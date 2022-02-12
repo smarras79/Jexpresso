@@ -15,7 +15,7 @@ julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
 You can test that things were installed properly with
 ```bash
-julia --project=. $jExpresso_HOME/test/runtests.jl
+julia --project=. $jExpresso_HOME/src/jexpresso.jl
 ```
 where `$jExpresso_HOME` is the path to the base jExpresso directory
 
