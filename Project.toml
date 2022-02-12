@@ -1,0 +1,7 @@
+name = "jexpresso"
+uuid = "5833cb5e-c414-47e6-9a84-00374d19fa25"
+authors = ["Simone <smarras@njit.edu>"]
+version = "0.1.0"
+
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
