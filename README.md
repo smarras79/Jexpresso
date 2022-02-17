@@ -15,9 +15,9 @@ julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
 You can test that things were installed properly with
 ```bash
-julia --project=. $jExpresso_HOME/src/jexpresso.jl
+julia --project=. $JEXPRESSO_HOME/src/jexpresso.jl
 ```
-where `$jExpresso_HOME` is the path to the base jExpresso directory
+where `$JEXPRESSO_HOME` is the path to the base jExpresso directory
 
 ## Problems building MPI.jl
 
