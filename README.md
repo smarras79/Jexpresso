@@ -30,13 +30,13 @@ MPI these would be subdirectories in `/opt/local/include` and `/opt/local/lib`.
 ## Setup with GPUs
 
 ```bash
-julia --project=$jExpresso_HOME/env/gpu -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
+julia --project=$JEXPRESSO_HOME/env/gpu -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
-where `$jExpresso_HOME` is the path to the base jExpresso directory
+where `$JEXPRESSO_HOME` is the path to the base jExpresso directory
 
 You can test that things were installed properly with
 ```bash
-julia --project=$jExpresso_HOME/env/gpu $jExpresso_HOME/test/runtests.jl
+julia --project=$JEXPRESSO_HOME/env/gpu $JEXPRESSO_HOME/test/runtests.jl
 ```
 
 [0]: https://github.com/JuliaParallel/MPI.jl
