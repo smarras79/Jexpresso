@@ -3,7 +3,7 @@
 # S. Marras, Feb 2022
 # 
 """
-    struct st_legendrea{T<:Real}
+    struct St_legendrea{T<:Real}
         legendre  :: T
         dlegendre :: T
         q         :: T # q  = legendre(p+1)  - legendre(p-1)
@@ -11,28 +11,31 @@
     end
 """
 
-struct st_legendre{T<:Float64}
+export St_legendre, St_lgl
+export f_lgl
+
+struct St_legendre{T<:Float64}
     legendre  :: T
     dlegendre :: T
     q         :: T # q  = legendre(p+1)  - legendre(p-1)
     dq        :: T # dq = dlegendre(p+1) - dlegendre(p-1)  
 end
 
-function (l::st_legendre)()
+#=function (l::St_legendre)()
     
     
    return [l.legendre,l.dlegendre]
 end
+=#
 
 
-
-struct st_lgl{T<:Float64}
+struct St_lgl{T<:Float64}
     lgl    :: T
     weight :: T
 end
 
 
-function f_lgl(lgl::st_lgl, p::int, ksi::T, w::T)
+function f_lgl(lgl::St_lgl, p::int, ksi::T, w::T)
 
 """
 2  Evaluate recursion, the Legendre polynomial of order p
