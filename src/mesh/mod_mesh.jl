@@ -3,9 +3,9 @@ export St_mesh, build_mesh2d!
 
 mutable struct St_mesh{TFloat,TInt}
     
-    x::Vector{TFloat}
-    y::Vector{TFloat}
-    z::Vector{TFloat}
+    x::Array{TFloat}
+    y::Array{TFloat}
+    z::Array{TFloat}
 
     xmin::TFloat; xmax::TFloat
     ymin::TFloat; ymax::TFloat
