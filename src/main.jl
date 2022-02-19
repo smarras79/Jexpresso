@@ -9,13 +9,13 @@ using MPI
 using PlotlyJS
 
 #Constants
-TInt   = Int64
-TFloat = Float64
+const TInt   = Int8
+const TFloat = Float64
 
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
-include("./user_inputs.jl")
+include("./IO/mod_inputs.jl")
 include("./mesh/mod_mesh.jl")
 include("./solver/mod_solution.jl")
 #--------------------------------------------------------
@@ -28,9 +28,16 @@ if MPI.Comm_rank(comm) == 0
     print(BLUE_FG(" # Welcome to ", RED_FG("jexpresso\n")))
     print(BLUE_FG(" # A Julia code to solve turbulence problems in the atmosphere\n"))
 
-    #Load user inputs (NamedTuple defined in user_inputs.jl
-    inputs = user_inputs()
 
+    #--------------------------------------------------------
+    #User inputs:
+    #--------------------------------------------------------
+    inputs, nvars = mod_inputs_user_inputs(TInt, TFloat)
+    
+
+    #--------------------------------------------------------
+    #Print inputs to screen
+    #--------------------------------------------------------
     #=
     NOTE: SM
     ADD HERE A FUNCTION TO CHECK IF SOME NECESSARY INPUTS WERE NOT DEFINED
@@ -38,39 +45,59 @@ if MPI.Comm_rank(comm) == 0
     =#
     println( " #--------------------------------------------------------------------------------")
     print(GREEN_FG(" # User inputs:\n"))
-    println( " # Equation set:  ", inputs.equation_set)
-    println( " # Problem:       ", inputs.problem)
-    println( " # N. space dims: ", inputs.nsd)
-    println( " # N. x-points:   ", inputs.npx)
-    println( " # [xmin, xmax]:  ", inputs.xmin, " ", inputs.xmax)
-    if (inputs.nsd > 1)
-        println( " # N. y-points:   ", inputs.npy)
-        println( " # [ymin, ymax]:  ", inputs.ymin, " ", inputs.ymax)
+    println( " # Equation set:  ", inputs[:equation_set])
+    println( " # Problem:       ", inputs[:problem])
+    println( " # N. variables:  ", nvars)
+    println( " # N. space dims: ", inputs[:nsd])
+    println( " # N. x-points:   ", inputs[:npx])
+    println( " # [xmin, xmax]:  ", inputs[:xmin], " ", inputs[:xmax])
+    if (inputs[:nsd] > 1)
+        println( " # N. y-points:   ", inputs[:npy])
+        println( " # [ymin, ymax]:  ", inputs[:ymin], " ", inputs[:ymax])
     end
-    if (inputs.nsd == 3)
-        println( " # N. z-points:   ", inputs.npz)
-        println( " # [zmin, zmax]:  ", inputs.zmin, " ", inputs.zmax)
+    if (inputs[:nsd] == 3)
+        println( " # N. z-points:   ", inputs[:npz])
+        println( " # [zmin, zmax]:  ", inputs[:zmin], " ", inputs[:zmax])
     end
 
-    #
-    # Build mesh
-    #
-    mesh = St_mesh{TFloat, TInt}(zeros(inputs.npx), zeros(inputs.npy), zeros(inputs.npz),
-                                 inputs.xmin, inputs.xmax,
-                                 inputs.ymin, inputs.ymax,
-                                 inputs.zmin, inputs.zmax,
-                                 inputs.npx, inputs.npy, inputs.npz)
+
     
-    build_mesh2d!(mesh)
+    #--------------------------------------------------------
+    # Build mesh    
+    #--------------------------------------------------------
     #
-    # END Build mesh
-    #
+    # Initialize mesh struct
+    mesh = St_mesh{TFloat, TInt}(zeros(inputs[:npx]), zeros(inputs[:npy]), zeros(inputs[:npz]),
+                                 inputs[:xmin], inputs[:xmax],
+                                 inputs[:ymin], inputs[:ymax],
+                                 inputs[:zmin], inputs[:zmax],
+                                 inputs[:npx], inputs[:npy], inputs[:npz])
 
-    qs = St_solution{TInt, TFloat}(zeros(npx,nvars))
-    #initial_conditions!(mesh,
-    #                    qinit,
-    #                    npx, npy, npz;
-    #                    problem)
+    # Create mesh
+    build_mesh2d!(mesh)
+    #--------------------------------------------------------
+    # END Build mesh    
+    #--------------------------------------------------------
+    
+    
+    #--------------------------------------------------------
+    # Initialize solution struct
+    #--------------------------------------------------------
+    #
+    # Initlaize solution struct
+    qs = St_solution{TInt, TFloat}(zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
+                                   zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
+                                   zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
+                                   zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
+                                   zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
+                                   zeros(TFloat, inputs[:nsd]*inputs[:nsd]),
+                                   )
+
+    # Build initial conditions
+    mod_solution_initial_conditions!(mesh,
+                                     qs,
+                                     inputs[:npx], inputs[:npy], inputs[:npz],
+                                     inputs[:problem])
     
 end
 
