@@ -24,43 +24,54 @@ MPI.Init()
 comm = MPI.COMM_WORLD
 
 if MPI.Comm_rank(comm) == 0
-    print(BLUE_FG("\n #------------------------------------------------------------\n"))
-    print(BLUE_FG(" # Welcome to ", RED_FG("jExpresso !!!\n")))
+    print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
+    print(BLUE_FG(" # Welcome to ", RED_FG("jexpresso\n")))
     print(BLUE_FG(" # A Julia code to solve turbulence problems in the atmosphere\n"))
-    print(BLUE_FG(" #------------------------------------------------------------\n\n"))
 
-    
-    #npx, npy, npz = 100, 100, 100    
+    #Load user inputs (NamedTuple defined in user_inputs.jl
     inputs = user_inputs()
-    
-    println( " #--------------------------------------------------------------------------------\n")
-    println( " # User inputs:\n # Equation set: ", inputs.equation_set)
+
+    #=
+    NOTE: SM
+    ADD HERE A FUNCTION TO CHECK IF SOME NECESSARY INPUTS WERE NOT DEFINED
+    THINK OF A WAY TO CREATE A DYNAMIC INPUT SETUP to make the inputs list flexible.
+    =#
+    println( " #--------------------------------------------------------------------------------")
+    print(GREEN_FG(" # User inputs:\n"))
+    println( " # Equation set: ", inputs.equation_set)
     println( " # Problem:       ", inputs.problem)
     println( " # N. space dims: ", inputs.nsd)
-    println( " # N. x-points:     ", inputs.npx)
-    println( " # [xmin, xmax]:    ", inputs.xmin, " ", inputs.xmax)
+    println( " # N. x-points:   ", inputs.npx)
+    println( " # [xmin, xmax]:  ", inputs.xmin, " ", inputs.xmax)
     if (inputs.nsd > 1)
-        println( " # N. x-points:     ", inputs.npy)
-        println( " # [ymin, ymax]:    ", inputs.ymin, " ", inputs.ymax)
+        println( " # N. y-points:   ", inputs.npy)
+        println( " # [ymin, ymax]:  ", inputs.ymin, " ", inputs.ymax)
     end
     if (inputs.nsd == 3)
-        println( " # N. x-points:     ", inputs.npz)
-        println( " # [zmin, zmax]:    ", inputs.zmin, " ", inputs.zmax)
+        println( " # N. z-points:   ", inputs.npz)
+        println( " # [zmin, zmax]:  ", inputs.zmin, " ", inputs.zmax)
     end
-    println( " # End user inputs.\n")
-    println( " #--------------------------------------------------------------------------------\n")
+
+    #
+    # Build mesh
+    #
+    mesh = St_mesh{TFloat, TInt}(zeros(npx), zeros(npy), zeros(npz),
+                                 inputs.xmin, inputs.xmax,
+                                 inputs.ymin, inputs.ymax,
+                                 inputs.zmin, inputs.zmax,
+                                 inputs.npx, inputs.npy, inputs.npz)
     
-    #=    mesh = St_mesh{TFloat, TInt}(zeros(npx), zeros(npy), zeros(npz),
-    xmin, xmax, ymin, ymax, zmin, zmax,
-                                 npx, npy, npz)
     build_mesh2d!(mesh)
+    #
+    # END Build mesh
+    #
 
     qs = St_solution{TInt, TFloat}(zeros(npx,nvars))
     #initial_conditions!(mesh,
     #                    qinit,
     #                    npx, npy, npz;
     #                    problem)
-    =#
+    
 end
 
 MPI.Barrier(comm)
