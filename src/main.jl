@@ -32,29 +32,22 @@ if MPI.Comm_rank(comm) == 0
     
     #npx, npy, npz = 100, 100, 100    
     inputs = user_inputs()
-#=
-    equation_set, problem,
-    nsd,
-    npx,
-    xmin, xmax,
-    ymin, ymax,
-    zmin, zmax = inputs[1],inputs[2], inputs[3], inputs[4], inputs[5], inputs[6], inputs[7], inputs[8], inputs[9], inputs[10]
-=#
+    
     println( " #--------------------------------------------------------------------------------\n")
-    println( " # User inputs:\n # Equation set: ", equation_set)
-    println( "\n # Problem:       ", problem)
-    println( "\n # N. space dims: ", nsd)
-    println( "\n N. x-points:     ", npx)
-    println( "\n [xmin, xmax]:    ", xmin, " ", xmax)
-    if (nsd > 1)
-        println( "\n N. x-points:     ", npy)
-        println( "\n [ymin, ymax]:    ", ymin, " ", ymax)
+    println( " # User inputs:\n # Equation set: ", inputs.equation_set)
+    println( " # Problem:       ", inputs.problem)
+    println( " # N. space dims: ", inputs.nsd)
+    println( " # N. x-points:     ", inputs.npx)
+    println( " # [xmin, xmax]:    ", inputs.xmin, " ", inputs.xmax)
+    if (inputs.nsd > 1)
+        println( " # N. x-points:     ", inputs.npy)
+        println( " # [ymin, ymax]:    ", inputs.ymin, " ", inputs.ymax)
     end
-    if (nsd == 3)
-        println( "\n N. x-points:     ", npz)
-        println( "\n [zmin, zmax]:    ", zmin, " ", zmax)
+    if (inputs.nsd == 3)
+        println( " # N. x-points:     ", inputs.npz)
+        println( " # [zmin, zmax]:    ", inputs.zmin, " ", inputs.zmax)
     end
-    println( "\n # End user inputs.\n")
+    println( " # End user inputs.\n")
     println( " #--------------------------------------------------------------------------------\n")
     
     #=    mesh = St_mesh{TFloat, TInt}(zeros(npx), zeros(npy), zeros(npz),
