@@ -38,7 +38,7 @@ if MPI.Comm_rank(comm) == 0
     =#
     println( " #--------------------------------------------------------------------------------")
     print(GREEN_FG(" # User inputs:\n"))
-    println( " # Equation set: ", inputs.equation_set)
+    println( " # Equation set:  ", inputs.equation_set)
     println( " # Problem:       ", inputs.problem)
     println( " # N. space dims: ", inputs.nsd)
     println( " # N. x-points:   ", inputs.npx)
@@ -55,7 +55,7 @@ if MPI.Comm_rank(comm) == 0
     #
     # Build mesh
     #
-    mesh = St_mesh{TFloat, TInt}(zeros(npx), zeros(npy), zeros(npz),
+    mesh = St_mesh{TFloat, TInt}(zeros(inputs.npx), zeros(inputs.npy), zeros(inputs.npz),
                                  inputs.xmin, inputs.xmax,
                                  inputs.ymin, inputs.ymax,
                                  inputs.zmin, inputs.zmax,
