@@ -1,7 +1,7 @@
-# jExpresso
-jExpresso
+# JEXPRESSO
+JEXPRESSO
 
-# Some notes on using jExpresso
+# Some notes on using JEXPRESSO
 
 To install and run the code assume Julia
 version 1.7.2.
@@ -15,9 +15,9 @@ julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
 You can test that things were installed properly with
 ```bash
-julia --project=. $jExpresso_HOME/src/jexpresso.jl
+julia --project=. $JEXPRESSO_HOME/src/main.jl
 ```
-where `$jExpresso_HOME` is the path to the base jExpresso directory
+where `$JEXPRESSO_HOME` is your path to the base JEXPRESSO directory (you can export it in your .bashrc or simply replace its value with the explicit name of the path)
 
 ## Problems building MPI.jl
 
@@ -30,13 +30,13 @@ MPI these would be subdirectories in `/opt/local/include` and `/opt/local/lib`.
 ## Setup with GPUs
 
 ```bash
-julia --project=$jExpresso_HOME/env/gpu -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
+julia --project=$JEXPRESSO_HOME/env/gpu -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
-where `$jExpresso_HOME` is the path to the base jExpresso directory
+where `$JEXPRESSO_HOME` is the path to the base JEXPRESSO directory
 
 You can test that things were installed properly with
 ```bash
-julia --project=$jExpresso_HOME/env/gpu $jExpresso_HOME/test/runtests.jl
+julia --project=$JEXPRESSO_HOME/env/gpu $JEXPRESSO_HOME/test/runtests.jl
 ```
 
 [0]: https://github.com/JuliaParallel/MPI.jl
