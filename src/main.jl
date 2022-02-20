@@ -6,7 +6,8 @@ using DifferentialEquations
 using Gridap
 using GridapGmsh
 using MPI
-using PlotlyJS
+using Plot, PlotlyJS
+using Revise
 
 #Constants
 const TInt   = Int8
@@ -98,6 +99,10 @@ if MPI.Comm_rank(comm) == 0
                                      qs,
                                      inputs[:npx], inputs[:npy], inputs[:npz],
                                      inputs[:problem])
+
+
+    # x and y given as arrays
+    plot(scatter(x=1:10, y=rand(10), mode="markers"))
     
 end
 

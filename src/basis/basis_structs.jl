@@ -2,23 +2,24 @@
 # This file contains all the structs definitions
 # S. Marras, Feb 2022
 # 
-"""
-    struct St_legendrea{T<:Real}
-        legendre  :: T
-        dlegendre :: T
-        q         :: T # q  = legendre(p+1)  - legendre(p-1)
-        dq        :: T # dq = dlegendre(p+1) - dlegendre(p-1)
-    end
-"""
-
 export St_legendre, St_lgl
 export f_lgl
 
-struct St_legendre{T<:Float64}
-    legendre  :: T
-    dlegendre :: T
-    q         :: T # q  = legendre(p+1)  - legendre(p-1)
-    dq        :: T # dq = dlegendre(p+1) - dlegendre(p-1)  
+struct St_legendre{TFloat}
+    
+    """
+        struct St_legendrea{TFloat<:Real}
+            legendre  :: TFloat
+            dlegendre :: TFloat
+            q         :: TFloat # q  = legendre(p+1)  - legendre(p-1)
+            dq        :: TFloat # dq = dlegendre(p+1) - dlegendre(p-1)
+        end
+    """
+    
+    legendre  :: TFloat
+    dlegendre :: TFloat
+    q         :: TFloat # q  = legendre(p+1)  - legendre(p-1)
+    dq        :: TFloat # dq = dlegendre(p+1) - dlegendre(p-1)  
 end
 
 #=function (l::St_legendre)()
@@ -29,13 +30,13 @@ end
 =#
 
 
-struct St_lgl{T<:Float64}
-    lgl    :: T
-    weight :: T
+struct St_lgl{TFloat}
+    lgl    :: TFloat
+    weight :: TFloat
 end
 
 
-function f_lgl(lgl::St_lgl, p::int, ksi::T, w::T)
+function f_lgl(lgl::St_lgl, p::Int8, TFloat::Float64)
 
 """
 2  Evaluate recursion, the Legendre polynomial of order p
@@ -54,8 +55,8 @@ function f_lgl(lgl::St_lgl, p::int, ksi::T, w::T)
 """
 
     size    = p + 1;
-    ksi     = zeros(T, size)
-    weights = zeros(T, size)
+    ksi     = zeros(TFloat, size)
+    weights = zeros(TFloat, size)
     
     #LGL nodes
     LegendreGaussLobattoNodesAndWeights(lgl, nop);

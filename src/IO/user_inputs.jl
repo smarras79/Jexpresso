@@ -1,9 +1,8 @@
 function user_inputs()
-    
-    #---------------------------------------------------------------------------
-    # User define your inputs below: the order doesn't matter
-    #---------------------------------------------------------------------------
     inputs = Dict(
+        #---------------------------------------------------------------------------
+        # User define your inputs below: the order doesn't matter
+        #---------------------------------------------------------------------------
         :equation_set => "NS",
         :problem      => "clouds",
         :nsd          => 2,   #number of space dimensions

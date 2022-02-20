@@ -1,7 +1,4 @@
-module build_lgl
-
-import St_legendre
-import St_lgl
+include("basis_structs.jl")
 
 export lgl
 
@@ -34,6 +31,4 @@ function lgl(p::Int, legendre::St_legendre)
     #LegendreGaussNodesAndWeights(lgl, nop);
 
     return lgl;
-end
-
 end

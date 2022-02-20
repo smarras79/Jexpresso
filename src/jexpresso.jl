@@ -6,9 +6,8 @@ The module is structured in the following sub-modules:
 - [`Jexpresso.Helpers`](@ref)
 - [`Jexpresso.Polynomials`](@ref)
 The exported names are:
-
-$(EXPORTS)
 """
+
 module Jexpresso
 
 include("./basis/build_lgl.jl")
