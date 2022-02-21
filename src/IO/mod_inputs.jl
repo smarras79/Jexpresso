@@ -16,8 +16,8 @@ function mod_inputs_user_inputs(TInt, TFloat)
         inputs[:npy] = 1
     end
     
-    nvars::TInt = 0
-    if (lowercase(inputs[:equation_set]) == "burgers")
+    nvars::TInt = 1
+    if (lowercase(inputs[:equation_set]) == "burgers" || lowercase(inputs[:equation_set]) == "burgers1d")
         if(inputs[:nsd] == 1)
             nvars = 1
         elseif (inputs[:nsd] == 2)
@@ -31,7 +31,11 @@ function mod_inputs_user_inputs(TInt, TFloat)
         elseif(inputs[:nsd] == 3)
             nvars == 5
         end
-    end
+    else
+        println( "\n !!!! ERROR in user_inputs.jl: equation_set ", inputs[:equation_set], " is not coded!!!")
+        println( " !!!! Chose among: \n !!!!  [1] burgers1 \n")
+        error()
+        end
             
     return inputs, nvars
 end

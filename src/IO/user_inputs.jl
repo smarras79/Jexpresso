@@ -3,12 +3,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :equation_set => "NS",
-        :problem      => "clouds",
-        :nsd          => 2,   #number of space dimensions
-        :npx          => 100, #N. points in x
-        :npy          => 100, #N. points in y
-        :npz          => 100, #N. points in z
+        :equation_set => "burgers1d",
+        :problem      => "burgers1d",
+        :nsd          => 1,   #number of space dimensions
+        :npx          => 10, #N. points in x
+        :npy          => 1, #N. points in y
+        :npz          => 1, #N. points in z
         :xmin         =>  -1,
         :xmax         =>   1,
         :ymin         =>  -1,

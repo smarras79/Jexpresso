@@ -1,7 +1,9 @@
-#module Mesh
-export St_mesh, build_mesh2d!
+using Revise
 
-mutable struct St_mesh{TFloat,TInt}
+export St_mesh
+export mod_mesh_build_mesh2d!
+
+mutable struct St_mesh{TInt,TFloat}
     
     x::Array{TFloat}
     y::Array{TFloat}
@@ -18,7 +20,7 @@ mutable struct St_mesh{TFloat,TInt}
 end #St_mesh
 
     
-function build_mesh2d!(mesh::St_mesh)
+function mod_mesh_build_mesh2d!(mesh::St_mesh)
     
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.npx - 1)
     Δy = abs(mesh.ymax - mesh.ymin)/(mesh.npy - 1)

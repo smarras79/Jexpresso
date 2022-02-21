@@ -6,8 +6,11 @@ using DifferentialEquations
 using Gridap
 using GridapGmsh
 using MPI
-using Plot, PlotlyJS
 using Revise
+
+#Plots
+using Plots
+plotlyjs()
 
 #Constants
 const TInt   = Int8
@@ -21,10 +24,10 @@ include("./mesh/mod_mesh.jl")
 include("./solver/mod_solution.jl")
 #--------------------------------------------------------
 
-MPI.Init()
-comm = MPI.COMM_WORLD
+#MPI.Init()
+#comm = MPI.COMM_WORLD
 
-if MPI.Comm_rank(comm) == 0
+#if MPI.Comm_rank(comm) == 0
     print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
     print(BLUE_FG(" # Welcome to ", RED_FG("jexpresso\n")))
     print(BLUE_FG(" # A Julia code to solve turbulence problems in the atmosphere\n"))
@@ -35,7 +38,6 @@ if MPI.Comm_rank(comm) == 0
     #--------------------------------------------------------
     inputs, nvars = mod_inputs_user_inputs(TInt, TFloat)
     
-
     #--------------------------------------------------------
     #Print inputs to screen
     #--------------------------------------------------------
@@ -61,50 +63,44 @@ if MPI.Comm_rank(comm) == 0
         println( " # [zmin, zmax]:  ", inputs[:zmin], " ", inputs[:zmax])
     end
 
-
-    
     #--------------------------------------------------------
     # Build mesh    
     #--------------------------------------------------------
     #
     # Initialize mesh struct
-    mesh = St_mesh{TFloat, TInt}(zeros(inputs[:npx]), zeros(inputs[:npy]), zeros(inputs[:npz]),
+    mesh = St_mesh{TInt,TFloat}(zeros(inputs[:npx]), zeros(inputs[:npy]), zeros(inputs[:npz]),
                                  inputs[:xmin], inputs[:xmax],
                                  inputs[:ymin], inputs[:ymax],
                                  inputs[:zmin], inputs[:zmax],
                                  inputs[:npx], inputs[:npy], inputs[:npz])
 
     # Create mesh
-    build_mesh2d!(mesh)
+    mod_mesh_build_mesh2d!(mesh)
     #--------------------------------------------------------
     # END Build mesh    
     #--------------------------------------------------------
-    
-    
+
     #--------------------------------------------------------
     # Initialize solution struct
     #--------------------------------------------------------
     #
     # Initlaize solution struct
-    qs = St_solution{TInt, TFloat}(zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
+   qs = St_solution{TInt,TFloat}(zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
                                    zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
                                    zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
                                    zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
                                    zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
-                                   zeros(TFloat, inputs[:nsd]*inputs[:nsd]),
-                                   )
+                                   zeros(TFloat, inputs[:nsd]*inputs[:nsd]))
+
 
     # Build initial conditions
     mod_solution_initial_conditions!(mesh,
                                      qs,
+                                     inputs[:nsd],
                                      inputs[:npx], inputs[:npy], inputs[:npz],
                                      inputs[:problem])
 
 
-    # x and y given as arrays
-    plot(scatter(x=1:10, y=rand(10), mode="markers"))
-    
-end
-
-MPI.Barrier(comm)
-MPI.Finalize()
+#end #main
+#MPI.Barrier(comm)
+#MPI.Finalize()
