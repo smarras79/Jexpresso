@@ -28,17 +28,21 @@ end #St_mesh
   
 function mod_solution_initial_conditions!(mesh::St_mesh,
                                           qsol::St_solution,
-                                          nsd,
-                                          npx, npy, npz, 
                                           problem="burgers1d")
-
+    
+    nsd = mesh.nsd
+    npx,  npy, npz = mesh.npx,  mesh.npy,  mesh.npz
+    xmin, xmax     = mesh.xmin, mesh.xmax
+    ymin, ymax     = mesh.ymin, mesh.ymax
+    zmin, zmax     = mesh.zmin, mesh.zmax
+    
     if (problem == "burgers1d" || problem == "burgers")
 
         if (nsd == 1)
             qsol.q[1, 1] = 0
             qsol.q[1, npx] = 0
             Δx = (mesh.xmax - mesh.xmin)/(npx-1)
-            for i = 2:npx-1
+            for i::TInt = 2:npx-1
                 x = mesh.x[i]
                 qsol.q[1, i] = sin(2*π*x) + 0.5*sin(π*x)
             end
@@ -50,24 +54,27 @@ end
 
 function mod_solution_solveODE!(mesh::St_mesh,
                                 qsol::St_solution,
-                                nsd,
-                                npx, npy, npz, 
                                 problem="burgers1d")
 
 
-    q0::TFloat
+    q0::Typeof(qsol.q)
+    
+    npx = mesh.npx, npy = mesh.npy, npz = mesh.npz
+    xmin, xmax = mesh.xmin, mesh.xmax
+    ymin, ymax = mesh.ymin, mesh.ymax
+    zmin, zmax = mesh.zmin, mesh.zmax
     
     # Define a problem
     p = (1.0,2.0,1.5,1.25) # a,b,c,d
     
     ϵ  = 1.0e-2
-    Δx = (mesh.xmax - mesh.xmin)/(npx-1)
+    Δx = (xmax - xmin)/(npx-1)
     a  = ϵ/(Δx*Δx)
     
     x = mesh.x
     qsol.q[1, 1]   = 0
     qsol.q[1, npx] = 0
-    Δx = (mesh.xmax - mesh.xmin)/(npx-1)
+    Δx = (xmax - xmin)/(npx-1)
     q0 = sin(2*π*x) + 0.5*sin(π*x)
 
    #= for i = 1:npx
