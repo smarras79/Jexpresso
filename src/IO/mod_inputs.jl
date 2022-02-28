@@ -49,19 +49,20 @@ end
 function mod_inputs_print(inputs::Dict{}; nvars::Int8)
     
     print(GREEN_FG(" # User inputs:\n"))
-    println( " # Equation set:  ", inputs[:equation_set])
-    println( " # Problem:       ", inputs[:problem])
-    println( " # N. variables:  ", nvars)
-    println( " # N. space dims: ", inputs[:nsd])
-    println( " # N. x-points:   ", inputs[:npx])
-    println( " # [xmin, xmax]:  ", inputs[:xmin], " ", inputs[:xmax])
+    println( " # Equation set:     ", inputs[:equation_set])
+    println( " # Problem:          ", inputs[:problem])
+    println( " # N. variables:     ", nvars)
+    println( " # N. space dims:    ", inputs[:nsd])
+    println( " # Polynomial order: ", inputs[:nop])
+    println( " # N. x-points:      ", inputs[:npx])
+    println( " # [xmin, xmax]:     ", inputs[:xmin], " ", inputs[:xmax])
     if (inputs[:nsd] > 1)
-        println( " # N. y-points:   ", inputs[:npy])
-        println( " # [ymin, ymax]:  ", inputs[:ymin], " ", inputs[:ymax])
+        println( " # N. y-points:      ", inputs[:npy])
+        println( " # [ymin, ymax]:     ", inputs[:ymin], " ", inputs[:ymax])
     end
     if (inputs[:nsd] == 3)
-        println( " # N. z-points:   ", inputs[:npz])
-        println( " # [zmin, zmax]:  ", inputs[:zmin], " ", inputs[:zmax])
+        println( " # N. z-points:      ", inputs[:npz])
+        println( " # [zmin, zmax]:     ", inputs[:zmin], " ", inputs[:zmax])
     end
     
 end

@@ -20,7 +20,7 @@ const TFloat = Float64
 # jexpresso modules
 #--------------------------------------------------------
 include("./IO/mod_inputs.jl")
-include("./mesh/mod_mesh.jl")
+include("./Mesh/mod_mesh.jl")
 include("./solver/mod_solution.jl")
 #--------------------------------------------------------
 
@@ -28,40 +28,17 @@ include("./solver/mod_solution.jl")
 #comm = MPI.COMM_WORLD
 
 #if MPI.Comm_rank(comm) == 0
-print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
-print(BLUE_FG(" # Welcome to ", RED_FG("jexpresso\n")))
-print(BLUE_FG(" # A Julia code to solve turbulence problems in the atmosphere\n"))
-
+mod_inputs_print_welcome()
 
 #--------------------------------------------------------
 #User inputs:
 #--------------------------------------------------------
-inputs, nvars = mod_inputs_user_inputs(TInt, TFloat)
+inputs, nvars = mod_inputs_user_inputs()
 
 #--------------------------------------------------------
 #Print inputs to screen
 #--------------------------------------------------------
-#=
-NOTE: SM
-ADD HERE A FUNCTION TO CHECK IF SOME NECESSARY INPUTS WERE NOT DEFINED
-THINK OF A WAY TO CREATE A DYNAMIC INPUT SETUP to make the inputs list flexible.
-=#
-println( " #--------------------------------------------------------------------------------")
-print(GREEN_FG(" # User inputs:\n"))
-println( " # Equation set:  ", inputs[:equation_set])
-println( " # Problem:       ", inputs[:problem])
-println( " # N. variables:  ", nvars)
-println( " # N. space dims: ", inputs[:nsd])
-println( " # N. x-points:   ", inputs[:npx])
-println( " # [xmin, xmax]:  ", inputs[:xmin], " ", inputs[:xmax])
-if (inputs[:nsd] > 1)
-    println( " # N. y-points:   ", inputs[:npy])
-    println( " # [ymin, ymax]:  ", inputs[:ymin], " ", inputs[:ymax])
-end
-if (inputs[:nsd] == 3)
-    println( " # N. z-points:   ", inputs[:npz])
-    println( " # [zmin, zmax]:  ", inputs[:zmin], " ", inputs[:zmax])
-end
+mod_inputs_print(inputs; nvars)
 
 #--------------------------------------------------------
 # Build mesh    
@@ -72,10 +49,10 @@ mesh = St_mesh{TInt,TFloat}(zeros(inputs[:npx]), zeros(inputs[:npy]), zeros(inpu
                             inputs[:xmin], inputs[:xmax],
                             inputs[:ymin], inputs[:ymax],
                             inputs[:zmin], inputs[:zmax],
-                            inputs[:npx], inputs[:npy], inputs[:npz])
+                            inputs[:npx], inputs[:npy], inputs[:npz], 1, 1)
 
 # Create mesh
-mod_mesh_build_mesh2d!(mesh)
+mod_mesh_build_mesh!(mesh)
 #--------------------------------------------------------
 # END Build mesh    
 #--------------------------------------------------------
@@ -86,17 +63,15 @@ mod_mesh_build_mesh2d!(mesh)
 #
 # Initlaize solution struct
 qsol = St_solution{TInt,TFloat}(zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
-                              zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
-                              zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
-                              zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
-                              zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
-                              zeros(TFloat, inputs[:nsd]*inputs[:nsd]))
+                                zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
+                                zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
+                                zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
+                                zeros(TFloat, nvars, inputs[:npx]*inputs[:npy]*inputs[:npz]),
+                                zeros(TFloat, inputs[:nsd]*inputs[:nsd]))
 
 # Build initial conditions
 mod_solution_initial_conditions!(mesh,
                                  qsol,
-                                 inputs[:nsd],
-                                 inputs[:npx], inputs[:npy], inputs[:npz],
                                  inputs[:problem])
 
 

@@ -20,7 +20,7 @@ mutable struct St_mesh{TInt, TFloat}
     npoin::TInt
     
     nsd::TInt
-
+    nop::TInt
 
 end #St_mesh
 
