@@ -141,7 +141,7 @@ function LegendreGaussLobattoNodesAndWeights(Legendre::St_legendre, lgl::St_lgl,
 	lgl.ω[TInt(nop/2)+1] = 2.0/(nop*(nop + 1.0)*L2);
     end
 
-    for j=1:nop+1
+    for j=1:nop+1       
         println( " # ξ, ω =: ", " ", lgl.ξ[j], " " , lgl.ω[j])
     end
     

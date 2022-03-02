@@ -48,23 +48,31 @@ end
 
 function mod_inputs_print(inputs::Dict{}; nvars::Int8)
     
-    print(GREEN_FG(" # User inputs:\n"))
-    println( " # Equation set:     ", inputs[:equation_set])
-    println( " # Problem:          ", inputs[:problem])
-    println( " # N. variables:     ", nvars)
-    println( " # N. space dims:    ", inputs[:nsd])
-    println( " # Polynomial order: ", inputs[:nop])
-    println( " # N. x-points:      ", inputs[:npx])
-    println( " # [xmin, xmax]:     ", inputs[:xmin], " ", inputs[:xmax])
-    if (inputs[:nsd] > 1)
-        println( " # N. y-points:      ", inputs[:npy])
-        println( " # [ymin, ymax]:     ", inputs[:ymin], " ", inputs[:ymax])
-    end
-    if (inputs[:nsd] == 3)
-        println( " # N. z-points:      ", inputs[:npz])
-        println( " # [zmin, zmax]:     ", inputs[:zmin], " ", inputs[:zmax])
-    end
+    print(GREEN_FG(" # User inputs: ........................ \n"))
+
+    #=for key in sort(collect(keys(inputs)))
+        println("$key => $(inputs[key])")
+    end=#
     
+    
+    if (haskey(inputs, :equation_set)) println( " # Equation set:     ", inputs[:equation_set]) end
+    
+    if (haskey(inputs, :problem))    println( " # Problem:          ", inputs[:problem]) end
+    if (haskey(inputs, :lread_gmsh)) println( " # Read GMSH:        ", inputs[:lread_gmsh]) end
+    if (haskey(inputs, :nsd))        println( " # N. space dims:    ", inputs[:nsd]) end
+    if (haskey(inputs, :nvars))      println( " # N. variables:     ", nvars) end
+    if (haskey(inputs, :nop))        println( " # Polynomial order: ", inputs[:nop]) end
+    if (haskey(inputs, :npx))        println( " # N. x-points:      ", inputs[:npx]) end
+    if (haskey(inputs, :xmin) && haskey(inputs, :xmax)) println( " # [xmin, xmax]:     ", inputs[:xmin], " ", inputs[:xmax]) end
+    if ((haskey(inputs, :nsd)) && inputs[:nsd] > 1)
+        if (haskey(inputs, :npy)) println( " # N. y-points:      ", inputs[:npy]) end
+        if (haskey(inputs, :ymin) && haskey(inputs, :ymax)) println( " # [ymin, ymax]:     ", inputs[:ymin], " ", inputs[:ymax]) end
+    end
+    if ((haskey(inputs, :nsd)) && inputs[:nsd] == 3)
+        if (haskey(inputs, :npz)) println( " # N. z-points:      ", inputs[:npz]) end
+        if (haskey(inputs, :zmin) && haskey(inputs, :zmax)) println( " # [zmin, zmax]:     ", inputs[:zmin], " ", inputs[:zmax]) end
+    end
+     print(GREEN_FG(" # User inputs: ........................ DONE\n"))
 end
 
 

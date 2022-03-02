@@ -24,10 +24,6 @@ include("./Mesh/mod_mesh.jl")
 include("./solver/mod_solution.jl")
 #--------------------------------------------------------
 
-#MPI.Init()
-#comm = MPI.COMM_WORLD
-
-#if MPI.Comm_rank(comm) == 0
 mod_inputs_print_welcome()
 
 #--------------------------------------------------------
@@ -87,26 +83,3 @@ savefig("~/Work/Codes/jexpresso/figs/initial_conditions.png")
                        inputs[:problem])
 =#
 
-#=
-# Define a problem
-u[1] = 
-
-    p = (1.0,2.0,1.5,1.25) # a,b,c,d
-f = function (du,u,p,t) # Define f as an in-place update into du
-    a,b,c,d = p
-    du[1] = a*u[1] - b*u[1]*u[2]
-    du[2] = -c*u[2]+ d*u[1]*u[2]
-end
-u0 = [1.0;1.0]; tspan = (0.0,10.0)
-prob = ODEProblem(f,u0,tspan,p)
-
-# Solve the problem
-sol = DifferentialEquations.solve(prob);
-
-# Plot the solution using the plot recipe
-plot(sol,title="All Plots.jl Attributes are Available")
-
-#end #main
-#MPI.Barrier(comm)
-#MPI.Finalize()
-=#

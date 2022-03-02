@@ -44,17 +44,31 @@ mod_inputs_print(inputs; nvars)
 #--------------------------------------------------------
 # Build mesh    
 #--------------------------------------------------------
-#
-# Initialize mesh struct
-mesh = St_mesh{TInt,TFloat}(zeros(inputs[:npx]), zeros(inputs[:npy]), zeros(inputs[:npz]),
-                            inputs[:xmin], inputs[:xmax],
-                            inputs[:ymin], inputs[:ymax],
-                            inputs[:zmin], inputs[:zmax],
-                            inputs[:npx], inputs[:npy], inputs[:npz], 1, 1,
-                            inputs[:nop])
 
-# Create mesh
-mod_mesh_build_mesh!(mesh)
+if (haskey(inputs, :lread_gmsh) && lowercase(inputs[:lread_gmsh]) == "true")
+
+    # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
+    mesh = St_mesh{TInt,TFloat}(zeros(2), zeros(2), zeros(2),
+                                0.0, 0.0,
+                                0.0, 0.0,
+                                0.0, 0.0,
+                                1, 1, 1, 1, 1,
+                                inputs[:nop])
+    
+    # Read gmsh grid using the GridapGmsh reader
+    mod_mesh_read_gmsh!(mesh)
+
+else
+    
+    # Initialize mesh struct
+    mesh = St_mesh{TInt,TFloat}(zeros(inputs[:npx]), zeros(inputs[:npy]), zeros(inputs[:npz]),
+                                inputs[:xmin], inputs[:xmax],
+                                inputs[:ymin], inputs[:ymax],
+                                inputs[:zmin], inputs[:zmax],
+                                inputs[:npx], inputs[:npy], inputs[:npz], 1, 1,
+                                inputs[:nop])
+end
+
 #--------------------------------------------------------
 # END Build mesh    
 #--------------------------------------------------------
@@ -63,7 +77,7 @@ mod_mesh_build_mesh!(mesh)
 # Initialize solution struct
 #--------------------------------------------------------
 #
-# Initlaize solution struct
+#= Initlaize solution struct
 qsol = St_solution{TInt,TFloat}(zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
                                 zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
                                 zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
@@ -76,6 +90,7 @@ mod_solution_initial_conditions!(mesh,
                                  qsol,
                                  inputs[:problem])
 
+=#
 
 Legendre = St_legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
 lgl      = St_lgl{TFloat}(zeros(TFloat, mesh.nop+1),
@@ -85,6 +100,6 @@ build_lgl!(Legendre, lgl, mesh.nop)
 #
 # Plot to file:
 #
-plt = plot(mesh.x, qsol.q[1,:], w = 3)
-plot(scatter!(mesh.x, zeros(length(mesh.x)), x=:sepal_width, y=:sepal_length, mode="markers"))
-savefig("~/Work/Codes/jexpresso/figs/initial_conditions.png")
+#plt = plot(mesh.x, qsol.q[1,:], w = 3)
+#plot(scatter!(mesh.x, zeros(length(mesh.x)), x=:sepal_width, y=:sepal_length, mode="markers"))
+#savefig("~/Work/Codes/jexpresso/figs/initial_conditions.png")
