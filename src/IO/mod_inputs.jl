@@ -13,9 +13,9 @@ function mod_inputs_user_inputs()
     
     inputs = user_inputs() # user_inputs is a Dict
 
-    print(GREEN_FG(" # User inputs: ........................ \n"))
+    print(GREEN_FG(" # User inputs from ...IO/user_inputs.jl .............. \n"))
     pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
-    print(GREEN_FG(" # User inputs: ........................ DONE\n"))    
+    print(GREEN_FG(" # User inputs: ................................... DONE\n"))    
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
