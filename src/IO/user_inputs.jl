@@ -3,11 +3,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :equation_set => "burgers",
-        :problem      => "burgers1d",
+        :equation_set => "ns",
+        :problem      => "rtb",
         :lread_gmsh   => true,
         :gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
-        :nsd          => 2,           #number of space dimensions
+        :nsd          => 3,           #number of space dimensions
         :nop          => 6,           #Polynomila order        
         #:npx          => 100,         #N. points in x
         #:npy          => 1,           #N. points in y

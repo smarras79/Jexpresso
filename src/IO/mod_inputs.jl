@@ -1,4 +1,5 @@
 using Crayons.Box
+using PrettyTables
 using Revise
 
 export mod_inputs_user_inputs
@@ -13,166 +14,133 @@ function mod_inputs_user_inputs()
     inputs = user_inputs() # user_inputs is a Dict
 
     print(GREEN_FG(" # User inputs: ........................ \n"))
-
+    pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
+    print(GREEN_FG(" # User inputs: ........................ DONE\n"))    
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
-    #    
-    if (!haskey(inputs, :equation_set))
-        @error " :equation_set is missing in .../IO/user_inputs.jl"
-        error_flag = 1
-    else
-        println( " # :equation_set =>     ", inputs[:equation_set])
-    end
+    #
+    mod_inputs_check(inputs, :equation_set, "e")
+    mod_inputs_check(inputs, :problem, "e")
     
-    if (!haskey(inputs, :problem))
-        @error " :problem is missing in .../IO/user_inputs.jl"
-        error_flag = 1
-    else
-        println( " # :problem      =>     ", inputs[:problem])        
-    end
-    
-    if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh] == true) #Non mandatory input
-        println( " # lread_gmsh    =>     ", inputs[:lread_gmsh])
-        if (!haskey(inputs, :gmsh_filename))
-            @error " :gmsh_filename is missing in .../IO/user_inputs.jl
-                     SOLUTION: add    :gmsh_filename => \"FILENAME.gmsh\" to ...IO/user_inputs.jl"
-            error_flag = 1
-        end
-    end
-    
-    if (!haskey(inputs, :nop))
-        @warn " :nop is missing in .../IO/user_inputs.jl
-        The default value nop=4 will be used."
-        inputs[:nop] = Int8(4)
-        println( " # :nop          =>     ", inputs[:nop])
-    else
-        println( " # :nop          =>     ", inputs[:nop])
-    end
-    
+    mod_inputs_check(inputs, :nop, Int8(4), "w")
     
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
+        
+        mod_inputs_check(inputs, :nsd,  "e")
+        mod_inputs_check(inputs, :npx,  "e")
+        mod_inputs_check(inputs, :xmin, "e")
+        mod_inputs_check(inputs, :xmax, "e")
+        mod_inputs_check(inputs, :npy,  "e")
+        mod_inputs_check(inputs, :ymin, "e")
+        mod_inputs_check(inputs, :ymax, "e")
+        mod_inputs_check(inputs, :npz,  "e")
+        mod_inputs_check(inputs, :zmin, "e")
+        mod_inputs_check(inputs, :zmax, "e")
+        
+    else
+        mod_inputs_check(inputs, :gmsh_filename, "e")
+        
+        mod_inputs_check(inputs, :nsd,  Int8(3), "-")
+        mod_inputs_check(inputs, :npx,  Int8(2), "-")
+        mod_inputs_check(inputs, :xmin, Float64(-1.0), "-")
+        mod_inputs_check(inputs, :xmax, Float64(+1.0), "-")
+        mod_inputs_check(inputs, :npy,  Int8(2), "-")
+        mod_inputs_check(inputs, :ymin, Float64(-1.0), "-")
+        mod_inputs_check(inputs, :ymax, Float64(+1.0), "-")
+        mod_inputs_check(inputs, :npz,  Int8(2), "-")
+        mod_inputs_check(inputs, :zmin, Float64(-1.0), "-")
+        mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
 
-        if (!haskey(inputs, :nsd))
-            @error " :nsd is missing in .../IO/user_inputs.jl"
-            error_flag = 1
-        else
-            println( " # :nsd          =>     ", inputs[:nsd])
-        end
+        s= """ 
+           Some undefined (and unnecessary) user inputs 
+           MAY have been given some default values.
+           User needs not to worry about them.
+           """
+        @warn s
         
-        if (!haskey(inputs, :npx))       
-            @warn " :npx is missing in .../IO/user_inputs.jl
-            The default value npx=2 will be used."
-            inputs[:npx] = Int8(2)
-            println( " # :npx          =>     ", inputs[:npx])
-        else
-            println( " # :npx          =>     ", inputs[:npx])
-        end
-        
-        if(!haskey(inputs, :xmin))
-            @warn " :xmin is missing in .../IO/user_inputs.jl
-            The default value :xmin=-1.0 will be used."
-            inputs[:xmin] = Float64(-1.0)
-        end
-        println( " # :xmin         =>     ", inputs[:xmin])
-        if(!haskey(inputs, :xmax))
-            @warn " ::xmax is missing in .../IO/user_inputs.jl
-           The default values :xmax=1.0 will be used."
-            inputs[:xmax] = Float64(1.0)
-        end
-        println( " # :xmax         =>     ", inputs[:xmax])
-        
-        
-        if (inputs[:nsd] > 1)
-            if (!haskey(inputs, :npy))       
-                @warn " :npy is missing in .../IO/user_inputs.
-                The default value npy=2 will be used."
-                inputs[:npy] = Int8(2)
-                println( " # :npy          =>     ", inputs[:npy])
-            else
-                println( " # :npy          =>     ", inputs[:npy])
-            end
-            
-            if(!haskey(inputs, :ymin))
-                @warn " :ymin is missing in .../IO/user_inputs.jl
-                The default value :ymin=-1.0 will be used."
-                inputs[:ymin] = Float64(-1.0)
-            end
-            println( " # :ymin         =>     ", inputs[:ymin])
-            if(!haskey(inputs, :ymin))
-                @warn " ::ymax is missing in .../IO/user_inputs.
-                The default values :ymax=1.0 will be used."
-                inputs[:ymax] = Float64(1.0)
-            end
-            println( " # :ymax         =>     ", inputs[:ymax])
+    end #lread_gmsh =#
+    
+    
+    #
+    # Correct quantities based on a hierarchy of input variables
+    #
+    if (inputs[:nsd] == 1)
+        inputs[:npy] = 1
+        inputs[:npz] = 1
+    elseif(inputs[:nsd] == 2)
+        inputs[:npz] = 1
+    end
 
-            
-            if (inputs[:nsd] == 3)
-                if (!haskey(inputs, :npz))
-                    @warn " :npz is missing in .../IO/user_inputs.jl
-                    The default value npz=2 will be used."
-                    inputs[:npz] = Int8(2)
-                    println( " # :npz          =>     ", inputs[:npz])
-                else
-                    println( " # :npz          =>     ", inputs[:npz])
-                end
-                
-                if(!haskey(inputs, :zmin))
-                    @warn " :zmin is missing in .../IO/user_inputs.jl
-                    The default value :zmin=-1.0 will be used."
-                    inputs[:zmin] = Float64(-1.0)
-                end
-                println( " # :zmin         =>     ", inputs[:zmin])
-                if(!haskey(inputs, :zmax))
-                    @warn " ::zmax is missing in .../IO/user_inputs.
-                    The default values :zmax=1.0 will be used."
-                    inputs[:zmax] = Float64(1.0)
-                end                
-                println( " # :zmax         =>     ", inputs[:zmax])
-            end
+    #
+    # Define nvars based on the problem being solved
+    #
+    nvars::Int8 = 1
+    if (lowercase(inputs[:equation_set]) == "burgers")
+        if(inputs[:nsd] == 1)
+            nvars = 1
+        elseif (inputs[:nsd] == 2)
+            nvars = 2
         end
+        println( " # nvars     ", nvars)
+        
+    elseif (lowercase(inputs[:equation_set]) == "ns")
+        if (inputs[:nsd] == 1)
+            nvars = 3
+        elseif(inputs[:nsd] == 2)
+            nvars = 4
+        elseif(inputs[:nsd] == 3)
+            nvars == 5
+        end
+        println( " # nvars     ", nvars)
+    else
+        s = """
+            JEXPRESSO ERROR in user_inputs.jl: equation_set ", inputs[:equation_set], " is not coded!
+            Chose among:
+                    [1] BURGERS
+                    [2] NS
+        """
+        @error s
     end
     
-    if error_flag == 1
-        error(" JEXPRESSO inputs error: some necessary user inputs are not defined in IO/user_inputs.jl\n The program will stop now!")
-    end
-
-print(GREEN_FG(" # User inputs: ........................ DONE\n"))
-
-#
-# Correct quantities based on a hierarchy of input variables
-#
-if (inputs[:nsd] == 1)
-    inputs[:npy] = 1
-    inputs[:npz] = 1
-elseif(inputs[:nsd] == 2)
-    inputs[:npz] = 1
+    
+    return inputs, nvars
 end
 
-nvars::Int8 = 1
-if (lowercase(inputs[:equation_set]) == "burgers")
-    if(inputs[:nsd] == 1)
-        nvars = 1
-    elseif (inputs[:nsd] == 2)
-        nvars = 2
+function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
+    
+    if (!haskey(inputs, key))
+        s = """
+            $key is missing in .../IO/user_inputs.jl
+            """
+        if (error_or_warning=="e")
+            error(s)
+        elseif (error_or_warning=="w")
+            @warn s
+        end
+        error_flag = 1
     end
-    println( " # nvars     ", nvars)
-elseif (lowercase(inputs[:equation_set]) == "ns")
-    if (inputs[:nsd] == 1)
-        nvars = 3
-    elseif(inputs[:nsd] == 2)
-        nvars = 4
-    elseif(inputs[:nsd] == 3)
-        nvars == 5
-    end
-    println( " # nvars     ", nvars)
-else
-    println( "\n !!!! ERROR in user_inputs.jl: equation_set ", inputs[:equation_set], " is not coded!!!")
-    println( "! Chose among: \n !!!!  [1] burgers1 \n")
-    error()
+       
 end
 
-return inputs, nvars
+
+function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
+
+    if (!haskey(inputs, key))
+        s = """
+            $key is missing in .../IO/user_inputs.jl
+            The default value $key=$value will be used.
+            """
+        if (error_or_warning=="e")
+            error(s)
+        elseif (error_or_warning=="w")
+            @warn s     
+        end
+        
+        #assign a dummy default value
+        inputs[key] = value
+    end
+
 end
 
 function mod_inputs_print_welcome()
@@ -183,7 +151,3 @@ function mod_inputs_print_welcome()
     print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
 
 end
-
-#inputs        = Dict{}()
-#inputs, nvars = mod_inputs_user_inputs()
-
