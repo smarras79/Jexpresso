@@ -80,7 +80,7 @@ function LegendreGaussLobattoNodesAndWeights(Legendre::St_legendre, lgl::St_lgl,
     
     Δ  ::Float64=0.0
     
-    println( " # Compute LGL nodes ...")
+    println( " # Compute LGL nodes ........................")
     
     for j=1:nop+1
 	lgl.ξ[j] = 0.0;
@@ -145,7 +145,7 @@ function LegendreGaussLobattoNodesAndWeights(Legendre::St_legendre, lgl::St_lgl,
         println( " # ξ, ω =: ", " ", lgl.ξ[j], " " , lgl.ω[j])
     end
     
-    println(" # Compute LGL nodes           ... DONE")
+    println(" # Compute LGL nodes ........................ DONE")
     
 end
 

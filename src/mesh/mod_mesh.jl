@@ -1,7 +1,13 @@
+using Gridap
+using GridapGmsh
 using Revise
 
+
 export St_mesh
+
 export mod_mesh_build_mesh!
+export mod_mesh_read_gmsh!
+
 
 mutable struct St_mesh{TInt, TFloat}
     
@@ -58,6 +64,25 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     for k = 1:mesh.npz
         mesh.z[k] = (k - 1)*Δz
     end
+end
+
+function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
+    
+    model = GmshDiscreteModel(gmsh_filename)
+    mesh.npoin = length(model.grid.node_coordinates)
+    npoin = mesh.npoin
+    
+    resize!(mesh.x, mesh.npoin)
+    resize!(mesh.y, mesh.npoin)
+    resize!(mesh.z, mesh.npoin)
+
+    for ip = 1:npoin
+        mesh.x[ip] = model.grid.node_coordinates[ip][1]
+        mesh.y[ip] = model.grid.node_coordinates[ip][2]
+        mesh.z[ip] = model.grid.node_coordinates[ip][3]
+    end
+        
+    writevtk(model,"gmsh_grid")
 end
 
 #end #module

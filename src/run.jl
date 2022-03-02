@@ -34,19 +34,16 @@ mod_inputs_print_welcome()
 #--------------------------------------------------------
 #User inputs:
 #--------------------------------------------------------
+inputs        = Dict{}()
 inputs, nvars = mod_inputs_user_inputs()
-
-#--------------------------------------------------------
-#Print inputs to screen
-#--------------------------------------------------------
-mod_inputs_print(inputs; nvars)
 
 #--------------------------------------------------------
 # Build mesh    
 #--------------------------------------------------------
 
-if (haskey(inputs, :lread_gmsh) && lowercase(inputs[:lread_gmsh]) == "true")
-
+if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
+    
+    println(" # Read gmsh grid")
     # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
     mesh = St_mesh{TInt,TFloat}(zeros(2), zeros(2), zeros(2),
                                 0.0, 0.0,
@@ -56,10 +53,11 @@ if (haskey(inputs, :lread_gmsh) && lowercase(inputs[:lread_gmsh]) == "true")
                                 inputs[:nop])
     
     # Read gmsh grid using the GridapGmsh reader
-    mod_mesh_read_gmsh!(mesh)
-
-else
+    mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
     
+    println(" # Read gmsh grid ........................ DONE")
+else
+    println(" # Build grid")
     # Initialize mesh struct
     mesh = St_mesh{TInt,TFloat}(zeros(inputs[:npx]), zeros(inputs[:npy]), zeros(inputs[:npz]),
                                 inputs[:xmin], inputs[:xmax],
@@ -67,6 +65,10 @@ else
                                 inputs[:zmin], inputs[:zmax],
                                 inputs[:npx], inputs[:npy], inputs[:npz], 1, 1,
                                 inputs[:nop])
+    
+    mod_mesh_build_mesh!(mesh)
+    
+    println(" # Build grid ........................ DONE")
 end
 
 #--------------------------------------------------------
