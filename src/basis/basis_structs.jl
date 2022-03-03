@@ -24,11 +24,29 @@ mutable struct St_legendre{TFloat}
     dq        :: TFloat
 end
 
+mutable struct St_Chebyshev{TFloat}
+  chebyshev ::TFloat
+end
+
 mutable struct St_lgl{TFloat}
     ξ::Array{TFloat}
     ω::Array{TFloat}
 end
 
+mutable struct St_lg{TFloat}
+  ξ::Array{Tfloat}
+  ω::Array{Tfloat}
+end
+
+mutable struct St_cg{TFloat}
+  ξ::Array{TFloat}
+  ω::Array{TFloat}
+end
+
+mutable struct St_cgl{TFloat}
+  ξ::Array{TFloat}
+  ω::Array{TFloat}
+end
 
 function build_lgl!(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
 
@@ -61,6 +79,95 @@ function build_lgl!(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
     return lgl;
 end
 
+function build_cg(cg::St_cg, nop::TInt)
+  size::Int8=nop+1
+  cg.ξ = zeros(Float64, size)
+  cg.ω = zeros(Float64, size)
+
+  #CG nodes
+  ChebyshevGaussNodesAndWeights!(cg,nop)
+  return cg
+end
+
+function build_cgl(cgl::St_cgl, nop::TInt)
+  size::Int8=nop+1
+  cgl.ξ = zeros(Float64, size)
+  cgl.ω = zeros(Float64, size)
+
+  #CGL nodes
+  ChebyshevGaussLobattoNodesAndWeights!(cgl,nop)
+  return cgl
+end
+
+function build_lg(Legendre::St_Legendre,lg::St_lg,nop)
+  size::Int8=nop+1
+  lg.ξ = zeros(Float64, size)
+  lg.ω = zeros(Float64, size)
+
+  #LG nodes
+  LegendreGaussNodesAndWeights(Legendre,lg,nop)
+  return lg
+end
+function ChebyshevGaussNodesAndWeights!(cg::St_lg, nop::TInt)
+  """
+     Compute the Nodes for the Chebyshev Gauss Quadrature
+     using Algorithm 26 of Kopriva's book 
+  """
+  for j=0:nop
+    cg.ξ[j+1]=-cospi((2*j+1)/(2*nop+2))
+    cg.ω[j+1]=π/(nop+1)
+  end
+end
+
+function ChebyshevGaussLobattoNodesAndWeights!(cgl::St_cgl,nop::TInt)
+  for j=0:nop
+    cgl.ξ[j+1]=-cospi(j/nop)
+    cgl.ω[j+1]=π/nop
+  end
+  cgl.ω[1]=cgl.ω[1]/2
+  cgl.ω[nop+1]=cgl.ω[nop+1]/2
+end
+
+
+function LegendreGaussNodesAndWeights!(Legendre::St_legendre, lg::St_lg, nop::TInt)
+   """
+      Compute the Nodes and Weights for the Legendre Gauss Quadrature
+      using Algorithm 23 of Kopriva's book valid for nop ≤  200
+   """
+   NITER = 100
+   TOL = 4*eps(Float64)
+   Δ::Float64=0.0
+   if (nop == 0)
+     lg.ξ[1]=0
+     lg.ω[1]=2
+   elseif (nop == 1)
+     lg.ξ[1] = -sqrt(1/3)
+     lg.ω[1] = 1
+     lg.ξ[2] = - lg.ξ[1]
+     lg.ω[2] = lg.ω[1]
+   else
+     for j=0:floor(Int,(nop+1)/2)-1
+       lg.ξ[j+1] = - cospi((2*j+1)/(2*nop+2))
+       for k=0:NITER
+         LegendreAndDerivativeAndQ!(Legendre, nop+1, lg.ξ[j+1])
+         Δ = -Legendre.legendre/Legendre.dlegendre
+         lg.ξ[j+1]=lg.ξ[j+1]+Δ
+         if (abs(Δ)≤TOL)
+           break
+         end
+       end
+       LegendreAndDerivativeAndQ!(Legendre, nop+1, lg.ξ[j+1])
+       lg.ξ[nop-j+1] = - lg.ξ[j+1]
+       lg.ω[j+1]=2/(1-lg.ξ[j+1]^2)/(Legendre.dlegendre)^2
+       lg.ω[nop-j+1]=lg.ω[j+1]
+     end
+   end
+   if (mod(nop,2) == 0)
+     LegendreAndDerivativeAndQ!(Legendre, nop+1, 0.0)
+     lg.ξ[Tint(nop/2)] = 0
+     lg.ω[Tint(nop/2)] = 2/Legendre.dlegendre^2
+   end
+ end
 
 function LegendreGaussLobattoNodesAndWeights(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
     
@@ -163,6 +270,11 @@ function LegendreAndDerivativeAndQ!(Legendre::St_legendre, nop::TInt, x::TFloat)
           Algorithm 24 of Kopriva's book
  
           Simone Marras, October 2021
+
+          
+          Note that this algorithm looses precision at high enough nop
+          if we intendt to use particularly large nop we should examine Yakimiw 1996 (Yassine) 
+
      """
     TFloat=Float64
     
@@ -180,12 +292,16 @@ function LegendreAndDerivativeAndQ!(Legendre::St_legendre, nop::TInt, x::TFloat)
         
     #st_legendre Legendre;
         
-    if (nop == 0)
-	L  = 1.0
-	dL = 0.0
+    if (nop == 0) #Order 0 case
+	Legendre.legendre  = 1.0
+	Legendre.dlegendre = 0.0
+  Legendre.q = x
+  Legendre.dq = 1.0
     elseif (nop == 1)
-	L  = x
-	dL = 1.0
+	Legendre.legendre  = x
+	Legendre.dlegendre = 1.0
+  Legendre.q = 0.5*(3*x^2-2)-1
+  Legendre.dq = 3*x
     else
 	Lm2  = 1.0
 	Lm1  = x
@@ -212,14 +328,41 @@ function LegendreAndDerivativeAndQ!(Legendre::St_legendre, nop::TInt, x::TFloat)
 	    dLm2 = dLm1
 	    dLm1 = dL
 	end
+  Legendre.legendre = L
+  Legendre.dlegendre = dL
+  Legendre.q = Lp1 - Lm2
+  Legendre.dq = dLp1 - dLm2
     end
-    
-    Legendre.legendre  = L
-    Legendre.dlegendre = dL
-    
-    Legendre.q  =  Lp1 -  Lm2 #WARNING: FIX THIS FOR nop=0 and nop=1
-    Legendre.dq = dLp1 - dLm2 #WARNING: FIX THIS FOR nop=0 and nop=1
 end
 
-
+function ChebyshevPolynomial!(Chebyshev::St_Chebyshev,nop::TInt,x::TFloat,Ks::TInt)
+   """
+      Evaluate by recursion the Chebyshev Polynomial
+      and switch to direct evaluation when nop > Ks
+      uses Algorithm 21 of Kopriva's book, 
+      NOTE Ks depends should never exceed 70 regardless of machine architecture
+      Yassine Tissaoui March 2022
+   """
+  Tfloat=Float64
+  T2::TFloat=0.0
+  T1::TFloat=0.0
+  T::TFloat=0.0
+  if (nop == 0) #case for order 0
+    Chebyshev.chebyshev = 1
+  elseif (nop ==1) #case for order 1
+    Chebyshev.chebyshev = x
+  elseif (nop ≤ Ks)
+    T2=1
+    T1=x
+    for j=2:nop
+      T=2*x*T1 - T2
+      T2=T1
+      T1=T
+    end
+    Chebyshev.chebyshev = T
+  else
+    T=cos(nop*acos(x))
+    Chebyshev.chebyshev = T
+  end
+end
 
