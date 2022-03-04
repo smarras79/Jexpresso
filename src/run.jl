@@ -49,14 +49,15 @@ if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
     mesh = St_mesh{TInt,TFloat}(nsd=Int8(inputs[:nsd]),
                                 nop=Int8(inputs[:nop]))
     
-@info mesh
+    @info mesh
     # Read gmsh grid using the GridapGmsh reader
     mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
     
     println(" # Read gmsh grid ........................ DONE")
 else
     println(" # Build grid")
-    # Initialize mesh struct
+    
+    # Initialize mesh struct for native structured grid:
     mesh = St_mesh{TInt,TFloat}(x = zeros(Int8(inputs[:npx])),
                                 y = zeros(Int8(inputs[:npy])),
                                 z = zeros(Int8(inputs[:npz])),
@@ -65,6 +66,8 @@ else
                                 zmin = Float64(inputs[:zmin]), zmax = Float64(inputs[:zmax]),
                                 nsd=Int8(inputs[:nsd]),
                                 nop=Int8(inputs[:nop]))
+    
+    @info mesh
     
     mod_mesh_build_mesh!(mesh)
     

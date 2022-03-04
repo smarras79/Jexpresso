@@ -53,7 +53,7 @@ function mod_inputs_user_inputs()
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
 
         s= """ 
-           Some undefined (and unnecessary) user inputs 
+           jexpresso: Some undefined (and unnecessary) user inputs 
            MAY have been given some default values.
            User needs not to worry about them.
            """
@@ -95,7 +95,7 @@ function mod_inputs_user_inputs()
         println( " # nvars     ", nvars)
     else
         s = """
-            JEXPRESSO ERROR in user_inputs.jl: equation_set ", inputs[:equation_set], " is not coded!
+            jexpresso  user_inputs.jl: equation_set ", inputs[:equation_set], " is not coded!
             Chose among:
                     [1] BURGERS
                     [2] NS
@@ -111,7 +111,7 @@ function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
     
     if (!haskey(inputs, key))
         s = """
-            $key is missing in .../IO/user_inputs.jl
+            jexpresso: $key is missing in .../IO/user_inputs.jl
             """
         if (error_or_warning=="e")
             error(s)
@@ -128,7 +128,7 @@ function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
 
     if (!haskey(inputs, key))
         s = """
-            $key is missing in .../IO/user_inputs.jl
+            jexpresso: $key is missing in .../IO/user_inputs.jl
             The default value $key=$value will be used.
             """
         if (error_or_warning=="e")

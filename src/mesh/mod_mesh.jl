@@ -25,9 +25,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     zmin::Union{TFloat, Missing} = -1.0;
     zmax::Union{TFloat, Missing} = +1.0;
 
-    npx::Union{TInt, Missing} = missing
-    npy::Union{TInt, Missing} = missing
-    npz::Union{TInt, Missing} = missing
+    npx::Union{TInt, Missing} = 1
+    npy::Union{TInt, Missing} = 1
+    npz::Union{TInt, Missing} = 1
     
     nelem::Union{TInt, Missing} = 1
     npoin::Union{TInt, Missing} = 1
