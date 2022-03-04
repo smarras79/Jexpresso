@@ -447,8 +447,455 @@ NOTE this ends the section on fourrier transform implementations,
 TODO implement 3D routines as necessary, Test vs FFTW
 Determine what can used from existing libraries FFTW, NUFFT etc.
 """
+"""
+   InitializeFCosT(N)
+   N::Integer
+   Determines the N cosine and sine coefficients necessary for a fast
+   cosine transform of an array of size N+1
+"""
+function InitialzeCosT(N::TInt)
+  C=zeros(Float64,N+1)
+  S=zeros(Float64,N+1)
+  for j=0:N
+    C[j+1]=cospi(j/N)
+    S[j+1]=sinpi(j/N)
+  end
+  return C,S
+end
+"""
+   FastCosineTransform(f,w,C,S,s)
+   f::vector of size N+1
+   w::trigonometric coefficients for FFT
+   C::cosine coefficients
+   S::Sine coefficients
+   s::forward or backward determiner
+   computes the fast cosine transform of a vector f using 
+   algorithm 28 of Kopriva's book
+"""
+function FastCosineTransform(f,w,C,S,s::TInt)
+  N=size(f)-1
+  for j=0:N-1
+    e[j+1]=0.5*(f[j+1]+f[N-j+1])-S[j+1]*(f[j+1]-f[N-j+1])
+  end
+  a̅,b̅ = ForwardRealFFT(e,w)
+  for k=0:floor(TInt,N/2)
+    a[2*k+1]= a̅[k+1]
+  end
+  a[2] = f[1]-f[N+1]
+  for j=1:N-1
+    a[2] = a[2] + 2 * C[j+1]*f[j+1]
+  end
+  a[2] = a[2]/N
+  for k=1:floor(TInt,N/2)-1
+    a[2*k+2] = b̅[k+1]+a[2*k]
+  end
+  if (s<0)
+    for k=0:N
+      a[k+1]=N*a[k+1]/2
+    end
+  end
+  return a
+end
+"""
+   FastChebyshevTransform(f,w,C,S,s)
+   f::vector of size N+1
+   w::trigonometric coefficients for FFT
+   C::cosine coefficients
+   S::Since coefficients
+   s::forward or backward determiner
+   computes the fast Chebyshev transform of a vector f using
+   algorithm 29 of Kopriva's book
+"""
+function FastChebyshevTransform(f,w,C,S,s)
+  N=size(f)-1
+  for j=0:N
+    g[j+1]=f[j+1]
+  end
+  if (s<0)
+    g[1] = 2*g[1]
+    g[N+1] = 2*g[N+1]
+  end
+  a=FastCosineTransform(g,w,C,S,s)
+  if (s>0)
+    a[1] = a[1]/2
+    a[N+1] = a[N+1]/2
+  end
+  return a
+end
+"""
+   BarycentricWeights(x)
+   x:set points x[j]=x_j
+   computes the Barycentric weights for a set of interpolation points x_j
+   using algorithm 30 of Kopriva's book
+"""
+function  BarycentricWeights(x)
+  N=size(x)-1
+  for j=1:N+1
+    w[j]=1
+  end
+  for j=2:N+1
+    for k=1:j-1
+      w[k]=w[k]*(x[k]-x[j])
+      w[j]=w[j]*(x[j]-x[k])
+    end
+  end
+  for j=1:N+1
+    w[j]=1/w[j]
+  end
+  return w
+end
+"""
+   LagnrangeInterpolation(x,x_j,f,w)
+   x::point to interpolate to
+   x_j::set of interpolation points
+   f::values of given function to be interpolated at the points x_j
+   w:: barycentric weights associated with x
+   compute the value of the lagrange interpolation of f using the points x_j and weight w
+   to onto the point x
+   using Algorithm 31 of Kopriva's book
+"""
+function LagrangeInterpolation(x,x_j,f,w)
+  num::Float64=0.0
+  den::Float64=0.0
+  N=size(x)-1
+  for j=1:N+1
+    if (AlmostEqual(x,x_j[j]))
+      return f[j]
+    end
+    t=w[j]/(x-x_j[j])
+    num = num + t*f[j]
+    den = den + t
+  end
+  return num/den
+end
+"""
+   PolynomialInterpolationMatrix(x,w,ξ)
+   x::set of interpolation points
+   w::barcyentric weights associated with x
+   ξ::set of points to interpolate to
+   computes the interpolation matrix needed to interpolate between the points x and ξ
+   using algorithm 32 of Kopriva's book
+"""
+function PolynomialInterpolationMatrix(x,w,ξ)
+  M=size(ξ)
+  N=size(x)
+  T = zeros(Float64,M,N)
+  for k=1:M
+    rowHasMatch = false
+    for j=1:N
+      T[k,j] = 0.0
+      if (AlmostEquals(ξ[k],x[j]))
+        rowHasMatch = true
+        T[k,j] = 1.0
+      end
+    end
+    if (rowHasMatch == false)
+      s=0
+      for j=1:N
+        t=w[j]/(ξ[k]-x[j])
+        T[k,j] = t
+        s=s+t
+      end
+      for j =0:N
+        T[k,j] = T[k,j]/s
+      end
+    end
+  end
+  return T
+end
+"""
+   IterpolateToNewPoints(T,f)
+   T::Interpolation matrix
+   f::values to use for interpolation
+   Interpolates f to new points using the interpolation points T
+   uses Algorithm 33 of Kopriva's book
+   NOTE use BLAS for this if possible
+"""
+function  InterpolateToNewPoints(T,f)
+  M=size(T,1)
+  N=size(T,2)
+  for i=1:M
+    t=0.0
+    for j=1:N
+      t=t+T[i,j]*f[j]
+    end
+    finterp[i]=t
+  end
+  return finterp
+end
+"""
+   LagrangeInterpolatingPolynomials(x,x_j,w)
+   x::point to interpolate to
+   x_j::set of N interpolation points
+   w::barycentric weights associated with x_j
+   compute the value of N lagrangian interpolating polynomials associated 
+   with x_j and w at x
+   using algorithm 34 of Kopriva's book
+"""
+function LagrangeInterpolatingPolynomials(x,x_j,w)
+  N=size(x_j)
+  xMatchesNode = false
+  for j=1:N
+    l[j]=0.0
+    if (AlmostEqual(x,x_j[j]))
+      l[j]=1.0
+      xMatchesNode = true
+    end
+  end
+  if (xMatchesNode)
+    return l
+  end
+  s=0.0
+  for j=1:N
+    t=w[j]/(x-x[j])
+    l[j] = t
+    s=s+t
+  end
+  for j=1:N
+    l[j]=l[j]/s
+  end
+  return l
+end
+"""
+   2DCoarseToFineInterpolation(x,y,f,ξ,η)
+   x::x coordinates on the coarse grid
+   y::y coordinates on the coarse grid
+   f:: values of f(x,y)
+   ξ::x coordinates on the fine grid
+   η::y coordinates on the fine grid
+   interpolates from coarse to a fine grid in 2D using algorithm 35 of Kopriva's book
+"""
+function 2DCoarseToFineInterpolation(x,y,f,ξ,η)
+  N_o = size(x)
+  M_o = size(y)
+  N_n = size(ξ)
+  M_n = size(ξ)
+  w_x = BarycentricWeights(x)
+  Tx = PolynomialInterpolationMatrix(x,w_x,ξ)
+  for j=1:M_o
+    F̅[:,j]=InterpolateToNewPoints(Tx,f[:,j])
+  end
+  w_y = BarycentricWeights(y)
+  Ty = PolynomialInterpolationMatrix(y,w_y,η)
+  for n=1:N_n
+    F[n,:] = InterpolateToNewPoints(Ty,F̅[n,:])
+  end
+  return F
+end
+"""
+   3DCoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
+   x::x coordinates on the coarse grid
+   y::y coordinates on the coarse grid
+   z::z coordinates on the coarse grid
+   f:: values f(x,y,z)
+   ξ::x coordinates on the fine grid
+   η::y coordinates on the fine grid
+   ζ::z coordinates on the fine grid
+   interpolates from a coarse to a fine grid in 3D extending algorithm 35 of Kopriva's book
+"""
+function 3DCoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
+  N_o = size(x)
+  M_o = size(y)
+  P_o = size(z)
+  N_n = size(ξ)
+  M_n = size(η)
+  P_n = size(ζ)
+  w_x = BarycentricWeights(x)
+  Tx = PolynomialInterpolationMatrix(x,w_x,ξ)
+  for i=1:M_o
+    for j=1:P_o
+      F̅[:,i,j] = InterpolateToNewPoints(T,f[:,i,j])
+    end
+  end
+  w_y = BarycentricWeights(y)
+  Ty = PolynomialInterpolationMatrix(y,w_y,η)
+  for i=1:N_n
+    for j=1:P_o
+      F̃[i,:,j]=InterpolateToNewPoints(Ty,F̅[i,:,j])
+    end
+  end
+  w_z = BarycentricWeights(z)
+  Tz = PolynomialInterpolationMatrix(z,w_z,ζ)
+  for i=1:N_n
+    for j=1:M_n
+      F[i,j,:] = InterpolateToNewPoints(Tz,F̃[i,j,:])
+    end
+  end
+  return F
+end
+"""
+   LagrangeInterpolantDerivative(x,x_j,f,w)
+   x::evaluation point
+   x_j::interpolation points
+   f::functions values at x_j
+   w::barycentric weights associated with x_j
+   evaluates the derivative of the lagrange interpolant of f at x using the point x_j of weight w
+   using algorithm 36 of Kopriva's book
+"""
+function LagrangeInterpolantDerivative(x,x_j,f,w)
+  N=size(x)
+  atNode = false
+  num::Float64=0.0
+  for j=1:N
+    if (AlmostEqual(x,x_j[j]))
+      atNode = true
+      p=f[j]
+      den = -w[j]
+      i=j
+    end
+  end
+  if (atNode)
+    for j=1:N
+      if (j≂̸i)
+        num = num+w[j]*(p-f[j])/(x-x_j[j])
+      end
+    end
+  else
+    den=0
+    p=LagrangeInterpolation(x,N,x_j,f,w)
+    for j=1:N
+      t=w[j]/(x-x_j[j])
+      num=num+t*(p-f[j])/(x-x_j[j])
+      den = den +t
+    end
+  end
+  return num/den
+end
+"""
+   PolynomialDerivativeMatrix(x)
+   x::Interpolation points
+   computes the Polynomial derivative matrix for the set of point x
+   using algorithm 37 of Kopriva's book
+   !!!!TODO implement sorting to reduce round-off errors
+"""
+function PolynomialDerivativeMatrix(x)
+  N=size(x)
+  w=BarycentricWeights(x)
+  for i=1:N
+    D[i,i] = 0.0
+    for j=1:N
+      if (j≂̸i)
+        D[i,j] = (w[j]/w[i])/(x[i]-x[j])
+        D[i,i] = D[i,i] - D[i,j]
+      end
+    end
+  end
+  return D
+end
+"""
+   CGLDerivativeMatrix(N)
+   x::CGL points
+   returns the Derivative matrix for the N Chebyshev Gauss-Lobatto points
+"""
+function CGLDerivativeMatrix(x,N)
+  for i=1:N+1
+    if (i>1 && i<N+1)
+      D[i,i] = -0.5*x[i]/(sinpi(i/N))^2
+    else
+      D[i,i] = (2*N^2+1)/6
+    end
+    for j =1:N+1
+      if(j≂̸i)
+        if (j==1 || j == N+1)
+          c̃j = 2
+        else
+          c̃j = 1
+        end
+        if (i==1 || i ==N+1)
+          c̃i = 2
+        else
+          c̃i = 1
+        end
+        D[i,j] = -0.5 * (c̃i/c̃j)*(-1)^(i-1+j-1)/(sinpi((i-1+j-1)/(2*N))*sinpi((i-j)/(2*N)))
+      end
+    end
+  end
+  return D
+end
+"""
+   mthOrderPolynomialDerivativeMatrix(m,x)
+   m::order of the derivative
+   x::interpolation points
+   computes the mth Polynomial Derivative Matrix using the set of interpolation points x
+   using algorithm 38 of Kopriva's book
+"""
+function MthOrderPolynomialDerivativeMatrix(m,x)
+  w = BarycentricWeights(x)
+  D = PolynomialDerivativeMatrix(x)
+  N=size(x)
+  if (m == 1)
+    return D
+  end
+  for k=2:m
+    for i=1:N
+      D[i,i] = 0
+      for j=1:N
+        if (j≂̸i)
+          D[i,i] = (k/(x[i]-x[j]))*((w[i]/w[j])*D[i,i] - D[i,j])
+          D[i,i] = D[i,i] - D[i,j]
+        end
+      end
+    end
+  end
+  return D
+end
+"""
+   EOMatrixDerivative(D,f)
+   D::Derivative matrix
+   f:: function array
+   computes the first derivative of f using Even Odd decomposition for speedup
+   using algorithm 39 of Kopriva's book
+"""
+function EOMatrixDerivative(D,f)
+  N=size(f)
 
- 
+  M::Int32=floor(Int32,(N)/2)
+  for j=1:M+1
+    e[j] = (f[j] + f[N-j])/2
+    o[j] = (f[j] - f[N-j])/2
+  end
+  for i=1:M
+    De[i] = 0.0
+    Do[i] = 0.0
+    for j=1:M
+      De[i] = De[i] + (D[i,j] + D[i,N-j])*e[j]
+      Do[i] = De[i] + (D[i,j] - D[i,N-j])*o[j]
+    end
+  end
+  if (mod(N,2)>0)
+    for i=1:M
+      De[i] = De[i] + D[i,M+1]*e[M+1]
+    end
+    De[M+1] = 0.0
+    for j=1:M
+      Do[M+1] = Do[M+1] + (D[M+1,j] - D[M+1,N-j])*o[j]
+    end
+  end
+  for j=1:M
+    Df[j] = De[j] + Do[j]
+    Df[N-j] = -De[j] + Do[j]
+  end
+  if (mod(N,2)>0)
+    Df[M+1] = De[M+1] + Do[M+1]
+  end
+  return Df
+end
+"""
+   FastChebyshevDerivative(f)
+   f:: function array
+   computes the Fast Chebysheve Derivative of a function f
+   Note that this is not efficient until N>60
+   at least not without building a tuned FFT
+"""
+function FastChebyshevDerivative(f)
+  N=size(f)-1
+  w=InitialzeFFT(N,1)
+  C,S = InitializeCosT(N)
+  f̃ = FastChebyshevTransform(f,w,C,S,1)
+  f̃1 = ChebyshevDerivativeCoefficients(f̃)
+  Df = FastChebyshevTransform(f̃1,w,C,S,-1)
+  return Df
+end
 
 
 
