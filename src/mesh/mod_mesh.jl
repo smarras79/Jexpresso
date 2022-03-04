@@ -4,33 +4,40 @@ using GridapGmsh
 using Revise
 
 export St_mesh
+export Foo
 
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
 
-mutable struct St_mesh{TInt, TFloat}
+Base.@kwdef struct St_mesh{TInt, TFloat}
     
-    x::Array{TFloat}
-    y::Array{TFloat}
-    z::Array{TFloat}
+    x::Union{Array{TFloat}, Missing} = zeros(2)
+    y::Union{Array{TFloat}, Missing} = zeros(2)
+    z::Union{Array{TFloat}, Missing} = zeros(2)
 
-    xmin::TFloat; xmax::TFloat
-    ymin::TFloat; ymax::TFloat
-    zmin::TFloat; zmax::TFloat
+    xmin::Union{TFloat, Missing} = -1.0;
+    xmax::Union{TFloat, Missing} = +1.0;
     
-    npx::TInt
-    npy::TInt
-    npz::TInt
-    
-    npoin::TInt
-    
-    nsd::TInt
-    nop::TInt
+    ymin::Union{TFloat, Missing} = -1.0;
+    ymax::Union{TFloat, Missing} = +1.0;
 
-end #St_mesh
+    zmin::Union{TFloat, Missing} = -1.0;
+    zmax::Union{TFloat, Missing} = +1.0;
 
-mutable struct St_conn{}
+    npx::Union{TInt, Missing} = missing
+    npy::Union{TInt, Missing} = missing
+    npz::Union{TInt, Missing} = missing
+    
+    nelem::Union{TInt, Missing} = 1
+    npoin::Union{TInt, Missing} = 1
+    
+    nsd::Union{TInt, Missing} = 1
+    nop::Union{TInt, Missing} = 4
+    
+end
+
+mutable struct St_conn
     
     cell_node_ids_ho::Table{Int32,Vector{Int32},Vector{Int32}}
     
@@ -80,7 +87,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     npoin = mesh.npoin
     @info typeof(model.grid.cell_node_ids)
     conn = typeof(model.grid.cell_node_ids)
-    @info model.grid.cell_node_ids[1][1:4]
     
     resize!(mesh.x, mesh.npoin)
     resize!(mesh.y, mesh.npoin)

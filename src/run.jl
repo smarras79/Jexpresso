@@ -44,14 +44,14 @@ inputs, nvars = mod_inputs_user_inputs()
 if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
     
     println(" # Read gmsh grid")
+    meshtest = Foo{TInt,TFloat}(nsd=Int8(inputs[:nsd]),
+                                nop=Int8(inputs[:nop]))
+
+    @info meshtest
+    
     # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-    mesh = St_mesh{TInt,TFloat}(zeros(2), zeros(2), zeros(2),
-                                0.0, 0.0,
-                                0.0, 0.0,
-                                0.0, 0.0,
-                                1, 1, 1, 1,                                
-                                Int8(inputs[:nsd]),
-                                Int8(inputs[:nop]))
+    mesh = St_mesh{TInt,TFloat}(nsd=Int8(inputs[:nsd]),
+                                nop=Int8(inputs[:nop]))
     
     # Read gmsh grid using the GridapGmsh reader
     mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
