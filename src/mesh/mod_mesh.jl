@@ -10,7 +10,7 @@ export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
 
-Base.@kwdef struct St_mesh{TInt, TFloat}
+Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     
     x::Union{Array{TFloat}, Missing} = zeros(2)
     y::Union{Array{TFloat}, Missing} = zeros(2)
