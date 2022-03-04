@@ -1,7 +1,7 @@
 using Gridap
+using Gridap.Arrays: Table
 using GridapGmsh
 using Revise
-
 
 export St_mesh
 
@@ -29,6 +29,12 @@ mutable struct St_mesh{TInt, TFloat}
     nop::TInt
 
 end #St_mesh
+
+mutable struct St_conn{}
+    
+    cell_node_ids_ho::Table{Int32,Vector{Int32},Vector{Int32}}
+    
+end #St_conn
 
 function mod_mesh_build_mesh!(mesh::St_mesh)
 
@@ -70,7 +76,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     
     model = GmshDiscreteModel(gmsh_filename)
     mesh.npoin = length(model.grid.node_coordinates)
+    @info model.grid.cell_node_ids #CONNN QUI
     npoin = mesh.npoin
+    @info typeof(model.grid.cell_node_ids)
+    conn = typeof(model.grid.cell_node_ids)
+    @info model.grid.cell_node_ids[1][1:4]
     
     resize!(mesh.x, mesh.npoin)
     resize!(mesh.y, mesh.npoin)
@@ -86,4 +96,3 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
 end
 
 #end #module
-
