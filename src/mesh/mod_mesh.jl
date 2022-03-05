@@ -77,6 +77,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     for k = 1:mesh.npz
         mesh.z[k] = (k - 1)*Δz
     end
+
 end
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)

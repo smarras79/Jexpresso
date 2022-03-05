@@ -9,9 +9,9 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
         :nsd          => 3,           #number of space dimensions
         :nop          => 6,           #Polynomila order        
-        :npx          => 100,         #N. points in x
-        :npy          => 1,           #N. points in y
-        :npz          => 1,           #N. points in z
+        :npx          => 10,         #N. points in x
+        :npy          => 10,           #N. points in y
+        :npz          => 5,           #N. points in z
         :xmin         => 0,
         :xmax         => 2π,
         :ymin         =>-1,
