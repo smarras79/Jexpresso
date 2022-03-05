@@ -50,7 +50,7 @@ if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
     mesh = St_mesh{TInt,TFloat}(nsd=Int8(inputs[:nsd]),
                                 nop=Int8(inputs[:nop]))
     
-    @info mesh
+    
     # Read gmsh grid using the GridapGmsh reader
     mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
     
@@ -62,9 +62,9 @@ else
     mesh = St_mesh{TInt,TFloat}(x = zeros(Int8(inputs[:npx])),
                                 y = zeros(Int8(inputs[:npy])),
                                 z = zeros(Int8(inputs[:npz])),
-                                npx = Int8(inputs[:npx]),
-                                npy = Int8(inputs[:npy]),
-                                npz = Int8(inputs[:npz]), 
+                                npx  = Int8(inputs[:npx]),
+                                npy  = Int8(inputs[:npy]),
+                                npz  = Int8(inputs[:npz]), 
                                 xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
                                 ymin = Float64(inputs[:ymin]), ymax = Float64(inputs[:ymax]),
                                 zmin = Float64(inputs[:zmin]), zmax = Float64(inputs[:zmax]),
@@ -72,6 +72,9 @@ else
                                 nop=Int8(inputs[:nop]))
     #@info mesh    
     mod_mesh_build_mesh!(mesh)
+    @info mesh.cell_node_ids_ho
+
+    
     
     #Write structured grid to VTK
     vtkfile = vtk_grid("mySTRUCTURED_GRID", mesh.x, mesh.y, mesh.z) # 3-D

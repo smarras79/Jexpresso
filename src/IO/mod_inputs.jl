@@ -53,7 +53,7 @@ function mod_inputs_user_inputs()
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
 
         s= """ 
-           jexpresso: Some undefined (and unnecessary) user inputs 
+           jexpresso: Some undefined (but unnecessary) user inputs 
            MAY have been given some default values.
            User needs not to worry about them.
            """
