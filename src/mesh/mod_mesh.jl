@@ -34,34 +34,27 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
 
-    cell_node_ids_ho::Union{Table{Int32,Vector{Int32},Vector{Int32}}, Missing} = zeros(nelem, npoin)
+    #high order connectivity table
+    cell_node_ids_ho::Table{Int32,Vector{Int32},Vector{Int32}} = Gridap.Arrays.Table(zeros(nelem), zeros(npoin))
     
 end
 
-mutable struct St_conn
-    
-    cell_node_ids_ho::Table{Int32,Vector{Int32},Vector{Int32}}
-    
-end #St_conn
-
 function mod_mesh_build_mesh!(mesh::St_mesh)
 
-    T = TFloat
-    Δx::T=0
-    Δy::T=0
-    Δz::T=0
-    nsd = mesh.nsd
+    Δx::TFloat=0.0
+    Δy::TFloat=0.0
+    Δz::TFloat=0.0   
     
-    if (nsd == 1)
+    if (mesh.nsd == 1)
         mesh.npy = mesh.npz = 1
         Δx = abs(mesh.xmax - mesh.xmin)/(mesh.npx - 1)
         Δy = 0.0
         Δz = 0.0
-    elseif (nsd == 2)
+    elseif (mesh.nsd == 2)
         mesh.npz = 1
         Δx = abs(mesh.xmax - mesh.xmin)/(mesh.npx - 1)
         Δy = abs(mesh.ymax - mesh.ymin)/(mesh.npy - 1)
-        Δz = 0
+        Δz = 0.0
     else
         Δx = abs(mesh.xmax - mesh.xmin)/(mesh.npx - 1)
         Δy = abs(mesh.ymax - mesh.ymin)/(mesh.npy - 1)
@@ -78,23 +71,22 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     for k = 1:mesh.npz
         mesh.z[k] = (k - 1)*Δz
     end
-
+    
 end
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     
     model = GmshDiscreteModel(gmsh_filename)
     mesh.npoin = length(model.grid.node_coordinates)
-    @info model.grid.cell_node_ids #CONNN QUI
-    npoin = mesh.npoin
-    @info typeof(model.grid.cell_node_ids)
-    conn = typeof(model.grid.cell_node_ids)
+    
+    #Initialize the high-order nodes table with low order points:
+    mesh.cell_node_ids_ho = model.grid.cell_node_ids
     
     resize!(mesh.x, mesh.npoin)
     resize!(mesh.y, mesh.npoin)
     resize!(mesh.z, mesh.npoin)
 
-    for ip = 1:npoin
+    for ip = 1:mesh.npoin
         mesh.x[ip] = model.grid.node_coordinates[ip][1]
         mesh.y[ip] = model.grid.node_coordinates[ip][2]
         mesh.z[ip] = model.grid.node_coordinates[ip][3]
