@@ -4,7 +4,6 @@ using GridapGmsh
 using Revise
 
 export St_mesh
-export Foo
 
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
@@ -34,6 +33,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
+
+    cell_node_ids_ho::Union{Table{Int32,Vector{Int32},Vector{Int32}}, Missing} = zeros(nelem, npoin)
     
 end
 
