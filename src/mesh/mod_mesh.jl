@@ -131,7 +131,7 @@ function mod_mesh_cgns_ordering!(cell_node_ids::Table{Int32,Vector{Int32},Vector
     temp8 = Int32(1)
     
     @info " before "
-    for iel = 1:nelem
+    for iel = 1:1
         
         @info cell_node_ids[iel][1], " ", cell_node_ids[iel][2], " ",
         cell_node_ids[iel][3], " ", cell_node_ids[iel][4], " ",
@@ -191,7 +191,7 @@ function mod_mesh_cgns_ordering!(cell_node_ids::Table{Int32,Vector{Int32},Vector
     end
      
     @info " After reorder "
-    for iel = 1:nelem
+    for iel = 1:1
         
         @info cell_node_ids[iel][1], " ", cell_node_ids[iel][2], " ",
         cell_node_ids[iel][3], " ", cell_node_ids[iel][4], " ",
