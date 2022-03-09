@@ -158,8 +158,9 @@ function mod_mesh_cgns_ordering!(cell_node_ids::Table{Int32,Vector{Int32},Vector
         @info temp6, " t1 ? cell[2] ", cell_node_ids[iel][2];
         @info temp7, " t1 ? cell[1] ", cell_node_ids[iel][1];
         @info temp8, " t1 ? cell[3] ", cell_node_ids[iel][3];
-         @info " === "
-	#Rewrite (`array[:] .= a` us used to modify the values of array[:] 
+        @info " === "
+        
+	#Rewrite cell_node_ids
 	cell_node_ids[iel][1] = temp1;
 	cell_node_ids[iel][2] = temp2;
 	cell_node_ids[iel][3] = temp3;
