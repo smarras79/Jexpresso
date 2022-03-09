@@ -86,7 +86,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     resize!(mesh.x, mesh.npoin)
     resize!(mesh.y, mesh.npoin)
     resize!(mesh.z, mesh.npoin)
-
+    
     for ip = 1:mesh.npoin
         mesh.x[ip] = model.grid.node_coordinates[ip][1]
         mesh.y[ip] = model.grid.node_coordinates[ip][2]
@@ -94,6 +94,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     end
         
     writevtk(model,"gmsh_grid")
+end
+
+function mod_mesh_!(mesh::St_mesh)
+
 end
 
 #end #module
