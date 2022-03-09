@@ -9,20 +9,9 @@ export St_mesh
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
-const NPOIN_EL3D  = Int32(8)
-const NEDGES_EL3D = Int32(12)
-const NFACES_EL3D = Int32(6)
-
-const NPOIN_EL2D  = Int32(4)
-const NEDGES_EL2D = Int32(4)
-const NFACES_EL2D = Int32(0)
-
-const NPOIN_EL1D  = Int32(2)
-const NEDGES_EL1D = Int32(1)
-const NFACES_EL1D = Int32(0)
-
-const VERTEX = Int32(1)
-const EDGE   = Int32(2)
+const VERTEX_NODES = Int32(1)
+const EDGE_NODES   = Int32(2)
+const FACE_NODES   = Int32(4)
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     
@@ -52,6 +41,10 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     #low and high order connectivity tables
     cell_node_ids::Table{Int32,Vector{Int32},Vector{Int32}} = Gridap.Arrays.Table(zeros(nelem), zeros(npoin))
     cell_node_ids_ho::Table{Int32,Vector{Int32},Vector{Int32}} = Gridap.Arrays.Table(zeros(nelem), zeros(npoin))
+    
+    conn_edge_el = Array{Int32, 3}(undef,  nelem, 12, 2)
+    conn_face_el = Array{Int32, 3}(undef,  nelem, 6,  4)
+    face_in_el   = Array{Int32, 3}(undef,  nelem, 12, 6)
     
 end
 
@@ -141,14 +134,14 @@ function mod_mesh_cgns_ordering!(cell_node_ids::Table{Int32,Vector{Int32},Vector
     @info " CGNS"
     for iel = 1:1
         
-        temp1 = cell_node_ids[iel][8];
-	temp2 = cell_node_ids[iel][6];
-	temp3 = cell_node_ids[iel][5];
-	temp4 = cell_node_ids[iel][7];
-        temp5 = cell_node_ids[iel][4];
-        temp6 = cell_node_ids[iel][2];
-        temp7 = cell_node_ids[iel][1];
-        temp8 = cell_node_ids[iel][3];
+        temp1 = copy(cell_node_ids[iel][8]);
+	temp2 = copy(cell_node_ids[iel][6]);
+	temp3 = copy(cell_node_ids[iel][5]);
+	temp4 = copy(cell_node_ids[iel][7]);
+        temp5 = copy(cell_node_ids[iel][4]);
+        temp6 = copy(cell_node_ids[iel][2]);
+        temp7 = copy(cell_node_ids[iel][1]);
+        temp8 = copy(cell_node_ids[iel][3]);
 
         @info temp1, " t1 ? cell[8] ", cell_node_ids[iel][8];
         @info temp2, " t1 ? cell[6] ", cell_node_ids[iel][6];
@@ -161,14 +154,14 @@ function mod_mesh_cgns_ordering!(cell_node_ids::Table{Int32,Vector{Int32},Vector
         @info " === "
         
 	#Rewrite cell_node_ids
-	cell_node_ids[iel][1] = temp1;
-	cell_node_ids[iel][2] = temp2;
-	cell_node_ids[iel][3] = temp3;
-	cell_node_ids[iel][4] = temp4;
-	cell_node_ids[iel][5] = temp5;
-	cell_node_ids[iel][6] = temp6;
-	cell_node_ids[iel][7] = temp7;
-	cell_node_ids[iel][8] = temp8;
+	cell_node_ids[iel][1] = copy(temp1);
+	cell_node_ids[iel][2] = copy(temp2);
+	cell_node_ids[iel][3] = copy(temp3);
+	cell_node_ids[iel][4] = copy(temp4);
+	cell_node_ids[iel][5] = copy(temp5);
+	cell_node_ids[iel][6] = copy(temp6);
+	cell_node_ids[iel][7] = copy(temp7);
+	cell_node_ids[iel][8] = copy(temp8);
 
         @info temp1, " t1 ? cell[1] ", cell_node_ids[iel][1];
         @info temp2, " t1 ? cell[2] ", cell_node_ids[iel][2];
@@ -192,65 +185,134 @@ function mod_mesh_cgns_ordering!(cell_node_ids::Table{Int32,Vector{Int32},Vector
     @info " "
     
 end
-    
+
 function mod_mesh_build_edges_faces!(mesh::St_mesh)
+
+    #### Convert to CGNS numbering
+    #### not correct; it doesnt modify mesh.cell_node_
+    #### @assert "not working yet"
+    ###mod_mesh_cgns_ordering!(mesh.cell_node_ids)
     
+    if mesh.nsd == 3
+        NEDGES_EL = 12
+        NFACES_EL = 6
+        EDGE_NODES = 2
+        FACE_NODES = 4
+    elseif mesh.nsd == 2
+        NEDGES_EL = 4
+        NFACES_EL = 1
+        EDGE_NODES = 2
+        FACE_NODES = 4
+    elseif mesh.nsd == 1
+        NEDGES_EL = 1
+        NFACES_EL = 0
+        EDGE_NODES = 2
+        FACE_NODES = 0
+    else
+        error( " This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
+    end
+    
+    mesh.conn_edge_el = Array{Int32, 3}(undef,  mesh.nelem, NEDGES_EL, EDGE_NODES)
+    mesh.conn_face_el = Array{Int32, 3}(undef,  mesh.nelem, NFACES_EL, FACE_NODES)
+    conn_face_el_sort = Array{Int32, 3}(undef,  mesh.nelem, NEDGES_EL, EDGE_NODES)
+    
+    populate_conn_edge_el!(mesh)
+    populate_conn_face_el!(mesh)
 
-    mod_mesh_cgns_ordering!(mesh.cell_node_ids)
-    @info "done reorder"
-    conn_edge_el = Array{Int32, 3}(undef,  mesh.nelem, NEDGES_EL3D, EDGE)
-    @info size(conn_edge_el)
-    @info typeof(conn_edge_el)
-    for iel = 1:1 #mesh.nelem
-        
-	# Edges bottom face:
-	iedg_el = 1
-        conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][1]
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][2]       
-	iedg_el = 2;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][2];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][3];
-	iedg_el = 3;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][3];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][4];
-	iedg_el = 4;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][4];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][1];
-
-        #Edges top face
-	iedg_el = 5;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][5];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][6];
-	iedg_el = 6;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][6];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][7];
-	iedg_el = 7;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][7];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][8];
-	iedg_el = 8;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][8];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][5];
-	
-	#Vertical edges
-	iedg_el = 9;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][1];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][5];
-	iedg_el = 10;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][2];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][6];
-	iedg_el = 11;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][3];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][7];
-	iedg_el = 12;
-	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][4];
-	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][8];
-
-        for iedg_el=1:12
-            @info " mesh.cell_node_ids[iel][1] = ",  iel, " ", conn_edge_el[iel,iedg_el,1], conn_edge_el[iel,iedg_el,2]
-        end
-        
-     end
+    conn_face_el_sort = copy(mesh.conn_face_el)
+    sort!(conn_face_el_sort, dims = 3)
     
 end
 
-#end #module
+function populate_conn_edge_el!(mesh::St_mesh)
+
+    for iel = 1:mesh.nelem
+        
+	# Edges bottom face:
+	iedg_el = 1
+        mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][2]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][6]       
+	iedg_el = 2
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][6]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][8]
+	iedg_el = 3
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][8]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][4]
+	iedg_el = 4
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][4]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][2]
+
+        #Edges top face
+	iedg_el = 5
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][1]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][5]
+	iedg_el = 6
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][5]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][7]
+	iedg_el = 7
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][7]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][3]
+	iedg_el = 8
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][3]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][1]
+	
+	#Vertical edges
+	iedg_el = 9
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][3]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][4]
+	iedg_el = 10
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][2]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][1]
+	iedg_el = 11
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][7]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][8]
+	iedg_el = 12
+	mesh.conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][6]
+	mesh.conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][5]
+        
+    end
+    
+end #populate_edge_el!
+
+
+function populate_conn_face_el!(mesh::St_mesh)
+
+    for iel = 1:mesh.nelem
+         
+        #
+        # Local faces node connectivity:
+        # i.e. what nodes belong to a given local face in iel:
+        #
+        mesh.conn_face_el[iel,1,1] = mesh.cell_node_ids[iel][1]
+        mesh.conn_face_el[iel,1,2] = mesh.cell_node_ids[iel][3]
+        mesh.conn_face_el[iel,1,3] = mesh.cell_node_ids[iel][4]
+        mesh.conn_face_el[iel,1,4] = mesh.cell_node_ids[iel][2]
+
+        mesh.conn_face_el[iel,3,1] = mesh.cell_node_ids[iel][5]
+        mesh.conn_face_el[iel,3,2] = mesh.cell_node_ids[iel][6]
+        mesh.conn_face_el[iel,3,3] = mesh.cell_node_ids[iel][8]
+        mesh.conn_face_el[iel,3,4] = mesh.cell_node_ids[iel][7]
+        
+        mesh.conn_face_el[iel,2,1] = mesh.cell_node_ids[iel][1]
+        mesh.conn_face_el[iel,2,2] = mesh.cell_node_ids[iel][2]
+        mesh.conn_face_el[iel,2,3] = mesh.cell_node_ids[iel][6]
+        mesh.conn_face_el[iel,2,4] = mesh.cell_node_ids[iel][5]
+        
+        mesh.conn_face_el[iel,4,1] = mesh.cell_node_ids[iel][3]
+        mesh.conn_face_el[iel,4,2] = mesh.cell_node_ids[iel][7]
+        mesh.conn_face_el[iel,4,3] = mesh.cell_node_ids[iel][8]
+        mesh.conn_face_el[iel,4,4] = mesh.cell_node_ids[iel][4]
+        
+        mesh.conn_face_el[iel,5,1] = mesh.cell_node_ids[iel][2]
+        mesh.conn_face_el[iel,5,2] = mesh.cell_node_ids[iel][4]
+        mesh.conn_face_el[iel,5,3] = mesh.cell_node_ids[iel][8]
+        mesh.conn_face_el[iel,5,4] = mesh.cell_node_ids[iel][6]
+        
+        mesh.conn_face_el[iel,6,1] = mesh.cell_node_ids[iel][1]
+        mesh.conn_face_el[iel,6,2] = mesh.cell_node_ids[iel][5]
+        mesh.conn_face_el[iel,6,3] = mesh.cell_node_ids[iel][7]
+        mesh.conn_face_el[iel,6,4] = mesh.cell_node_ids[iel][3]
+        
+    end
+    
+end #populate_face_el
