@@ -116,13 +116,100 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     #writevtk(model,"gmsh_grid")
 end
 
+function mod_mesh_cgns_ordering!(cell_node_ids::Table{Int32,Vector{Int32},Vector{Int32}})
+
+    nelem     = Int32(size(cell_node_ids, 1))
+    nnodes_el = Int32(size(cell_node_ids[1], 1))
+    
+    temp1 = Int32(1)
+    temp2 = Int32(1)
+    temp3 = Int32(1)
+    temp4 = Int32(1)
+    temp5 = Int32(1)
+    temp6 = Int32(1)
+    temp7 = Int32(1)
+    temp8 = Int32(1)
+    
+    @info " before "
+    for iel = 1:nelem
+        
+        @info cell_node_ids[iel][1], " ", cell_node_ids[iel][2], " ",
+        cell_node_ids[iel][3], " ", cell_node_ids[iel][4], " ",
+        cell_node_ids[iel][5], " ", cell_node_ids[iel][6], " ",
+        cell_node_ids[iel][7], " ", cell_node_ids[iel][8]
+    end
+    @info " CGNS"
+    for iel = 1:1
+        
+        temp1 = cell_node_ids[iel][8];
+	temp2 = cell_node_ids[iel][6];
+	temp3 = cell_node_ids[iel][5];
+	temp4 = cell_node_ids[iel][7];
+        temp5 = cell_node_ids[iel][4];
+        temp6 = cell_node_ids[iel][2];
+        temp7 = cell_node_ids[iel][1];
+        temp8 = cell_node_ids[iel][3];
+
+        @info temp1, " t1 ? cell[8] ", cell_node_ids[iel][8];
+        @info temp2, " t1 ? cell[6] ", cell_node_ids[iel][6];
+        @info temp3, " t1 ? cell[5] ", cell_node_ids[iel][5];
+        @info temp4, " t1 ? cell[7] ", cell_node_ids[iel][7];
+        @info temp5, " t1 ? cell[4] ", cell_node_ids[iel][4];
+        @info temp6, " t1 ? cell[2] ", cell_node_ids[iel][2];
+        @info temp7, " t1 ? cell[1] ", cell_node_ids[iel][1];
+        @info temp8, " t1 ? cell[3] ", cell_node_ids[iel][3];
+         @info " === "
+	#Rewrite (`array[:] .= a` us used to modify the values of array[:] 
+	cell_node_ids[iel][1] = temp1;
+	cell_node_ids[iel][2] = temp2;
+	cell_node_ids[iel][3] = temp3;
+	cell_node_ids[iel][4] = temp4;
+	cell_node_ids[iel][5] = temp5;
+	cell_node_ids[iel][6] = temp6;
+	cell_node_ids[iel][7] = temp7;
+	cell_node_ids[iel][8] = temp8;
+
+        @info temp1, " t1 ? cell[1] ", cell_node_ids[iel][1];
+        @info temp2, " t1 ? cell[2] ", cell_node_ids[iel][2];
+        @info temp3, " t1 ? cell[3] ", cell_node_ids[iel][3];
+        @info temp4, " t1 ? cell[4] ", cell_node_ids[iel][4];
+        @info temp5, " t1 ? cell[5] ", cell_node_ids[iel][5];
+        @info temp6, " t1 ? cell[6] ", cell_node_ids[iel][6];
+        @info temp7, " t1 ? cell[7] ", cell_node_ids[iel][7];
+        @info temp8, " t1 ? cell[8] ", cell_node_ids[iel][8];
+        
+        #=
+        @info temp1, " t1 ", cell_node_ids[iel][8];
+	@info temp2, " t2 ", cell_node_ids[iel][6];
+	@info temp3, " t3 ", cell_node_ids[iel][5];
+	@info temp4, " t4 ", cell_node_ids[iel][7];
+	@info temp5, " t5 ", cell_node_ids[iel][4];
+	@info temp6, " t6 ", cell_node_ids[iel][2];
+	@info temp7, " t7 ", cell_node_ids[iel][1];
+	@info temp8, " t8 ", cell_node_ids[iel][3];=#
+    end
+     
+    @info " After reorder "
+    for iel = 1:nelem
+        
+        @info cell_node_ids[iel][1], " ", cell_node_ids[iel][2], " ",
+        cell_node_ids[iel][3], " ", cell_node_ids[iel][4], " ",
+        cell_node_ids[iel][5], " ", cell_node_ids[iel][6], " ",
+        cell_node_ids[iel][7], " ", cell_node_ids[iel][8]
+    end
+    @info " "
+    
+end
+    
 function mod_mesh_build_edges_faces!(mesh::St_mesh)
     
-    
+
+    mod_mesh_cgns_ordering!(mesh.cell_node_ids)
+    @info "done reorder"
     conn_edge_el = Array{Int32, 3}(undef,  mesh.nelem, NEDGES_EL3D, EDGE)
     @info size(conn_edge_el)
     @info typeof(conn_edge_el)
-    for iel = 1:2 #mesh.nelem
+    for iel = 1:1 #mesh.nelem
         
 	# Edges bottom face:
 	iedg_el = 1
@@ -165,8 +252,10 @@ function mod_mesh_build_edges_faces!(mesh::St_mesh)
 	iedg_el = 12;
 	conn_edge_el[iel,iedg_el,1] = mesh.cell_node_ids[iel][4];
 	conn_edge_el[iel,iedg_el,2] = mesh.cell_node_ids[iel][8];
-        
-        #@info " mesh.cell_node_ids[iel][1] = ",  iel, " ", conn_edge_el[iel,iedg_el,1]
+
+        for iedg_el=1:12
+            @info " mesh.cell_node_ids[iel][1] = ",  iel, " ", conn_edge_el[iel,iedg_el,1], conn_edge_el[iel,iedg_el,2]
+        end
         
      end
     
