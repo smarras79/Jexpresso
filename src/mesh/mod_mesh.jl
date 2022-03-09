@@ -179,15 +179,6 @@ function mod_mesh_cgns_ordering!(cell_node_ids::Table{Int32,Vector{Int32},Vector
         @info temp7, " t1 ? cell[7] ", cell_node_ids[iel][7];
         @info temp8, " t1 ? cell[8] ", cell_node_ids[iel][8];
         
-        #=
-        @info temp1, " t1 ", cell_node_ids[iel][8];
-	@info temp2, " t2 ", cell_node_ids[iel][6];
-	@info temp3, " t3 ", cell_node_ids[iel][5];
-	@info temp4, " t4 ", cell_node_ids[iel][7];
-	@info temp5, " t5 ", cell_node_ids[iel][4];
-	@info temp6, " t6 ", cell_node_ids[iel][2];
-	@info temp7, " t7 ", cell_node_ids[iel][1];
-	@info temp8, " t8 ", cell_node_ids[iel][3];=#
     end
      
     @info " After reorder "
