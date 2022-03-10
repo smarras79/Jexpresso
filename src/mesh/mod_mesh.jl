@@ -141,10 +141,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     # Connectivity
     #
     mesh.cell_node_ids = model.grid.cell_node_ids
-    
-    @info mesh.conn_all_edges = get_face_nodes(model, 1)
-    #@info mesh.conn_all_edges = get_face_nodes(model,1)
+
+    # NOTICE remove all these prints after this is all working
+    @info " Connectivity of all faces"
+    @info mesh.conn_all_faces = get_face_nodes(model, 2) #faces --> 4 nodes
+    @info length(mesh.conn_all_faces)
+    @info " Connectivity of all edges"
+    @info mesh.conn_all_edges = get_face_nodes(model, 1) #edges --> 2 nodes
     @info length(mesh.conn_all_edges)
+    @info " "
 
     #@info size(get_isboundary_face(topology,mesh.nsd-1))
     for i=1:length(get_isboundary_face(topology,mesh.nsd-1))
