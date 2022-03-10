@@ -151,6 +151,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     @info length(mesh.conn_all_edges)
     @info " "
 
+    dump(topology)
+    
     #@info size(get_isboundary_face(topology,mesh.nsd-1))
     for i=1:length(get_isboundary_face(topology,mesh.nsd-1))
         #Get nodes of each element's face
