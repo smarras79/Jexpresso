@@ -1,5 +1,14 @@
+using Test
 using Gridap
+using Gridap.Arrays
 using Gridap.Arrays: Table
+using Gridap.Geometry
+using Gridap.Fields
+using Gridap.ReferenceFEs
+using Gridap.CellData
+
+using Gridap.Geometry: GridMock
+
 using GridapGmsh
 using LinearAlgebra
 using Revise
@@ -31,21 +40,30 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     npx::Union{TInt, Missing} = 1
     npy::Union{TInt, Missing} = 1
     npz::Union{TInt, Missing} = 1
-    
-    nelem::Union{TInt, Missing} = 1
+
     npoin::Union{TInt, Missing} = 1
+    nelem::Union{TInt, Missing} = 1
+    
+    nedges::Union{TInt, Missing} = 1     # total number of edges
+    nedges_bdy::Union{TInt, Missing} = 1 # bdy edges
+    nedges_int::Union{TInt, Missing} = 1 # internal edges
+
+    nfaces::Union{TInt, Missing} = 1     # total number of faces
+    nfaces_bdy::Union{TInt, Missing} = 1 # bdy faces
+    nfaces_int::Union{TInt, Missing} = 1 # internal faces
     
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
-
+    
     #low and high order connectivity tables
     cell_node_ids::Table{Int32,Vector{Int32},Vector{Int32}} = Gridap.Arrays.Table(zeros(nelem), zeros(npoin))
     cell_node_ids_ho::Table{Int32,Vector{Int32},Vector{Int32}} = Gridap.Arrays.Table(zeros(nelem), zeros(npoin))
     
-    conn_edge_el = Array{Int32, 3}(undef,  nelem, 12, 2)
-    conn_face_el = Array{Int32, 3}(undef,  nelem, 6,  4)
-    face_in_elem = Array{Int32, 3}(undef,  nelem, 6, 2)
-    
+    conn_all_edges = Array{Int32, 2}(undef,  1, 2)
+    conn_all_faces = Array{Int32, 2}(undef,  1, 4)
+    conn_edge_el   = Array{Int32, 3}(undef,  nelem, 12, 2)
+    conn_face_el   = Array{Int32, 3}(undef,  nelem, 6,  4)
+    face_in_elem   = Array{Int32, 3}(undef,  nelem, 6, 2)    
 end
 
 function mod_mesh_build_mesh!(mesh::St_mesh)
@@ -84,16 +102,58 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
 end
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
-    
-    model      = GmshDiscreteModel(gmsh_filename)
-    mesh.npoin = length(model.grid.node_coordinates)
-    mesh.nelem = length(model.grid.cell_node_ids)
 
+    #
+    # Read GMSH grid from file
+    #
+    model    = GmshDiscreteModel(gmsh_filename, renumber=true)
+    topology = get_grid_topology(model)
+    mesh.nsd = num_cell_dims(model)
+
+    @info topology.vertex_coordinates
+    
+    
+    #dump(topology)
+    #
+    # Mesh elements, nodes, faces, edges
+    #
+    mesh.npoin      = num_faces(model,0)
+    mesh.nedges     = num_faces(model,1)
+    mesh.nfaces     = num_faces(model,2)
+    mesh.nelem      = num_faces(model,3)
+    mesh.nfaces_bdy = count(get_isboundary_face(topology,mesh.nsd-1))
+    mesh.nfaces_int = mesh.nfaces - mesh.nfaces_bdy
+    mesh.nedges_bdy = count(get_isboundary_face(topology,mesh.nsd-2))
+    mesh.nedges_int = mesh.nedges - mesh.nedges_bdy
+    
+    
+    println(" # N. elements       : ", mesh.nelem)
+    println(" # N. points         : ", mesh.npoin)
+    println(" # N. edges          : ", mesh.nedges)
+    println(" # N. internal edges : ", mesh.nedges_int)
+    println(" # N. boundary edges : ", mesh.nedges_bdy)
+    println(" # N. faces          : ", mesh.nfaces) 
+    println(" # N. internal faces : ", mesh.nfaces_int)
+    println(" # N. boundary faces : ", mesh.nfaces_bdy)
+
+    
+    #
+    # Connectivity
+    #
     mesh.cell_node_ids = model.grid.cell_node_ids
     
-    @info model.grid.cell_node_ids
-    #@info length(model.grid.cell_node_ids)
-    
+    @info mesh.conn_all_edges = get_face_nodes(model, 1)
+    #@info mesh.conn_all_edges = get_face_nodes(model,1)
+    @info length(mesh.conn_all_edges)
+
+    #@info size(get_isboundary_face(topology,mesh.nsd-1))
+    for i=1:length(get_isboundary_face(topology,mesh.nsd-1))
+        #Get nodes of each element's face
+        if get_isboundary_face(topology,mesh.nsd-1)[i] == true
+     #       @info get_face_nodes(model,1)
+        end
+    end
+
     resize!(mesh.x, mesh.npoin)
     resize!(mesh.y, mesh.npoin)
     resize!(mesh.z, mesh.npoin)
@@ -104,7 +164,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
         mesh.z[ip] = model.grid.node_coordinates[ip][3]
     end
 
-    mod_mesh_build_edges_faces!(mesh)
+    #
+    # Create/extract esges and faces from GMSH grid
+    #
+    mod_mesh_build_edges_faces!(mesh)   
     
     #writevtk(model,"gmsh_grid")
 end
@@ -148,9 +211,9 @@ function mod_mesh_build_edges_faces!(mesh::St_mesh)
     #local sorting for comparison done later
     conn_face_el_sort = copy(mesh.conn_face_el)
     sort!(conn_face_el_sort, dims = 3)
-    
-    nint_faces = populate_face_in_elem!(mesh.face_in_elem, mesh.nelem, NFACES_EL, conn_face_el_sort)
-    println(" # Ninternal faces: ", nint_faces)
+
+    #count internal and boundary nfacesk_int, nfaces_bdy
+    populate_face_in_elem!(mesh.face_in_elem, mesh.nelem, NFACES_EL, conn_face_el_sort)
     
 end
 
@@ -274,10 +337,11 @@ function populate_face_in_elem!(face_in_elem::Array{Int32, 3}, nelem, NFACES_EL,
 		end
 	    end
 	end
-    end 
+    end     
+    nfaces_int = Int32(iface)
+
     
-    nint_faces = Int32(iface)
-    return nint_faces
+    
 end
 
 
