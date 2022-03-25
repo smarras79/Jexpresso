@@ -71,7 +71,7 @@ function build_lgl!(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
     lgl.ω = zeros(Float64, size)
     
     #LGL nodes
-    LegendreGaussLobattoNodesAndWeights(Legendre, lgl, nop);
+    LegendreGaussLobattoNodesAndWeights!(Legendre, lgl, nop);
     
     #LG nodes
     #LegendreGaussNodesAndWeights(lgl, nop);
@@ -169,7 +169,7 @@ function LegendreGaussNodesAndWeights!(Legendre::St_legendre, lg::St_lg, nop::TI
     end
 end
 
-function LegendreGaussLobattoNodesAndWeights(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
+function LegendreGaussLobattoNodesAndWeights!(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
     
     NITER = 100
     TOL = 4*eps()
