@@ -13,8 +13,8 @@ mutable struct St_legendre{TFloat}
     struct St_legendrea{TFloat<:Real}
           legendre  :: TFloat
           dlegendre :: TFloat
-           q         :: TFloat -> q  = legendre(p+1)  - legendre(p-1)
-           dq        :: TFloat -> dq = dlegendre(p+1) - dlegendre(p-1)
+           q        :: TFloat -> q  = legendre(p+1)  - legendre(p-1)
+           dq       :: TFloat -> dq = dlegendre(p+1) - dlegendre(p-1)
     end
     """
     

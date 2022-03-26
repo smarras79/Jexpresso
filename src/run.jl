@@ -70,11 +70,12 @@ else
                                 zmin = Float64(inputs[:zmin]), zmax = Float64(inputs[:zmax]),
                                 nsd=Int8(inputs[:nsd]),
                                 nop=Int8(inputs[:nop]))
-    #@info mesh    
+
+    
+    #@info mesh
     mod_mesh_build_mesh!(mesh)
     @info mesh.cell_node_ids_ho
 
-    
     
     #Write structured grid to VTK
     vtkfile = vtk_grid("mySTRUCTURED_GRID", mesh.x, mesh.y, mesh.z) # 3-D
@@ -82,6 +83,9 @@ else
     
     println(" # Build grid ........................ DONE")
 end
+
+
+add_high_order_nodes!(mesh)
 
 #--------------------------------------------------------
 # END Build mesh    
@@ -106,10 +110,6 @@ mod_solution_initial_conditions!(mesh,
 
 =#
 
-Legendre = St_legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
-lgl      = St_lgl{TFloat}(zeros(TFloat, mesh.nop+1),
-                     zeros(TFloat, mesh.nop+1))
-build_lgl!(Legendre, lgl, mesh.nop)
 
 #
 # Plot to file:
