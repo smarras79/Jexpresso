@@ -14,7 +14,7 @@ using Plots; gr()
 plotlyjs()
 
 #Constants
-const TInt   = Int8
+const TInt   = Int64
 const TFloat = Float64
 
 #--------------------------------------------------------
@@ -26,6 +26,8 @@ include("./basis/basis_structs.jl")
 include("./solver/mod_solution.jl")
 #--------------------------------------------------------
 
+struct EDGES <:At_geo_entity end
+struct FACES <:At_geo_entity end
 #MPI.Init()
 #comm = MPI.COMM_WORLD
 
@@ -50,8 +52,8 @@ if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
     mesh = St_mesh{TInt,TFloat}(nsd=Int8(inputs[:nsd]),
                                 nop=Int8(inputs[:nop]))
     
-    
     # Read gmsh grid using the GridapGmsh reader
+    
     mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
     
     println(" # Read gmsh grid ........................ DONE")
@@ -73,8 +75,7 @@ else
 
     
     #@info mesh
-    mod_mesh_build_mesh!(mesh)
-    @info mesh.cell_node_ids_ho
+    
 
     
     #Write structured grid to VTK
@@ -84,8 +85,6 @@ else
     println(" # Build grid ........................ DONE")
 end
 
-
-add_high_order_nodes!(mesh)
 
 #--------------------------------------------------------
 # END Build mesh    
