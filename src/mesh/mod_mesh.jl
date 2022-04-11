@@ -224,57 +224,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     #writevtk(model,"gmsh_grid")
 end
 
-#=function mod_mesh_build_edges_faces!(mesh::St_mesh)
-    
-    if mesh.nsd == 3
-        mesh.NEDGES_EL  = 12
-        mesh.NFACES_EL  = 6
-        mesh.EDGE_NODES = 2
-        mesh.FACE_NODES = 4
-    elseif mesh.nsd == 2
-        mesh.NEDGES_EL  = 4
-        mesh.NFACES_EL  = 1
-        mesh.EDGE_NODES = 2
-        mesh.FACE_NODES = 4
-    elseif mesh.nsd == 1
-        mesh.NEDGES_EL  = 1
-        mesh.NFACES_EL  = 0
-        mesh.EDGE_NODES = 2
-        mesh.FACE_NODES = 0
-    else
-        error( " WRONG NSD: This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
-    end
-    
-    mesh.conn_edge_el = Array{Int64, 3}(undef,  mesh.nelem, mesh.NEDGES_EL, mesh.EDGE_NODES)
-    mesh.conn_face_el = Array{Int64, 3}(undef,  mesh.nelem, mesh.NFACES_EL, mesh.FACE_NODES)
-    mesh.face_in_elem = Array{Int64, 3}(undef,  mesh.nelem, mesh.NFACES_EL, mesh.FACE_NODES)
-    conn_face_el_sort = Array{Int64, 3}(undef,  mesh.nelem, mesh.NEDGES_EL, mesh.EDGE_NODES)
-    mesh.nsd = 1
-        @error " Only 3D is currently coded. 1D is not currently supported."
-    if (mesh.nsd == 1)
-    
-        #mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, 1)        
-    elseif (mesh.nsd == 2)
-        @error " Only 3D is currently coded. 2D is not currently supported."
-        #mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, mesh.nop+1, mesh.nop+1)
-    elseif (mesh.nsd == 3) 
-        mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, mesh.nop+1, mesh.nop+1, mesh.nop+1)
-    end
-    
-    populate_conn_edge_el!(mesh)
-    populate_conn_face_el!(mesh)
-    
-    #local sorting for comparison done later
-    #conn_face_el_sort = copy(mesh.conn_face_el)
-    #sort!(conn_face_el_sort, dims = 3)
-
-    #count internal and boundary nfaces_int, nfaces_bdy
-    #populate_face_in_elem!(mesh.face_in_elem, mesh.nelem, mesh.NFACES_EL, conn_face_el_sort)
-
-    #add high order nodes to all unique edges and faces
-end
-=#
-
 function populate_conn_edge_el!(mesh::St_mesh)
     
     for iel = 1:mesh.nelem
@@ -653,6 +602,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
     
 end
 
+#=
 function mod_mesh_cgns_ordering!(cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}})
 
     nelem     = Int64(size(cell_node_ids, 1))
@@ -729,3 +679,55 @@ function mod_mesh_cgns_ordering!(cell_node_ids::Table{Int64,Vector{Int64},Vector
     @info " "
     
 end
+=#
+
+#=function mod_mesh_build_edges_faces!(mesh::St_mesh)
+    
+    if mesh.nsd == 3
+        mesh.NEDGES_EL  = 12
+        mesh.NFACES_EL  = 6
+        mesh.EDGE_NODES = 2
+        mesh.FACE_NODES = 4
+    elseif mesh.nsd == 2
+        mesh.NEDGES_EL  = 4
+        mesh.NFACES_EL  = 1
+        mesh.EDGE_NODES = 2
+        mesh.FACE_NODES = 4
+    elseif mesh.nsd == 1
+        mesh.NEDGES_EL  = 1
+        mesh.NFACES_EL  = 0
+        mesh.EDGE_NODES = 2
+        mesh.FACE_NODES = 0
+    else
+        error( " WRONG NSD: This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
+    end
+    
+    mesh.conn_edge_el = Array{Int64, 3}(undef,  mesh.nelem, mesh.NEDGES_EL, mesh.EDGE_NODES)
+    mesh.conn_face_el = Array{Int64, 3}(undef,  mesh.nelem, mesh.NFACES_EL, mesh.FACE_NODES)
+    mesh.face_in_elem = Array{Int64, 3}(undef,  mesh.nelem, mesh.NFACES_EL, mesh.FACE_NODES)
+    conn_face_el_sort = Array{Int64, 3}(undef,  mesh.nelem, mesh.NEDGES_EL, mesh.EDGE_NODES)
+    mesh.nsd = 1
+        @error " Only 3D is currently coded. 1D is not currently supported."
+    if (mesh.nsd == 1)
+    
+        #mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, 1)        
+    elseif (mesh.nsd == 2)
+        @error " Only 3D is currently coded. 2D is not currently supported."
+        #mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, mesh.nop+1, mesh.nop+1)
+    elseif (mesh.nsd == 3) 
+        mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, mesh.nop+1, mesh.nop+1, mesh.nop+1)
+    end
+    
+    populate_conn_edge_el!(mesh)
+    populate_conn_face_el!(mesh)
+    
+    #local sorting for comparison done later
+    #conn_face_el_sort = copy(mesh.conn_face_el)
+    #sort!(conn_face_el_sort, dims = 3)
+
+    #count internal and boundary nfaces_int, nfaces_bdy
+    #populate_face_in_elem!(mesh.face_in_elem, mesh.nelem, mesh.NFACES_EL, conn_face_el_sort)
+
+    #add high order nodes to all unique edges and faces
+end
+=#
