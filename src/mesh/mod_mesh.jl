@@ -77,10 +77,10 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     FACE_NODES::Union{TInt, Missing} =  4
     
     #low and high order connectivity tables
-    cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(npoin))
-    cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(npoin))
+    cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(8))
+    cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(8))
     
-    conn_unique_edges    = Array{Int64, 2}(undef,  1, 2)
+    conn_unique_edges = Array{Int64, 2}(undef,  1, 2)
     conn_unique_faces = Array{Int64, 2}(undef,  1, 4)
     conn_edge_el      = Array{Int64, 3}(undef,  nelem, 12, 2)
     conn_face_el      = Array{Int64, 3}(undef,  nelem,  6, 4)
