@@ -236,8 +236,15 @@ function mod_mesh_build_edges_faces!(mesh::St_mesh)
     mesh.conn_edge_el = Array{Int64, 3}(undef,  mesh.nelem, mesh.NEDGES_EL, mesh.EDGE_NODES)
     mesh.conn_face_el = Array{Int64, 3}(undef,  mesh.nelem, mesh.NFACES_EL, mesh.FACE_NODES)
     mesh.face_in_elem = Array{Int64, 3}(undef,  mesh.nelem, mesh.NFACES_EL, mesh.FACE_NODES)
-    
     conn_face_el_sort = Array{Int64, 3}(undef,  mesh.nelem, mesh.NEDGES_EL, mesh.EDGE_NODES)
+
+    if (mesh.nsd == 1) 
+        mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, 1)
+    else if (mesh.nsd == 2) 
+        mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, mesh.nop+1, mesh.nop+1)
+    else if (mesh.nsd == 3) 
+        mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, mesh.nop+1, mesh.nop+1, mesh.nop+1)
+    end
         
     populate_conn_edge_el!(mesh)
     populate_conn_face_el!(mesh)
