@@ -12,6 +12,7 @@ using GridapGmsh
 using LinearAlgebra
 using Printf
 using Revise
+using StaticArrays
 
 export St_mesh
 
@@ -80,6 +81,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(8))
     cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(8))
     
+    #conn_ho           = @SArray zeros(nelem, nop+1, nop+1, nop+1)
+    conn_ho           = Array{Int64, 1}(undef, nelem*(nop+1))
     conn_unique_edges = Array{Int64, 2}(undef,  1, 2)
     conn_unique_faces = Array{Int64, 2}(undef,  1, 4)
     conn_edge_el      = Array{Int64, 3}(undef,  nelem, 12, 2)
@@ -149,6 +152,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     else
         error( " WRONG NSD: This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
     end
+    
+    
+    
     #@info topology.vertex_coordinates
     
     #dump(topology)
@@ -175,10 +181,25 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     println(" # N. internal faces : ", mesh.nfaces_int)
     println(" # N. boundary faces : ", mesh.nfaces_bdy)
     println(" # GMSH LINEAR GRID PROPERTIES ...................... END")
+
+    #
+    # Coordinates arrays
+    # 
+    resize!(mesh.x, mesh.npoin_linear)
+    resize!(mesh.y, mesh.npoin_linear)
+    resize!(mesh.z, mesh.npoin_linear)
     
     #
-    # Connectivity
+    # Connectivity matrices
     #
+    resize!(mesh.conn_ho, mesh.nelem*(mesh.nop+1)^(mesh.nsd))
+    if (mesh.nsd == 1)
+        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.nop+1)
+    elseif (mesh.nsd == 2)
+        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.nop+1, mesh.nop+1)
+    elseif (mesh.nsd == 3)
+        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.nop+1, mesh.nop+1, mesh.nop+1)
+    end
     mesh.cell_node_ids     = model.grid.cell_node_ids
     mesh.conn_unique_faces = get_face_nodes(model, FACE) #faces --> 4 nodes
     mesh.conn_unique_edges = get_face_nodes(model, EDGE) #edges --> 2 nodes
@@ -191,11 +212,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
         end
     end
     =#
-    
-    resize!(mesh.x, mesh.npoin_linear)
-    resize!(mesh.y, mesh.npoin_linear)
-    resize!(mesh.z, mesh.npoin_linear)
-    
+
+
     open("./COORDS_LO.dat", "w") do f
 
         for ip = 1:mesh.npoin_linear
@@ -706,8 +724,7 @@ end
     mesh.conn_face_el = Array{Int64, 3}(undef,  mesh.nelem, mesh.NFACES_EL, mesh.FACE_NODES)
     mesh.face_in_elem = Array{Int64, 3}(undef,  mesh.nelem, mesh.NFACES_EL, mesh.FACE_NODES)
     conn_face_el_sort = Array{Int64, 3}(undef,  mesh.nelem, mesh.NEDGES_EL, mesh.EDGE_NODES)
-    mesh.nsd = 1
-        @error " Only 3D is currently coded. 1D is not currently supported."
+  
     if (mesh.nsd == 1)
     
         #mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, 1)        
