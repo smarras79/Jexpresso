@@ -7,9 +7,12 @@ from numpy.random import rand
 print_lables=True
 #print_lables=False
 
-plot_edge_nodes = False
-plot_face_nodes = False
-plot_vol_nodes  = True
+F = False
+T = True
+
+plot_edge_nodes = F
+plot_face_nodes = F
+plot_vol_nodes  = T
 
 
 #
