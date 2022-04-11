@@ -130,9 +130,26 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     model    = GmshDiscreteModel(gmsh_filename, renumber=true)
     topology = get_grid_topology(model)
     mesh.nsd = num_cell_dims(model)
-
-    @info topology.vertex_coordinates
     
+    if mesh.nsd == 3
+        mesh.NEDGES_EL  = 12
+        mesh.NFACES_EL  = 6
+        mesh.EDGE_NODES = 2
+        mesh.FACE_NODES = 4
+    elseif mesh.nsd == 2
+        mesh.NEDGES_EL  = 4
+        mesh.NFACES_EL  = 1
+        mesh.EDGE_NODES = 2
+        mesh.FACE_NODES = 4
+    elseif mesh.nsd == 1
+        mesh.NEDGES_EL  = 1
+        mesh.NFACES_EL  = 0
+        mesh.EDGE_NODES = 2
+        mesh.FACE_NODES = 0
+    else
+        error( " WRONG NSD: This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
+    end
+    #@info topology.vertex_coordinates
     
     #dump(topology)
     #
@@ -207,12 +224,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     #writevtk(model,"gmsh_grid")
 end
 
-function mod_mesh_build_edges_faces!(mesh::St_mesh)
-
-    #### Convert to CGNS numbering
-    #### not correct; it doesnt modify mesh.cell_node_
-    #### @assert "not working yet"
-    ###mod_mesh_cgns_ordering!(mesh.cell_node_ids)
+#=function mod_mesh_build_edges_faces!(mesh::St_mesh)
     
     if mesh.nsd == 3
         mesh.NEDGES_EL  = 12
@@ -237,15 +249,18 @@ function mod_mesh_build_edges_faces!(mesh::St_mesh)
     mesh.conn_face_el = Array{Int64, 3}(undef,  mesh.nelem, mesh.NFACES_EL, mesh.FACE_NODES)
     mesh.face_in_elem = Array{Int64, 3}(undef,  mesh.nelem, mesh.NFACES_EL, mesh.FACE_NODES)
     conn_face_el_sort = Array{Int64, 3}(undef,  mesh.nelem, mesh.NEDGES_EL, mesh.EDGE_NODES)
-
-    if (mesh.nsd == 1) 
-        mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, 1)
-    else if (mesh.nsd == 2) 
-        mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, mesh.nop+1, mesh.nop+1)
-    else if (mesh.nsd == 3) 
+    mesh.nsd = 1
+        @error " Only 3D is currently coded. 1D is not currently supported."
+    if (mesh.nsd == 1)
+    
+        #mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, 1)        
+    elseif (mesh.nsd == 2)
+        @error " Only 3D is currently coded. 2D is not currently supported."
+        #mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, mesh.nop+1, mesh.nop+1)
+    elseif (mesh.nsd == 3) 
         mesh.conn_ho = Array{Int64, 4}(undef,  mesh.nelem, mesh.nop+1, mesh.nop+1, mesh.nop+1)
     end
-        
+    
     populate_conn_edge_el!(mesh)
     populate_conn_face_el!(mesh)
     
@@ -257,9 +272,8 @@ function mod_mesh_build_edges_faces!(mesh::St_mesh)
     #populate_face_in_elem!(mesh.face_in_elem, mesh.nelem, mesh.NFACES_EL, conn_face_el_sort)
 
     #add high order nodes to all unique edges and faces
-    
-    
 end
+=#
 
 function populate_conn_edge_el!(mesh::St_mesh)
     
@@ -422,7 +436,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
         ip  = tot_linear_poin + 1
         for iedge_g = 1:mesh.nedges
             
-            ip1 = min(mesh.conn_unique_edges[iedge_g][1], mesh.conn_unique_edges[iedge_g][2])        
+            ip1 = min(mesh.conn_unique_edges[iedge_g][1], mesh.conn_unique_edges[iedge_g][2])
             ip2 = max(mesh.conn_unique_edges[iedge_g][1], mesh.conn_unique_edges[iedge_g][2])
 
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
