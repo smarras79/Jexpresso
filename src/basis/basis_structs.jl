@@ -23,29 +23,50 @@ mutable struct St_legendre{TFloat}
     q         :: TFloat
     dq        :: TFloat
 end
+abstract type AbstractIntegrationPointAndWeights end
 
-mutable struct St_Chebyshev{TFloat}
+mutable struct St_Chebyshev{TFloat} <:AbstractIntegrationPointAndWeights
     chebyshev ::TFloat
 end
 
-mutable struct St_lgl{TFloat}
+mutable struct St_lgl{TFloat} <:AbstractIntegrationPointAndWeights
     ξ::Array{TFloat}
     ω::Array{TFloat}
 end
 
-mutable struct St_lg{TFloat}
+mutable struct St_lg{TFloat} <:AbstractIntegrationPointAndWeights
     ξ::Array{TFloat}
     ω::Array{TFloat}
 end
 
-mutable struct St_cg{TFloat}
+mutable struct St_cg{TFloat} <:AbstractIntegrationPointAndWeights
     ξ::Array{TFloat}
     ω::Array{TFloat}
 end
 
-mutable struct St_cgl{TFloat}
+mutable struct St_cgl{TFloat} <:AbstractIntegrationPointAndWeights
     ξ::Array{TFloat}
     ω::Array{TFloat}
+end
+
+function build_Integration_points!(::AbstractIntegrationPointAndWeights,nop::TInt) end
+ 
+function build_Integration_points!(cg::St_cg, nop::TInt)
+  build_cg!(cg,nop)
+end
+
+function build_Integration_points!(cgl::St_cgl,nop::TInt)
+  build_cgl!(cgl,nop)
+end
+
+function build_Integration_points!(lg::St_lg,nop::TInt)
+  Legendre = St_legendre{TFloat}(0.0,0.0,0.0,0.0)
+  build_lg!(Legendre,lg,nop)
+end
+
+function build_Integration_points!(lgl::St_lgl,nop::TInt)
+  Legendre = St_legendre{TFloat}(0.0,0.0,0.0,0.0)
+  build_lgl!(Legendre,lgl,nop)
 end
 
 function build_lgl!(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
@@ -79,7 +100,8 @@ function build_lgl!(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
     return lgl;
 end
 
-function build_cg(cg::St_cg, nop::TInt)
+
+function build_cg!(cg::St_cg, nop::TInt)
     size::Int8=nop+1
     cg.ξ = zeros(Float64, size)
     cg.ω = zeros(Float64, size)
@@ -89,7 +111,7 @@ function build_cg(cg::St_cg, nop::TInt)
     return cg
 end
 
-function build_cgl(cgl::St_cgl, nop::TInt)
+function build_cgl!(cgl::St_cgl, nop::TInt)
     size::Int8=nop+1
     cgl.ξ = zeros(Float64, size)
     cgl.ω = zeros(Float64, size)
@@ -99,7 +121,7 @@ function build_cgl(cgl::St_cgl, nop::TInt)
     return cgl
 end
 
-function build_lg(Legendre::St_legendre,lg::St_lg,nop)
+function build_lg!(Legendre::St_legendre,lg::St_lg,nop)
     size::Int8=nop+1
     lg.ξ = zeros(Float64, size)
     lg.ω = zeros(Float64, size)

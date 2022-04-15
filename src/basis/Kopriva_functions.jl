@@ -853,7 +853,7 @@ function mthOrderPolynomialDerivativeMatrix(m,x)
         end
       end
     end
-    Dtemp=Dm
+    Dtemp.=Dm
   end
   return Dtemp
 end
