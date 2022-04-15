@@ -1,3 +1,4 @@
+include("basis_structs.jl")
 """ DiscreteFourrierCoefficients(f)
     f:: array of length N
     computes the Discrete fourrier coefficients of f
@@ -18,7 +19,7 @@ end
      f̃:: array of length N of discrete fourrier coefficients
      computes the fourrier interpolant of f at the point x using the coefficients f̃
      using Algorithm 2 of Kopriva
- """
+"""
 function FourierInterpolantFromModes(f̃,x)
   i=Complex(0,1)
   N=size(f̂)
@@ -42,7 +43,7 @@ function AlmostEqual(a,b)
       return false
     end
   else
-    if (abs(a-b)≤ϵ*abs(a)) && (abs(a-b)≤\epsilon*b)
+    if (abs(a-b)≤ϵ*abs(a)) && (abs(a-b)≤ϵ*abs(b))
       return true
     else
       return false
@@ -131,6 +132,7 @@ end
    using Algorithm 7 of Kopriva's book
 """
 function InitializeFFT(N,s)
+  w=zeros(Float64,N)
   if (s>0)
     s=1
   else
@@ -208,7 +210,7 @@ function  FFTOfTwoRealVectors_forward(x,y,w)
   X[1]=Z[1].re
   Y[1]=Z[1].im
   for k=1:N-1
-    X[k+1]=0.5*(Z[k+1]+conj(Z[N-k-1])/N
+    X[k+1]=0.5*(Z[k+1]+conj(Z[N-k-1]))/N
     Y[k+1]=(-im/2)*(Z[k+1]+conj(Z[N-k+1]))/N
   end
   return X,Y
@@ -412,15 +414,17 @@ end
    Implement sorted and ordered version if this is important for later
 """
 function FourierDerivativeMatrix(N)
+  D=zeros(Float64,N,N)
   for i=0:N-1
     D[i+1,i+1]=0
     for j=0:N-1
-      if (j≂̸i)
+      if (j != i)
         D[i+1,j+1]=0.5*(-1)^(i+j)*cot((i-j)*π/N)
-        D[i+1,i+1]=D[i+1,i+1]-D[i+1,j+1]
+        D[i+1,i+1] = D[i+1,i+1] - D[i+1,j+1]
       end
     end
   end
+  @info D
   return D
 end
 """
@@ -432,9 +436,10 @@ end
    either use use a BLAS library or implement our own optimized version (BLAS much more likely) This is for demonstration purposes and will likely be abandoned
 """
 function MxVDerivative(D,f)
-  N=size(f)
+  N=size(f,1)
+  Idf = zeros(Float64,N)
   for i=1:N
-    t=0
+    t=0.0
     for j=1:N
       t=t+D[i,j]*f[j]
     end
@@ -442,18 +447,20 @@ function MxVDerivative(D,f)
   end
   return Idf
 end
+
 """
-NOTE this ends the section on fourrier transform implementations,
-TODO implement 3D routines as necessary, Test vs FFTW
-Determine what can used from existing libraries FFTW, NUFFT etc.
+   NOTE this ends the section on fourrier transform implementations,
+   TODO implement 3D routines as necessary, Test vs FFTW
+   Determine what can used from existing libraries FFTW, NUFFT etc.
 """
+
 """
    InitializeFCosT(N)
    N::Integer
    Determines the N cosine and sine coefficients necessary for a fast
    cosine transform of an array of size N+1
 """
-function InitialzeCosT(N::TInt)
+function InitializeCosT(N)
   C=zeros(Float64,N+1)
   S=zeros(Float64,N+1)
   for j=0:N
@@ -472,7 +479,7 @@ end
    computes the fast cosine transform of a vector f using 
    algorithm 28 of Kopriva's book
 """
-function FastCosineTransform(f,w,C,S,s::TInt)
+function FastCosineTransform(f,w,C,S,s)
   N=size(f)-1
   for j=0:N-1
     e[j+1]=0.5*(f[j+1]+f[N-j+1])-S[j+1]*(f[j+1]-f[N-j+1])
@@ -529,14 +536,15 @@ end
    using algorithm 30 of Kopriva's book
 """
 function  BarycentricWeights(x)
-  N=size(x)-1
+  N=size(x,1)-1
+  w=zeros(Float64,N+1)
   for j=1:N+1
     w[j]=1
   end
   for j=2:N+1
     for k=1:j-1
-      w[k]=w[k]*(x[k]-x[j])
-      w[j]=w[j]*(x[j]-x[k])
+        w[k] = w[k]*(x[k]-x[j])
+        w[j] = w[j]*(x[j]-x[k])
     end
   end
   for j=1:N+1
@@ -557,12 +565,13 @@ end
 function LagrangeInterpolation(x,x_j,f,w)
   num::Float64=0.0
   den::Float64=0.0
-  N=size(x)-1
+  N=size(x_j,1)-1
+
   for j=1:N+1
     if (AlmostEqual(x,x_j[j]))
       return f[j]
     end
-    t=w[j]/(x-x_j[j])
+    t=w[j]/(x-x_j[j])+eps(Float64)
     num = num + t*f[j]
     den = den + t
   end
@@ -577,14 +586,14 @@ end
    using algorithm 32 of Kopriva's book
 """
 function PolynomialInterpolationMatrix(x,w,ξ)
-  M=size(ξ)
-  N=size(x)
+  M=size(ξ,1)
+  N=size(x,1)
   T = zeros(Float64,M,N)
   for k=1:M
     rowHasMatch = false
     for j=1:N
       T[k,j] = 0.0
-      if (AlmostEquals(ξ[k],x[j]))
+      if (AlmostEqual(ξ[k],x[j]))
         rowHasMatch = true
         T[k,j] = 1.0
       end
@@ -596,7 +605,7 @@ function PolynomialInterpolationMatrix(x,w,ξ)
         T[k,j] = t
         s=s+t
       end
-      for j =0:N
+      for j =1:N
         T[k,j] = T[k,j]/s
       end
     end
@@ -614,6 +623,7 @@ end
 function  InterpolateToNewPoints(T,f)
   M=size(T,1)
   N=size(T,2)
+  finterp=zeros(Float64,M)
   for i=1:M
     t=0.0
     for j=1:N
@@ -633,7 +643,8 @@ end
    using algorithm 34 of Kopriva's book
 """
 function LagrangeInterpolatingPolynomials(x,x_j,w)
-  N=size(x_j)
+  N=size(x_j,1)
+  l=zeros(Float64,N)
   xMatchesNode = false
   for j=1:N
     l[j]=0.0
@@ -647,7 +658,7 @@ function LagrangeInterpolatingPolynomials(x,x_j,w)
   end
   s=0.0
   for j=1:N
-    t=w[j]/(x-x[j])
+    t=w[j]/(x-x_j[j])
     l[j] = t
     s=s+t
   end
@@ -665,7 +676,7 @@ end
    η::y coordinates on the fine grid
    interpolates from coarse to a fine grid in 2D using algorithm 35 of Kopriva's book
 """
-function 2DCoarseToFineInterpolation(x,y,f,ξ,η)
+function D2CoarseToFineInterpolation(x,y,f,ξ,η)
   N_o = size(x)
   M_o = size(y)
   N_n = size(ξ)
@@ -682,6 +693,7 @@ function 2DCoarseToFineInterpolation(x,y,f,ξ,η)
   end
   return F
 end
+
 """
    3DCoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
    x::x coordinates on the coarse grid
@@ -693,7 +705,7 @@ end
    ζ::z coordinates on the fine grid
    interpolates from a coarse to a fine grid in 3D extending algorithm 35 of Kopriva's book
 """
-function 3DCoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
+function D3CoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
   N_o = size(x)
   M_o = size(y)
   P_o = size(z)
@@ -769,15 +781,19 @@ end
    !!!!TODO implement sorting to reduce round-off errors
 """
 function PolynomialDerivativeMatrix(x)
-  N=size(x)
+  N=size(x,1)
   w=BarycentricWeights(x)
+  D=zeros(Float64,N,N)
   for i=1:N
     D[i,i] = 0.0
     for j=1:N
-      if (j≂̸i)
+      if (j!=i)
         D[i,j] = (w[j]/w[i])/(x[i]-x[j])
-        D[i,i] = D[i,i] - D[i,j]
       end
+    end
+    Ds = sort(D[i,:],by=abs)
+    for j=1:N
+      D[i,i] = D[i,i] - Ds[j]
     end
   end
   return D
@@ -795,7 +811,7 @@ function CGLDerivativeMatrix(x,N)
       D[i,i] = (2*N^2+1)/6
     end
     for j =1:N+1
-      if(j≂̸i)
+      if(j!=i)
         if (j==1 || j == N+1)
           c̃j = 2
         else
@@ -819,25 +835,27 @@ end
    computes the mth Polynomial Derivative Matrix using the set of interpolation points x
    using algorithm 38 of Kopriva's book
 """
-function MthOrderPolynomialDerivativeMatrix(m,x)
+function mthOrderPolynomialDerivativeMatrix(m,x)
   w = BarycentricWeights(x)
-  D = PolynomialDerivativeMatrix(x)
-  N=size(x)
+  Dtemp = PolynomialDerivativeMatrix(x)
+  N=size(x,1)
   if (m == 1)
-    return D
+    return Dtemp
   end
-  for k=2:m
+  Dm = zeros(Float64,N,N)
+  for k=2:m 
     for i=1:N
-      D[i,i] = 0
+      Dm[i,i] = 0
       for j=1:N
-        if (j≂̸i)
-          D[i,i] = (k/(x[i]-x[j]))*((w[i]/w[j])*D[i,i] - D[i,j])
-          D[i,i] = D[i,i] - D[i,j]
+        if (j!=i)
+          Dm[i,j] = (k/(x[i]-x[j]))*((w[j]/w[i])*Dtemp[i,i] - Dtemp[i,j])
+          Dm[i,i] = Dm[i,i] - Dm[i,j]
         end
       end
     end
+    Dtemp.=Dm
   end
-  return D
+  return Dtemp
 end
 """
    EOMatrixDerivative(D,f)
@@ -897,7 +915,734 @@ function FastChebyshevDerivative(f)
   return Df
 end
 
+"""
+   FourierCollocationTimeDerivative(Φ,D)
+   Φ::Approximated function
+   D::Derivative matrix
+   ν::Diffusion coefficient
+   Computes the time derivative for advection diffusion equation
+   using the Fourrier Collocation method
+   Algorithm 41 of Koopriva's book
+"""
+function  FourierCollocationTimeDerivative(Φ,D)
+  F=MxVDerivative(D,Φ)
+  N=size(Φ,1)
+  for j=1:N
+    F[j] = ν*F[j]-Φ[j]
+  end
+  Φt = MxVDerivative(D,F)
+  return Φt
+end
+
+"""
+   CollocationStepByRK3(tn,Δt,Φ,D,ν,a,b,g)
+   tn::current time
+   Δt:: time step
+   Φ:: Approximated function
+   D:: Derivative matrix
+   ν:: Diffusion coefficient
+   a,b,g:: RK3 tableau
+   Advance the advection diffusion equation in time using RK3
+   Algorithm 42 of Kopriva's book
+"""
+function CollocationStepByRK3(tn,Δt,Φ,D,ν,a,b,g)
+  N=size(Φ,1)
+  G=zeros(Float64,N)
+  for m=1:3
+    t=tn + b[m] * Δt
+    Φt = FourierCollocationTimeDerivative(Φ,D)
+    for j=1:N
+      G[j] = a[m]*G[j] + Φt[j]
+      Φ[j] = Φ[j] + g[m]*Δt*G[j]
+    end
+  end
+  return Φ
+end
+
+"""
+   FourierCollocationDriver(N,NT,T,Φ,ν,a,b,g)
+   N::Number of collocation points
+   NT::number of time steps
+   T:: end time
+   Φ::Approximated function
+   ν::diffusion coefficients
+   a,b,g::RK3 tableau
+   A driver for the Fourrier Collocation method using RK3
+   Algorithm 43 of Kopriva's book
+"""
+
+function  FourierCollocationDriver(N,NT,T,Φ,ν,a,b,g)
+  N1=size(Φ,1)
+  D=FourierDerivativeMatrix(N1)
+  Δt = T/NT
+  tn =0.0
+  for n=0:NT-1
+    Φ = CollocationStepByRK3(tn,Δt,Φ,D,ν,a,b,g)
+    tn = (n+1)*Δt
+  end
+  return Φ
+end
 
 
 
+"""
+   ADTimeDerivative(Φ̂)
+   Φ̂::set of N+1 fourrier coefficients of Φ
+   ν::diffusion coefficient
+   Computes the time derivative of the fourrier coefficients for the solution Φ of an advection diffusion equation
+   uses Algorithm 44 of Kopriva's book
+"""
 
+function ADTimeDerivative(Φ̂,ν)
+  N=size(Φ̂,1)-1
+  N2=floor(Int64,N/2)
+  Φ̂t = zeros(Complex,N+1)
+  for k=1:N+1
+    iter = k-1-N2
+    Φ̂t[k] = -(im*iter + ν*iter^2)*Φ̂[k]
+  end
+  return Φ̂t
+end
+
+"""
+   FourrierGalerkinStep(tn,Δt,Φ̂,ν,a,b,g)
+   Φ̂::set of N+1 Fourrier coefficients of Φ
+   tn::current time
+   ν::diffusion coefficient
+   Δt::time step
+   a,b,g::RK3 tableau
+   Advance the advection diffusion equation in time using the RK3 time integrator
+   Algorithm 45 of Kopriva's book
+"""
+
+function FourrierGalerkinStep(tn,Δt,Φ̂,ν,a,b,g)
+  N=size(Φ̂,1)
+  G=zeros(Complex,N)
+  for m=1:3
+    t=tn+b[m]*Δt
+    Φ̂t=ADTimeDerivative(Φ̂,ν)
+    for k=1:N
+      G[k] = a[m]*G[k] + Φ̂t[k]
+      Φ̂[k] = Φ̂[k] + g[m]*Δt*G[k]
+    end
+  end
+  return Φ̂
+end
+
+"""
+   EvaluateFourierGalerkinSolution(x,Φ̂)
+   x::evaluation point
+   Φ̂::Set of N+1 Fourrier coefficients of Φ
+   evaluates the solution Φ at the point x using the Fourrier Coefficients Φ̂
+   Algorithm 46 of Kopriva's book
+"""
+
+function EvaluateFourierGalerkinSolution(x,Φ̂)
+  N=size(Φ̂,1)-1
+  N2=floor(Int64,N/2)
+  Φ::Complex=0.0
+  for k=1:N+1
+    iter=k-1-N2
+    Φ = Φ + Φ̂[k]*exp(im*iter*x)
+  end
+  return Φ
+end
+
+"""
+   FourierGalerkinDriver(Φ̂,N,NT,T,Nout,ν,a,b,g)
+   Φ̂:: initial Fourrier coefficients of Φ
+   N:: N number of fourrier coefficients of truncation
+   NT:: number of time steps
+   T:: end time
+   ν:: diffusion coefficient
+   a,b,g:: RK3 tableau
+   computes the solution of the advection diffusion equation at time T using the RK3
+   time integrator following Fourrier Galerkin method
+   Algorithm 47 of Kopriva's book
+"""
+
+function FourierGalerkinDriver(Φ̂,N,NT,T,Nout,ν,a,b,g)
+  Δt = T/NT
+  tn = 0.0
+  for n=0:NT-1
+    Φ̂=FourrierGalerkinStep(tn,Δt,Φ̂,ν,a,b,g)
+    tn=(n+1)*Δt
+  end
+  Δx = 2*π/Nout
+  x=zeros(Float64,Nout+1)
+  Φ=zeros(Complex,Nout+1)
+  for j=0:Nout
+    x[j+1] = j*Δx
+    Φ[j+1] = EvaluateFourierGalerkinSolution(x[j+1],Φ̂)
+  end
+  return Φ
+end
+#TODO build driver for scalar advection
+
+"""
+   DirectConvolutionSum(V̂,Ŵ)
+   V̂::Fourrier Coefficients of V
+   Ŵ::Fourrier Coeffiicients of W
+   computes the Direct convolutions sum for V and W
+   Algorithm48 of Kopriva's book
+"""
+
+function  DirectConvolutionSum(V̂,Ŵ)
+  N=size(V̂,1)-1
+  N2=floor(Int64,N/2)
+  VW=zeros(Complex,N+1)
+  for k=-N2:N2
+    iter=k+1+N2
+    VW[iter]=0.0
+    for p=max(-N2,k-N2):min(N2,N2+k)
+      iter1=p+1+N2
+      VW[iter] = VW[iter] + V̂[iter-iter1]*Ŵ[iter1]
+    end
+  end
+  return VW
+end
+
+"""
+   FastConvolutionSum(V̂,Ŵ)
+   V::Fourrier Coefficients of V
+   W::Fourrier Coefficients of W
+   computes the Fast Convolution sum for V and W
+   Algorithm 49 of Kopriva's book
+"""
+
+function FastConvolutionSum(V̂,Ŵ)
+  N=size(V̂,1)-1
+  N2=floor(Int64,N/2)
+  M=2*N
+  M2 = floor(Int64,M/2)
+  Ṽ=zeros(Complex,M+1)
+  W̃=zeros(Complex,M+1)
+  for k=0:N2
+    Ṽ[k+1] = V̂[k+1]
+    W̃[k+1] = Ŵ[k+1]
+  end
+  for k=-1:-N2/2:-1
+    Ṽ[M+1+k] = V̂[k+1+N]
+    W̃[M+1+k] = Ŵ[k+1+N]
+  end
+  w=InitializeFFT(M,-1)
+  V = Radix2FFT(Ṽ,w)
+  W = Radix2FFT(W̃,w)
+  Q=zeros(M)
+  for j=0:M-1
+    Q[j+1] = V[j+1]*W[j+1]
+  end
+  w=InitializeFFT(M,1)
+  Q̃=Radix2FFT(Q,w)
+  for k=0:N2
+    VW[k+1] = Q̃[k+1]
+  end
+  for k=-1:-N2:-1
+    VW[k+1+N] = Q̃[M+1+k]
+  end
+  return VW
+end
+
+"""
+   CollocationStepByRK3(tn,Δt,Φ,D,gL,gR)
+   tn::current time
+   Δt::time step
+   Φ::Approximated function
+   D::Derivative matrix
+   gL::Left side boundary condition
+   gR::right side boundary condition
+   a,b,g::RK3 tableau
+   o::2 for diffusion, 1 for advection, 3 for both
+   Advance the diffusion equation in time using RK3 and the collocation method
+   Algorithm 50 of Kopriva's book
+"""
+
+function  CollocationStepByRK3(tn,Δt,Φ,D,D2,gL,gR,a,b,g,o)
+  N=size(Φ,1)
+  G=zeros(Float64,N)
+  Φt=zeros(Float64,N)
+  for m=1:3
+    t=tn+b[m]*Δt
+    Φt = MxVDerivative(D2,Φ) - MxVDerivative(D,Φ)
+    for j=1:N
+      G[j] = a[m]*G[j] + Φt[j]
+      Φ[j] = Φ[j] + g[m]*Δt*G[j]
+    end
+  end
+  if (o==1)
+    Φ[1] = sinpi(-tn-Δt)
+    Φ[N] = sinpi(2-tn-Δt)
+  elseif (o==3)
+    Φ[1] = sinpi(-tn-Δt)*exp(-π^2*(tn+Δt))
+    Φ[N] = sinpi(2-tn-Δt)*exp(-π^2*(tn+Δt))
+  else
+    Φ[1] = gL
+    Φ[N] = gR
+  end
+  return Φ
+end
+
+"""
+   LegendreCollocationIntegrator(N,NT,Nout,T,Φ,a,b,g)
+   N::Number of points
+   NT:number of time steps
+   Nout::number of output points
+   T::end time
+   Φ:initial conditions
+   a,b,g::RK3 tableau
+   gL,gR:: Left and right boundary conditions
+   c::Advection coefficient
+   m::2 for diffusion, 1 for advection, 3 for both
+   ν::diffusion coefficient
+   solves the diffusion equation using a Legendre Collocation integrator operating on RK3
+   Algorithm 51 of Kopriva's book
+"""
+
+function  LegendreCollocationIntegrator(N,NT,Nout,T,Φ,a,b,g,gL,gR,ad)
+  Legendre = St_legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
+  lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
+                       zeros(TFloat, N+1))
+  LegendreGaussLobattoNodesAndWeights!(Legendre,lgl,N)
+  x=lgl.ξ
+  w=lgl.ω
+  D=zeros(Float64,N+1,N+1)
+  D2=zeros(Float64,N+1,N+1)
+  if (ad==3)
+    D=PolynomialDerivativeMatrix(x)
+    D2 = mthOrderPolynomialDerivativeMatrix(2,x)
+  elseif(ad==2)
+    D2 = mthOrderPolynomialDerivativeMatrix(2,x)
+  else
+    D = PolynomialDerivativeMatrix(x)
+  end
+  Δt = T/NT
+  tn=0.0
+  for n=0:NT-1
+    Φ=CollocationStepByRK3(tn,Δt,Φ,D,D2,gL,gR,a,b,g,ad)
+    tn =(n+1)*Δt
+  end
+  X=zeros(Float64,Nout+1)
+  for j=0:Nout
+    X[j+1]=-1+2*j/Nout
+  end
+  w=BarycentricWeights(x)
+  T=zeros(Float64,Nout+1,N)
+  T=PolynomialInterpolationMatrix(x,w,X)
+  ΦI = zeros(Float64,Nout+1)
+  ΦI = InterpolateToNewPoints(T,Φ)
+  return ΦI
+end
+
+
+"""
+   ModifiedLegendreBasis(nop,x)
+   nop::PolynomialOrder
+   x::EvaluationPoint
+   Evaluate the LegendreModified basis of order nop at point x
+   Algorithm 52 of Kopriva's book
+"""
+
+function ModifiedLegendreBasis(nop,x)
+  Legendre = St_legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
+  LegendreAndDerivativeAndQ!(Legendre,nop,x)
+  L1 = Legendre
+  LegendreAndDerivativeAndQ!(Legendre,nop+2,x)
+  L2= Legendre
+  Φ=L1.legendre - L2.legendre
+  Φ=Φ/sqrt(4*nop+6)
+end
+
+"""
+   EvaluateLegendreGalerkinSolution(N,x,Φ̂)
+   N::polynomial order
+   x::Evaluation point
+   Φ̂::N-2 Coefficients
+   Evaluate the Legendre Galerkin solution at the point x
+   Algorithm 53 of Kopriva's book
+"""
+
+function EvaluateLegendreGalerkinSolution(N,x,Φ̂)
+  Φ=0.0
+  for k=0:N-2
+    Φ = Φ +Φ̂[k+1]*ModifiedLegendreBasis(N,x)
+  end
+  return Φ
+end
+
+"""
+   InitTMatrix(N,p)
+   N::polynomial order
+   p::Even or odd index 0 or 1
+   Computes even or odd index coefficients of the tridiagonal Legendre Galerkin matrix
+   Algorithm 54 of Kopriva's book
+"""
+
+function InitMatrix(N,p)
+  d=zeros(Float64,N+1)
+  l=zeros(Float64,N)
+  u=zeros(Float64,N)
+  for j=1:N+1
+    d[j] =(1/sqrt(4*(2*(j-1)+p)+6))^2*(-1)*((-2/(2*(2*(j-1)+p)+1))+(-2/(2*(2*(j-1)+p)+5)))
+  end
+  for i=2:N+1
+    l[i-1] = (-2/(2*(2*(i-1)+p)+1))*(1/sqrt(4*(2*(j-1)+p)+6))*(1/sqrt(4*(2*(j-2)+p)+6))
+    u[i-1] = l[i-1]
+  end
+  return d,l,u
+end
+
+"""
+   TriDiagonalSolve(l,d,u,y)
+   l::lower diagonal
+   d::diagonal
+   u::upper diagonal
+   y:: rhs vector
+   Invert the Tridiagonal matrix of diagonal d, lower diagonal l and u
+   Algorithm 141 of Kopriva's book
+"""
+
+function  TriDiagonalSolve(l,d,u,y)
+  N=size(d,1)
+  d̂=zeros(Float64,N)
+  for j=1:N
+    d̂[j] = d[j]
+  end
+  for j=2:N
+    d̂[j] = d̂[j] - l[j-1]/d̂[j-1]*u[j-1]
+    y[j] = y[j] - l[j-1]/d̂[j-1]*y[j-1]
+  end
+  x=zeros(Float64,N)
+  x[N]=y[N]/d̂[N]
+  for j=N-1:1:-1
+    x[j] = (y[j]-u[j]*x[j+1])/d̂[j]
+  end
+  return x
+end
+
+"""
+   ModifiedCoefsFromLegendreCoefs(Φ̂)
+   ϕ̂::Legendre expansion coefficients
+   Computes the modified Legendre coefficients to verify boundary conditions
+   Algorithm 55 of Kopriva's book
+"""
+
+function  ModifiedCoefsFromLegendreCoefs(ϕ̂)
+  N=size(ϕ̂,1)-1
+  M=floor(Int64,N/2)
+  d,l,u = InitMatrix(M+1,0)
+  rhs= zeros(Float64,M+1)
+  b=zeros(Float64,M+1)
+  for j =1:M+1
+    iter = j-1
+    rhs[j] = (-2/(4*iter+5))*(1/sqrt(8*iter+6))*ϕ̂[2*iter+3] - (1/sqrt(8*iter+6)) * (-1)*((-2/(4*iter+5))+(-2/(4*iter+1))) * ϕ̂[2*iter+1]
+  end
+  b=TriDiagonalSolve(l,d,u,rhs)
+  for j =0:M
+    Φ̂[2*j+1] = b[j+1]
+  end
+  M=floor(Int64,N/2)-1
+  d,l,u = InitMatrix(M,1)
+  for j =1:M+1
+    iter = j-1
+    rhs[j] = (-2/(2*(2*iter+1)+5))*(1/sqrt(4*(2*iter+1)+6))*ϕ̂[2*iter+4] - (1/sqrt(4*(2*iter+1)+6)) * (-1)*((-2/(2*(2*iter+1)+5))+(-2/(2*(2*iter+1)+1))) * ϕ̂[2*iter+1]
+  end
+  b = TriDiagonalSolve(l,d,u,rhs)
+  for j =0:M
+    Φ̂[2*j+2] = b[j+1]
+  end
+  return Φ̂
+end
+
+"""
+   LegendreGalerkinStep(Δt,Φ̂n)
+   Δt::time step
+   Φn::Legendre Coefficients at time n
+   Advance one time step using the Trapezoidal rule using the Legendre Galerkin method
+   Algorithm 56 of Kopriva's book
+"""
+
+function LegendreGalerkinStep(Δt,Φ̂)
+  N=size(Φ̂,1)
+  #Even indexed coefficients
+  M=floor(Int64,(N-1)/2)
+  d,l,u = InitMatrix(M+1,0)
+  rhs= zeros(Float64,M+1)
+  rhs[1] = (d[1]-Δt/2)*Φ̂n[1] + u[1]*Φ̂n[3]
+  for j=2:M
+    iter = j-1
+    rhs[j] = l[iter]*Φ̂n[2*(iter-1)+1]+(d[j]-Δt/2)*Φ̂n[2*iter+1] + u[j] * Φ̂n[2*j]
+  end
+  rhs[M+1] = (d[M+1]-Δt/2)*Φ̂n[2*M+1]+l[M]*Φn[2*(M-1)+1]
+  for j=1:M+1
+    d[j] = d[j] + Δt/2
+  end
+  Φ̂ = TriDiagonalSolve(l,d,u,rhs)
+  Φ̂n1 = zeros(Float64,N)
+  for j=0:M
+    Φ̂n1[2*j+1] = Φ̂[j+1]
+  end
+  #Odd indexed coefficients
+  M=floor(Int64,(N-1)/2)-1
+  d,l,u = InitMatrix(M+1,1)
+  rhs[1] = (d[1]-Δt/2)*Φ̂n[2] + u[1]*Φ̂n[4]
+  for j=2:M
+    iter = j-1
+    rhs[j] = l[iter]*Φ̂n[2*(iter-1)+2]+(d[j]-Δt/2)*Φ̂n[2*iter+2] + u[j] * Φ̂n[2*j+1]
+  end
+  rhs[M+1] = (d[M+1]-Δt/2)*Φ̂n[2*M+2]+l[M]*Φn[2*(M-1)+2]
+  for j=1:M+1
+    d[j] = d[j] + Δt/2
+  end
+  Φ̂ = TriDiagonalSolve(l,d,u,rhs)
+  for j=0:M
+    Φ̂n1[2*j+2] = Φ̂[j+1]
+  end
+  return Φ̂n1
+end
+
+"""
+   LegendreGalerkinDriver((N,NT,T,Nout,Φ,a,b,g)
+   N::Order of the approximation
+   NT::number of time steps
+   Nout::number of output points
+   T::final time
+   Φ̂:: approximated solution coefficients
+   a,b,g:: RK3 tableau
+   Driver for the Legendre Galerkin method
+"""
+
+function LegendreGalerkinDriver(N,NT,T,Nout,Φ̂,a,b,g)
+  Δt = T/Nout
+  tn = 0.0
+  for n=0:NT-1
+    Φ̂=LegendreGalerkinStep(Δt,Φ̂)
+    tn = (n+1)*Δt
+  end
+  Δx=2*π/Nout
+  x=zeros(Float64,Nout+1)
+  Φ=zeros(Float64,Nout+1)
+  for j =0:Nout
+    x[j+1] = j*Δx
+    Φ[j+1] = EvaluateLegendreGalerkinSolution(x[j+1],Φ̂)
+  end
+  return Φ
+end
+
+
+"""
+   CGDerivativeMatrix(N)
+   N::Polynomial order
+   Generates the Derivative matrix for a Continuous Galerkin method
+   Algorithm 57 of Kopriva's book
+"""
+
+function  CGDerivativeMatrix(N)
+  Legendre = St_legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
+  lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
+                       zeros(TFloat, N+1))
+  LegendreGaussLobattoNodesAndWeights!(Legendre, lgl,N)
+  x=lgl.ξ
+  w=lgl.ω
+  D = PolynomialDerivativeMatrix(x)
+  G=zeros(Float64,N+1,N+1)
+  for j=1:N+1
+    for n=1:N+1
+      s=0.0
+      for k=1:N+1
+        s=s+D[k,n]*D[k,j]*w[k]
+      end
+      G[j,n]=s/w[j]
+    end
+  end
+  return G
+end
+"""
+   CGDriver(N,NT,Nout,T,Φ,a,b,g,gL,gR)
+   N::Order of approximation
+   NT::number of time steps
+   Nout::Number of outputs
+   Φ::approximated solution
+   a,b,g::RK3 tableau
+   gL,gR::boundary conditions
+   CG Driver
+"""
+function  CGDriver(N,NT,Nout,T,Φ,a,b,g,gL,gR)
+  D = zeros(Float64,N+1,N+1)
+  D2 = -CGDerivativeMatrix(N)
+  Δt = T/NT
+  tn=0.0
+  for n=0:NT-1
+    Φ=CollocationStepByRK3(tn,Δt,Φ,D,D2,gL,gR,a,b,g,2)
+    tn =(n+1)*Δt
+  end
+    X=zeros(Float64,Nout+1)
+  for j=0:Nout
+    X[j+1]=-1+2*j/Nout
+  end
+  w=BarycentricWeights(x)
+  T=zeros(Float64,Nout+1,N)
+  T=PolynomialInterpolationMatrix(x,w,X)
+  ΦI = zeros(Float64,Nout+1)
+  ΦI = InterpolateToNewPoints(T,Φ)
+  return ΦI
+end
+
+"""
+   NodalDiscontinuousGalerkin
+   N::Polynomial order
+   D̂::Derivative matrix
+   lL:: left boundary lagrange interprolant
+   lR:: right boundary lagrange interpolant
+   Φ:: Solution Array
+   A class for the Nodal Discontinuous Galerkin method
+   Algorithm 58 of Kopriva's book
+"""
+
+mutable struct NodalDiscontinuousGalerkin
+  N::TInt
+  D̂::Array{TFloat}
+  lL::Array{TFloat}
+  lR::Array{TFloat}
+  w::Array{TFloat}
+  Φ::Array{TFloat}
+end
+
+"""
+   BuildNodalDiscontinuousGalerkin(N)
+   N::Polynomial order
+   Construct the NodalDiscontinuousGalerkin struct
+   Algorithm 59 of Kopriva's book
+"""
+
+function  buildNodalDiscontinuousGalerkin!(N,DG::NodalDiscontinuousGalerkin)
+  DG.N = N
+  Legendre = St_legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
+  lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
+           zeros(TFloat, N+1))
+  LegendreGaussLobattoNodesAndWeights!(Legendre,lgl,N)
+  x=lgl.ξ
+  w=lgl.ω
+  DG.w = w
+  wB = BarycentricWeights(x)
+  DG.lL = LagrangeInterpolatingPolynomials(-1.0,x,wB)
+  DG.lR = LagrangeInterpolatingPolynomials(1.0,x,wB)
+  D= PolynomialDerivativeMatrix(x)
+  for j=1:N+1
+    for i=1:N+1
+      DG.D̂[i,j] = -D[j,i]*w[j]/w[i]
+    end
+  end
+end
+
+"""
+   DGDerivative(DG,ΦL,ΦR,Φ)
+   DG::Discontinuous Galerkin class
+   ΦL::boundary values left
+   ΦR::boundary values right
+   Φ::Approximated function
+   Computes the first spatial derivative via the DG approximation
+   Algorithm 60 of Kopriva's book
+"""
+
+function  DGDerivative(DG::NodalDiscontinuousGalerkin,ΦL,ΦR,Φ)
+  Φ1 = MxVDerivative(DG.D̂,Φ)
+  N=DG.N
+  for j=1:N+1
+    Φ1[j] = Φ1[j] + (ΦR*DG.lR[j] - ΦL*DG.lL[j])/DG.w[j]
+  end
+  return Φ1
+end
+
+"""
+   InterpolateToBoundary(Φ,l)
+   Φ::Nodal values
+   l::interpolating polynomial
+   Interpolates the nodal values to the boundary
+   Part of Algorithm 61 of Kopriva's book
+"""
+function  InterpolateToBoundary(Φ,l)
+  interpolatedValue = 0.0
+  N=size(Φ,1)
+  for j=1:N
+    interpolatedValue = interpolatedValue + l[j] * Φ[j]
+  end
+  return interpolatedValue
+end
+
+"""
+   DGTimeDerivative(DG,t,c)
+   DG::Discontinous Galerkin class
+   t::time
+   c::wave speed
+   g::boundary value
+   Determines the time derivative for the DG approximation
+   Algorithm 61 of Kopriva's book
+"""
+
+function  DGTimeDerivative(DG::NodalDiscontinuousGalerkin,t,c,g,Δt,tn)
+  if (c>0)
+    ΦL= sinpi(-t)
+    ΦR = InterpolateToBoundary(DG.Φ,DG.lR)
+  else
+    ΦR=sinpi(2-t)
+    ΦL = InterpolateToBoundary(DG.Φ,DG.lL)
+  end
+  Φt = -c * DGDerivative(DG,ΦL,ΦR,DG.Φ)
+  return Φt
+end
+
+#TODO Replace interpolate to boundary with BLAS x dot for efficiency in the future
+"""
+   DGStepByRK3(tn,Δt,DG,a,b,g,c,gb)
+   tn::current time
+   Δt:: time step
+   DG ::Discontinous Galerkin class
+   a,b,g::RK3 tableau
+   c::wave speed
+   gb:: boundary values
+   Advances the DG method in time using RK3
+   Algorithm 62 of Kopriva's book
+"""
+
+function  DGStepByRK3!(tn,Δt,DG::NodalDiscontinuousGalerkin,a,b,g,c,gb)
+  N=size(DG.Φ,1)
+  G=zeros(Float64,N)
+  for m=1:3
+    t = tn + b[m] * Δt
+    Φt = DGTimeDerivative(DG,t,c,gb,Δt,tn)
+    for j=1:N
+      G[j] = a[m] * G[j] + Φt[j]
+      DG.Φ[j] = DG.Φ[j] + g[m] * Δt*G[j]
+    end
+  end
+end
+
+"""
+   DGDriver(N,NT,Nout,T,DG,a,b,g,c,gb)
+   N::Order of approximation
+   NT::Number of time steps
+   Nout::Number of output points
+   DG::DG class
+   a,b,g::RK3 tableau
+   c::scalar transport coefficient
+   gb::boundary values
+"""
+
+function  DGDriver!(N,NT,Nout,T,DG::NodalDiscontinuousGalerkin,a,b,g,c,gb)
+  Δt = T/NT
+  tn=0.0
+  for n=0:NT-1
+    DGStepByRK3!(tn,Δt,DG,a,b,g,c,gb)
+    tn =(n+1)*Δt
+  end
+  X=zeros(Float64,Nout+1)
+  for j=0:Nout
+    X[j+1]=-1+2*j/Nout
+  end
+  w=BarycentricWeights(x)
+  T=zeros(Float64,Nout+1,N)
+  T=PolynomialInterpolationMatrix(x,w,X)
+  ΦI = zeros(Float64,Nout+1)
+  ΦI = InterpolateToNewPoints(T,DG.Φ)
+  return ΦI
+end
