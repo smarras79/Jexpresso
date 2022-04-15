@@ -71,6 +71,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
+    ngl::Union{TInt, Missing} = nop + 1
 
     NEDGES_EL::Union{TInt, Missing}  = 12
     NFACES_EL::Union{TInt, Missing}  =  6
@@ -81,8 +82,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(8))
     cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(8))
     
-    #conn_ho           = @SArray zeros(nelem, nop+1, nop+1, nop+1)
-    conn_ho           = Array{Int64, 1}(undef, nelem*(nop+1))
+    conn_ho           = Array{Int64, 1}(undef, nelem*ngl)
     conn_unique_edges = Array{Int64, 2}(undef,  1, 2)
     conn_unique_faces = Array{Int64, 2}(undef,  1, 4)
     conn_edge_el      = Array{Int64, 3}(undef,  nelem, 12, 2)
@@ -192,28 +192,39 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     #
     # Connectivity matrices
     #
-    resize!(mesh.conn_ho, mesh.nelem*(mesh.nop+1)^(mesh.nsd))
-    if (mesh.nsd == 1)
-        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.nop+1)
-    elseif (mesh.nsd == 2)
-        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.nop+1, mesh.nop+1)
-    elseif (mesh.nsd == 3)
-        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.nop+1, mesh.nop+1, mesh.nop+1)
-    end
     mesh.cell_node_ids     = model.grid.cell_node_ids
     mesh.conn_unique_faces = get_face_nodes(model, FACE) #faces --> 4 nodes
     mesh.conn_unique_edges = get_face_nodes(model, EDGE) #edges --> 2 nodes
+    ngl = mesh.ngl
     
+    resize!(mesh.conn_ho, mesh.nelem*(mesh.ngl)^(mesh.nsd))
+    if (mesh.nsd == 1)
+        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.ngl)
+    elseif (mesh.nsd == 2)
+        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.ngl, mesh.ngl)
+    elseif (mesh.nsd == 3)
+        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
+
+        for iel = 1:mesh.nelem
+            mesh.conn_ho[iel,1,1,1]                      = mesh.cell_node_ids[iel][3]
+            mesh.conn_ho[iel,mesh.ngl,1,1]               = mesh.cell_node_ids[iel][2]
+            mesh.conn_ho[iel,mesh.ngl,1,mesh.ngl]        = mesh.cell_node_ids[iel][1]
+            mesh.conn_ho[iel,1,1,mesh.ngl]               = mesh.cell_node_ids[iel][4]
+
+            mesh.conn_ho[iel,1,mesh.ngl,1]               = mesh.cell_node_ids[iel][7]
+            mesh.conn_ho[iel,mesh.ngl,mesh.ngl,1]        = mesh.cell_node_ids[iel][6]
+            mesh.conn_ho[iel,mesh.ngl,mesh.ngl,mesh.ngl] = mesh.cell_node_ids[iel][5]
+            mesh.conn_ho[iel,1,mesh.ngl,mesh.ngl]        = mesh.cell_node_ids[iel][8]
+        end
     #=@info size(get_isboundary_face(topology,mesh.nsd-1))
     for i=1:length(get_isboundary_face(topology,mesh.nsd-1))
         #Get nodes of each element's face
         if get_isboundary_face(topology,mesh.nsd-1)[i] == true
     #        @info get_face_nodes(model,EDGE) #edges
         end
+    end=#
     end
-    =#
-
-
+    
     open("./COORDS_LO.dat", "w") do f
 
         for ip = 1:mesh.npoin_linear
