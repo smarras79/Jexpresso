@@ -195,7 +195,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.cell_node_ids     = model.grid.cell_node_ids
     mesh.conn_unique_faces = get_face_nodes(model, FACE) #faces --> 4 nodes
     mesh.conn_unique_edges = get_face_nodes(model, EDGE) #edges --> 2 nodes
-    ngl = mesh.ngl
     
     resize!(mesh.conn_ho, mesh.nelem*(mesh.ngl)^(mesh.nsd))
     if (mesh.nsd == 1)
@@ -204,17 +203,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
         mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.ngl, mesh.ngl)
     elseif (mesh.nsd == 3)
         mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
-
+        
         for iel = 1:mesh.nelem
-            mesh.conn_ho[iel,1,1,1]                      = mesh.cell_node_ids[iel][3]
+            mesh.conn_ho[iel,1,1,1]                      = mesh.cell_node_ids[iel][4]
             mesh.conn_ho[iel,mesh.ngl,1,1]               = mesh.cell_node_ids[iel][2]
             mesh.conn_ho[iel,mesh.ngl,1,mesh.ngl]        = mesh.cell_node_ids[iel][1]
-            mesh.conn_ho[iel,1,1,mesh.ngl]               = mesh.cell_node_ids[iel][4]
+            mesh.conn_ho[iel,1,1,mesh.ngl]               = mesh.cell_node_ids[iel][3]
 
-            mesh.conn_ho[iel,1,mesh.ngl,1]               = mesh.cell_node_ids[iel][7]
+            mesh.conn_ho[iel,1,mesh.ngl,1]               = mesh.cell_node_ids[iel][8]
             mesh.conn_ho[iel,mesh.ngl,mesh.ngl,1]        = mesh.cell_node_ids[iel][6]
             mesh.conn_ho[iel,mesh.ngl,mesh.ngl,mesh.ngl] = mesh.cell_node_ids[iel][5]
-            mesh.conn_ho[iel,1,mesh.ngl,mesh.ngl]        = mesh.cell_node_ids[iel][8]
+            mesh.conn_ho[iel,1,mesh.ngl,mesh.ngl]        = mesh.cell_node_ids[iel][7]
         end
     #=@info size(get_isboundary_face(topology,mesh.nsd-1))
     for i=1:length(get_isboundary_face(topology,mesh.nsd-1))
