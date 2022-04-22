@@ -368,7 +368,6 @@ function populate_face_in_elem!(face_in_elem::Array{Int64, 3}, nelem, NFACES_EL,
 			face_in_elem[jel,jfac,2] = iel
 			
 			#@info " SHARED FACE:  face %d of ELEMENT %d is shared with face %d of ELEMENT %d - (%d %d %d %d) = (%d %d %d %d)\n", ifac+1,iel+1, jfac+1, jel+1, conn_face_el_sort[iel,ifac,1], conn_face_el_sort[iel,ifac,2], conn_face_el_sort[iel,ifac,3], conn_face_el_sort[iel,ifac,4],  conn_face_el_sort[jel,jfac,1], conn_face_el_sort[jel,jfac,2], conn_face_el_sort[jel,jfac,3], conn_face_el_sort[jel,jfac,4]
-			
 			iface = iface + 1;
 		    end
 		end
@@ -475,11 +474,12 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
         
         ip  = tot_linear_poin + tot_edges_internal_nodes + 1
         for iface_g = 1:mesh.nfaces
-            
-            ip1 = mesh.conn_unique_faces[iface_g][4]
-            ip2 = mesh.conn_unique_faces[iface_g][2]
-            ip3 = mesh.conn_unique_faces[iface_g][1]
-            ip4 = mesh.conn_unique_faces[iface_g][3]
+
+            #GGNS numbering
+            @show ip1 = mesh.conn_unique_faces[iface_g][1]
+            @show ip2 = mesh.conn_unique_faces[iface_g][3]
+            @show ip3 = mesh.conn_unique_faces[iface_g][4]
+            @show ip4 = mesh.conn_unique_faces[iface_g][2]
             
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
@@ -562,15 +562,17 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
 
         ip  = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + 1
         for iel_g = 1:mesh.nelem
+
+            #CGNS numbering
+            @show ip1 = mesh.cell_node_ids[iel_g][2]
+            @show ip2 = mesh.cell_node_ids[iel_g][6]
+            @show ip3 = mesh.cell_node_ids[iel_g][8]
+            @show ip4 = mesh.cell_node_ids[iel_g][4]
+            @show ip5 = mesh.cell_node_ids[iel_g][1]
+            @show ip6 = mesh.cell_node_ids[iel_g][5]
+            @show ip7 = mesh.cell_node_ids[iel_g][7]
+            @show ip8 = mesh.cell_node_ids[iel_g][3]
             
-            ip1 = mesh.cell_node_ids[iel_g][4]
-            ip2 = mesh.cell_node_ids[iel_g][2]
-            ip3 = mesh.cell_node_ids[iel_g][1]
-            ip4 = mesh.cell_node_ids[iel_g][3]
-            ip5 = mesh.cell_node_ids[iel_g][8]
-            ip6 = mesh.cell_node_ids[iel_g][6]
-            ip7 = mesh.cell_node_ids[iel_g][5]
-            ip8 = mesh.cell_node_ids[iel_g][7]
             
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
