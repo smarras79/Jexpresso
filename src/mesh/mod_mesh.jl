@@ -487,6 +487,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
         for iedge_el = 1:NEDGES_EL
 
             ip1 = mesh.conn_edge_el[iel, iedge_el, 1]
+            
+            
         end
         
     end
