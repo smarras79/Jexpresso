@@ -209,11 +209,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.conn_unique_edges = get_face_nodes(model, EDGE) #edges --> 2 nodes
     
     if (mesh.nsd == 1)
-        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.ngl)
+        mesh.conn_ho = reshape(mesh.conn_ho, mesh.ngl, mesh.nelem)
     elseif (mesh.nsd == 2)
-        mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.ngl, mesh.ngl)
+        mesh.conn_ho = reshape(mesh.conn_ho, mesh.ngl, mesh.ngl,  mesh.nelem)
     elseif (mesh.nsd == 3)
-        #mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
+        #mesh.conn_ho = reshape(mesh.conn_ho, mesh.ngl, mesh.ngl, mesh.ngl, mesh.nelem)
         mesh.conn_ho = reshape(mesh.conn_ho, mesh.nelem, mesh.ngl*mesh.ngl*mesh.ngl)
         
         for iel = 1:mesh.nelem
@@ -489,43 +489,79 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
         end=#
         
         #Populate connectivity:
-        for iel = 1:mesh.nelem
-
-            ip  = tot_linear_poin + 1
-            for iedge_el = 1:mesh.NEDGES_EL
-
+        isrepeated::Array{Int64, 2} = zeros(12, mesh.nelem)
+        ip  = tot_linear_poin + 1
+        for iedge_el = 1:mesh.NEDGES_EL
+            for iel = 1:mesh.nelem
                 ip1 = mesh.conn_edge_el[iel, iedge_el, 1]
                 ip2 = mesh.conn_edge_el[iel, iedge_el, 2]
-
-                irepeated = 0
-                for iedge_g = 1:mesh.nedges
-                    
-                    ip11 = mesh.conn_unique_edges[iedge_g][1]
-                    ip22 = mesh.conn_unique_edges[iedge_g][2]
-
-                    if ( (ip1 === ip11 && ip2 === ip22) || (ip1 === ip22 && ip2 === ip11) )
+                
+                for jel = iel+1:mesh.nelem
+                    for jedge_el = 1:mesh.NEDGES_EL
+                        ip11 = mesh.conn_edge_el[jel, jedge_el, 1]
+                        ip22 = mesh.conn_edge_el[jel, jedge_el, 2]
                         
-                        # Repeated edge
-                        @info irepeated = irepeated + 1
-                        
-                    else
-                        for l=2:ngl-1
-                            ξ = lgl.ξ[l];
+                        if ( (ip1 == ip11 && ip2 == ip22) || (ip1 == ip22 && ip2 == ip11) && isrepeated[iedge_el, iel] == 0 )
+                            isrepeated[iedge_el, iel] = 1
                             
-                            #mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-	                    #mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-	                    #mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
+                        else
+                            for l=2:ngl-1
+                                ξ = lgl.ξ[l];
+                                
+                                #mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
+	                        #mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
+	                        #mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
+                                
+                                #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                                
+                                #@show ip = ip + 1
+                            end
                             
-                            #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
-                            
-                            #@show ip = ip + 1
                         end
-                        
-                    end
-                end                       
-            end        
+                    end                       
+                end        
+            end
         end
-        
+
+        #second pass:
+        #Populate connectivity:
+        isrepeated::Array{Int64, 2} = zeros(12, mesh.nelem)
+        ip  = tot_linear_poin + 1
+        nrepeated = 0
+        for iedge_el = 1:mesh.NEDGES_EL
+            for iel = 1:mesh.nelem
+                ip1 = mesh.conn_edge_el[iel, iedge_el, 1]
+                ip2 = mesh.conn_edge_el[iel, iedge_el, 2]
+                
+                for jel = iel+1:mesh.nelem
+                    for jedge_el = 1:mesh.NEDGES_EL
+                        ip11 = mesh.conn_edge_el[jel, jedge_el, 1]
+                        ip22 = mesh.conn_edge_el[jel, jedge_el, 2]
+                        
+                        if ( (ip1 == ip11 && ip2 == ip22) || (ip1 == ip22 && ip2 == ip11))
+                            nrepeated = nrepeated + 1
+                            # Repeated edge
+                            @info "Repeated edge ip1 : " iel jel  ip1 ip11 ip2 ip22 nrepeated
+                            isrepeated[iedge_el, iel] = 1
+                            
+                        else
+                            for l=2:ngl-1
+                                ξ = lgl.ξ[l];
+                                
+                                #mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
+	                        #mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
+	                        #mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
+                                
+                                #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                                
+                                #@show ip = ip + 1
+                            end
+                            
+                        end
+                    end                       
+                end        
+            end
+        end
     end #do f
 
     
