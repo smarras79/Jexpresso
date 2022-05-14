@@ -87,6 +87,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     conn_unique_edges = ElasticArray{Int64}(undef,  1, 2)
     conn_unique_faces = ElasticArray{Int64}(undef,  1, 4)
 
+    conn_edge_L2G     = ElasticArray{Int64}(undef, 1, NEDGES_EL, nelem)
     conn_edge_el      = ElasticArray{Int64}(undef, 2, NEDGES_EL, nelem)
     conn_face_el      = ElasticArray{Int64}(undef, 4, NFACES_EL, nelem)
     face_in_elem      = ElasticArray{Int64}(undef, 2, NFACES_EL, nelem)
@@ -197,8 +198,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     resize!(mesh.x, mesh.npoin_linear)
     resize!(mesh.y, mesh.npoin_linear)
     resize!(mesh.z, mesh.npoin_linear)
-    resize!(mesh.conn_edge_el, 2, mesh.NEDGES_EL, mesh.nelem)
-    resize!(mesh.conn_face_el, 4, mesh.NFACES_EL, mesh.nelem)
+
+    resize!(mesh.conn_edge_L2G, 1, mesh.NEDGES_EL, mesh.nelem)
+    resize!(mesh.conn_edge_el,  2, mesh.NEDGES_EL, mesh.nelem)
+    resize!(mesh.conn_face_el,  4, mesh.NFACES_EL, mesh.nelem)
     resize!(mesh.conn_ho, mesh.nelem*(mesh.ngl)^(mesh.nsd))
     
     #
@@ -292,45 +295,45 @@ function populate_conn_edge_el!(mesh::St_mesh)
         
 	# Edges bottom face:
 	iedg_el = 1
-        mesh.conn_edge_el[iel,iedg_el,1] = ip1
-	mesh.conn_edge_el[iel,iedg_el,2] = ip2
+        mesh.conn_edge_el[1, iedg_el, iel] = ip1
+	mesh.conn_edge_el[2, iedg_el, iel] = ip2
 	iedg_el = 2
-	mesh.conn_edge_el[iel,iedg_el,1] = ip2
-	mesh.conn_edge_el[iel,iedg_el,2] = ip3
+	mesh.conn_edge_el[1, iedg_el, iel] = ip2
+	mesh.conn_edge_el[2, iedg_el, iel] = ip3
 	iedg_el = 3
-	mesh.conn_edge_el[iel,iedg_el,1] = ip3
-	mesh.conn_edge_el[iel,iedg_el,2] = ip4
+	mesh.conn_edge_el[1, iedg_el, iel] = ip3
+	mesh.conn_edge_el[2, iedg_el, iel] = ip4
 	iedg_el = 4
-	mesh.conn_edge_el[iel,iedg_el,1] = ip4
-	mesh.conn_edge_el[iel,iedg_el,2] = ip1
+	mesh.conn_edge_el[1, iedg_el, iel] = ip4
+	mesh.conn_edge_el[2, iedg_el, iel] = ip1
 
 	#Vertical edges
 	iedg_el = 5
-	mesh.conn_edge_el[iel,iedg_el,1] = ip1
-	mesh.conn_edge_el[iel,iedg_el,2] = ip5
+	mesh.conn_edge_el[1, iedg_el, iel] = ip1
+	mesh.conn_edge_el[2, iedg_el, iel] = ip5
 	iedg_el = 6
-	mesh.conn_edge_el[iel,iedg_el,1] = ip2
-	mesh.conn_edge_el[iel,iedg_el,2] = ip6
+	mesh.conn_edge_el[1, iedg_el, iel] = ip2
+	mesh.conn_edge_el[2, iedg_el, iel] = ip6
 	iedg_el = 7
-	mesh.conn_edge_el[iel,iedg_el,1] = ip3
-	mesh.conn_edge_el[iel,iedg_el,2] = ip7
+	mesh.conn_edge_el[1, iedg_el, iel] = ip3
+	mesh.conn_edge_el[2, iedg_el, iel] = ip7
 	iedg_el = 8
-	mesh.conn_edge_el[iel,iedg_el,1] = ip4
-	mesh.conn_edge_el[iel,iedg_el,2] = ip8
+	mesh.conn_edge_el[1, iedg_el, iel] = ip4
+	mesh.conn_edge_el[2, iedg_el, iel] = ip8
         
         #Edges top face
 	iedg_el = 9
-	mesh.conn_edge_el[iel,iedg_el,1] = ip5
-	mesh.conn_edge_el[iel,iedg_el,2] = ip6
+	mesh.conn_edge_el[1, iedg_el, iel] = ip5
+	mesh.conn_edge_el[2, iedg_el, iel] = ip6
 	iedg_el = 10
-	mesh.conn_edge_el[iel,iedg_el,1] = ip6
-	mesh.conn_edge_el[iel,iedg_el,2] = ip7
+	mesh.conn_edge_el[1, iedg_el, iel] = ip6
+	mesh.conn_edge_el[2, iedg_el, iel] = ip7
 	iedg_el = 11
-	mesh.conn_edge_el[iel,iedg_el,1] = ip7
-	mesh.conn_edge_el[iel,iedg_el,2] = ip8
+	mesh.conn_edge_el[1, iedg_el, iel] = ip7
+	mesh.conn_edge_el[2, iedg_el, iel] = ip8
 	iedg_el = 12
-	mesh.conn_edge_el[iel,iedg_el,1] = ip8
-	mesh.conn_edge_el[iel,iedg_el,2] = ip5
+	mesh.conn_edge_el[1, iedg_el, iel] = ip8
+	mesh.conn_edge_el[2, iedg_el, iel] = ip5
 	
     end
 
@@ -361,40 +364,40 @@ function populate_conn_face_el!(mesh::St_mesh)
         # i.e. what nodes belong to a given local face in iel:
         #
         face_el = 1
-        mesh.conn_face_el[iel, face_el, 1] = ip1
-        mesh.conn_face_el[iel, face_el, 2] = ip4
-        mesh.conn_face_el[iel, face_el, 3] = ip3
-        mesh.conn_face_el[iel, face_el, 4] = ip2
+        mesh.conn_face_el[1, face_el, iel] = ip1
+        mesh.conn_face_el[2, face_el, iel] = ip4
+        mesh.conn_face_el[3, face_el, iel] = ip3
+        mesh.conn_face_el[4, face_el, iel] = ip2
 
         face_el = 2
-        mesh.conn_face_el[iel, face_el, 1] = ip1
-        mesh.conn_face_el[iel, face_el, 2] = ip2
-        mesh.conn_face_el[iel, face_el, 3] = ip6
-        mesh.conn_face_el[iel, face_el, 4] = ip5
+        mesh.conn_face_el[1, face_el, iel] = ip1
+        mesh.conn_face_el[2, face_el, iel] = ip2
+        mesh.conn_face_el[3, face_el, iel] = ip6
+        mesh.conn_face_el[4, face_el, iel] = ip5
         
         face_el = 3
-        mesh.conn_face_el[iel, face_el, 1] = ip2
-        mesh.conn_face_el[iel, face_el, 2] = ip3
-        mesh.conn_face_el[iel, face_el, 3] = ip7
-        mesh.conn_face_el[iel, face_el, 4] = ip6
+        mesh.conn_face_el[1, face_el, iel] = ip2
+        mesh.conn_face_el[2, face_el, iel] = ip3
+        mesh.conn_face_el[3, face_el, iel] = ip7
+        mesh.conn_face_el[4, face_el, iel] = ip6
         
         face_el = 4
-        mesh.conn_face_el[iel, face_el, 1] = ip3
-        mesh.conn_face_el[iel, face_el, 2] = ip4
-        mesh.conn_face_el[iel, face_el, 3] = ip8
-        mesh.conn_face_el[iel, face_el, 4] = ip7
+        mesh.conn_face_el[1, face_el, iel] = ip3
+        mesh.conn_face_el[2, face_el, iel] = ip4
+        mesh.conn_face_el[3, face_el, iel] = ip8
+        mesh.conn_face_el[4, face_el, iel] = ip7
         
         face_el = 5
-        mesh.conn_face_el[iel, face_el, 1] = ip1
-        mesh.conn_face_el[iel, face_el, 2] = ip5
-        mesh.conn_face_el[iel, face_el, 3] = ip8
-        mesh.conn_face_el[iel, face_el, 4] = ip4
+        mesh.conn_face_el[1, face_el, iel] = ip1
+        mesh.conn_face_el[2, face_el, iel] = ip5
+        mesh.conn_face_el[3, face_el, iel] = ip8
+        mesh.conn_face_el[4, face_el, iel] = ip4
         
         face_el = 6
-        mesh.conn_face_el[iel, face_el, 1] = ip5
-        mesh.conn_face_el[iel, face_el, 2] = ip6
-        mesh.conn_face_el[iel, face_el, 3] = ip7
-        mesh.conn_face_el[iel, face_el, 4] = ip8
+        mesh.conn_face_el[1, face_el, iel] = ip5
+        mesh.conn_face_el[2, face_el, iel] = ip6
+        mesh.conn_face_el[3, face_el, iel] = ip7
+        mesh.conn_face_el[4, face_el, iel] = ip8
         
     end
     
@@ -415,11 +418,11 @@ function populate_face_in_elem!(face_in_elem::Array{Int64, 3}, nelem, NFACES_EL,
 			    conn_face_el_sort[iel,ifac,4] === conn_face_el_sort[jel,jfac,4] && 
 			    iel ≠ jel) 
 			
-			face_in_elem[iel,ifac,1] = iel
-			face_in_elem[iel,ifac,2] = jel
+			face_in_elem[1, ifac, iel] = iel
+			face_in_elem[2, ifac, iel] = jel
 			
-			face_in_elem[jel,jfac,1] = jel
-			face_in_elem[jel,jfac,2] = iel
+			face_in_elem[1, jfac, jel] = jel
+			face_in_elem[2, jfac, jel] = iel
 			
 			#@info " SHARED FACE:  face %d of ELEMENT %d is shared with face %d of ELEMENT %d - (%d %d %d %d) = (%d %d %d %d)\n", ifac+1,iel+1, jfac+1, jel+1, conn_face_el_sort[iel,ifac,1], conn_face_el_sort[iel,ifac,2], conn_face_el_sort[iel,ifac,3], conn_face_el_sort[iel,ifac,4],  conn_face_el_sort[jel,jfac,1], conn_face_el_sort[jel,jfac,2], conn_face_el_sort[jel,jfac,3], conn_face_el_sort[jel,jfac,4]
 			iface = iface + 1;
@@ -487,48 +490,81 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
                 ip = ip + 1
             end
         end=#
-        
-        #Populate connectivity:
-        isrepeated::Array{Int64, 2} = zeros(12, mesh.nelem)
-        edge_repeated_g::Array{Int64} = zeros(mesh.nelem*mesh.NEDGES_EL)
-        ip = tot_linear_poin + 1
-        nrepeated = 0
-        for iedge_el = 1:mesh.NEDGES_EL
+
+        #
+        # Populate connectivity:
+        #
+        isrepeated::Array{Int64, 2}      = zeros(12, mesh.nelem)
+        edge_repeated_g::Array{Int64, 2} = zeros(mesh.NEDGES_EL*mesh.nelem, 3)
+        ip  = tot_linear_poin + 1
+        #
+        # First pass:
+        #
+        for iedge_g = 1:mesh.nedges
+            ip1 = mesh.conn_unique_edges[iedge_g][1]
+            ip2 = mesh.conn_unique_edges[iedge_g][2]
+            
+            nrepeated = 1
             for iel = 1:mesh.nelem
-                ip1 = mesh.conn_edge_el[iel, iedge_el, 1]
-                ip2 = mesh.conn_edge_el[iel, iedge_el, 2]
+                for iedge_el = 1:mesh.NEDGES_EL
+                    ip11 = mesh.conn_edge_el[1, iedge_el, iel]
+                    ip22 = mesh.conn_edge_el[2, iedge_el, iel]
+ 
+                    if ( ((ip1 == ip11 && ip2 == ip22) || (ip1 == ip22 && ip2 == ip11)) )
+                        
+                        nrepeated = nrepeated + 1
+                        mesh.conn_edge_L2G[1, iedge_el, iel] = iedge_g;
+                        
+                        #@info jedge_g = jedge_g - 1
+                        edge_repeated_g[iedge_g, 1] = edge_repeated_g[iedge_g, 1] + 1
+                        edge_repeated_g[iedge_g, 2] = iel
+                        edge_repeated_g[iedge_g, 3] = iedge_el
+                    end                       
+                end
+            end
+        end
 
-                iedge_g = 1
-                for jel = iel+1:mesh.nelem
-                    for jedge_el = 1:mesh.NEDGES_EL
-                        ip11 = mesh.conn_edge_el[jel, jedge_el, 1]
-                        ip22 = mesh.conn_edge_el[jel, jedge_el, 2]
+        @info " conn_edge_L2G =:"
+        for iel = 1:mesh.nelem
+            for iedge_el = 1:mesh.NEDGES_EL
+                iedge_g = mesh.conn_edge_L2G[1, iedge_el, iel]
+                @info " -- iel, iedge_el --> Iedge global repeated " iel iedge_el  mesh.conn_edge_L2G[1, iedge_el, iel], edge_repeated_g[iedge_g, 1]
+            end
+        end
+        @show "MAX N EDGES "  maximum(mesh.conn_edge_L2G)
+        
+        #end
+        #@info "JEDGE G " jedge_g
+        return
+        #
+        # second pass:
+        #
+        for iedge_g = 1:mesh.nedges
+            ip1 = mesh.conn_unique_edges[iedge_g][1]
+            ip2 = mesh.conn_unique_edges[iedge_g][2]
+            
+            for iel = 1:mesh.nelem
+                for iedge_el = 1:mesh.NEDGES_EL
+                    ip11 = mesh.conn_edge_el[1, iedge_el, iel]
+                    ip22 = mesh.conn_edge_el[2, iedge_el, iel]
+                    
+                    
+                    if (edge_repeated_g[iedge_g][1] < 1)
+                        for l=2:ngl-1
+                            ξ = lgl.ξ[l];
+                            #ip = mesh.
 
-                        if ( (ip1 == ip11 && ip2 == ip22) || (ip1 == ip22 && ip2 == ip11) )
-                            #
-                            # Repeated edge
-                            #
-                            nrepeated = nrepeated + 1
-                            @info "Repeated edge ip1 : " iel jel  ip1 ip11 ip2 ip22 nrepeated
-                            isrepeated[iedge_el, iel] = jedge_el
-                            edge_repeated_g[iedge_g] =+ 1
-                            
-                            @show " iedge is repeated " iedge_g edge_repeated_g[iedge_g]
-                        else
-                            for l=2:ngl-1
-                                ξ = lgl.ξ[l];
-                                
                                 #mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
 	                        #mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
 	                        #mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
                                 
                                 #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                                 #@show ip = ip + 1
-                            end
                         end
-                        iedge_g = iedge_g + 1
+                    else
+                        a=1
                     end
-                end
+                end                            
             end
         end
     end #do f
