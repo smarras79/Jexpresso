@@ -88,6 +88,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     conn_unique_faces = ElasticArray{Int64}(undef,  1, 4)
 
     conn_edge_L2G     = ElasticArray{Int64}(undef, 1, NEDGES_EL, nelem)
+    conn_face_L2G     = ElasticArray{Int64}(undef, 1, NFACES_EL, nelem)
+    
     conn_edge_el      = ElasticArray{Int64}(undef, 2, NEDGES_EL, nelem)
     conn_face_el      = ElasticArray{Int64}(undef, 4, NFACES_EL, nelem)
     face_in_elem      = ElasticArray{Int64}(undef, 2, NFACES_EL, nelem)
@@ -200,6 +202,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     resize!(mesh.z, mesh.npoin_linear)
 
     resize!(mesh.conn_edge_L2G, 1, mesh.NEDGES_EL, mesh.nelem)
+    resize!(mesh.conn_face_L2G, 1, mesh.NFACES_EL, mesh.nelem)
+    
     resize!(mesh.conn_edge_el,  2, mesh.NEDGES_EL, mesh.nelem)
     resize!(mesh.conn_face_el,  4, mesh.NFACES_EL, mesh.nelem)
     resize!(mesh.conn_ho, mesh.nelem*(mesh.ngl)^(mesh.nsd))
@@ -269,10 +273,14 @@ lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
                            zeros(mesh.nop+1))
 build_lgl!(Legendre, lgl, mesh.nop)
 
+#Edges
 populate_conn_edge_el!(mesh)
 add_high_order_nodes_edges!(mesh, lgl)
+#Faces
+populate_conn_face_el!(mesh)
 add_high_order_nodes_faces!(mesh, lgl)
-add_high_order_nodes_volumes!(mesh, lgl)
+#Volume
+#add_high_order_nodes_volumes!(mesh, lgl)
 
 #writevtk(model,"gmsh_grid")
 end
@@ -470,75 +478,59 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     open("./COORDS_HO_edges.dat", "w") do f
 
         ip  = tot_linear_poin + 1
-        #=for iedge_g = 1:mesh.nedges
-            
-            ip1 = min(mesh.conn_unique_edges[iedge_g][1], mesh.conn_unique_edges[iedge_g][2])
-            ip2 = max(mesh.conn_unique_edges[iedge_g][1], mesh.conn_unique_edges[iedge_g][2])
-
-            x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
-            x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
-
-            for l=2:ngl-1
-                ξ = lgl.ξ[l];
-                
-               # mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-	       # mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-	       # mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
-                
-               # @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
-                
-                ip = ip + 1
-            end
-        end=#
-
+        
         #
         # Populate connectivity:
         #
         isrepeated::Array{Int64, 2}      = zeros(12, mesh.nelem)
         edge_repeated_g::Array{Int64, 2} = zeros(mesh.NEDGES_EL*mesh.nelem, 3)
-        ip  = tot_linear_poin + 1
         #
         # First pass:
         #
         for iedge_g = 1:mesh.nedges
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
+            α = [ip1, ip2]
             
             nrepeated = 1
             for iel = 1:mesh.nelem
                 for iedge_el = 1:mesh.NEDGES_EL
                     ip11 = mesh.conn_edge_el[1, iedge_el, iel]
                     ip22 = mesh.conn_edge_el[2, iedge_el, iel]
- 
-                    if ( ((ip1 == ip11 && ip2 == ip22) || (ip1 == ip22 && ip2 == ip11)) )
-                        
+                    β = [ip11, ip22]
+                    
+                    if ( issetequal(α, β) )
                         nrepeated = nrepeated + 1
                         mesh.conn_edge_L2G[1, iedge_el, iel] = iedge_g;
                         
-                        #@info jedge_g = jedge_g - 1
                         edge_repeated_g[iedge_g, 1] = edge_repeated_g[iedge_g, 1] + 1
                         edge_repeated_g[iedge_g, 2] = iel
                         edge_repeated_g[iedge_g, 3] = iedge_el
-                    end                       
+                    end                     
                 end
             end
         end
 
         @info " conn_edge_L2G =:"
         for iel = 1:mesh.nelem
+            @info "IEL " iel
             for iedge_el = 1:mesh.NEDGES_EL
-                iedge_g = mesh.conn_edge_L2G[1, iedge_el, iel]
-                @info " -- iel, iedge_el --> Iedge global repeated " iel iedge_el  mesh.conn_edge_L2G[1, iedge_el, iel], edge_repeated_g[iedge_g, 1]
+                
+            
+                @show " iedge_g"
+                @show iedge_g = mesh.conn_edge_L2G[1, iedge_el, iel]
+                @show ip11 = mesh.conn_edge_el[1, iedge_el, iel]
+                @show ip22 = mesh.conn_edge_el[2, iedge_el, iel]
+                @info "  iedge_el --> Iedge global repeated " iedge_el mesh.conn_edge_L2G[1, iedge_el, iel], edge_repeated_g[iedge_g, 1]
             end
         end
-        @show "MAX N EDGES "  maximum(mesh.conn_edge_L2G)
+        @show "MAX N EDGES "  maximum(mesh.conn_edge_L2G)      
         
-        #end
-        #@info "JEDGE G " jedge_g
-        return
+        
         #
         # second pass:
-        #
+        #=
+        ip = tot_linear_poin + 1
         for iedge_g = 1:mesh.nedges
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
@@ -548,25 +540,24 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
                     ip11 = mesh.conn_edge_el[1, iedge_el, iel]
                     ip22 = mesh.conn_edge_el[2, iedge_el, iel]
                     
-                    
-                    if (edge_repeated_g[iedge_g][1] < 1)
+                    if (edge_repeated_g[iedge_g][1] < 2)
                         for l=2:ngl-1
                             ξ = lgl.ξ[l];
-                            #ip = mesh.
 
-                                #mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-	                        #mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-	                        #mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
-                                
-                                #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
-                                #@show ip = ip + 1
+                            mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
+	                    mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
+	                    mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
+
+                            mesh.conn_ho[iel, 8 + (l - 1)] = ip
+                            #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                            ip = ip + 1
                         end
                     else
                         a=1
                     end
                 end                            
             end
-        end
+        end =#
     end #do f
         
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
@@ -608,18 +599,78 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
     open("./COORDS_HO_faces.dat", "w") do f
         
         ip  = tot_linear_poin + tot_edges_internal_nodes + 1
+
+        
+        #
+        # Populate connectivity:
+        #
+        isrepeated::Array{Int64, 2}      = zeros(12, mesh.nelem)
+        face_repeated_g::Array{Int64, 2} = zeros(mesh.NFACES_EL*mesh.nelem, 3)
+        #
+        # First pass:
+        #
         for iface_g = 1:mesh.nfaces
 
             #GGNS numbering
-            @show ip1 = mesh.conn_unique_faces[iface_g][1]
-            @show ip2 = mesh.conn_unique_faces[iface_g][2]
-            @show ip3 = mesh.conn_unique_faces[iface_g][4]
-            @show ip4 = mesh.conn_unique_faces[iface_g][3]
-
+            ip1 = mesh.conn_unique_faces[iface_g][1]
+            ip2 = mesh.conn_unique_faces[iface_g][2]
+            ip3 = mesh.conn_unique_faces[iface_g][4]
+            ip4 = mesh.conn_unique_faces[iface_g][3]
+            
+            α = [ip1, ip2, ip3, ip4]
+            
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
             x3, y3, z3 = mesh.x[ip3], mesh.y[ip3], mesh.z[ip3]
             x4, y4, z4 = mesh.x[ip4], mesh.y[ip4], mesh.z[ip4]
+            
+            nrepeated = 1
+            for iel = 1:mesh.nelem
+                for iface_el = 1:mesh.NFACES_EL
+                    
+                    ip11 = mesh.conn_face_el[1, iface_el, iel]
+                    ip44 = mesh.conn_face_el[2, iface_el, iel]
+                    ip33 = mesh.conn_face_el[3, iface_el, iel]
+                    ip22 = mesh.conn_face_el[4, iface_el, iel]
+
+                    β = [ip11, ip22, ip33, ip44]
+                    if ( issetequal(α, β) )
+                        nrepeated = nrepeated + 1
+                        mesh.conn_face_L2G[1, iface_el, iel] = iface_g;
+                        
+                        face_repeated_g[iface_g, 1] = face_repeated_g[iface_g, 1] + 1
+                        face_repeated_g[iface_g, 2] = iel
+                        face_repeated_g[iface_g, 3] = iface_el
+                    end
+                    
+                end
+            end
+        end
+
+        @info " "
+        @info " conn_face_L2G =:"
+        for iel = 1:mesh.nelem
+            @info "IEL " iel
+            for iface_el = 1:mesh.NFACES_EL
+                
+            
+                @show " iface_g"
+                @show iface_g = mesh.conn_face_L2G[1, iface_el, iel]
+                @show ip11 = mesh.conn_face_el[1, iface_el, iel]
+                @show ip44 = mesh.conn_face_el[2, iface_el, iel]
+                @show ip33 = mesh.conn_face_el[3, iface_el, iel]
+                @show ip22 = mesh.conn_face_el[4, iface_el, iel]
+                @info "  iface_el --> Iface global repeated " iface_el mesh.conn_face_L2G[1, iface_el, iel], face_repeated_g[iface_g, 1]
+            end
+        end
+        @show "MAX N FACES "  maximum(mesh.conn_face_L2G)
+        
+        
+
+        #
+        # second pass:
+        #=
+        for iface_g = 1:mesh.nfaces
             
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
@@ -648,7 +699,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
 	            ip = ip + 1
                 end
             end
-        end 
+        end =#
     end #file
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
