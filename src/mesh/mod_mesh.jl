@@ -490,63 +490,30 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
         
         #Populate connectivity:
         isrepeated::Array{Int64, 2} = zeros(12, mesh.nelem)
-        edge_repeated_g::Array{Int64} = zeros(mesh.nedges)
-        ip  = tot_linear_poin + 1
-        for iel = 1:mesh.nelem
-            for iedge_el = 1:mesh.NEDGES_EL
-                
-                ip1 = mesh.conn_edge_el[iel, iedge_el, 1]
-                ip2 = mesh.conn_edge_el[iel, iedge_el, 2]
-                
-                iedge_g = 0
-                for jel = 1:mesh.nelem
-                    for jedge_el = 1:mesh.NEDGES_EL
-                        ip11 = mesh.conn_edge_el[jel, jedge_el, 1]
-                        ip22 = mesh.conn_edge_el[jel, jedge_el, 2]
-                        
-                        #isrepeated[iedge_el, iel] = 1
-                        @show "edge_g " iedge_g = iedge_g + 1
-                            
-                        if ( (ip1 == ip11 && ip2 == ip22) || (ip1 == ip22 && ip2 == ip11) && isrepeated[iedge_el, iel] == 0 )
-                            isrepeated[iedge_el, iel] = 1
-                            edge_repeated_g[iedge_g] =+ 1
-                        else
-                            
-                            #for l=2:ngl-1
-                                #ξ = lgl.ξ[l];                                
-                                #mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-	                        #mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-	                        #mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
-                                
-                                #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)    
-                                #@show ip = ip + 1
-                            #end
-                        end
-                    end                       
-                end        
-            end
-        end
-
-        #second pass:
-        #Populate connectivity:
-        ip  = tot_linear_poin + 1
+        edge_repeated_g::Array{Int64} = zeros(mesh.nelem*mesh.NEDGES_EL)
+        ip = tot_linear_poin + 1
         nrepeated = 0
         for iedge_el = 1:mesh.NEDGES_EL
             for iel = 1:mesh.nelem
                 ip1 = mesh.conn_edge_el[iel, iedge_el, 1]
                 ip2 = mesh.conn_edge_el[iel, iedge_el, 2]
-                
+
+                iedge_g = 1
                 for jel = iel+1:mesh.nelem
                     for jedge_el = 1:mesh.NEDGES_EL
                         ip11 = mesh.conn_edge_el[jel, jedge_el, 1]
                         ip22 = mesh.conn_edge_el[jel, jedge_el, 2]
-                        
-                        if ( (ip1 == ip11 && ip2 == ip22) || (ip1 == ip22 && ip2 == ip11))
-                            nrepeated = nrepeated + 1
+
+                        if ( (ip1 == ip11 && ip2 == ip22) || (ip1 == ip22 && ip2 == ip11) )
+                            #
                             # Repeated edge
+                            #
+                            nrepeated = nrepeated + 1
                             @info "Repeated edge ip1 : " iel jel  ip1 ip11 ip2 ip22 nrepeated
-                            isrepeated[iedge_el, iel] = 1
+                            isrepeated[iedge_el, iel] = jedge_el
+                            edge_repeated_g[iedge_g] =+ 1
                             
+                            @show " iedge is repeated " iedge_g edge_repeated_g[iedge_g]
                         else
                             for l=2:ngl-1
                                 ξ = lgl.ξ[l];
@@ -556,18 +523,16 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
 	                        #mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
                                 
                                 #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
-                                
                                 #@show ip = ip + 1
                             end
-                            
                         end
-                    end                       
-                end        
+                        iedge_g = iedge_g + 1
+                    end
+                end
             end
         end
     end #do f
-
-    
+        
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
     return 
 end
