@@ -481,7 +481,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     tot_faces_internal_nodes = mesh.nfaces*(ngl-2)*(ngl-2)
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)*(ngl-2)*(ngl-2)
 
-    #Increase number of grid points from linear count to titak high-order points
+    #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_edges_internal_nodes + tot_faces_internal_nodes + tot_vol_internal_nodes
 
     if length(mesh.x_ho) < mesh.npoin
@@ -525,20 +525,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
             end
         end
     end
-    #=@info " conn_edge_L2G =:"
-    for iel = 1:mesh.nelem
-        @info " iel "
-        @info iel
-        for iedge_el = 1:mesh.NEDGES_EL
-
-            ip11 = mesh.conn_edge_el[1, iedge_el, iel]
-            ip22 = mesh.conn_edge_el[2, iedge_el, iel]
-            
-            iedge_g = mesh.conn_edge_L2G[1, iedge_el, iel]
-            @info " -- iel, iedge_el --> Iedge global repeated " iedge_el ip11 ip22  mesh.conn_edge_L2G[1, iedge_el, iel], edge_repeated_g[iedge_g, 1]
-        end
-    end
-    @show "MAX N EDGES "  maximum(mesh.conn_edge_L2G)=#
     
     open("./COORDS_HO_edges.dat", "w") do f
         #
@@ -546,6 +532,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
         #
         ip = tot_linear_poin + 1
         for iedge_g = 1:mesh.nedges
+            
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
             
@@ -569,31 +556,31 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
                 @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip = ip + 1
             end
-        end
-        
-        #
-        # Second pass: populate mesh.conn_ho[1:8+mesh.NEDGES_EL*(ngl-2), ∀ elem]\n")
-        #
-        for iel = 1:mesh.nelem
-            iconn = 1
-            for iedge_el = 1:mesh.NEDGES_EL
-                iedge_g = mesh.conn_edge_L2G[1, iedge_el, iel]
-                for l = 2:ngl-1
-                    ip = conn_edge_poin[iedge_g, l]
-                    mesh.conn_ho[8 + iconn, iel] = ip #OK
-                    iconn = iconn + 1
-                end
-            end
-        end
-        for iel = 1:mesh.nelem
-            @show length(mesh.conn_ho[:, iel])
-            for l=1:8+mesh.NEDGES_EL*(ngl-2)
-                @printf(" %d ", mesh.conn_ho[l, iel]) #OK
-            end
-            @printf("\n ")
-        end #OK
-        
+        end         
     end #do f
+    
+    #
+    # Second pass: populate mesh.conn_ho[1:8+mesh.NEDGES_EL*(ngl-2), ∀ elem]\n")
+    #
+    for iel = 1:mesh.nelem
+        iconn = 1
+        for iedge_el = 1:mesh.NEDGES_EL
+            iedge_g = mesh.conn_edge_L2G[1, iedge_el, iel]
+            for l = 2:ngl-1
+                ip = conn_edge_poin[iedge_g, l]
+                mesh.conn_ho[8 + iconn, iel] = ip #OK
+                iconn = iconn + 1
+            end
+        end
+    end
+    for iel = 1:mesh.nelem
+        @show length(mesh.conn_ho[:, iel])
+        for l=1:8+mesh.NEDGES_EL*(ngl-2)
+            @printf(" %d ", mesh.conn_ho[l, iel]) #OK
+        end
+        @printf("\n ")
+    end #OK
+    
     @show "EDGES INTERNAL NODES " tot_edges_internal_nodes
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
     return 
@@ -602,8 +589,7 @@ end
 function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
 
     if (mesh.nop < 2) return end
-    
-    
+        
     x1, y1, z1 = Float64(0.0), Float64(0.0), Float64(0.0)
     x2, y2, z2 = Float64(0.0), Float64(0.0), Float64(0.0)
     x3, y3, z3 = Float64(0.0), Float64(0.0), Float64(0.0)
@@ -619,8 +605,8 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)*(ngl-2)*(ngl-2)
 
     #Increase number of grid points from linear count to total high-order points
-    @info mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + tot_vol_internal_nodes
-   
+    mesh.npoin = mesh.npoin_linear + tot_edges_internal_nodes + tot_faces_internal_nodes + tot_vol_internal_nodes
+    
 
     if length(mesh.x_ho) < mesh.npoin
         resize!(mesh.x_ho, mesh.npoin)
@@ -632,82 +618,67 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
         resize!(mesh.z_ho, mesh.npoin)
     end
     
-    open("./COORDS_HO_faces.dat", "w") do f
-        
-        ip  = tot_linear_poin + tot_edges_internal_nodes + 1
+     
+    isrepeated::Array{Int64, 2}      = zeros(12, mesh.nelem)
+    face_repeated_g::Array{Int64, 2} = zeros(mesh.NFACES_EL*mesh.nelem, 3)
+    conn_face_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl*mesh.ngl)
 
+    #
+    # Populate mesh.conn_face_L2G:
+    #
+    for iface_g = 1:mesh.nfaces
+
+        #GGNS numbering
+        ip1 = mesh.conn_unique_faces[iface_g][1]
+        ip2 = mesh.conn_unique_faces[iface_g][2]
+        ip3 = mesh.conn_unique_faces[iface_g][4]
+        ip4 = mesh.conn_unique_faces[iface_g][3]
+        α = [ip1, ip2, ip3, ip4]
         
-        #
-        # Populate connectivity:
-        #
-        isrepeated::Array{Int64, 2}      = zeros(12, mesh.nelem)
-        face_repeated_g::Array{Int64, 2} = zeros(mesh.NFACES_EL*mesh.nelem, 3)
+        for iel = 1:mesh.nelem
+            for iface_el = 1:mesh.NFACES_EL
+                
+                ip11 = mesh.conn_face_el[1, iface_el, iel]
+                ip44 = mesh.conn_face_el[2, iface_el, iel]
+                ip33 = mesh.conn_face_el[3, iface_el, iel]
+                ip22 = mesh.conn_face_el[4, iface_el, iel]
+                β = [ip11, ip22, ip33, ip44]
+                
+                if ( issetequal(α, β) )
+                    mesh.conn_face_L2G[1, iface_el, iel] = iface_g
+                    
+                    face_repeated_g[iface_g, 1] = face_repeated_g[iface_g, 1] + 1
+                    face_repeated_g[iface_g, 2] = iel
+                    face_repeated_g[iface_g, 3] = iface_el
+                end
+                
+            end
+        end
+    end
+    
+    open("./COORDS_HO_faces.dat", "w") do f
         #
         # First pass:
         #
+        ip  = tot_linear_poin + tot_edges_internal_nodes + 1
         for iface_g = 1:mesh.nfaces
-
+            
             #GGNS numbering
             ip1 = mesh.conn_unique_faces[iface_g][1]
             ip2 = mesh.conn_unique_faces[iface_g][2]
             ip3 = mesh.conn_unique_faces[iface_g][4]
             ip4 = mesh.conn_unique_faces[iface_g][3]
-            
-            α = [ip1, ip2, ip3, ip4]
+
+            conn_face_poin[iface_g, 1] = ip1
+            conn_face_poin[iface_g, 2] = ip2
+            conn_face_poin[iface_g, 3] = ip4
+            conn_face_poin[iface_g, 4] = ip3
             
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
             x3, y3, z3 = mesh.x[ip3], mesh.y[ip3], mesh.z[ip3]
             x4, y4, z4 = mesh.x[ip4], mesh.y[ip4], mesh.z[ip4]
-            
-            nrepeated = 1
-            for iel = 1:mesh.nelem
-                for iface_el = 1:mesh.NFACES_EL
-                    
-                    ip11 = mesh.conn_face_el[1, iface_el, iel]
-                    ip44 = mesh.conn_face_el[2, iface_el, iel]
-                    ip33 = mesh.conn_face_el[3, iface_el, iel]
-                    ip22 = mesh.conn_face_el[4, iface_el, iel]
-
-                    β = [ip11, ip22, ip33, ip44]
-                    if ( issetequal(α, β) )
-                        nrepeated = nrepeated + 1
-                        mesh.conn_face_L2G[1, iface_el, iel] = iface_g;
-                        
-                        face_repeated_g[iface_g, 1] = face_repeated_g[iface_g, 1] + 1
-                        face_repeated_g[iface_g, 2] = iel
-                        face_repeated_g[iface_g, 3] = iface_el
-                    end
-                    
-                end
-            end
-        end
-
-        #=@info " "
-        @info " conn_face_L2G =:"
-        for iel = 1:mesh.nelem
-            @info "IEL " iel
-            for iface_el = 1:mesh.NFACES_EL
-                
-            
-                @show " iface_g"
-                @show iface_g = mesh.conn_face_L2G[1, iface_el, iel]
-                @show ip11 = mesh.conn_face_el[1, iface_el, iel]
-                @show ip44 = mesh.conn_face_el[2, iface_el, iel]
-                @show ip33 = mesh.conn_face_el[3, iface_el, iel]
-                @show ip22 = mesh.conn_face_el[4, iface_el, iel]
-                @info "  iface_el --> Iface global repeated " iface_el mesh.conn_face_L2G[1, iface_el, iel], face_repeated_g[iface_g, 1]
-            end
-        end
-        @show "MAX N FACES "  maximum(mesh.conn_face_L2G)=#
-        
-        
-
-        #
-        # second pass:
-        #=
-        for iface_g = 1:mesh.nfaces
-            
+  
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
                 
@@ -730,13 +701,70 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
 		                      + z3*(1 + ξ)*(1 + ζ)*0.25
 		                      + z4*(1 - ξ)*(1 + ζ)*0.25)
 
+                    @error " ARRIVATO QUI"
+                    #I = ... 1 + l*() + k*() See GIRALDO'S BOOK
+                    conn_face_poin[iface_g, l] = ip
+                    
                     @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                     
 	            ip = ip + 1
                 end
             end
-        end =#
-    end #file
+        end
+    end #do f
+
+    #=@info " "
+    @info " conn_face_L2G =:"
+    for iel = 1:mesh.nelem
+    @info "IEL " iel
+    for iface_el = 1:mesh.NFACES_EL
+    
+    
+    @show " iface_g"
+    @show iface_g = mesh.conn_face_L2G[1, iface_el, iel]
+    @show ip11 = mesh.conn_face_el[1, iface_el, iel]
+    @show ip44 = mesh.conn_face_el[2, iface_el, iel]
+    @show ip33 = mesh.conn_face_el[3, iface_el, iel]
+    @show ip22 = mesh.conn_face_el[4, iface_el, iel]
+    @info "  iface_el --> Iface global repeated " iface_el mesh.conn_face_L2G[1, iface_el, iel], face_repeated_g[iface_g, 1]
+    end
+    end
+    @show "MAX N FACES "  maximum(mesh.conn_face_L2G)=#
+    
+
+    #
+    # second pass:
+    #=
+    for iface_g = 1:mesh.nfaces
+    
+    for l=2:ngl-1
+    ξ = lgl.ξ[l];
+    
+    for m=2:ngl-1
+    ζ = lgl.ξ[m];
+    
+    
+    mesh.x_ho[ip] = (x1*(1 - ξ)*(1 - ζ)*0.25
+    + x2*(1 + ξ)*(1 - ζ)*0.25
+    + x3*(1 + ξ)*(1 + ζ)*0.25			
+    + x4*(1 - ξ)*(1 + ζ)*0.25)
+    
+    mesh.y_ho[ip] =  (y1*(1 - ξ)*(1 - ζ)*0.25
+    + y2*(1 + ξ)*(1 - ζ)*0.25
+    + y3*(1 + ξ)*(1 + ζ)*0.25
+    + y4*(1 - ξ)*(1 + ζ)*0.25)
+    
+    mesh.z_ho[ip] =  (z1*(1 - ξ)*(1 - ζ)*0.25
+    + z2*(1 + ξ)*(1 - ζ)*0.25
+    + z3*(1 + ξ)*(1 + ζ)*0.25
+    + z4*(1 - ξ)*(1 + ζ)*0.25)
+
+    @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+    
+    ip = ip + 1
+    end
+    end
+    end =#
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
     
