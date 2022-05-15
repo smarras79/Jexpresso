@@ -307,7 +307,7 @@ add_high_order_nodes_faces!(mesh, lgl)
 end
 
 function populate_conn_edge_el!(mesh::St_mesh)
-
+    
     for iel = 1:mesh.nelem
 
         #
@@ -372,7 +372,6 @@ end #populate_edge_el!
 
 
 function populate_conn_face_el!(mesh::St_mesh)
-
     
     for iel = 1:mesh.nelem
         
@@ -561,13 +560,18 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
                 
                 conn_edge_poin[iedge_g, l] = ip
 
-                @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                @printf(" lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
+                
+                #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip = ip + 1
             end
+            @printf(" \n")
         end
         
         #
         # Second pass:
+        #
+        @printf(" ------ \n")
         for iel = 1:mesh.nelem
             #@info " iel = "
             #@info iel
@@ -577,20 +581,22 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
                 #@info " " 
                 #@info "iedge_el " iedge_el
                 #@info "iedge_el " iedge_g
-                for l=2:ngl-1
+                for l=
                     ip = conn_edge_poin[iedge_g, l]
                     #@info " ip " ip
-                    mesh.conn_ho[8 + (l - 1), iel] = ip
+                    @printf(" lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
+                    #mesh.conn_ho[8 + (l - 1), iel] = ip
                 end
+            @printf(" \n")
             end
         end
-
+return 
         for iel = 1:mesh.nelem
             @show length(mesh.conn_ho[:, iel])
-            #for l=1:length(mesh.conn_ho[:, iel])
-            #    @printf(" %d ", mesh.conn_ho[l, iel])
-            #end
-            #@printf("\n ")
+            for l=1:length(mesh.conn_ho[:, iel])
+                @printf(" %d ", mesh.conn_ho[l, iel])
+            end
+            @printf("\n ")
         end
         
         #=for iedge_g = 1:mesh.nedges

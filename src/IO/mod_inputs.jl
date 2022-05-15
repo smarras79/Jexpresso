@@ -21,9 +21,8 @@ function mod_inputs_user_inputs()
     #
     mod_inputs_check(inputs, :equation_set, "e")
     mod_inputs_check(inputs, :problem, "e")
-    
     mod_inputs_check(inputs, :nop, Int8(4), "w")
-    
+
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         
