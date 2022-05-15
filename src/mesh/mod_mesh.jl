@@ -61,7 +61,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nelem::Union{TInt, Missing} = 1
     npoin::Union{TInt, Missing} = 1        #This is updated after populating with high-order nodes
     npoin_linear::Union{TInt, Missing} = 1 #This is always the original number of the first-order grid
-    
+
     nedges::Union{TInt, Missing} = 1     # total number of edges
     nedges_bdy::Union{TInt, Missing} = 1 # bdy edges
     nedges_int::Union{TInt, Missing} = 1 # internal edges
@@ -73,12 +73,13 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
     ngl::Union{TInt, Missing} = nop + 1
-
+    npoin_el::Union{TInt, Missing} = 1 #Total number of points in the reference element
+    
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
     NEDGES_EL::Union{TInt, Missing}  = 12
     NFACES_EL::Union{TInt, Missing}  =  6
     EDGE_NODES::Union{TInt, Missing} =  2
-    FACE_NODES::Union{TInt, Missing} =  4    
+    FACE_NODES::Union{TInt, Missing} =  4
 
     
     #low and high order connectivity tables
@@ -236,8 +237,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     resize!(mesh.conn_edge_el,  2, mesh.NEDGES_EL, mesh.nelem)
     resize!(mesh.conn_face_el,  4, mesh.NFACES_EL, mesh.nelem)
 
-    @show points_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + el_vol_internal_nodes
-    resize!(mesh.conn_ho, points_el*mesh.nelem)
+    @show mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + el_vol_internal_nodes
+    resize!(mesh.conn_ho, mesh.npoin_el*mesh.nelem)
     
     #
     # Connectivity matrices
@@ -246,7 +247,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.conn_unique_faces = get_face_nodes(model, FACE) #faces --> 4 nodes
     mesh.conn_unique_edges = get_face_nodes(model, EDGE) #edges --> 2 nodes
 
-    mesh.conn_ho = reshape(mesh.conn_ho, points_el, mesh.nelem)
+    mesh.conn_ho = reshape(mesh.conn_ho, mesh.npoin_el, mesh.nelem)
     if (mesh.nsd == 1)
         #mesh.conn_ho = reshape(mesh.conn_ho, mesh.ngl, mesh.nelem)
     elseif (mesh.nsd == 2)
@@ -550,7 +551,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
 
             conn_edge_poin[iedge_g,        1] = ip1
             conn_edge_poin[iedge_g, mesh.ngl] = ip2
-            
+            @printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
                 
@@ -559,8 +560,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
 	        mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
                 
                 conn_edge_poin[iedge_g, l] = ip
-
-                @printf(" lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
+                
+                #@printf(" lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
                 
                 #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip = ip + 1
@@ -571,34 +572,36 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
         #
         # Second pass:
         #
-        @printf(" ------ \n")
+        @printf(" --- %d \n", mesh.npoin_el)
         for iel = 1:mesh.nelem
-            #@info " iel = "
-            #@info iel
+            @info " iel = "
+            @info iel
+            iconn = 1
             for iedge_el = 1:mesh.NEDGES_EL
                 iedge_g = mesh.conn_edge_L2G[1, iedge_el, iel]
                 
-                #@info " " 
+                @info " " 
                 #@info "iedge_el " iedge_el
-                #@info "iedge_el " iedge_g
-                for l=
+                @info "iedge_g " iedge_g
+                for l = 2:ngl-1
                     ip = conn_edge_poin[iedge_g, l]
-                    #@info " ip " ip
-                    @printf(" lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
-                    #mesh.conn_ho[8 + (l - 1), iel] = ip
+                    @info " ip " ip
+                    #@printf(" -lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
+                    mesh.conn_ho[8 + iconn, iel] = ip #OK
+                    iconn = iconn + 1
                 end
-            @printf(" \n")
             end
+            @printf(" \n")
         end
-return 
+        @printf("QUI -----\n")
         for iel = 1:mesh.nelem
             @show length(mesh.conn_ho[:, iel])
-            for l=1:length(mesh.conn_ho[:, iel])
-                @printf(" %d ", mesh.conn_ho[l, iel])
+            for l=1:8+mesh.NEDGES_EL*(ngl-2) #length(mesh.conn_ho[:, iel])
+                @printf(" %d ", mesh.conn_ho[l, iel]) #OK
             end
             @printf("\n ")
-        end
-        
+        end #OK
+        return  
         #=for iedge_g = 1:mesh.nedges
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
