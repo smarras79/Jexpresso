@@ -542,16 +542,20 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     
     open("./COORDS_HO_edges.dat", "w") do f
         #
-        # First pass:
+        # First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
         #
         ip = tot_linear_poin + 1
         for iedge_g = 1:mesh.nedges
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
-
+            
             conn_edge_poin[iedge_g,        1] = ip1
             conn_edge_poin[iedge_g, mesh.ngl] = ip2
-            @printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
+            
+            x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
+            x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
+                        
+            #@printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
                 
@@ -562,136 +566,32 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
                 conn_edge_poin[iedge_g, l] = ip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
-                
-                #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip = ip + 1
             end
-            @printf(" \n")
         end
         
         #
-        # Second pass:
+        # Second pass: populate mesh.conn_ho[1:8+mesh.NEDGES_EL*(ngl-2), ∀ elem]\n")
         #
-        @printf(" --- %d \n", mesh.npoin_el)
         for iel = 1:mesh.nelem
-            @info " iel = "
-            @info iel
             iconn = 1
             for iedge_el = 1:mesh.NEDGES_EL
                 iedge_g = mesh.conn_edge_L2G[1, iedge_el, iel]
-                
-                @info " " 
-                #@info "iedge_el " iedge_el
-                @info "iedge_g " iedge_g
                 for l = 2:ngl-1
                     ip = conn_edge_poin[iedge_g, l]
-                    @info " ip " ip
-                    #@printf(" -lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
                     mesh.conn_ho[8 + iconn, iel] = ip #OK
                     iconn = iconn + 1
                 end
             end
-            @printf(" \n")
         end
-        @printf("QUI -----\n")
         for iel = 1:mesh.nelem
             @show length(mesh.conn_ho[:, iel])
-            for l=1:8+mesh.NEDGES_EL*(ngl-2) #length(mesh.conn_ho[:, iel])
+            for l=1:8+mesh.NEDGES_EL*(ngl-2)
                 @printf(" %d ", mesh.conn_ho[l, iel]) #OK
             end
             @printf("\n ")
         end #OK
-        return  
-        #=for iedge_g = 1:mesh.nedges
-            ip1 = mesh.conn_unique_edges[iedge_g][1]
-            ip2 = mesh.conn_unique_edges[iedge_g][2]
-            α = [ip1, ip2]
-        
-            nrepeated = 1
-            ip = tot_linear_poin + 1 
-            for iel = 1:mesh.nelem
-                for iedge_el = 1:mesh.NEDGES_EL
-                    ip11 = mesh.conn_edge_el[1, iedge_el, iel]
-                    ip22 = mesh.conn_edge_el[2, iedge_el, iel]
-                    β = [ip11, ip22]
-                    
-                    if ( issetequal(α, β) )
-                        nrepeated = nrepeated + 1
-                        mesh.conn_edge_L2G[1, iedge_el, iel] = iedge_g;
-                        
-                        edge_repeated_g[iedge_g, 1] = edge_repeated_g[iedge_g, 1] + 1
-                        edge_repeated_g[iedge_g, 2] = iel
-                        edge_repeated_g[iedge_g, 3] = iedge_el
-
-                        
-                        for l=2:ngl-1
-                            ξ = lgl.ξ[l];
-                            
-                            mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-	                    mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-	                    mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
-                            
-                            @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
-                            mesh.conn_ho[8 + (l - 1), iel] = ip
-                            @show ip = ip + 1
-                        end
-                    end                     
-                end
-            end
-        end=#
-
-        #=@info " conn_edge_L2G =:"
-        for iel = 1:mesh.nelem
-            @info "IEL " iel
-            for iedge_el = 1:mesh.NEDGES_EL
-                
-            
-                @show " iedge_g"
-                @show iedge_g = mesh.conn_edge_L2G[1, iedge_el, iel]
-                @show ip11 = mesh.conn_edge_el[1, iedge_el, iel]
-                @show ip22 = mesh.conn_edge_el[2, iedge_el, iel]
-                @info "  iedge_el --> Iedge global repeated " iedge_el mesh.conn_edge_L2G[1, iedge_el, iel], edge_repeated_g[iedge_g, 1]
-            end
-        end
-        @show "MAX N EDGES "  maximum(mesh.conn_edge_L2G)=#
-        
-        
-        #
-        # Third pass:
-        #=
-        ip = tot_linear_poin + 1
-        for iel = 1:mesh.nelem
-            for iedge_el = 1:mesh.NEDGES_EL
-
-                iedge_g = mesh.conn_edge_L2G[1, iedge_el, iel]
-                if (edge_repeated_g[iedge_g, 1] === 1)
-                    iedge_g
-                    edge_repeated_g[iedge_g, 1]
-                    ip11 = mesh.conn_edge_el[1, iedge_el, iel]
-                    ip22 = mesh.conn_edge_el[2, iedge_el, iel]
-
-                    x1, y1, z1 = mesh.x[ip11], mesh.y[ip11], mesh.z[ip11]
-                    x2, y2, z2 = mesh.x[ip22], mesh.y[ip22], mesh.z[ip22]
-                    
-                    for l=2:ngl-1
-                        ξ = lgl.ξ[l];
-
-                        mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-	                mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-	                mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
-                        
-                        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
-                        mesh.conn_ho[8 + (l - 1), iel] = ip
-                        ip = ip + 1
-                    end
-                    #end
-                end
-            end
-        end=#
-
-        #
-        # third pass for repeated edges only:
-        #
         
     end #do f
     @show "EDGES INTERNAL NODES " tot_edges_internal_nodes
