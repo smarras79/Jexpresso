@@ -10,9 +10,9 @@ print_lables=True
 F = False
 T = True
 
-plot_edge_nodes = F
+plot_edge_nodes = T
 plot_face_nodes = F
-plot_vol_nodes  = T
+plot_vol_nodes  = F
 
 
 #
