@@ -481,6 +481,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     tot_faces_internal_nodes = mesh.nfaces*(ngl-2)*(ngl-2)
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)*(ngl-2)*(ngl-2)
 
+    el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
+    
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_edges_internal_nodes + tot_faces_internal_nodes + tot_vol_internal_nodes
 
@@ -560,7 +562,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     end #do f
     
     #
-    # Second pass: populate mesh.conn_ho[1:8+mesh.NEDGES_EL*(ngl-2), ∀ elem]\n")
+    # Second pass: populate mesh.conn_ho[1:8+el_edges_internal_nodes, ∀ elem]\n")
     #
     for iel = 1:mesh.nelem
         iconn = 1
@@ -575,7 +577,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     end
     for iel = 1:mesh.nelem
         @show length(mesh.conn_ho[:, iel])
-        for l=1:8+mesh.NEDGES_EL*(ngl-2)
+        for l=1:8+el_edges_internal_nodes
             @printf(" %d ", mesh.conn_ho[l, iel]) #OK
         end
         @printf("\n ")
@@ -604,6 +606,9 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
     tot_faces_internal_nodes = mesh.nfaces*(ngl-2)*(ngl-2)
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)*(ngl-2)*(ngl-2)
 
+    el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
+    el_faces_internal_nodes  = mesh.NFACES_EL*(ngl-2)*(ngl-2)
+    
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_edges_internal_nodes + tot_faces_internal_nodes + tot_vol_internal_nodes
     
@@ -621,7 +626,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
      
     isrepeated::Array{Int64, 2}      = zeros(12, mesh.nelem)
     face_repeated_g::Array{Int64, 2} = zeros(mesh.NFACES_EL*mesh.nelem, 3)
-    conn_face_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl*mesh.ngl)
+    conn_face_poin::Array{Int64, 3}  = zeros(mesh.nedges, mesh.ngl, mesh.ngl)
 
     #
     # Populate mesh.conn_face_L2G:
@@ -669,10 +674,10 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
             ip3 = mesh.conn_unique_faces[iface_g][4]
             ip4 = mesh.conn_unique_faces[iface_g][3]
 
-            conn_face_poin[iface_g, 1] = ip1
-            conn_face_poin[iface_g, 2] = ip2
-            conn_face_poin[iface_g, 3] = ip4
-            conn_face_poin[iface_g, 4] = ip3
+            conn_face_poin[iface_g, 1, 1]     = ip1
+            conn_face_poin[iface_g, ngl, 1]   = ip2
+            conn_face_poin[iface_g, ngl, ngl] = ip4
+            conn_face_poin[iface_g, 1, ngl]   = ip3
             
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
@@ -684,7 +689,6 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
                 
                 for m=2:ngl-1
                     ζ = lgl.ξ[m];
-                    
                     
 	            mesh.x_ho[ip] = (x1*(1 - ξ)*(1 - ζ)*0.25
                                      + x2*(1 + ξ)*(1 - ζ)*0.25
@@ -701,9 +705,9 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
 		                      + z3*(1 + ξ)*(1 + ζ)*0.25
 		                      + z4*(1 - ξ)*(1 + ζ)*0.25)
 
-                    @error " ARRIVATO QUI"
-                    #I = ... 1 + l*() + k*() See GIRALDO'S BOOK
-                    conn_face_poin[iface_g, l] = ip
+                    #@error " ARRIVATO QUI"
+                    #I = l + 1 + m*mesh.ngl
+                    conn_face_poin[iface_g, l, m] = ip
                     
                     @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                     
@@ -713,6 +717,31 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
         end
     end #do f
 
+    #
+    # Second pass: populate mesh.conn_ho[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
+    #
+    for iel = 1:mesh.nelem
+        iconn = 1
+        for iface_el = 1:mesh.NFACES_EL
+            iface_g = mesh.conn_face_L2G[1, iface_el, iel]
+            
+            for l = 2:ngl-1
+                for m = 2:ngl-1
+                    ip = conn_face_poin[iface_g, l, m]
+                    mesh.conn_ho[8 + el_edges_internal_nodes + iconn, iel] = ip
+                    iconn = iconn + 1
+                end
+            end
+        end
+    end
+
+     for iel = 1:mesh.nelem
+         for l=1:8+el_edges_interla_nodes+el_faces_internal_nodes
+            @printf(" %d ", mesh.conn_ho[l, iel]) #OK
+        end
+        @printf("\n ")
+    end #OK
+    
     #=@info " "
     @info " conn_face_L2G =:"
     for iel = 1:mesh.nelem
