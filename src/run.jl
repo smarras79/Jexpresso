@@ -46,7 +46,7 @@ inputs, nvars = mod_inputs_user_inputs()
 
 if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
     
-    println(" # Read gmsh grid")
+    println(" # Read gmsh grid and populate with high-order points ")
     
     # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
     mesh = St_mesh{TInt,TFloat}(nsd=Int8(inputs[:nsd]),
@@ -56,7 +56,7 @@ if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
     
     mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
     
-    println(" # Read gmsh grid ........................ DONE")
+    println(" # Read gmsh grid and populate with high-order points ........................ DONE")
 else
     println(" # Build grid")
     

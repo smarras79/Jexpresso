@@ -172,8 +172,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
         error( " WRONG NSD: This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
     end
     
-    
-    
     #@info topology.vertex_coordinates
     
     #dump(topology)
@@ -201,18 +199,19 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     println(" # N. boundary faces : ", mesh.nfaces_bdy)
     println(" # GMSH LINEAR GRID PROPERTIES ...................... END")
        
-    ngl                      = mesh.nop + 1
-    @show tot_linear_poin         = mesh.npoin_linear
-    @show el_edges_internal_nodes = mesh.NEDGES_EL*(ngl-2)
-    @show el_faces_internal_nodes = mesh.NFACES_EL*(ngl-2)^(mesh.nsd-1)
-    @show el_vol_internal_nodes   = (ngl-2)^(mesh.nsd)
+    ngl                     = mesh.nop + 1
+    tot_linear_poin         = mesh.npoin_linear
     
-    @show tot_edges_internal_nodes = mesh.nedges*(ngl-2)
-    @show tot_faces_internal_nodes = mesh.nfaces*(ngl-2)^(mesh.nsd-1)
-    @show tot_vol_internal_nodes   = mesh.nelem*(ngl-2)^(mesh.nsd)
+    tot_edges_internal_nodes = mesh.nedges*(ngl-2)
+    tot_faces_internal_nodes = mesh.nfaces*(ngl-2)^(mesh.nsd-1)
+    tot_vol_internal_nodes   = mesh.nelem*(ngl-2)^(mesh.nsd)
+    
+    el_edges_internal_nodes = mesh.NEDGES_EL*(ngl-2)
+    el_faces_internal_nodes = mesh.NFACES_EL*(ngl-2)^(mesh.nsd-1)
+    el_vol_internal_nodes   = (ngl-2)^(mesh.nsd)
     
     #Update number of grid points from linear count to total high-order points
-    @show mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + tot_vol_internal_nodes
+    mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + tot_vol_internal_nodes
     
     if (mesh.nop > 1)
         println(" # GMSH HIGH-ORDER GRID PROPERTIES")
@@ -237,7 +236,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     resize!(mesh.conn_edge_el,  2, mesh.NEDGES_EL, mesh.nelem)
     resize!(mesh.conn_face_el,  4, mesh.NFACES_EL, mesh.nelem)
 
-    @show mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + el_vol_internal_nodes
+    mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + el_vol_internal_nodes
     resize!(mesh.conn_ho, mesh.npoin_el*mesh.nelem)
     
     #
@@ -367,7 +366,7 @@ function populate_conn_edge_el!(mesh::St_mesh)
 	
     end
 
-    @info "CONN EDGE " size(mesh.conn_edge_el)
+    #@info "CONN EDGE " size(mesh.conn_edge_el)
     
 end #populate_edge_el!
 
@@ -495,8 +494,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     if length(mesh.z_ho) < mesh.npoin        
         resize!(mesh.z_ho, mesh.npoin)
     end
-
-    @info size(mesh.conn_edge_el)
     
     isrepeated::Array{Int64, 2}      = zeros(12, mesh.nelem)
     edge_repeated_g::Array{Int64, 2} = zeros(mesh.NEDGES_EL*mesh.nelem, 3)
@@ -575,15 +572,14 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
             end
         end
     end
-    for iel = 1:mesh.nelem
-        @show length(mesh.conn_ho[:, iel])
+    #=for iel = 1:mesh.nelem
         for l=1:8+el_edges_internal_nodes
             @printf(" %d ", mesh.conn_ho[l, iel]) #OK
         end
         @printf("\n ")
-    end #OK
+    end =#
     
-    @show "EDGES INTERNAL NODES " tot_edges_internal_nodes
+    #@info " EDGES INTERNAL NODES " tot_edges_internal_nodes
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
     return 
 end
@@ -735,12 +731,12 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
         end
     end
 
-     for iel = 1:mesh.nelem
-         for l=1:8+el_edges_internal_nodes+el_faces_internal_nodes
+    #=for iel = 1:mesh.nelem
+        for l=1:8+el_edges_internal_nodes+el_faces_internal_nodes
             @printf(" %d ", mesh.conn_ho[l, iel]) #OK
         end
         @printf("\n ")
-    end #OK
+    end =#
         
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
     
@@ -797,16 +793,15 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
             #
             # CGNS numbering
             #
-            @show ip1 = mesh.cell_node_ids[iel][2]
-            @show ip2 = mesh.cell_node_ids[iel][6]
-            @show ip3 = mesh.cell_node_ids[iel][8]
-            @show ip4 = mesh.cell_node_ids[iel][4]
-            @show ip5 = mesh.cell_node_ids[iel][1]
-            @show ip6 = mesh.cell_node_ids[iel][5]
-            @show ip7 = mesh.cell_node_ids[iel][7]
-            @show ip8 = mesh.cell_node_ids[iel][3]
-            
-            
+            ip1 = mesh.cell_node_ids[iel][2]
+            ip2 = mesh.cell_node_ids[iel][6]
+            ip3 = mesh.cell_node_ids[iel][8]
+            ip4 = mesh.cell_node_ids[iel][4]
+            ip5 = mesh.cell_node_ids[iel][1]
+            ip6 = mesh.cell_node_ids[iel][5]
+            ip7 = mesh.cell_node_ids[iel][7]
+            ip8 = mesh.cell_node_ids[iel][3]
+                        
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
             x3, y3, z3 = mesh.x[ip3], mesh.y[ip3], mesh.z[ip3]
@@ -865,15 +860,14 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
             end 
         end
     end #file
-
     
-    @printf(" CONN_HO FULL\n")
+    #=@printf(" CONN_HO FULL\n")
      for iel = 1:mesh.nelem
          for l=1:8 + el_edges_internal_nodes + el_faces_internal_nodes + el_vol_internal_nodes
             @printf(" %d ", mesh.conn_ho[l, iel]) #OK
         end
         @printf("\n ")
-    end #OK
+    end =# #OK
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES DONE")
     
