@@ -302,7 +302,7 @@ add_high_order_nodes_edges!(mesh, lgl)
 populate_conn_face_el!(mesh)
 add_high_order_nodes_faces!(mesh, lgl)
 #Volume
-#add_high_order_nodes_volumes!(mesh, lgl)
+add_high_order_nodes_volumes!(mesh, lgl)
 
 #writevtk(model,"gmsh_grid")
 end
@@ -770,6 +770,10 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
     tot_faces_internal_nodes = mesh.nfaces*(ngl-2)*(ngl-2)
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)*(ngl-2)*(ngl-2)
 
+    el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
+    el_faces_internal_nodes  = mesh.NFACES_EL*(ngl-2)*(ngl-2)
+    el_vol_internal_nodes    = (ngl-2)*(ngl-2)*(ngl-2)
+    
     #Increase number of grid points from linear count to titak high-order points
     mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + tot_vol_internal_nodes
     
@@ -786,19 +790,21 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
     open("./COORDS_HO_vol.dat", "w") do f
 
         ip  = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + 1
-        for iel_g = 1:mesh.nelem
+        for iel = 1:mesh.nelem
 
+            iconn = 1
+            
             #
             # CGNS numbering
             #
-            @show ip1 = mesh.cell_node_ids[iel_g][2]
-            @show ip2 = mesh.cell_node_ids[iel_g][6]
-            @show ip3 = mesh.cell_node_ids[iel_g][8]
-            @show ip4 = mesh.cell_node_ids[iel_g][4]
-            @show ip5 = mesh.cell_node_ids[iel_g][1]
-            @show ip6 = mesh.cell_node_ids[iel_g][5]
-            @show ip7 = mesh.cell_node_ids[iel_g][7]
-            @show ip8 = mesh.cell_node_ids[iel_g][3]
+            @show ip1 = mesh.cell_node_ids[iel][2]
+            @show ip2 = mesh.cell_node_ids[iel][6]
+            @show ip3 = mesh.cell_node_ids[iel][8]
+            @show ip4 = mesh.cell_node_ids[iel][4]
+            @show ip5 = mesh.cell_node_ids[iel][1]
+            @show ip6 = mesh.cell_node_ids[iel][5]
+            @show ip7 = mesh.cell_node_ids[iel][7]
+            @show ip8 = mesh.cell_node_ids[iel][3]
             
             
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
@@ -846,15 +852,28 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
 			                 + z6*(1 + ξ)*(1 - η)*(1 + ζ)*0.125
 			                 + z7*(1 + ξ)*(1 + η)*(1 + ζ)*0.125
 			                 + z8*(1 - ξ)*(1 + η)*(1 + ζ)*0.125)
-		        
+
+                        mesh.conn_ho[8 + el_edges_internal_nodes + el_faces_internal_nodes + iconn, iel] = ip
+
                         @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+
+                        ip = ip + 1
                         
-	                ip = ip + 1
+                        iconn = iconn + 1
                     end
                 end
             end 
         end
     end #file
+
+    
+    @printf(" CONN_HO FULL\n")
+     for iel = 1:mesh.nelem
+         for l=1:8 + el_edges_internal_nodes + el_faces_internal_nodes + el_vol_internal_nodes
+            @printf(" %d ", mesh.conn_ho[l, iel]) #OK
+        end
+        @printf("\n ")
+    end #OK
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES DONE")
     
