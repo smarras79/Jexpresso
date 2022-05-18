@@ -736,65 +736,12 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
     end
 
      for iel = 1:mesh.nelem
-         for l=1:8+el_edges_interla_nodes+el_faces_internal_nodes
+         for l=1:8+el_edges_internal_nodes+el_faces_internal_nodes
             @printf(" %d ", mesh.conn_ho[l, iel]) #OK
         end
         @printf("\n ")
     end #OK
-    
-    #=@info " "
-    @info " conn_face_L2G =:"
-    for iel = 1:mesh.nelem
-    @info "IEL " iel
-    for iface_el = 1:mesh.NFACES_EL
-    
-    
-    @show " iface_g"
-    @show iface_g = mesh.conn_face_L2G[1, iface_el, iel]
-    @show ip11 = mesh.conn_face_el[1, iface_el, iel]
-    @show ip44 = mesh.conn_face_el[2, iface_el, iel]
-    @show ip33 = mesh.conn_face_el[3, iface_el, iel]
-    @show ip22 = mesh.conn_face_el[4, iface_el, iel]
-    @info "  iface_el --> Iface global repeated " iface_el mesh.conn_face_L2G[1, iface_el, iel], face_repeated_g[iface_g, 1]
-    end
-    end
-    @show "MAX N FACES "  maximum(mesh.conn_face_L2G)=#
-    
-
-    #
-    # second pass:
-    #=
-    for iface_g = 1:mesh.nfaces
-    
-    for l=2:ngl-1
-    ξ = lgl.ξ[l];
-    
-    for m=2:ngl-1
-    ζ = lgl.ξ[m];
-    
-    
-    mesh.x_ho[ip] = (x1*(1 - ξ)*(1 - ζ)*0.25
-    + x2*(1 + ξ)*(1 - ζ)*0.25
-    + x3*(1 + ξ)*(1 + ζ)*0.25			
-    + x4*(1 - ξ)*(1 + ζ)*0.25)
-    
-    mesh.y_ho[ip] =  (y1*(1 - ξ)*(1 - ζ)*0.25
-    + y2*(1 + ξ)*(1 - ζ)*0.25
-    + y3*(1 + ξ)*(1 + ζ)*0.25
-    + y4*(1 - ξ)*(1 + ζ)*0.25)
-    
-    mesh.z_ho[ip] =  (z1*(1 - ξ)*(1 - ζ)*0.25
-    + z2*(1 + ξ)*(1 - ζ)*0.25
-    + z3*(1 + ξ)*(1 + ζ)*0.25
-    + z4*(1 - ξ)*(1 + ζ)*0.25)
-
-    @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
-    
-    ip = ip + 1
-    end
-    end
-    end =#
-    
+        
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
     
 end
