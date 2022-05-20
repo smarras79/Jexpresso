@@ -86,6 +86,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(8))
     cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(8))
     
+    conn_ho_ptr       = ElasticArray{Int64}(undef, nelem)    
     conn_ho           = ElasticArray{Int64}(undef, ngl*nelem)
     conn_unique_edges = ElasticArray{Int64}(undef,  1, 2)
     conn_unique_faces = ElasticArray{Int64}(undef,  1, 4)
@@ -238,6 +239,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
 
     mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + el_vol_internal_nodes
     resize!(mesh.conn_ho, mesh.npoin_el*mesh.nelem)
+    resize!(mesh.conn_ho_ptr, mesh.nelem)
     
     #
     # Connectivity matrices
@@ -245,7 +247,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.cell_node_ids     = model.grid.cell_node_ids
     mesh.conn_unique_faces = get_face_nodes(model, FACE) #faces --> 4 nodes
     mesh.conn_unique_edges = get_face_nodes(model, EDGE) #edges --> 2 nodes
-
+    
     mesh.conn_ho = reshape(mesh.conn_ho, mesh.npoin_el, mesh.nelem)
     if (mesh.nsd == 1)
         #mesh.conn_ho = reshape(mesh.conn_ho, mesh.ngl, mesh.nelem)
@@ -285,29 +287,30 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
         end
     end
 
-#
-# Add high-order points to edges, faces, and elements (volumes)
-#
-# initialize LGL struct and buyild Gauss-Lobatto-xxx points
-Legendre = St_legendre{Float64}(0.0, 0.0, 0.0, 0.0)
-lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
-                           zeros(mesh.nop+1))
-build_lgl!(Legendre, lgl, mesh.nop)
-
-#Edges
-populate_conn_edge_el!(mesh)
-add_high_order_nodes_edges!(mesh, lgl)
-#Faces
-populate_conn_face_el!(mesh)
-add_high_order_nodes_faces!(mesh, lgl)
-#Volume
-add_high_order_nodes_volumes!(mesh, lgl)
-
-#writevtk(model,"gmsh_grid")
+    #
+    # Add high-order points to edges, faces, and elements (volumes)
+    #
+    # initialize LGL struct and buyild Gauss-Lobatto-xxx points
+    Legendre = St_legendre{Float64}(0.0, 0.0, 0.0, 0.0)
+    lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
+                               zeros(mesh.nop+1))
+    build_lgl!(Legendre, lgl, mesh.nop)
+    
+    #Edges
+    populate_conn_edge_el!(mesh)
+    @time add_high_order_nodes_edges!(mesh, lgl)
+    
+    #Faces
+    #populate_conn_face_el!(mesh)
+    #add_high_order_nodes_faces!(mesh, lgl)
+    #Volume
+    #add_high_order_nodes_volumes!(mesh, lgl)
+    
+    #writevtk(model,"gmsh_grid")
 end
 
 function populate_conn_edge_el!(mesh::St_mesh)
-    
+    @info " AA"
     for iel = 1:mesh.nelem
 
         #
@@ -365,7 +368,7 @@ function populate_conn_edge_el!(mesh::St_mesh)
 	mesh.conn_edge_el[2, iedg_el, iel] = ip5
 	
     end
-
+    @info " BB"
     #@info "CONN EDGE " size(mesh.conn_edge_el)
     
 end #populate_edge_el!
@@ -466,9 +469,9 @@ end
 function  add_high_order_nodes!(mesh::St_mesh) end
 
 function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
-
+ @info " CC"
     if (mesh.nop < 2) return end
-    
+  
     x1, y1, z1 = Float64(0.0), Float64(0.0), Float64(0.0)
     x2, y2, z2 = Float64(0.0), Float64(0.0), Float64(0.0)
     
@@ -495,37 +498,49 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
         resize!(mesh.z_ho, mesh.npoin)
     end
     
-    isrepeated::Array{Int64, 2}      = zeros(12, mesh.nelem)
-    edge_repeated_g::Array{Int64, 2} = zeros(mesh.NEDGES_EL*mesh.nelem, 3)
+    #edge_repeated_g::Array{Int64, 2} = zeros(mesh.NEDGES_EL*mesh.nelem, 3)
     conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-
+    
     #
     # Populate mesh.conn_edge_L2G
     #
+    cache_unique_edges = array_cache(mesh.conn_unique_edges) # allocation here
     for iedge_g = 1:mesh.nedges
-        ip1 = mesh.conn_unique_edges[iedge_g][1]
-        ip2 = mesh.conn_unique_edges[iedge_g][2]
-        α = [ip1, ip2]
+        
+        ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
+        ip1, ip2 = ai[1], ai[2]
         
         for iel = 1:mesh.nelem
             for iedge_el = 1:mesh.NEDGES_EL
                 
-                ip11 = mesh.conn_edge_el[1, iedge_el, iel]
-                ip22 = mesh.conn_edge_el[2, iedge_el, iel]
-                β = [ip11, ip22]
+                # ip11 = mesh.conn_edge_el[1, iedge_el, iel]
+                # ip22 = mesh.conn_edge_el[2, iedge_el, iel]
+                #β = [ip11, ip22]
+                #@show iel iedge_el
+                #for iedge_g = 1:mesh.nedges
                 
-                if ( issetequal(α, β) )
-                    mesh.conn_edge_L2G[1, iedge_el, iel] = iedge_g
-                     
-                    edge_repeated_g[iedge_g, 1] = edge_repeated_g[iedge_g, 1] + 1
-                    edge_repeated_g[iedge_g, 2] = iel
-                    edge_repeated_g[iedge_g, 3] = iedge_el
-                end
+                #    ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
+                #    ip1, ip2 = ai[1], ai[2]
+                
+                #@show ip1, ip2 = mesh.conn_unique_edges[iedge_g][1], mesh.conn_unique_edges[iedge_g][2]
+                #@printf(f, " %d %d\n", ip1, ip2)
+                #    α = [ip1, ip2]
+                
+                #=if ( 1===1) #issetequal(α, β) )
+                mesh.conn_edge_L2G[1, iedge_el, iel] = iedge_g
+                
+                #edge_repeated_g[iedge_g, 1] = edge_repeated_g[iedge_g, 1] + 1
+                #edge_repeated_g[iedge_g, 2] = iel
+                #edge_repeated_g[iedge_g, 3] = iedge_el
+                end=#
             end
         end
     end
+    #end
+    @info " DD"
     
-    open("./COORDS_HO_edges.dat", "w") do f
+    return 
+    ##open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
         #
@@ -552,12 +567,12 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
                 conn_edge_poin[iedge_g, l] = ip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
-                @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip = ip + 1
             end
         end         
-    end #do f
-    
+    ##end #do f
+     @info " EE"
     #
     # Second pass: populate mesh.conn_ho[1:8+el_edges_internal_nodes, ∀ elem]\n")
     #
@@ -572,6 +587,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
             end
         end
     end
+     @info " FF"
     #=for iel = 1:mesh.nelem
         for l=1:8+el_edges_internal_nodes
             @printf(" %d ", mesh.conn_ho[l, iel]) #OK
@@ -619,9 +635,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
         resize!(mesh.z_ho, mesh.npoin)
     end
     
-     
-    isrepeated::Array{Int64, 2}      = zeros(12, mesh.nelem)
-    face_repeated_g::Array{Int64, 2} = zeros(mesh.NFACES_EL*mesh.nelem, 3)
+    #face_repeated_g::Array{Int64, 2} = zeros(mesh.NFACES_EL*mesh.nelem, 3)
     conn_face_poin::Array{Int64, 3}  = zeros(mesh.nedges, mesh.ngl, mesh.ngl)
 
     #
@@ -648,16 +662,16 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
                 if ( issetequal(α, β) )
                     mesh.conn_face_L2G[1, iface_el, iel] = iface_g
                     
-                    face_repeated_g[iface_g, 1] = face_repeated_g[iface_g, 1] + 1
-                    face_repeated_g[iface_g, 2] = iel
-                    face_repeated_g[iface_g, 3] = iface_el
+                    #face_repeated_g[iface_g, 1] = face_repeated_g[iface_g, 1] + 1
+                    #face_repeated_g[iface_g, 2] = iel
+                    #face_repeated_g[iface_g, 3] = iface_el
                 end
                 
             end
         end
     end
     
-    open("./COORDS_HO_faces.dat", "w") do f
+    ##open("./COORDS_HO_faces.dat", "w") do f
         #
         # First pass:
         #
@@ -705,13 +719,13 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
                     #I = l + 1 + m*mesh.ngl
                     conn_face_poin[iface_g, l, m] = ip
                     
-                    @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                    #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                     
 	            ip = ip + 1
                 end
             end
         end
-    end #do f
+    ##end #do f
 
     #
     # Second pass: populate mesh.conn_ho[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
@@ -783,7 +797,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
         resize!(mesh.z_ho, mesh.npoin)
     end
     
-    open("./COORDS_HO_vol.dat", "w") do f
+    ##open("./COORDS_HO_vol.dat", "w") do f
 
         ip  = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + 1
         for iel = 1:mesh.nelem
@@ -850,7 +864,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
 
                         mesh.conn_ho[8 + el_edges_internal_nodes + el_faces_internal_nodes + iconn, iel] = ip
 
-                        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                        #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
 
                         ip = ip + 1
                         
@@ -859,7 +873,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
                 end
             end 
         end
-    end #file
+    ##end # do f 
     
     #=@printf(" CONN_HO FULL\n")
      for iel = 1:mesh.nelem
