@@ -513,6 +513,9 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
         for iel = 1:mesh.nelem
             for iedge_el = 1:mesh.NEDGES_EL
                 
+                ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
+                #ip1, ip2 = ai[1], ai[2]
+                @show ip1 = evaluate!(cache_unique_edges, ai, 1)
                 # ip11 = mesh.conn_edge_el[1, iedge_el, iel]
                 # ip22 = mesh.conn_edge_el[2, iedge_el, iel]
                 #β = [ip11, ip22]
