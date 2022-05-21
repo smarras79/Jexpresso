@@ -500,6 +500,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     
     #edge_repeated_g::Array{Int64, 2} = zeros(mesh.NEDGES_EL*mesh.nelem, 3)
     conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
+    @info typeof(mesh.conn_unique_edges)
     
     #
     # Populate mesh.conn_edge_L2G
@@ -507,11 +508,16 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     cache_unique_edges = array_cache(mesh.conn_unique_edges) # allocation here
     for iedge_g = 1:mesh.nedges
         
-        ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
-        ip1, ip2 = ai[1], ai[2]
-        
+        #ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
+        #ip1, ip2 = ai[1], ai[2]
+ 
         for iel = 1:mesh.nelem
             for iedge_el = 1:mesh.NEDGES_EL
+            
+                #ip1, ip2 = mesh.conn_unique_edges[iedge_g][1], mesh.conn_unique_edges[iedge_g][2]
+                
+                ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
+                #ip1, ip2 = ai[1], ai[2] #bottleneck
                 
                 ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
                 #ip1, ip2 = ai[1], ai[2]
