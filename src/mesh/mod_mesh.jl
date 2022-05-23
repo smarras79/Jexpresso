@@ -521,33 +521,43 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     
     #edge_repeated_g::Array{Int64, 2} = zeros(mesh.NEDGES_EL*mesh.nelem, 3)
     conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    @info typeof(mesh.conn_unique_edges)
+    @info typeof(mesh.conn_unique_edges) #This has type Table (As defined in the Gridap --- Verdugo paper)
     
     #
     # Populate mesh.conn_edge_L2G
     #
     cache_unique_edges = array_cache(mesh.conn_unique_edges) # allocation here
     for iedge_g = 1:mesh.nedges
-        
-        #ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
-        #ip1, ip2 = ai[1], ai[2]
+
+        ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
+        ai[2]
         
         for iel = 1:mesh.nelem
             for iedge_el = 1:mesh.NEDGES_EL
                 
+                ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
+                ai[2]
+
+                #ai = getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)
+                #ai[2]
+                
+                #ip1, ip2 = ai[1], ai[2]
+                #ai[2] === ai[1]
+                
+                
                 #ip1, ip2 = mesh.conn_unique_edges[iedge_g][1], mesh.conn_unique_edges[iedge_g][2]
 
-                if( ( mesh.conn_edge_el[1, iedge_el, iel] == mesh.conn_edge_el[2, iedge_el, iel] &&
+              #=  if( ( mesh.conn_edge_el[1, iedge_el, iel] == mesh.conn_edge_el[2, iedge_el, iel] &&
                       mesh.conn_edge_el[1, iedge_el, iel] == mesh.conn_edge_el[1, iedge_el, iel]) ||
                     ( mesh.conn_edge_el[2, iedge_el, iel] == mesh.conn_edge_el[1, iedge_el, iel] &&
                       mesh.conn_edge_el[2, iedge_el, iel] == mesh.conn_edge_el[2, iedge_el, iel])
-                    )
+                    )=#
                     
-                    # if( (getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[1] == mesh.conn_edge_el[2, iedge_el, iel] &&
-               #      getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[2] == mesh.conn_edge_el[1, iedge_el, iel]) ||
-               #     (getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[1] == mesh.conn_edge_el[1, iedge_el, iel] &&
-               #      getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[2] == mesh.conn_edge_el[2, iedge_el, iel])
-               #     )
+                #=if( (getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[1] == mesh.conn_edge_el[2, iedge_el, iel] &&
+                     getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[2] == mesh.conn_edge_el[1, iedge_el, iel]) ||
+                    (getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[1] == mesh.conn_edge_el[1, iedge_el, iel] &&
+                     getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[2] == mesh.conn_edge_el[2, iedge_el, iel])
+                    )=#
                     #=if( (getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[1] == getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[2]&&
                     getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[2] == getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[1]) ||
                     (getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[1] == getindex!(cache_unique_edges, mesh.conn_unique_edges, iedge_g)[1] &&
@@ -576,7 +586,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
                     #edge_repeated_g[iedge_g, 2] = iel
                     #edge_repeated_g[iedge_g, 3] = iedge_el
                     end=#
-                end
+                #end
             end
         end
     end
