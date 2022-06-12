@@ -93,6 +93,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     
     #low and high order connectivity tables
     cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(8))
+    cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(1), zeros(1))
     cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(8))
     
     conn_ho_ptr       = ElasticArray{Int64}(undef, nelem)    
@@ -269,12 +270,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.cell_node_ids     = model.grid.cell_node_ids
     mesh.conn_unique_faces = get_face_nodes(model, FACE) #faces --> 4 nodes
     @show mesh.conn_unique_edges = get_face_nodes(model, EDGE) #edges --> 2 nodes
-
-    topo = get_grid_topology(model)
-    @show get_faces(topo, 3, 1)
+    @show typeof(get_face_nodes(model, EDGE))
     
-    return
-    
+    #topo = get_grid_topology(model)
+    @show mesh.cell_edge_ids = get_faces(topology, 3, 1)
+        
     mesh.conn_ho = reshape(mesh.conn_ho, mesh.npoin_el, mesh.nelem)
     if (mesh.nsd == 1)
         #mesh.conn_ho = reshape(mesh.conn_ho, mesh.ngl, mesh.nelem)
