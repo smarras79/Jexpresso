@@ -268,7 +268,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     #
     mesh.cell_node_ids     = model.grid.cell_node_ids
     mesh.conn_unique_faces = get_face_nodes(model, FACE) #faces --> 4 nodes
-    mesh.conn_unique_edges = get_face_nodes(model, EDGE) #edges --> 2 nodes
+    @show mesh.conn_unique_edges = get_face_nodes(model, EDGE) #edges --> 2 nodes
+
+    topo = get_grid_topology(model)
+    @show get_faces(topo, 3, 1)
+    
+    return
     
     mesh.conn_ho = reshape(mesh.conn_ho, mesh.npoin_el, mesh.nelem)
     if (mesh.nsd == 1)
@@ -525,7 +530,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     
     #
     # Populate mesh.conn_edge_L2G
-    #
+    #=
     cache_unique_edges = array_cache(mesh.conn_unique_edges) # allocation here
     for iedge_g = 1:mesh.nedges
 
@@ -589,7 +594,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
                 #end
             end
         end
-    end
+    end=#
     #end
     @info " DD"
     
