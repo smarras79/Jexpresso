@@ -6,6 +6,7 @@ function user_inputs()
         :equation_set => "ns",
         :problem      => "rtb",
         :lread_gmsh   => true,
+        #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
         :gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
