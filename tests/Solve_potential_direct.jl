@@ -1,6 +1,6 @@
 TInt=Int64
 TFloat=Float64
-include("2D_3D_structures.jl")
+include("../src/Infrastructure/2D_3D_structures.jl")
 N=40
 M=40
 Nit=10

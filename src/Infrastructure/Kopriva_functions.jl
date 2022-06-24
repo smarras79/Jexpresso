@@ -1,4 +1,4 @@
-include("basis_structs.jl")
+include("../basis/basis_structs.jl")
 """ DiscreteFourrierCoefficients(f)
     f:: array of length N
     computes the Discrete fourrier coefficients of f

@@ -1,7 +1,7 @@
 TInt=Int64
 TFloat=Float64
-include("Kopriva_functions.jl")
-include("TimeIntegrators.jl")
+include("../src/Infrastructure/Kopriva_functions.jl")
+include("../src/TimeIntegration/TimeIntegrators.jl")
 rk3 = RK3_Integrator{TFloat}(zeros(TFloat,3),zeros(TFloat,3),zeros(TFloat,3))
 buildRK3Integrator!(rk3)
 N=16
