@@ -386,4 +386,3 @@ function ChebyshevPolynomial!(Chebyshev::St_Chebyshev,nop::TInt,x::TFloat,Ks::TI
         Chebyshev.chebyshev = T
     end
 end
-
