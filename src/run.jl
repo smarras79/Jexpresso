@@ -53,7 +53,6 @@ if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
                                 nop=Int8(inputs[:nop]))
     
     # Read gmsh grid using the GridapGmsh reader
-    
     mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
     
     println(" # Read gmsh grid ........................ DONE")
@@ -89,30 +88,3 @@ end
 #--------------------------------------------------------
 # END Build mesh    
 #--------------------------------------------------------
-
-#--------------------------------------------------------
-# Initialize solution struct
-#--------------------------------------------------------
-#
-#= Initlaize solution struct
-qsol = St_solution{TInt,TFloat}(zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
-                                zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
-                                zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
-                                zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
-                                zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
-                                zeros(TFloat, mesh.nsd*mesh.nsd))
-
-# Build initial conditions
-mod_solution_initial_conditions!(mesh,
-                                 qsol,
-                                 inputs[:problem])
-
-=#
-
-
-#
-# Plot to file:
-#
-#plt = plot(mesh.x, qsol.q[1,:], w = 3)
-#plot(scatter!(mesh.x, zeros(length(mesh.x)), x=:sepal_width, y=:sepal_length, mode="markers"))
-#savefig("~/Work/Codes/jexpresso/figs/initial_conditions.png")
