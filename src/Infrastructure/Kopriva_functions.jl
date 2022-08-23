@@ -1,4 +1,4 @@
-include("basis_structs.jl")
+include("../basis/basis_structs.jl")
 """ DiscreteFourrierCoefficients(f)
     f:: array of length N
     computes the Discrete fourrier coefficients of f
@@ -1451,8 +1451,29 @@ function  CGDerivativeMatrix(N)
       for k=1:N+1
         s=s+D[k,n]*D[k,j]*w[k]
       end
-      G[j,n]=s/w[j]
+      G[j,n]=s#/w[j]
     end
+  end
+  return G
+end
+
+function CGDerivativeMatrixĜ(N)
+  Legendre = St_legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
+  lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
+                         zeros(TFloat, N+1))
+  LegendreGaussLobattoNodesAndWeights!(Legendre, lgl,N)
+  x=lgl.ξ
+  w=lgl.ω
+  D = PolynomialDerivativeMatrix(x)
+  G=zeros(Float64,N+1,N+1)
+  for j=1:N+1
+     for n=1:N+1
+       s=0.0
+       for k=1:N+1
+         s=s+D[k,n]*D[k,j]*w[k]
+       end
+       G[j,n]=s/w[j]
+     end
   end
   return G
 end
@@ -1468,7 +1489,7 @@ end
 """
 function  CGDriver(N,NT,Nout,T,Φ,a,b,g,gL,gR)
   D = zeros(Float64,N+1,N+1)
-  D2 = -CGDerivativeMatrix(N)
+  D2 = -CGDerivativeMatrixĜ(N)
   Δt = T/NT
   tn=0.0
   for n=0:NT-1

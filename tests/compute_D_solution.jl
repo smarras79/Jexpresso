@@ -1,7 +1,7 @@
 TInt=Int64
 TFloat=Float64
-include("Kopriva_functions.jl")
-include("basis_structs.jl")
+include("../src/Infrastructure/Kopriva_functions.jl")
+include("../src/basis/basis_structs.jl")
 a=zeros(Float64,3)
 b=zeros(Float64,3)
 g=zeros(Float64,3)
@@ -21,7 +21,7 @@ NT= 100.0
 ν=0.2
 xer = zeros(Float64,Nout+1)
 Φr = zeros(Float64,Nout+1)
-N=10
+N=15
 Φ = zeros(Float64,N+1)
 Legendre = St_legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
 lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
