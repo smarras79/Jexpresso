@@ -1686,11 +1686,24 @@ struct MassMatrix1D <: Abstract_Mass_Matrix end
 struct MassMatrix2D <: Abstract_Mass_Matrix end
 struct MassMatrix3D <: Abstract_Mass_Matrix end
 
-function ElementMassMatrix_1D(N, Q, TFloat)
+function ElementMassMatrix_1D(ψ, ω, N, Q, TFloat)
+    
+    M = zeros(Float64,N+1,N+1)   
+    for k=1:Q+1
+        for i=1:N+1
+            for j=1:N+1
+                M[i,j] = M[i,j] + ω[k]*ψ[i,k]*ψ[j,k]
+            end
+        end
+    end
+    
+    return M
 
-    nx = 100
-    x = range(-1, 1, length=nx)
-    l = zeros(TFloat, nx)
+end
+
+function ElementMassMatrix(N, Q, PT::MassMatrix1D, TFloat)
+    
+    ψ = zeros(TFloat, N+1, Q+1)
     lgl = St_lgl{TFloat}(zeros(TFloat, N+1),
                          zeros(TFloat, N+1))
     
@@ -1698,27 +1711,15 @@ function ElementMassMatrix_1D(N, Q, TFloat)
     ξ = lgl.ξ
     ω = BarycentricWeights(ξ)
 
-    for i=1:nx
-        ψ = LagrangeInterpolatingPolynomials(x[i],ξ,ω)
-        l[i] = ψ[1]
-    end
-    
-    plot_curve(x, l, "Basis", "x", "ψ", [""], :none)
-    
- #=   M = zeros(Float64,N,N)
-    
-    for k=1:Q+1
-        for i=1:N+1
-            for j=1:N+1
-                M[i,j] = M[i,j] + ω[k]*
+    for k = 1:Q+1
+        L = LagrangeInterpolatingPolynomials(ξ[k],ξ,ω)
+        for i = 1:N+1
+            ψ[i,k] = L[i]
         end
     end
-    return M
-=#
-end
-
-function ElementMassMatrix(dims,PT::MassMatrix1D,T)
-    M = ElementMassMatrix_1D(x, N, Q)
+    
+    
+    M = ElementMassMatrix_1D(ψ, ω, N, Q, TFloat)
     return M
 end
 

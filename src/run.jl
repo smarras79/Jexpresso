@@ -76,8 +76,8 @@ else
     =#
     
     #@info mesh
-    nop=Int64(inputs[:nop])
-    ElementMassMatrix_1D(nop, nop, Float64)
+    nop=Int64(inputs[:nop])    
+    ElementMassMatrix(nop, nop, MassMatrix1D(), Float64)
     
 
     
