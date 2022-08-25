@@ -6,6 +6,14 @@ abstract type Abstract_Integration_Points end
 abstract type Abstract_Method_Type end
 abstract type Nodal_Solver end
 
+
+mutable struct Nodal1DStorage <:NodalStorage
+    N::Int64
+    ξ::AbstractIntegrationPointAndWeights
+    Dξ::Array{Float64}
+    D2ξ::Array{Float64}
+end
+
 mutable struct Nodal2DStorage <:NodalStorage
     N::Int64
     M::Int64
@@ -34,12 +42,14 @@ mutable struct Nodal3DStorage <: NodalStorage
 end
 
 
+struct LGL1D <: Abstract_Integration_Points end
+struct CGL1D <: Abstract_Integration_Points end
 struct LGL2D <: Abstract_Integration_Points end
 struct CGL2D <: Abstract_Integration_Points end
 struct LGL3D <: Abstract_Integration_Points end
 struct CGL3D <: Abstract_Integration_Points end
 struct Collocation <: Abstract_Method_Type end
-struct Nodal_Galerkin <: Abstract_Method_Type end
+struct NodalGalerkin <: Abstract_Method_Type end
 
 abstract type FDPreconditioner end
 
@@ -70,7 +80,60 @@ mutable struct NodalAdvDiff <: Nodal_Solver
     T::Abstract_Method_Type
 end
 
+#1D
+#2D
+function build_nodal_1DStorage_cgl(N,T::Collocation)
+    cgl      = St_cgl{TFloat}(zeros(TFloat, N+1),
+                              zeros(TFloat, N+1))
+    build_Integration_points!(cgl,N)
+    ξ = cgl
+    Dξ = PolynomialDerivativeMatrix(cgl.ξ)
+    D2ξ = mthOrderPolynomialDerivativeMatrix(2,cgl.ξ)
+    
+    ND = Nodal1DStorage(N,ξ,Dξ,D2ξ)
+    return ND
+end
 
+function build_nodal_1DStorage_cgl(N,T::NodalGalerkin)
+    cgl      = St_cgl{TFloat}(zeros(TFloat, N+1),
+                              zeros(TFloat, N+1))
+    build_Integration_points!(cgl,N)
+    ξ = cgl
+    Dξ = PolynomialDerivativeMatrix(cgl.ξ)
+    D2ξ = CGDerivativeMatrix(N)
+    
+    ND = Nodal1DStorage(N,ξ,Dξ,D2ξ)
+    return ND
+end
+###
+
+function build_nodal_1DStorage_lgl(N,T::Collocation)
+    lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
+                              zeros(TFloat, N+1))
+    build_Integration_points!(lgl,N)
+    ξ = lgl
+    Dξ = PolynomialDerivativeMatrix(lgl.ξ)
+    D2ξ = mthOrderPolynomialDerivativeMatrix(2,lgl.ξ)
+    
+    build_Integration_points!(lgl,M)
+    ND = Nodal1DStorage(N,ξ,Dξ,D2ξ)
+    
+    return ND
+end
+function build_nodal_1DStorage_lgl(N,T::NodalGalerkin)
+    lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
+                              zeros(TFloat, N+1))
+    build_Integration_points!(lgl,N)
+    ξ = lgl
+    Dξ = PolynomialDerivativeMatrix(lgl.ξ)
+    D2ξ = CGDerivativeMatrix(N)
+    
+    ND = Nodal1DStorage(N,ξ,Dξ,D2ξ)
+    return ND
+end
+
+
+#2D
 function build_nodal_2DStorage_cgl(N,M,T::Collocation)
     cgl      = St_cgl{TFloat}(zeros(TFloat, N+1),
                               zeros(TFloat, N+1))
@@ -85,11 +148,12 @@ function build_nodal_2DStorage_cgl(N,M,T::Collocation)
     η = cgl
     Dη = PolynomialDerivativeMatrix(cgl.ξ)
     D2η = mthOrderPolynomialDerivativeMatrix(2,cgl.ξ)
+    
     ND = Nodal2DStorage(N,M,ξ,η,Dξ,Dη,D2ξ,D2η)
     return ND
 end
 
-function build_nodal_2DStorage_cgl(N,M,T::Nodal_Galerkin)
+function build_nodal_2DStorage_cgl(N,M,T::NodalGalerkin)
     cgl      = St_cgl{TFloat}(zeros(TFloat, N+1),
                               zeros(TFloat, N+1))
     build_Integration_points!(cgl,N)
@@ -124,7 +188,7 @@ function build_nodal_2DStorage_lgl(N,M,T::Collocation)
     return ND
 end
 
-function build_nodal_2DStorage_lgl(N,M,T::Nodal_Galerkin)
+function build_nodal_2DStorage_lgl(N,M,T::NodalGalerkin)
     lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
                               zeros(TFloat, N+1))
     build_Integration_points!(lgl,N)
@@ -186,7 +250,7 @@ function build_nodal_3DStorage_lgl(N,M,L,T::Collocation)
     return ND
 end 
 
-function build_nodal_3DStorage_lgl(N,M,L,T::Nodal_Galerkin)
+function build_nodal_3DStorage_lgl(N,M,L,T::NodalGalerkin)
     lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
                               zeros(TFloat, N+1))
     build_Integration_points!(lgl,N)
@@ -210,21 +274,37 @@ function build_nodal_3DStorage_lgl(N,M,L,T::Nodal_Galerkin)
 end 
 
 
+#1D LGL
+function build_nodal_Storage(dims,PT::LGL1D,T)
+    ND = build_nodal_1DStorage_lgl(dims[1],T)
+    return ND
+end
+
+#1D CGL
+function build_nodal_Storage(dims,PT::CGL1D,T)
+    ND = build_nodal_1DStorage_cgl(dims[1],T)
+    return ND
+end
+
+#2DLGL
 function build_nodal_Storage(dims,PT::LGL2D,T)
     ND = build_nodal_2DStorage_lgl(dims[1],dims[2],T)
     return ND
 end
 
+#2D CGL
 function build_nodal_Storage(dims,PT::CGL2D,T)
     ND = build_nodal_2DStorage_cgl(dims[1],dims[2],T)
     return ND
 end
 
+#3D LGL
 function build_nodal_Storage(dims,PT::LGL3D,T)
     ND=  build_nodal_3DStorage_lgl(dims[1],dims[2],dims[3],T)
     return ND
 end
 
+#3D CGL
 function build_nodal_Storage(dims,PT::CGL3D,T)
     ND = build_nodal_3DStorage_cgl(dims[1],dims[2],dims[3])
     return ND
@@ -283,7 +363,7 @@ function transport!(NAD::NodalAdvDiff,T::Collocation,k)
     NAD.transport = MaskSidesFaces(NAD.transport, NAD)
 end
 
-function transport!(NAD::NodalAdvDiff,T::Nodal_Galerkin,k)
+function transport!(NAD::NodalAdvDiff,T::NodalGalerkin,k)
     N=NAD.ND.N
     M=NAD.ND.M
     Φx = zeros(Float64,N+1,N+1)
@@ -844,7 +924,7 @@ function LUSolve(A,p,rhs)
     return y
 end
 
-function ComputeLaplacian(U,NP::Nodal_Solver,::Nodal_Galerkin)
+function ComputeLaplacian(U,NP::Nodal_Solver,T::NodalGalerkin)
     N=NP.ND.N
     M=NP.ND.M
     Uxx = zeros(Float64,N+1,M+1)
@@ -867,7 +947,7 @@ function ComputeLaplacian(U,NP::Nodal_Solver,::Nodal_Galerkin)
     return Lap
 end
 
-function Residual(NP::NodalPotential,::Nodal_Galerkin)
+function Residual(NP::NodalPotential,T::NodalGalerkin)
     N=NP.ND.N
     M=NP.ND.M
     L=(N+1)*(M+1)
