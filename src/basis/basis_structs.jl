@@ -94,9 +94,6 @@ function build_lgl!(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
     #LGL nodes
     LegendreGaussLobattoNodesAndWeights!(Legendre, lgl, nop);
     
-    #LG nodes
-    #LegendreGaussNodesAndWeights(lgl, nop);
-
     return lgl;
 end
 

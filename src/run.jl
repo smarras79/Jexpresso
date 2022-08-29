@@ -25,6 +25,7 @@ include("./Mesh/mod_mesh.jl")
 include("./basis/basis_structs.jl")
 include("./Infrastructure/Kopriva_functions.jl")
 include("./Infrastructure/2D_3D_structures.jl")
+include("../tests/build_lagrange_polynomial.jl")
 include("./solver/mod_solution.jl")
 #--------------------------------------------------------
 
@@ -51,10 +52,8 @@ mod_mesh_mesh_driver(inputs)
 #--------------------------------------------------------
 # Build mass matrix
 #--------------------------------------------------------
-TInt=Int64
-TFloat=Float64
-
 N   = 6
+Q = 100
 Nit = 100
 Tol = 0.1
 
@@ -65,9 +64,12 @@ T2  = Collocation()
 
 dim  = 1
 dims = [N]
-ND   = build_nodal_Storage(dims,P1,T1)
+ND   = build_nodal_Storage(dims,P1,T1) # --> ξ <- ND.ξ.ξ
+ω_bcentric = BarycentricWeights(ND.ξ.ξ)
+
+ξ  = ND.ξ.ξ
+ξq = range(-1, 1, length=Q+1)
+plot_lagrange_polynomial_classic(ξ, ξq, N, Q, TFloat)
 
 
 #ElementMassMatrix(Int64(inputs[:nop]), Int64(inputs[:nop]), MassMatrix1D(), Float64)
-        
-

@@ -635,6 +635,60 @@ function  InterpolateToNewPoints(T,f)
     end
     return finterp
 end
+
+"""
+    LagrangeInterpolatingPolynomials_classic(ξ, ξq, N, Q, TFloat)
+    ξ::set of N interpolation points (e.g. LGL points)
+    ξq::point to interpolate to (e.g. quadrature points of points within the element)
+    
+    Algorithm 3.1 + 3.2 from Giraldo's book
+
+    from https://github.com/fxgiraldo/Element-based-Galerkin-Methods/blob/master/Projects/Project_01_1D_Interpolation/For_Instructors/julia/lagrange_basis.jl
+
+"""
+function LagrangeInterpolatingPolynomials_classic(ξ, ξq, N, Q, TFloat)
+
+    #Initialize arrays
+    L    = zeros(TFloat, N+1, Q+1)
+    dLdx = zeros(TFloat, N+1, Q+1)
+ 
+    for l=1:Q+1
+        xl = ξq[l]
+
+        #Construct Basis
+        for i=1:N+1
+            
+            xi        = ξ[i]
+            L[i,l]    = 1.0
+            dLdx[i,l] = 0.0
+            for j=1:N+1
+                xj = ξ[j]
+
+                #L
+                if (j != i)
+                    L[i,l] = L[i,l]*(xl - xj)/(xi - xj)
+                end
+                
+                ddL=1
+                if (j != i)
+                    for k=1:N+1
+                        xk = ξ[k]
+                        
+                        #dL/dx
+                        if (k !=i && k !=j)
+                            ddL = ddL*(xl - xk)/(xi - xk)
+                        end
+                    end
+                    dLdx[i, l] = dLdx[i, l] + ddL/(xi - xj)
+                end
+            end
+        end
+    end
+
+    return (L, dLdx)
+end
+
+
 """
        LagrangeInterpolatingPolynomials(x,x_j,w)
        x::point to interpolate to

@@ -81,7 +81,6 @@ mutable struct NodalAdvDiff <: Nodal_Solver
 end
 
 #1D
-#2D
 function build_nodal_1DStorage_cgl(N,T::Collocation)
     cgl      = St_cgl{TFloat}(zeros(TFloat, N+1),
                               zeros(TFloat, N+1))
@@ -105,7 +104,6 @@ function build_nodal_1DStorage_cgl(N,T::NodalGalerkin)
     ND = Nodal1DStorage(N,ξ,Dξ,D2ξ)
     return ND
 end
-###
 
 function build_nodal_1DStorage_lgl(N,T::Collocation)
     lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
@@ -125,6 +123,7 @@ function build_nodal_1DStorage_lgl(N,T::NodalGalerkin)
                               zeros(TFloat, N+1))
     build_Integration_points!(lgl,N)
     ξ = lgl
+    
     Dξ = PolynomialDerivativeMatrix(lgl.ξ)
     D2ξ = CGDerivativeMatrix(N)
     
