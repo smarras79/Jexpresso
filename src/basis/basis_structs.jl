@@ -2,15 +2,16 @@
 # This file contains all the structs definitions
 # S. Marras, Feb 2022
 # 
-export St_legendre
+export St_Lagrange
+export St_Legendre
 export St_lgl
 export build_lgl!
 export LegendreGaussLobattoNodesAndWeights
 
-mutable struct St_legendre{TFloat}
+mutable struct St_Legendre{TFloat}
     
     """
-    struct St_legendrea{TFloat<:Real}
+    struct St_Legendrea{TFloat<:Real}
           legendre  :: TFloat
           dlegendre :: TFloat
            q        :: TFloat -> q  = legendre(p+1)  - legendre(p-1)
@@ -23,7 +24,10 @@ mutable struct St_legendre{TFloat}
     q         :: TFloat
     dq        :: TFloat
 end
+
 abstract type AbstractIntegrationPointAndWeights end
+abstract type AbstractInterpolationBasis end
+struct LagrangeBasis <: AbstractInterpolationBasis end
 
 mutable struct St_Chebyshev{TFloat} <:AbstractIntegrationPointAndWeights
     chebyshev ::TFloat
@@ -49,6 +53,11 @@ mutable struct St_cgl{TFloat} <:AbstractIntegrationPointAndWeights
     ω::Array{TFloat}
 end
 
+mutable struct St_Lagrange{TFloat} <:AbstractInterpolationBasis
+    ψ::Matrix{TFloat}
+    dψ::Matrix{TFloat}
+end
+
 function build_Integration_points!(::AbstractIntegrationPointAndWeights,nop::TInt) end
  
 function build_Integration_points!(cg::St_cg, nop::TInt)
@@ -60,16 +69,28 @@ function build_Integration_points!(cgl::St_cgl,nop::TInt)
 end
 
 function build_Integration_points!(lg::St_lg,nop::TInt)
-  Legendre = St_legendre{TFloat}(0.0,0.0,0.0,0.0)
+  Legendre = St_Legendre{TFloat}(0.0,0.0,0.0,0.0)
   build_lg!(Legendre,lg,nop)
 end
 
 function build_Integration_points!(lgl::St_lgl,nop::TInt)
-  Legendre = St_legendre{TFloat}(0.0,0.0,0.0,0.0)
+  Legendre = St_Legendre{TFloat}(0.0,0.0,0.0,0.0)
   build_lgl!(Legendre,lgl,nop)
 end
 
-function build_lgl!(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
+function build_Interpolation_basis!(TP::LagrangeBasis, ξ, ξq, T)
+
+    N = size(ξ,1)  - 1
+    Q = size(ξq,1) - 1
+    basis = St_Lagrange{T}(zeros(N+1,Q+1), zeros(N+1,Q+1))    
+    (basis.ψ, basis.dψ) = LagrangeInterpolatingPolynomials_classic(ξ, ξq, T)
+    
+    return basis
+end
+
+
+
+function build_lgl!(Legendre::St_Legendre, lgl::St_lgl, nop::TInt)
 
     """
       Evaluate recursion, the Legendre polynomial of order p
@@ -118,7 +139,7 @@ function build_cgl!(cgl::St_cgl, nop::TInt)
     return cgl
 end
 
-function build_lg!(Legendre::St_legendre,lg::St_lg,nop)
+function build_lg!(Legendre::St_Legendre,lg::St_lg,nop)
     size::Int8=nop+1
     lg.ξ = zeros(Float64, size)
     lg.ω = zeros(Float64, size)
@@ -148,7 +169,7 @@ function ChebyshevGaussLobattoNodesAndWeights!(cgl::St_cgl,nop::TInt)
 end
 
 
-function LegendreGaussNodesAndWeights!(Legendre::St_legendre, lg::St_lg, nop::TInt)
+function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop::TInt)
     """
           Compute the Nodes and Weights for the Legendre Gauss Quadrature
           using Algorithm 23 of Kopriva's book valid for nop ≤  200
@@ -188,7 +209,7 @@ function LegendreGaussNodesAndWeights!(Legendre::St_legendre, lg::St_lg, nop::TI
     end
 end
 
-function LegendreGaussLobattoNodesAndWeights!(Legendre::St_legendre, lgl::St_lgl, nop::TInt)
+function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl, nop::TInt)
     
     NITER = 100
     TOL = 4*eps()
@@ -275,7 +296,7 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_legendre, lgl::St_lgl
     
 end
 
-function LegendreAndDerivativeAndQ!(Legendre::St_legendre, nop::TInt, x::TFloat)
+function LegendreAndDerivativeAndQ!(Legendre::St_Legendre, nop::TInt, x::TFloat)
     
     """
              Evaluate by recursion, the Legendre polynomial of order p
@@ -382,4 +403,59 @@ function ChebyshevPolynomial!(Chebyshev::St_Chebyshev,nop::TInt,x::TFloat,Ks::TI
         T=cos(nop*acos(x))
         Chebyshev.chebyshev = T
     end
+end
+
+"""
+    LagrangeInterpolatingPolynomials_classic(ξ, ξq, N, Q, TFloat)
+    ξ::set of N interpolation points (e.g. LGL points)
+    ξq::point to interpolate to (e.g. quadrature points of points within the element)
+    
+    Algorithm 3.1 + 3.2 from Giraldo's book
+
+    from https://github.com/fxgiraldo/Element-based-Galerkin-Methods/blob/master/Projects/Project_01_1D_Interpolation/For_Instructors/julia/lagrange_basis.jl
+
+"""
+function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
+
+    N = size(ξ,1) - 1
+    Q = size(ξq,1) - 1
+    
+    #Initialize arrays
+    L    = zeros(TFloat, N+1, Q+1)
+    dLdx = zeros(TFloat, N+1, Q+1)
+ 
+    for l=1:Q+1
+        xl = ξq[l]
+
+        #Construct Basis
+        for i=1:N+1
+            
+            xi        = ξ[i]
+            L[i,l]    = 1.0
+            dLdx[i,l] = 0.0
+            for j=1:N+1
+                xj = ξ[j]
+
+                #L
+                if (j != i)
+                    L[i,l] = L[i,l]*(xl - xj)/(xi - xj)
+                end
+                
+                ddL=1
+                if (j != i)
+                    for k=1:N+1
+                        xk = ξ[k]
+                        
+                        #dL/dx
+                        if (k !=i && k !=j)
+                            ddL = ddL*(xl - xk)/(xi - xk)
+                        end
+                    end
+                    dLdx[i, l] = dLdx[i, l] + ddL/(xi - xj)
+                end
+            end
+        end
+    end
+
+    return (L, dLdx)
 end

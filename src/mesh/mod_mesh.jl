@@ -53,11 +53,11 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
 
     zmin::Union{TFloat, Missing} = -1.0;
     zmax::Union{TFloat, Missing} = +1.0;
-
+    
     npx::Union{TInt, Missing} = 1
     npy::Union{TInt, Missing} = 1
     npz::Union{TInt, Missing} = 1
-
+    
     nelem::Union{TInt, Missing} = 1
     npoin::Union{TInt, Missing} = 1        # This is updated after populating with high-order nodes
     npoin_linear::Union{TInt, Missing} = 1 # This is always the original number of the first-order grid
@@ -259,7 +259,7 @@ end
 # Add high-order points to edges, faces, and elements (volumes)
 #
 # initialize LGL struct and buyild Gauss-Lobatto-xxx points
-Legendre = St_legendre{Float64}(0.0, 0.0, 0.0, 0.0)
+Legendre = St_Legendre{Float64}(0.0, 0.0, 0.0, 0.0)
 lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
                            zeros(mesh.nop+1))
 build_lgl!(Legendre, lgl, mesh.nop)
