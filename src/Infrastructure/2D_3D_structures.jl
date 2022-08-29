@@ -89,7 +89,7 @@ function build_nodal_1DStorage_cgl(N,T::Collocation)
     Dξ = PolynomialDerivativeMatrix(cgl.ξ)
     D2ξ = mthOrderPolynomialDerivativeMatrix(2,cgl.ξ)
     
-    ND = Nodal1DStorage(N,ξ,Dξ,D2ξ)
+    ND = Nodal1DStorage(N,ξ,Dξ,D2ξ,ψ,dψ)
     return ND
 end
 

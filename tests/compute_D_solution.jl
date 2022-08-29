@@ -23,7 +23,7 @@ xer = zeros(Float64,Nout+1)
 Φr = zeros(Float64,Nout+1)
 N=15
 Φ = zeros(Float64,N+1)
-Legendre = St_legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
+Legendre = St_Legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
 lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
                        zeros(TFloat, N+1))
 LegendreGaussLobattoNodesAndWeights!(Legendre,lgl,N)
