@@ -434,12 +434,18 @@ end
 
 function  add_high_order_nodes!(mesh::St_mesh) end
 
-function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, lgl::St_lgl)
+function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
     
     if (mesh.nop < 2) return end
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES")
     println(" # ...")
+
+    Legendre = St_Legendre{Float64}(0.0, 0.0, 0.0, 0.0)
+    lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
+                               zeros(mesh.nop+1))
+    build_lgl!(Legendre, lgl, mesh.nop)
+
     
     x1, y1, z1 = Float64(0.0), Float64(0.0), Float64(0.0)
     x2, y2, z2 = Float64(0.0), Float64(0.0), Float64(0.0)
@@ -454,63 +460,52 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, lgl::St_lgl)
     
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
-
+    resize!(mesh.x, (mesh.npoin))
+    
     if length(mesh.x_ho) < mesh.npoin
         resize!(mesh.x_ho, (mesh.npoin))
     end
-    
-    conn1d::Array{Int64, 2}  = zeros(mesh.nelem, mesh.npoin_el)
-    
-    open("./COORDS_HO_edges_1D.dat", "w") do f
-        #
-        # First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
-        #
-        ip = tot_linear_poin + 1
-        for iel_g = 1:mesh.nelem
-            
-            ip1 = mesh.conn_unique_edges[iedge_g][1]
-            ip2 = mesh.conn_unique_edges[iedge_g][2]
-            
-            conn1d[iel_g,        1] = ip1
-            conn1d[iel_g, mesh.ngl] = ip2
-            
-            x1 = mesh.x[ip1]
-            x2 = mesh.x[ip2]
-            
-            #@printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
-            for l=2:ngl-1
-                ξ = lgl.ξ[l];
-                
-                mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-	        
-                conn1d[iel_g, l] = ip
-                
-                #@printf(" lgl %d: %d %d ", l, ielem_g, conn_elem_poin[ielem_g, l])
-                @printf(f, " %.6f %d\n", mesh.x_ho[ip], ip)
-                ip = ip + 1
-            end
-        end
-    end #do f
 
     #
-    # Second pass: populate mesh.conn_ho[1:8+el_edges_internal_nodes, ∀ elem]\n")
+    # First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
     #
-    iconn = 1
-    for iel_el = 1:nelem
-        for l = 2:ngl-1
-            ip = conn1d[iel_g, l]
-            mesh.conn_ho[2 + iconn, iel] = ip #OK
+    ip = tot_linear_poin + 1
+    for iel_g = 1:mesh.nelem
+
+        ip1 = iel_g
+        ip2 = iel_g + 1
+        
+        mesh.conn_ho[1, iel_g] = ip1
+        mesh.conn_ho[2, iel_g] = ip2
+        
+        x1 = mesh.x[ip1]
+        x2 = mesh.x[ip2]
+        
+        iconn = 1
+        for l=2:ngl-1
+            ξ = lgl.ξ[l];
+            
+            mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
+            
+            mesh.conn_ho[2 + iconn, iel_g] = ip #OK
             iconn = iconn + 1
+            
+            ip = ip + 1
         end
     end
     
-    for iel = 1:mesh.nelem
-        for l=1:2+(ngl-2)
-            @printf(" %d ", mesh.conn_ho[l, iel]) #OK
+    
+    
+    #=open("./COORDS_HO_1D.dat", "w") do f
+    for iel_g = 1:mesh.nelem
+        for l=1:ngl
+            @printf(f, " lgl %d: %d %d\n", l, iel_g,  mesh.conn_ho[l, iel_g])
+            @printf(" %d ", mesh.conn[l, iel_g]) #OK
         end
         @printf("\n ")
     end
-    
+    end #do f
+    =#
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
     return 
@@ -881,10 +876,13 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     end
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.npx - 1)
     mesh.npoin = mesh.npx
-    
-    for i = 1:mesh.npx
-        mesh.x[i] = (i - 1)*Δx
-    end
+
+    open("./COORDS_LO_1D.dat", "w") do f
+        for i = 1:mesh.npx
+            mesh.x[i] = (i - 1)*Δx
+            @printf(f, " %.6f %d\n", mesh.x[i], i)
+        end
+    end #f
     
     ###    
     mesh.NNODES_EL  = 2
@@ -926,29 +924,22 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     
     #
     # Resize (using resize! from ElasticArrays) as needed
-    # 
-    resize!(mesh.x, (mesh.npoin_linear))
-    
-    mesh.npoin_el = mesh.NNODES_EL + el_vol_internal_nodes
-    
+    #
+    resize!(mesh.x, (mesh.npoin_linear))    
+    mesh.npoin_el = mesh.NNODES_EL + el_vol_internal_nodes   
     resize!(mesh.conn_ho, (mesh.npoin_el*mesh.nelem))
-    resize!(mesh.conn_ho_ptr, (mesh.nelem))
+    mesh.conn_ho = reshape(mesh.conn_ho, mesh.npoin_el, mesh.nelem)
 
-    cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(mesh.npoin_el))
-    cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(mesh.npoin_el))
-
-    #Populate low order conn:
-    for iel=1:mesh.nelem
-        for ip=1:mesh.npoin
-            cell_node_ids[iel] =
-                end
+    for iel = 1:mesh.nelem
+        mesh.conn_ho[1, iel] = iel
+        mesh.conn_ho[2, iel] = iel + 1
     end
-    
-    ###
-
-    #Add high-order nodes
-    add_high_order_nodes_1D_native_mesh!(mesh, lgl)
         
+    #Add high-order nodes
+    add_high_order_nodes_1D_native_mesh!(mesh)
+
+    #plot_1d_grid(mesh)
+
     println(" # BUILD LINEAR CARTESIAN GRID ............................ DONE")
     
 end

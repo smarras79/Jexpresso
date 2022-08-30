@@ -2,8 +2,11 @@ using Plots; gr()
 using LaTeXStrings
 using ColorSchemes
 
+include("../../mesh/mod_mesh.jl")
+
 export plot_error
 export plot_curve
+export plot_1d_grid
 
 function plot_error(x, y, title::String, legend_labels; yscale)
 
@@ -49,4 +52,15 @@ function plot_surf()
 
     display(fig)
     
+end
+
+function plot_1d_grid(mesh::St_mesh)
+    
+    x = mesh.x
+    npoin = length(x)
+    
+    plt = plot() #Clear plot
+    for i=1:npoin
+        display(scatter!(x, zeros(npoin), markersizes=4))
+    end 
 end
