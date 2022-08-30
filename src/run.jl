@@ -68,7 +68,6 @@ T2  = Collocation()
 # ξ = ND.ξ.ξ
 # ω = ND.ξ.ω
 #--------------------------------------------------------
-#Interpolation points
 ND = build_nodal_Storage([N],P1,T1) # --> ξ <- ND.ξ.ξ
 ξ  = ND.ξ.ξ
 
@@ -106,9 +105,11 @@ end
 #--------------------------------------------------------
 basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
 
-nelem = 1
-M = build_element_matrices!(TP, basis.ψ, ω, nelem, N, Q, TFloat)
 
-
-
-#ElementMassMatrix(Int64(inputs[:nop]), Int64(inputs[:nop]), MassMatrix1D(), Float64)
+#--------------------------------------------------------
+# Build element mass matrix
+#
+# Return:
+# M[iel, i, j]
+#--------------------------------------------------------
+M = build_element_matrices!(TP, basis.ψ, ω, mesh.nelem, N, Q, TFloat)
