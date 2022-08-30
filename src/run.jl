@@ -104,12 +104,10 @@ end
 # ψ     = basis.ψ[N+1, Q+1]
 # dψ/dξ = basis.dψ[N+1, Q+1]
 #--------------------------------------------------------
-ξr    = ξq #range(-1, 1, length=100) #Used for plotting purposes only
 basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
-#plot_basis(basis.ψ, ξ, ξr)
 
-
-M = build_element_matrices!(TP, basis.ψ, ω, 1, N, Q, TFloat)
+nelem = 1
+M = build_element_matrices!(TP, basis.ψ, ω, nelem, N, Q, TFloat)
 
 
 
