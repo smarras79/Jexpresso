@@ -880,7 +880,6 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     open("./COORDS_LO_1D.dat", "w") do f
         for i = 1:mesh.npx
             mesh.x[i] = (i - 1)*Δx
-            @printf(f, " %.6f %d\n", mesh.x[i], i)
         end
     end #f
     
@@ -922,9 +921,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     end
     
     
-    #
     # Resize (using resize! from ElasticArrays) as needed
-    #
     resize!(mesh.x, (mesh.npoin_linear))    
     mesh.npoin_el = mesh.NNODES_EL + el_vol_internal_nodes   
     resize!(mesh.conn_ho, (mesh.npoin_el*mesh.nelem))
