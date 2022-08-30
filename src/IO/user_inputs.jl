@@ -12,11 +12,11 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
         :nsd          => 1,           #number of space dimensions
         :nop          => 4,           #Polynomila order        
-        :npx          => 10,         #N. points in x
+        :npx          => 4,         #N. points in x
         :npy          => 10,           #N. points in y
         :npz          => 5,           #N. points in z
         :xmin         => 0,
-        :xmax         => 2π,
+        :xmax         => 5,
         :ymin         =>-1,
         :ymax         => 1,
         :zmin         =>-1,
