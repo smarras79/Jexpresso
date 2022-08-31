@@ -30,8 +30,19 @@ struct AD1D <: AbstractProblem end
 struct NS1D <: AbstractProblem end
 struct BURGERS1D <: AbstractProblem end
 
-function cg_driver(AP::AD1D, lexact_integration::Bool, N, TFloat)
-
+function cg_driver(inputs::Dict,  #input parameters from src/user_input.jl
+                   ET::AD1D,      #Equation subtype
+                   TFloat) 
+    
+    N = inputs[:nop]
+    lexact_integration = inputs[:lexact_integration]
+    
+    #--------------------------------------------------------
+    # Create/read mesh
+    # return mesh::St_mesh
+    #--------------------------------------------------------
+    mesh = mod_mesh_mesh_driver(inputs)
+    
     #--------------------------------------------------------
     # Build interpolation nodes:
     #             the user decides among LGL, GL, etc. 
