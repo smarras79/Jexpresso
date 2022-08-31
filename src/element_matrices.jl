@@ -35,13 +35,13 @@ function build_element_matrices!(TP::Exact, ψ, dψdξ, ω, nelem, N, Q, T)
             for i=1:N+1
                 for j=1:N+1
                     el_matrices.M[i,j,iel] = el_matrices.M[i,j,iel] + (1.0/8.0)*ω[k]*ψ[i,k]*ψ[j,k]
-                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] + 0.5*ω[k]*ψ[i,k]*dψdξ[j,k]
+                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] + ω[k]*ψ[i,k]*dψdξ[j,k]
                 end
             end
         end
     end
 
-    @show el_matrices.M
+    @show el_matrices.D
     
     return el_matrices
 end
@@ -51,19 +51,22 @@ function build_element_matrices!(TP::Inexact, ψ, dψdξ, ω, nelem, N, Q, T)
     el_matrices = St_ElMat_Inexact{T}(zeros(N+1, nelem),
                                       zeros(N+1, N+1, nelem))
 
+    @show dψdξ[1,1, 1]
+    @show dψdξ[2,1, 1]
+    
     for iel=1:nelem
         for k=1:Q+1
             for i=1:N+1
                 for j=1:N+1
+                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] + ω[k]*ψ[i,k]*dψdξ[j,k] #Sparse
                     if (i == j)
-                        el_matrices.M[i,iel]   = el_matrices.M[i,iel] + 0.5*ω[k]*ψ[i,k]*ψ[j,k] #Store only the diagonal elements 
-                        el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] + 0.5*ω[k]*ψ[i,k]*dψdξ[j,k] #Sparse
+                        el_matrices.M[i,iel]   = el_matrices.M[i,iel] + 0.5*ω[k]*ψ[i,k]*ψ[j,k] #Store only the diagonal elements
                     end
                 end
             end
         end
     end
-    @show el_matrices.M
+    @show el_matrices.D
     println(size(el_matrices.M))
     
     return el_matrices
