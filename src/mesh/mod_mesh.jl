@@ -90,8 +90,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
     
-    conn_ho_ptr       = ElasticArray{Int64}(undef, nelem)    
-    conn_ho           = ElasticArray{Int64}(undef, ngl*nelem)
+    conn_ptr       = ElasticArray{Int64}(undef, nelem)    
+    conn           = ElasticArray{Int64}(undef, ngl*nelem)
     conn_unique_edges = ElasticArray{Int64}(undef,  1, 2)
     conn_unique_faces = ElasticArray{Int64}(undef,  1, 4)
 
@@ -206,8 +206,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     resize!(mesh.conn_face_el,  (4, mesh.NFACES_EL, mesh.nelem))
 
     mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + el_vol_internal_nodes
-    resize!(mesh.conn_ho, (mesh.npoin_el*mesh.nelem))
-    resize!(mesh.conn_ho_ptr, (mesh.nelem))
+    resize!(mesh.conn, (mesh.npoin_el*mesh.nelem))
+    resize!(mesh.conn_ptr, (mesh.nelem))
     
     #
     # Connectivity matrices
@@ -218,23 +218,23 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.cell_edge_ids     = get_faces(topology, 3, 1)   #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     mesh.cell_face_ids     = get_faces(topology, 3, 2)   #edge map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
     
-    mesh.conn_ho = reshape(mesh.conn_ho, mesh.npoin_el, mesh.nelem)
+    mesh.conn = reshape(mesh.conn, mesh.npoin_el, mesh.nelem)
     if (mesh.nsd == 1)
-        #mesh.conn_ho = reshape(mesh.conn_ho, mesh.ngl, mesh.nelem)
+        #mesh.conn = reshape(mesh.conn, mesh.ngl, mesh.nelem)
     elseif (mesh.nsd == 2)
-        #mesh.conn_ho = reshape(mesh.conn_ho, mesh.ngl, mesh.ngl - 4,  mesh.nelem)
+        #mesh.conn = reshape(mesh.conn, mesh.ngl, mesh.ngl - 4,  mesh.nelem)
     elseif (mesh.nsd == 3)
-        #mesh.conn_ho = reshape(mesh.conn_ho, mesh.ngl, mesh.ngl, mesh.ngl, mesh.nelem)
+        #mesh.conn = reshape(mesh.conn, mesh.ngl, mesh.ngl, mesh.ngl, mesh.nelem)
         for iel = 1:mesh.nelem
             
-            mesh.conn_ho[1, iel] = mesh.cell_node_ids[iel][2]
-            mesh.conn_ho[2, iel] = mesh.cell_node_ids[iel][6]
-            mesh.conn_ho[3, iel] = mesh.cell_node_ids[iel][8]
-            mesh.conn_ho[4, iel] = mesh.cell_node_ids[iel][4]
-            mesh.conn_ho[5, iel] = mesh.cell_node_ids[iel][1]
-            mesh.conn_ho[6, iel] = mesh.cell_node_ids[iel][5]
-            mesh.conn_ho[7, iel] = mesh.cell_node_ids[iel][7]
-            mesh.conn_ho[8, iel] = mesh.cell_node_ids[iel][3]
+            mesh.conn[1, iel] = mesh.cell_node_ids[iel][2]
+            mesh.conn[2, iel] = mesh.cell_node_ids[iel][6]
+            mesh.conn[3, iel] = mesh.cell_node_ids[iel][8]
+            mesh.conn[4, iel] = mesh.cell_node_ids[iel][4]
+            mesh.conn[5, iel] = mesh.cell_node_ids[iel][1]
+            mesh.conn[6, iel] = mesh.cell_node_ids[iel][5]
+            mesh.conn[7, iel] = mesh.cell_node_ids[iel][7]
+            mesh.conn[8, iel] = mesh.cell_node_ids[iel][3]
             
         end
         #=@info size(get_isboundary_face(topology,mesh.nsd-1))
@@ -476,8 +476,8 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
         ip1 = iel_g
         ip2 = iel_g + 1
         
-        mesh.conn_ho[1, iel_g] = ip1
-        mesh.conn_ho[2, iel_g] = ip2
+        mesh.conn[1, iel_g] = ip1
+        mesh.conn[2, iel_g] = ip2
         
         x1 = mesh.x[ip1]
         x2 = mesh.x[ip2]
@@ -488,7 +488,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
             
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
             
-            mesh.conn_ho[2 + iconn, iel_g] = ip #OK
+            mesh.conn[2 + iconn, iel_g] = ip #OK
             iconn = iconn + 1
             
             ip = ip + 1
@@ -500,7 +500,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
     #=open("./COORDS_HO_1D.dat", "w") do f
     for iel_g = 1:mesh.nelem
     for l=1:ngl
-    @printf(f, " lgl %d: %d %d\n", l, iel_g,  mesh.conn_ho[l, iel_g])
+    @printf(f, " lgl %d: %d %d\n", l, iel_g,  mesh.conn[l, iel_g])
     @printf(" %d ", mesh.conn[l, iel_g]) #OK
     end
     @printf("\n ")
@@ -581,7 +581,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     end #do f
 
     #
-    # Second pass: populate mesh.conn_ho[1:8+el_edges_internal_nodes, ∀ elem]\n")
+    # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes, ∀ elem]\n")
     #
     cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here    
     for iel = 1:mesh.nelem
@@ -591,7 +591,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
             iedge_g = edge_ids[iedge_el]
             for l = 2:ngl-1
                 ip = conn_edge_poin[iedge_g, l]
-                mesh.conn_ho[8 + iconn, iel] = ip #OK
+                mesh.conn[8 + iconn, iel] = ip #OK
                 iconn = iconn + 1
             end
         end
@@ -599,7 +599,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl)
     
     #=for iel = 1:mesh.nelem
     for l=1:8+el_edges_internal_nodes
-    @printf(" %d ", mesh.conn_ho[l, iel]) #OK
+    @printf(" %d ", mesh.conn[l, iel]) #OK
     end
     @printf("\n ")
     end
@@ -704,7 +704,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
     end #do f
 
     #
-    # Second pass: populate mesh.conn_ho[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
+    # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
     #
     cache_face_ids = array_cache(mesh.cell_face_ids) # allocation here    
     for iel = 1:mesh.nelem
@@ -715,7 +715,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
             for l = 2:ngl-1
                 for m = 2:ngl-1
                     ip = conn_face_poin[iface_g, l, m]
-                    mesh.conn_ho[8 + el_edges_internal_nodes + iconn, iel] = ip
+                    mesh.conn[8 + el_edges_internal_nodes + iconn, iel] = ip
                     iconn = iconn + 1
                 end
             end
@@ -724,7 +724,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl)
     
     #=for iel = 1:mesh.nelem
     for l=1:8+el_edges_internal_nodes+el_faces_internal_nodes
-    @printf(" %d ", mesh.conn_ho[l, iel]) #OK
+    @printf(" %d ", mesh.conn[l, iel]) #OK
     end
     @printf("\n ")
     end=#
@@ -841,7 +841,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
 			                 + z7*(1 + ξ)*(1 + η)*(1 + ζ)*0.125
 			                 + z8*(1 - ξ)*(1 + η)*(1 + ζ)*0.125)
 
-                        mesh.conn_ho[8 + el_edges_internal_nodes + el_faces_internal_nodes + iconn, iel] = ip
+                        mesh.conn[8 + el_edges_internal_nodes + el_faces_internal_nodes + iconn, iel] = ip
 
                         @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
 
@@ -853,10 +853,10 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
         end
     end # do f 
     
-    #=@printf(" CONN_HO FULL\n")
+    #=@printf(" CONN FULL\n")
     for iel = 1:mesh.nelem
     for l=1:8 + el_edges_internal_nodes + el_faces_internal_nodes + el_vol_internal_nodes
-    @printf(" %d ", mesh.conn_ho[l, iel]) #OK
+    @printf(" %d ", mesh.conn[l, iel]) #OK
     end
     @printf("\n ")
     end #OK
@@ -918,12 +918,12 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     # Resize (using resize! from ElasticArrays) as needed
     resize!(mesh.x, (mesh.npoin_linear))    
     mesh.npoin_el = mesh.NNODES_EL + el_vol_internal_nodes   
-    resize!(mesh.conn_ho, (mesh.npoin_el*mesh.nelem))
-    mesh.conn_ho = reshape(mesh.conn_ho, mesh.npoin_el, mesh.nelem)
+    resize!(mesh.conn, (mesh.npoin_el*mesh.nelem))
+    mesh.conn = reshape(mesh.conn, mesh.npoin_el, mesh.nelem)
 
     for iel = 1:mesh.nelem
-        mesh.conn_ho[1, iel] = iel
-        mesh.conn_ho[2, iel] = iel + 1
+        mesh.conn[1, iel] = iel
+        mesh.conn[2, iel] = iel + 1
     end
     
     #Add high-order nodes
