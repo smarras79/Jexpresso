@@ -96,7 +96,7 @@ function cg_driver(inputs::Dict,  #input parameters from src/user_input.jl
     # el_mat.M[iel, i]    <-- if inexact (diagonal)
     # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
     #--------------------------------------------------------
-    @show el_mat = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh.nelem, N, Q, TFloat)
+    el_mat = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh.nelem, N, Q, TFloat)
     
 end
 
