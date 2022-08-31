@@ -23,7 +23,10 @@ const TFloat = Float64
 include("./IO/mod_inputs.jl")
 include("./Mesh/mod_mesh.jl")
 include("./basis/basis_structs.jl")
-include("./solver/mod_solution.jl")
+include("./Infrastructure/Kopriva_functions.jl")
+include("./Infrastructure/2D_3D_structures.jl")
+include("./element_matrices.jl")
+include("../tests/plot_lagrange_polynomial.jl")
 #--------------------------------------------------------
 
 struct EDGES <:At_geo_entity end
@@ -41,78 +44,78 @@ inputs        = Dict{}()
 inputs, nvars = mod_inputs_user_inputs()
 
 #--------------------------------------------------------
-# Build mesh    
+# Create/read mesh
+# return mesh::St_mesh
 #--------------------------------------------------------
+mesh = mod_mesh_mesh_driver(inputs)
 
-if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
-    
-    println(" # Read gmsh grid and populate with high-order points ")
-    
-    # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-    mesh = St_mesh{TInt,TFloat}(nsd=Int8(inputs[:nsd]),
-                                nop=Int8(inputs[:nop]))
-    
-    # Read gmsh grid using the GridapGmsh reader
-    
-    mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
-    
-    println(" # Read gmsh grid and populate with high-order points ........................ DONE")
-else
-    println(" # Build grid")
-    
-    # Initialize mesh struct for native structured grid:
-    mesh = St_mesh{TInt,TFloat}(x = zeros(Int8(inputs[:npx])),
-                                y = zeros(Int8(inputs[:npy])),
-                                z = zeros(Int8(inputs[:npz])),
-                                npx  = Int8(inputs[:npx]),
-                                npy  = Int8(inputs[:npy]),
-                                npz  = Int8(inputs[:npz]), 
-                                xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
-                                ymin = Float64(inputs[:ymin]), ymax = Float64(inputs[:ymax]),
-                                zmin = Float64(inputs[:zmin]), zmax = Float64(inputs[:zmax]),
-                                nsd=Int8(inputs[:nsd]),
-                                nop=Int8(inputs[:nop]))
+#--------------------------------------------------------
+# Problem setup
+# !!!!!!
+# !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
+# !!!!!!
+#--------------------------------------------------------
+exact_quadrature = false
 
-    
-    #@info mesh
-    
+P1  = LGL1D()
+P2  = CGL1D()
+T1  = NodalGalerkin()
+T2  = Collocation()
 
+#--------------------------------------------------------
+# Build interpolation nodes:
+#             the user decides among LGL, GL, etc. 
+# Return:
+# ξ = ND.ξ.ξ
+# ω = ND.ξ.ω
+#--------------------------------------------------------
+N  = inputs[:nop]
+ND = build_nodal_Storage([N],P1,T1) # --> ξ <- ND.ξ.ξ
+ξ  = ND.ξ.ξ
+
+exact_integration = inputs[:lexact_integration]
+if exact_integration
+    #
+    # Exact quadrature:
+    # Quadrature order (Q = N+1) ≠ polynomial order (N)
+    #
+    TP  = Exact()
+    Q   = N + 1
     
-    #Write structured grid to VTK
-    vtkfile = vtk_grid("mySTRUCTURED_GRID", mesh.x, mesh.y, mesh.z) # 3-D
-    outfiles = vtk_save(vtkfile)
+    NDq = build_nodal_Storage([Q],P1,T1) # --> ξ <- ND.ξ.ξ
+    ξq  = NDq.ξ.ξ
+    ω   = NDq.ξ.ω
     
-    println(" # Build grid ........................ DONE")
+else  
+    #
+    # Inexact quadrature:
+    # Quadrature and interpolation orders coincide (Q = N)
+    #
+    TP  = Inexact()
+    Q   = N
+    NDq = ND
+    ξq  = ξ
+    ω   = ND.ξ.ω
 end
 
 
-#--------------------------------------------------------
-# END Build mesh    
-#--------------------------------------------------------
 
 #--------------------------------------------------------
-# Initialize solution struct
-#--------------------------------------------------------
+# Build Lagrange polynomials:
 #
-#= Initlaize solution struct
-qsol = St_solution{TInt,TFloat}(zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
-                                zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
-                                zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
-                                zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
-                                zeros(TFloat, nvars, mesh.npx*mesh.npy*mesh.npz),
-                                zeros(TFloat, mesh.nsd*mesh.nsd))
-
-# Build initial conditions
-mod_solution_initial_conditions!(mesh,
-                                 qsol,
-                                 inputs[:problem])
-
-=#
+# Return:
+# ψ     = basis.ψ[N+1, Q+1]
+# dψ/dξ = basis.dψ[N+1, Q+1]
+#--------------------------------------------------------
+basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
 
 
+#--------------------------------------------------------
+# Build element mass matrix
 #
-# Plot to file:
-#
-#plt = plot(mesh.x, qsol.q[1,:], w = 3)
-#plot(scatter!(mesh.x, zeros(length(mesh.x)), x=:sepal_width, y=:sepal_length, mode="markers"))
-#savefig("~/Work/Codes/jexpresso/figs/initial_conditions.png")
+# Return:
+# el_mat.M[iel, i, j] <-- if exact (full)
+# el_mat.M[iel, i]    <-- if inexact (diagonal)
+# el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
+#--------------------------------------------------------
+el_mat = build_element_matrices!(TP, basis.ψ, basis.dψ, ω, mesh.nelem, N, Q, TFloat)
