@@ -40,8 +40,7 @@ function build_element_matrices!(TP::Exact, ψ, dψdξ, ω, nelem, N, Q, T)
             end
         end
     end
-
-    @show el_matrices.D
+    #@show el_matrices.D
     
     return el_matrices
 end
@@ -51,9 +50,6 @@ function build_element_matrices!(TP::Inexact, ψ, dψdξ, ω, nelem, N, Q, T)
     el_matrices = St_ElMat_Inexact{T}(zeros(N+1, nelem),
                                       zeros(N+1, N+1, nelem))
 
-    @show dψdξ[1,1, 1]
-    @show dψdξ[2,1, 1]
-    
     for iel=1:nelem
         for k=1:Q+1
             for i=1:N+1
@@ -66,12 +62,40 @@ function build_element_matrices!(TP::Inexact, ψ, dψdξ, ω, nelem, N, Q, T)
             end
         end
     end
-    @show el_matrices.D
-    println(size(el_matrices.M))
-    
+    #@show el_matrices.D
+        
     return el_matrices
     
 end
 
 
+function DSSmatrix!(M::Matrix{T}, Me::Matrix{T}, conn, nelem, npoin, N, T) <: where{T}
+
+    M = zeros(npoin+1, npoin+1)
+    
+    for iel=1:nelem
+        for i=1:N+1
+            I = conn[i,iel]
+            for j=1:N+1
+                J = conn[j,iel]                
+                M[I,J] = M[I,J] + Me[i,j,iel]                
+            end
+        end
+    end
+    
+end
+
+
+function DSSarray!(A::Array{T}, Ae::Array{T}, conn, nelem, npoin, N, T) <: where{T}
+
+    A = zeros(npoin+1)
+    
+    for iel=1:nelem
+        for i=1:N+1
+            I = conn[i,iel]
+            A[I] = A[I] + Ae[i,iel]
+        end
+    end
+
+end
 
