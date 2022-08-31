@@ -245,36 +245,36 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
         end=#
     end
 
-    open("./COORDS_LO.dat", "w") do f
-        for ip = 1:mesh.npoin_linear
-            mesh.x[ip] = model.grid.node_coordinates[ip][1]
-            mesh.y[ip] = model.grid.node_coordinates[ip][2]
-            mesh.z[ip] = model.grid.node_coordinates[ip][3]
-            @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-        end
+open("./COORDS_LO.dat", "w") do f
+    for ip = 1:mesh.npoin_linear
+        mesh.x[ip] = model.grid.node_coordinates[ip][1]
+        mesh.y[ip] = model.grid.node_coordinates[ip][2]
+        mesh.z[ip] = model.grid.node_coordinates[ip][3]
+        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
     end
+end
 
-    #
-    # Add high-order points to edges, faces, and elements (volumes)
-    #
-    # initialize LGL struct and buyild Gauss-Lobatto-xxx points
-    Legendre = St_Legendre{Float64}(0.0, 0.0, 0.0, 0.0)
-    lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
-                               zeros(mesh.nop+1))
-    build_lgl!(Legendre, lgl, mesh.nop)
+#
+# Add high-order points to edges, faces, and elements (volumes)
+#
+# initialize LGL struct and buyild Gauss-Lobatto-xxx points
+Legendre = St_Legendre{Float64}(0.0, 0.0, 0.0, 0.0)
+lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
+                           zeros(mesh.nop+1))
+build_lgl!(Legendre, lgl, mesh.nop)
 
-    #Edges
-    populate_conn_edge_el!(mesh)
-    @time add_high_order_nodes_edges!(mesh, lgl)
+#Edges
+populate_conn_edge_el!(mesh)
+@time add_high_order_nodes_edges!(mesh, lgl)
 
-    #Faces
-    populate_conn_face_el!(mesh)
-    @time add_high_order_nodes_faces!(mesh, lgl)
+#Faces
+populate_conn_face_el!(mesh)
+@time add_high_order_nodes_faces!(mesh, lgl)
 
-    #Volume
-    @time add_high_order_nodes_volumes!(mesh, lgl)
+#Volume
+@time add_high_order_nodes_volumes!(mesh, lgl)
 
-    #writevtk(model,"gmsh_grid")
+#writevtk(model,"gmsh_grid")
 end
 
 function populate_conn_edge_el!(mesh::St_mesh)
@@ -410,10 +410,10 @@ function populate_face_in_elem!(face_in_elem::Array{Int64, 3}, nelem, NFACES_EL,
                 for jel = iel:nelem
 		    
 		    if(     conn_face_el_sort[iel,ifac,1] === conn_face_el_sort[jel,jfac,1] && 
-			conn_face_el_sort[iel,ifac,2] === conn_face_el_sort[jel,jfac,2] && 
-			conn_face_el_sort[iel,ifac,3] === conn_face_el_sort[jel,jfac,3] && 
-			conn_face_el_sort[iel,ifac,4] === conn_face_el_sort[jel,jfac,4] && 
-			iel ≠ jel) 
+			    conn_face_el_sort[iel,ifac,2] === conn_face_el_sort[jel,jfac,2] && 
+			    conn_face_el_sort[iel,ifac,3] === conn_face_el_sort[jel,jfac,3] && 
+			    conn_face_el_sort[iel,ifac,4] === conn_face_el_sort[jel,jfac,4] && 
+			    iel ≠ jel) 
 			
 			face_in_elem[1, ifac, iel] = iel
 			face_in_elem[2, ifac, iel] = jel
@@ -498,11 +498,11 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
     
     #=open("./COORDS_HO_1D.dat", "w") do f
     for iel_g = 1:mesh.nelem
-        for l=1:ngl
-            @printf(f, " lgl %d: %d %d\n", l, iel_g,  mesh.conn_ho[l, iel_g])
-            @printf(" %d ", mesh.conn[l, iel_g]) #OK
-        end
-        @printf("\n ")
+    for l=1:ngl
+    @printf(f, " lgl %d: %d %d\n", l, iel_g,  mesh.conn_ho[l, iel_g])
+    @printf(" %d ", mesh.conn[l, iel_g]) #OK
+    end
+    @printf("\n ")
     end
     end #do f
     =#
@@ -860,8 +860,8 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl)
     @printf("\n ")
     end #OK
     =#
-    
-    println(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES DONE")
+
+println(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES DONE")
 
 end
 
@@ -877,25 +877,18 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.npx - 1)
     mesh.npoin = mesh.npx
 
-    open("./COORDS_LO_1D.dat", "w") do f
-        for i = 1:mesh.npx
-            mesh.x[i] = (i - 1)*Δx
-        end
-    end #f
+    for i = 1:mesh.npx
+        mesh.x[i] = (i - 1)*Δx
+    end
     
-    ###    
     mesh.NNODES_EL  = 2
     mesh.NEDGES_EL  = 1
     mesh.NFACES_EL  = 0
     mesh.EDGE_NODES = 2
     mesh.FACE_NODES = 0
     
-    #@info topology.vertex_coordinates
-    
-    #dump(topology)
-    #
+
     # Mesh elements, nodes, faces, edges
-    #
     mesh.npoin_linear = mesh.npx
     mesh.npoin        = mesh.npoin_linear     #This will be updated for the high order grid
     mesh.nelem        = mesh.npx - 1
@@ -931,12 +924,12 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
         mesh.conn_ho[1, iel] = iel
         mesh.conn_ho[2, iel] = iel + 1
     end
-        
+    
     #Add high-order nodes
     add_high_order_nodes_1D_native_mesh!(mesh)
 
     #plot_1d_grid(mesh)
-
+    
     println(" # BUILD LINEAR CARTESIAN GRID ............................ DONE")
     
 end
