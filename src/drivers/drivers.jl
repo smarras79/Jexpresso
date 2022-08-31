@@ -1,3 +1,5 @@
+include("../IO/plotting/jeplots.jl")
+
 #--------------------------------------------------------
 # external packages
 #--------------------------------------------------------
@@ -6,10 +8,6 @@ using DifferentialEquations
 using Revise
 using WriteVTK
 
-#Plots
-using Plots; gr()
-plotlyjs()
-
 #Constants
 const TInt   = Int64
 const TFloat = Float64
@@ -17,6 +15,7 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
+include("../IO/mod_initialize.jl")
 include("../IO/mod_inputs.jl")
 include("../Mesh/mod_mesh.jl")
 include("../basis/basis_structs.jl")
@@ -25,14 +24,19 @@ include("../Infrastructure/2D_3D_structures.jl")
 include("../element_matrices.jl")
 #--------------------------------------------------------
 
+
+abstract type AbstractDiscretization end
+struct CG <:  AbstractDiscretization end
+
 abstract type AbstractProblem end
 struct AD1D <: AbstractProblem end
 struct NS1D <: AbstractProblem end
 struct BURGERS1D <: AbstractProblem end
 
-function cg_driver(inputs::Dict,  #input parameters from src/user_input.jl
-                   ET::AD1D,      #Equation subtype
-                   TFloat) 
+function driver(DT::CG,        #Space discretization type
+                ET::AD1D,      #Equation subtype
+                inputs::Dict,  #input parameters from src/user_input.jl
+                TFloat) 
     
     N = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]
@@ -98,6 +102,8 @@ function cg_driver(inputs::Dict,  #input parameters from src/user_input.jl
     #--------------------------------------------------------
     el_mat = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh.nelem, N, Q, TFloat)
     
+    q = mod_initialize_initialize(mesh, inputs, TFloat)
+
 end
 
 function create_rhs(PT::AD1D)

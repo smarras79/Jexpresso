@@ -1,8 +1,8 @@
-include("../src/basis/basis_structs.jl")
-
 using Plots; gr()
 using LaTeXStrings
 using ColorSchemes
+
+include("../src/basis/basis_structs.jl")
 
 """
     Test driver to show how to build and plot a
@@ -15,6 +15,15 @@ using ColorSchemes
     ξ  is the array of N+1 Interpolation points (e.g. LGL)
     ξq is the array of Q+1 quadrature points
 """
+function plot_curve(ξ, ψ, title)
+    
+    plt = plot() #Clear plot
+    display(plot!(ξ, ψ, title = title, legend=false, lw = 3,
+                  xtickfontsize=16, ytickfontsize=16, reuse=false,
+                  xlabel="ξ",ylabel="ψ(ξ)"))
+    
+end
+
 function plot_basis(ψ, ξ, ξq)
 
     N = size(ψ, 1) - 1
