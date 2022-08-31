@@ -22,7 +22,7 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("./IO/mod_inputs.jl")
 include("./Mesh/mod_mesh.jl")
-include("./drivers/cg_driver.jl")
+include("./drivers/drivers.jl")
 include("../tests/plot_lagrange_polynomial.jl")
 #--------------------------------------------------------
 
@@ -44,6 +44,7 @@ inputs, nvars = mod_inputs_user_inputs()
 # !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
 # !!!!!!
 #--------------------------------------------------------
-cg_driver(inputs,
-          AD1D(),
-          TFloat)
+driver(CG(),   # Space discretization type    
+       AD1D(), # Equation subtype
+       inputs, # input parameters from src/user_input.jl
+       TFloat)
