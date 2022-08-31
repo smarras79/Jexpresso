@@ -31,8 +31,7 @@ const EDGE_NODES   = UInt8(2)
 const FACE_NODES   = UInt8(4)
 
 
-abstract type At_geo_entity end
-
+#abstract type At_geo_entity end
 
 include("../basis/basis_structs.jl")
 
@@ -90,8 +89,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
     
-    conn_ptr       = ElasticArray{Int64}(undef, nelem)    
-    conn           = ElasticArray{Int64}(undef, ngl*nelem)
+    conn_ptr          = ElasticArray{Int64}(undef, nelem)    
+    conn              = ElasticArray{Int64}(undef, ngl*nelem)
     conn_unique_edges = ElasticArray{Int64}(undef,  1, 2)
     conn_unique_faces = ElasticArray{Int64}(undef,  1, 4)
 
@@ -102,7 +101,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     face_in_elem      = ElasticArray{Int64}(undef, 2, NFACES_EL, nelem)
     
 end
-
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
 
@@ -439,7 +437,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
     
     if (mesh.nop < 2) return end
     
-    println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES")
+    println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ ")
     println(" # ...")
 
     Legendre = St_Legendre{Float64}(0.0, 0.0, 0.0, 0.0)
@@ -479,8 +477,8 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
         mesh.conn[1, iel_g] = ip1
         mesh.conn[2, iel_g] = ip2
         
-        x1 = mesh.x[ip1]
-        x2 = mesh.x[ip2]
+        @show x1 = mesh.x[ip1]
+        @show x2 = mesh.x[ip2]
         
         iconn = 1
         for l=2:ngl-1
@@ -495,8 +493,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
         end
     end
     
-    
-    
     #=open("./COORDS_HO_1D.dat", "w") do f
     for iel_g = 1:mesh.nelem
     for l=1:ngl
@@ -508,7 +504,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
     end #do f
     =#
     
-    println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
+    println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
 end
 
@@ -878,10 +874,10 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.npx - 1)
     mesh.npoin = mesh.npx
 
-    for i = 1:mesh.npx
-        mesh.x[i] = (i - 1)*Δx
+    mesh.x[1] = mesh.xmin
+    for i = 2:mesh.npx
+        mesh.x[i] = mesh.x[i-1] + Δx
     end
-    
     mesh.NNODES_EL  = 2
     mesh.NEDGES_EL  = 1
     mesh.NFACES_EL  = 0
@@ -920,7 +916,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     mesh.npoin_el = mesh.NNODES_EL + el_vol_internal_nodes   
     resize!(mesh.conn, (mesh.npoin_el*mesh.nelem))
     mesh.conn = reshape(mesh.conn, mesh.npoin_el, mesh.nelem)
-
+    
     for iel = 1:mesh.nelem
         mesh.conn[1, iel] = iel
         mesh.conn[2, iel] = iel + 1
