@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :equation_set => "ns",
-        :problem      => "rtb",
+        :problem      => "wave1d",
         :lexact_integration => false,
         #:lexact_integration => true,
         :lread_gmsh   => false,
@@ -13,11 +13,11 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
         :nsd          => 1,           #number of space dimensions
-        :nop          => 1,           #Polynomila order
-        :nelx         => 1,           #N. elements in x
+        :nop          => 4,           #Polynomila order
+        :nelx         => 20,           #N. elements in x
         :nely         => 0,           #N. elements in y
         :nelz         => 0,           #N. elements in z
-        :xmin         =>-1,
+        :xmin         => -1,
         :xmax         => 1,
         :ymin         => 0,
         :ymax         => 0,

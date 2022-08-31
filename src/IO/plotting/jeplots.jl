@@ -4,10 +4,6 @@ using ColorSchemes
 
 include("../../mesh/mod_mesh.jl")
 
-export plot_error
-export plot_curve
-export plot_1d_grid
-
 function plot_error(x, y, title::String, legend_labels; yscale)
 
     xlabel = "nop"
@@ -17,28 +13,14 @@ function plot_error(x, y, title::String, legend_labels; yscale)
     
 end
 
+function plot_curve(ξ, ψ, title)
 
-function plot_curve!(x, y,
-                title::String,
-                xlabel::String,
-                ylabel::String,
-                legend_labels,
-                yscale=:log10)
-
-    # yscale is log10 by default.
-    # use yscale=:none for linear
+    N = size(ψ, 1) - 1
     
-    fontsize = 16
-    
-    fig = plot(x, y, title = title, label = legend_labels, lw = 3)
-    plot!(xlabel=xlabel)
-    plot!(ylabel=ylabel; yscale=yscale)
-    plot!(xtickfontsize=fontsize,
-          ytickfontsize=fontsize, reuse=true)
-    
-    #fig = scatter!(x, y, linewidth=3, linestyle=:dot,markersize=3)
-    #display(fig)
-    
+    plt = plot() #Clear plot
+    display(plot(ξ, ψ, title = title, legend=false, lw = 3,
+                 xtickfontsize=16, ytickfontsize=16, reuse=false,
+                 xlabel="ξ",ylabel="ψ(ξ)"))
 end
 
 
