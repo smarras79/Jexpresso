@@ -21,19 +21,23 @@ function mod_inputs_user_inputs()
     #
     mod_inputs_check(inputs, :equation_set, "e")
     mod_inputs_check(inputs, :problem, "e")
-    mod_inputs_check(inputs, :nop, Int8(4), "w")
+    mod_inputs_check(inputs, :nop, Int8(4), "w") #Polynomial order
 
+    if(!haskey(inputs, :lexact_integration))
+        inputs[:lexact_integration] = false #Default integration rule is INEXACT
+    end
+    
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         
         mod_inputs_check(inputs, :nsd,  "e")
-        mod_inputs_check(inputs, :npx,  "e")
+        mod_inputs_check(inputs, :nelx,  "e")
         mod_inputs_check(inputs, :xmin, "e")
         mod_inputs_check(inputs, :xmax, "e")
-        mod_inputs_check(inputs, :npy,  "e")
+        mod_inputs_check(inputs, :nely,  "e")
         mod_inputs_check(inputs, :ymin, "e")
         mod_inputs_check(inputs, :ymax, "e")
-        mod_inputs_check(inputs, :npz,  "e")
+        mod_inputs_check(inputs, :nelz,  "e")
         mod_inputs_check(inputs, :zmin, "e")
         mod_inputs_check(inputs, :zmax, "e")
         
@@ -41,13 +45,13 @@ function mod_inputs_user_inputs()
         mod_inputs_check(inputs, :gmsh_filename, "e")
         
         mod_inputs_check(inputs, :nsd,  Int8(3), "-")
-        mod_inputs_check(inputs, :npx,  Int8(2), "-")
+        mod_inputs_check(inputs, :nelx,  Int8(2), "-")
         mod_inputs_check(inputs, :xmin, Float64(-1.0), "-")
         mod_inputs_check(inputs, :xmax, Float64(+1.0), "-")
-        mod_inputs_check(inputs, :npy,  Int8(2), "-")
+        mod_inputs_check(inputs, :nely,  Int8(2), "-")
         mod_inputs_check(inputs, :ymin, Float64(-1.0), "-")
         mod_inputs_check(inputs, :ymax, Float64(+1.0), "-")
-        mod_inputs_check(inputs, :npz,  Int8(2), "-")
+        mod_inputs_check(inputs, :nelz,  Int8(2), "-")
         mod_inputs_check(inputs, :zmin, Float64(-1.0), "-")
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
 
@@ -64,6 +68,24 @@ function mod_inputs_user_inputs()
     #
     # Correct quantities based on a hierarchy of input variables
     #
+    # Define default npx,y,z for native grid given
+    # values for the user's nelx,y,z
+    if(haskey(inputs, :nelx))
+        inputs[:npx] = inputs[:nelx] + 1
+    else
+        inputs[:npx] = 2
+    end
+    if(haskey(inputs, :nely))
+        inputs[:npy] = inputs[:nely] + 1
+    else
+        inputs[:npy] = 2
+    end
+    if(haskey(inputs, :nelz))
+        inputs[:npz] = inputs[:nelz] + 1
+    else
+        inputs[:npz] = 2
+    end
+    
     if (inputs[:nsd] == 1)
         inputs[:npy] = 1
         inputs[:npz] = 1
