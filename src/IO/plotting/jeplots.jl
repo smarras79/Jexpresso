@@ -14,13 +14,19 @@ function plot_error(x, y, title::String, legend_labels; yscale)
 end
 
 function plot_curve(ξ, ψ, title)
-
-    N = size(ψ, 1) - 1
     
     plt = plot() #Clear plot
-    display(plot(ξ, ψ, title = title, legend=false, lw = 3,
+    display(plot!(ξ, ψ, title = title, legend=false, lw = 3,
                  xtickfontsize=16, ytickfontsize=16, reuse=false,
                  xlabel="ξ",ylabel="ψ(ξ)"))
+end
+
+function scatter_curve(ξ, ψ, title)
+    
+    plt = plot() #Clear plot
+    display(scatter!(ξ, ψ, title = title, legend=false, lw = 3,
+                     xtickfontsize=16, ytickfontsize=16, reuse=false,
+                     xlabel="ξ",ylabel="ψ(ξ)"))
 end
 
 

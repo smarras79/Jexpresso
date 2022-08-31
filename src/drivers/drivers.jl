@@ -1,3 +1,5 @@
+include("../IO/plotting/jeplots.jl")
+
 #--------------------------------------------------------
 # external packages
 #--------------------------------------------------------
@@ -5,9 +7,6 @@ using Crayons.Box
 using DifferentialEquations
 using Revise
 using WriteVTK
-
-#Plots
-using Plots; gr()
 
 #Constants
 const TInt   = Int64
@@ -102,16 +101,9 @@ function driver(DT::CG,        #Space discretization type
     # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
     #--------------------------------------------------------
     el_mat = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh.nelem, N, Q, TFloat)
-
     
     q = mod_initialize_initialize(mesh, inputs, TFloat)
 
-    qn = sort(q.qn)
-    xn = sort(mesh.x)
-
-    plt = plot()
-    display(plot!(xn, qn))
-    
 end
 
 function create_rhs(PT::AD1D)
