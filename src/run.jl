@@ -22,11 +22,7 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("./IO/mod_inputs.jl")
 include("./Mesh/mod_mesh.jl")
-#include("./basis/basis_structs.jl")
 include("./drivers/cg_driver.jl")
-#include("./Infrastructure/Kopriva_functions.jl")
-#include("./Infrastructure/2D_3D_structures.jl")
-#include("./element_matrices.jl")
 include("../tests/plot_lagrange_polynomial.jl")
 #--------------------------------------------------------
 
@@ -37,16 +33,10 @@ include("../tests/plot_lagrange_polynomial.jl")
 mod_inputs_print_welcome()
 
 #--------------------------------------------------------
-#User inputs:
+#Read User Inputs:
 #--------------------------------------------------------
 inputs        = Dict{}()
 inputs, nvars = mod_inputs_user_inputs()
-
-#--------------------------------------------------------
-# Create/read mesh
-# return mesh::St_mesh
-#--------------------------------------------------------
-mesh = mod_mesh_mesh_driver(inputs)
 
 #--------------------------------------------------------
 # Problem setup
@@ -54,7 +44,6 @@ mesh = mod_mesh_mesh_driver(inputs)
 # !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
 # !!!!!!
 #--------------------------------------------------------
-cg_driver(AD1D(),
-          inputs[:lexact_integration],
-          inputs[:nop],
+cg_driver(inputs,
+          AD1D(),
           TFloat)
