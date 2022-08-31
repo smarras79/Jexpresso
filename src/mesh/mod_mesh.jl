@@ -446,25 +446,19 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
     build_lgl!(Legendre, lgl, mesh.nop)
 
     
-    x1, y1, z1 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x2, y2, z2 = Float64(0.0), Float64(0.0), Float64(0.0)
-    
+    x1, x2 = Float64(0.0), Float64(0.0)    
     ξ::typeof(lgl.ξ[1]) = 0.0
 
     ngl                      = mesh.nop + 1
     tot_linear_poin          = mesh.npoin_linear
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)
     el_internal_nodes        = ngl - 2
-    el_nodes        = ngl - 2
+    el_nodes                 = ngl
     
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
     resize!(mesh.x, (mesh.npoin))
     
-    if length(mesh.x_ho) < mesh.npoin
-        resize!(mesh.x_ho, (mesh.npoin))
-    end
-
     #
     # First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
     #
@@ -474,11 +468,8 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
         ip1 = iel_g
         ip2 = iel_g + 1
         
-        mesh.conn[1, iel_g] = ip1
-        mesh.conn[2, iel_g] = ip2
-        
-        @show x1 = mesh.x[ip1]
-        @show x2 = mesh.x[ip2]
+        mesh.conn[1, iel_g], mesh.conn[2, iel_g] = ip1, ip2
+        x1, x2 = mesh.x[ip1], mesh.x[ip2]
         
         iconn = 1
         for l=2:ngl-1
@@ -492,17 +483,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
             ip = ip + 1
         end
     end
-    
-    #=open("./COORDS_HO_1D.dat", "w") do f
-    for iel_g = 1:mesh.nelem
-    for l=1:ngl
-    @printf(f, " lgl %d: %d %d\n", l, iel_g,  mesh.conn[l, iel_g])
-    @printf(" %d ", mesh.conn[l, iel_g]) #OK
-    end
-    @printf("\n ")
-    end
-    end #do f
-    =#
     
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
@@ -879,10 +859,6 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
         mesh.x[i] = mesh.x[i-1] + Δx
     end
     mesh.NNODES_EL  = 2
-    mesh.NEDGES_EL  = 1
-    mesh.NFACES_EL  = 0
-    mesh.EDGE_NODES = 2
-    mesh.FACE_NODES = 0
     
 
     # Mesh elements, nodes, faces, edges
@@ -897,7 +873,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     
     ngl                     = mesh.nop + 1
     tot_linear_poin         = mesh.npoin_linear    
-    tot_vol_internal_nodes  = mesh.nelem*(ngl-2)    
+    tot_vol_internal_nodes  = mesh.nelem*(ngl-2)  
     el_vol_internal_nodes   = (ngl-2)
     
     #Update number of grid points from linear count to total high-order points
@@ -912,8 +888,8 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     
     
     # Resize (using resize! from ElasticArrays) as needed
-    resize!(mesh.x, (mesh.npoin_linear))    
-    mesh.npoin_el = mesh.NNODES_EL + el_vol_internal_nodes   
+    resize!(mesh.x, (mesh.npoin))    
+    mesh.npoin_el = ngl
     resize!(mesh.conn, (mesh.npoin_el*mesh.nelem))
     mesh.conn = reshape(mesh.conn, mesh.npoin_el, mesh.nelem)
     

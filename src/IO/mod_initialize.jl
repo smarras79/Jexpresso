@@ -19,25 +19,28 @@ function mod_initialize_initialize(mesh::St_mesh, inputs::Dict, TFloat)
                                    zeros(mesh.npoin),
                                    zeros(mesh.npoin),
                                    zeros(mesh.npoin))
+    
+    if (inputs[:problem] === "wave1d")
 
-    if (inputs[:problem] === "test")
-        
-        @inbounds for i = 1:2:length(q.qn)-1
-            q.qn[i]  = 1.0     # odd i
-            q.qn[i+1] = 2.0   # even i
-        end
-        if isodd(length(q.qn))
-            q.qn[end] = 0
+        ngl = mesh.nop + 1
+        for iel_g = 1:mesh.nelem
+            for l=1:ngl
+                ip = mesh.conn[l, iel_g]
+                x = mesh.x[ip]
+                
+                q.qn[ip]  = exp(-64.0*x*x)
+            end
         end
 
-    elseif (inputs[:problem] === "wave1d")
-        
-        @inbounds for i = 1:length(q.qn)
-            q.qn[i]  = exp(-64.0*mesh.x[i]*mesh.x[i])
-        end
+        #------------------------------------------
+        # Plot initial condition:
+        # Notice that I scatter the points to
+        # avoid sorting the x and q which would be
+        # becessary for a smooth curve plot.
+        #------------------------------------------
+        scatter_curve(mesh.x, q.qn, "")
         
     end
-
     
     return q
 end
