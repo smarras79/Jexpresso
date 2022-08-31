@@ -45,9 +45,9 @@ inputs, nvars = mod_inputs_user_inputs()
 
 #--------------------------------------------------------
 # Create/read mesh
+# return mesh::St_mesh
 #--------------------------------------------------------
-mod_mesh_mesh_driver(inputs)
-
+mesh = mod_mesh_mesh_driver(inputs)
 
 #--------------------------------------------------------
 # Problem setup
@@ -69,16 +69,19 @@ T2  = Collocation()
 # ξ = ND.ξ.ξ
 # ω = ND.ξ.ω
 #--------------------------------------------------------
+N  = inputs[:nop]
 ND = build_nodal_Storage([N],P1,T1) # --> ξ <- ND.ξ.ξ
 ξ  = ND.ξ.ξ
 
-if exact_quadrature    
+exact_integration = inputs[:lexact_integration]
+if exact_integration
     #
     # Exact quadrature:
     # Quadrature order (Q = N+1) ≠ polynomial order (N)
     #
     TP  = Exact()
     Q   = N + 1
+    
     NDq = build_nodal_Storage([Q],P1,T1) # --> ξ <- ND.ξ.ξ
     ξq  = NDq.ξ.ξ
     ω   = NDq.ξ.ω
@@ -111,6 +114,8 @@ basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
 # Build element mass matrix
 #
 # Return:
-# M[iel, i, j]
+# el_mat.M[iel, i, j] <-- if exact (full)
+# el_mat.M[iel, i]    <-- if inexact (diagonal)
+# el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
 #--------------------------------------------------------
-M = build_element_matrices!(TP, basis.ψ, ω, mesh.nelem, N, Q, TFloat)
+el_mat = build_element_matrices!(TP, basis.ψ, basis.dψ, ω, mesh.nelem, N, Q, TFloat)
