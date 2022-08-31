@@ -51,9 +51,10 @@ mod_mesh_mesh_driver(inputs)
 
 #--------------------------------------------------------
 # Problem setup
+# !!!!!!
+# !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
+# !!!!!!
 #--------------------------------------------------------
-N = 1
-
 exact_quadrature = false
 
 P1  = LGL1D()
