@@ -25,7 +25,7 @@ include("./Mesh/mod_mesh.jl")
 include("./basis/basis_structs.jl")
 include("./Infrastructure/Kopriva_functions.jl")
 include("./Infrastructure/2D_3D_structures.jl")
-include("./mass_matrix.jl")
+include("./element_matrices.jl")
 include("../tests/plot_lagrange_polynomial.jl")
 #--------------------------------------------------------
 

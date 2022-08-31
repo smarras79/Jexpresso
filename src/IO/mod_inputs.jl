@@ -24,7 +24,7 @@ function mod_inputs_user_inputs()
     mod_inputs_check(inputs, :nop, Int8(4), "w") #Polynomial order
 
     if(!haskey(inputs, :lexact_integration))
-        inputs[:lexact_integration] = true #Default integration rule is exact
+        inputs[:lexact_integration] = false #Default integration rule is INEXACT
     end
     
     #Grid entries:
