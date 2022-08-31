@@ -5,16 +5,17 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :equation_set => "ns",
         :problem      => "rtb",
+        :lexact_integration => false,
         :lread_gmsh   => false,
-        :gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR.msh",
+        #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
         :nsd          => 1,           #number of space dimensions
-        :nop          => 4,           #Polynomila order        
-        :npx          => 4,         #N. points in x
-        :npy          => 10,           #N. points in y
-        :npz          => 5,           #N. points in z
+        :nop          => 1,           #Polynomila order
+        :nelx         => 1,           #N. elements in x
+        :nely         => 0,           #N. elements in y
+        :nelz         => 0,           #N. elements in z
         :xmin         => 0,
         :xmax         => 5,
         :ymin         =>-1,

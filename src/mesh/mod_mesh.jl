@@ -17,6 +17,7 @@ using StaticArrays
 
 export St_mesh
 
+export mod_mesh_mesh_driver
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
@@ -1012,5 +1013,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
         println(" # Build navite grid ........................ DONE")
     end
 
+    #dump(mesh)
+    return mesh
     
 end
