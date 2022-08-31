@@ -69,7 +69,7 @@ function build_element_matrices!(TP::Inexact, ψ, dψdξ, ω, nelem, N, Q, T)
 end
 
 
-function DSSmatrix!(M::Matrix{T}, Me::Matrix{T}, conn, nelem, npoin, N, T) <: where{T}
+function DSSmatrix!(M::Matrix, Me::Matrix, conn, nelem, npoin, N, T)
 
     M = zeros(npoin+1, npoin+1)
     
@@ -86,7 +86,7 @@ function DSSmatrix!(M::Matrix{T}, Me::Matrix{T}, conn, nelem, npoin, N, T) <: wh
 end
 
 
-function DSSarray!(A::Array{T}, Ae::Array{T}, conn, nelem, npoin, N, T) <: where{T}
+function DSSarray!(A::Array, Ae::Array, conn, nelem, npoin, N, T)
 
     A = zeros(npoin+1)
     
