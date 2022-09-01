@@ -33,7 +33,7 @@ function mod_initialize_initialize(mesh::St_mesh, inputs::Dict, TFloat)
                 q.qn[ip]  = exp(-64.0*x*x)
             end
         end
-
+        
         #------------------------------------------
         # Plot initial condition:
         # Notice that I scatter the points to

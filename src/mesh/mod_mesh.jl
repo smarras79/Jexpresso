@@ -44,6 +44,10 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     x_ho::Union{Array{TFloat}, Missing} = zeros(2)
     y_ho::Union{Array{TFloat}, Missing} = zeros(2)
     z_ho::Union{Array{TFloat}, Missing} = zeros(2)
+
+    Δx::Union{Array{TFloat}, Missing} = zeros(2)
+    Δy::Union{Array{TFloat}, Missing} = zeros(2)
+    Δz::Union{Array{TFloat}, Missing} = zeros(2)
     
     xmin::Union{TFloat, Missing} = -1.0;
     xmax::Union{TFloat, Missing} = +1.0;
@@ -844,27 +848,28 @@ end
 
 function mod_mesh_build_mesh!(mesh::St_mesh)
 
-    println(" # BUILD LINEAR CARTESIAN GRID ............................")
-
-    Δx::TFloat=0.0
-
     if (mesh.nsd > 1)
         @error(" USE GMSH to build a higher-dimensional grid!")
     end
-    Δx = abs(mesh.xmax - mesh.xmin)/(mesh.npx - 1)
+    
+    println(" # BUILD LINEAR CARTESIAN GRID ............................")
+    
+    mesh.npoin_linear = mesh.npx
+    mesh.npoin        = mesh.npoin_linear #This will be updated for high order grids
+    mesh.nelem        = mesh.npx - 1
+    
+    Δx::TFloat=0.0
+    resize!(mesh.Δx, mesh.nelem)
+    
+    Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
     mesh.npoin = mesh.npx
 
     mesh.x[1] = mesh.xmin
     for i = 2:mesh.npx
         mesh.x[i] = mesh.x[i-1] + Δx
+        mesh.Δx[i-1] = Δx #Constant for the sake of simplicity in 1D problems. This may change later
     end
     mesh.NNODES_EL  = 2
-    
-
-    # Mesh elements, nodes, faces, edges
-    mesh.npoin_linear = mesh.npx
-    mesh.npoin        = mesh.npoin_linear     #This will be updated for the high order grid
-    mesh.nelem        = mesh.npx - 1
     
     println(" # 1D NATIVE LINEAR GRID PROPERTIES")
     println(" # N. elements       : ", mesh.nelem)
