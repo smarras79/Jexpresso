@@ -5,6 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :equation_set => "ns",
         :problem      => "wave1d",
+        :tend         => 1.0,
         :lexact_integration => false,
         #:lexact_integration => true,
         :lread_gmsh   => false,

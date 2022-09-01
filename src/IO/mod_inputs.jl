@@ -21,8 +21,14 @@ function mod_inputs_user_inputs()
     #
     mod_inputs_check(inputs, :equation_set, "e")
     mod_inputs_check(inputs, :problem, "e")
-    mod_inputs_check(inputs, :nop, Int8(4), "w") #Polynomial order
+    mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
 
+    #Time:
+    mod_inputs_check(inputs, :tend, Float64(4), "w") #Final time
+    if(!haskey(inputs, :tinit))
+        inputs[:tinit] = 0.0  #Initial time is 0.0 by default
+    end
+    
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
     end

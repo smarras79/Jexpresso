@@ -1,5 +1,3 @@
-include("../IO/plotting/jeplots.jl")
-
 #--------------------------------------------------------
 # external packages
 #--------------------------------------------------------
@@ -18,10 +16,12 @@ const TFloat = Float64
 include("../IO/mod_initialize.jl")
 include("../IO/mod_inputs.jl")
 include("../Mesh/mod_mesh.jl")
+include("../solver/mod_solution.jl")
 include("../basis/basis_structs.jl")
 include("../Infrastructure/Kopriva_functions.jl")
 include("../Infrastructure/2D_3D_structures.jl")
 include("../element_matrices.jl")
+include("../IO/plotting/jeplots.jl")
 #--------------------------------------------------------
 
 
@@ -40,6 +40,11 @@ function driver(DT::CG,        #Space discretization type
     
     N = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]
+
+    
+    @show tinit = inputs[:tinit]
+    @show tend = inputs[:tend]
+    
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -101,15 +106,51 @@ function driver(DT::CG,        #Space discretization type
     # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
     #--------------------------------------------------------
     el_mat = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh.nelem, N, Q, TFloat)
-    
+    M = DSSmatrix!(el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+
     q = mod_initialize_initialize(mesh, inputs, TFloat)
 
+    Nt = (timef - timei)/Δt
+    for it = 1:Nt
+
+        rhs = build_rhs(AD1D(), mesh, el_mat, q.qn)
+        
+        RHS = DSSarray!(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+        
+    end
+    
+    
+    
+    
 end
 
-function create_rhs(PT::AD1D)
+function build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q)
 
+    rhs = zeros(mesh.ngl^mesh.nsd, mesh.nelem)
+    f   = zeros(mesh.ngl^mesh.nsd)
+    u   = 1.0 #m/s
+
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl
+            
+            ip = mesh.conn[i, iel]
+            f[i] = u*q[ip]
+            
+        end
+    end
+        
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl
+
+            #HERE IS WHERE the equation terms should come from a user defined tuple
+            for j = 1:mesh.ngl
+                rhs(i,iel) = -el_mat.D(i,j,iel)*f[j]
+            end
+        end
+    end
     
-
+    return rhs
+    
 end
 
 
