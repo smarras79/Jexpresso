@@ -40,11 +40,6 @@ function driver(DT::CG,        #Space discretization type
     
     N = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]
-
-    
-    @show tinit = inputs[:tinit]
-    @show tend = inputs[:tend]
-    
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -96,7 +91,7 @@ function driver(DT::CG,        #Space discretization type
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
 
-
+    
     #--------------------------------------------------------
     # Build element mass matrix
     #
@@ -105,19 +100,19 @@ function driver(DT::CG,        #Space discretization type
     # el_mat.M[iel, i]    <-- if inexact (diagonal)
     # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
     #--------------------------------------------------------
-    el_mat = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh.nelem, N, Q, TFloat)
-    M = DSSmatrix!(el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
-
+    el_mat = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh, N, Q, TFloat)
+    (M, Minv)= DSS(QT, el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+    
     q = mod_initialize_initialize(mesh, inputs, TFloat)
 
-    Nt = (timef - timei)/Δt
-    for it = 1:Nt
+    Δt = inputs[:Δt]
+    Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
+    #for it = 1:Nt
 
-        rhs = build_rhs(AD1D(), mesh, el_mat, q.qn)
-        
-        RHS = DSSarray!(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
-        
-    end
+    rhs = build_rhs(AD1D(), mesh, el_mat, q.qn)
+    RHS = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+    
+    #end
     
     
     
@@ -128,7 +123,7 @@ function build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q)
 
     rhs = zeros(mesh.ngl^mesh.nsd, mesh.nelem)
     f   = zeros(mesh.ngl^mesh.nsd)
-    u   = 1.0 #m/s
+    u   = 2.0 #m/s
 
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl
@@ -138,13 +133,13 @@ function build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q)
             
         end
     end
-        
+    
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl
 
             #HERE IS WHERE the equation terms should come from a user defined tuple
             for j = 1:mesh.ngl
-                rhs(i,iel) = -el_mat.D(i,j,iel)*f[j]
+                rhs[i, iel] = -el_mat.D[i,j,iel]*f[j]
             end
         end
     end

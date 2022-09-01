@@ -22,9 +22,10 @@ function mod_inputs_user_inputs()
     mod_inputs_check(inputs, :equation_set, "e")
     mod_inputs_check(inputs, :problem, "e")
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
-
+    
     #Time:
-    mod_inputs_check(inputs, :tend, Float64(4), "w") #Final time
+    mod_inputs_check(inputs, :tend, "e") #Final time
+    mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
     end

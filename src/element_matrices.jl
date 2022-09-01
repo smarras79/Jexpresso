@@ -23,18 +23,18 @@ mutable struct St_ElMat_Inexact{TFloat} <: AbstractMassType
     D::Array{TFloat, 3} #Sparse differentiation matrix also for inexact int.
 end
     
-#Exact mass matrix
+function build_element_matrices!(QT::Exact, ψ, dψdξ, ω, mesh, N, Q, T)
 
-function build_element_matrices!(TP::Exact, ψ, dψdξ, ω, nelem, N, Q, T)
-
-    el_matrices = St_ElMat_Exact{T}(zeros(N+1, N+1, nelem),
-                                    zeros(N+1, N+1, nelem))
+    el_matrices = St_ElMat_Exact{T}(zeros(N+1, N+1, mesh.nelem),
+                                    zeros(N+1, N+1, mesh.nelem))
     
-    for iel=1:nelem
+    for iel=1:mesh.nelem
+        Jinv = mesh.Δx[iel]/2
+        
         for k=1:Q+1
             for i=1:N+1
                 for j=1:N+1
-                    el_matrices.M[i,j,iel] = el_matrices.M[i,j,iel] + (1.0/8.0)*ω[k]*ψ[i,k]*ψ[j,k]
+                    el_matrices.M[i,j,iel] = el_matrices.M[i,j,iel] + Jinv*ω[k]*ψ[i,k]*ψ[j,k]
                     el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] + ω[k]*ψ[i,k]*dψdξ[j,k]
                 end
             end
@@ -45,18 +45,20 @@ function build_element_matrices!(TP::Exact, ψ, dψdξ, ω, nelem, N, Q, T)
     return el_matrices
 end
 
-function build_element_matrices!(TP::Inexact, ψ, dψdξ, ω, nelem, N, Q, T)
+function build_element_matrices!(QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
     
-    el_matrices = St_ElMat_Inexact{T}(zeros(N+1, nelem),
-                                      zeros(N+1, N+1, nelem))
+    el_matrices = St_ElMat_Inexact{T}(zeros(N+1,      mesh.nelem),
+                                      zeros(N+1, N+1, mesh.nelem))
 
-    for iel=1:nelem
+    for iel=1:mesh.nelem
+        Jinv = mesh.Δx[iel]/2
+        
         for k=1:Q+1
             for i=1:N+1
                 for j=1:N+1
                     el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] + ω[k]*ψ[i,k]*dψdξ[j,k] #Sparse
                     if (i == j)
-                        el_matrices.M[i,iel]   = el_matrices.M[i,iel] + 0.5*ω[k]*ψ[i,k]*ψ[j,k] #Store only the diagonal elements
+                        el_matrices.M[i,iel] = el_matrices.M[i,iel] + Jinv*ω[k]*ψ[i,k]*ψ[j,k] #Store only the diagonal elements
                     end
                 end
             end
@@ -69,9 +71,10 @@ function build_element_matrices!(TP::Inexact, ψ, dψdξ, ω, nelem, N, Q, T)
 end
 
 
-function DSSmatrix!(Me::Matrix, conn, nelem, npoin, N, T)
+function DSS(QT::Exact, Me::AbstractArray, conn, nelem, npoin, N, T)
 
-    M = zeros(npoin+1, npoin+1)
+    M    = zeros(npoin, npoin)
+    Minv = zeros(npoin, npoin)
     
     for iel=1:nelem
         for i=1:N+1
@@ -82,14 +85,32 @@ function DSSmatrix!(Me::Matrix, conn, nelem, npoin, N, T)
             end
         end
     end
-
-    return M
+    Minv = inv(M)
+    
+    return M , Minv
 end
 
 
-function DSSarray(Ae::Array, conn, nelem, npoin, N, T)
+function DSS(QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
 
-    A = zeros(npoin+1)
+    A = zeros(npoin)
+    Ainv = zeros(npoin)
+    
+    for iel=1:nelem
+        for i=1:N+1
+            I = conn[i,iel]
+            A[I] = A[I] + Ae[i,iel]
+        end
+    end
+    Ainv = 1.0./A
+    
+    return A, Ainv
+end
+
+
+function DSSarray(Ae::AbstractArray, conn, nelem, npoin, N, T)
+
+    A = zeros(npoin)
     
     for iel=1:nelem
         for i=1:N+1
