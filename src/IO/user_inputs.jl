@@ -5,7 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :equation_set => "ns",
         :problem      => "wave1d",
-        :tend         => 1.0,
+        :tend         => 15.0,
         :lexact_integration => false,
         :lread_gmsh   => false,
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR.msh",
@@ -13,8 +13,8 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
         :nsd          => 1,           #number of space dimensions
-        :nop          => 1,           #Polynomila order
-        :nelx         => 2,           #N. elements in x
+        :nop          => 4,           #Polynomila order
+        :nelx         => 10,           #N. elements in x
         :nely         => 0,           #N. elements in y
         :nelz         => 0,           #N. elements in z
         :xmin         => -1,
