@@ -110,14 +110,91 @@ function driver(DT::CG,        #Space discretization type
     q = mod_initialize_initialize(mesh, inputs, TFloat)
 
     Δt = inputs[:Δt]
+    C = 0.1
+    u = 2.0
+    Δt = 0.25 #C*u*minimum(mesh.Δx)
     Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
-    #for it = 1:Nt
 
-    rhs = drivers_build_rhs(AD1D(), mesh, el_mat, q.qn)
-    RHS = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+    plt = scatter() #Clear plot
+    display(scatter(mesh.x, q.qn))
+    rhs = zeros(mesh.ngl^mesh.nsd, mesh.nelem)
 
-    drivers_apply_bc(PERIODIC1D_CG(), q.qn)
+    #periodicity flag array
+    periodicity = zeros(Int64, mesh.npoin)
+    for ip=1:mesh.npoin
+        periodicity[ip]=ip
+    end
+    periodicity[end]=1
     
+    for it = 1:Nt
+        @show it, Δt
+        #rhs = drivers_build_rhs(AD1D(), mesh, el_mat, q.qn)
+        #RHS = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+        
+        RHS = zeros(mesh.npoin)
+        #S1
+        for iel = 1:mesh.nelem
+            for i = 1:mesh.ngl
+                ip = mesh.conn[i, iel]
+                for j = 1:mesh.ngl
+                    #rhs[i, iel] = -el_mat.D[i,j,iel]*u*q.qn[ip]
+                    RHS[ip] = RHS[ip] + el_mat.D[i,j,iel]*u*q.qn[ip]
+                end
+            end
+        end
+        q.qnp1 = q.qn + Δt*RHS
+        
+        display(scatter())
+        display(scatter!(mesh.x, q.qn))
+        
+        q.qn = q.qnp1
+        #RHS1 = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+        #=qs1 = q.qn + Δt*RHS1
+        
+
+        #S2
+        for iel = 1:mesh.nelem
+            for i = 1:mesh.ngl
+                ip = mesh.conn[i, iel]
+                
+                for j = 1:mesh.ngl
+                    rhs[i, iel] = -el_mat.D[i,j,iel]*u*qs1[ip]
+                end
+            end
+        end
+        RHS2 = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+        qs2 = (3/4)*q.qn + (1/4)*qs1 + (1/4)*Δt*RHS1
+
+        #S3
+        for iel = 1:mesh.nelem
+            for i = 1:mesh.ngl
+                ip = mesh.conn[i, iel]
+                
+                for j = 1:mesh.ngl
+                    rhs[i, iel] = -el_mat.D[i,j,iel]*u*qs2[ip]
+                end
+            end
+        end
+        RHS2 = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+        q.qnp1 = (1/4)*q.qn + (2/3)*qs2 + (2/3)*Δt*RHS2
+
+        #Periodic b.c.
+        q.qn[end] = q.qn[1]
+        
+        #=q1 = q.qn + Δt*RHS
+        rhs1 =  drivers_build_rhs(AD1D(), mesh, el_mat, q1)
+        RHS1 = DSSarray(rhs1, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+        
+        q2 = 3/4*q.qn + 1/4*q1 + 1/4*Δt*RHS1
+        rhs2 = drivers_build_rhs(AD1D(), mesh, el_mat, q1)
+        RHS2 = DSSarray(rhs1, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+
+        qnp1 = 1/3*q.qn + 2/3*q2 + 2/3*Δt*RHS2=#
+        =#
+        #Periodic b.c.
+        q.qn[end] = q.qn[1]
+        
+    end
     
     
 end
@@ -125,29 +202,28 @@ end
 function drivers_build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q)
 
     rhs = zeros(mesh.ngl^mesh.nsd, mesh.nelem)
+    RHS = zeros(mesh.npoin)
     f   = zeros(mesh.ngl^mesh.nsd)
     u   = 2.0 #m/s
-
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl
-            
-            ip = mesh.conn[i, iel]
-            f[i] = u*q[ip]
-            
-        end
-    end
+    
     
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl
+            ip = mesh.conn[i, iel]
+            f[i] = u*q[ip]
+        end
+        
+        for i = 1:mesh.ngl
+            ip = mesh.conn[i, iel]
 
-            #HERE IS WHERE the equation terms should come from a user defined tuple
             for j = 1:mesh.ngl
-                rhs[i, iel] = -el_mat.D[i,j,iel]*f[j]
+                #rhs[i, iel] = -el_mat.D[i,j,iel]*f[j]
+                RHS[periodicity[ip]] = RHS[periodicity[ip]] + el_mat.D[i,j,iel]*f[j]
             end
         end
     end
     
-    return rhs    
+    return rhs, RHS  
 end
 
 function drivers_apply_bc(PT::PERIODIC1D_CG, qn::Array)

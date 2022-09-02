@@ -3,6 +3,7 @@ include("./plotting/jeplots.jl")
 
 mutable struct St_SolutionVectors{TFloat}
 
+    qnp1::Array{TFloat} #qⁿ⁺¹
     qn::Array{TFloat}   #qⁿ
     qnm1::Array{TFloat} #qⁿ⁻¹
     qnm2::Array{TFloat} #qⁿ⁻²
@@ -17,6 +18,7 @@ end
 function mod_initialize_initialize(mesh::St_mesh, inputs::Dict, TFloat)
 
     q = St_SolutionVectors{TFloat}(zeros(mesh.npoin),
+                                   zeros(mesh.npoin),
                                    zeros(mesh.npoin),
                                    zeros(mesh.npoin),
                                    zeros(mesh.npoin),
