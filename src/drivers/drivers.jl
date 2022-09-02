@@ -33,6 +33,10 @@ struct AD1D <: AbstractProblem end
 struct NS1D <: AbstractProblem end
 struct BURGERS1D <: AbstractProblem end
 
+
+abstract type AbstractBC end
+struct PERIODIC1D_CG <: AbstractBC end
+
 function driver(DT::CG,        #Space discretization type
                 ET::AD1D,      #Equation subtype
                 inputs::Dict,  #input parameters from src/user_input.jl
@@ -109,17 +113,16 @@ function driver(DT::CG,        #Space discretization type
     Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
     #for it = 1:Nt
 
-    rhs = build_rhs(AD1D(), mesh, el_mat, q.qn)
+    rhs = drivers_build_rhs(AD1D(), mesh, el_mat, q.qn)
     RHS = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
-    
-    #end
-    
+
+    drivers_apply_bc(PERIODIC1D_CG(), q.qn)
     
     
     
 end
 
-function build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q)
+function drivers_build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q)
 
     rhs = zeros(mesh.ngl^mesh.nsd, mesh.nelem)
     f   = zeros(mesh.ngl^mesh.nsd)
@@ -144,8 +147,11 @@ function build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q)
         end
     end
     
-    return rhs
-    
+    return rhs    
 end
 
+function drivers_apply_bc(PT::PERIODIC1D_CG, qn::Array)
 
+    qn[end] = qn[1]
+    
+end

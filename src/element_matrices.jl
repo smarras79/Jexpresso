@@ -35,7 +35,7 @@ function build_element_matrices!(QT::Exact, ψ, dψdξ, ω, mesh, N, Q, T)
             for i=1:N+1
                 for j=1:N+1
                     el_matrices.M[i,j,iel] = el_matrices.M[i,j,iel] + Jinv*ω[k]*ψ[i,k]*ψ[j,k]
-                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] + ω[k]*ψ[i,k]*dψdξ[j,k]
+                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] +      ω[k]*ψ[i,k]*dψdξ[j,k]
                 end
             end
         end
@@ -56,7 +56,7 @@ function build_element_matrices!(QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
         for k=1:Q+1
             for i=1:N+1
                 for j=1:N+1
-                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] + ω[k]*ψ[i,k]*dψdξ[j,k] #Sparse
+                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] +      ω[k]*ψ[i,k]*dψdξ[j,k] #Sparse
                     if (i == j)
                         el_matrices.M[i,iel] = el_matrices.M[i,iel] + Jinv*ω[k]*ψ[i,k]*ψ[j,k] #Store only the diagonal elements
                     end
