@@ -84,7 +84,6 @@ function driver(DT::CG,        #Space discretization type
         ξq  = ξ
         ω   = ND.ξ.ω
     end
-
     
     #--------------------------------------------------------
     # Build Lagrange polynomials:
@@ -94,7 +93,6 @@ function driver(DT::CG,        #Space discretization type
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
-
     
     #--------------------------------------------------------
     # Build element mass matrix
@@ -105,108 +103,117 @@ function driver(DT::CG,        #Space discretization type
     # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
     #--------------------------------------------------------
     el_mat = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh, N, Q, TFloat)
-    (M, Minv)= DSS(QT, el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+    (M, Minv) = DSS(QT,      el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+    (D, Dinv) = DSS(Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
     
-    q = mod_initialize_initialize(mesh, inputs, TFloat)
-
+    #initial condition --> q.qn
+    q         = mod_initialize_initialize(mesh, inputs, TFloat)
+    
     Δt = inputs[:Δt]
     C = 0.1
     u = 2.0
-    Δt = 0.25 #C*u*minimum(mesh.Δx)
+    Δt = C*u*minimum(mesh.Δx)/mesh.nop
     Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
-
+    
     plt = scatter() #Clear plot
-    display(scatter(mesh.x, q.qn))
-    rhs = zeros(mesh.ngl^mesh.nsd, mesh.nelem)
-
+    #display(scatter(mesh.x, q.qn))
+    
     #periodicity flag array
     periodicity = zeros(Int64, mesh.npoin)
-    for ip=1:mesh.npoin
-        periodicity[ip]=ip
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl
+            ip = mesh.conn[i, iel]
+            periodicity[ip]=ip
+        end
     end
-    periodicity[end]=1
-    
-    for it = 1:Nt
-        @show it, Δt
-        #rhs = drivers_build_rhs(AD1D(), mesh, el_mat, q.qn)
-        #RHS = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
-        
-        RHS = zeros(mesh.npoin)
-        #S1
-        for iel = 1:mesh.nelem
-            for i = 1:mesh.ngl
-                ip = mesh.conn[i, iel]
-                for j = 1:mesh.ngl
-                    #rhs[i, iel] = -el_mat.D[i,j,iel]*u*q.qn[ip]
-                    RHS[ip] = RHS[ip] + el_mat.D[i,j,iel]*u*q.qn[ip]
-                end
-            end
-        end
-        q.qnp1 = q.qn + Δt*RHS
-        
-        display(scatter())
-        display(scatter!(mesh.x, q.qn))
-        
-        q.qn = q.qnp1
-        #RHS1 = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
-        #=qs1 = q.qn + Δt*RHS1
-        
+    periodicity[2]=1
 
-        #S2
-        for iel = 1:mesh.nelem
-            for i = 1:mesh.ngl
-                ip = mesh.conn[i, iel]
-                
-                for j = 1:mesh.ngl
-                    rhs[i, iel] = -el_mat.D[i,j,iel]*u*qs1[ip]
+    RKA = [(0), 
+           (-567301805773) / (1357537059087), 
+           (-2404267990393) / (2016746695238), 
+           (-3550918686646) / (2091501179385), 
+           (-1275806237668) / (842570457699 )];
+
+    RKB = [(1432997174477) / (9575080441755 ),
+           (5161836677717) / (13612068292357),
+           (1720146321549) / (2090206949498 ),
+           (3134564353537) / (4481467310338 ),
+           (2277821191437) / (14882151754819)];
+
+    RKC = [(0),
+           (1432997174477) / (9575080441755),
+           (2526269341429) / (6820363962896),
+           (2006345519317) / (3224310063776),
+           (2802321613138) / (2924317926251)];
+    
+    qnp1 = copy(q.qn)
+    dq   = zeros(mesh.npoin);
+    R    = zeros(mesh.npoin);
+    qp   = copy(q.qn)
+    for it = 1:1000
+        #@show it, Δt
+        
+        for s = 1:length(RKA)
+            
+            #Create RHS Matrix
+            for I = 1:mesh.npoin
+                for J = 1:mesh.npoin
+                    R[I] = D[I,J]*qp[J]*Minv[I] #only valid for CG
                 end
             end
-        end
-        RHS2 = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+            
+            #RHS = drivers_build_rhs(AD1D(), mesh, el_mat, qp, periodicity)
+            #R = RHS.*Minv
+            
+            #Solve System
+            for I=1:mesh.npoin
+                dq[I] = RKA[s]*dq[I] + Δt*R[I]
+                qp[I] = qp[I] + RKB[s]*dq[I]
+            end
+            for I=1:mesh.npoin
+                if (mesh.x[I] > 0.9999)
+                    #if periodicity[2] == periodicity[1]
+                    qp[I] = qp[1] #periodicity
+                end
+            end
+        end #s
+        
+        #S1
+        
+        #=
+        #periodic b.c.      
+        qnp1 .= qnp1 + Δt*RHS
+        qs1 = q.qn + Δt*RHS
+        q.qn[2] = q.qn[1]
+        
+        #S2
+        R = drivers_build_rhs(AD1D(), mesh, el_mat, qs1, periodicity)
+        RHS1 = Minv.*R
         qs2 = (3/4)*q.qn + (1/4)*qs1 + (1/4)*Δt*RHS1
+        q.qn[2] = q.qn[1]   
 
         #S3
-        for iel = 1:mesh.nelem
-            for i = 1:mesh.ngl
-                ip = mesh.conn[i, iel]
-                
-                for j = 1:mesh.ngl
-                    rhs[i, iel] = -el_mat.D[i,j,iel]*u*qs2[ip]
-                end
-            end
-        end
-        RHS2 = DSSarray(rhs, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
-        q.qnp1 = (1/4)*q.qn + (2/3)*qs2 + (2/3)*Δt*RHS2
-
-        #Periodic b.c.
-        q.qn[end] = q.qn[1]
-        
-        #=q1 = q.qn + Δt*RHS
-        rhs1 =  drivers_build_rhs(AD1D(), mesh, el_mat, q1)
-        RHS1 = DSSarray(rhs1, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
-        
-        q2 = 3/4*q.qn + 1/4*q1 + 1/4*Δt*RHS1
-        rhs2 = drivers_build_rhs(AD1D(), mesh, el_mat, q1)
-        RHS2 = DSSarray(rhs1, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
-
-        qnp1 = 1/3*q.qn + 2/3*q2 + 2/3*Δt*RHS2=#
+        R = drivers_build_rhs(AD1D(), mesh, el_mat, qs2, periodicity)
+        RHS2 = Minv.*R
+        qnp1 = (1/3)*q.qn + (2/3)*qs2 + (2/3)*Δt*RHS2
         =#
-        #Periodic b.c.
-        q.qn[end] = q.qn[1]
+        #Update
+        #q.qn .= qp
+        
+        display(scatter())
+        display(scatter!(mesh.x, qp))
         
     end
     
     
 end
 
-function drivers_build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q)
-
-    rhs = zeros(mesh.ngl^mesh.nsd, mesh.nelem)
+function drivers_build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q, periodicity)
+    
     RHS = zeros(mesh.npoin)
     f   = zeros(mesh.ngl^mesh.nsd)
     u   = 2.0 #m/s
-    
-    
+
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl
             ip = mesh.conn[i, iel]
@@ -215,19 +222,20 @@ function drivers_build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q)
         
         for i = 1:mesh.ngl
             ip = mesh.conn[i, iel]
-
             for j = 1:mesh.ngl
-                #rhs[i, iel] = -el_mat.D[i,j,iel]*f[j]
-                RHS[periodicity[ip]] = RHS[periodicity[ip]] + el_mat.D[i,j,iel]*f[j]
+                RHS[ip] = RHS[ip] + el_mat.D[j,i,iel]*f[i]
             end
         end
     end
-    
-    return rhs, RHS  
-end
 
-function drivers_apply_bc(PT::PERIODIC1D_CG, qn::Array)
-
-    qn[end] = qn[1]
+    #Zero-out the RHS row corresponding to the periodic node
+    for ip=1:mesh.npoin
+        #if (periodicity[ip] == 1)
+        if( mesh.x[ip] > 0.999999)
+            @show ip mesh.x[ip]
+            RHS[ip] = 0
+        end
+    end
     
+    return RHS  
 end
