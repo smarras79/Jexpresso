@@ -29,20 +29,20 @@ function mod_initialize_initialize(mesh::St_mesh, inputs::Dict, TFloat)
         
         for iel_g = 1:mesh.nelem
             for l=1:ngl
-                ip = mesh.conn[l, iel_g]
-                x = mesh.x[ip]
+                ip       = mesh.conn[l, iel_g]
                 
-                q.qn[ip]  = exp(-64.0*x*x)
+                x        = mesh.x[ip]
+                q.qn[ip] = exp(-64.0*x*x)
             end
         end
-        
         #------------------------------------------
         # Plot initial condition:
         # Notice that I scatter the points to
         # avoid sorting the x and q which would be
         # becessary for a smooth curve plot.
         #------------------------------------------
-        scatter_curve(mesh.x, q.qn, "")
+        #plt = scatter() #Clear plot
+        #display(scatter!(mesh.x, q.qn))
 
     elseif(inputs[:problem] === "burgers" || inputs[:problem] === "burgers1d")
 
