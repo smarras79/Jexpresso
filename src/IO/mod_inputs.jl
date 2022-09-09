@@ -5,7 +5,7 @@ using Revise
 export mod_inputs_user_inputs
 export mod_inputs_print_welcome
 
-include("./user_inputs.jl")
+include("../../user_inputs.jl")
 
 function mod_inputs_user_inputs()
 
