@@ -27,7 +27,12 @@ end
 
 abstract type AbstractIntegrationPointAndWeights end
 abstract type AbstractInterpolationBasis end
+abstract type AbstractSpaceDimensions end
+
 struct LagrangeBasis <: AbstractInterpolationBasis end
+struct nsd1D <: AbstractSpaceDimensions end
+struct nsd2D <: AbstractSpaceDimensions end
+struct nsd3D <: AbstractSpaceDimensions end
 
 mutable struct St_Chebyshev{TFloat} <:AbstractIntegrationPointAndWeights
     chebyshev ::TFloat
@@ -78,12 +83,72 @@ function build_Integration_points!(lgl::St_lgl,nop::TInt)
   build_lgl!(Legendre,lgl,nop)
 end
 
-function build_Interpolation_basis!(TP::LagrangeBasis, ξ, ξq, T)
+function build_Interpolation_basis!(TP::LagrangeBasis, SD::nsd1D, T::Type{Float64}, ξ, ξq)
 
-    N = size(ξ,1)  - 1
-    Q = size(ξq,1) - 1
-    basis = St_Lagrange{T}(zeros(N+1,Q+1), zeros(N+1,Q+1))    
+    Nξ = size(ξ,1)  - 1
+    Qξ = size(ξq,1) - 1
+
+    N  = (Nξ + 1)
+    Q  = (Qξ + 1)
+    
+    basis = St_Lagrange{T}(zeros(N,Q), zeros(N,Q))
     (basis.ψ, basis.dψ) = LagrangeInterpolatingPolynomials_classic(ξ, ξq, T)
+    
+    return basis
+end
+
+
+function build_Interpolation_basis!(TP::LagrangeBasis, SD::nsd2D, T::Type{Float64}, ξ, ξq)
+
+    Nξ = size(ξ,1)  - 1
+    Qξ = size(ξq,1) - 1
+    
+    Nη = Nξ
+    Qη = Qξ
+
+    N  = (Nξ + 1)*(Nη + 1)
+    Q  = (Qξ + 1)*(Qη + 1)
+    
+    basis = St_Lagrange{T}(zeros(N,Q), zeros(N,Q))    
+    (ψ, dψ) = LagrangeInterpolatingPolynomials_classic(ξ, ξq, T)
+    
+    for i = 1:Nξ+1
+        ψ[i] .= basis.ψ[i,:]
+        for j = 1:Nη+1
+            l = i + 1 + j*(Nξ + 1)
+            basis.ψ[l] = ψ[i]*ψ[j]
+        end
+    end
+    
+    return basis
+end
+
+
+function build_Interpolation_basis!(TP::LagrangeBasis, SD::nsd3D, T::Type{Float64}, ξ, ξq)
+
+    Nξ = size(ξ,1)  - 1
+    Qξ = size(ξq,1) - 1
+    
+    Nη = Nξ #NOTICE THAT THESE SHOULD Be size(η,1) - 1 when we add different orders in different directions.
+    Qη = Qξ # " " " 
+    
+    Nζ = Nξ #NOTICE THAT THESE SHOULD Be size(ζ,1) - 1 when we add different orders in different directions.
+    Qζ = Qξ # " " " 
+
+    N  = (Nξ + 1)*(Nη + 1)*(Nζ + 1)
+    Q  = (Qξ + 1)*(Qη + 1)*(Qζ + 1)
+    
+    basis = St_Lagrange{T}(zeros(N,Q), zeros(N,Q))
+    (ψ, dψ) = LagrangeInterpolatingPolynomials_classic(ξ, ξq, T)
+
+    for i = 1:Nξ+1
+        for j = 1:Nη+1
+            for k = 1:Nζ+1
+                l = i + 1 + j*(Nξ + 1) + k*(Nξ + 1)*(Nη + 1)
+                basis.ψ[l] = ψ[i]*ψ[j]*ψ[k]
+            end
+        end
+    end
     
     return basis
 end
