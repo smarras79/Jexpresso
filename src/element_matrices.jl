@@ -51,7 +51,7 @@ function build_element_matrices!(QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
                                       zeros(N+1, N+1, mesh.nelem))
 
     for iel=1:mesh.nelem
-        Jac = mesh.Δx[iel]/2
+        @show Jac = mesh.Δx[iel]/2
         
         for k=1:Q+1
             for i=1:N+1
@@ -71,16 +71,18 @@ function build_element_matrices!(QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
 end
 
 
-function DSS(QT::Exact, Me::AbstractArray, conn, nelem, npoin, N, T)
+function DSS(QT::Exact, Me::AbstractArray, periodicity, conn, nelem, npoin, N, T)
 
     M    = zeros(npoin, npoin)
     Minv = zeros(npoin, npoin)
     
     for iel=1:nelem
         for i=1:N+1
-            I = conn[i,iel]
+            #I = conn[i,iel]
+            I = periodicity[conn[i,iel]]
             for j=1:N+1
-                J = conn[j,iel]                
+                #J = conn[j,iel]
+                J = periodicity[conn[j,iel]]
                 M[I,J] = M[I,J] + Me[i,j,iel]                
             end
         end
@@ -91,14 +93,14 @@ function DSS(QT::Exact, Me::AbstractArray, conn, nelem, npoin, N, T)
 end
 
 
-function DSS(QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
+function DSS(QT::Inexact, Ae::AbstractArray, periodicity, conn, nelem, npoin, N, T)
 
     A = zeros(npoin)
     Ainv = zeros(npoin)
     
     for iel=1:nelem
         for i=1:N+1
-            I = conn[i,iel]
+            I = periodicity[conn[i,iel]]
             A[I] = A[I] + Ae[i,iel]
         end
     end

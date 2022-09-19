@@ -42,23 +42,22 @@ function driver(DT::CG,        #Space discretization type
                 inputs::Dict,  #input parameters from src/user_input.jl
                 TFloat) 
     
-    N = inputs[:nop]
+    Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]
     
     #--------------------------------------------------------
     # Create/read mesh
     # return mesh::St_mesh
-    #--------------------------------------------------------
-    mesh = mod_mesh_mesh_driver(inputs)
-    
-    #--------------------------------------------------------
-    # Build interpolation nodes:
+    # and Build interpolation nodes
     #             the user decides among LGL, GL, etc. 
     # Return:
     # ξ = ND.ξ.ξ
     # ω = ND.ξ.ω
     #--------------------------------------------------------
-    ND = build_nodal_Storage([N], LGL1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
+    mesh = mod_mesh_mesh_driver(inputs)
+
+    #--------------------------------------------------------
+    ND = build_nodal_Storage([Nξ], LGL1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
     ξ  = ND.ξ.ξ
     
     if lexact_integration
@@ -67,11 +66,11 @@ function driver(DT::CG,        #Space discretization type
         # Quadrature order (Q = N+1) ≠ polynomial order (N)
         #
         QT  = Exact() #Quadrature Type
-        Q   = N + 1
+        Qξ  = Nξ + 1
         
-        NDq = build_nodal_Storage([Q], LGL1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
-        ξq  = NDq.ξ.ξ
-        ω   = NDq.ξ.ω
+        NDQ = build_nodal_Storage([Qξ], LGL1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
+        ξq  = NDQ.ξ.ξ
+        ω   = NDQ.ξ.ω
         
     else  
         #
@@ -79,12 +78,23 @@ function driver(DT::CG,        #Space discretization type
         # Quadrature and interpolation orders coincide (Q = N)
         #
         QT  = Inexact() #Quadrature Type
-        Q   = N
-        NDq = ND
+        Qξ  = Nξ
+        NDQ = ND
         ξq  = ξ
         ω   = ND.ξ.ω
     end
     
+    
+    if (mesh.nsd == 1)
+        SD = nsd1D()
+    elseif (mesh.nsd == 2)
+        SD = nsd2D()        
+    elseif (mesh.nsd == 3)
+        SD = nsd3D()
+    end
+       
+    
+ 
     #--------------------------------------------------------
     # Build Lagrange polynomials:
     #
@@ -92,7 +102,21 @@ function driver(DT::CG,        #Space discretization type
     # ψ     = basis.ψ[N+1, Q+1]
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
-    basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
+    basis = build_Interpolation_basis!(LagrangeBasis(), SD, TFloat, ξ, ξq)
+
+    @info size(basis.ψ)
+    
+@info "2d basis built DONE"
+return 
+    #periodicity flag array
+    periodicity = zeros(Int64, mesh.npoin)
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl
+            ip = mesh.conn[i, iel]
+            periodicity[ip]=ip
+        end
+    end
+    periodicity[mesh.npoin_linear]=1
     
     #--------------------------------------------------------
     # Build element mass matrix
@@ -102,9 +126,9 @@ function driver(DT::CG,        #Space discretization type
     # el_mat.M[iel, i]    <-- if inexact (diagonal)
     # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
     #--------------------------------------------------------
-    el_mat = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh, N, Q, TFloat)
-    (M, Minv) = DSS(QT,      el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
-    (D, Dinv) = DSS(Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, N, TFloat)
+    el_mat    = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
+    (M, Minv) = DSS(QT,      el_mat.M, periodicity, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    (D, Dinv) = DSS(Exact(), el_mat.D, periodicity, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #initial condition --> q.qn
     q         = mod_initialize_initialize(mesh, inputs, TFloat)
@@ -118,15 +142,6 @@ function driver(DT::CG,        #Space discretization type
     plt = scatter() #Clear plot
     #display(scatter(mesh.x, q.qn))
     
-    #periodicity flag array
-    periodicity = zeros(Int64, mesh.npoin)
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl
-            ip = mesh.conn[i, iel]
-            periodicity[ip]=ip
-        end
-    end
-    periodicity[2]=1
 
     RKA = [(0), 
            (-567301805773) / (1357537059087), 
@@ -150,7 +165,7 @@ function driver(DT::CG,        #Space discretization type
     dq   = zeros(mesh.npoin);
     R    = zeros(mesh.npoin);
     qp   = copy(q.qn)
-    for it = 1:1000
+    for it = 1:Nt
         #@show it, Δt
         
         for s = 1:length(RKA)
@@ -158,7 +173,7 @@ function driver(DT::CG,        #Space discretization type
             #Create RHS Matrix
             for I = 1:mesh.npoin
                 for J = 1:mesh.npoin
-                    R[I] = D[I,J]*qp[J]*Minv[I] #only valid for CG
+                    R[I] = Minv[I]*D[I,J]*qp[J] #only valid for CG
                 end
             end
             
@@ -171,39 +186,16 @@ function driver(DT::CG,        #Space discretization type
                 qp[I] = qp[I] + RKB[s]*dq[I]
             end
             for I=1:mesh.npoin
-                if (mesh.x[I] > 0.9999)
-                    #if periodicity[2] == periodicity[1]
+                if (periodicity[mesh.npoin_linear] == periodicity[I])
                     qp[I] = qp[1] #periodicity
                 end
             end
         end #s
-        
-        #S1
-        
-        #=
-        #periodic b.c.      
-        qnp1 .= qnp1 + Δt*RHS
-        qs1 = q.qn + Δt*RHS
-        q.qn[2] = q.qn[1]
-        
-        #S2
-        R = drivers_build_rhs(AD1D(), mesh, el_mat, qs1, periodicity)
-        RHS1 = Minv.*R
-        qs2 = (3/4)*q.qn + (1/4)*qs1 + (1/4)*Δt*RHS1
-        q.qn[2] = q.qn[1]   
-
-        #S3
-        R = drivers_build_rhs(AD1D(), mesh, el_mat, qs2, periodicity)
-        RHS2 = Minv.*R
-        qnp1 = (1/3)*q.qn + (2/3)*qs2 + (2/3)*Δt*RHS2
-        =#
-        #Update
-        #q.qn .= qp
-        
-        display(scatter())
-        display(scatter!(mesh.x, qp))
-        
     end
+    
+      
+    display(scatter())
+    display(scatter!(mesh.x, qp))
     
     
 end
