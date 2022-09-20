@@ -5,7 +5,7 @@ using Revise
 export mod_inputs_user_inputs
 export mod_inputs_print_welcome
 
-include("./user_inputs.jl")
+include("../../user_inputs.jl")
 
 function mod_inputs_user_inputs()
 
@@ -21,8 +21,15 @@ function mod_inputs_user_inputs()
     #
     mod_inputs_check(inputs, :equation_set, "e")
     mod_inputs_check(inputs, :problem, "e")
-    mod_inputs_check(inputs, :nop, Int8(4), "w") #Polynomial order
-
+    mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
+    
+    #Time:
+    mod_inputs_check(inputs, :tend, "e") #Final time
+    mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on
+    if(!haskey(inputs, :tinit))
+        inputs[:tinit] = 0.0  #Initial time is 0.0 by default
+    end
+    
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
     end
@@ -31,7 +38,7 @@ function mod_inputs_user_inputs()
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         
         mod_inputs_check(inputs, :nsd,  "e")
-        mod_inputs_check(inputs, :nelx,  "e")
+        mod_inputs_check(inputs, :nelx, "e")
         mod_inputs_check(inputs, :xmin, "e")
         mod_inputs_check(inputs, :xmax, "e")
         mod_inputs_check(inputs, :nely,  "e")
