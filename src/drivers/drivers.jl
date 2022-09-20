@@ -86,13 +86,13 @@ function driver(DT::CG,        #Space discretization type
     
     
     if (mesh.nsd == 1)
-        SD = nsd1D()
+        SD = NSD_1D()
     elseif (mesh.nsd == 2)
-        SD = nsd2D()        
+        SD = NSD_2D()        
     elseif (mesh.nsd == 3)
-        SD = nsd3D()
+        SD = NSD_3D()
     end
-       
+    
     
  
     #--------------------------------------------------------
@@ -106,8 +106,8 @@ function driver(DT::CG,        #Space discretization type
 
     @info size(basis.ψ)
     
-@info "2d basis built DONE"
-return 
+    @info "2d basis built DONE"
+    return 
     #periodicity flag array
     periodicity = zeros(Int64, mesh.npoin)
     for iel = 1:mesh.nelem
@@ -166,85 +166,65 @@ return
 
     for it = 1:Nt
         
-    @info qp[mesh.npoin_linear] mesh.x[mesh.npoin_linear]
-    @info qp[1] mesh.x[1]
-    @info mesh.npoin_linear
-    @info  "###############"
-    
-    display(plot())
-    display(plot!(mesh.x, qp, seriestype = :scatter,  title="Initial"))
-
- #=   for iel=1:mesh.nelem
-        for i=1:mesh.ngl
-            I = mesh.conn[i, iel]
-            #for I = 1:mesh.npoin
-            #for J = 1:mesh.npoin
-            if (mesh.x[I] > 0.99 || mesh.x[I] < -0.99)
-                @show I qp[I] mesh.x[I] "-----"
-            end
-        end
-    end=#
-    
-    t    = 0.0    
-    for it = 1:Nt+200
-        #@show it, Δt
-        t = t + Δt
+        @info qp[mesh.npoin_linear] mesh.x[mesh.npoin_linear]
+        @info qp[1] mesh.x[1]
+        @info mesh.npoin_linear
+        @info  "###############"
         
-        for s = 1:length(RKA)
-            
-            #Create RHS Matrix
-            #for iel=1:mesh.nelem
-            #    for i=1:mesh.ngl
-            #        I = mesh.conn[i, iel]
-                    
-             #       for j=1:mesh.ngl
-             #           J = mesh.conn[j, iel]
-            for I = 1:mesh.npoin
-                for J = 1:mesh.npoin
-                    R[I] = Minv[I]*D[I,J]*qp[J] #only valid for CG
-                end
-            end
-            #end
-            
-            #RHS = drivers_build_rhs(AD1D(), mesh, el_mat, qp, periodicity)
-            #R = RHS.*Minv
-            
-            #Solve System
-            #for iel=1:mesh.nelem
-            #    for i=1:mesh.ngl
-            #        I = mesh.conn[i, iel]
-            for I=1:mesh.npoin
-                dq[I] = RKA[s]*dq[I] + Δt*R[I]
-                qp[I] = qp[I] + RKB[s]*dq[I]
-            end
-            for I=1:mesh.npoin
-                if (periodicity[mesh.npoin_linear] == periodicity[I])
-                    qp[I] = qp[1] #periodicity
-                end
-            end
-        end #s
-    end
-    
-      
-    display(scatter())
-    display(scatter!(mesh.x, qp))
-            #end
+        display(plot())
+        display(plot!(mesh.x, qp, seriestype = :scatter,  title="Initial"))
 
-            #B.C.
-            qp[1] = 0
-            qp[mesh.npoin_linear] = qp[1]
+        #=   for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+        I = mesh.conn[i, iel]
+        #for I = 1:mesh.npoin
+        #for J = 1:mesh.npoin
+        if (mesh.x[I] > 0.99 || mesh.x[I] < -0.99)
+        @show I qp[I] mesh.x[I] "-----"
+        end
+        end
+        end=#
+        
+        t    = 0.0    
+        for it = 1:Nt+200
+            #@show it, Δt
+            t = t + Δt
             
-            #for I=1:mesh.npoin
-            #    if (mesh.x[I] > 0.9999)
-            #        #if periodicity[2] == periodicity[1]
-            #        qp[I] = qp[1] #periodicity
-            #    end
-            #end
-        end #s
+            for s = 1:length(RKA)
+                
+                #Create RHS Matrix
+                #for iel=1:mesh.nelem
+                #    for i=1:mesh.ngl
+                #        I = mesh.conn[i, iel]
+                
+                #       for j=1:mesh.ngl
+                #           J = mesh.conn[j, iel]
+                for I = 1:mesh.npoin
+                    for J = 1:mesh.npoin
+                        R[I] = Minv[I]*D[I,J]*qp[J] #only valid for CG
+                    end
+                end
+                #end
+                
+                #RHS = drivers_build_rhs(AD1D(), mesh, el_mat, qp, periodicity)
+                #R = RHS.*Minv
+                
+                #Solve System
+                #for iel=1:mesh.nelem
+                #    for i=1:mesh.ngl
+                #        I = mesh.conn[i, iel]
+                for I=1:mesh.npoin
+                    dq[I] = RKA[s]*dq[I] + Δt*R[I]
+                    qp[I] = qp[I] + RKB[s]*dq[I]
+                end
+                for I=1:mesh.npoin
+                    if (periodicity[mesh.npoin_linear] == periodicity[I])
+                        qp[I] = qp[1] #periodicity
+                    end
+                end
+            end #s
+        end        
     end
-     display(plot())
-    display(plot!(mesh.x, qp, seriestype = :scatter,  title="Final"))
-    
 end
 
 function drivers_build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q, periodicity)

@@ -30,9 +30,9 @@ abstract type AbstractInterpolationBasis end
 abstract type AbstractSpaceDimensions end
 
 struct LagrangeBasis <: AbstractInterpolationBasis end
-struct nsd1D <: AbstractSpaceDimensions end
-struct nsd2D <: AbstractSpaceDimensions end
-struct nsd3D <: AbstractSpaceDimensions end
+struct NSD_1D <: AbstractSpaceDimensions end
+struct NSD_2D <: AbstractSpaceDimensions end
+struct NSD_3D <: AbstractSpaceDimensions end
 
 mutable struct St_Chebyshev{TFloat} <:AbstractIntegrationPointAndWeights
     chebyshev ::TFloat
@@ -83,7 +83,7 @@ function build_Integration_points!(lgl::St_lgl,nop::TInt)
   build_lgl!(Legendre,lgl,nop)
 end
 
-function build_Interpolation_basis!(TP::LagrangeBasis, SD::nsd1D, T::Type{Float64}, ξ, ξq)
+function build_Interpolation_basis!(TP::LagrangeBasis, SD::NSD_1D, T::Type{Float64}, ξ, ξq)
 
     Nξ = size(ξ,1)  - 1
     Qξ = size(ξq,1) - 1
@@ -98,7 +98,7 @@ function build_Interpolation_basis!(TP::LagrangeBasis, SD::nsd1D, T::Type{Float6
 end
 
 
-function build_Interpolation_basis!(TP::LagrangeBasis, SD::nsd2D, T::Type{Float64}, ξ, ξq)
+function build_Interpolation_basis!(TP::LagrangeBasis, SD::NSD_2D, T::Type{Float64}, ξ, ξq)
 
     Nξ = size(ξ,1)  - 1
     Qξ = size(ξq,1) - 1
@@ -124,7 +124,7 @@ function build_Interpolation_basis!(TP::LagrangeBasis, SD::nsd2D, T::Type{Float6
 end
 
 
-function build_Interpolation_basis!(TP::LagrangeBasis, SD::nsd3D, T::Type{Float64}, ξ, ξq)
+function build_Interpolation_basis!(TP::LagrangeBasis, SD::NSD_3D, T::Type{Float64}, ξ, ξq)
 
     Nξ = size(ξ,1)  - 1
     Qξ = size(ξq,1) - 1
