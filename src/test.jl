@@ -15,6 +15,7 @@ include("./IO/mod_initialize.jl")
 include("./IO/mod_inputs.jl")
 include("./Mesh/mod_mesh.jl")
 include("./solver/mod_solution.jl")
+include("./operators/operators.jl")
 include("./basis/basis_structs.jl")
 include("./Infrastructure/Kopriva_functions.jl")
 include("./Infrastructure/2D_3D_structures.jl")
@@ -77,7 +78,6 @@ function test_driver(DT::CG,            #Discretization Type
         x2 = x[ix]*x[ix]
         qe[ix] = 1.0/(1 + 50.0*x2)
         #dqedx[ix] = -100.0*x[ix]/((1 + 50.0*x2)*(1 + 50.0*x2))
-        
         #qe[ix] = cos(π*x[ix]/2)
     end
 
@@ -96,13 +96,8 @@ function test_driver(DT::CG,            #Discretization Type
     # q(x)     = ∑ⱼ{1,Nξ} ψⱼ(x)qⱼ
     # ∂q(x)/∂ξ = ∑ⱼ{1,Nξ} ∂ψⱼ(x)/∂x qⱼ
     #
-    qh = zeros(Nx) #Interpolated data
-    for ix = 1:length(qh)
-        qh[ix] = 0
-        for jlgl = 1:length(qj)
-            qh[ix] = qh[ix] + basis.ψ[jlgl, ix]*qj[jlgl]
-        end
-    end
+    qh = zeros(Nx)
+    interpolate!(qh, qj, basis.ψ)
 
     #
     # Plot:
