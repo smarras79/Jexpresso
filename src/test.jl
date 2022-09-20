@@ -52,7 +52,13 @@ function test_driver(DT::CG,            #Discretization Type
     mesh = mod_mesh_mesh_driver(inputs)
 
     #--------------------------------------------------------
-    ND = build_nodal_Storage([Nξ], LGL1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
+    
+    if(inputs[:interpolation_nodes] == "lgl")
+        IP = LGL_1D()
+    elseif(inputs[:interpolation_nodes] == "cgl")
+        IP = CGL_1D()
+    end
+    ND = build_nodal_Storage([Nξ], IP, NodalGalerkin()) # --> ξ <- ND.ξ.ξ
     ξ  = ND.ξ.ξ
     qj = zeros(length(ξ))
 
@@ -133,7 +139,7 @@ function test_driver(DT::CG,            #Discretization Type
     mesh = mod_mesh_mesh_driver(inputs)
 
     #--------------------------------------------------------
-    ND = build_nodal_Storage([Nξ], LGL1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
+    ND = build_nodal_Storage([Nξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
     ξ  = ND.ξ.ξ
     
     if lexact_integration
@@ -144,7 +150,7 @@ function test_driver(DT::CG,            #Discretization Type
         QT  = Exact() #Quadrature Type
         Qξ  = Nξ + 1
         
-        NDQ = build_nodal_Storage([Qξ], LGL1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
+        NDQ = build_nodal_Storage([Qξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
         ξq  = NDQ.ξ.ξ
         ω   = NDQ.ξ.ω
         

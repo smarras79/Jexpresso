@@ -42,12 +42,12 @@ mutable struct Nodal3DStorage <: NodalStorage
 end
 
 
-struct LGL1D <: Abstract_Integration_Points end
-struct CGL1D <: Abstract_Integration_Points end
-struct LGL2D <: Abstract_Integration_Points end
-struct CGL2D <: Abstract_Integration_Points end
-struct LGL3D <: Abstract_Integration_Points end
-struct CGL3D <: Abstract_Integration_Points end
+struct LGL_1D <: Abstract_Integration_Points end
+struct CGL_1D <: Abstract_Integration_Points end
+struct LGL_2D <: Abstract_Integration_Points end
+struct CGL_2D <: Abstract_Integration_Points end
+struct LGL_3D <: Abstract_Integration_Points end
+struct CGL_3D <: Abstract_Integration_Points end
 struct Collocation <: Abstract_Method_Type end
 struct NodalGalerkin <: Abstract_Method_Type end
 
@@ -274,37 +274,37 @@ end
 
 
 #1D LGL
-function build_nodal_Storage(dims,PT::LGL1D,T)
+function build_nodal_Storage(dims,PT::LGL_1D,T)
     ND = build_nodal_1DStorage_lgl(dims[1],T)
     return ND
 end
 
 #1D CGL
-function build_nodal_Storage(dims,PT::CGL1D,T)
+function build_nodal_Storage(dims,PT::CGL_1D,T)
     ND = build_nodal_1DStorage_cgl(dims[1],T)
     return ND
 end
 
 #2DLGL
-function build_nodal_Storage(dims,PT::LGL2D,T)
+function build_nodal_Storage(dims,PT::LGL_2D,T)
     ND = build_nodal_2DStorage_lgl(dims[1],dims[2],T)
     return ND
 end
 
 #2D CGL
-function build_nodal_Storage(dims,PT::CGL2D,T)
+function build_nodal_Storage(dims,PT::CGL_2D,T)
     ND = build_nodal_2DStorage_cgl(dims[1],dims[2],T)
     return ND
 end
 
 #3D LGL
-function build_nodal_Storage(dims,PT::LGL3D,T)
+function build_nodal_Storage(dims,PT::LGL_3D,T)
     ND=  build_nodal_3DStorage_lgl(dims[1],dims[2],dims[3],T)
     return ND
 end
 
 #3D CGL
-function build_nodal_Storage(dims,PT::CGL3D,T)
+function build_nodal_Storage(dims,PT::CGL_3D,T)
     ND = build_nodal_3DStorage_cgl(dims[1],dims[2],dims[3])
     return ND
 end
