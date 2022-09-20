@@ -55,9 +55,10 @@ function test_driver(DT::CG,            #Discretization Type
     ξ  = ND.ξ.ξ
     qj = zeros(length(ξ))
 
-    Nx = 101    
-    x  = range(-1, 1, Nx)
-    qe = zeros(Nx)
+    Nx    = 101    
+    x     = range(-1, 1, Nx)
+    qe    = zeros(Nx)
+    dqedx = zeros(Nx)
    
     
     #--------------------------------------------------------
@@ -75,20 +76,25 @@ function test_driver(DT::CG,            #Discretization Type
     for ix = 1:length(x)
         x2 = x[ix]*x[ix]
         qe[ix] = 1.0/(1 + 50.0*x2)
+        #dqedx[ix] = -100.0*x[ix]/((1 + 50.0*x2)*(1 + 50.0*x2))
+        
         #qe[ix] = cos(π*x[ix]/2)
     end
 
     #
-    # Calculate qⱼ at the LGL nodes:
+    # Calculate qⱼ  at the LGL nodes:
     #
     for ilgl = 1:length(ξ)
         ξ2 = ξ[ilgl]*ξ[ilgl]
-        qj[ilgl] = 1.0/(1 + 50.0*ξ2)
+        qj[ilgl]  = 1.0/(1 + 50.0*ξ2)
+        #dqjdξ[ix] = -100.0*ξ[ilgl]/((1 + 50.0*ξ2)*(1 + 50.0*ξ2))
         #qj[ilgl] = cos(π*ξ[ilgl]/2)
     end
-
+    
     #
-    # Interpolate: q(x) = ∑{1,Nξ} ψⱼ(x)qⱼ
+    # Interpolate:
+    # q(x)     = ∑ⱼ{1,Nξ} ψⱼ(x)qⱼ
+    # ∂q(x)/∂ξ = ∑ⱼ{1,Nξ} ∂ψⱼ(x)/∂x qⱼ
     #
     qh = zeros(Nx) #Interpolated data
     for ix = 1:length(qh)
@@ -101,8 +107,9 @@ function test_driver(DT::CG,            #Discretization Type
     #
     # Plot:
     #
+    title =  string("Interpolation test at order ", Nξ)
     display(plot())
-    plot!(x, qe, seriestype = :line,  title="Interpolation test", label="Exact")
+    plot!(x, qe, seriestype = :line,  title=title, label="Exact")
     plot!(x, qh, seriestype = :line, label="qʰ(x)")
     display(plot!(ξ, qj, seriestype = :scatter, label="qⱼ(ξ)"))
 
