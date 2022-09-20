@@ -13,7 +13,7 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
         :nsd          => 2,           #number of space dimensions
-        :nop          => 4,           #Polynomila order
+        :nop          => 100,           #Polynomila order
         :nelx         => 1,          #N. elements in x
         :nely         => 1,           #N. elements in y
         :nelz         => 1,           #N. elements in z
