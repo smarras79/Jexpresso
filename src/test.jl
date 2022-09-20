@@ -1,7 +1,6 @@
 #--------------------------------------------------------
 # external packages
 #--------------------------------------------------------
-using DifferentialEquations
 using Revise
 
 #Constants
@@ -11,16 +10,10 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
-include("./IO/mod_initialize.jl")
-include("./IO/mod_inputs.jl")
-include("./Mesh/mod_mesh.jl")
-include("./solver/mod_solution.jl")
-include("./operators/operators.jl")
 include("./basis/basis_structs.jl")
-include("./Infrastructure/Kopriva_functions.jl")
+include("./IO/mod_inputs.jl")
+include("./operators/operators.jl")
 include("./Infrastructure/2D_3D_structures.jl")
-include("./element_matrices.jl")
-include("./IO/plotting/jeplots.jl")
 #--------------------------------------------------------
 
 abstract type AbstractDiscretization end
@@ -31,27 +24,13 @@ struct INTERPOLATION <: AbstractProblem end
 struct INTEGRATION   <: AbstractProblem end
 
 
-function test_driver(DT::CG,            #Discretization Type
-                     SD::NSD_1D,        #Space Dimensions
+function test_driver(SD::NSD_1D,        #Space Dimensions
                      PT::INTERPOLATION, #Problem Type
                      inputs::Dict,      #input parameters from src/user_input.jl
                      TFloat) 
     
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]
-    
-    #--------------------------------------------------------
-    # Create/read mesh
-    # return mesh::St_mesh
-    # and Build interpolation nodes
-    #             the user decides among LGL, GL, etc. 
-    # Return:
-    # ξ = ND.ξ.ξ
-    # ω = ND.ξ.ω
-    #--------------------------------------------------------
-    mesh = mod_mesh_mesh_driver(inputs)
-
-    #--------------------------------------------------------
     
     if(inputs[:interpolation_nodes] == "lgl")
         IP = LGL_1D()
@@ -118,8 +97,7 @@ function test_driver(DT::CG,            #Discretization Type
 end
 
 
-function test_driver(DT::CG,            #Discretization Type
-                     SD::NSD_1D,        #Space Dimensions
+function test_driver(SD::NSD_1D,        #Space Dimensions
                      PT::INTEGRATION,   #Problem Type
                      inputs::Dict,      #input parameters from src/user_input.jl
                      TFloat) 
@@ -127,17 +105,6 @@ function test_driver(DT::CG,            #Discretization Type
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]
     
-    #--------------------------------------------------------
-    # Create/read mesh
-    # return mesh::St_mesh
-    # and Build interpolation nodes
-    #             the user decides among LGL, GL, etc. 
-    # Return:
-    # ξ = ND.ξ.ξ
-    # ω = ND.ξ.ω
-    #--------------------------------------------------------
-    mesh = mod_mesh_mesh_driver(inputs)
-
     #--------------------------------------------------------
     ND = build_nodal_Storage([Nξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
     ξ  = ND.ξ.ξ
@@ -175,9 +142,5 @@ function test_driver(DT::CG,            #Discretization Type
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), SD, TFloat, ξ, ξq)
 
-    
-    
-    display(plot())
-    display(plot!(mesh.x, qp, seriestype = :scatter,  title="Final"))
-    
+    #...
 end
