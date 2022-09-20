@@ -58,14 +58,7 @@ function test_driver(DT::CG,            #Discretization Type
     Nx = 101    
     x  = range(-1, 1, Nx)
     qe = zeros(Nx)
-    
-    #Analytic qe evaluated at Nx points x
-    for ix = 1:length(x)
-        x2 = x[ix]*x[ix]
-        qe[ix] = 1.0/(1 + 50.0*x2)
-        #qe[ix] = cos(π*x[ix]/2)
-    end
-
+   
     
     #--------------------------------------------------------
     # Build Lagrange polynomials:
@@ -76,7 +69,18 @@ function test_driver(DT::CG,            #Discretization Type
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), SD, TFloat, ξ, x)
 
-    #Function q evaluated on the LGL nodes:
+    #
+    # Build exact function on a uniform grid of Nx points:
+    #
+    for ix = 1:length(x)
+        x2 = x[ix]*x[ix]
+        qe[ix] = 1.0/(1 + 50.0*x2)
+        #qe[ix] = cos(π*x[ix]/2)
+    end
+
+    #
+    # Calculate qⱼ at the LGL nodes:
+    #
     for ilgl = 1:length(ξ)
         ξ2 = ξ[ilgl]*ξ[ilgl]
         qj[ilgl] = 1.0/(1 + 50.0*ξ2)
@@ -93,11 +97,15 @@ function test_driver(DT::CG,            #Discretization Type
             qh[ix] = qh[ix] + basis.ψ[jlgl, ix]*qj[jlgl]
         end
     end
-    
+
+    #
+    # Plot:
+    #
     display(plot())
-    plot!(x, qe, seriestype = :line,  title="Interpolation test")
-    plot!(ξ, qj, seriestype = :scatter)
-    display(plot!(x, qh, seriestype = :line))
+    plot!(x, qe, seriestype = :line,  title="Interpolation test", label="Exact")
+    plot!(x, qh, seriestype = :line, label="qʰ(x)")
+    display(plot!(ξ, qj, seriestype = :scatter, label="qⱼ(ξ)"))
+
     
 end
 
