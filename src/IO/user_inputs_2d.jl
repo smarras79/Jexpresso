@@ -7,7 +7,7 @@ function user_inputs()
         :problem      => "none",
         :tend         => 2.5,
         :lexact_integration => false,
-        :lread_gmsh   => true,
+        #:lread_gmsh   => false,
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR.msh",
         :gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
