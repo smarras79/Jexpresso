@@ -50,8 +50,7 @@ inputs, nvars = mod_inputs_user_inputs()
 #       inputs, # input parameters from src/user_input.jl
 #       TFloat)
 
-test_driver(CG(),            # Discretization Type
-            NSD_1D(),        # Number of Space Dimensions
+test_driver(NSD_1D(),        # Number of Space Dimensions
             INTERPOLATION(), # Problem Type
             inputs,          # input parameters from src/user_input.jl
             TFloat)
