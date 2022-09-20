@@ -57,7 +57,7 @@ function driver(DT::CG,        #Space discretization type
     mesh = mod_mesh_mesh_driver(inputs)
 
     #--------------------------------------------------------
-    ND = build_nodal_Storage([Nξ], LGL1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
+    ND = build_nodal_Storage([Nξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
     ξ  = ND.ξ.ξ
     
     if lexact_integration
@@ -68,7 +68,7 @@ function driver(DT::CG,        #Space discretization type
         QT  = Exact() #Quadrature Type
         Qξ  = Nξ + 1
         
-        NDQ = build_nodal_Storage([Qξ], LGL1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
+        NDQ = build_nodal_Storage([Qξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
         ξq  = NDQ.ξ.ξ
         ω   = NDQ.ξ.ω
         
