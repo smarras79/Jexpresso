@@ -12,7 +12,7 @@ function user_inputs()
         :gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
-        :nsd                 => 1,           #number of space dimensions
+        :nsd                 => 2,           #number of space dimensions
         :interpolation_nodes =>"lgl",        #Choice: lgl, cgl 
         :nop                 => 100,         #Polynomila order
         :nelx                => 1,           #N. elements in x
