@@ -33,6 +33,11 @@ function mod_inputs_user_inputs()
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
     end
+
+    mod_inputs_check(inputs, :interpolation_nodes, String("lgl"), "w")
+    if(haskey(inputs, :interpolation_nodes) && inputs[:interpolation_nodes] == "llg" || inputs[:interpolation_nodes] == "gll")
+        inputs[:interpolation_nodes] = "lgl"
+    end
     
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
