@@ -21,14 +21,14 @@ export mod_mesh_mesh_driver
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
-const POIN         = UInt8(0)
-const EDGE         = UInt8(1)
-const FACE         = UInt8(2)
-const ELEM         = UInt8(3)
+const POIN         = UInt64(0)
+const EDGE         = UInt64(1)
+const FACE         = UInt64(2)
+const ELEM         = UInt64(3)
 
-const VERTEX_NODES = UInt8(1)
-const EDGE_NODES   = UInt8(2)
-const FACE_NODES   = UInt8(4)
+const VERTEX_NODES = UInt64(1)
+const EDGE_NODES   = UInt64(2)
+const FACE_NODES   = UInt64(4)
 
 
 #abstract type At_geo_entity end
@@ -922,8 +922,8 @@ function mod_mesh_mesh_driver(inputs::Dict)
         println(" # Read gmsh grid and populate with high-order points ")
         
         # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-        mesh = St_mesh{TInt,TFloat}(nsd=Int8(inputs[:nsd]),
-                                    nop=Int8(inputs[:nop]))
+        mesh = St_mesh{TInt,TFloat}(nsd=Int64(inputs[:nsd]),
+                                    nop=Int64(inputs[:nop]))
         
         # Read gmsh grid using the GridapGmsh reader
         mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
@@ -939,33 +939,33 @@ function mod_mesh_mesh_driver(inputs::Dict)
             
             if (inputs[:nsd]==1)
                 println(" # ... build 1D grid ")
-                mesh = St_mesh{TInt,TFloat}(x = zeros(Int8(inputs[:npx])),
-                                            npx  = Int8(inputs[:npx]),
+                mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
+                                            npx  = Int64(inputs[:npx]),
                                             xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
-                                            nop=Int8(inputs[:nop]))
+                                            nop=Int64(inputs[:nop]))
                 
             elseif (inputs[:nsd]==2)
                 println(" # ... build 2D grid ")
-                mesh = St_mesh{TInt,TFloat}(x = zeros(Int8(inputs[:npx])),
-                                            z = zeros(Int8(inputs[:npz])),
-                                            npx  = Int8(inputs[:npx]),
-                                            npz  = Int8(inputs[:npz]), 
+                mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
+                                            z = zeros(Int64(inputs[:npz])),
+                                            npx  = Int64(inputs[:npx]),
+                                            npz  = Int64(inputs[:npz]), 
                                             xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
                                             zmin = Float64(inputs[:zmin]), zmax = Float64(inputs[:zmax]),
-                                            nop=Int8(inputs[:nop]))
+                                            nop=Int64(inputs[:nop]))
                 
             elseif (inputs[:nsd]==3)
                 println(" # ... build 3D grid ")
-                mesh = St_mesh{TInt,TFloat}(x = zeros(Int8(inputs[:npx])),
-                                            y = zeros(Int8(inputs[:npy])),
-                                            z = zeros(Int8(inputs[:npz])),
-                                            npx  = Int8(inputs[:npx]),
-                                            npy  = Int8(inputs[:npy]),
-                                            npz  = Int8(inputs[:npz]), 
+                mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
+                                            y = zeros(Int64(inputs[:npy])),
+                                            z = zeros(Int64(inputs[:npz])),
+                                            npx  = Int64(inputs[:npx]),
+                                            npy  = Int64(inputs[:npy]),
+                                            npz  = Int64(inputs[:npz]), 
                                             xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
                                             ymin = Float64(inputs[:ymin]), ymax = Float64(inputs[:ymax]),
                                             zmin = Float64(inputs[:zmin]), zmax = Float64(inputs[:zmax]),
-                                            nop=Int8(inputs[:nop]))
+                                            nop=Int64(inputs[:nop]))
             else
                 @error( " INPUT ERROR: nsd must be an integer in [1, 2, 3] ")
             end
@@ -977,10 +977,10 @@ function mod_mesh_mesh_driver(inputs::Dict)
             #
             println(" # ... build DEFAULT 1D grid")
             println(" # ...... DEFINE NSD in your input dictionary if you want a different grid!")
-            mesh = St_mesh{TInt,TFloat}(x = zeros(Int8(inputs[:npx])),
-                                        npx  = Int8(inputs[:npx]),
+            mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
+                                        npx  = Int64(inputs[:npx]),
                                         xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
-                                        nop=Int8(inputs[:nop]))
+                                        nop=Int64(inputs[:nop]))
         end
         
         mod_mesh_build_mesh!(mesh)
