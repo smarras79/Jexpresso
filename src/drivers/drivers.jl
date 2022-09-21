@@ -15,6 +15,7 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("../IO/mod_initialize.jl")
 include("../IO/mod_inputs.jl")
+include("../IO/print_matrix.jl")
 include("../Mesh/mod_mesh.jl")
 include("../solver/mod_solution.jl")
 include("../basis/basis_structs.jl")
@@ -103,11 +104,7 @@ function driver(DT::CG,        #Space discretization type
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), SD, TFloat, ξ, ξq)
-
-    @info size(basis.ψ)
     
-    @info "2d basis built DONE"
-    return 
     #periodicity flag array
     periodicity = zeros(Int64, mesh.npoin)
     for iel = 1:mesh.nelem
@@ -127,11 +124,21 @@ function driver(DT::CG,        #Space discretization type
     # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
     #--------------------------------------------------------
     el_mat    = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
-    (M, Minv) = DSS(QT,      el_mat.M, periodicity, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+
+    #show(stdout, "text/plain", mesh.conn)
+    
+    (M, Minv) = DSS(QT, el_mat.M, periodicity, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
     (D, Dinv) = DSS(Exact(), el_mat.D, periodicity, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+
+    #show(stdout, "text/plain", el_mat.D)
+    #@show "-----"
+    #show(stdout, "text/plain", D)
     
     #initial condition --> q.qn
     q         = mod_initialize_initialize(mesh, inputs, TFloat)
+    
+    display(plot())
+    display(plot!(mesh.x, q.qn, seriestype = :scatter,  title="Initial"))
     
     Δt = inputs[:Δt]
     C = 0.1
@@ -160,70 +167,91 @@ function driver(DT::CG,        #Space discretization type
            (2006345519317) / (3224310063776),
            (2802321613138) / (2924317926251)];
 
+    qel  = zeros(mesh.ngl, mesh.nelem);
+    Rel  = zeros(mesh.ngl, mesh.nelem);
     R    = zeros(mesh.npoin);
     dq   = zeros(mesh.npoin);   
     qp   = copy(q.qn)
-
-    for it = 1:Nt
-        
-        @info qp[mesh.npoin_linear] mesh.x[mesh.npoin_linear]
-        @info qp[1] mesh.x[1]
-        @info mesh.npoin_linear
-        @info  "###############"
-        
-        display(plot())
-        display(plot!(mesh.x, qp, seriestype = :scatter,  title="Initial"))
-
-        #=   for iel=1:mesh.nelem
-        for i=1:mesh.ngl
-        I = mesh.conn[i, iel]
-        #for I = 1:mesh.npoin
-        #for J = 1:mesh.npoin
-        if (mesh.x[I] > 0.99 || mesh.x[I] < -0.99)
-        @show I qp[I] mesh.x[I] "-----"
+    
+    for iel = 1:mesh.nelem
+        for l=1:mesh.ngl
+            ip         = mesh.conn[l, iel]                
+            x          = mesh.x[ip]
+            qel[l,iel] = exp(-64.0*x*x)
         end
+    end
+    
+    t    = 0.0
+    q0 = copy(q.qn)
+    for it = 1:Nt
+        #@show it, Δt
+        t = t + Δt
+
+        dq = zeros(mesh.npoin)
+        
+        #for s = 1:length(RKA)
+
+        #Create RHS Matrix
+        for iel=1:mesh.nelem
+            Rel  = zeros(mesh.ngl, mesh.nelem)
+            for i=1:mesh.ngl
+                I = mesh.conn[i, iel]                
+                for j=1:mesh.ngl
+                    J = mesh.conn[j, iel]
+                    #qel[j,iel] = q0[J]
+                    qel[j,iel] = qp[J]
+                    Rel[i,iel] = Rel[i,iel] - el_mat.D[j,i,iel]*(u*qel[j,iel])
+                end
+            end
+        end
+        
+        #DSS R
+        R = zeros(mesh.npoin);
+        for iel=1:mesh.nelem
+            for i=1:mesh.ngl
+                I = mesh.conn[i,iel]
+                R[I] = R[I] + Rel[i,iel]
+            end
+        end
+        
+        for iel=1:mesh.nelem
+            for i=1:mesh.ngl
+                I = mesh.conn[i, iel]
+                #if (I != 1 && I != mesh.npoin_linear)
+                #    R[I] = Minv[I]*R[I]
+                #else
+                #    R[I] = 0.0
+                #end
+            end
+        end
+        
+        #=  for I=1:mesh.npoin
+        if (I != 1 && I != mesh.npoin_linear)
+        dq[I] = RKA[s]*dq[I] + Δt*R[I]
+        qp[I] = qp[I] + RKB[s]*dq[I]
         end
         end=#
+        #for iel=1:mesh.nelem
+        #   for i=1:mesh.ngl
+        for I=1:mesh.npoin
+            #      I = mesh.conn[i, iel]
+            qp[I] = qp[I] + Δt*R[I]
+        end
+        #end
+        #qp[1] = 0
+        #qp[mesh.npoin_linear] = 0
+        #for I=1:mesh.npoin
+        #    if (periodicity[mesh.npoin_linear] == periodicity[I])
+        #        qp[I] = qp[1] #periodicity
+        #    end
+    #end
         
-        t    = 0.0    
-        for it = 1:Nt+200
-            #@show it, Δt
-            t = t + Δt
-            
-            for s = 1:length(RKA)
-                
-                #Create RHS Matrix
-                #for iel=1:mesh.nelem
-                #    for i=1:mesh.ngl
-                #        I = mesh.conn[i, iel]
-                
-                #       for j=1:mesh.ngl
-                #           J = mesh.conn[j, iel]
-                for I = 1:mesh.npoin
-                    for J = 1:mesh.npoin
-                        R[I] = Minv[I]*D[I,J]*qp[J] #only valid for CG
-                    end
-                end
-                #end
-                
-                #RHS = drivers_build_rhs(AD1D(), mesh, el_mat, qp, periodicity)
-                #R = RHS.*Minv
-                
-                #Solve System
-                #for iel=1:mesh.nelem
-                #    for i=1:mesh.ngl
-                #        I = mesh.conn[i, iel]
-                for I=1:mesh.npoin
-                    dq[I] = RKA[s]*dq[I] + Δt*R[I]
-                    qp[I] = qp[I] + RKB[s]*dq[I]
-                end
-                for I=1:mesh.npoin
-                    if (periodicity[mesh.npoin_linear] == periodicity[I])
-                        qp[I] = qp[1] #periodicity
-                    end
-                end
-            end #s
-        end        
+        q0 = copy(qp)
+        
+        display(plot())
+        display(plot!(mesh.x, qp, seriestype = :scatter,  title="solution"))
+        
+#    end #s
     end
 end
 
