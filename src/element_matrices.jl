@@ -40,7 +40,7 @@ function build_element_matrices!(QT::Exact, ψ, dψdξ, ω, mesh, N, Q, T)
             end
         end
     end
-    #@show el_matrices.D
+    #show(stdout, "text/plain", el_matrices.D)
     
     return el_matrices
 end
@@ -51,11 +51,11 @@ function build_element_matrices!(QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
                                       zeros(N+1, N+1, mesh.nelem))
 
     for iel=1:mesh.nelem
-        @show Jac = mesh.Δx[iel]/2
+        Jac = mesh.Δx[iel]/2
         
         for k=1:Q+1
             for i=1:N+1
-                for j=1:N+1                   
+                for j=1:N+1
                     if (i == j)
                         el_matrices.M[i,iel] = el_matrices.M[i,iel] + Jac*ω[k]*ψ[i,k]*ψ[j,k] #Store only the diagonal elements
                     end
@@ -64,8 +64,8 @@ function build_element_matrices!(QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
             end
         end
     end
-    #@show el_matrices.D
-        
+    #show(stdout, "text/plain", el_matrices.D)
+    
     return el_matrices
     
 end
@@ -78,11 +78,11 @@ function DSS(QT::Exact, Me::AbstractArray, periodicity, conn, nelem, npoin, N, T
     
     for iel=1:nelem
         for i=1:N+1
-            #I = conn[i,iel]
-            I = periodicity[conn[i,iel]]
+           @show  I = conn[i,iel] iel
+            #I = periodicity[conn[i,iel]]
             for j=1:N+1
-                #J = conn[j,iel]
-                J = periodicity[conn[j,iel]]
+                J = conn[j,iel]
+                #J = periodicity[conn[j,iel]]
                 M[I,J] = M[I,J] + Me[i,j,iel]                
             end
         end
@@ -100,7 +100,7 @@ function DSS(QT::Inexact, Ae::AbstractArray, periodicity, conn, nelem, npoin, N,
     
     for iel=1:nelem
         for i=1:N+1
-            I = periodicity[conn[i,iel]]
+            I = conn[i,iel]
             A[I] = A[I] + Ae[i,iel]
         end
     end
