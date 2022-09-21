@@ -126,16 +126,14 @@ function driver(DT::CG,        #Space discretization type
     el_mat    = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
 
     #show(stdout, "text/plain", mesh.conn)
-    
     (M, Minv) = DSS(QT, el_mat.M, periodicity, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
     (D, Dinv) = DSS(Exact(), el_mat.D, periodicity, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
 
-    #show(stdout, "text/plain", el_mat.D)
-    #@show "-----"
-    #show(stdout, "text/plain", D)
-    
-    #initial condition --> q.qn
-    q         = mod_initialize_initialize(mesh, inputs, TFloat)
+    Dstar = copy(D)
+    Dstar = Minv*D
+        
+    #Initialize q
+    q = mod_initialize_initialize(mesh, inputs, TFloat)
     
     display(plot())
     display(plot!(mesh.x, q.qn, seriestype = :scatter,  title="Initial"))
@@ -146,8 +144,6 @@ function driver(DT::CG,        #Space discretization type
     Δt = C*u*minimum(mesh.Δx)/mesh.nop
     Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
     
-    plt = scatter() #Clear plot
-    #display(scatter(mesh.x, q.qn))
 
     RKA = [(0), 
            (-567301805773) / (1357537059087), 
@@ -172,87 +168,44 @@ function driver(DT::CG,        #Space discretization type
     R    = zeros(mesh.npoin);
     dq   = zeros(mesh.npoin);   
     qp   = copy(q.qn)
-    
-    for iel = 1:mesh.nelem
-        for l=1:mesh.ngl
-            ip         = mesh.conn[l, iel]                
-            x          = mesh.x[ip]
-            qel[l,iel] = exp(-64.0*x*x)
-        end
-    end
-    
-    t    = 0.0
-    q0 = copy(q.qn)
+
+
+    #
+    # ALGO 5.5 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
+    #    
+    plt = scatter() #Clear plot
     for it = 1:Nt
-        #@show it, Δt
-        t = t + Δt
-
-        dq = zeros(mesh.npoin)
         
-        #for s = 1:length(RKA)
-
-        #Create RHS Matrix
-        for iel=1:mesh.nelem
-            Rel  = zeros(mesh.ngl, mesh.nelem)
-            for i=1:mesh.ngl
-                I = mesh.conn[i, iel]                
-                for j=1:mesh.ngl
-                    J = mesh.conn[j, iel]
-                    #qel[j,iel] = q0[J]
-                    qel[j,iel] = qp[J]
-                    Rel[i,iel] = Rel[i,iel] - el_mat.D[j,i,iel]*(u*qel[j,iel])
+        dq = zeros(mesh.npoin);
+        for s = 1:length(RKA)
+            R = zeros(mesh.npoin);
+            for iel=1:mesh.nelem
+                for i=1:mesh.ngl
+                    I = mesh.conn[i,iel]
+                    for j=1:mesh.ngl
+                        J = mesh.conn[j,iel]
+                        R[I] = R[I] - u*Dstar[I,J]*qp[J]
+                    end
                 end
             end
-        end
-        
-        #DSS R
-        R = zeros(mesh.npoin);
-        for iel=1:mesh.nelem
-            for i=1:mesh.ngl
-                I = mesh.conn[i,iel]
-                R[I] = R[I] + Rel[i,iel]
+            R[1] = 0.0
+            R[mesh.npoin_linear] = 0.0
+            
+            for I=1:mesh.npoin
+                dq[I] = RKA[s]*dq[I] + Δt*R[I]
+                qp[I] = qp[I] + RKB[s]*dq[I]
             end
-        end
-        
-        for iel=1:mesh.nelem
-            for i=1:mesh.ngl
-                I = mesh.conn[i, iel]
-                #if (I != 1 && I != mesh.npoin_linear)
-                #    R[I] = Minv[I]*R[I]
-                #else
-                #    R[I] = 0.0
-                #end
-            end
-        end
-        
-        #=  for I=1:mesh.npoin
-        if (I != 1 && I != mesh.npoin_linear)
-        dq[I] = RKA[s]*dq[I] + Δt*R[I]
-        qp[I] = qp[I] + RKB[s]*dq[I]
-        end
-        end=#
-        #for iel=1:mesh.nelem
-        #   for i=1:mesh.ngl
-        for I=1:mesh.npoin
-            #      I = mesh.conn[i, iel]
-            qp[I] = qp[I] + Δt*R[I]
-        end
-        #end
-        #qp[1] = 0
-        #qp[mesh.npoin_linear] = 0
-        #for I=1:mesh.npoin
-        #    if (periodicity[mesh.npoin_linear] == periodicity[I])
-        #        qp[I] = qp[1] #periodicity
-        #    end
-    #end
-        
-        q0 = copy(qp)
+
+            #Solid wall b.c.
+            qp[1] = 0.0
+            qp[mesh.npoin_linear] = 0.0
+
+        end #s
         
         display(plot())
         display(plot!(mesh.x, qp, seriestype = :scatter,  title="solution"))
-        
-#    end #s
     end
+
 end
 
 function drivers_build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q, periodicity)
