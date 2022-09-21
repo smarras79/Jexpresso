@@ -14,14 +14,17 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
         :nsd                 => 1,    #number of space dimensions
         :interpolation_nodes =>"lgl", #Choice: lgl, cgl 
-        :nop                 => 4,    #Polynomila order
+        :nop                 => 8,    #Polynomila order
         #----------------------------------------------
         # Build native 1D grid.
         # For 2D/3D read a GMSH grid instead
         #----------------------------------------------
-        :nelx                => 39,    #N. elements in x
+        :nelx                => 100,    #N. elements in x
         :xmin                => -1,
-        :xmax                => 1,
+        :xmax                =>  1,
+        #:nelx                => 200,    #N. elements in x
+        #:xmin                => -10,
+        #:xmax                => 10,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter

@@ -104,16 +104,7 @@ function driver(DT::CG,        #Space discretization type
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), SD, TFloat, ξ, ξq)
-    
-    #periodicity flag array
-    periodicity = zeros(Int64, mesh.npoin)
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl
-            ip = mesh.conn[i, iel]
-            periodicity[ip]=ip
-        end
-    end
-    periodicity[mesh.npoin_linear]=1
+
     
     #--------------------------------------------------------
     # Build element mass matrix
@@ -126,8 +117,8 @@ function driver(DT::CG,        #Space discretization type
     el_mat    = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
 
     #show(stdout, "text/plain", mesh.conn)
-    (M, Minv) = DSS(QT, el_mat.M, periodicity, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    (D, Dinv) = DSS(Exact(), el_mat.D, periodicity, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    (M, Minv) = DSS(QT, el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    (D, Dinv) = DSS(Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
 
     Dstar = copy(D)
     Dstar = Minv*D
