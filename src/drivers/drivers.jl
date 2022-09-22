@@ -30,6 +30,7 @@ abstract type AbstractDiscretization end
 struct CG <:  AbstractDiscretization end
 
 abstract type AbstractProblem end
+struct Wave1D <: AbstractProblem end
 struct AD1D <: AbstractProblem end
 struct NS1D <: AbstractProblem end
 struct BURGERS1D <: AbstractProblem end
@@ -39,7 +40,7 @@ abstract type AbstractBC end
 struct PERIODIC1D_CG <: AbstractBC end
 
 function driver(DT::CG,        #Space discretization type
-                ET::AD1D,      #Equation subtype
+                ET::Wave1D,    #Equation subtype
                 inputs::Dict,  #input parameters from src/user_input.jl
                 TFloat) 
     
@@ -117,116 +118,177 @@ function driver(DT::CG,        #Space discretization type
     el_mat    = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
 
     #show(stdout, "text/plain", mesh.conn)
-    (M, Minv) = DSS(QT, el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    (D, Dinv) = DSS(Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-
-    Dstar = copy(D)
-    Dstar = Minv*D
-        
+    (M, Minv) = DSS(QT,      el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    (D, ~)    = DSS(Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    
     #Initialize q
     q = mod_initialize_initialize(mesh, inputs, TFloat)
-    
-    display(plot())
-    display(plot!(mesh.x, q.qn, seriestype = :scatter,  title="Initial"))
+
+    #Plot I.C.
+    plt1 = plot(mesh.x, q.qn, seriestype = :scatter,  title="Initial", reuse = false)
+    display(plt1)
+
     
     Δt = inputs[:Δt]
-    C = 0.1
+    C = 0.25
     u = 2.0
     Δt = C*u*minimum(mesh.Δx)/mesh.nop
     Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
     
+    RKA = (TFloat(0),
+           TFloat(-567301805773)  / TFloat(1357537059087),
+           TFloat(-2404267990393) / TFloat(2016746695238),
+           TFloat(-3550918686646) / TFloat(2091501179385),
+           TFloat(-1275806237668) / TFloat(842570457699 ))
 
-    RKA = [(0), 
-           (-567301805773) / (1357537059087), 
-           (-2404267990393) / (2016746695238), 
-           (-3550918686646) / (2091501179385), 
-           (-1275806237668) / (842570457699 )];
+    RKB = (TFloat(1432997174477) / TFloat(9575080441755 ),
+           TFloat(5161836677717) / TFloat(13612068292357),
+           TFloat(1720146321549) / TFloat(2090206949498 ),
+           TFloat(3134564353537) / TFloat(4481467310338 ),
+           TFloat(2277821191437) / TFloat(14882151754819))
 
-    RKB = [(1432997174477) / (9575080441755 ),
-           (5161836677717) / (13612068292357),
-           (1720146321549) / (2090206949498 ),
-           (3134564353537) / (4481467310338 ),
-           (2277821191437) / (14882151754819)];
+    RKC = (TFloat(0),
+           TFloat(1432997174477) / TFloat(9575080441755),
+           TFloat(2526269341429) / TFloat(6820363962896),
+           TFloat(2006345519317) / TFloat(3224310063776),
+           TFloat(2802321613138) / TFloat(2924317926251))
 
-    RKC = [(0),
-           (1432997174477) / (9575080441755),
-           (2526269341429) / (6820363962896),
-           (2006345519317) / (3224310063776),
-           (2802321613138) / (2924317926251)];
-
-    qel  = zeros(mesh.ngl, mesh.nelem);
-    Rel  = zeros(mesh.ngl, mesh.nelem);
     R    = zeros(mesh.npoin);
     dq   = zeros(mesh.npoin);   
-    qp   = copy(q.qn)
+    q   = copy(q.qn)
 
 
     #
-    # ALGO 5.5 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
-    #    
-    plt = scatter() #Clear plot
+    # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
+    #
+    plt2 = scatter() #Clear plot
     for it = 1:Nt
         
         dq = zeros(mesh.npoin);
+        qe = zeros(mesh.ngl);
         for s = 1:length(RKA)
-            R = zeros(mesh.npoin);
+            
+            #
+            # RHS
+            #
+            rhs = drivers_build_rhs(QT, Wave1D(), mesh, M, el_mat, u*q)
+
+            for I=1:mesh.npoin
+                dq[I] = RKA[s]*dq[I] + Δt*rhs[I]
+                q[I] = q[I] + RKB[s]*dq[I]
+            end
+
+            #
+            # B.C.: solid wall
+            #
+            q[1] = 0.0
+            q[mesh.npoin_linear] = 0.0
+
+        end #stages
+
+        plt2 = scatter(mesh.x, q,  title="solution")
+        display(plt2)
+    end
+
+#=
+#
+# ALGO 5.5 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
+#
+Dstar = copy(D)
+if QT == Exact()
+Dstar = Minv*D
+else
+for I=1:mesh.npoin
+Dstar[I,I] = Minv[I]*D[I,I]
+end
+end
+    @info size(M) size(Minv) size(Dstar)
+    for it = 1:Nt  
+        dq = zeros(mesh.npoin)
+        for s = 1:length(RKA)
+            rhs = zeros(mesh.npoin)
             for iel=1:mesh.nelem
                 for i=1:mesh.ngl
                     I = mesh.conn[i,iel]
                     for j=1:mesh.ngl
                         J = mesh.conn[j,iel]
-                        R[I] = R[I] - u*Dstar[I,J]*qp[J]
+                        rhs[I] = rhs[I] - u*Dstar[I,J]*q[J]
                     end
                 end
             end
-            R[1] = 0.0
-            R[mesh.npoin_linear] = 0.0
+            rhs[1] = 0.0
+            rhs[mesh.npoin_linear] = 0.0
             
             for I=1:mesh.npoin
-                dq[I] = RKA[s]*dq[I] + Δt*R[I]
-                qp[I] = qp[I] + RKB[s]*dq[I]
+                dq[I] = RKA[s]*dq[I] + Δt*rhs[I]
+                q[I] = q[I] + RKB[s]*dq[I]
             end
-
-            #Solid wall b.c.
-            qp[1] = 0.0
-            qp[mesh.npoin_linear] = 0.0
+ 
+            #
+            # B.C. Solid wall
+            #
+            q[1] = 0.0
+            q[mesh.npoin_linear] = 0.0
 
         end #s
         
         display(plot())
-        display(plot!(mesh.x, qp, seriestype = :scatter,  title="solution"))
+        display(plot!(mesh.x, q, seriestype = :scatter,  title="solution"))
     end
+=#
 
 end
 
-function drivers_build_rhs(PT::AD1D, mesh::St_mesh, el_mat, q, periodicity)
-    
-    RHS = zeros(mesh.npoin)
-    f   = zeros(mesh.ngl^mesh.nsd)
-    u   = 2.0 #m/s
+function drivers_build_rhs(QT::Inexact, PT::Wave1D, mesh::St_mesh, M, el_mat, f)
 
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl
-            ip = mesh.conn[i, iel]
-            f[i] = u*q[ip]
+    #
+    # Linear RHS in flux form: f = u*q
+    #
+    
+    rhs = zeros(mesh.npoin)
+    fe  = zeros(mesh.ngl)
+    for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            I = mesh.conn[i,iel]
+            fe[i] = f[I]
         end
-        
-        for i = 1:mesh.ngl
-            ip = mesh.conn[i, iel]
-            for j = 1:mesh.ngl
-                RHS[ip] = RHS[ip] + el_mat.D[j,i,iel]*f[i]
+        for i=1:mesh.ngl
+            I = mesh.conn[i,iel]
+            for j=1:mesh.ngl
+                rhs[I] = rhs[I] - el_mat.D[i,j,iel]*fe[j]
             end
         end
     end
 
-    #Zero-out the RHS row corresponding to the periodic node
-    for ip=1:mesh.npoin
-        #if (periodicity[ip] == 1)
-        if( mesh.x[ip] > 0.999999)
-            @show ip mesh.x[ip]
-            RHS[ip] = 0
+    # M⁻¹*rhs where M is diagonal
+    rhs .= rhs./M
+    
+    return rhs
+end
+
+function drivers_build_rhs(QT::Exact, PT::Wave1D, mesh::St_mesh, M, el_mat, f)
+
+    #
+    # Linear RHS in flux form: f = u*q
+    #
+    
+    rhs = zeros(mesh.npoin)
+    fe  = zeros(mesh.ngl)
+    for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            I = mesh.conn[i,iel]
+            fe[i] = f[I]
+        end
+        for i=1:mesh.ngl
+            I = mesh.conn[i,iel]
+            for j=1:mesh.ngl
+                rhs[I] = rhs[I] - el_mat.D[i,j,iel]*fe[j]
+            end
         end
     end
     
-    return RHS  
+    # M⁻¹*rhs where M is not full
+    rhs = M\rhs
+    
+    return rhs
 end
