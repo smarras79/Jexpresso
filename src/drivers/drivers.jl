@@ -68,6 +68,7 @@ function driver(DT::CG,        #Space discretization type
         # Quadrature order (Q = N+1) ≠ polynomial order (N)
         #
         QT  = Exact() #Quadrature Type
+        QT_String = "Exact"
         Qξ  = Nξ + 1
         
         NDQ = build_nodal_Storage([Qξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
@@ -80,6 +81,7 @@ function driver(DT::CG,        #Space discretization type
         # Quadrature and interpolation orders coincide (Q = N)
         #
         QT  = Inexact() #Quadrature Type
+        QT_String = "Inexact"
         Qξ  = Nξ
         NDQ = ND
         ξq  = ξ
@@ -124,6 +126,9 @@ function driver(DT::CG,        #Space discretization type
     #Initialize q
     q = mod_initialize_initialize(mesh, inputs, TFloat)
 
+    dq   = zeros(mesh.npoin);   
+    qp   = copy(q.qn)
+    
     #Plot I.C.
     plt1 = plot(mesh.x, q.qn, seriestype = :scatter,  title="Initial", reuse = false)
     display(plt1)
@@ -153,9 +158,6 @@ function driver(DT::CG,        #Space discretization type
            TFloat(2006345519317) / TFloat(3224310063776),
            TFloat(2802321613138) / TFloat(2924317926251))
 
-    R    = zeros(mesh.npoin);
-    dq   = zeros(mesh.npoin);   
-    q   = copy(q.qn)
 
 
     #
@@ -171,22 +173,23 @@ function driver(DT::CG,        #Space discretization type
             #
             # RHS
             #
-            rhs = drivers_build_rhs(QT, Wave1D(), mesh, M, el_mat, u*q)
+            rhs = drivers_build_rhs(QT, Wave1D(), mesh, M, el_mat, u*qp)
 
             for I=1:mesh.npoin
                 dq[I] = RKA[s]*dq[I] + Δt*rhs[I]
-                q[I] = q[I] + RKB[s]*dq[I]
+                qp[I] = qp[I] + RKB[s]*dq[I]
             end
 
             #
             # B.C.: solid wall
             #
-            q[1] = 0.0
-            q[mesh.npoin_linear] = 0.0
+            qp[1] = 0.0
+            qp[mesh.npoin_linear] = 0.0
 
         end #stages
 
-        plt2 = scatter(mesh.x, q,  title="solution")
+        title = string("Solution for N=", Nξ, " & ", QT_String, " integration")
+        plt2 = scatter(mesh.x, qp,  title=title)
         display(plt2)
     end
 
@@ -212,7 +215,7 @@ end
                     I = mesh.conn[i,iel]
                     for j=1:mesh.ngl
                         J = mesh.conn[j,iel]
-                        rhs[I] = rhs[I] - u*Dstar[I,J]*q[J]
+                        rhs[I] = rhs[I] - u*Dstar[I,J]*qp[J]
                     end
                 end
             end
@@ -221,19 +224,19 @@ end
             
             for I=1:mesh.npoin
                 dq[I] = RKA[s]*dq[I] + Δt*rhs[I]
-                q[I] = q[I] + RKB[s]*dq[I]
+                qp[I] = qp[I] + RKB[s]*dq[I]
             end
  
             #
             # B.C. Solid wall
             #
-            q[1] = 0.0
-            q[mesh.npoin_linear] = 0.0
+            qp[1] = 0.0
+            qp[mesh.npoin_linear] = 0.0
 
         end #s
         
         display(plot())
-        display(plot!(mesh.x, q, seriestype = :scatter,  title="solution"))
+        display(plot!(mesh.x, qp, seriestype = :scatter,  title="solution"))
     end
 =#
 
