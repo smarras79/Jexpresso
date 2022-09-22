@@ -46,7 +46,7 @@ inputs, nvars = mod_inputs_user_inputs()
 # !!!!!!
 #--------------------------------------------------------
 driver(CG(),   # Space discretization type    
-       AD1D(), # Equation subtype
+       Wave1D(), # Equation subtype
        inputs, # input parameters from src/user_input.jl
        TFloat)
 
