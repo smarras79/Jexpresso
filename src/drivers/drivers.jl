@@ -13,16 +13,17 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
+include("../basis/basis_structs.jl")
+include("../element_matrices.jl")
 include("../IO/mod_initialize.jl")
 include("../IO/mod_inputs.jl")
 include("../IO/print_matrix.jl")
-include("../Mesh/mod_mesh.jl")
-include("../solver/mod_solution.jl")
-include("../basis/basis_structs.jl")
+include("../IO/plotting/jeplots.jl")
 include("../Infrastructure/Kopriva_functions.jl")
 include("../Infrastructure/2D_3D_structures.jl")
-include("../element_matrices.jl")
-include("../IO/plotting/jeplots.jl")
+include("../Mesh/mod_mesh.jl")
+include("../solver/mod_solution.jl")
+include("../TimeIntegration/TimeIntegrators.jl")  
 #--------------------------------------------------------
 
 
@@ -140,35 +141,20 @@ function driver(DT::CG,        #Space discretization type
     Δt = C*u*minimum(mesh.Δx)/mesh.nop
     Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
     
-    RKA = (TFloat(0),
-           TFloat(-567301805773)  / TFloat(1357537059087),
-           TFloat(-2404267990393) / TFloat(2016746695238),
-           TFloat(-3550918686646) / TFloat(2091501179385),
-           TFloat(-1275806237668) / TFloat(842570457699 ))
-
-    RKB = (TFloat(1432997174477) / TFloat(9575080441755 ),
-           TFloat(5161836677717) / TFloat(13612068292357),
-           TFloat(1720146321549) / TFloat(2090206949498 ),
-           TFloat(3134564353537) / TFloat(4481467310338 ),
-           TFloat(2277821191437) / TFloat(14882151754819))
-
-    RKC = (TFloat(0),
-           TFloat(1432997174477) / TFloat(9575080441755),
-           TFloat(2526269341429) / TFloat(6820363962896),
-           TFloat(2006345519317) / TFloat(3224310063776),
-           TFloat(2802321613138) / TFloat(2924317926251))
-
-
+    
 
     #
     # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
     #
     plt2 = scatter() #Clear plot
+    
+    RK = RK_Integrator{TFloat}(zeros(TFloat,5),zeros(TFloat,5),zeros(TFloat,5))
+    buildRK5Integrator!(RK)
     for it = 1:Nt
         
         dq = zeros(mesh.npoin);
         qe = zeros(mesh.ngl);
-        for s = 1:length(RKA)
+        for s = 1:length(RK.a)
             
             #
             # RHS
@@ -176,8 +162,8 @@ function driver(DT::CG,        #Space discretization type
             rhs = drivers_build_rhs(QT, Wave1D(), mesh, M, el_mat, u*qp)
 
             for I=1:mesh.npoin
-                dq[I] = RKA[s]*dq[I] + Δt*rhs[I]
-                qp[I] = qp[I] + RKB[s]*dq[I]
+                dq[I] = RK.a[s]*dq[I] + Δt*rhs[I]
+                qp[I] = qp[I] + RK.b[s]*dq[I]
             end
 
             #
@@ -208,7 +194,7 @@ end
     @info size(M) size(Minv) size(Dstar)
     for it = 1:Nt  
         dq = zeros(mesh.npoin)
-        for s = 1:length(RKA)
+        for s = 1:length(RK.a)
             rhs = zeros(mesh.npoin)
             for iel=1:mesh.nelem
                 for i=1:mesh.ngl
@@ -223,8 +209,8 @@ end
             rhs[mesh.npoin_linear] = 0.0
             
             for I=1:mesh.npoin
-                dq[I] = RKA[s]*dq[I] + Δt*rhs[I]
-                qp[I] = qp[I] + RKB[s]*dq[I]
+                dq[I] = RK.a[s]*dq[I] + Δt*rhs[I]
+                qp[I] = qp[I] + RK.b[s]*dq[I]
             end
  
             #
