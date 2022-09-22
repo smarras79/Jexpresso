@@ -6,7 +6,7 @@ function user_inputs()
         :equation_set => "ns",
         :problem      => "wave1d",
         :tend         => 2.5,
-        :lexact_integration => true,
+        :lexact_integration => true, #false by default
         #:lread_gmsh   => false,
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR.msh",
         :gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
@@ -14,12 +14,12 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
         :nsd                 => 1,    #number of space dimensions
         :interpolation_nodes =>"lgl", #Choice: lgl, cgl 
-        :nop                 => 8,    #Polynomila order
+        :nop                 => 5,    #Polynomila order
         #----------------------------------------------
         # Build native 1D grid.
         # For 2D/3D read a GMSH grid instead
         #----------------------------------------------
-        :nelx                => 100,    #N. elements in x
+        :nelx                => 50,    #N. elements in x
         :xmin                => -1,
         :xmax                =>  1,
         #:nelx                => 200,    #N. elements in x
