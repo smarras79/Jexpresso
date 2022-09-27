@@ -114,7 +114,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     model    = GmshDiscreteModel(gmsh_filename, renumber=true)
     topology = get_grid_topology(model)
     mesh.nsd = num_cell_dims(model)
-    
+    @info "NSDDDDDD " mesh.nsd
+    return
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
     #@show labels = FaceLabeling(d_to_num_dfaces)
     #@show get_face_entity(labels,0) .= get_isboundary_face(model,0) .+ 1
@@ -472,7 +473,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
         ip1 = iel_g
         ip2 = iel_g + 1
         
-        #mesh.conn[1, iel_g], mesh.conn[2, iel_g] = ip1, ip2
         mesh.conn[1, iel_g], mesh.conn[ngl, iel_g] = ip1, ip2
         x1, x2 = mesh.x[ip1], mesh.x[ip2]
         
