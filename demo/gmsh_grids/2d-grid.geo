@@ -11,28 +11,19 @@
 
 lc = 1e-2;
 
+gridsize_bottom = 0.1;
+gridsize_top    = 0.2;
+
 // This variable can then be used in the definition of Gmsh's simplest
 // `elementary entity', a `Point'. A Point is uniquely identified by a tag (a
 // strictly positive integer; here `1') and defined by a list of four numbers:
 // three coordinates (X, Y and Z) and the target mesh size (lc) close to the
 // point:
 
-Point(1) = {0, 0, 0, lc};
-
-// The distribution of the mesh element sizes will then be obtained by
-// interpolation of these mesh sizes throughout the geometry. Another method to
-// specify mesh sizes is to use general mesh size Fields (see `t10.geo'). A
-// particular case is the use of a background mesh (see `t7.geo').
-
-// If no target mesh size of provided, a default uniform coarse size will be
-// used for the model, based on the overall model size.
-
-// We can then define some additional points. All points should have different
-// tags:
-
-Point(2) = {.1, 0,  0, lc};
-Point(3) = {.1, .3, 0, lc};
-Point(4) = {0,  .3, 0, lc};
+Point(1) = {-1, -1, 0, gridsize_bottom};
+Point(2) = { 1, -1, 0, gridsize_bottom};
+Point(3) = { 1,  1, 0, gridsize_top};
+Point(4) = {-1,  1, 0, gridsize_top};
 
 // Curves are Gmsh's second type of elementary entities, and, amongst curves,
 // straight lines are the simplest. A straight line is identified by a tag and
