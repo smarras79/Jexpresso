@@ -58,7 +58,7 @@ function driver(DT::CG,        #Space discretization type
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-return
+    
     #--------------------------------------------------------
     ND = build_nodal_Storage([Nξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
     ξ  = ND.ξ.ξ
@@ -97,8 +97,6 @@ return
     elseif (mesh.nsd == 3)
         SD = NSD_3D()
     end
-    @info SD
-    
  
     #--------------------------------------------------------
     # Build Lagrange polynomials:
@@ -108,8 +106,6 @@ return
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), SD, TFloat, ξ, ξq)
-
-    return
     
     #--------------------------------------------------------
     # Build element mass matrix
