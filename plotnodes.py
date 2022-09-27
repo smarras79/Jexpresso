@@ -102,7 +102,7 @@ if (plot_vol_nodes == True):
 #fig.canvas.mpl_connect('pick_event', onpick3)
 
 # Make axes limits 
-my_aspect_ratio = max(x)/max(z)
+my_aspect_ratio = min(max(x)/max(z), max(x)/max(y))
 ax3d.set_box_aspect((my_aspect_ratio, 1, 1))
 
 xmax = max(x)
