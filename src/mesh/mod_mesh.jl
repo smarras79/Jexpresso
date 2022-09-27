@@ -472,7 +472,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
         ip1 = iel_g
         ip2 = iel_g + 1
         
-        #mesh.conn[1, iel_g], mesh.conn[2, iel_g] = ip1, ip2
         mesh.conn[1, iel_g], mesh.conn[ngl, iel_g] = ip1, ip2
         x1, x2 = mesh.x[ip1], mesh.x[ip2]
         
