@@ -114,8 +114,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     model    = GmshDiscreteModel(gmsh_filename, renumber=true)
     topology = get_grid_topology(model)
     mesh.nsd = num_cell_dims(model)
-    @info "NSDDDDDD " mesh.nsd
-    return
+    
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
     #@show labels = FaceLabeling(d_to_num_dfaces)
     #@show get_face_entity(labels,0) .= get_isboundary_face(model,0) .+ 1
