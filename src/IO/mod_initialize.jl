@@ -54,6 +54,29 @@ function mod_initialize_initialize(mesh::St_mesh, inputs::Dict, TFloat)
                 q.qn[ip] = sin(2*π*x) + 0.5*sin(π*x)
             end
         end
+
+    elseif(inputs[:problem] === "adv2d" || inputs[:problem] === "rotational_cone"  || inputs[:problem] === "cone")
+
+        #Cone properties:
+        σ = 32.0
+        (xc, yc) = (-0.5, 0)
+        
+        for iel_g = 1:mesh.nelem
+            for l=1:ngl
+                for m=1:ngl
+                    for n=1:ngl
+                        I = l + 1 + m*(ngl + 1) + n*(ngl + 1)*(ngl + 1)
+
+                        ip = mesh.conn[I, iel_g]
+                        
+                        x = mesh.x[ip]
+                        y = mesh.y[ip]
+                        
+                        q.qn[ip] = exp(-σ*(x - xc)*(x - xc) + (y - yc)*(y - yc))
+                    end
+                end
+            end
+        end
         
     end
     
