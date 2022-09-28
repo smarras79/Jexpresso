@@ -222,14 +222,28 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.cell_node_ids     = model.grid.cell_node_ids
     mesh.conn_unique_faces = get_face_nodes(model, FACE_flg) #faces --> 4 nodes
     mesh.conn_unique_edges = get_face_nodes(model, EDGE_flg) #edges --> 2 nodes
-    mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, mesh.nsd-2)   #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
+    mesh.cell_edge_ids     = get_faces(topology, 3, 1)   #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1)   #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
+
+    @show size(mesh.cell_edge_ids)
+    show(stdout, "text/plain",  mesh.cell_edge_ids)
+    @info size(mesh.conn_unique_edges)
+    show(stdout, "text/plain",  mesh.conn_unique_edges)
+    
+#    show(stdout, "text/plain",mesh.cell_edge_ids)
+    #@info size(mesh.cell_edge_ids)
+    
+    for iel=1:mesh.nelem
+        for iedge_el = 1:12
+            iedge_g = mesh.cell_edge_ids[iel][iedge_el]
+            @info iedge_g mesh.conn_unique_edges[iedge_g][1] mesh.conn_unique_edges[iedge_g][2]
+        end
+    end
+    error("YA")
     
     if (mesh.nsd == 1)
         nothing
-        
     elseif (mesh.nsd == 2)
-
         for iel = 1:mesh.nelem
             mesh.conn[1, iel] = mesh.cell_node_ids[iel][1]
             mesh.conn[2, iel] = mesh.cell_node_ids[iel][2]
@@ -242,8 +256,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
             mesh.y[ip] = model.grid.node_coordinates[ip][2]
             @printf(" %.6f %.6f  %d\n", mesh.x[ip],  mesh.y[ip], ip)
         end
-
-        
         open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 mesh.x[ip] = model.grid.node_coordinates[ip][1]
@@ -251,9 +263,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
                 @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
             end
         end #f
-        
     elseif (mesh.nsd == 3)
-        
         for iel = 1:mesh.nelem
             mesh.conn[1, iel] = mesh.cell_node_ids[iel][2]
             mesh.conn[2, iel] = mesh.cell_node_ids[iel][6]
@@ -294,7 +304,7 @@ build_lgl!(Legendre, lgl, mesh.nop)
 #
 # Edges
 #
-#populate_conn_edge_el!(mesh, SD)
+populate_conn_edge_el!(mesh, SD)
 @time add_high_order_nodes_edges!(mesh, lgl, SD)
 
 #
@@ -615,33 +625,31 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
         end
     end #do f
 
+    show(stdout, "text/plain", conn_edge_poin)
+    @info "-----"
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes, ∀ elem]\n")
     #
     cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here
+    @info length(edge_ids)
+    
     for iel = 1:mesh.nelem
         iconn = 1
         edge_ids = getindex!(cache_edge_ids, mesh.cell_edge_ids, iel)
-        @info length(edge_ids)
-        
         for iedge_el = 1:length(edge_ids)
-            @show iedge_g = edge_ids[iedge_el]
+            iedge_g = edge_ids[iedge_el]
             for l = 2:ngl-1
                 ip = conn_edge_poin[iedge_g, l]
-                mesh.conn[2^(mesh.nsd-1) + l, iel] = ip #OK
-                
+                @show iel iedge_el ip
+                mesh.conn[2^mesh.nsd + 1 + iconn, iel] = ip #OK
+                iconn = iconn + 1
             end
         end
     end
-    @printf(" CONNN  EDGES ")
-    for iel = 1:mesh.nelem
-        for l=1:2+el_edges_internal_nodes
-            @printf(" %d ", mesh.conn[l, iel]) #OK
-        end
-        @printf("\n ")
-    end
-    
+    show(stdout, "text/plain", mesh.conn')
+    @info size(mesh.conn)
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
+    error("nansnsns")
     return 
 end
 
