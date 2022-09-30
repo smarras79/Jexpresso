@@ -291,6 +291,8 @@ lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
                            zeros(mesh.nop+1))
 build_lgl!(Legendre, lgl, mesh.nop)
 
+
+println(" # POPULATE GRID with SPECTRAL NODES ............................ ")
 #
 # Edges
 #
@@ -300,7 +302,7 @@ populate_conn_edge_el!(mesh, SD)
 #
 # Faces
 #
-#populate_conn_face_el!(mesh, SD)
+populate_conn_face_el!(mesh, SD)
 @time add_high_order_nodes_faces!(mesh, lgl, SD)
 
 #
@@ -310,7 +312,9 @@ populate_conn_edge_el!(mesh, SD)
 #         
 @time add_high_order_nodes_volumes!(mesh, lgl, SD)
 
-error(" END NOW")
+show(stdout, "text/plain", mesh.conn')
+println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
+
 #writevtk(model,"gmsh_grid")
 end
 
@@ -633,7 +637,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             end
         end
     end
-    show(stdout, "text/plain", mesh.conn')
+    #show(stdout, "text/plain", mesh.conn')
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
     
@@ -726,21 +730,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
     end
     #show(stdout, "text/plain", mesh.conn')
     #error("now")
-    
-    #=
-    cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here    
-    for iel = 1:mesh.nelem      
-        edge_ids = getindex!(cache_edge_ids, mesh.cell_edge_ids, iel)
-        for iedge_el = 1:length(edge_ids)
-            iedge_g = edge_ids[iedge_el]
-            iconn = 1
-            for l = 2:ngl-1
-                ip = conn_edge_poin[iedge_g, l]
-                mesh.conn[2^mesh.nsd + l, iel] = ip #OK
-                
-            end
-        end
-    end=#
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
     return 
@@ -841,22 +830,16 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
     cache_face_ids = array_cache(mesh.cell_face_ids) # allocation here    
     for iel = 1:mesh.nelem
         iface_g = iel
-     #   face_ids = getindex!(cache_face_ids, mesh.cell_face_ids, iel)             
-     #   for iface_el = 1:length(face_ids)
-     #       iface_g = face_ids[iface_el]
-            iconn = 1
-            for l = 2:ngl-1
-                for m = 2:ngl-1
-                    ip = conn_face_poin[iface_g, l, m]
-                    mesh.conn[2^mesh.nsd + el_edges_internal_nodes + iconn, iel] = ip
+        iconn = 1
+        for l = 2:ngl-1
+            for m = 2:ngl-1
+                ip = conn_face_poin[iface_g, l, m]
+                mesh.conn[2^mesh.nsd + el_edges_internal_nodes + iconn, iel] = ip
                     iconn = iconn + 1
-                end
             end
-     #    end
+        end
     end
-    
-    show(stdout, "text/plain", mesh.conn')
-    error(" NOW")
+    #show(stdout, "text/plain", mesh.conn')
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
 
@@ -975,13 +958,6 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
         end
     end
     
-    #=for iel = 1:mesh.nelem
-    for l=1:8+el_edges_internal_nodes+el_faces_internal_nodes
-    @printf(" %d ", mesh.conn[l, iel]) #OK
-    end
-    @printf("\n ")
-    end=#
-
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
 
 end
@@ -1108,8 +1084,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
             end 
         end
     end # do f 
-    
-    show(stdout, "text/plain", mesh.conn')
+    #show(stdout, "text/plain", mesh.conn')
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES DONE")
 
