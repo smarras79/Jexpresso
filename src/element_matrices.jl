@@ -121,7 +121,7 @@ function DSS(SD::NSD_1D, QT::Exact, Me::AbstractArray, conn, nelem, npoin, N, T)
 end
 
 
-function DSS(QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
+function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
 
     A = zeros(npoin)
     Ainv = zeros(npoin)
@@ -138,7 +138,7 @@ function DSS(QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
 end
 
 
-function DSSarray(Ae::AbstractArray, conn, nelem, npoin, N, T)
+function DSSarray(SD::NSD_1D, Ae::AbstractArray, conn, nelem, npoin, N, T)
 
     A = zeros(npoin)
     

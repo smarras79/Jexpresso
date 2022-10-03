@@ -106,7 +106,10 @@ function driver(DT::CG,        #Space discretization type
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), SD, TFloat, ξ, ξq)
-    error("DONE drivers.jl")
+
+    if (mesh.nsd > 1)
+        error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
+    end
     #--------------------------------------------------------
     # Build element mass matrix
     #
@@ -115,11 +118,11 @@ function driver(DT::CG,        #Space discretization type
     # el_mat.M[iel, i]    <-- if inexact (diagonal)
     # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
     #--------------------------------------------------------
-    el_mat    = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
+    el_mat    = build_element_matrices!(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
 
     #show(stdout, "text/plain", mesh.conn)
-    (M, Minv) = DSS(QT,      el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    (D, ~)    = DSS(Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    (M, Minv) = DSS(SD, QT,      el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    (D, ~)    = DSS(SD, Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #Initialize q
     q = mod_initialize_initialize(mesh, inputs, TFloat)
