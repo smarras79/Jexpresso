@@ -544,7 +544,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
             
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
             
-            #mesh.conn[2 + iconn, iel_g] = ip #OK
             mesh.conn[l, iel_g] = ip #OK
             iconn = iconn + 1
             
@@ -783,10 +782,6 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             ip2 = mesh.cell_node_ids[iel][2]
             ip3 = mesh.cell_node_ids[iel][3]
             ip4 = mesh.cell_node_ids[iel][4]
-            #ip1 = mesh.conn_unique_faces[iface_g][1]
-            #ip2 = mesh.conn_unique_faces[iface_g][2]
-            #ip3 = mesh.conn_unique_faces[iface_g][4]
-            #ip4 = mesh.conn_unique_faces[iface_g][3]
 
             conn_face_poin[iface_g, 1, 1]     = ip1
             conn_face_poin[iface_g, ngl, 1]   = ip2
@@ -1142,7 +1137,6 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
 
     #allocate mesh.conn and reshape it
     mesh.conn = Array{Int64}(undef, mesh.npoin_el, mesh.nelem)
-    #mesh.conn = reshape(mesh.conn, mesh.npoin_el, mesh.nelem)
     
     for iel = 1:mesh.nelem
         mesh.conn[1, iel] = iel
