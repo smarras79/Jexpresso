@@ -45,8 +45,10 @@ inputs, nvars = mod_inputs_user_inputs()
 # !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
 # !!!!!!
 #--------------------------------------------------------
+#PROBLEM_EQUATIONS = Adv2D()
+PROBLEM_EQUATIONS = Wave1D()
 driver(CG(),   # Space discretization type    
-       Wave1D(), # Equation subtype
+       PROBLEM_EQUATIONS, # Equation subtype
        inputs, # input parameters from src/user_input.jl
        TFloat)
 

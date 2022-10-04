@@ -141,8 +141,6 @@ function driver(DT::CG,        #Space discretization type
     Δt = C*u*minimum(mesh.Δx)/mesh.nop
     Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
     
-    
-
     #
     # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
     #
@@ -278,7 +276,7 @@ function driver(DT::CG,       #Space discretization type
         ω   = ND.ξ.ω
     end
     
-    SD = NSD_3D()
+    SD = NSD_2D()
     
     #--------------------------------------------------------
     # Build Lagrange polynomials:
@@ -297,24 +295,26 @@ function driver(DT::CG,       #Space discretization type
     # el_mat.M[iel, i]    <-- if inexact (diagonal)
     # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
     #--------------------------------------------------------
-    el_mat    = build_element_matrices!(QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
+    el_mat    = build_element_matrices!(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
 
     
     #show(stdout, "text/plain", mesh.conn)
-    (M, Minv) = DSS(QT,      el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    (D, ~)    = DSS(Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    
+    (M, Minv) = DSS(SD, QT,      el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    (D, ~)    = DSS(SD, Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+   error(" 2d qui") 
     #Initialize q
     q = mod_initialize_initialize(mesh, inputs, TFloat)
     return
     
     dq   = zeros(mesh.npoin);   
     qp   = copy(q.qn)
-    return 
+    
+    
     #Plot I.C.
     plt1 = plot(mesh.x, q.qn, seriestype = :scatter,  title="Initial", reuse = false)
     display(plt1)
 
+    return
     
     Δt = inputs[:Δt]
     C = 0.25

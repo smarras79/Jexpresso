@@ -17,29 +17,25 @@ struct NSD_2D <: AbstractSpaceDimensions end
 struct NSD_3D <: AbstractSpaceDimensions end
 
 abstract type AbstractMassType end
-mutable struct St_ElMat_Exact{TFloat} <: AbstractMassType
-    M::Array{TFloat, 3} #Full mass matrix with exact integration
-    D::Array{TFloat, 3} #Full differentiation matrix with exact integration
+mutable struct St_ElMat{TFloat} <: AbstractMassType
+    M::Array{TFloat}
+    D::Array{TFloat}
 end
 
-mutable struct St_ElMat_Inexact{TFloat} <: AbstractMassType
-    M::Array{TFloat, 2} #Diagonal mass matrix for inexact integration
-    D::Array{TFloat, 3} #Sparse differentiation matrix also for inexact int.
-end
-    
+
 function build_element_matrices!(SD::NSD_1D, QT::Exact, ψ, dψdξ, ω, mesh, N, Q, T)
 
-    el_matrices = St_ElMat_Exact{T}(zeros(N+1, N+1, mesh.nelem),
-                                    zeros(N+1, N+1, mesh.nelem))
+    el_matrices = St_ElMat{T}(zeros(N+1, N+1, mesh.nelem),
+                              zeros(N+1, N+1, mesh.nelem))
     
     for iel=1:mesh.nelem
         Jac = mesh.Δx[iel]/2
         
-        for k=1:Q+1
+        for iq=1:Q+1
             for i=1:N+1
                 for j=1:N+1
-                    el_matrices.M[i,j,iel] = el_matrices.M[i,j,iel] + Jac*ω[k]*ψ[i,k]*ψ[j,k]
-                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] +      ω[k]*ψ[i,k]*dψdξ[j,k]
+                    el_matrices.M[i,j,iel] = el_matrices.M[i,j,iel] + Jac*ω[iq]*ψ[i,iq]*ψ[j,iq]
+                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] +      ω[iq]*ψ[i,iq]*dψdξ[j,iq]
                 end
             end
         end
@@ -51,19 +47,19 @@ end
 
 function build_element_matrices!(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
     
-    el_matrices = St_ElMat_Inexact{T}(zeros(N+1,      mesh.nelem),
-                                      zeros(N+1, N+1, mesh.nelem))
+    el_matrices = St_ElMat{T}(zeros(N+1,      mesh.nelem),
+                              zeros(N+1, N+1, mesh.nelem))
 
     for iel=1:mesh.nelem
         Jac = mesh.Δx[iel]/2
         
-        for k=1:Q+1
+        for iq=1:Q+1
             for i=1:N+1
                 for j=1:N+1
                     if (i == j)
-                        el_matrices.M[i,iel] = el_matrices.M[i,iel] + Jac*ω[k]*ψ[i,k]*ψ[j,k] #Store only the diagonal elements
+                        el_matrices.M[i,iel] = el_matrices.M[i,iel] + Jac*ω[iq]*ψ[i,iq]*ψ[j,iq] #Store only the diagonal elements
                     end
-                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] +      ω[k]*ψ[i,k]*dψdξ[j,k] #Sparse
+                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] +      ω[iq]*ψ[i,iq]*dψdξ[j,iq] #Sparse
                 end
             end
         end
@@ -76,28 +72,39 @@ end
 
 
 function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
-    
-    el_matrices = St_ElMat_Inexact{T}(zeros(N+1,      mesh.nelem),
-                                      zeros(N+1, N+1, mesh.nelem))
 
+    #M::Array{TFloat, mesh.nsd*2 + 1} #Diagonal mass matrix for inexact integration
+    #D::Array{TFloat, mesh.nsd*2 + 1} #Sparse differentiation matrix also for inexact int.
+    
+    el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem),
+                              zeros(N+1, N+1, N+1, N+1, mesh.nelem))
+
+    
     for iel=1:mesh.nelem
-        Jac = mesh.Δx[iel]/2
         
-        for iq=1:Q+1
-            for i=1:N+1
-                for j=1:N+1
-                    if (i == j)
-                        el_matrices.M[i,iel] = el_matrices.M[i,iel] + Jac*ω[k]*ψ[i,k]*ψ[j,k] #Store only the diagonal elements
+        for k = 1:Q+1
+            for l = 1:Q+1
+                
+                Jkl = 1
+                for i = 1:N+1
+                    for j = 1:N+1
+                        ψJK = ψ[i,k]*ψ[j,l]
+
+                        for m = 1:N+1
+                            for n = 1:N+1
+                                ψIK = ψ[m,k]*ψ[n,l]                                
+                                el_matrices.M[i,j,m,n,iel] = el_matrices.M[i,j,m,n,iel] +  ω[k,l]*Jkl*ψIK*ψJK #Sparse
+                            end
+                        end
                     end
-                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] +      ω[k]*ψ[i,k]*dψdξ[j,k] #Sparse
                 end
             end
         end
     end
     #show(stdout, "text/plain", el_matrices.D)
-
-return el_matrices
-
+    
+    return el_matrices
+    
 end
 
 
