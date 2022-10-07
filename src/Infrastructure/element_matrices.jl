@@ -4,8 +4,8 @@ using Gridap.Arrays
 using Gridap.Arrays: Table
 using SparseArrays
 
-include("./mesh/mod_mesh.jl")
-include("./basis/basis_structs.jl")
+include("../mesh/mod_mesh.jl")
+include("../basis/basis_structs.jl")
 
 abstract type AbstractIntegrationType end
 struct Exact <: AbstractIntegrationType end
