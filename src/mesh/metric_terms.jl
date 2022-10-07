@@ -1,4 +1,4 @@
-include("../mesh/mod_mesh.jl")
+include("../mesh/mesh.jl")
 include("../basis/basis_structs.jl")
 
 
