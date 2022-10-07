@@ -20,7 +20,8 @@ include("../IO/plotting/jeplots.jl")
 include("../Infrastructure/element_matrices.jl")
 include("../Infrastructure/Kopriva_functions.jl")
 include("../Infrastructure/2D_3D_structures.jl")
-include("../Mesh/mod_mesh.jl")
+include("../Mesh/metric_terms.jl")
+include("../Mesh/mesh.jl")
 include("../solver/mod_solution.jl")
 include("../TimeIntegration/TimeIntegrators.jl")  
 #--------------------------------------------------------
@@ -106,11 +107,13 @@ function driver(DT::CG,        #Space discretization type
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), SD, TFloat, ξ, ξq)
-    @info type(basis)
-    error("ss")
     if (mesh.nsd > 1)
         error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
     end
+    
+    build_metric_terms(SD::NSD_2D, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ)
+    error(" driver stop")
+        
     #--------------------------------------------------------
     # Build element mass matrix
     #
