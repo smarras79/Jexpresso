@@ -72,9 +72,6 @@ end
 
 
 function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
-
-    #M::Array{TFloat, mesh.nsd*2 + 1} #Diagonal mass matrix for inexact integration
-    #D::Array{TFloat, mesh.nsd*2 + 1} #Sparse differentiation matrix also for inexact int.
     
     el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem),
                               zeros(N+1, N+1, N+1, N+1, mesh.nelem))
