@@ -1,4 +1,4 @@
-include("../mesh/mod_mesh.jl")
+include("../mesh/mesh.jl")
 include("./plotting/jeplots.jl")
 
 mutable struct St_SolutionVectors{TFloat}
