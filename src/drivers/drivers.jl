@@ -17,6 +17,7 @@ include("../basis/basis_structs.jl")
 include("../IO/mod_initialize.jl")
 include("../IO/mod_inputs.jl")
 include("../IO/plotting/jeplots.jl")
+include("../IO/print_matrix.jl")
 include("../Infrastructure/element_matrices.jl")
 include("../Infrastructure/Kopriva_functions.jl")
 include("../Infrastructure/2D_3D_structures.jl")
@@ -59,6 +60,7 @@ function driver(DT::CG,        #Space discretization type
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
+    print_matrix(mesh.conn)
     
     #--------------------------------------------------------
     ND = build_nodal_Storage([Nξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
@@ -106,14 +108,14 @@ function driver(DT::CG,        #Space discretization type
     # ψ     = basis.ψ[N+1, Q+1]
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
-    basis = build_Interpolation_basis!(LagrangeBasis(), SD, TFloat, ξ, ξq)
+    basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
+    
+   # mestrics = build_metric_terms(SD, mesh, basis, Nξ, Qξ, ξ, TFloat)
+    print_matrix(mesh.conn[:, 1])
     if (mesh.nsd > 1)
         error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
     end
     
-    build_metric_terms(SD::NSD_2D, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ)
-    error(" driver stop")
-        
     #--------------------------------------------------------
     # Build element mass matrix
     #
@@ -289,7 +291,7 @@ function driver(DT::CG,       #Space discretization type
     # ψ     = basis.ψ[N+1, Q+1]
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
-    basis = build_Interpolation_basis!(LagrangeBasis(), SD, TFloat, ξ, ξq)
+    basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
     
     #--------------------------------------------------------
     # Build element mass matrix

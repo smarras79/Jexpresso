@@ -83,7 +83,7 @@ function build_Integration_points!(lgl::St_lgl,nop::TInt)
   build_lgl!(Legendre,lgl,nop)
 end
 
-function build_Interpolation_basis!(TP::LagrangeBasis, SD::NSD_1D, T::Type{Float64}, ξ, ξq)
+function build_Interpolation_basis!(TP::LagrangeBasis, ξ, ξq, T::Type{Float64})
 
     Nξ = size(ξ,1)  - 1
     Qξ = size(ξq,1) - 1
@@ -96,63 +96,6 @@ function build_Interpolation_basis!(TP::LagrangeBasis, SD::NSD_1D, T::Type{Float
     
     return basis
 end
-
-
-function build_Interpolation_basis!(TP::LagrangeBasis, SD::NSD_2D, T::Type{Float64}, ξ, ξq)
-
-    Nξ = size(ξ,1)  - 1
-    Qξ = size(ξq,1) - 1
-    
-    Nη = Nξ
-    Qη = Qξ
-
-    N  = (Nξ + 1)*(Nη + 1)
-    Q  = (Qξ + 1)*(Qη + 1)
-    
-    basis = St_Lagrange{T}(zeros(N,Q), zeros(N,Q))    
-    (ψ, dψ) = LagrangeInterpolatingPolynomials_classic(ξ, ξq, T)
-    
-    for i = 1:Nξ+1
-        ψ[i] .= basis.ψ[i,:]
-        for j = 1:Nη+1
-            l = i + 1 + j*(Nξ + 1)
-            basis.ψ[l] = ψ[i]*ψ[j]
-        end
-    end
-    
-    return basis
-end
-
-
-function build_Interpolation_basis!(TP::LagrangeBasis, SD::NSD_3D, T::Type{Float64}, ξ, ξq)
-
-    Nξ = size(ξ,1)  - 1
-    Qξ = size(ξq,1) - 1
-    
-    Nη = Nξ #NOTICE THAT THESE SHOULD Be size(η,1) - 1 when we add different orders in different directions.
-    Qη = Qξ # " " " 
-    
-    Nζ = Nξ #NOTICE THAT THESE SHOULD Be size(ζ,1) - 1 when we add different orders in different directions.
-    Qζ = Qξ # " " " 
-
-    N  = (Nξ + 1)*(Nη + 1)*(Nζ + 1)
-    Q  = (Qξ + 1)*(Qη + 1)*(Qζ + 1)
-    
-    basis = St_Lagrange{T}(zeros(N,Q), zeros(N,Q))
-    (ψ, dψ) = LagrangeInterpolatingPolynomials_classic(ξ, ξq, T)
-
-    for i = 1:Nξ+1
-        for j = 1:Nη+1
-            for k = 1:Nζ+1
-                l = i + 1 + j*(Nξ + 1) + k*(Nξ + 1)*(Nη + 1)
-                basis.ψ[l] = ψ[i]*ψ[j]*ψ[k]
-            end
-        end
-    end
-    
-    return basis
-end
-
 
 
 function build_lgl!(Legendre::St_Legendre, lgl::St_lgl, nop::TInt)
