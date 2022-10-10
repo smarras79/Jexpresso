@@ -91,7 +91,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
-    
+
+    #conn              = ElasticArray{Int64}(undef, ngl*nelem)
+    connijk           = Array{Int64}(undef, 0)
     conn              = Array{Int64}(undef, 0)
     conn_unique_edges = ElasticArray{Int64}(undef,  1, 2)
     conn_unique_faces = ElasticArray{Int64}(undef,  1, 4)
@@ -233,6 +235,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     if (mesh.nsd == 1)
         nothing
     elseif (mesh.nsd == 2)
+        
+        mesh.connijk = Array{Int64}(undef, mesh.ngl, mesh.ngl, mesh.nelem)
         for iel = 1:mesh.nelem
             mesh.conn[1, iel] = mesh.cell_node_ids[iel][1]
             mesh.conn[2, iel] = mesh.cell_node_ids[iel][2]
@@ -253,6 +257,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
             end
         end #f
     elseif (mesh.nsd == 3)
+        mesh.connijk = Array{Int64}(undef, mesh.ngl, mesh.ngl, mesh.ngl, mesh.nelem)
         for iel = 1:mesh.nelem
             mesh.conn[1, iel] = mesh.cell_node_ids[iel][2]
             mesh.conn[2, iel] = mesh.cell_node_ids[iel][6]
@@ -418,9 +423,9 @@ function populate_conn_face_el!(mesh::St_mesh, SD::NSD_2D)
         # CGNS numbering
         #
         ip1 = mesh.cell_node_ids[iel][1]
-        ip2 = mesh.cell_node_ids[iel][2]
+        ip4 = mesh.cell_node_ids[iel][2]
         ip3 = mesh.cell_node_ids[iel][3]
-        ip4 = mesh.cell_node_ids[iel][4]
+        ip2 = mesh.cell_node_ids[iel][4]
         
         #
         # Local faces node connectivity:
@@ -543,6 +548,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
             
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
             
+            #mesh.conn[2 + iconn, iel_g] = ip #OK
             mesh.conn[l, iel_g] = ip #OK
             iconn = iconn + 1
             
@@ -779,8 +785,12 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             #GGNS numbering
             ip1 = mesh.cell_node_ids[iel][1]
             ip2 = mesh.cell_node_ids[iel][2]
-            ip3 = mesh.cell_node_ids[iel][3]
-            ip4 = mesh.cell_node_ids[iel][4]
+            ip3 = mesh.cell_node_ids[iel][4]
+            ip4 = mesh.cell_node_ids[iel][3]
+            #ip1 = mesh.conn_unique_faces[iface_g][1]
+            #ip2 = mesh.conn_unique_faces[iface_g][2]
+            #ip3 = mesh.conn_unique_faces[iface_g][4]
+            #ip4 = mesh.conn_unique_faces[iface_g][3]
 
             conn_face_poin[iface_g, 1, 1]     = ip1
             conn_face_poin[iface_g, ngl, 1]   = ip2
@@ -1136,6 +1146,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
 
     #allocate mesh.conn and reshape it
     mesh.conn = Array{Int64}(undef, mesh.npoin_el, mesh.nelem)
+    #mesh.conn = reshape(mesh.conn, mesh.npoin_el, mesh.nelem)
     
     for iel = 1:mesh.nelem
         mesh.conn[1, iel] = iel
