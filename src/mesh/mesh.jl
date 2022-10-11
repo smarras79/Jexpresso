@@ -242,6 +242,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
             mesh.conn[2, iel] = mesh.cell_node_ids[iel][2]
             mesh.conn[3, iel] = mesh.cell_node_ids[iel][3]
             mesh.conn[4, iel] = mesh.cell_node_ids[iel][4]
+            
+            mesh.connijk[1,    1, iel] = mesh.cell_node_ids[iel][2]
+            mesh.connijk[ngl,  1, iel] = mesh.cell_node_ids[iel][4]
+            mesh.connijk[ngl,ngl, iel] = mesh.cell_node_ids[iel][3]
+            mesh.connijk[1,  ngl, iel] = mesh.cell_node_ids[iel][1]
         end
 
         for ip = 1:mesh.npoin_linear
@@ -787,10 +792,6 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             ip2 = mesh.cell_node_ids[iel][2]
             ip3 = mesh.cell_node_ids[iel][4]
             ip4 = mesh.cell_node_ids[iel][3]
-            #ip1 = mesh.conn_unique_faces[iface_g][1]
-            #ip2 = mesh.conn_unique_faces[iface_g][2]
-            #ip3 = mesh.conn_unique_faces[iface_g][4]
-            #ip4 = mesh.conn_unique_faces[iface_g][3]
 
             conn_face_poin[iface_g, 1, 1]     = ip1
             conn_face_poin[iface_g, ngl, 1]   = ip2
@@ -819,6 +820,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
 		                      + y4*(1 - ξ)*(1 + ζ)*0.25)
 
                     conn_face_poin[iface_g, l, m] = ip
+                    mesh.connijk[l, m, iel] = ip
                     
                     @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                     
@@ -839,10 +841,33 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             for m = 2:ngl-1
                 ip = conn_face_poin[iface_g, l, m]
                 mesh.conn[2^mesh.nsd + el_edges_internal_nodes + iconn, iel] = ip
-                    iconn = iconn + 1
+                iconn = iconn + 1
             end
         end
     end
+    #
+    # Populate connijk[i,j,iel]
+    #
+    #Left edge
+    for iel = 1:mesh.nelem
+        for m = ngl-1:-1:2
+            j = ngl - m
+            mesh.connijk[1, m, iel] = mesh.conn[4 + j, iel]
+            @info j
+        end
+    end
+    #Right edge
+    for iel = 1:mesh.nelem
+        for m = ngl-1:-1:2
+            j = ngl - m
+            @info mesh.connijk[ngl, m, iel] = mesh.conn[4 + ngl-2 + j, iel] 4 + ngl-2 + j
+            
+        end
+    end
+
+
+    
+    
     #show(stdout, "text/plain", mesh.conn')
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
