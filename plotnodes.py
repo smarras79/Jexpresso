@@ -13,7 +13,6 @@ T = True
 nsd = 2
 plot_edge_nodes = T
 plot_face_nodes = T
-plot_vol_nodes  = T
 if nsd == 2:
     plot_vol_nodes  = F
 else:
