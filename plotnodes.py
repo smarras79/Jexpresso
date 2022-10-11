@@ -12,7 +12,7 @@ T = True
 
 plot_edge_nodes = T
 plot_face_nodes = T
-plot_vol_nodes  = T
+plot_vol_nodes  = F
 
 
 #
