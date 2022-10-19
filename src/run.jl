@@ -2,7 +2,6 @@
 # external packages
 #--------------------------------------------------------
 using Crayons.Box
-using DifferentialEquations
 using Gridap
 using GridapGmsh
 using MPI

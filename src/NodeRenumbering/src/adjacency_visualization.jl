@@ -39,7 +39,6 @@ julia> adjacency_visualization(RCM_adjacency)
 """
 function adjacency_visualization(RCM_adjacency::Dict{Int, Vector{Int}})
     m=Matrix(I, length(RCM_adjacency), length(RCM_adjacency))
-    #m=eye(length(RCM_adjacency))
     for (k, v) in RCM_adjacency
         for i in v
           m[k, i]=1
