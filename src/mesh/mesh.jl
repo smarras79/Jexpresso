@@ -11,13 +11,13 @@ using Gridap.CellData
 using Gridap.Geometry: GridMock
 using GridapGmsh
 using LinearAlgebra
+using UnicodePlots
 using Printf
 using Revise
 using ElasticArrays
 using StaticArrays
 
 export St_mesh
-
 export mod_mesh_mesh_driver
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
@@ -259,12 +259,49 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
          
         #Fill in elements dictionary needed by NodeOrdering.jl
         elements = Dict(
-            kk => mesh.conn[:, kk]
+            kk => mesh.conn[1:4, kk]
             for kk = 1:mesh.nelem)
         element_types = Dict(
-            kk => ":Quad4"
+            kk => :Quad4
             for kk = 1:mesh.nelem)
-error(" SIAMP QUI")
+        #@info elements
+        #@info element_types
+
+        original_grid_adj = Dict{Int, Vector{Int}}(
+            1 => [5, 8],
+            2 => [5, 6],
+            3 => [6, 7],
+            4 => [7, 8],
+            5 => [1, 2, 10],
+            6 => [2, 3, 11],
+            7 => [3, 4, 11],
+            8 => [1, 4, 10],
+            9 => [2, 4, 10, 11],
+            10 => [5, 8, 9],
+            11 => [6, 7, 9]
+        )
+       #= original_grid_adj = Dict{Int, Vector{Int}}(
+                       7 => [5, 6, 9],
+                       9 => [7, 8],
+                       4 => [2, 6],
+                       2 => [4, 3, 1],
+                       3 => [5, 6, 2, 1],
+                       8 => [6, 9],
+                       5 => [7, 3],
+                       6 => [7, 3, 8, 4],
+                       1 => [3, 2]);=#
+        testmat = adjacency_visualization(original_grid_adj)
+        display(UnicodePlots.heatmap(testmat))
+        error(" SIAMP QUI")
+        
+        adjacency = create_adjacency_graph(elements, element_types)
+        degrees = node_degrees(adjacency)
+        neworder = RCM(adjacency, degrees, tot_linear_poin, tot_linear_poin)
+        finalorder = renumbering(neworder)
+        RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
+        newmatrix = adjacency_visualization(RCM_adjacency)
+        display(UnicodePlots.heatmap(newmatrix))
+        error(" SIAMP QUI")
         
         for ip = 1:mesh.npoin_linear
             mesh.x[ip] = model.grid.node_coordinates[ip][1]
@@ -292,13 +329,12 @@ error(" SIAMP QUI")
         end
         
         #Fill in elements dictionary needed by NodeOrdering.jl
-        #elements = Dict(
-        #    kk => data[kk,:]
-        #    for kk = 1:size(data,1))
-        #element_types = Dict(
-        #    kk => ":Quad4"
-        #    for kk = 1:size(data,1))
-
+        elements = Dict(
+            kk => mesh.conn[1:8, kk]
+            for kk = 1:mesh.nelem)
+        element_types = Dict(
+            kk => :Hexa8
+            for kk = 1:mesh.nelem)
        
         open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
