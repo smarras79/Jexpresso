@@ -1,5 +1,6 @@
 using Test
 using DelimitedFiles
+using DataStructures
 using Gridap
 using Gridap.Arrays
 using Gridap.Arrays: Table
@@ -34,6 +35,13 @@ struct NSD_3D <: AbstractSpaceDimensions end
 #abstract type At_geo_entity end
 
 include("../basis/basis_structs.jl")
+include("../NodeRenumbering/src/create_adjacency_graph.jl")
+include("../NodeRenumbering/src/node_degrees.jl")
+include("../NodeRenumbering/src/RCM.jl")
+include("../NodeRenumbering/src/renumbering.jl")
+include("../NodeRenumbering/src/create_RCM_adjacency.jl")
+include("../NodeRenumbering/src/adjacency_visualization.jl")
+
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     
@@ -247,9 +255,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
             mesh.connijk[1,    1, iel] = mesh.cell_node_ids[iel][2]
             mesh.connijk[ngl,  1, iel] = mesh.cell_node_ids[iel][3]
             mesh.connijk[ngl,ngl, iel] = mesh.cell_node_ids[iel][4]
-
         end
-
+         
+        #Fill in elements dictionary needed by NodeOrdering.jl
+        elements = Dict(
+            kk => mesh.conn[:, kk]
+            for kk = 1:mesh.nelem)
+        element_types = Dict(
+            kk => ":Quad4"
+            for kk = 1:mesh.nelem)
+error(" SIAMP QUI")
+        
         for ip = 1:mesh.npoin_linear
             mesh.x[ip] = model.grid.node_coordinates[ip][1]
             mesh.y[ip] = model.grid.node_coordinates[ip][2]
@@ -274,14 +290,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
             mesh.conn[7, iel] = mesh.cell_node_ids[iel][7]
             mesh.conn[8, iel] = mesh.cell_node_ids[iel][3]
         end
-        #=@info size(get_isboundary_face(topology,mesh.nsd-1))
-        for i=1:length(get_isboundary_face(topology,mesh.nsd-1))
-        #Get nodes of each element's face
-        if get_isboundary_face(topology,mesh.nsd-1)[i] == true
-        #        @info get_face_nodes(model,EDGE) #edges
-        end
-        end=#
         
+        #Fill in elements dictionary needed by NodeOrdering.jl
+        #elements = Dict(
+        #    kk => data[kk,:]
+        #    for kk = 1:size(data,1))
+        #element_types = Dict(
+        #    kk => ":Quad4"
+        #    for kk = 1:size(data,1))
+
+       
         open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 mesh.x[ip] = model.grid.node_coordinates[ip][1]
@@ -292,6 +310,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
         end #f
     end
 
+error(" STOP here MESH.jl")
+    
 #
 # Add high-order points to edges, faces, and elements (volumes)
 #
