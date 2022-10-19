@@ -1,4 +1,0 @@
-[deps]
-LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-PyPlot = "d330b81b-6aea-500a-939a-2ce795aea3ee"
-UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
