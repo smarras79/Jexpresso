@@ -33,11 +33,11 @@ end
 
 function build_metric_terms(SD::NSD_2D, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, T)
     
-    metrics = St_metrics{T}(dxdξ = zeros(Q+1, Q+1, mesh.nelem), #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                            dxdη = zeros(Q+1, Q+1, mesh.nelem), #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                            dydξ = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                            dydη = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                            J    = zeros(Q+1, Q+1, mesh.nelem)) #    J[1:Nq, 1:Nq, 1:nelem]
+    metrics = St_metrics{T}(dxdξ = zeros(2, Q+1, Q+1, mesh.nelem), #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                            dxdη = zeros(2, Q+1, Q+1, mesh.nelem), #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                            dydξ = zeros(2, Q+1, Q+1, mesh.nelem), #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                            dydη = zeros(2, Q+1, Q+1, mesh.nelem), #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                            J    = zeros(2, Q+1, Q+1, mesh.nelem)) #    J[1:Nq, 1:Nq, 1:nelem]
 
     ψ  = basis.ψ
     dψ = basis.dψ
@@ -58,24 +58,22 @@ function build_metric_terms(SD::NSD_2D, mesh::St_mesh, basis::St_Lagrange, N, Q,
             end
         end
     end
-        
+    
     return metrics
 end
 
-
-
 function build_metric_terms(SD::NSD_3D, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ)
 
-     metrics = St_metrics{T}(dxdξ = zeros(Q+1, Q+1, mesh.nelem), #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dxdη = zeros(Q+1, Q+1, mesh.nelem), #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                             dxdζ = zeros(Q+1, Q+1, mesh.nelem), #∂x/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dydξ = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dydη = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                             dydζ = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dzdξ = zeros(Q+1, Q+1, mesh.nelem), #∂z/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dzdη = zeros(Q+1, Q+1, mesh.nelem), #∂z/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                             dzdζ = zeros(Q+1, Q+1, mesh.nelem), #∂z/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                             J    = zeros(Q+1, Q+1, mesh.nelem)) #    J[1:Nq, 1:Nq, 1:nelem]
+     metrics = St_metrics{T}(dxdξ = zeros(2, Q+1, Q+1, mesh.nelem), #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dxdη = zeros(2, Q+1, Q+1, mesh.nelem), #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                             dxdζ = zeros(2, Q+1, Q+1, mesh.nelem), #∂x/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dydξ = zeros(2, Q+1, Q+1, mesh.nelem), #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dydη = zeros(2, Q+1, Q+1, mesh.nelem), #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                             dydζ = zeros(2, Q+1, Q+1, mesh.nelem), #∂y/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dzdξ = zeros(2, Q+1, Q+1, mesh.nelem), #∂z/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dzdη = zeros(2, Q+1, Q+1, mesh.nelem), #∂z/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                             dzdζ = zeros(2, Q+1, Q+1, mesh.nelem), #∂z/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                             J    = zeros(2, Q+1, Q+1, mesh.nelem)) #    J[1:Nq, 1:Nq, 1:nelem]
     
     return metrics
 end

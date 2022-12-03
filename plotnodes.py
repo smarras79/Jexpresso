@@ -11,6 +11,7 @@ F = False
 T = True
 
 nsd = 2
+lplot_low_order_only = T
 plot_edge_nodes = T
 plot_face_nodes = T
 if nsd == 2:
@@ -18,6 +19,8 @@ if nsd == 2:
 else:
     plot_vol_nodes  = T
 
+
+    
 #
 # USER: DO NO TOUCH from here on!
 #
@@ -39,6 +42,7 @@ z=coords_lo[:,2];
 ip=coords_lo[:,3];
 
 scatter = ax3d.scatter(x, y, z, marker='o',  picker=True)
+    
 
 if (print_lables == True):
     for xcoords, ycoords, zcoords, label in zip(x, y, z, ip):
@@ -94,15 +98,6 @@ if (plot_vol_nodes == True):
     if (print_lables == True):
         for xcoords, ycoords, zcoords, label in zip(x, y, z, ip):
             ax3d.text(xcoords, ycoords, zcoords, int(label))
-
-# PICK currently not working correctly.
-# The values that it returns are incorrect.
-#def onpick3(event):
-#    point_index = int(event.ind)
-#    print('onpick3 scatter:', point_index)
-#    print("X=",x[point_index], " Y=",y[point_index], " Z=",z[point_index], " PointIdx=", point_index)
-#
-#fig.canvas.mpl_connect('pick_event', onpick3)
 
 # Make axes limits 
 my_aspect_ratio = min(max(x)/max(z), max(x)/max(y))
