@@ -171,7 +171,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.nedges       = num_faces(model,EDGE_flg)
     mesh.nfaces       = num_faces(model,FACE_flg)   
     mesh.nelem        = num_faces(model,ELEM_flg)
-        
+    
     mesh.nfaces_bdy   = count(get_isboundary_face(topology,mesh.nsd-1))
     mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
     mesh.nedges_bdy   = count(get_isboundary_face(topology,mesh.nsd-2))
@@ -236,118 +236,224 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
 
     mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
-
+    
     #show(stdout, "text/plain",  mesh.conn_unique_faces)
     #show(stdout, "text/plain",  mesh.conn_unique_edges)
-    
-    if (mesh.nsd == 1)
-        nothing
-    elseif (mesh.nsd == 2)
-        
-        mesh.connijk = Array{Int64}(undef, mesh.ngl, mesh.ngl, mesh.nelem)
-        for iel = 1:mesh.nelem
-            mesh.conn[1, iel] = mesh.cell_node_ids[iel][1]
-            mesh.conn[2, iel] = mesh.cell_node_ids[iel][2]
-            mesh.conn[3, iel] = mesh.cell_node_ids[iel][4]
-            mesh.conn[4, iel] = mesh.cell_node_ids[iel][3]
-            
-            mesh.connijk[1,  ngl, iel] = mesh.cell_node_ids[iel][1]
-            mesh.connijk[1,    1, iel] = mesh.cell_node_ids[iel][2]
-            mesh.connijk[ngl,  1, iel] = mesh.cell_node_ids[iel][3]
-            mesh.connijk[ngl,ngl, iel] = mesh.cell_node_ids[iel][4]
-        end
-         
-        #Fill in elements dictionary needed by NodeOrdering.jl
-        elements = Dict(
-            kk => mesh.conn[1:4, kk]
-            for kk = 1:mesh.nelem)
-        element_types = Dict(
-            kk => :Quad4
-            for kk = 1:mesh.nelem)
-        #@info elements
-        #@info element_types
 
-        original_grid_adj = Dict{Int, Vector{Int}}(
-            1 => [5, 8],
-            2 => [5, 6],
-            3 => [6, 7],
-            4 => [7, 8],
-            5 => [1, 2, 10],
-            6 => [2, 3, 11],
-            7 => [3, 4, 11],
-            8 => [1, 4, 10],
-            9 => [2, 4, 10, 11],
-            10 => [5, 8, 9],
-            11 => [6, 7, 9]
-        )
-       #= original_grid_adj = Dict{Int, Vector{Int}}(
-                       7 => [5, 6, 9],
-                       9 => [7, 8],
-                       4 => [2, 6],
-                       2 => [4, 3, 1],
-                       3 => [5, 6, 2, 1],
-                       8 => [6, 9],
-                       5 => [7, 3],
-                       6 => [7, 3, 8, 4],
-                       1 => [3, 2]);=#
-        testmat = adjacency_visualization(original_grid_adj)
-        display(UnicodePlots.heatmap(testmat))
-        error(" SIAMP QUI")
+if (mesh.nsd == 1)
+    nothing
+elseif (mesh.nsd == 2)
+    
+    mesh.connijk = Array{Int64}(undef, mesh.ngl, mesh.ngl, mesh.nelem)
+    for iel = 1:mesh.nelem
+        mesh.conn[1, iel] = mesh.cell_node_ids[iel][1]
+        mesh.conn[2, iel] = mesh.cell_node_ids[iel][2]
+        mesh.conn[3, iel] = mesh.cell_node_ids[iel][4]
+        mesh.conn[4, iel] = mesh.cell_node_ids[iel][3]
         
+        mesh.connijk[1,  ngl, iel] = mesh.cell_node_ids[iel][1]
+        mesh.connijk[1,    1, iel] = mesh.cell_node_ids[iel][2]
+        mesh.connijk[ngl,  1, iel] = mesh.cell_node_ids[iel][3]
+        mesh.connijk[ngl,ngl, iel] = mesh.cell_node_ids[iel][4]
+    end
+    
+    #
+    # Fill in elements dictionary needed by NodeOrdering.jl
+    #
+    elements = Dict(
+        kk => mesh.conn[1:4, kk]
+        for kk = 1:mesh.nelem)
+    element_types = Dict(
+        kk => :Quad4
+        for kk = 1:mesh.nelem)
+
+    #if (rcm_renumber)
+        #
+        #Use NodeNumbering.jl
+        #
         adjacency = create_adjacency_graph(elements, element_types)
         degrees = node_degrees(adjacency)
         neworder = RCM(adjacency, degrees, tot_linear_poin, tot_linear_poin)
         finalorder = renumbering(neworder)
         RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
-        newmatrix = adjacency_visualization(RCM_adjacency)
-        display(UnicodePlots.heatmap(newmatrix))
-        error(" SIAMP QUI")
+        #newmatrix = adjacency_visualization(RCM_adjacency)
+        #display(UnicodePlots.heatmap(newmatrix))
         
+        #
+        # Rewrite coordinates in RCM order:
+        #
+        #temporary copy of x,y:
+        xold = Array{TFloat}(zeros(mesh.npoin_linear))
+        yold = Array{TFloat}(zeros(mesh.npoin_linear))
         for ip = 1:mesh.npoin_linear
-            mesh.x[ip] = model.grid.node_coordinates[ip][1]
-            mesh.y[ip] = model.grid.node_coordinates[ip][2]
-            @printf(" %.6f %.6f  %d\n", mesh.x[ip],  mesh.y[ip], ip)
+            xold[ip] = model.grid.node_coordinates[ip][1]
+            yold[ip] = model.grid.node_coordinates[ip][2]
+
+            mesh.x[ip] = xold[ip]
+            mesh.y[ip] = yold[ip]
         end
-        open("./COORDS_LO.dat", "w") do f
-            for ip = 1:mesh.npoin_linear
-                mesh.x[ip] = model.grid.node_coordinates[ip][1]
-                mesh.y[ip] = model.grid.node_coordinates[ip][2]
-                @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
-            end
-        end #f
-    elseif (mesh.nsd == 3)
-        mesh.connijk = Array{Int64}(undef, mesh.ngl, mesh.ngl, mesh.ngl, mesh.nelem)
-        for iel = 1:mesh.nelem
-            mesh.conn[1, iel] = mesh.cell_node_ids[iel][2]
-            mesh.conn[2, iel] = mesh.cell_node_ids[iel][6]
-            mesh.conn[3, iel] = mesh.cell_node_ids[iel][8]
-            mesh.conn[4, iel] = mesh.cell_node_ids[iel][4]
-            mesh.conn[5, iel] = mesh.cell_node_ids[iel][1]
-            mesh.conn[6, iel] = mesh.cell_node_ids[iel][5]
-            mesh.conn[7, iel] = mesh.cell_node_ids[iel][7]
-            mesh.conn[8, iel] = mesh.cell_node_ids[iel][3]
+        #=for (ip_old, ip_new) in finalorder
+            println(ip_old, " => ", ip_new)
+            
+            mesh.x[ip_new] = xold[ip_old]
+            mesh.y[ip_new] = yold[ip_old]
+            #@printf(" %.6f %.6f  %d\n", mesh.x[ip_new],  mesh.y[ip_new], ip_new)
         end
         
-        #Fill in elements dictionary needed by NodeOrdering.jl
-        elements = Dict(
-            kk => mesh.conn[1:8, kk]
-            for kk = 1:mesh.nelem)
-        element_types = Dict(
-            kk => :Hexa8
-            for kk = 1:mesh.nelem)
-       
-        open("./COORDS_LO.dat", "w") do f
-            for ip = 1:mesh.npoin_linear
-                mesh.x[ip] = model.grid.node_coordinates[ip][1]
-                mesh.y[ip] = model.grid.node_coordinates[ip][2]
-                mesh.z[ip] = model.grid.node_coordinates[ip][3]
-                @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-            end
-        end #f
+        connold = Array{Int64}(undef, 0)
+    connold = copy(mesh.conn)
+    for iel = 1:mesh.nelem
+        #1
+        ipold = connold[1, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[1, iel] = ipnew
+
+        #2
+        ipold = connold[2, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[2, iel] = ipnew
+        
+        #3
+        ipold = connold[3, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[3, iel] = ipnew
+
+        #4
+        ipold = connold[4, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[4, iel] = ipnew
+
+        @printf(" %d: %d %d %d %d\n", iel,  mesh.conn[1, iel],  mesh.conn[2, iel],  mesh.conn[3, iel],  mesh.conn[4, iel])
+        
+    end
+    =#
+    open("./COORDS_LO.dat", "w") do f
+        for ip = 1:mesh.npoin_linear
+            @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
+        end
+    end #f
+    
+elseif (mesh.nsd == 3)
+    mesh.connijk = Array{Int64}(undef, mesh.ngl, mesh.ngl, mesh.ngl, mesh.nelem)
+    for iel = 1:mesh.nelem
+        #CGNS numbering:
+        mesh.conn[1, iel] = mesh.cell_node_ids[iel][2]
+        mesh.conn[2, iel] = mesh.cell_node_ids[iel][3]
+        mesh.conn[3, iel] = mesh.cell_node_ids[iel][1]
+        mesh.conn[4, iel] = mesh.cell_node_ids[iel][4]
+        mesh.conn[5, iel] = mesh.cell_node_ids[iel][6]
+        mesh.conn[6, iel] = mesh.cell_node_ids[iel][7]
+        mesh.conn[7, iel] = mesh.cell_node_ids[iel][5]
+        mesh.conn[8, iel] = mesh.cell_node_ids[iel][8]
     end
 
-error(" STOP here MESH.jl")
+    #
+    # Fill in elements dictionary needed by NodeOrdering.jl
+    #
+    elements = Dict(
+        kk => mesh.conn[1:8, kk]
+        for kk = 1:mesh.nelem)
+    element_types = Dict(
+        kk => :Hexa8
+        for kk = 1:mesh.nelem)
+
+    ##
+    #Use NodeNumbering.jl
+    adjacency = create_adjacency_graph(elements, element_types)
+    starting_matrix = adjacency_visualization(adjacency)
+    display(UnicodePlots.heatmap(starting_matrix))
     
+    degrees = node_degrees(adjacency)
+    neworder = RCM(adjacency, degrees, tot_linear_poin, tot_linear_poin)
+    finalorder = renumbering(neworder)
+    RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
+    #newmatrix = adjacency_visualization(RCM_adjacency)
+    #display(UnicodePlots.heatmap(newmatrix))
+    
+    #
+    # Rewrite coordinates in RCM order:
+    #
+    #temporary copy of x,y:
+    xold = Array{TFloat}(zeros(mesh.npoin_linear))
+    yold = Array{TFloat}(zeros(mesh.npoin_linear))
+    zold = Array{TFloat}(zeros(mesh.npoin_linear))
+    for ip = 1:mesh.npoin_linear
+        xold[ip] = model.grid.node_coordinates[ip][1]
+        yold[ip] = model.grid.node_coordinates[ip][2]
+        zold[ip] = model.grid.node_coordinates[ip][3]
+        
+        mesh.x[ip_new] = xold[ip]
+        mesh.y[ip_new] = yold[ip]
+        mesh.z[ip_new] = zold[ip]
+    end
+    #=
+    for (ip_old, ip_new) in finalorder
+        #println(ip_old, " => ", ip_new)
+
+        mesh.x[ip_new] = xold[ip_old]
+        mesh.y[ip_new] = yold[ip_old]
+        mesh.z[ip_new] = zold[ip_old]
+        #@printf(" %.6f %.6f %f %d\n", mesh.x[ip_new],  mesh.y[ip_new], mesh.z[ip_new], ip_new)
+    end
+    connold = Array{Int64}(undef, 0)
+    connold = copy(mesh.conn)
+    for iel = 1:mesh.nelem
+        #1
+        ipold = connold[1, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[1, iel] = ipnew
+
+        #2
+        ipold = connold[2, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[2, iel] = ipnew
+        
+        #3
+        ipold = connold[3, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[3, iel] = ipnew
+
+        #4
+        ipold = connold[4, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[4, iel] = ipnew
+
+        
+        #5
+        ipold = connold[5, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[5, iel] = ipnew
+
+        #6
+        ipold = connold[6, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[6, iel] = ipnew
+        
+        #7
+        ipold = connold[7, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[7, iel] = ipnew
+
+        #8
+        ipold = connold[8, iel]
+        ipnew = get(finalorder, ipold, -1)
+        mesh.conn[8, iel] = ipnew
+
+        #@printf(" %d: %d %d %d %d\n", iel,  mesh.conn[1, iel],  mesh.conn[2, iel],  mesh.conn[3, iel],  mesh.conn[4, iel])
+        
+    end=#
+
+open("./COORDS_LO.dat", "w") do f
+    for ip = 1:mesh.npoin_linear
+        mesh.x[ip] = model.grid.node_coordinates[ip][1]
+        mesh.y[ip] = model.grid.node_coordinates[ip][2]
+        mesh.z[ip] = model.grid.node_coordinates[ip][3]
+        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+    end
+end #f
+end
+
+
 #
 # Add high-order points to edges, faces, and elements (volumes)
 #
@@ -363,8 +469,8 @@ println(" # POPULATE GRID with SPECTRAL NODES ............................ ")
 # Edges
 #
 populate_conn_edge_el!(mesh, SD)
-@time add_high_order_nodes_edges1!(mesh, lgl, SD)
-error("QUO")
+@time add_high_order_nodes_edges!(mesh, lgl, SD)
+
 #
 # Faces
 #
@@ -378,7 +484,7 @@ populate_conn_face_el!(mesh, SD)
 #         
 @time add_high_order_nodes_volumes!(mesh, lgl, SD)
 
-show(stdout, "text/plain", mesh.conn')
+#show(stdout, "text/plain", mesh.conn')
 println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
 
 #writevtk(model,"gmsh_grid")
@@ -388,29 +494,27 @@ end
 function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_2D)
     
     for iel = 1:mesh.nelem
-
         #
         # CGNS numbering
         #
-       @show ip1 = mesh.cell_node_ids[iel][4]
-       @show ip2 = mesh.cell_node_ids[iel][3]
-       @show ip3 = mesh.cell_node_ids[iel][1]
-       @show ip4 = mesh.cell_node_ids[iel][2]
+        ip1 = mesh.cell_node_ids[iel][4]
+        ip2 = mesh.cell_node_ids[iel][3]
+        ip3 = mesh.cell_node_ids[iel][1]
+        ip4 = mesh.cell_node_ids[iel][2]
         
 	# Edges bottom face:
-	@show iedg_el = 1
-        @show mesh.conn_edge_el[1, iedg_el, iel] = ip1
-	@show mesh.conn_edge_el[2, iedg_el, iel] = ip2
-	@show iedg_el = 2
-	@show mesh.conn_edge_el[1, iedg_el, iel] = ip2
-	@show mesh.conn_edge_el[2, iedg_el, iel] = ip3
-	@show iedg_el = 3
-	@show mesh.conn_edge_el[1, iedg_el, iel] = ip3
-	@show mesh.conn_edge_el[2, iedg_el, iel] = ip4
-	@show iedg_el = 4
-	@show mesh.conn_edge_el[1, iedg_el, iel] = ip4
-	@show mesh.conn_edge_el[2, iedg_el, iel] = ip1
-        
+	iedg_el = 1
+        mesh.conn_edge_el[1, iedg_el, iel] = ip1
+	mesh.conn_edge_el[2, iedg_el, iel] = ip2
+	iedg_el = 2
+	mesh.conn_edge_el[1, iedg_el, iel] = ip2
+	mesh.conn_edge_el[2, iedg_el, iel] = ip3
+	iedg_el = 3
+	mesh.conn_edge_el[1, iedg_el, iel] = ip3
+	mesh.conn_edge_el[2, iedg_el, iel] = ip4
+	iedg_el = 4
+	mesh.conn_edge_el[1, iedg_el, iel] = ip4
+	mesh.conn_edge_el[2, iedg_el, iel] = ip1
     end
     
 end #populate_edge_el!
@@ -418,7 +522,6 @@ end #populate_edge_el!
 function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_3D)
     
     for iel = 1:mesh.nelem
-
         #
         # CGNS numbering
         #
@@ -472,7 +575,6 @@ function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_3D)
 	iedg_el = 12
 	mesh.conn_edge_el[1, iedg_el, iel] = ip8
 	mesh.conn_edge_el[2, iedg_el, iel] = ip5
-	
     end
     
 end #populate_edge_el!
@@ -480,15 +582,14 @@ end #populate_edge_el!
 function populate_conn_face_el!(mesh::St_mesh, SD::NSD_2D)
     
     for iel = 1:mesh.nelem
-        
         #
         # CGNS numbering
         #
-        @show ip1 = mesh.cell_node_ids[iel][4]
-        @show ip2 = mesh.cell_node_ids[iel][3]
-        @show ip3 = mesh.cell_node_ids[iel][1]
-        @show ip4 = mesh.cell_node_ids[iel][2]
-                
+        ip1 = mesh.cell_node_ids[iel][4]
+        ip2 = mesh.cell_node_ids[iel][3]
+        ip3 = mesh.cell_node_ids[iel][1]
+        ip4 = mesh.cell_node_ids[iel][2]
+        
         #
         # Local faces node connectivity:
         # i.e. what nodes belong to a given local face in iel:
@@ -498,7 +599,6 @@ function populate_conn_face_el!(mesh::St_mesh, SD::NSD_2D)
         mesh.conn_face_el[2, face_el, iel] = ip2
         mesh.conn_face_el[3, face_el, iel] = ip3
         mesh.conn_face_el[4, face_el, iel] = ip4
-        
     end
     
 end #populate_face_el
@@ -506,7 +606,6 @@ end #populate_face_el
 function populate_conn_face_el!(mesh::St_mesh, SD::NSD_3D)
     
     for iel = 1:mesh.nelem
-        
         #
         # CGNS numbering
         #
@@ -558,7 +657,6 @@ function populate_conn_face_el!(mesh::St_mesh, SD::NSD_3D)
         mesh.conn_face_el[2, face_el, iel] = ip6
         mesh.conn_face_el[3, face_el, iel] = ip7
         mesh.conn_face_el[4, face_el, iel] = ip8
-        
     end
     
 end #populate_face_el
@@ -740,8 +838,9 @@ function  add_high_order_nodes_edges1!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
     end
     
     conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    @info size(mesh.cell_edge_ids,1)
+    @info size(mesh.cell_edge_ids)
     @info size(mesh.cell_edge_ids,2)
+    @info mesh.cell_edge_ids
     
     open("./COORDS_HO_edges.dat", "w") do f
         #
@@ -752,7 +851,7 @@ function  add_high_order_nodes_edges1!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
 
                 ip = tot_linear_poin + 1
                 for iedge_g = 1:mesh.nedges
-                    if iedge_g == mesh.cell_edge_ids[iel, iedg_el]
+                    if iedge_g == mesh.cell_edge_ids[iel][iedg_el]
 
                         ip1 = mesh.conn_edge_el[1, iedg_el, iel]
                         ip2 = mesh.conn_edge_el[2, iedg_el, iel]
@@ -764,8 +863,9 @@ function  add_high_order_nodes_edges1!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
                         
                         x1, y1 = mesh.x[ip1], mesh.y[ip1]
                         x2, y2 = mesh.x[ip2], mesh.y[ip2]
+
+                        #@printf(" Iel[%d]: (iedg_el, iedge_g)=(%d,%d) --> (ip1, ip2)=(%d, %d), (x1,y1)=(%f,%f), (x2, y2)=(%f,%f)\n", iel,      iedg_el, iedge_g,              conn_edge_poin[iedge_g,1],conn_edge_poin[iedge_g,mesh.ngl], x1,y1, x2,y2)
                         
-                        #@printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
                         for l=2:ngl-1
                             ξ = lgl.ξ[l];
                             
@@ -774,7 +874,7 @@ function  add_high_order_nodes_edges1!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
                             
                             conn_edge_poin[iedge_g, l] = ip
                             
-                            #@printf(" lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
+                            #@printf(" Iel[%d]: lgl %d: %d %d %d\n", iel, l, iedg_el, iedge_g, conn_edge_poin[iedge_g, l])
                             @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                             ip = ip + 1
                         end
@@ -858,7 +958,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
             
-            @printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
+            #@printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
                 
@@ -1001,6 +1101,8 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             end
         end
     end
+    #show(stdout, "text/plain", mesh.conn')
+    
     #
     # Populate connijk[i,j,iel]
     #
@@ -1009,23 +1111,20 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
         for m = ngl-1:-1:2
             j = ngl - m
             mesh.connijk[1, m, iel] = mesh.conn[4 + j, iel]
-            @info j
         end
     end
     #Right edge
     for iel = 1:mesh.nelem
         for m = ngl-1:-1:2
             j = ngl - m
-            @info mesh.connijk[ngl, m, iel] = mesh.conn[4 + ngl-2 + j, iel] 4 + ngl-2 + j
-            
+            mesh.connijk[ngl, m, iel] = mesh.conn[4 + ngl-2 + j, iel] + ngl-2 + j
         end
     end
-
-
+    @show "WARNING!!!!! mesh.jl: CONTINUE WITH MESH.CONNIJK population. STILL INCOMPLETE!!!!"
     
-    
-    #show(stdout, "text/plain", mesh.conn')
-    
+    #for iel = 1:mesh.nelem
+    #    show(stdout, "text/plain", mesh.connijk[:,:,iel]')
+    #end
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
 
 end
@@ -1230,7 +1329,6 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
                     for n=2:ngl-1
                         ζ = lgl.ξ[n];
                         
-                        
 	                mesh.x_ho[ip] = (x1*(1 - ξ)*(1 - η)*(1 - ζ)*0.125
 			                 + x2*(1 + ξ)*(1 - η)*(1 - ζ)*0.125
 			                 + x3*(1 + ξ)*(1 + η)*(1 - ζ)*0.125
@@ -1430,31 +1528,31 @@ end
 #=
 function populate_face_in_elem!(face_in_elem::Array{Int64, 3}, nelem, NFACES_EL, conn_face_el_sort::Array{Int64, 3})
 
-    iface = Int64(0)
-    for ifac = 1:NFACES_EL
-        for iel = 1:nelem	    
-	    for jfac = 1:NFACES_EL
-                for jel = iel:nelem
-		    
-		    if(     conn_face_el_sort[iel,ifac,1] === conn_face_el_sort[jel,jfac,1] && 
-			    conn_face_el_sort[iel,ifac,2] === conn_face_el_sort[jel,jfac,2] && 
-			    conn_face_el_sort[iel,ifac,3] === conn_face_el_sort[jel,jfac,3] && 
-			    conn_face_el_sort[iel,ifac,4] === conn_face_el_sort[jel,jfac,4] && 
-			    iel ≠ jel) 
-			
-			face_in_elem[1, ifac, iel] = iel
-			face_in_elem[2, ifac, iel] = jel
-			
-			face_in_elem[1, jfac, jel] = jel
-			face_in_elem[2, jfac, jel] = iel
-			
-			#@info " SHARED FACE:  face %d of ELEMENT %d is shared with face %d of ELEMENT %d - (%d %d %d %d) = (%d %d %d %d)\n", ifac+1,iel+1, jfac+1, jel+1, conn_face_el_sort[iel,ifac,1], conn_face_el_sort[iel,ifac,2], conn_face_el_sort[iel,ifac,3], conn_face_el_sort[iel,ifac,4],  conn_face_el_sort[jel,jfac,1], conn_face_el_sort[jel,jfac,2], conn_face_el_sort[jel,jfac,3], conn_face_el_sort[jel,jfac,4]
-			iface = iface + 1;
-		    end
-		end
-	    end
-	end
-    end     
-    nfaces_int = Int64(iface)    
+iface = Int64(0)
+for ifac = 1:NFACES_EL
+for iel = 1:nelem	    
+for jfac = 1:NFACES_EL
+for jel = iel:nelem
+
+if(     conn_face_el_sort[iel,ifac,1] === conn_face_el_sort[jel,jfac,1] && 
+conn_face_el_sort[iel,ifac,2] === conn_face_el_sort[jel,jfac,2] && 
+conn_face_el_sort[iel,ifac,3] === conn_face_el_sort[jel,jfac,3] && 
+conn_face_el_sort[iel,ifac,4] === conn_face_el_sort[jel,jfac,4] && 
+iel ≠ jel) 
+
+face_in_elem[1, ifac, iel] = iel
+face_in_elem[2, ifac, iel] = jel
+
+face_in_elem[1, jfac, jel] = jel
+face_in_elem[2, jfac, jel] = iel
+
+#@info " SHARED FACE:  face %d of ELEMENT %d is shared with face %d of ELEMENT %d - (%d %d %d %d) = (%d %d %d %d)\n", ifac+1,iel+1, jfac+1, jel+1, conn_face_el_sort[iel,ifac,1], conn_face_el_sort[iel,ifac,2], conn_face_el_sort[iel,ifac,3], conn_face_el_sort[iel,ifac,4],  conn_face_el_sort[jel,jfac,1], conn_face_el_sort[jel,jfac,2], conn_face_el_sort[jel,jfac,3], conn_face_el_sort[jel,jfac,4]
+iface = iface + 1;
+end
+end
+end
+end
+end     
+nfaces_int = Int64(iface)    
 end
 =#

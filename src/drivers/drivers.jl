@@ -59,8 +59,7 @@ function driver(DT::CG,        #Space discretization type
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    print_matrix(mesh.conn)
-    
+        
     #--------------------------------------------------------
     ND = build_nodal_Storage([Nξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
     ξ  = ND.ξ.ξ
@@ -89,8 +88,7 @@ function driver(DT::CG,        #Space discretization type
         NDQ = ND
         ξq  = ξ
         ω   = ND.ξ.ω
-    end
-    
+    end 
     
     if (mesh.nsd == 1)
         SD = NSD_1D()
@@ -109,11 +107,10 @@ function driver(DT::CG,        #Space discretization type
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
     
-   # mestrics = build_metric_terms(SD, mesh, basis, Nξ, Qξ, ξ, TFloat)
-    print_matrix(mesh.conn[:, 1])
-    if (mesh.nsd > 1)
-        error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
-    end
+    mestrics = build_metric_terms(SD, mesh, basis, Nξ, Qξ, ξ, TFloat)
+    #if (mesh.nsd > 1)
+    #    error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
+    #end
     
     #--------------------------------------------------------
     # Build element mass matrix
@@ -138,7 +135,6 @@ function driver(DT::CG,        #Space discretization type
     #Plot I.C.
     plt1 = plot(mesh.x, q.qn, seriestype = :scatter,  title="Initial", reuse = false)
     display(plt1)
-
     
     Δt = inputs[:Δt]
     C = 0.25

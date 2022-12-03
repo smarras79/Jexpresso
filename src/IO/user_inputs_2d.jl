@@ -12,6 +12,8 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
+        #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_refine.msh",
+        #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_refine_coarse.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
         :nsd                 => 2,           #number of space dimensions

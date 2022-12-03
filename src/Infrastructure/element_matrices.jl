@@ -81,8 +81,10 @@ function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, 
         
         for k = 1:Q+1
             for l = 1:Q+1
-                
+
+                ωkl = ω[k]*ω[l]
                 Jkl = 1
+                
                 for i = 1:N+1
                     for j = 1:N+1
                         ψJK = ψ[i,k]*ψ[j,l]
@@ -90,7 +92,7 @@ function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, 
                         for m = 1:N+1
                             for n = 1:N+1
                                 ψIK = ψ[m,k]*ψ[n,l]                                
-                                el_matrices.M[i,j,m,n,iel] = el_matrices.M[i,j,m,n,iel] +  ω[k,l]*Jkl*ψIK*ψJK #Sparse
+                                el_matrices.M[i,j,m,n,iel] = el_matrices.M[i,j,m,n,iel] + ωkl*Jkl*ψIK*ψJK #Sparse
                             end
                         end
                     end
@@ -129,6 +131,26 @@ function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, 
 
     A = zeros(npoin)
     Ainv = zeros(npoin)
+    
+    for iel=1:nelem
+        for i=1:N+1
+            I = conn[i,iel]
+            A[I] = A[I] + Ae[i,iel]
+        end
+    end
+    Ainv = 1.0./A
+    
+    return A, Ainv
+end
+
+
+
+function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
+
+    A = zeros(npoin)
+    Ainv = zeros(npoin)
+
+    error("element_matrices.jl: REVISE DSS(NSD_2D)")
     
     for iel=1:nelem
         for i=1:N+1
