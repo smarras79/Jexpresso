@@ -106,8 +106,8 @@ function driver(DT::CG,        #Space discretization type
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
-    
-    mestrics = build_metric_terms(SD, mesh, basis, Nξ, Qξ, ξ, TFloat)
+
+    #mestrics = build_metric_terms(SD, mesh, basis, Nξ, Qξ, ξ, TFloat)
     #if (mesh.nsd > 1)
     #    error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
     #end
