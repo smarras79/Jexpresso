@@ -1001,7 +1001,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             end
         end
     end
-    #show(stdout, "text/plain", mesh.conn')
+    show(stdout, "text/plain", mesh.conn')
     
     #
     # Populate connijk[i,j,iel]
@@ -1020,7 +1020,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             mesh.connijk[ngl, m, iel] = mesh.conn[4 + ngl-2 + j, iel] + ngl-2 + j
         end
     end
-    @show "WARNING!!!!! mesh.jl: CONTINUE WITH MESH.CONNIJK population. STILL INCOMPLETE!!!!"
+    error("WARNING!!!!! mesh.jl: CONTINUE WITH MESH.CONNIJK population. STILL INCOMPLETE!!!!")
     
     for iel = 1:mesh.nelem
         show(stdout, "text/plain", mesh.connijk[:,:,iel]')
