@@ -5,7 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :equation_set => "ns",
         :problem      => "wave1d",
-        :tend         => 0.5,
+        :tend         => 2.5,
         :lexact_integration => true, #false by default
         :lread_gmsh   => false,
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR.msh",
@@ -22,9 +22,6 @@ function user_inputs()
         :nelx                => 50,    #N. elements in x
         :xmin                => -1,
         :xmax                =>  1,
-        #:nelx                => 200,    #N. elements in x
-        #:xmin                => -10,
-        #:xmax                => 10,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter

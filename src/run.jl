@@ -50,8 +50,3 @@ driver(CG(),   # Space discretization type
        PROBLEM_EQUATIONS, # Equation subtype
        inputs, # input parameters from src/user_input.jl
        TFloat)
-
-#test_driver(NSD_1D(),        # Number of Space Dimensions
-#            INTERPOLATION(), # Problem Type
-#            inputs,          # input parameters from src/user_input.jl
-#            TFloat)
