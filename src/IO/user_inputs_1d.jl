@@ -5,7 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :equation_set => "ns",
         :problem      => "wave1d",
-        :tend         => 2.5,
+        :tend         => 0.5,
         :lexact_integration => true, #false by default
         :lread_gmsh   => false,
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR.msh",
