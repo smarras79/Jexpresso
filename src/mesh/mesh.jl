@@ -808,106 +808,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
     return 
 end
 
-function  add_high_order_nodes_edges1!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
-    
-    if (mesh.nop < 2) return end
-    
-    println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES")
-    println(" # ...")
-    
-    x1, y1 = Float64(0.0), Float64(0.0)
-    x2, y2 = Float64(0.0), Float64(0.0)
-    
-    ξ::typeof(lgl.ξ[1]) = 0.0
-
-    ngl                      = mesh.nop + 1
-    tot_linear_poin          = mesh.npoin_linear
-    tot_edges_internal_nodes = mesh.nedges*(ngl-2)
-    tot_vol_internal_nodes   = mesh.nelem*(ngl-2)*(ngl-2)
-
-    el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
-    
-    #Increase number of grid points from linear count to total high-order points
-    mesh.npoin = mesh.npoin_linear + tot_edges_internal_nodes + tot_vol_internal_nodes
-
-    if length(mesh.x_ho) < mesh.npoin
-        resize!(mesh.x_ho, (mesh.npoin))
-    end
-    if length(mesh.y_ho) < mesh.npoin        
-        resize!(mesh.y_ho, (mesh.npoin))
-    end
-    
-    conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    @info size(mesh.cell_edge_ids)
-    @info size(mesh.cell_edge_ids,2)
-    @info mesh.cell_edge_ids
-    
-    open("./COORDS_HO_edges.dat", "w") do f
-        #
-        # First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
-        #
-        for iel = 1:mesh.nelem
-            for iedg_el = 1:length(mesh.conn_edge_el[1, :, iel])
-
-                ip = tot_linear_poin + 1
-                for iedge_g = 1:mesh.nedges
-                    if iedge_g == mesh.cell_edge_ids[iel][iedg_el]
-
-                        ip1 = mesh.conn_edge_el[1, iedg_el, iel]
-                        ip2 = mesh.conn_edge_el[2, iedg_el, iel]
-                        #ip1 = mesh.conn_unique_edges[iedge_g][1]
-                        #ip2 = mesh.conn_unique_edges[iedge_g][2]
-                        
-                        conn_edge_poin[iedge_g,        1] = ip1
-                        conn_edge_poin[iedge_g, mesh.ngl] = ip2
-                        
-                        x1, y1 = mesh.x[ip1], mesh.y[ip1]
-                        x2, y2 = mesh.x[ip2], mesh.y[ip2]
-
-                        #@printf(" Iel[%d]: (iedg_el, iedge_g)=(%d,%d) --> (ip1, ip2)=(%d, %d), (x1,y1)=(%f,%f), (x2, y2)=(%f,%f)\n", iel,      iedg_el, iedge_g,              conn_edge_poin[iedge_g,1],conn_edge_poin[iedge_g,mesh.ngl], x1,y1, x2,y2)
-                        
-                        for l=2:ngl-1
-                            ξ = lgl.ξ[l];
-                            
-                            mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-	                    mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-                            
-                            conn_edge_poin[iedge_g, l] = ip
-                            
-                            #@printf(" Iel[%d]: lgl %d: %d %d %d\n", iel, l, iedg_el, iedge_g, conn_edge_poin[iedge_g, l])
-                            @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
-                            ip = ip + 1
-                        end
-                    end
-                end
-            end
-        end
-    end #do f
-    #show(stdout, "text/plain", conn_edge_poin)
-    #@info "-----2D edges"
-    
-    #
-    # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes, ∀ elem]\n")
-    #
-    cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here  
-    for iel = 1:mesh.nelem
-        edge_ids = getindex!(cache_edge_ids, mesh.cell_edge_ids, iel)
-        iconn = 1
-        for iedge_el = 1:length(edge_ids)
-            iedge_g = edge_ids[iedge_el]
-            for l = 2:ngl-1
-                ip = conn_edge_poin[iedge_g, l]
-                mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
-                iconn = iconn + 1
-            end
-        end
-    end
-    #show(stdout, "text/plain", mesh.conn')
-    
-    println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
-    
-    return 
-end
 
 function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
     
@@ -1122,9 +1022,9 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
     end
     @show "WARNING!!!!! mesh.jl: CONTINUE WITH MESH.CONNIJK population. STILL INCOMPLETE!!!!"
     
-    #for iel = 1:mesh.nelem
-    #    show(stdout, "text/plain", mesh.connijk[:,:,iel]')
-    #end
+    for iel = 1:mesh.nelem
+        show(stdout, "text/plain", mesh.connijk[:,:,iel]')
+    end
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
 
 end
@@ -1554,5 +1454,108 @@ end
 end
 end     
 nfaces_int = Int64(iface)    
+end
+=#
+
+#=
+function  add_high_order_nodes_edges1!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
+    
+    if (mesh.nop < 2) return end
+    
+    println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES")
+    println(" # ...")
+    
+    x1, y1 = Float64(0.0), Float64(0.0)
+    x2, y2 = Float64(0.0), Float64(0.0)
+    
+    ξ::typeof(lgl.ξ[1]) = 0.0
+
+    ngl                      = mesh.nop + 1
+    tot_linear_poin          = mesh.npoin_linear
+    tot_edges_internal_nodes = mesh.nedges*(ngl-2)
+    tot_vol_internal_nodes   = mesh.nelem*(ngl-2)*(ngl-2)
+
+    el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
+    
+    #Increase number of grid points from linear count to total high-order points
+    mesh.npoin = mesh.npoin_linear + tot_edges_internal_nodes + tot_vol_internal_nodes
+
+    if length(mesh.x_ho) < mesh.npoin
+        resize!(mesh.x_ho, (mesh.npoin))
+    end
+    if length(mesh.y_ho) < mesh.npoin        
+        resize!(mesh.y_ho, (mesh.npoin))
+    end
+    
+    conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
+    @info size(mesh.cell_edge_ids)
+    @info size(mesh.cell_edge_ids,2)
+    @info mesh.cell_edge_ids
+    
+    open("./COORDS_HO_edges.dat", "w") do f
+        #
+        # First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
+        #
+        for iel = 1:mesh.nelem
+            for iedg_el = 1:length(mesh.conn_edge_el[1, :, iel])
+
+                ip = tot_linear_poin + 1
+                for iedge_g = 1:mesh.nedges
+                    if iedge_g == mesh.cell_edge_ids[iel][iedg_el]
+
+                        ip1 = mesh.conn_edge_el[1, iedg_el, iel]
+                        ip2 = mesh.conn_edge_el[2, iedg_el, iel]
+                        #ip1 = mesh.conn_unique_edges[iedge_g][1]
+                        #ip2 = mesh.conn_unique_edges[iedge_g][2]
+                        
+                        conn_edge_poin[iedge_g,        1] = ip1
+                        conn_edge_poin[iedge_g, mesh.ngl] = ip2
+                        
+                        x1, y1 = mesh.x[ip1], mesh.y[ip1]
+                        x2, y2 = mesh.x[ip2], mesh.y[ip2]
+
+                        #@printf(" Iel[%d]: (iedg_el, iedge_g)=(%d,%d) --> (ip1, ip2)=(%d, %d), (x1,y1)=(%f,%f), (x2, y2)=(%f,%f)\n", iel,      iedg_el, iedge_g,              conn_edge_poin[iedge_g,1],conn_edge_poin[iedge_g,mesh.ngl], x1,y1, x2,y2)
+                        
+                        for l=2:ngl-1
+                            ξ = lgl.ξ[l];
+                            
+                            mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
+	                    mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
+                            
+                            conn_edge_poin[iedge_g, l] = ip
+                            
+                            #@printf(" Iel[%d]: lgl %d: %d %d %d\n", iel, l, iedg_el, iedge_g, conn_edge_poin[iedge_g, l])
+                            @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
+                            ip = ip + 1
+                        end
+                    end
+                end
+            end
+        end
+    end #do f
+    #show(stdout, "text/plain", conn_edge_poin)
+    #@info "-----2D edges"
+    
+    #
+    # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes, ∀ elem]\n")
+    #
+    cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here  
+    for iel = 1:mesh.nelem
+        edge_ids = getindex!(cache_edge_ids, mesh.cell_edge_ids, iel)
+        iconn = 1
+        for iedge_el = 1:length(edge_ids)
+            iedge_g = edge_ids[iedge_el]
+            for l = 2:ngl-1
+                ip = conn_edge_poin[iedge_g, l]
+                mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
+                iconn = iconn + 1
+            end
+        end
+    end
+    #show(stdout, "text/plain", mesh.conn')
+    
+    println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
+    
+    return 
 end
 =#
