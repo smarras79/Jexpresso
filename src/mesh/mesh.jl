@@ -122,10 +122,25 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.nsd = num_cell_dims(model)
     
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
-    #@show labels = FaceLabeling(d_to_num_dfaces)
-    #@show get_face_entity(labels,0) .= get_isboundary_face(model,0) .+ 1
-    #@show get_face_entity(labels,1) .= get_isboundary_face(model,1) .+ 1
-    #@show get_face_entity(labels,2) .= get_isboundary_face(model,2) .+ 1
+    @show labels = FaceLabeling(d_to_num_dfaces)
+
+    add_tag!(labels,"interior",[1,])
+    add_tag!(labels,"boundary",[2,])
+    add_tag_from_tags!(labels,"all",["interior","boundary"])
+    @info num_entities(labels)
+    @info num_tags(labels)
+    @info get_tag_name(labels,1)
+    @info get_tag_name(labels,2)
+    @info get_tag_name(labels,3)
+    face_to_tag = get_face_tag(labels,["boundary"],1)
+    @info face_to_tag
+    #@test get_tag_from_name(labels,"interior") == 1
+    #@test get_tag_from_name(labels,"all") == 3
+    
+    #show(stdout, "text/plain",  mesh.conn_unique_faces)
+    #show(stdout, "text/plain",  mesh.conn_unique_edges)
+    ###
+
     
     POIN_flg = 0
     EDGE_flg = 1
@@ -171,6 +186,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.nedges       = num_faces(model,EDGE_flg)
     mesh.nfaces       = num_faces(model,FACE_flg)   
     mesh.nelem        = num_faces(model,ELEM_flg)
+
     
     mesh.nfaces_bdy   = count(get_isboundary_face(topology,mesh.nsd-1))
     mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
@@ -236,9 +252,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
 
     mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
-    
-    #show(stdout, "text/plain",  mesh.conn_unique_faces)
-    #show(stdout, "text/plain",  mesh.conn_unique_edges)
 
 if (mesh.nsd == 1)
     nothing
