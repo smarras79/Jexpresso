@@ -10,8 +10,8 @@ print_lables=True
 F = False
 T = True
 
-nsd = 2
-lplot_global_coords = T
+nsd = 3
+lplot_global_coords = F
 lplot_low_order_only = T
 plot_edge_nodes = T
 plot_face_nodes = T

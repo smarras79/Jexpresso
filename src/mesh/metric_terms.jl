@@ -47,13 +47,12 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     dψ = basis.dψ
 
     @info " metric terms WIP"
-    
     for iel = 1:mesh.nelem
         for l = 1:Q+1
             for k = 1:Q+1
                 for j = 1:N+1
                     for i = 1:N+1
-                        ip = mesh.connijk[i,j,iel] 
+                        ip = mesh.connijk[i,j,iel]
                         xij = mesh.x[ip]
                         metrics.dxdξ[k, l, iel] = metrics.dxdξ[1, k, l, iel] + dψ[i,k]*ψ[j,l]*xij
                         metrics.dxdη[k, l, iel] = metrics.dxdη[1, k, l, iel] + ψ[i,k]*dψ[j,l]*xij
