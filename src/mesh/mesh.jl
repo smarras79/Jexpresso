@@ -228,11 +228,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     end
     
     #
-    # Resize (using resize! from ElasticArrays) as needed
+    # Resize as needed
     # 
-    resize!(mesh.x, (mesh.npoin_linear))
-    resize!(mesh.y, (mesh.npoin_linear))
-    resize!(mesh.z, (mesh.npoin_linear))
+    resize!(mesh.x, (mesh.npoin))
+    resize!(mesh.y, (mesh.npoin))
+    resize!(mesh.z, (mesh.npoin))
 
     mesh.conn_edge_el = Array{Int64}(undef, 2, mesh.NEDGES_EL, mesh.nelem)
     mesh.conn_face_el = Array{Int64}(undef, 4, mesh.NFACES_EL, mesh.nelem)
@@ -264,10 +264,6 @@ elseif (mesh.nsd == 2)
         mesh.conn[3, iel] = mesh.cell_node_ids[iel][4]
         mesh.conn[4, iel] = mesh.cell_node_ids[iel][3]
         
-        #mesh.connijk[1,  ngl, iel] = mesh.cell_node_ids[iel][1]
-        #mesh.connijk[1,    1, iel] = mesh.cell_node_ids[iel][2]
-        #mesh.connijk[ngl,  1, iel] = mesh.cell_node_ids[iel][3]
-        #mesh.connijk[ngl,ngl, iel] = mesh.cell_node_ids[iel][4]
         mesh.connijk[1,  1, iel] = mesh.cell_node_ids[iel][1]
         mesh.connijk[1,    ngl, iel] = mesh.cell_node_ids[iel][2]
         mesh.connijk[ngl,  ngl, iel] = mesh.cell_node_ids[iel][4]
@@ -504,6 +500,42 @@ populate_conn_face_el!(mesh, SD)
 # NOTICE: in 2D we consider only edges and 2D faces
 #         
 @time add_high_order_nodes_volumes!(mesh, lgl, SD)
+
+@info size(mesh.x)
+@info size(mesh.x_ho)
+
+
+for ip = mesh.npoin_linear+1:mesh.npoin
+    mesh.x[ip] = mesh.x_ho[ip]
+    mesh.y[ip] = mesh.y_ho[ip]
+    if (mesh.nsd > 2)
+        mesh.z[ip] = mesh.z_ho[ip]
+    end
+end
+#
+# Free memory of obsolete arrays
+#
+resize!(mesh.x_ho, 1)
+resize!(mesh.y_ho, 1)
+resize!(mesh.z_ho, 1)
+GC.gc()
+#
+# END Free memory of obsolete arrays
+#
+
+open("./COORDS_GLOBAL.dat", "w") do f
+   # for ip = 1:mesh.npoin
+        for iel = 1:mesh.nelem
+            for i = 1:mesh.ngl
+                for j = 1:mesh.ngl
+                    ip = mesh.connijk[i,j,iel]
+                    @printf(" %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
+                    @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
+                end
+            end
+        end
+    #end
+end
 
 #show(stdout, "text/plain", mesh.conn')
 println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
@@ -1207,7 +1239,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
     
 
     if length(mesh.x_ho) < mesh.npoin
-        setize!(mesh.x_ho, (mesh.npoin))
+        resize!(mesh.x_ho, (mesh.npoin))
     end
     if length(mesh.y_ho) < mesh.npoin
         resize!(mesh.y_ho, (mesh.npoin))

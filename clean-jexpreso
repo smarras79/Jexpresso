@@ -1,1 +1,1 @@
-rm *.vtu *~ COORDS_HO*.dat COORDS_LO.dat
+rm *.vtu *~ COORDS_HO*.dat COORDS_LO.dat COORDS_GLOBAL.dat

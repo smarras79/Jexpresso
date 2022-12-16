@@ -107,10 +107,11 @@ function driver(DT::CG,        #Space discretization type
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
 
-    #mestrics = build_metric_terms(SD, mesh, basis, Nξ, Qξ, ξ, TFloat)
-    #if (mesh.nsd > 1)
-    #    error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
-    #end
+    MT = COVAR() #Metric type: COVAR or CNVAR
+    mestrics = build_metric_terms(SD, MT, mesh, basis, Nξ, Qξ, ξ, TFloat)
+    if (mesh.nsd > 1)
+        error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
+    end
     
     #--------------------------------------------------------
     # Build element mass matrix
