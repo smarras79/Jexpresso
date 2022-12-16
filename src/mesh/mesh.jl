@@ -305,45 +305,7 @@ elseif (mesh.nsd == 2)
             mesh.x[ip] = xold[ip]
             mesh.y[ip] = yold[ip]
         end
-        #=for (ip_old, ip_new) in finalorder
-            println(ip_old, " => ", ip_new)
-            
-            mesh.x[ip_new] = xold[ip_old]
-            mesh.y[ip_new] = yold[ip_old]
-            #@printf(" %.6f %.6f  %d\n", mesh.x[ip_new],  mesh.y[ip_new], ip_new)
-        end
-        
-        connold = Array{Int64}(undef, 0)
-    connold = copy(mesh.conn)
-    for iel = 1:mesh.nelem
-        #1
-        ipold = connold[1, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[1, iel] = ipnew
-        mesh.connijk[1,1,iel] = ipnew
-
-        #2
-        ipold = connold[2, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[2, iel] = ipnew
-        mesh.connijk[1,ngl,iel=ipnew
-        
-        #3
-        ipold = connold[3, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[3, iel] = ipnew
-        mesh.connijk[ngl,ngl,iel] = ipnew
-
-        #4
-        ipold = connold[4, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[4, iel] = ipnew
-        mesh.connijk[ngl,1,iel]=ipnew
-
-        @printf(" %d: %d %d %d %d\n", iel,  mesh.conn[1, iel],  mesh.conn[2, iel],  mesh.conn[3, iel],  mesh.conn[4, iel])
-        
-    end
-    =#
+    
     open("./COORDS_LO.dat", "w") do f
         for ip = 1:mesh.npoin_linear
             @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
@@ -373,19 +335,18 @@ elseif (mesh.nsd == 3)
     element_types = Dict(
         kk => :Hexa8
         for kk = 1:mesh.nelem)
-
-    ##
-    #Use NodeNumbering.jl
-    adjacency = create_adjacency_graph(elements, element_types)
-    starting_matrix = adjacency_visualization(adjacency)
-    display(UnicodePlots.heatmap(starting_matrix))
     
+    #
+    #Use NodeNumbering.jl
+    #
+    adjacency = create_adjacency_graph(elements, element_types)
     degrees = node_degrees(adjacency)
     neworder = RCM(adjacency, degrees, tot_linear_poin, tot_linear_poin)
     finalorder = renumbering(neworder)
     RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
     #newmatrix = adjacency_visualization(RCM_adjacency)
     #display(UnicodePlots.heatmap(newmatrix))
+     
     
     #
     # Rewrite coordinates in RCM order:
@@ -399,9 +360,9 @@ elseif (mesh.nsd == 3)
         yold[ip] = model.grid.node_coordinates[ip][2]
         zold[ip] = model.grid.node_coordinates[ip][3]
         
-        mesh.x[ip_new] = xold[ip]
-        mesh.y[ip_new] = yold[ip]
-        mesh.z[ip_new] = zold[ip]
+        mesh.x[ip] = xold[ip]
+        mesh.y[ip] = yold[ip]
+        mesh.z[ip] = zold[ip]
     end
     #=
     for (ip_old, ip_new) in finalorder
@@ -501,13 +462,10 @@ populate_conn_face_el!(mesh, SD)
 #         
 @time add_high_order_nodes_volumes!(mesh, lgl, SD)
 
-@info size(mesh.x)
-@info size(mesh.x_ho)
-
-
 for ip = mesh.npoin_linear+1:mesh.npoin
     mesh.x[ip] = mesh.x_ho[ip]
     mesh.y[ip] = mesh.y_ho[ip]
+    mesh.z[ip] = 0.0
     if (mesh.nsd > 2)
         mesh.z[ip] = mesh.z_ho[ip]
     end
@@ -524,17 +482,17 @@ GC.gc()
 #
 
 open("./COORDS_GLOBAL.dat", "w") do f
-   # for ip = 1:mesh.npoin
-        for iel = 1:mesh.nelem
-            for i = 1:mesh.ngl
-                for j = 1:mesh.ngl
-                    ip = mesh.connijk[i,j,iel]
-                    @printf(" %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
-                    @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
-                end
-            end
-        end
-    #end
+     for ip = 1:mesh.npoin
+    #    for iel = 1:mesh.nelem
+    #        for i = 1:mesh.ngl
+    #            for j = 1:mesh.ngl
+    #                ip = mesh.connijk[i,j,iel]
+                    @printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+                    @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+    #            end
+    #        end
+    #    end
+     end
 end
 
 #show(stdout, "text/plain", mesh.conn')

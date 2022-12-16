@@ -109,9 +109,9 @@ function driver(DT::CG,        #Space discretization type
 
     MT = COVAR() #Metric type: COVAR or CNVAR
     mestrics = build_metric_terms(SD, MT, mesh, basis, Nξ, Qξ, ξ, TFloat)
-    if (mesh.nsd > 1)
-        error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
-    end
+    #if (mesh.nsd > 1)
+    #    error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
+    #end
     
     #--------------------------------------------------------
     # Build element mass matrix
@@ -417,8 +417,7 @@ function drivers_build_rhs(SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, M
 
     #
     # Linear RHS in flux form: f = u*q
-    #
-    
+    #  
     rhs = zeros(mesh.npoin)
     fe  = zeros(mesh.ngl)
     for iel=1:mesh.nelem
