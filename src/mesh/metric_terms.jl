@@ -41,6 +41,12 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                             dxdη = zeros(Q+1, Q+1, mesh.nelem), #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
                             dydξ = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
                             dydη = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+
+                            dξdx = zeros(Q+1, Q+1, mesh.nelem), #∂ξ/∂x[2, 1:Nq, 1:Nq, 1:nelem]
+                            dηdx = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂x[2, 1:Nq, 1:Nq, 1:nelem]
+                            dξdy = zeros(Q+1, Q+1, mesh.nelem), #∂ξ/∂y[2, 1:Nq, 1:Nq, 1:nelem]
+                            dηdy = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂y[2, 1:Nq, 1:Nq, 1:nelem]
+                            
                             Je   = zeros(Q+1, Q+1, mesh.nelem)) #   Je[1:Nq, 1:Nq, 1:nelem]
 
     ψ  = basis.ψ
@@ -62,10 +68,20 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     end
                 end
             end
-            Je[k, l, iel] = metrics.dxdξ[k, l, iel]*metrics.dydη[k, l, iel] - metrics.dydξ[k, l, iel]*metrics.dxdη[k, l, iel]
+            
+        end
+        
+        for l = 1:Q+1
+            for k = 1:Q+1
+                Je[k, l, iel] = metrics.dxdξ[k, l, iel]*metrics.dydη[k, l, iel] - metrics.dydξ[k, l, iel]*metrics.dxdη[k, l, iel]
+                dξdx[k, l, iel] =  dydη[k, l, iel]/Je[k, l, iel]
+                dξdy[k, l, iel] = -dxdη[k, l, iel]/Je[k, l, iel]
+                dηdx[k, l, iel] = -dydξ[k, l, iel]/Je[k, l, iel]
+                dηdy[k, l, iel] =  dxdξ[k, l, iel]/Je[k, l, iel]
+                
+            end
         end
     end
-
     
     show(stdout, "text/plain", Je)
     

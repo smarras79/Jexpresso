@@ -364,71 +364,15 @@ elseif (mesh.nsd == 3)
         mesh.y[ip] = yold[ip]
         mesh.z[ip] = zold[ip]
     end
-    #=
-    for (ip_old, ip_new) in finalorder
-        #println(ip_old, " => ", ip_new)
-
-        mesh.x[ip_new] = xold[ip_old]
-        mesh.y[ip_new] = yold[ip_old]
-        mesh.z[ip_new] = zold[ip_old]
-        #@printf(" %.6f %.6f %f %d\n", mesh.x[ip_new],  mesh.y[ip_new], mesh.z[ip_new], ip_new)
-    end
-    connold = Array{Int64}(undef, 0)
-    connold = copy(mesh.conn)
-    for iel = 1:mesh.nelem
-        #1
-        ipold = connold[1, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[1, iel] = ipnew
-
-        #2
-        ipold = connold[2, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[2, iel] = ipnew
-        
-        #3
-        ipold = connold[3, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[3, iel] = ipnew
-
-        #4
-        ipold = connold[4, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[4, iel] = ipnew
-
-        
-        #5
-        ipold = connold[5, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[5, iel] = ipnew
-
-        #6
-        ipold = connold[6, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[6, iel] = ipnew
-        
-        #7
-        ipold = connold[7, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[7, iel] = ipnew
-
-        #8
-        ipold = connold[8, iel]
-        ipnew = get(finalorder, ipold, -1)
-        mesh.conn[8, iel] = ipnew
-
-        #@printf(" %d: %d %d %d %d\n", iel,  mesh.conn[1, iel],  mesh.conn[2, iel],  mesh.conn[3, iel],  mesh.conn[4, iel])
-        
-    end=#
-
-open("./COORDS_LO.dat", "w") do f
-    for ip = 1:mesh.npoin_linear
-        mesh.x[ip] = model.grid.node_coordinates[ip][1]
-        mesh.y[ip] = model.grid.node_coordinates[ip][2]
-        mesh.z[ip] = model.grid.node_coordinates[ip][3]
-        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-    end
-end #f
+    
+    open("./COORDS_LO.dat", "w") do f
+        for ip = 1:mesh.npoin_linear
+            mesh.x[ip] = model.grid.node_coordinates[ip][1]
+            mesh.y[ip] = model.grid.node_coordinates[ip][2]
+            mesh.z[ip] = model.grid.node_coordinates[ip][3]
+            @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+        end
+    end #f
 end
 
 
