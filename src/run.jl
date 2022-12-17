@@ -45,7 +45,8 @@ inputs, nvars = mod_inputs_user_inputs()
 # !!!!!!
 #--------------------------------------------------------
 #PROBLEM_EQUATIONS = Adv2D()
-PROBLEM_EQUATIONS = Wave1D()
+#PROBLEM_EQUATIONS = Wave1D()
+PROBLEM_EQUATIONS = Heat2D()
 driver(CG(),   # Space discretization type    
        PROBLEM_EQUATIONS, # Equation subtype
        inputs, # input parameters from src/user_input.jl

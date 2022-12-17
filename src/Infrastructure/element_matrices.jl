@@ -5,6 +5,7 @@ using Gridap.Arrays: Table
 using SparseArrays
 
 include("../mesh/mesh.jl")
+include("../mesh/metric_terms.jl")
 include("../basis/basis_structs.jl")
 
 abstract type AbstractIntegrationType end
@@ -18,11 +19,14 @@ struct NSD_3D <: AbstractSpaceDimensions end
 
 abstract type AbstractMassType end
 mutable struct St_ElMat{TFloat} <: AbstractMassType
-    M::Array{TFloat}
-    D::Array{TFloat}
+    M::Array{TFloat} = zeros(1) #Mass
+    D::Array{TFloat} = zeros(1) #Differentiation
+    L::Array{TFloat} = zeros(1) #Laplacian
 end
 
-
+#
+# Element matrices:
+#
 function build_element_matrices!(SD::NSD_1D, QT::Exact, ψ, dψdξ, ω, mesh, N, Q, T)
 
     el_matrices = St_ElMat{T}(zeros(N+1, N+1, mesh.nelem),
@@ -71,7 +75,7 @@ function build_element_matrices!(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, 
 end
 
 
-function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
+function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
     
     el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem),
                               zeros(N+1, N+1, N+1, N+1, mesh.nelem))
@@ -82,8 +86,8 @@ function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, 
         for k = 1:Q+1
             for l = 1:Q+1
 
-                ωkl = ω[k]*ω[l]
-                Jkl = 1
+                ωkl  = ω[k]*ω[l]
+                Jkle = metrics.Je[k, l, iel]
                 
                 for i = 1:N+1
                     for j = 1:N+1
@@ -92,7 +96,7 @@ function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, 
                         for m = 1:N+1
                             for n = 1:N+1
                                 ψIK = ψ[m,k]*ψ[n,l]                                
-                                el_matrices.M[i,j,m,n,iel] = el_matrices.M[i,j,m,n,iel] + ωkl*Jkl*ψIK*ψJK #Sparse
+                                el_matrices.M[i,j,m,n,iel] = el_matrices.M[i,j,m,n,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
                             end
                         end
                     end
@@ -102,11 +106,83 @@ function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, 
     end
     #show(stdout, "text/plain", el_matrices.D)
     
-    return el_matrices
+    return el_matrices   
+end
+
+# Mass
+function build_mass_matrix!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
     
+    el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem))
+
+    
+    for iel=1:mesh.nelem
+        
+        for k = 1:Q+1
+            for l = 1:Q+1
+
+                ωkl  = ω[k]*ω[l]
+                Jkle = metrics.Je[k, l, iel]
+                
+                for i = 1:N+1
+                    for j = 1:N+1
+                        ψJK = ψ[i,k]*ψ[j,l]
+
+                        for m = 1:N+1
+                            for n = 1:N+1
+                                ψIK = ψ[m,k]*ψ[n,l]                                
+                                el_matrices.M[i,j,m,n,iel] = el_matrices.M[i,j,m,n,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", el_matrices.D)
+    
+    return el_matrices    
 end
 
 
+# Advection
+function build_mass_matrix!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
+    
+    el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem))
+    
+    for iel=1:mesh.nelem
+        
+        for k = 1:Q+1
+            for l = 1:Q+1
+
+                ωkl  = ω[k]*ω[l]
+                Jkle = metrics.Je[k, l, iel]
+                
+                for i = 1:N+1
+                    for j = 1:N+1
+                        ψJK  = ψ[i,k]*ψ[j,l]
+                        dψJK = dψ[j,k]
+                        
+                        for m = 1:N+1
+                            for n = 1:N+1
+                                ψIK = ψ[m,k]*ψ[n,l]                                
+                                el_matrices.D[i,j,m,n,iel] = el_matrices.D[i,j,m,n,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", el_matrices.D)
+    
+    return el_matrices    
+end
+
+
+
+#
+# DSS
+#
 function DSS(SD::NSD_1D, QT::Exact, Me::AbstractArray, conn, nelem, npoin, N, T)
 
     M    = zeros(npoin, npoin)
