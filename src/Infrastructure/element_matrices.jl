@@ -30,6 +30,7 @@ end
 function build_element_matrices!(SD::NSD_1D, QT::Exact, ψ, dψdξ, ω, mesh, N, Q, T)
 
     el_matrices = St_ElMat{T}(zeros(N+1, N+1, mesh.nelem),
+                              zeros(N+1, N+1, mesh.nelem),
                               zeros(N+1, N+1, mesh.nelem))
     
     for iel=1:mesh.nelem
@@ -52,6 +53,7 @@ end
 function build_element_matrices!(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
     
     el_matrices = St_ElMat{T}(zeros(N+1,      mesh.nelem),
+                              zeros(N+1, N+1, mesh.nelem),
                               zeros(N+1, N+1, mesh.nelem))
 
     for iel=1:mesh.nelem
@@ -78,6 +80,7 @@ end
 function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
     
     el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem),
+                              zeros(N+1, N+1, N+1, N+1, mesh.nelem),
                               zeros(N+1, N+1, N+1, N+1, mesh.nelem))
 
     
@@ -110,10 +113,9 @@ function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, 
 end
 
 # Mass
-function build_mass_matrix!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix!(SD::NSD_2D, QT::Inexact, ψ, ω, mesh, metrics, N, Q, T)
     
-    el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem))
-
+    M = zeros(N+1, N+1, N+1, N+1, mesh.nelem)
     
     for iel=1:mesh.nelem
         
@@ -130,7 +132,7 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, metri
                         for m = 1:N+1
                             for n = 1:N+1
                                 ψIK = ψ[m,k]*ψ[n,l]                                
-                                el_matrices.M[i,j,m,n,iel] = el_matrices.M[i,j,m,n,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
+                                M[i,j,m,n,iel] = M[i,j,m,n,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
                             end
                         end
                     end
@@ -140,32 +142,36 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, metri
     end
     #show(stdout, "text/plain", el_matrices.D)
     
-    return el_matrices    
+    return M
 end
 
 
-# Advection
-function build_mass_matrix!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
+# Laplace
+function build_laplace_matrix!(SD::NSD_2D, QT::Inexact, dψdξ, ω, mesh, metrics, N, Q, T)
     
-    el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem))
+    L = zeros(N+1, N+1, N+1, N+1, mesh.nelem)
     
     for iel=1:mesh.nelem
         
         for k = 1:Q+1
             for l = 1:Q+1
-
+                
                 ωkl  = ω[k]*ω[l]
                 Jkle = metrics.Je[k, l, iel]
                 
                 for i = 1:N+1
                     for j = 1:N+1
-                        ψJK  = ψ[i,k]*ψ[j,l]
-                        dψJK = dψ[j,k]
+                        
+                        dψJKdx = dψdξ[i,k]*ψ[j,l]*metrics.dξdx[k,l,iel] + ψ[i,k]*dψdη[j,l]*metrics.dηdx[k,l,iel]
+                        dψJKdy = dψdξ[i,k]*ψ[j,l]*metrics.dξdy[k,l,iel] + ψ[i,k]*dψdη[j,l]*metrics.dηdy[k,l,iel]
                         
                         for m = 1:N+1
                             for n = 1:N+1
-                                ψIK = ψ[m,k]*ψ[n,l]                                
-                                el_matrices.D[i,j,m,n,iel] = el_matrices.D[i,j,m,n,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
+                                
+                                dψIKdx = dψdξ[m,k]*ψ[n,l]*metrics.dξdx[k,l,iel] + ψ[m,k]*dψdη[n,l]*metrics.dηdx[k,l,iel]
+                                dψIKdy = dψdξ[m,k]*ψ[n,l]*metrics.dξdy[k,l,iel] + ψ[m,k]*dψdη[n,l]*metrics.dηdy[k,l,iel]
+                                
+                                L[i,j,m,n,iel] = L[i,j,m,n,iel] + ωkl*Jkle*(dψIKdx*dψJKdx + dψIKdy*dψJKdy)
                             end
                         end
                     end
@@ -173,12 +179,10 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, metri
             end
         end
     end
-    #show(stdout, "text/plain", el_matrices.D)
+    #show(stdout, "text/plain", el_matrices.L)
     
-    return el_matrices    
+    return L
 end
-
-
 
 #
 # DSS
