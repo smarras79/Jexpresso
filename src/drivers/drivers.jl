@@ -34,7 +34,7 @@ abstract type AbstractProblem end
 struct Wave1D <: AbstractProblem end
 struct AD1D <: AbstractProblem end
 struct NS1D <: AbstractProblem end
-struct BURGERS1D <: AbstractProblem end
+struct Burgers1D <: AbstractProblem end
 struct Adv2D <: AbstractProblem end
 struct Heat2D <: AbstractProblem end
 
@@ -490,17 +490,19 @@ function driver(DT::CG,        #Space discretization type
     # el_mat.M[iel, i]    <-- if inexact (diagonal)
     # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
     #--------------------------------------------------------
-    el_mat    = build_element_matrices!(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
+    mass_matrix      = build_mass_matrix!(SD, QT, basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    diffusion_matrix = build_laplace_matrix!(SD, QT, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     
     #show(stdout, "text/plain", mesh.conn)
-    (M, Minv) = DSS(SD, QT,      el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    (D, ~)    = DSS(SD, Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    (M, Minv) = DSS(SD, QT,      mass_matrix.M,      mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    (L, ~)    = DSS(SD, Exact(), diffusion_matrix.L, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #Initialize q
     q = mod_initialize_initialize(mesh, inputs, TFloat)
 
     dq   = zeros(mesh.npoin);   
     qp   = copy(q.qn)
+    error("quo Heat2d")
     
     #Plot I.C.
     #plt1 = plot(mesh.x, q.qn, seriestype = :scatter,  title="Initial", reuse = false)
