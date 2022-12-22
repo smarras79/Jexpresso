@@ -1,5 +1,5 @@
 module jexpresso
 
-include("run.jl")
+include("./src/run.jl")
 
 end # module

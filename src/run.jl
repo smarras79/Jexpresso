@@ -19,11 +19,11 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
-include("./test.jl")
-include("./IO/mod_inputs.jl")
-include("./Mesh/mesh.jl")
-include("./drivers/drivers.jl")
-include("../tests/plot_lagrange_polynomial.jl")
+include("../test.jl")
+include("../IO/mod_inputs.jl")
+include("../Mesh/mesh.jl")
+include("../drivers/drivers.jl")
+include("../../tests/plot_lagrange_polynomial.jl")
 #--------------------------------------------------------
 
 #MPI.Init()

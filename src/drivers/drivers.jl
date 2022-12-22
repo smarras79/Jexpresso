@@ -43,7 +43,7 @@ abstract type AbstractBC end
 struct PERIODIC1D_CG <: AbstractBC end
 
 function driver(DT::CG,        #Space discretization type
-                ET::Wave1D,    #Equation subtype
+                PT::Wave1D,    #Equation subtype
                 inputs::Dict,  #input parameters from src/user_input.jl
                 TFloat) 
     
@@ -231,7 +231,7 @@ end
 
 ###SM
 function driver(DT::CG,       #Space discretization type
-                ET::Adv2D,    #Equation subtype
+                PT::Adv2D,    #Equation subtype
                 inputs::Dict, #input parameters from src/user_input.jl
                 TFloat) 
     
@@ -414,7 +414,7 @@ end
 
 
 function driver(DT::CG,        #Space discretization type
-                ET::Heat2D,    #Equation subtype
+                PT::Heat2D,    #Equation subtype
                 inputs::Dict,  #input parameters from src/user_input.jl
                 TFloat) 
     
