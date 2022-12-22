@@ -15,7 +15,7 @@ const TFloat = Float64
 include("../AbstractProblems.jl")
 
 include("./rhs.jl")
-include("./mod_initialize.jl")
+include("./initialize.jl")
 
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
@@ -111,7 +111,7 @@ function driver(DT::CG,        #Space discretization type
     (D, ~)    = DSS(SD, Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #Initialize q
-    q = mod_initialize_initialize(Wave1D(), mesh, inputs, TFloat)
+    q = initialize(Wave1D(), mesh, inputs, TFloat)
 
     dq   = zeros(mesh.npoin);   
     qp   = copy(q.qn)
@@ -244,7 +244,7 @@ function driver(DT::CG,       #Space discretization type
     
     
     #Initialize q
-    q = mod_initialize_initialize(Adv2D(), mesh, inputs, TFloat)
+    q = initialize(Adv2D(), mesh, inputs, TFloat)
     return
     
     dq   = zeros(mesh.npoin);   
