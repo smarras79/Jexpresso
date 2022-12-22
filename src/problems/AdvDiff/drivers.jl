@@ -12,21 +12,22 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
-include("../../problems/AbstractProblems.jl")
+include("../AbstractProblems.jl")
 include("./rhs.jl")
 
-include("../../basis/basis_structs.jl")
-include("../../IO/mod_initialize.jl")
-include("../../IO/mod_inputs.jl")
-include("../../IO/plotting/jeplots.jl")
-include("../../IO/print_matrix.jl")
-include("../../Infrastructure/element_matrices.jl")
-include("../../Infrastructure/Kopriva_functions.jl")
-include("../../Infrastructure/2D_3D_structures.jl")
-include("../../Mesh/metric_terms.jl")
-include("../../Mesh/mesh.jl")
-include("../../solver/mod_solution.jl")
-include("../../TimeIntegration/TimeIntegrators.jl")  
+include("../../io/mod_initialize.jl")
+include("../../io/mod_inputs.jl")
+include("../../io/plotting/jeplots.jl")
+include("../../io/print_matrix.jl")
+
+include("../../kernel/basis/basis_structs.jl")
+include("../../kernel/infrastructure/element_matrices.jl")
+include("../../kernel/infrastructure/Kopriva_functions.jl")
+include("../../kernel/infrastructure/2D_3D_structures.jl")
+include("../../kernel/mesh/metric_terms.jl")
+include("../../kernel/mesh/mesh.jl")
+include("../../kernel/solver/mod_solution.jl")
+include("../../kernel/timeIntegration/TimeIntegrators.jl")  
 #--------------------------------------------------------
 
 
@@ -98,9 +99,7 @@ function driver(DT::CG,        #Space discretization type
 
     MT = COVAR() #Metric type: COVAR or CNVAR
     mestrics = build_metric_terms(SD, MT, mesh, basis, Nξ, Qξ, ξ, TFloat)
-    #if (mesh.nsd > 1)
-    #    error("drivers.jl TEMPORARY STOP WHILE TESTING 2D/3D grids.")
-    #end
+   
     
     #--------------------------------------------------------
     # Build element mass matrix
@@ -229,6 +228,7 @@ function driver(DT::CG,       #Space discretization type
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
+    error("STOP at drivers advdiff2D")
     
     #--------------------------------------------------------
     # Build element mass matrix
