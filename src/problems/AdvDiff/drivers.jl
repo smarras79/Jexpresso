@@ -20,6 +20,7 @@ include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
 include("../../io/print_matrix.jl")
 
+include("../../kernel/AbstractTypes.jl")
 include("../../kernel/basis/basis_structs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
@@ -29,13 +30,6 @@ include("../../kernel/mesh/mesh.jl")
 include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
 #--------------------------------------------------------
-
-
-abstract type AbstractDiscretization end
-struct CG <:  AbstractDiscretization end
-
-abstract type AbstractBC end
-struct PERIODIC1D_CG <: AbstractBC end
 
 function driver(DT::CG,        #Space discretization type
                 ET::Wave1D,    #Equation subtype

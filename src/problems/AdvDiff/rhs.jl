@@ -1,18 +1,12 @@
 using Test
 
-
+include("../../kernel/abstractTypes.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/basis/basis_structs.jl")
+
 include("../AbstractProblems.jl")
 
-abstract type AbstractIntegrationType end
-struct Inexact <: AbstractIntegrationType end
-
-abstract type AbstractSpaceDimensions end
-struct NSD_1D <: AbstractSpaceDimensions end
-struct NSD_2D <: AbstractSpaceDimensions end
-struct NSD_3D <: AbstractSpaceDimensions end
 
 function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, q, ψ, dψdξ, ω, mesh::St_mesh, metrics::St_metrics, M, f)
 

@@ -4,18 +4,11 @@ using Gridap.Arrays
 using Gridap.Arrays: Table
 using SparseArrays
 
+include("../AbstractTypes.jl")
 include("../mesh/mesh.jl")
 include("../mesh/metric_terms.jl")
 include("../basis/basis_structs.jl")
 
-abstract type AbstractIntegrationType end
-struct Exact <: AbstractIntegrationType end
-struct Inexact <: AbstractIntegrationType end
-
-abstract type AbstractSpaceDimensions end
-struct NSD_1D <: AbstractSpaceDimensions end
-struct NSD_2D <: AbstractSpaceDimensions end
-struct NSD_3D <: AbstractSpaceDimensions end
 
 abstract type AbstractMassType end
 mutable struct St_ElMat{TFloat} <: AbstractMassType

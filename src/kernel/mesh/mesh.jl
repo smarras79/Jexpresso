@@ -35,12 +35,12 @@ struct NSD_3D <: AbstractSpaceDimensions end
 #abstract type At_geo_entity end
 
 include("../basis/basis_structs.jl")
-include("../auxiliary/nodeRenumbering/src/create_adjacency_graph.jl")
-include("../auxiliary/nodeRenumbering/src/node_degrees.jl")
-include("../auxiliary/nodeRenumbering/src/RCM.jl")
-include("../auxiliary/nodeRenumbering/src/renumbering.jl")
-include("../auxiliary/nodeRenumbering/src/create_RCM_adjacency.jl")
-include("../auxiliary/nodeRenumbering/src/adjacency_visualization.jl")
+include("../../auxiliary/nodeRenumbering/src/create_adjacency_graph.jl")
+include("../../auxiliary/nodeRenumbering/src/node_degrees.jl")
+include("../../auxiliary/nodeRenumbering/src/RCM.jl")
+include("../../auxiliary/nodeRenumbering/src/renumbering.jl")
+include("../../auxiliary/nodeRenumbering/src/create_RCM_adjacency.jl")
+include("../../auxiliary/nodeRenumbering/src/adjacency_visualization.jl")
 
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat}
