@@ -19,11 +19,8 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
-include("../test.jl")
-include("../IO/mod_inputs.jl")
-include("../Mesh/mesh.jl")
-include("../drivers/drivers.jl")
-include("../../tests/plot_lagrange_polynomial.jl")
+include("../src/io/mod_inputs.jl")
+include("../src/problems/AdvDiff/drivers.jl") #automate this based on input
 #--------------------------------------------------------
 
 #MPI.Init()
@@ -44,9 +41,8 @@ inputs, nvars = mod_inputs_user_inputs()
 # !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
 # !!!!!!
 #--------------------------------------------------------
-#PROBLEM_EQUATIONS = Adv2D()
+PROBLEM_EQUATIONS = Adv2D()
 #PROBLEM_EQUATIONS = Wave1D()
-PROBLEM_EQUATIONS = Heat2D()
 driver(CG(),   # Space discretization type    
        PROBLEM_EQUATIONS, # Equation subtype
        inputs, # input parameters from src/user_input.jl

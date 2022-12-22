@@ -1,9 +1,10 @@
 using Test
 
-include("../mesh/mesh.jl")
-include("../mesh/metric_terms.jl")
-include("../basis/basis_structs.jl")
-include("../Problems/AbstractProblems.jl")
+
+include("../../kernel/mesh/mesh.jl")
+include("../../kernel/mesh/metric_terms.jl")
+include("../../kernel/basis/basis_structs.jl")
+include("../AbstractProblems.jl")
 
 abstract type AbstractIntegrationType end
 struct Inexact <: AbstractIntegrationType end
@@ -23,16 +24,20 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, q, ψ, dψdξ, ω, mesh::
         for i=1:N+1
             for j=1:N+1
                 ip_el = i + 1 + j*(N + 1)
+                
+                u  = q.qn[i,j,iel,2]
+                v  = q.qn[i,j,iel,3]
+                
                 dqdξ = 0
                 dqdη = 0
                 for k = 1:N+1
-                    dqdξ = dqdξ + dψdξ[k,i]*q[k,j,iel]
-                    dqdη = dqdη + dψdη[k,j]*q[i,k,iel]
+                    dqdξ = dqdξ + dψdξ[k,i]*q.qn[k,j,iel,1]
+                    dqdη = dqdη + dψdη[k,j]*q.qn[i,k,iel,1]
                 end
                 dqdx = dqdξ*dξdx[i,j] + dqdη*dηdx[i,j]
                 dqdy = dqdξ*dξdy[i,j] + dqdη*dηdy[i,j]
 
-                rhe_el[ip_el] = ω[i]*ω[j]*
+                rhe_el[ip_el] = ω[i]*ω[j]*Je[i,j,iel_g]*(u*dqdx + v*dqdy)
             end
         end
     end

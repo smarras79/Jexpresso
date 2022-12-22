@@ -56,14 +56,14 @@ end
 function mod_initialize_initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
 
     ngl = mesh.nop + 1
-    
-    q = St_SolutionVectors{TFloat}(zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(1),
-                                   zeros(1),
-                                   zeros(1),
-                                   zeros(1),
-                                   zeros(ngl, ngl, mesh.nelem) )
+    nsd = mesh.nsd
+    q = St_SolutionVectors{TFloat}(zeros(mesh.npoin, nsd+1),
+                                   zeros(mesh.npoin, nsd+1),
+                                   zeros(1, nsd+1),
+                                   zeros(1, nsd+1),
+                                   zeros(1, nsd+1),
+                                   zeros(1, nsd+1),
+                                   zeros(ngl, ngl, mesh.nelem, nsd+1) )
 
     #Cone properties:
     σ = 32.0
@@ -77,8 +77,13 @@ function mod_initialize_initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloa
                 x  = mesh.x[ip]
                 y  = mesh.y[ip]
                 
-                q.qn[ip] = exp(-σ*(x - xc)*(x - xc) + (y - yc)*(y - yc))
-                q.qel[i,j,iel_g] = q.qn[ip]
+                q.qn[ip,1] = exp(-σ*(x - xc)*(x - xc) + (y - yc)*(y - yc))
+                q.qn[ip,2] = +y
+                q.qn[ip,3] = -x
+
+                q.qel[i,j,iel_g,1] = q.qn[ip,1]
+                q.qel[i,j,iel_g,2] = q.qn[ip,2]
+                q.qel[i,j,iel_g,3] = q.qn[ip,3]
             end
         end
     end
