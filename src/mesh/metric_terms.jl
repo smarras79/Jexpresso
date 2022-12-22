@@ -58,13 +58,17 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             for k = 1:Q+1
                 for j = 1:N+1
                     for i = 1:N+1
+
                         ip = mesh.connijk[i,j,iel]
+
                         xij = mesh.x[ip]
+                        yij = mesh.y[ip]
+                        
                         metrics.dxdξ[k, l, iel] = metrics.dxdξ[1, k, l, iel] + dψ[i,k]*ψ[j,l]*xij
                         metrics.dxdη[k, l, iel] = metrics.dxdη[1, k, l, iel] + ψ[i,k]*dψ[j,l]*xij
                         
-                        metrics.dydξ[k, l, iel] = metrics.dydξ[1, k, l, iel] + dψ[i,k]*ψ[j,l]*xij
-                        metrics.dydη[k, l, iel] = metrics.dydη[1, k, l, iel] + ψ[i,k]*dψ[j,l]*xij
+                        metrics.dydξ[k, l, iel] = metrics.dydξ[1, k, l, iel] + dψ[i,k]*ψ[j,l]*yij
+                        metrics.dydη[k, l, iel] = metrics.dydη[1, k, l, iel] + ψ[i,k]*dψ[j,l]*yij
                     end
                 end
             end
