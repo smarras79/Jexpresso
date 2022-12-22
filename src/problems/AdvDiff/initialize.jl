@@ -21,7 +21,7 @@ end
 
 
 
-function mod_initialize_initialize(ET::Wave1D, mesh::St_mesh, inputs::Dict, TFloat)
+function initialize(ET::Wave1D, mesh::St_mesh, inputs::Dict, TFloat)
 
     q = St_SolutionVectors{TFloat}(zeros(mesh.npoin),
                                    zeros(mesh.npoin),
@@ -53,7 +53,7 @@ function mod_initialize_initialize(ET::Wave1D, mesh::St_mesh, inputs::Dict, TFlo
 end
 
 
-function mod_initialize_initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
+function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
 
     ngl = mesh.nop + 1
     nsd = mesh.nsd
