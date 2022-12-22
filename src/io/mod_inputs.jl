@@ -41,7 +41,6 @@ function mod_inputs_user_inputs()
     
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
-
         
         mod_inputs_check(inputs, :nsd,  Int8(1), "-")
         mod_inputs_check(inputs, :nelx, "e")

@@ -13,9 +13,10 @@ const TFloat = Float64
 # jexpresso modules
 #--------------------------------------------------------
 include("../AbstractProblems.jl")
-include("./rhs.jl")
 
-include("../../io/mod_initialize.jl")
+include("./rhs.jl")
+include("./mod_initialize.jl")
+
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
 include("../../io/print_matrix.jl")

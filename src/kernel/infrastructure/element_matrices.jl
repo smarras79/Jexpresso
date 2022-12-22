@@ -12,9 +12,9 @@ include("../basis/basis_structs.jl")
 
 abstract type AbstractMassType end
 mutable struct St_ElMat{TFloat} <: AbstractMassType
-    M::Array{TFloat} = zeros(1) #Mass
-    D::Array{TFloat} = zeros(1) #Differentiation
-    L::Array{TFloat} = zeros(1) #Laplacian
+    M::Array{TFloat} #Mass
+    D::Array{TFloat} #Differentiation
+    L::Array{TFloat} #Laplacian
 end
 
 #

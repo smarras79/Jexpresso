@@ -1,7 +1,7 @@
 include("../AbstractProblems.jl")
 
-include("../../mesh/mesh.jl")
-include("../../plotting/jeplots.jl")
+include("../../kernel/mesh/mesh.jl")
+include("../../io/plotting/jeplots.jl")
 
 mutable struct St_SolutionVectors{TFloat}
 
