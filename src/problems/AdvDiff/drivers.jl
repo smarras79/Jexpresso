@@ -236,11 +236,11 @@ function driver(DT::CG,       #Space discretization type
     el_mat    = build_element_matrices!(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
 
     metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
-    error("QUI AdvDiff/drivers.jl")
     
     #show(stdout, "text/plain", mesh.conn)
     (M, Minv) = DSS(SD, QT, el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
 
+    error("QUI AdvDiff/drivers.jl")
     
     
     #Initialize q
