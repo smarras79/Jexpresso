@@ -70,7 +70,7 @@ function build_element_matrices!(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, 
 end
 
 
-function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
+function build_element_matrices!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
     
     el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem),
                               zeros(N+1, N+1, N+1, N+1, mesh.nelem),
@@ -106,7 +106,7 @@ function build_element_matrices!(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, 
 end
 
 # Mass
-function build_mass_matrix!(SD::NSD_2D, QT::Inexact, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
     
     M = zeros(N+1, N+1, N+1, N+1, mesh.nelem)
     
@@ -138,6 +138,30 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, ψ, ω, mesh, metrics, N, Q
     return M
 end
 
+function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
+
+    M = zeros((N+1)^2, (N+1)^2, mesh.nelem)
+    @info size(M)
+
+    for iel=1:mesh.nelem
+        
+        for i = 1:N+1
+            for j = 1:N+1
+
+                ωij  = ω[i]*ω[j]
+                Jije = metrics.Je[i, j, iel]
+
+                m = i + (j - 1)*(N + 1)
+                n = m
+                
+                M[m,n,iel] = M[m,n,iel] + ωij*Jije #Sparse
+            end
+        end
+    end
+    show(stdout, "text/plain", M)
+    
+    return M
+end
 
 # Laplace
 function build_laplace_matrix!(SD::NSD_2D, QT::Inexact, dψdξ, ω, mesh, metrics, N, Q, T)

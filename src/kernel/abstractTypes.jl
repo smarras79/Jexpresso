@@ -8,6 +8,12 @@
 abstract type AbstractIntegrationType end
 struct Exact <: AbstractIntegrationType end
 struct Inexact <: AbstractIntegrationType end
+#
+# Monolithic/tensor-product
+#
+abstract type AbstractMatrixType end
+struct Monolithic <: AbstractMatrixType end
+struct TensorProduct <: AbstractMatrixType end
 
 #
 # Space dimensions
