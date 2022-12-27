@@ -244,27 +244,19 @@ function driver(DT::CG,       #Space discretization type
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------
     #el_mat    = build_element_matrices!(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
-    M = build_mass_matrix!(SD, QT, Monolithic(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    @info size(M)
+    Me = build_mass_matrix!(SD, QT, Monolithic(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     
-    error("QUI AdvDiff/drivers.jl")
+    show(stdout, "text/plain", Me[:,1])
+    @info size(Me)
+    #(M, Minv) = DSS(SD, QT, Me, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
-    #show(stdout, "text/plain", mesh.conn)
-    #(M, Minv) = DSS(SD, QT, el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    M = DSS(SD, QT, Me, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
 
+    show(stdout, "text/plain", M)
+    
     #Initialize q
     q = initialize(Adv2D(), mesh, inputs, TFloat)
-
-    @info size(M)
     
-    error("QUI AdvDiff/drivers.jl")
-    
-    #show(stdout, "text/plain", mesh.conn)
-    #(M, Minv) = DSS(SD, QT, el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-
-    #Initialize q
-    q = initialize(Adv2D(), mesh, inputs, TFloat)
-
     error("QUI AdvDiff/drivers.jl")
     return    
 
