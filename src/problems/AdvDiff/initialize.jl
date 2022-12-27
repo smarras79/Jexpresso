@@ -1,5 +1,8 @@
-include("../AbstractProblems.jl")
+using GeoStats
+using GeophysicalModelGenerator 
+using Plots
 
+include("../AbstractProblems.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../io/plotting/jeplots.jl")
 
@@ -17,9 +20,6 @@ mutable struct St_SolutionVectors{TFloat}
     #Fvisc::Array{TFloat} #Viscous flux
     
 end
-
-
-
 
 function initialize(ET::Wave1D, mesh::St_mesh, inputs::Dict, TFloat)
 
@@ -55,6 +55,8 @@ end
 
 function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
 
+    @info " Initialize fields for Adv2D ........................ "
+    
     ngl = mesh.nop + 1
     nsd = mesh.nsd
     q = St_SolutionVectors{TFloat}(zeros(mesh.npoin, nsd+1),
@@ -67,7 +69,7 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
 
     #Cone properties:
     σ = 32.0
-    (xc, yc) = (-0.5, 0)
+    (xc, yc) = (-0.5, 0.0)
     
     for iel_g = 1:mesh.nelem
         for i=1:ngl
@@ -77,16 +79,27 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
                 x  = mesh.x[ip]
                 y  = mesh.y[ip]
                 
-                q.qn[ip,1] = exp(-σ*(x - xc)*(x - xc) + (y - yc)*(y - yc))
+                q.qn[ip,1] = exp(-σ*((x - xc)*(x - xc) + (y - yc)*(y - yc)))
                 q.qn[ip,2] = +y
                 q.qn[ip,3] = -x
 
-                q.qel[i,j,iel_g,1] = q.qn[ip,1]
-                q.qel[i,j,iel_g,2] = q.qn[ip,2]
-                q.qel[i,j,iel_g,3] = q.qn[ip,3]
+                q.qnel[i,j,iel_g,1] = q.qn[ip,1]
+                q.qnel[i,j,iel_g,2] = q.qn[ip,2]
+                q.qnel[i,j,iel_g,3] = q.qn[ip,3]
             end
         end
     end
+    
+    #------------------------------------------
+    # Plot initial condition:
+    # Notice that I scatter the points to
+    # avoid sorting the x and q which would be
+    # becessary for a smooth curve plot.
+    #------------------------------------------
+    plt = Plots.scatter() #Clear plot
+    backend(:plotly)
+    gui(Plots.scatter(mesh.x,mesh.y,marker_z=q.qn, ylabel="x",xlabel="y",markersize=2.5) )
+    @info " Initialize fields for Adv2D ........................ DONE"
     
     return q
 end

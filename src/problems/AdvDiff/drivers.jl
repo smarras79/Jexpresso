@@ -223,33 +223,53 @@ function driver(DT::CG,       #Space discretization type
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
-    error("STOP at drivers advdiff2D")
+
+    #--------------------------------------------------------
+    # Build metric terms
+    #
+    # Return:
+    # dxdξ,dη[1:Q+1, 1:Q+1, 1:nelem]
+    # dydξ,dη[1:Q+1, 1:Q+1, 1:nelem]
+    # dzdξ,dη[1:Q+1, 1:Q+1, 1:nelem]
+    # dξdx,dy[1:Q+1, 1:Q+1, 1:nelem]
+    # dηdx,dy[1:Q+1, 1:Q+1, 1:nelem]
+    #      Je[1:Q+1, 1:Q+1, 1:nelem]
+    #--------------------------------------------------------
+    metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
     
     #--------------------------------------------------------
     # Build element mass matrix
     #
     # Return:
-    # el_mat.M[iel, i, j] <-- if exact (full)
-    # el_mat.M[iel, i]    <-- if inexact (diagonal)
-    # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
+    # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------
-    el_mat    = build_element_matrices!(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
-
-    metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
+    #el_mat    = build_element_matrices!(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
+    M = build_mass_matrix!(SD, QT, Monolithic(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    @info size(M)
     
-    #show(stdout, "text/plain", mesh.conn)
-    (M, Minv) = DSS(SD, QT, el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-
     error("QUI AdvDiff/drivers.jl")
     
-    
+    #show(stdout, "text/plain", mesh.conn)
+    #(M, Minv) = DSS(SD, QT, el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+
     #Initialize q
     q = initialize(Adv2D(), mesh, inputs, TFloat)
-    return
+
+    @info size(M)
     
+    error("QUI AdvDiff/drivers.jl")
+    
+    #show(stdout, "text/plain", mesh.conn)
+    #(M, Minv) = DSS(SD, QT, el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+
+    #Initialize q
+    q = initialize(Adv2D(), mesh, inputs, TFloat)
+
+    error("QUI AdvDiff/drivers.jl")
+    return    
+
     dq   = zeros(mesh.npoin);   
     qp   = copy(q.qn)
-    
     
     #Plot I.C.
     plt1 = plot(mesh.x, q.qn, seriestype = :scatter,  title="Initial", reuse = false)

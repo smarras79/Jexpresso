@@ -106,9 +106,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     conn_unique_edges = ElasticArray{Int64}(undef,  1, 2)
     conn_unique_faces = ElasticArray{Int64}(undef,  1, 4)
 
-    conn_edge_el      = Array{Int64}(undef, 0,0,0)
-    conn_face_el      = Array{Int64}(undef, 0,0,0)
-    face_in_elem      = Array{Int64}(undef, 0,0,0)
+    conn_edge_el      = Array{Int64}(undef, 0, 0, 0)
+    conn_face_el      = Array{Int64}(undef, 0, 0, 0)
+    face_in_elem      = Array{Int64}(undef, 0, 0, 0)
     
 end
 
@@ -122,18 +122,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.nsd = num_cell_dims(model)
     
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
-    @show labels = FaceLabeling(d_to_num_dfaces)
-
-    add_tag!(labels,"interior",[1,])
-    add_tag!(labels,"boundary",[2,])
-    add_tag_from_tags!(labels,"all",["interior","boundary"])
-    @info num_entities(labels)
-    @info num_tags(labels)
-    @info get_tag_name(labels,1)
-    @info get_tag_name(labels,2)
-    @info get_tag_name(labels,3)
-    face_to_tag = get_face_tag(labels,["boundary"],1)
-    @info face_to_tag
+    #@show labels = FaceLabeling(d_to_num_dfaces)
+    #add_tag!(labels,"interior",[1,])
+    #add_tag!(labels,"boundary",[2,])
+    #add_tag_from_tags!(labels,"all",["interior","boundary"])
+    #@info num_entities(labels)
+    #@info num_tags(labels)
+    #@info get_tag_name(labels,1)
+    #@info get_tag_name(labels,2)
+    #@info get_tag_name(labels,3)
+    #face_to_tag = get_face_tag(labels,["boundary"],1)
+    #@info face_to_tag
     #@test get_tag_from_name(labels,"interior") == 1
     #@test get_tag_from_name(labels,"all") == 3
     
@@ -264,12 +263,13 @@ elseif (mesh.nsd == 2)
         mesh.conn[3, iel] = mesh.cell_node_ids[iel][4]
         mesh.conn[4, iel] = mesh.cell_node_ids[iel][3]
         
-        mesh.connijk[1,  1, iel] = mesh.cell_node_ids[iel][1]
-        mesh.connijk[1,    ngl, iel] = mesh.cell_node_ids[iel][2]
-        mesh.connijk[ngl,  ngl, iel] = mesh.cell_node_ids[iel][4]
-        mesh.connijk[ngl,1, iel] = mesh.cell_node_ids[iel][3]
+        mesh.connijk[1,  1, iel]     = mesh.cell_node_ids[iel][2]#2,2
+        mesh.connijk[1,    ngl, iel] = mesh.cell_node_ids[iel][1]#
+        mesh.connijk[ngl,  ngl, iel] = mesh.cell_node_ids[iel][3]#1,2
+        mesh.connijk[ngl,1, iel]     = mesh.cell_node_ids[iel][4]#
+        @printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[1,  1, iel], mesh.connijk[ngl, 1, iel] , mesh.connijk[1,ngl, iel], mesh.connijk[ngl, ngl, iel] )
+                    
     end
-    
     #
     # Fill in elements dictionary needed by NodeOrdering.jl
     #
@@ -431,7 +431,7 @@ open("./COORDS_GLOBAL.dat", "w") do f
     #        for i = 1:mesh.ngl
     #            for j = 1:mesh.ngl
     #                ip = mesh.connijk[i,j,iel]
-                    @printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+                    #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
                     @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
     #            end
     #        end
@@ -705,7 +705,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
     end
     
     conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-
     open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
@@ -746,7 +745,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
     cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here  
     for iel = 1:mesh.nelem
         edge_ids = getindex!(cache_edge_ids, mesh.cell_edge_ids, iel)
-        show(stdout, "text/plain",edge_ids)
+        #show(stdout, "text/plain",edge_ids)
         iconn = 1
         iedge_el = 1
         iedge_g = edge_ids[iedge_el]
@@ -824,14 +823,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             iconn = iconn + 1
            # mesh.connijk[l,1,iel]=ip
         end
-        #=for iedge_el = 1:length(edge_ids)
-            iedge_g = edge_ids[iedge_el]
-            for l = 2:ngl-1
-                ip = conn_edge_poin[iedge_g, l]
-                mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
-                iconn = iconn + 1
-            end
-        end=#
     end
     #show(stdout, "text/plain", mesh.conn')
     
@@ -1067,7 +1058,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             end
         end=#
     end
-    show(stdout, "text/plain", mesh.conn')
+    #show(stdout, "text/plain", mesh.conn')
 
     for iel = 1:mesh.nelem
         iter =1
@@ -1105,9 +1096,9 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             mesh.connijk[ngl, m, iel] = mesh.conn[4 + ngl-2 + j, iel] + ngl-2 + j
         end
     end=#
-    for iel = 1:mesh.nelem
-        show(stdout, "text/plain", mesh.connijk[:,:,iel]')
-    end
+    #for iel = 1:mesh.nelem
+    #    show(stdout, "text/plain", mesh.connijk[:,:,iel]')
+    #end
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
 
 end
@@ -1117,8 +1108,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
     if (mesh.nop < 2) return end
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES")
-    println(" # ...")
-    
+        
     x1, y1, z1 = Float64(0.0), Float64(0.0), Float64(0.0)
     x2, y2, z2 = Float64(0.0), Float64(0.0), Float64(0.0)
     x3, y3, z3 = Float64(0.0), Float64(0.0), Float64(0.0)
@@ -1151,7 +1141,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
     end
     
     conn_face_poin::Array{Int64, 3}  = zeros(mesh.nedges, mesh.ngl, mesh.ngl)
-
+    
     open("./COORDS_HO_faces.dat", "w") do f
         #
         # First pass:
