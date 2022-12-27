@@ -140,7 +140,7 @@ end
 
 function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
 
-    M = zeros((N+1)^2, (N+1)^2, mesh.nelem)
+    M = zeros((N+1)^2, mesh.nelem)
     @info size(M)
 
     for iel=1:mesh.nelem
@@ -154,11 +154,11 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mes
                 m = i + (j - 1)*(N + 1)
                 n = m
                 
-                M[m,n,iel] = M[m,n,iel] + ωij*Jije #Sparse
+                M[m,iel] = M[m,iel] + ωij*Jije #Sparse
             end
         end
     end
-    show(stdout, "text/plain", M)
+    #show(stdout, "text/plain", M)
     
     return M
 end
@@ -241,13 +241,10 @@ function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, 
 end
 
 
-
-function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
+function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
 
     A = zeros(npoin)
     Ainv = zeros(npoin)
-
-    error("element_matrices.jl: REVISE DSS(NSD_2D)")
     
     for iel=1:nelem
         for i=1:N+1
@@ -261,17 +258,17 @@ function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, 
 end
 
 
-function DSSarray(SD::NSD_1D, Ae::AbstractArray, conn, nelem, npoin, N, T)
+function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
 
-    A = zeros(npoin)
+    A  = zeros(npoin)
+    MN = (N+1)^2
     
     for iel=1:nelem
-        for i=1:N+1
+        for i=1:MN
             I = conn[i,iel]
             A[I] = A[I] + Ae[i,iel]
         end
     end
-
+        
     return A
 end
-

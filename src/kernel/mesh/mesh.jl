@@ -267,7 +267,7 @@ elseif (mesh.nsd == 2)
         mesh.connijk[1,    ngl, iel] = mesh.cell_node_ids[iel][1]#
         mesh.connijk[ngl,  ngl, iel] = mesh.cell_node_ids[iel][3]#1,2
         mesh.connijk[ngl,1, iel]     = mesh.cell_node_ids[iel][4]#
-        @printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[1,  1, iel], mesh.connijk[ngl, 1, iel] , mesh.connijk[1,ngl, iel], mesh.connijk[ngl, ngl, iel] )
+        #@printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[1,  1, iel], mesh.connijk[ngl, 1, iel] , mesh.connijk[1,ngl, iel], mesh.connijk[ngl, ngl, iel] )
                     
     end
     #
