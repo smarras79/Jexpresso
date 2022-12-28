@@ -247,12 +247,10 @@ function driver(DT::CG,       #Space discretization type
     Me = build_mass_matrix!(SD, QT, Monolithic(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     
     show(stdout, "text/plain", Me[:,1])
-    @info size(Me)
-    #(M, Minv) = DSS(SD, QT, Me, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    #@info size(Me)
     
     M = DSS(SD, QT, Me, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-
-    show(stdout, "text/plain", M)
+    #show(stdout, "text/plain", M)
     
     #Initialize q
     q = initialize(Adv2D(), mesh, inputs, TFloat)
