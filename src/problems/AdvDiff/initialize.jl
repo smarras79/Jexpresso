@@ -1,4 +1,7 @@
+import Conda
+using Plots
 using Dierckx, PyPlot
+Conda.add("matplotlib")
 
 include("../AbstractProblems.jl")
 include("../../kernel/mesh/mesh.jl")
@@ -12,7 +15,7 @@ mutable struct St_SolutionVectors{TFloat}
     qnm2::Array{TFloat} #qⁿ⁻²
     qnm3::Array{TFloat} #qⁿ⁻³
     qe::Array{TFloat}   #qexact    
-    qnel::Array{TFloat}   #qⁿ[ngl,ngl,ngl,nelem]
+    qnel::Array{TFloat} #qⁿ[ngl,ngl,ngl,nelem]
     
     #Finv ::Array{TFloat} #Inviscid flux
     #Fvisc::Array{TFloat} #Viscous flux
