@@ -240,8 +240,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
 
     mesh.conn = Array{Int64}(undef, mesh.npoin_el, mesh.nelem)
-    #@info mesh.npoin mesh.npoin_el
-    
+        
     #
     # Connectivity matrices
     #

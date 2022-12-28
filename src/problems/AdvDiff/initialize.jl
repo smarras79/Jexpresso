@@ -87,10 +87,7 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
             end
         end
     end
-    @info size(mesh.x)
-    @info size(mesh.y)
-    @info size(q.qn[:,1])
-
+    
     #------------------------------------------
     # Plot initial condition:
     # Notice that I scatter the points to
@@ -98,9 +95,8 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
     # becessary for a smooth curve plot.
     #------------------------------------------   
     clf()
-    PyPlot.tricontour(mesh.x, mesh.y, q.qn[:,1])    
+    PyPlot.tricontour(mesh.x, mesh.y, q.qn[:,1])
     #PyPlot.colorbar()
-    
     
     @info " Initialize fields for Adv2D ........................ DONE"
     

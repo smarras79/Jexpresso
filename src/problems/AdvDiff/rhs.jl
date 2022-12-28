@@ -19,14 +19,14 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, q, ψ, dψdξ, ω, mesh::
             for j=1:N+1
                 ip_el = i + 1 + j*(N + 1)
                 
-                u  = q.qn[i,j,iel,2]
-                v  = q.qn[i,j,iel,3]
+                u  = q.qnel[i,j,iel,2]
+                v  = q.qnel[i,j,iel,3]
                 
                 dqdξ = 0
                 dqdη = 0
                 for k = 1:N+1
-                    dqdξ = dqdξ + dψdξ[k,i]*q.qn[k,j,iel,1]
-                    dqdη = dqdη + dψdη[k,j]*q.qn[i,k,iel,1]
+                    dqdξ = dqdξ + dψdξ[k,i]*q.qnel[k,j,iel,1]
+                    dqdη = dqdη + dψdη[k,j]*q.qnel[i,k,iel,1]
                 end
                 dqdx = dqdξ*dξdx[i,j] + dqdη*dηdx[i,j]
                 dqdy = dqdξ*dξdy[i,j] + dqdη*dηdy[i,j]
