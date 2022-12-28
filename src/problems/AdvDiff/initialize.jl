@@ -91,25 +91,17 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
     @info size(mesh.y)
     @info size(q.qn[:,1])
 
-    clf()
-    PyPlot.tricontour(mesh.x, mesh.y, q.qn[:,1])    
-    PyPlot.colorbar()
-    
-    
     #------------------------------------------
     # Plot initial condition:
     # Notice that I scatter the points to
     # avoid sorting the x and q which would be
     # becessary for a smooth curve plot.
-    #------------------------------------------
-    #=plt = Plots.scatter() #Clear plot
-    backend(:plotly)
-
-    G = mat2grid(q.qn[:,1], mesh.x, mesh.y);
-    gui(Plots.contourf(G, show=true))
+    #------------------------------------------   
+    clf()
+    PyPlot.tricontour(mesh.x, mesh.y, q.qn[:,1])    
+    #PyPlot.colorbar()
     
-    #gui(Plots.scatter(mesh.x,mesh.y,marker_z=q.qn, ylabel="x",xlabel="y",markersize=2.5) )
-    =#
+    
     @info " Initialize fields for Adv2D ........................ DONE"
     
     return q
