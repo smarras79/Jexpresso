@@ -259,7 +259,7 @@ end
 
 function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
-    A  = zeros(npoin,1)
+    A  = zeros(npoin)
     #=
     MN = (N+1)^2
     for iel=1:nelem
