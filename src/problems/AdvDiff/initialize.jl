@@ -1,6 +1,4 @@
-using GeoStats
-using GeophysicalModelGenerator 
-using Plots
+using Dierckx, PyPlot
 
 include("../AbstractProblems.jl")
 include("../../kernel/mesh/mesh.jl")
@@ -89,6 +87,14 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
             end
         end
     end
+    @info size(mesh.x)
+    @info size(mesh.y)
+    @info size(q.qn[:,1])
+
+    clf()
+    PyPlot.tricontour(mesh.x, mesh.y, q.qn[:,1])    
+    PyPlot.colorbar()
+    
     
     #------------------------------------------
     # Plot initial condition:
@@ -96,9 +102,14 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
     # avoid sorting the x and q which would be
     # becessary for a smooth curve plot.
     #------------------------------------------
-    plt = Plots.scatter() #Clear plot
+    #=plt = Plots.scatter() #Clear plot
     backend(:plotly)
-    gui(Plots.scatter(mesh.x,mesh.y,marker_z=q.qn, ylabel="x",xlabel="y",markersize=2.5) )
+
+    G = mat2grid(q.qn[:,1], mesh.x, mesh.y);
+    gui(Plots.contourf(G, show=true))
+    
+    #gui(Plots.scatter(mesh.x,mesh.y,marker_z=q.qn, ylabel="x",xlabel="y",markersize=2.5) )
+    =#
     @info " Initialize fields for Adv2D ........................ DONE"
     
     return q
