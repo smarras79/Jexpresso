@@ -255,17 +255,12 @@ function driver(DT::CG,       #Space discretization type
     #Initialize q
     q = initialize(Adv2D(), mesh, inputs, TFloat)
     
+    dq   = zeros(mesh.npoin);   
+    qp   = copy(q.qn)  
+    qpel = copy(q.qnel)
+    
     error("QUI AdvDiff/drivers.jl")
     return    
-
-    dq   = zeros(mesh.npoin);   
-    qp   = copy(q.qn)
-    
-    #Plot I.C.
-    plt1 = plot(mesh.x, q.qn, seriestype = :scatter,  title="Initial", reuse = false)
-    display(plt1)
-
-    return
     
     Δt = inputs[:Δt]
     C = 0.25
@@ -273,13 +268,9 @@ function driver(DT::CG,       #Space discretization type
     Δt = C*u*minimum(mesh.Δx)/mesh.nop
     Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
     
-    
-
     #
     # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
-    #
-    plt2 = scatter() #Clear plot
-    
+    #  
     RK = RK_Integrator{TFloat}(zeros(TFloat,5),zeros(TFloat,5),zeros(TFloat,5))
     buildRK5Integrator!(RK)
     for it = 1:Nt
@@ -291,7 +282,7 @@ function driver(DT::CG,       #Space discretization type
             #
             # RHS
             #
-            rhs = build_rhs(SD, QT, Adv2D(), mesh, M, el_mat, u*qp)
+            rhs = build_rhs(SD, QT, Adv2D(), qp, basis.ψ, basis.dψ, ω, mesh, metrics, M, 0)
 
             for I=1:mesh.npoin
                 dq[I] = RK.a[s]*dq[I] + Δt*rhs[I]
@@ -301,14 +292,14 @@ function driver(DT::CG,       #Space discretization type
             #
             # B.C.: solid wall
             #
-            qp[1] = 0.0
-            qp[mesh.npoin_linear] = 0.0
+            #qp[1] = 0.0
+            #qp[mesh.npoin_linear] = 0.0
 
         end #stages
 
         title = string("Solution for N=", Nξ, " & ", QT_String, " integration")
-        plt2 = scatter(mesh.x, qp,  title=title)
-        display(plt2)
+        clf()
+        PyPlot.tricontour(mesh.x, mesh.y, q.qp,  title=title)
     end
 
 end
