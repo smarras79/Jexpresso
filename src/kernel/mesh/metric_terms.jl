@@ -68,8 +68,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                         metrics.dxdη[k, l, iel] = metrics.dxdη[k, l, iel] + ψ[i,k]*dψ[j,l]*xij
                         
                         metrics.dydξ[k, l, iel] = metrics.dydξ[k, l, iel] + dψ[i,k]*ψ[j,l]*yij
-                        metrics.dydη[k, l, iel] = metrics.dydη[k, l, iel] + ψ[i,k]*dψ[j,l]*yij
-                        
+                        metrics.dydη[k, l, iel] = metrics.dydη[k, l, iel] + ψ[i,k]*dψ[j,l]*yij                        
                         #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
                     end
                 end
@@ -89,7 +88,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             end
         end
     end
-    #show(stdout, "text/plain", metrics.Je)
+    show(stdout, "text/plain", metrics.Je)
     
     return metrics
 end

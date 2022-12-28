@@ -36,9 +36,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, q, ψ, dψdξ, ω, mesh::
         end
     end
     #show(stdout, "text/plain", el_matrices.D)
-    
-    return el_matrices
-    
+        
 end
 
 
