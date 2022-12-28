@@ -8,7 +8,7 @@ include("../../kernel/basis/basis_structs.jl")
 include("../AbstractProblems.jl")
 
 
-function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, q, ψ, dψdξ, ω, mesh::St_mesh, metrics::St_metrics, M, f)
+function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, q, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, f)
 
     N   = mesh.nop
     ngl = N+1
@@ -17,26 +17,28 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, q, ψ, dψdξ, ω, mesh::
     for iel=1:mesh.nelem
         for i=1:N+1
             for j=1:N+1
-                ip_el = i + 1 + j*(N + 1)
                 
+                ip_el = i + (j-1)*(N + 1)
+                                
                 u  = q.qnel[i,j,iel,2]
                 v  = q.qnel[i,j,iel,3]
                 
                 dqdξ = 0
                 dqdη = 0
                 for k = 1:N+1
-                    dqdξ = dqdξ + dψdξ[k,i]*q.qnel[k,j,iel,1]
-                    dqdη = dqdη + dψdη[k,j]*q.qnel[i,k,iel,1]
+                    dqdξ = dqdξ + dψ[k,i]*q.qnel[k,j,iel,1]
+                    dqdη = dqdη + dψ[k,j]*q.qnel[i,k,iel,1]
                 end
-                dqdx = dqdξ*dξdx[i,j] + dqdη*dηdx[i,j]
-                dqdy = dqdξ*dξdy[i,j] + dqdη*dηdy[i,j]
+                dqdx = dqdξ*metrics.dξdx[i,j,iel] + dqdη*metrics.dηdx[i,j,iel]
+                dqdy = dqdξ*metrics.dξdy[i,j,iel] + dqdη*metrics.dηdy[i,j,iel]
 
-                rhe_el[ip_el] = ω[i]*ω[j]*Je[i,j,iel_g]*(u*dqdx + v*dqdy)
+                rhs_el[ip_el, iel] = ω[i]*ω[j]*metrics.Je[i,j,iel]*(u*dqdx + v*dqdy)
             end
         end
     end
     #show(stdout, "text/plain", el_matrices.D)
-        
+
+    return rhs_el
 end
 
 

@@ -88,7 +88,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             end
         end
     end
-    show(stdout, "text/plain", metrics.Je)
+    #show(stdout, "text/plain", metrics.Je)
     
     return metrics
 end

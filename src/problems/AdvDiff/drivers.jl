@@ -31,7 +31,6 @@ include("../../kernel/mesh/mesh.jl")
 include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
 #--------------------------------------------------------
-
 function driver(DT::CG,        #Space discretization type
                 ET::Wave1D,    #Equation subtype
                 inputs::Dict,  #input parameters from src/user_input.jl
@@ -243,37 +242,37 @@ function driver(DT::CG,       #Space discretization type
     # Return:
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------
-    #el_mat    = build_element_matrices!(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
     Me = build_mass_matrix!(SD, QT, Monolithic(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    #show(stdout, "text/plain", Me[:,1])
     
-    show(stdout, "text/plain", Me[:,1])
-    #@info size(Me)
-    
-    M = DSS(SD, QT, Me, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    M = DSS(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     #show(stdout, "text/plain", M)
-    
+        
     #Initialize q
     q = initialize(Adv2D(), mesh, inputs, TFloat)
     
-    dq   = zeros(mesh.npoin);   
-    qp   = copy(q.qn)  
+    dq   = zeros(mesh.npoin);
+    qp   = copy(q.qn)
     qpel = copy(q.qnel)
-    
+    RHS  = zeros(mesh.npoin);
+
     error("QUI AdvDiff/drivers.jl")
-    return    
     
     Δt = inputs[:Δt]
     C = 0.25
     u = 2.0
-    Δt = C*u*minimum(mesh.Δx)/mesh.nop
-    Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
-    
+    #@info Δt = C*u*minimum(mesh.Δx)/mesh.nop
+    # add a function to find the mesh mininum resolution
+    #
+    Δt = 0.1
+    Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
+
     #
     # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
     #  
     RK = RK_Integrator{TFloat}(zeros(TFloat,5),zeros(TFloat,5),zeros(TFloat,5))
     buildRK5Integrator!(RK)
-    for it = 1:Nt
+    for it = 1:1 #Nt
         
         dq = zeros(mesh.npoin);
         qe = zeros(mesh.ngl);
@@ -282,12 +281,14 @@ function driver(DT::CG,       #Space discretization type
             #
             # RHS
             #
-            rhs = build_rhs(SD, QT, Adv2D(), qp, basis.ψ, basis.dψ, ω, mesh, metrics, M, 0)
+            rhs_el = build_rhs(SD, QT, Adv2D(), q, basis.ψ, basis.dψ, ω, mesh, metrics, 0, 0)
 
-            for I=1:mesh.npoin
-                dq[I] = RK.a[s]*dq[I] + Δt*rhs[I]
-                qp[I] = qp[I] + RK.b[s]*dq[I]
-            end
+            RHS = DSS(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+            
+            # for I=1:mesh.npoin
+            #     dq[I] = RK.a[s]*dq[I] + Δt*rhs[I]
+            #     qp[I] = qp[I] + RK.b[s]*dq[I]
+            # end
 
             #
             # B.C.: solid wall
@@ -299,7 +300,9 @@ function driver(DT::CG,       #Space discretization type
 
         title = string("Solution for N=", Nξ, " & ", QT_String, " integration")
         clf()
-        PyPlot.tricontour(mesh.x, mesh.y, q.qp,  title=title)
+        PyPlot.tricontour(mesh.x, mesh.y, RHS,  title=title)
     end
 
+    return    
+    
 end
