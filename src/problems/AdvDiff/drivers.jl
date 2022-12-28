@@ -255,8 +255,6 @@ function driver(DT::CG,       #Space discretization type
     qp   = copy(q.qn)
     qpel = copy(q.qnel)
     RHS  = zeros(mesh.npoin);
-
-    error("QUI AdvDiff/drivers.jl")
     
     Δt = inputs[:Δt]
     C = 0.25
@@ -297,12 +295,15 @@ function driver(DT::CG,       #Space discretization type
             #qp[mesh.npoin_linear] = 0.0
 
         end #stages
-
+        @info size(RHS) size(mesh.x) size(mesh.y)
+        
         title = string("Solution for N=", Nξ, " & ", QT_String, " integration")
         clf()
         PyPlot.tricontour(mesh.x, mesh.y, RHS,  title=title)
     end
 
+    error("QUI AdvDiff/drivers.jl")
+    
     return    
     
 end
