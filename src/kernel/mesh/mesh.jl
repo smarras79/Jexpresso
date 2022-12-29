@@ -261,11 +261,30 @@ elseif (mesh.nsd == 2)
         mesh.conn[2, iel] = mesh.cell_node_ids[iel][2]
         mesh.conn[3, iel] = mesh.cell_node_ids[iel][4]
         mesh.conn[4, iel] = mesh.cell_node_ids[iel][3]
+
+        #
+        # 3-----4
+        # |     |
+        # |     |
+        # 1-----2
+        #
+        mesh.connijk[1,  1, iel]     = mesh.cell_node_ids[iel][2]
+        mesh.connijk[1,    ngl, iel] = mesh.cell_node_ids[iel][1]
+        mesh.connijk[ngl,  ngl, iel] = mesh.cell_node_ids[iel][3]
+        mesh.connijk[ngl,1, iel]     = mesh.cell_node_ids[iel][4]
         
-        mesh.connijk[1,  1, iel]     = mesh.cell_node_ids[iel][2]#2,2
-        mesh.connijk[1,    ngl, iel] = mesh.cell_node_ids[iel][1]#
-        mesh.connijk[ngl,  ngl, iel] = mesh.cell_node_ids[iel][3]#1,2
-        mesh.connijk[ngl,1, iel]     = mesh.cell_node_ids[iel][4]#
+        #=
+        # 4-----3
+        # |     |
+        # |     |
+        # 1-----2
+        #
+        mesh.connijk[1,  1, iel]     = mesh.cell_node_ids[iel][1]
+        mesh.connijk[1,    ngl, iel] = mesh.cell_node_ids[iel][2]
+        mesh.connijk[ngl,  ngl, iel] = mesh.cell_node_ids[iel][4]
+        mesh.connijk[ngl,1, iel]     = mesh.cell_node_ids[iel][3]
+        =#
+        
         #@printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[1,  1, iel], mesh.connijk[ngl, 1, iel] , mesh.connijk[1,ngl, iel], mesh.connijk[ngl, ngl, iel] )
                     
     end
@@ -763,7 +782,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             ip = conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
-         #   mesh.connijk[1,l,iel] = ip
         end
         iedge_el = 4
         iedge_g = edge_ids[iedge_el]
@@ -782,7 +800,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             ip = conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
-          #  mesh.connijk[l,ngl,iel] = ip
         end
         iedge_el = 2
         iedge_g = edge_ids[iedge_el] 
@@ -801,7 +818,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             ip = conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
-           # mesh.connijk[ngl,l,iel] = ip
         end
         iedge_el = 3
         iedge_g = edge_ids[iedge_el]
@@ -820,7 +836,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             ip = conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
-           # mesh.connijk[l,1,iel]=ip
         end
     end
     #show(stdout, "text/plain", mesh.conn')
@@ -1077,27 +1092,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             mesh.connijk[m,1,iel] = mesh.conn[4+iter,iel]
             iter = iter+1
         end
-    end 
-    #
-    # Populate connijk[i,j,iel]
-    #
-    #Left edge
-    #=for iel = 1:mesh.nelem
-        for m = ngl-1:-1:2
-            j = ngl - m
-            mesh.connijk[1, m, iel] = mesh.conn[4 + j, iel]
-        end
     end
-    #Right edge
-    for iel = 1:mesh.nelem
-        for m = ngl-1:-1:2
-            j = ngl - m
-            mesh.connijk[ngl, m, iel] = mesh.conn[4 + ngl-2 + j, iel] + ngl-2 + j
-        end
-    end=#
-    #for iel = 1:mesh.nelem
-    #    show(stdout, "text/plain", mesh.connijk[:,:,iel]')
-    #end
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
 
 end
@@ -1397,7 +1392,6 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
 
     #allocate mesh.conn and reshape it
     mesh.conn = Array{Int64}(undef, mesh.npoin_el, mesh.nelem)
-    #mesh.conn = reshape(mesh.conn, mesh.npoin_el, mesh.nelem)
     
     for iel = 1:mesh.nelem
         mesh.conn[1, iel] = iel

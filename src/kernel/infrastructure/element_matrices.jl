@@ -154,6 +154,7 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mes
                 n = m
                 
                 M[m,iel] = M[m,iel] + ωij*Jije #Sparse
+                #M[i,j,iel] = M[i,j,iel] + ωij*Jije #Sparse
             end
         end
     end
@@ -273,6 +274,7 @@ function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
         for i=1:N+1
             for j=1:N+1
                 m = i + (j - 1)*(N + 1)
+                
                 I = conn[i,j,iel]
                 #I = conn[m,iel] #this doesn't work if ngl>4! it returns a ZERO. CHECK and debug!
                 if (I == 0)
@@ -282,6 +284,28 @@ function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
             end
         end
     end
-        
+    #show(stdout, "text/plain", M)
+    return A
+end
+
+function DSSrhsij(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+
+    A  = zeros(npoin)
+    
+    for iel=1:nelem
+        for i=1:N+1
+            for j=1:N+1
+                m = i + (j - 1)*(N + 1)
+                
+                I = conn[i,j,iel]
+                #I = conn[m,iel] #this doesn't work if ngl>4! it returns a ZERO. CHECK and debug!
+                if (I == 0)
+                    error( "ELEMENT_MATRICES.jl ZEROOOOOO")
+                end
+                A[I] = A[I] + Ae[i,j,iel]
+            end
+        end
+    end
+    #show(stdout, "text/plain", M)
     return A
 end
