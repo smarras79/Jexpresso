@@ -8,31 +8,45 @@ include("../../kernel/basis/basis_structs.jl")
 include("../AbstractProblems.jl")
 
 
-function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, q, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, f)
+function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
 
-    N   = mesh.nop
-    ngl = N+1
+    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem,3)
     
-    rhs_el = zeros(ngl*ngl,mesh.nelem)
-    for iel=1:mesh.nelem
-        for i=1:N+1
-            for j=1:N+1
+    rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
+    #rhs_el = zeros(mesh.ngl*mesh.ngl,mesh.nelem)
+
+     for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                m = mesh.connijk[i,j,iel]
+
+                qnel[i,j,iel,1] = qp.qn[m,1]
+                qnel[i,j,iel,2] = qp.qn[m,2]
+                qnel[i,j,iel,3] = qp.qn[m,3]
                 
-                ip_el = i + (j-1)*(N + 1)
+            end
+        end
+     end
+    
+    for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                m = i + (j-1)*mesh.ngl
                                 
-                u  = q.qnel[i,j,iel,2]
-                v  = q.qnel[i,j,iel,3]
+                u  = qnel[i,j,iel,2]
+                v  = qnel[i,j,iel,3]
                 
                 dqdξ = 0
                 dqdη = 0
-                for k = 1:N+1
-                    dqdξ = dqdξ + dψ[k,i]*q.qnel[k,j,iel,1]
-                    dqdη = dqdη + dψ[k,j]*q.qnel[i,k,iel,1]
+                for k = 1:mesh.ngl
+                    dqdξ = dqdξ + dψ[k,i]*qnel[k,j,iel,1]
+                    dqdη = dqdη + dψ[k,j]*qnel[i,k,iel,1]
                 end
                 dqdx = dqdξ*metrics.dξdx[i,j,iel] + dqdη*metrics.dηdx[i,j,iel]
                 dqdy = dqdξ*metrics.dξdy[i,j,iel] + dqdη*metrics.dηdy[i,j,iel]
 
-                rhs_el[ip_el, iel] = ω[i]*ω[j]*metrics.Je[i,j,iel]*(u*dqdx + v*dqdy)
+                #rhs_el[m, iel] = ω[i]*ω[j]*metrics.Je[i,j,iel]*(u*dqdx + v*dqdy)
+                rhs_el[i,j,iel] = ω[i]*ω[j]*metrics.Je[i,j,iel]*(u*dqdx + v*dqdy)
             end
         end
     end

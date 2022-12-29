@@ -247,47 +247,55 @@ function driver(DT::CG,       #Space discretization type
     
     M = DSS(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     #show(stdout, "text/plain", M)
-        
+    
     #Initialize q
-    q = initialize(Adv2D(), mesh, inputs, TFloat)
+    qp = initialize(Adv2D(), mesh, inputs, TFloat)
     
     dq   = zeros(mesh.npoin);
-    qp   = copy(q.qn)
-    qpel = copy(q.qnel)
+    qpel = copy(qp.qnel)
     RHS  = zeros(mesh.npoin);
     
     Δt = inputs[:Δt]
     C = 0.25
-    u = 2.0
     #@info Δt = C*u*minimum(mesh.Δx)/mesh.nop
     # add a function to find the mesh mininum resolution
     #
-    Δt = 0.1
+    Δt = 0.01
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-
+    Nt = 50
+    
     #
     # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
     #  
     RK = RK_Integrator{TFloat}(zeros(TFloat,5),zeros(TFloat,5),zeros(TFloat,5))
     buildRK5Integrator!(RK)
-    for it = 1:1 #Nt
+    for it = 1:Nt
         
         dq = zeros(mesh.npoin);
         qe = zeros(mesh.ngl);
         for s = 1:length(RK.a)
             
             #
-            # RHS
+            # rhs[ngl,ngl,nelem]
             #
-            rhs_el = build_rhs(SD, QT, Adv2D(), q, basis.ψ, basis.dψ, ω, mesh, metrics, 0, 0)
-
-            RHS = DSS(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+            rhs_el = build_rhs(SD, QT, Adv2D(), qp, basis.ψ, basis.dψ, ω, mesh, metrics)
+            #
+            # RHS[npoin] = DSS(rhs)
+            #
+            RHS = DSSrhsij(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+            RHS .= RHS./M
+            #for I=1:mesh.npoin
+            for iel=1:mesh.nelem
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        I = mesh.connijk[i,j,iel]
+                        dq[I] = RK.a[s]*dq[I] + Δt*RHS[I]
+                        #qp[I,1] = qp[I,1] + RK.b[s]*dq[I]
+                        qp.qn[I,1] = qp.qn[I,1] + RK.b[s]*dq[I]
+                    end
+                end
+            end
             
-            # for I=1:mesh.npoin
-            #     dq[I] = RK.a[s]*dq[I] + Δt*rhs[I]
-            #     qp[I] = qp[I] + RK.b[s]*dq[I]
-            # end
-
             #
             # B.C.: solid wall
             #
@@ -297,9 +305,14 @@ function driver(DT::CG,       #Space discretization type
         end #stages
         @info size(RHS) size(mesh.x) size(mesh.y)
         
-        title = string("Solution for N=", Nξ, " & ", QT_String, " integration")
         clf()
-        PyPlot.tricontour(mesh.x, mesh.y, RHS,  title=title)
+        title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
+        frhs = PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30)
+        #frhs = PyPlot.tricontourf(mesh.x, mesh.y, qp, levels=30)
+        #frhs = PyPlot.tricontourf(mesh.x, mesh.y, RHS, levels=30)
+        PyPlot.colorbar(frhs)
+        plt[:show]()
+        
     end
 
     error("QUI AdvDiff/drivers.jl")
