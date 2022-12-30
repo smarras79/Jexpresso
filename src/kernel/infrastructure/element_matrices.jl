@@ -107,25 +107,31 @@ end
 
 # Mass
 function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+
+    MN = N + 1
+    QN = Q + 1
     
-    M = zeros(N+1, N+1, N+1, N+1, mesh.nelem)
+    M = zeros((N+1)^2, (N+1)^2, mesh.nelem)
+    #M = zeros(N+1, N+1, N+1, N+1, mesh.nelem)
     
     for iel=1:mesh.nelem
         
-        for k = 1:Q+1
-            for l = 1:Q+1
-
+        for l = 1:QN
+            for k = 1:QN
+                
                 ωkl  = ω[k]*ω[l]
                 Jkle = metrics.Je[k, l, iel]
                 
-                for i = 1:N+1
-                    for j = 1:N+1
+                for j = 1:MN
+                    for i = 1:MN
+                        I = i + (j - 1)*(N + 1)
                         ψJK = ψ[i,k]*ψ[j,l]
-
-                        for m = 1:N+1
-                            for n = 1:N+1
-                                ψIK = ψ[m,k]*ψ[n,l]                                
-                                M[i,j,m,n,iel] = M[i,j,m,n,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
+                        for n = 1:MN
+                            for m = 1:MN
+                                J = m + (n - 1)*(N + 1)
+                                ψIK = ψ[m,k]*ψ[n,l]
+                                #M[i,j,m,n,iel] = M[i,j,m,n,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
+                                M[I,J,iel] = M[I,J,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
                             end
                         end
                     end
@@ -133,13 +139,15 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, ω, 
             end
         end
     end
-    #show(stdout, "text/plain", el_matrices.D)
+    #show(stdout, "text/plain", M)
     
     return M
 end
 
 function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
 
+    MN = (N+1)^2
+    QN = MN
     M = zeros((N+1)^2, mesh.nelem)
     
     for iel=1:mesh.nelem
@@ -288,24 +296,46 @@ function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
     return A
 end
 
-function DSSrhsij(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
-
-    A  = zeros(npoin)
+function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
+    M  = zeros(npoin)
     for iel=1:nelem
-        for i=1:N+1
-            for j=1:N+1
-                m = i + (j - 1)*(N + 1)
-                
+        for j = 1:N+1
+            for i = 1:N+1
+                J = i + (j - 1)*(N + 1)
+                JP = conn[i,j,iel]
+                for n = 1:N+1
+                    for m = 1:N+1
+                        I = m + (n - 1)*(N + 1)
+                        IP = conn[m,n,iel]
+                        
+                        #M[IP,JP] = M[IP,JP] + Mel[I,J,iel] #if exact
+                        M[IP] = M[IP] + Mel[I,J,iel] #if inexact
+                    end
+                end
+            end
+        end
+    end    
+    #show(stdout, "text/plain", M)
+    return M
+end
+
+
+function DSSijk_rhs(SD::NSD_2D, QT::Inexact, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
+    
+    V  = zeros(npoin)
+    for iel = 1:nelem
+        for j = 1:N+1
+            for i = 1:N+1
                 I = conn[i,j,iel]
-                #I = conn[m,iel] #this doesn't work if ngl>4! it returns a ZERO. CHECK and debug!
+                
                 if (I == 0)
                     error( "ELEMENT_MATRICES.jl ZEROOOOOO")
                 end
-                A[I] = A[I] + Ae[i,j,iel]
+                V[I] = V[I] + Vel[i,j,iel]
             end
         end
     end
-    #show(stdout, "text/plain", M)
-    return A
+    #show(stdout, "text/plain", V)
+    return V
 end
