@@ -141,7 +141,7 @@ function driver(DT::CG,        #Space discretization type
             #
             # RHS
             #
-            rhs = build_rhs(SD, QT, Wave1D(), mesh, M, el_mat, u*qp)
+            rhs = build_rhs(SD, QT, Wave1D(), mesh, metrics, M, el_mat, u*qp)
 
             for I=1:mesh.npoin
                 dq[I] = RK.a[s]*dq[I] + Δt*rhs[I]
@@ -242,11 +242,17 @@ function driver(DT::CG,       #Space discretization type
     # Return:
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------
-    Me = build_mass_matrix!(SD, QT, Monolithic(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    #show(stdout, "text/plain", Me[:,1])
+    #show(stdout, "text/plain", mesh.conn)
+    #@printf("\n")
+    #show(stdout, "text/plain", mesh.connijk)
+    #@printf("\n")
     
-    M = DSS(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    Me = build_mass_matrix!(SD, QT, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    #show(stdout, "text/plain", Me[:,:,1:mesh.nelem])
+    
+    M =              DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     #show(stdout, "text/plain", M)
+    
     
     #Initialize q
     qp = initialize(Adv2D(), mesh, inputs, TFloat)
@@ -260,13 +266,13 @@ function driver(DT::CG,       #Space discretization type
     #@info Δt = C*u*minimum(mesh.Δx)/mesh.nop
     # add a function to find the mesh mininum resolution
     #
-    Δt = 0.01
+    Δt = 0.005
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
     Nt = 50
     
     #
     # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
-    #  
+    #
     RK = RK_Integrator{TFloat}(zeros(TFloat,5),zeros(TFloat,5),zeros(TFloat,5))
     buildRK5Integrator!(RK)
     for it = 1:Nt
@@ -282,18 +288,11 @@ function driver(DT::CG,       #Space discretization type
             #
             # RHS[npoin] = DSS(rhs)
             #
-            RHS = DSSrhsij(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+            RHS = DSSijk_rhs(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
             RHS .= RHS./M
-            #for I=1:mesh.npoin
-            for iel=1:mesh.nelem
-                for i=1:mesh.ngl
-                    for j=1:mesh.ngl
-                        I = mesh.connijk[i,j,iel]
-                        dq[I] = RK.a[s]*dq[I] + Δt*RHS[I]
-                        #qp[I,1] = qp[I,1] + RK.b[s]*dq[I]
-                        qp.qn[I,1] = qp.qn[I,1] + RK.b[s]*dq[I]
-                    end
-                end
+            for I=1:mesh.npoin
+                dq[I] = RK.a[s]*dq[I] + Δt*RHS[I]
+                qp.qn[I,1] = qp.qn[I,1] + RK.b[s]*dq[I]
             end
             
             #
@@ -303,18 +302,17 @@ function driver(DT::CG,       #Space discretization type
             #qp[mesh.npoin_linear] = 0.0
 
         end #stages
-        @info size(RHS) size(mesh.x) size(mesh.y)
+        #@info size(RHS) size(mesh.x) size(mesh.y)
         
-        clf()
-        title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
-        frhs = PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30)
-        #frhs = PyPlot.tricontourf(mesh.x, mesh.y, qp, levels=30)
-        #frhs = PyPlot.tricontourf(mesh.x, mesh.y, RHS, levels=30)
-        PyPlot.colorbar(frhs)
-        plt[:show]()
         
     end
-
+    clf()
+    title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
+    frhs = PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30)
+    #frhs = PyPlot.tricontourf(mesh.x, mesh.y, RHS, levels=30)
+    PyPlot.colorbar(frhs)
+    plt[:show]()
+    
     error("QUI AdvDiff/drivers.jl")
     
     return    
