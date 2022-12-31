@@ -15,7 +15,7 @@ julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
 You can test that things were installed properly with
 ```bash
-julia --project=. $JEXPRESSO_HOME/src/jexpresso.jl
+julia --project=. $JEXPRESSO_HOME/jexpresso.jl
 ```
 
 where `$JEXPRESSO_HOME` is your path to the base JEXPRESSO directory (you can export it in your .bashrc or simply replace its value with the explicit name of the path)

@@ -10,7 +10,7 @@ print_lables=True
 F = False
 T = True
 
-nsd = 3
+nsd = 1
 lplot_global_coords = F
 lplot_low_order_only = T
 plot_edge_nodes = T
@@ -52,7 +52,7 @@ if (lplot_global_coords == True):
 # Load coords
 #
 # 1) Low order:
-if (lplot_low_order_only == True):
+if (lplot_low_order_only == True or nsd < 2):
     coords_lo = np.loadtxt('COORDS_LO.dat', usecols=range(4))
     
     x=coords_lo[:,0];
@@ -66,8 +66,8 @@ if (lplot_low_order_only == True):
         for xcoords, ycoords, zcoords, label in zip(x, y, z, ip):
             ax3d.text(xcoords, ycoords, zcoords, int(label))
 
-            
-if (plot_edge_nodes == True):
+
+if (plot_edge_nodes == True and nsd > 2):
     # 2) high order edges
     del x, y, z, ip
     coords_ho = np.loadtxt('COORDS_HO_edges.dat', usecols=range(4))
@@ -85,7 +85,7 @@ if (plot_edge_nodes == True):
             ax3d.text(xcoords, ycoords, zcoords, int(label))
         
 
-if (plot_face_nodes == True):
+if (plot_face_nodes == True and nsd > 2):
     # 3) high order faces
     del x, y, z, ip
     coords_ho = np.loadtxt('COORDS_HO_faces.dat', usecols=range(4))
@@ -102,7 +102,7 @@ if (plot_face_nodes == True):
             ax3d.text(xcoords, ycoords, zcoords, int(label))
         
 
-if (plot_vol_nodes == True):
+if (plot_vol_nodes == True and nsd > 2):
     # 4 high order internal
     del x, y, z, ip
     coords_ho = np.loadtxt('COORDS_HO_vol.dat', usecols=range(4))

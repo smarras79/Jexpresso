@@ -37,15 +37,15 @@ end
 
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, T)
     
-    metrics = St_metrics{T}(dxdξ = zeros(Q+1, Q+1, mesh.nelem), #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                            dxdη = zeros(Q+1, Q+1, mesh.nelem), #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                            dydξ = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                            dydη = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+    metrics = St_metrics{T}(dxdξ = zeros(Q+1, Q+1, mesh.nelem), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dxdη = zeros(Q+1, Q+1, mesh.nelem), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                            dydξ = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dydη = zeros(Q+1, Q+1, mesh.nelem), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
 
-                            dξdx = zeros(Q+1, Q+1, mesh.nelem), #∂ξ/∂x[2, 1:Nq, 1:Nq, 1:nelem]
-                            dηdx = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂x[2, 1:Nq, 1:Nq, 1:nelem]
-                            dξdy = zeros(Q+1, Q+1, mesh.nelem), #∂ξ/∂y[2, 1:Nq, 1:Nq, 1:nelem]
-                            dηdy = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂y[2, 1:Nq, 1:Nq, 1:nelem]
+                            dξdx = zeros(Q+1, Q+1, mesh.nelem), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dηdx = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dξdy = zeros(Q+1, Q+1, mesh.nelem), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                            dηdy = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
                             
                             Je   = zeros(Q+1, Q+1, mesh.nelem)) #   Je[1:Nq, 1:Nq, 1:nelem]
 
@@ -58,32 +58,37 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             for k = 1:Q+1
                 for j = 1:N+1
                     for i = 1:N+1
+
                         ip = mesh.connijk[i,j,iel]
+
                         xij = mesh.x[ip]
-                        metrics.dxdξ[k, l, iel] = metrics.dxdξ[1, k, l, iel] + dψ[i,k]*ψ[j,l]*xij
-                        metrics.dxdη[k, l, iel] = metrics.dxdη[1, k, l, iel] + ψ[i,k]*dψ[j,l]*xij
+                        yij = mesh.y[ip]
                         
-                        metrics.dydξ[k, l, iel] = metrics.dydξ[1, k, l, iel] + dψ[i,k]*ψ[j,l]*xij
-                        metrics.dydη[k, l, iel] = metrics.dydη[1, k, l, iel] + ψ[i,k]*dψ[j,l]*xij
+                        metrics.dxdξ[k, l, iel] = metrics.dxdξ[k, l, iel] + dψ[i,k]*ψ[j,l]*xij
+                        metrics.dxdη[k, l, iel] = metrics.dxdη[k, l, iel] + ψ[i,k]*dψ[j,l]*xij
+                        
+                        metrics.dydξ[k, l, iel] = metrics.dydξ[k, l, iel] + dψ[i,k]*ψ[j,l]*yij
+                        metrics.dydη[k, l, iel] = metrics.dydη[k, l, iel] + ψ[i,k]*dψ[j,l]*yij                        
+                        #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
                     end
                 end
+                #@printf(" dxdξ=%f, dxdη=%f, dydξ=%f dydη=%f \n",  metrics.dxdξ[k, l, iel],  metrics.dxdη[k, l, iel], metrics.dydξ[k, l, iel],  metrics.dydη[k, l, iel] )
             end
-            
         end
         
         for l = 1:Q+1
             for k = 1:Q+1
-                Je[k, l, iel] = metrics.dxdξ[k, l, iel]*metrics.dydη[k, l, iel] - metrics.dydξ[k, l, iel]*metrics.dxdη[k, l, iel]
-                dξdx[k, l, iel] =  dydη[k, l, iel]/Je[k, l, iel]
-                dξdy[k, l, iel] = -dxdη[k, l, iel]/Je[k, l, iel]
-                dηdx[k, l, iel] = -dydξ[k, l, iel]/Je[k, l, iel]
-                dηdy[k, l, iel] =  dxdξ[k, l, iel]/Je[k, l, iel]
+                metrics.Je[k, l, iel] = metrics.dxdξ[k, l, iel]*metrics.dydη[k, l, iel] - metrics.dydξ[k, l, iel]*metrics.dxdη[k, l, iel]
+                
+                metrics.dξdx[k, l, iel] =  metrics.dydη[k, l, iel]/metrics.Je[k, l, iel]
+                metrics.dξdy[k, l, iel] = -metrics.dxdη[k, l, iel]/metrics.Je[k, l, iel]
+                metrics.dηdx[k, l, iel] = -metrics.dydξ[k, l, iel]/metrics.Je[k, l, iel]
+                metrics.dηdy[k, l, iel] =  metrics.dxdξ[k, l, iel]/metrics.Je[k, l, iel]
                 
             end
         end
     end
-    
-    show(stdout, "text/plain", Je)
+    #show(stdout, "text/plain", metrics.Je)
     
     return metrics
 end
