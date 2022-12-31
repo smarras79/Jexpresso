@@ -2,7 +2,7 @@ using Plots; gr()
 using LaTeXStrings
 using ColorSchemes
 
-include("../../mesh/mesh.jl")
+include("../../kernel/mesh/mesh.jl")
 
 function plot_error(x, y, title::String, legend_labels; yscale)
 
