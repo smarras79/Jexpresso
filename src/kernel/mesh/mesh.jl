@@ -1297,8 +1297,10 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
 		                      + y4*(1 - ξ)*(1 + ζ)*0.25)
 
                     conn_face_poin[iface_g, l, m] = ip
-                    mesh.connijk[m, l, iel] = ip
-                    
+                    #NEW ORDERING
+                    mesh.connijk[m, ngl-l+1, iel] = ip
+                    #OLD ORDERING
+                    #mesh.connijk[m, l, iel] = ip
                     @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                     
 	            ip = ip + 1
@@ -1356,9 +1358,9 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             end
         end=#
     end
-    #show(stdout, "text/plain", mesh.conn')
-
-    for iel = 1:mesh.nelem
+ #   show(stdout, "text/plain", mesh.conn')
+    ## OLD NUMBERING
+    #=for iel = 1:mesh.nelem
         iter =1
         for m=2:ngl-1
             mesh.connijk[1,m,iel] = mesh.conn[4+iter,iel]
@@ -1376,6 +1378,29 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
             mesh.connijk[m,1,iel] = mesh.conn[4+iter,iel]
             iter = iter+1
         end
+    end=# 
+    ## NEW NUMBERING 
+    for iel = 1:mesh.nelem
+        iter =1
+        for m=ngl-1:-1:2
+            mesh.connijk[1,m,iel] = mesh.conn[4+iter,iel]
+            iter = iter+1
+        end
+        for m=2:ngl-1
+            mesh.connijk[m,1,iel] = mesh.conn[4+iter,iel]
+            iter = iter+1
+        end
+        for m=2:ngl-1
+            mesh.connijk[ngl,m,iel] = mesh.conn[4+iter,iel]
+            iter = iter+1
+        end
+        for m=ngl-1:-1:2
+            mesh.connijk[m,ngl,iel] = mesh.conn[4+iter,iel]
+            iter = iter+1
+        end
+    end
+    for iel =1:mesh.nelem
+#      show(stdout, "text/plain", mesh.connijk[:,:,iel]')
     end
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
 

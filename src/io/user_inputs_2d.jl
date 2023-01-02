@@ -20,7 +20,7 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
         :nsd                 => 2,           #number of space dimensions
         :interpolation_nodes =>"lgl",        #Choice: lgl, cgl 
-        :nop                 => 1,         #Polynomila order
+        :nop                 => 3,         #Polynomila order
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
