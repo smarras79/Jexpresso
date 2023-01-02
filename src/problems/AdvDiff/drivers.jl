@@ -268,7 +268,7 @@ function driver(DT::CG,       #Space discretization type
     #
     Δt = 0.025
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-    Nt = 500
+    #Nt = 500
     
     #
     # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
