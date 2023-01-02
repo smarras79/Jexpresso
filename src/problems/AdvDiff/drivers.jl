@@ -212,7 +212,7 @@ function driver(DT::CG,       #Space discretization type
         ω   = ND.ξ.ω
     end
     
-    SD = NSD_2D()
+    SD = NSD_3D()
     
     #--------------------------------------------------------
     # Build Lagrange polynomials:
