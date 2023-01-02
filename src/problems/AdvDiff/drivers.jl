@@ -266,9 +266,9 @@ function driver(DT::CG,       #Space discretization type
     #@info Δt = C*u*minimum(mesh.Δx)/mesh.nop
     # add a function to find the mesh mininum resolution
     #
-    Δt = 0.005
+    Δt = 0.025
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-    Nt = 50
+    Nt = 500
     
     #
     # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
@@ -303,15 +303,18 @@ function driver(DT::CG,       #Space discretization type
 
         end #stages
         #@info size(RHS) size(mesh.x) size(mesh.y)
-        
-        
+                
+        #clf()
+        #title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
+        #frhs = PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30)
+        #PyPlot.colorbar(frhs)        
+        #plt[:show]()
+
+        title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
+        display(PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30))
+        #PyPlot.colorbar(frhs)        
+        #plt[:show]()
     end
-    clf()
-    title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
-    frhs = PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30)
-    #frhs = PyPlot.tricontourf(mesh.x, mesh.y, RHS, levels=30)
-    PyPlot.colorbar(frhs)
-    plt[:show]()
     
     error("QUI AdvDiff/drivers.jl")
     

@@ -70,7 +70,7 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
 
     #Cone properties:
     σ = 32.0
-    (xc, yc) = (-0.5, 0.0)
+    (xc, yc) = (-0.35, 0.0)
     
     for iel_g = 1:mesh.nelem
         for i=1:ngl
@@ -97,8 +97,13 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
     # avoid sorting the x and q which would be
     # becessary for a smooth curve plot.
     #------------------------------------------   
-    ##ioff()    
-    #p1 = PyPlot.tricontourf(mesh.x, mesh.y, q.qn[:,1])
+    ##ioff()
+    clf()
+    qinitplt = PyPlot.tricontourf(mesh.x, mesh.y, q.qn[:,1], levels=30)
+    PyPlot.colorbar(qinitplt)
+    plt[:show]()
+
+    #p1 = PyPlot.tricontourf(mesh.x, mesh.y, q.qn[:,1], levels=30)
     #PyPlot.colorbar(p1)
     #plt[:show]()
     
