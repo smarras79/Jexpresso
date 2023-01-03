@@ -5,7 +5,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :equation_set => "ns",
         :problem      => "none",
-        :tend         => 10,
+        :tend         => 2.5,
+        :Δt           => 0.0025,
         :lexact_integration => false,
         :lread_gmsh   => true,
         #:gmsh_filename => "./demo/gmsh_grids/hexa_TFI_2x2.msh",
