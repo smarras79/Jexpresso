@@ -110,6 +110,13 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     conn_face_el      = Array{Int64}(undef, 0, 0, 0)
     face_in_elem      = Array{Int64}(undef, 0, 0, 0)
     
+    bc_xmin = Array{Int64}(undef, 0)
+    bc_xmax = Array{Int64}(undef, 0)
+    bc_ymin = Array{Int64}(undef, 0)
+    bc_ymax = Array{Int64}(undef, 0)
+    bc_zmin = Array{Int64}(undef, 0)
+    bc_zmax = Array{Int64}(undef, 0)
+
 end
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
@@ -439,6 +446,92 @@ for ip = mesh.npoin_linear+1:mesh.npoin
         mesh.z[ip] = mesh.z_ho[ip]
     end
 end
+#Determine boundary nodes and assign node numbers to appropriate arrays
+xmin_npoin = 0
+xmax_npoin = 0
+ymin_npoin = 0
+ymax_npoin = 0
+zmin_npoin = 0
+zmax_npoin = 0
+mesh.xmin = -2.0
+mesh.xmax = 2.0
+mesh.ymin = -2.0
+mesh.ymax = 2.0
+for ip=1:mesh.npoin
+   if (AlmostEqual(mesh.xmin,mesh.x[ip]))
+      xmin_npoin +=1
+   end
+   if (AlmostEqual(mesh.xmax,mesh.x[ip]))
+      xmax_npoin +=1
+   end
+   if (mesh.nsd > 1)
+      if (AlmostEqual(mesh.ymin,mesh.y[ip]))
+         ymin_npoin +=1
+      end
+      if (AlmostEqual(mesh.ymax,mesh.y[ip]))
+         ymax_npoin +=1
+      end
+      if (mesh.nsd > 2)
+         if (AlmostEqual(mesh.zmin,mesh.z[ip]))
+            zmin_npoin +=1
+         end
+         if (AlmostEqual(mesh.zmax,mesh.z[ip]))
+            zmax_npoin +=1
+         end
+      end
+   end
+end
+mesh.bc_xmin = Array{Int64}(undef,xmin_npoin)
+mesh.bc_xmax = Array{Int64}(undef,xmin_npoin)
+if (mesh.nsd > 1)
+   mesh.bc_ymin = Array{Int64}(undef,ymin_npoin)
+   mesh.bc_ymax = Array{Int64}(undef,ymax_npoin)
+end
+if (mesh.nsd > 2)
+   mesh.bc_zmin = Array{Int64}(undef,zmin_npoin)
+   mesh.bc_zmax = Array{Int64}(undef,zmax_npoin)
+end
+iterxmin=1
+iterxmax=1
+iterymin=1
+iterymax=1
+iterzmin=1
+iterzmax=1
+
+for ip=1:mesh.npoin
+   if (AlmostEqual(mesh.xmin,mesh.x[ip]))
+      mesh.bc_xmin[iterxmin]=ip
+      iterxmin +=1
+   end
+   if (AlmostEqual(mesh.xmax,mesh.x[ip]))
+      mesh.bc_xmax[iterxmax]=ip
+      iterxmax +=1
+   end
+   if (mesh.nsd > 1)
+      if (AlmostEqual(mesh.ymin,mesh.y[ip]))
+         mesh.bc_ymin[iterymin]=ip
+         iterymin +=1
+      end
+      if (AlmostEqual(mesh.ymax,mesh.y[ip]))
+         mesh.bc_ymax[iterymax]=ip
+         iterymax +=1
+      end
+      if (mesh.nsd > 2)
+         if (AlmostEqual(mesh.zmin,mesh.z[ip]))
+            mesh.bc_zmin[iterzmin]=ip
+            iterzmin +=1
+         end
+         if (AlmostEqual(mesh.zmax,mesh.z[ip]))
+            mesh.bc_zmax[iterzmax]=ip
+            iterzmax +=1
+         end
+      end
+   end
+end
+@info mesh.bc_xmin
+@info mesh.bc_xmax
+@info mesh.bc_ymin
+@info mesh.bc_ymax
 #
 # Free memory of obsolete arrays
 #
