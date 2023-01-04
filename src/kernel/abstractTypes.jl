@@ -35,7 +35,8 @@ struct CG <:  AbstractDiscretization end
 #
 abstract type AbstractTime end
 struct RK <: AbstractTime end
-struct RK45 <: AbstractTime end
+struct RK3 <: AbstractTime end
+struct RK5 <: AbstractTime end
 
 
 #

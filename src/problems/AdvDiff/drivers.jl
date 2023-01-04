@@ -16,13 +16,13 @@ include("../AbstractProblems.jl")
 
 include("./rhs.jl")
 include("./initialize.jl")
-include("./timeAdvance.jl")
+include("./timeLoop.jl")
 
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
 include("../../io/print_matrix.jl")
 
-include("../../kernel/AbstractTypes.jl")
+include("../../kernel/abstractTypes.jl")
 include("../../kernel/basis/basis_structs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
@@ -256,14 +256,13 @@ function driver(DT::CG,       #Space discretization type
         
     #Initialize q
     qp = initialize(Adv2D(), mesh, inputs, TFloat)
-    
-    #error("QUI AdvDiff/drivers.jl")
-    
+        
     Δt = inputs[:Δt]
     # add a function to find the mesh mininum resolution
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-    
-    time_loop(SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, TFloat)
+
+    TD = RK5()
+    time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, TFloat)
     
     error("QUI AdvDiff/drivers.jl")
     
