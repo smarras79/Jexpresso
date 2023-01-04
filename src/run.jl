@@ -8,10 +8,6 @@ using MPI
 using Revise
 using WriteVTK
 
-#Plots
-using Plots; gr()
-plotlyjs()
-
 #Constants
 const TInt   = Int64
 const TFloat = Float64

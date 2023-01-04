@@ -31,6 +31,14 @@ struct CG <:  AbstractDiscretization end
 
 
 #
+# Time discretization
+#
+abstract type AbstractTime end
+struct RK <: AbstractTime end
+struct RK45 <: AbstractTime end
+
+
+#
 # Boundary flags/conditions
 #
 abstract type AbstractBC end

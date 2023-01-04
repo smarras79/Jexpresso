@@ -1,12 +1,11 @@
 using Test
 
+include("../AbstractProblems.jl")
+
 include("../../kernel/abstractTypes.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/basis/basis_structs.jl")
-
-include("../AbstractProblems.jl")
-
 
 function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
 
