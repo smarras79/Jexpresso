@@ -1,4 +1,5 @@
-using Plots; gr()
+#using Plots; gr()
+using PlotlyJS
 using LaTeXStrings
 using ColorSchemes
 
@@ -51,4 +52,19 @@ function plot_1d_grid(mesh::St_mesh)
     for i=1:npoin
         display(scatter!(x, zeros(npoin), markersizes=4))
     end 
+end
+
+#
+# Contours with PlotlyJS
+#
+function jcontour(x1, y1, z1, title)
+    
+    data = PlotlyJS.contour(;z=z1, x=x1, y=y1,
+                   colorbar=attr(;title="",titleside="right",
+                                 titlefont=attr(;size=14,
+                                                family="Arial, sans-serif")))
+
+    layout = Layout(;title=title)
+    display(PlotlyJS.plot(data, layout))
+
 end

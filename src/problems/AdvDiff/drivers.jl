@@ -16,6 +16,7 @@ include("../AbstractProblems.jl")
 
 include("./rhs.jl")
 include("./initialize.jl")
+include("./timeAdvance.jl")
 
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
@@ -32,7 +33,7 @@ include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
 #--------------------------------------------------------
 function driver(DT::CG,        #Space discretization type
-                ET::Wave1D,    #Equation subtype
+                PT::Wave1D,    #Equation subtype
                 inputs::Dict,  #input parameters from src/user_input.jl
                 TFloat) 
     
@@ -164,7 +165,7 @@ function driver(DT::CG,        #Space discretization type
 end
 
 function driver(DT::CG,       #Space discretization type
-                ET::Adv2D,    #Equation subtype
+                PT::Adv2D,    #Equation subtype
                 inputs::Dict, #input parameters from src/user_input.jl
                 TFloat) 
     
@@ -252,20 +253,17 @@ function driver(DT::CG,       #Space discretization type
     
     M =              DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     #show(stdout, "text/plain", M)
-    
-    
+        
     #Initialize q
     qp = initialize(Adv2D(), mesh, inputs, TFloat)
     
-    #dq   = zeros(mesh.npoin);
-    #qpel = copy(qp.qnel)
-    #RHS  = zeros(mesh.npoin);
+    #error("QUI AdvDiff/drivers.jl")
     
     Δt = inputs[:Δt]
     # add a function to find the mesh mininum resolution
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
     
-    time_advance(RHS, d)
+    time_loop(SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, TFloat)
     
     error("QUI AdvDiff/drivers.jl")
     

@@ -21,6 +21,12 @@ julia --project=. $JEXPRESSO_HOME/jexpresso.jl
 where `$JEXPRESSO_HOME` is your path to the base JEXPRESSO directory (you can export it in your .bashrc or simply replace its value with the explicit name of the path)
 
 
+## Plotting
+For plotting we rely on PlotlyJS. If you want to use a different package,
+modify ./src/io/plotting/jplots.jl accordinly.
+```
+
+
 ## Problems building MPI.jl
 
 If you are having problems building MPI.jl then most likely you need to set the
