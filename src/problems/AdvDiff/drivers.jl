@@ -267,7 +267,7 @@ function driver(DT::CG,       #Space discretization type
     #@info Δt = C*u*minimum(mesh.Δx)/mesh.nop
     # add a function to find the mesh mininum resolution
     #
-    Δt = 0.005
+    #Δt = 0.01
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
         
     #
