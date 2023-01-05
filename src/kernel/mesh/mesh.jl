@@ -203,15 +203,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
     
     println(" # GMSH LINEAR GRID PROPERTIES")
-    println(" # N. space dimensions: ", mesh.nsd)
-    println(" # N. elements        : ", mesh.nelem)
-    println(" # N. points          : ", mesh.npoin_linear)
-    println(" # N. edges           : ", mesh.nedges)
-    println(" # N. internal edges  : ", mesh.nedges_int)
-    println(" # N. boundary edges  : ", mesh.nedges_bdy)
-    println(" # N. faces           : ", mesh.nfaces) 
-    println(" # N. internal faces  : ", mesh.nfaces_int)
-    println(" # N. boundary faces  : ", mesh.nfaces_bdy)
+    println(" # N. elements       : ", mesh.nelem)
+    println(" # N. points         : ", mesh.npoin_linear)
+    println(" # N. edges          : ", mesh.nedges)
+    println(" # N. internal edges : ", mesh.nedges_int)
+    println(" # N. boundary edges : ", mesh.nedges_bdy)
+    println(" # N. faces          : ", mesh.nfaces) 
+    println(" # N. internal faces : ", mesh.nfaces_int)
+    println(" # N. boundary faces : ", mesh.nfaces_bdy)
     println(" # GMSH LINEAR GRID PROPERTIES ...................... END")
     
     ngl                     = mesh.nop + 1
@@ -244,22 +243,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     resize!(mesh.y, (mesh.npoin))
     resize!(mesh.z, (mesh.npoin))
 
-    mesh.conn_edge_el = Array{Int32, 3}(undef, 2, mesh.NEDGES_EL, mesh.nelem)
-    mesh.conn_face_el = Array{Int32, 3}(undef, 4, mesh.NFACES_EL, mesh.nelem)
-    mesh.face_in_elem = Array{Int32, 3}(undef, 2, mesh.NFACES_EL, mesh.nelem)
-
-    @info mesh.NNODES_EL
-    @info el_edges_internal_nodes
-    @info el_faces_internal_nodes
-    @info (mesh.nsd - 2)
-    @info el_vol_internal_nodes
+    mesh.conn_edge_el = Array{Int64}(undef, 2, mesh.NEDGES_EL, mesh.nelem)
+    mesh.conn_face_el = Array{Int64}(undef, 4, mesh.NFACES_EL, mesh.nelem)
+    mesh.face_in_elem = Array{Int64}(undef, 2, mesh.NFACES_EL, mesh.nelem)
     
     mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
 
-    @info mesh.npoin_el, mesh.nelem
-    @info mesh.npoin_el*mesh.nelem
-    mesh.conn = Array{Int32, 2}(undef, mesh.npoin_el, mesh.nelem)
-    return 
+    mesh.conn = Array{Int64}(undef, mesh.npoin_el, mesh.nelem)
+        
     #
     # Connectivity matrices
     #
@@ -465,10 +456,22 @@ ymin_npoin = 0
 ymax_npoin = 0
 zmin_npoin = 0
 zmax_npoin = 0
-mesh.xmin = -2.0
-mesh.xmax = 2.0
-mesh.ymin = -2.0
-mesh.ymax = 2.0
+for ip=1:mesh.npoin
+   mesh.xmin = min(mesh.xmin, mesh.x[ip])
+   mesh.xmax = max(mesh.xmax, mesh.x[ip])
+   if (mesh.nsd >1)
+       mesh.ymin = min(mesh.ymin, mesh.y[ip])
+       mesh.ymax = max(mesh.ymax, mesh.y[ip])
+       if (mesh.nsd > 2)
+           mesh.zmin = min(mesh.zmin, mesh.z[ip])
+           mesh.zmax = max(mesh.zmax, mesh.z[ip])
+       end
+   end
+end
+#mesh.xmin = -2.0
+#mesh.xmax = 2.0
+#mesh.ymin = -2.0
+#mesh.ymax = 2.0
 for ip=1:mesh.npoin
    if (AlmostEqual(mesh.xmin,mesh.x[ip]))
       xmin_npoin +=1
