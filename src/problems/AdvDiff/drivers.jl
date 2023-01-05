@@ -30,6 +30,7 @@ include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
+include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::CG,        #Space discretization type
                 ET::Wave1D,    #Equation subtype
@@ -293,28 +294,8 @@ function driver(DT::CG,       #Space discretization type
                 dq[I] = RK.a[s]*dq[I] + Δt*RHS[I]
                 qp.qn[I,1] = qp.qn[I,1] + RK.b[s]*dq[I]
             end
-                
-            #B.C.: dirichlet solid wall
+            apply_boundary_conditions!(qp,mesh,inputs,SD)   
             #Left boundary
-            for I=1:size(mesh.bc_xmin,1)
-               ip = mesh.bc_xmin[I]
-               qp.qn[ip,:] .= 0.0
-            end
-            #Right boundary
-            for I=1:size(mesh.bc_xmax,1)
-               ip = mesh.bc_xmax[I]
-               qp.qn[ip,:] .= 0.0
-            end
-            #bottom boundary
-            for I=1:size(mesh.bc_ymin,1)
-               ip = mesh.bc_ymin[I]
-               qp.qn[ip,:] .= 0.0
-            end
-            #top boundary
-            for I=1:size(mesh.bc_ymax,1)
-               ip = mesh.bc_ymax[I]
-               qp.qn[ip,:] .= 0.0
-            end
             #
             # B.C.: solid wall
             #
