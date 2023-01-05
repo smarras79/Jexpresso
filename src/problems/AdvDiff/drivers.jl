@@ -263,11 +263,11 @@ function driver(DT::CG,       #Space discretization type
     RHS  = zeros(mesh.npoin);
     
     Δt = inputs[:Δt]
-    C = 0.25
+    CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
+    @show CFL
     #@info Δt = C*u*minimum(mesh.Δx)/mesh.nop
     # add a function to find the mesh mininum resolution
     #
-    Δt = 0.005
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
         
     #
@@ -311,12 +311,14 @@ function driver(DT::CG,       #Space discretization type
         #PyPlot.colorbar(frhs)        
         #plt[:show]()
 
-        title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
-        display(PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30))
+        #title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
+        #display(PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30))
         #PyPlot.colorbar(frhs)        
         #plt[:show]()
     end
-    
+    title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
+    display(PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30))
+    PyPlot.title("Solution at final step")
     error("QUI AdvDiff/drivers.jl")
     
     return    

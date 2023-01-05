@@ -221,7 +221,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)^(mesh.nsd)
     
     el_edges_internal_nodes = mesh.NEDGES_EL*(ngl-2)
-    el_faces_internal_nodes = mesh.NFACES_EL*(ngl-2)^(ngl-2)
+    el_faces_internal_nodes = mesh.NFACES_EL*(ngl-2)*(ngl-2)
     el_vol_internal_nodes   = (ngl-2)^(mesh.nsd)
     
     #Update number of grid points from linear count to total high-order points
