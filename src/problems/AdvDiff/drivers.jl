@@ -264,7 +264,8 @@ function driver(DT::CG,       #Space discretization type
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
-    @info CFL
+    println(" # CFL = ", CFL)
+    
     #@info Δt = C*u*minimum(mesh.Δx)/mesh.nop
     # add a function to find the mesh mininum resolution
     #
@@ -316,7 +317,6 @@ function driver(DT::CG,       #Space discretization type
         #PyPlot.colorbar(frhs)        
         #plt[:show]()
     end
-    title = string(" Tracer at final time 2π for N=", Nξ, " & Nop=", mesh.nop, " & ", QT_String, " integration")        
     display(PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30))
     PyPlot.title("Solution at final step")
     error("QUI AdvDiff/drivers.jl")

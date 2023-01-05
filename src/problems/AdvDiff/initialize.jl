@@ -101,20 +101,8 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
     clf()
     qinitplt = PyPlot.tricontourf(mesh.x, mesh.y, q.qn[:,1], levels=30)
     PyPlot.colorbar(qinitplt)
+    PyPlot.title("Initial condition")
     plt[:show]()
-
-    #p1 = PyPlot.tricontourf(mesh.x, mesh.y, q.qn[:,1], levels=30)
-    #PyPlot.colorbar(p1)
-    #plt[:show]()
-    
-    #=p2 = PyPlot.tricontourf(mesh.x, mesh.y, q.qn[:,2], levels=30)
-    PyPlot.colorbar(p2)
-    plt[:show]()
-    
-    p3 = PyPlot.tricontourf(mesh.x, mesh.y, q.qn[:,3], levels=30)
-    PyPlot.colorbar(p3)
-    plt[:show]()=#
-    
     
     @info " Initialize fields for Adv2D ........................ DONE"
     
