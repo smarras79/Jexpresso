@@ -22,9 +22,8 @@ where `$JEXPRESSO_HOME` is your path to the base JEXPRESSO directory (you can ex
 
 
 ## Plotting
-For plotting we rely on PlotlyJS. If you want to use a different package,
+For plotting we rely on `PlotlyJS`. If you want to use a different package,
 modify ./src/io/plotting/jplots.jl accordinly.
-```
 
 
 ## Problems building MPI.jl
@@ -50,4 +49,3 @@ julia --project=$JEXPRESSO_HOME/env/gpu $JEXPRESSO_HOME/test/runtests.jl
 ```
 
 [0]: https://github.com/JuliaParallel/MPI.jl
--->
