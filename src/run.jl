@@ -2,16 +2,11 @@
 # external packages
 #--------------------------------------------------------
 using Crayons.Box
-using DifferentialEquations
 using Gridap
 using GridapGmsh
 using MPI
 using Revise
 using WriteVTK
-
-#Plots
-using Plots; gr()
-plotlyjs()
 
 #Constants
 const TInt   = Int64
@@ -20,11 +15,8 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
-include("./test.jl")
-include("./IO/mod_inputs.jl")
-include("./Mesh/mod_mesh.jl")
-include("./drivers/drivers.jl")
-include("../tests/plot_lagrange_polynomial.jl")
+include("../src/io/mod_inputs.jl")
+include("../src/problems/AdvDiff/drivers.jl") #automate this based on input
 #--------------------------------------------------------
 
 #MPI.Init()
@@ -45,12 +37,9 @@ inputs, nvars = mod_inputs_user_inputs()
 # !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
 # !!!!!!
 #--------------------------------------------------------
+PROBLEM_EQUATIONS = Adv2D()
+#PROBLEM_EQUATIONS = Wave1D()
 driver(CG(),   # Space discretization type    
-       Wave1D(), # Equation subtype
+       PROBLEM_EQUATIONS, # Equation subtype
        inputs, # input parameters from src/user_input.jl
        TFloat)
-
-#test_driver(NSD_1D(),        # Number of Space Dimensions
-#            INTERPOLATION(), # Problem Type
-#            inputs,          # input parameters from src/user_input.jl
-#            TFloat)
