@@ -264,7 +264,7 @@ function driver(DT::CG,       #Space discretization type
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
-    @show CFL
+    @info CFL
     #@info Δt = C*u*minimum(mesh.Δx)/mesh.nop
     # add a function to find the mesh mininum resolution
     #
