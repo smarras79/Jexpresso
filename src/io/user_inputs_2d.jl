@@ -18,6 +18,12 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_refine_coarse.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
+        :xmin_bc  => "periodic", #Use either dirichlet or periodic
+        :ymin_bc  => "periodic", #Use either dirichlet or periodic
+        :zmin_bc  => "periodic", #Use either dirichlet or periodic
+        :xmax_bc  => "periodic", #Use either dirichlet or periodic
+        :ymax_bc  => "dirichlet", #Use either dirichlet or periodic
+        :zmax_bc  => "dirichlet", #Use either dirichlet or periodic
         :nsd                 => 2,           #number of space dimensions
         :interpolation_nodes =>"lgl",        #Choice: lgl, cgl 
         :nop                 => 8,         #Polynomila order

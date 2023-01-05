@@ -116,6 +116,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     bc_ymax = Array{Int64}(undef, 0)
     bc_zmin = Array{Int64}(undef, 0)
     bc_zmax = Array{Int64}(undef, 0)
+    xperiodicity = Dict{Int64,Int64}()
+    yperiodicity = Dict{Int64,Int64}()
+    zperiodicity = Dict{Int64,Int64}()
 
 end
 
@@ -482,7 +485,7 @@ for ip=1:mesh.npoin
    end
 end
 mesh.bc_xmin = Array{Int64}(undef,xmin_npoin)
-mesh.bc_xmax = Array{Int64}(undef,xmin_npoin)
+mesh.bc_xmax = Array{Int64}(undef,xmax_npoin)
 if (mesh.nsd > 1)
    mesh.bc_ymin = Array{Int64}(undef,ymin_npoin)
    mesh.bc_ymax = Array{Int64}(undef,ymax_npoin)
@@ -528,10 +531,61 @@ for ip=1:mesh.npoin
       end
    end
 end
-@info mesh.bc_xmin
-@info mesh.bc_xmax
-@info mesh.bc_ymin
-@info mesh.bc_ymax
+if (mesh.nsd > 1)
+
+# determine corresponding periodic boundary nodes in case of periodic boundary conditions
+#X periodicity
+    @info mesh.y[mesh.bc_xmin[:]]
+    @info mesh.y[mesh.bc_xmax[:]] 
+    @info mesh.bc_xmin
+    @info mesh.bc_xmax
+    matcher = zeros(1,xmin_npoin)
+    for ip=1:size(mesh.bc_xmin,1)
+       
+       for ip1=1:size(mesh.bc_xmax,1)
+          if (mesh.nsd == 2 && AlmostEqual(mesh.y[mesh.bc_xmin[ip]],mesh.y[mesh.bc_xmax[ip1]]))
+             matcher[ip] = mesh.bc_xmax[ip1]
+          elseif (mesh.nsd == 3 && AlmostEqual(mesh.y[mesh.bc_xmin[ip]],mesh.y[mesh.bc_xmax[ip1]]) && AlmostEqual(mesh.z[mesh.bc_xmin[ip]],mesh.z[mesh.bc_xmax[ip1]]) )
+             matcher[ip] = mesh.bc_xmax[ip1]
+          end
+       end 
+    end
+    mesh.xperiodicity = Dict{Int64,Int64}()
+    for ip=1:size(mesh.bc_xmin,1)
+       mesh.xperiodicity[mesh.bc_xmin[ip]]=matcher[ip]
+    end
+    #Y periodicity
+    matcher = zeros(1,ymin_npoin)
+    for ip=1:size(mesh.bc_ymin,1)
+       for ip1=1:size(mesh.bc_ymax,1)
+          if (mesh.nsd == 2 && AlmostEqual(mesh.x[mesh.bc_ymin[ip]],mesh.x[mesh.bc_ymax[ip1]]))
+             matcher[ip] = mesh.bc_ymax[ip1]
+          elseif (mesh.nsd == 3 && AlmostEqual(mesh.x[mesh.bc_ymin[ip]],mesh.x[mesh.bc_ymax[ip]]) && AlmostEqual(mesh.z[mesh.bc_ymin[ip]],mesh.z[mesh.bc_ymax[ip1]]) )
+             matcher[ip] = mesh.bc_ymax[ip1]
+          end
+       end 
+    end
+    mesh.yperiodicity = Dict{Int64,Int64}()
+    for ip=1:size(mesh.bc_ymin,1)
+       mesh.yperiodicity[mesh.bc_ymin[ip]]=matcher[ip]
+    end
+    if (mesh.nsd > 2)
+        matcher = zeros(1,zmin_npoin)
+        for ip=1:size(mesh.bc_zmin,1)
+           for ip1=1:size(mesh.bc_zmax,1)
+              if (AlmostEqual(mesh.x[mesh.bc_zmin[ip]],mesh.x[mesh.bc_zmax[ip]]) && AlmostEqual(mesh.y[mesh.bc_zmin[ip]],mesh.y[mesh.bc_zmax[ip1]]) )
+                 matcher[ip] = mesh.bc_zmax[ip1]
+              end
+           end
+        end
+        mesh.zperiodicity = Dict{Int64,Int64}()
+        for ip=1:size(mesh.bc_zmin,1)
+           mesh.zperiodicity[mesh.bc_zmin[ip]]=matcher[ip]
+        end 
+    end
+end
+
+#
 #
 # Free memory of obsolete arrays
 #

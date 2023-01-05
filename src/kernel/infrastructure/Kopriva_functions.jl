@@ -37,8 +37,9 @@ end
        determine if two floating point numbers a and b are nearly equal or not
     """
 function AlmostEqual(a,b)
-    ϵ=eps(typeof(a))
-    if (a == 0) || (b == 0)
+    #ϵ=eps(typeof(a))
+    ϵ = 0.000001
+    if (a == 0) || (b == 0) || (a <=ϵ) || (b <= ϵ) 
         if (abs(a-b) ≤ 2*ϵ)
             return true
         else
