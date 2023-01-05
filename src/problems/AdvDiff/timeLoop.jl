@@ -18,12 +18,13 @@ function time_loop(TD::RK5,
                    qp,
                    M,
                    Nt, Δt,
+                   inputs::Dict, 
                    T)
      
     for it = 1:Nt
         
         rk!(qp; TD, SD, QT, PT,
-            mesh, metrics, basis, ω, M, Δt, T)
+            mesh, metrics, basis, ω, M, Δt, inputs, T)
         
     end
     title = string("solution at final step ", Nt)
