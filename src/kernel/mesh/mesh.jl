@@ -456,10 +456,22 @@ ymin_npoin = 0
 ymax_npoin = 0
 zmin_npoin = 0
 zmax_npoin = 0
-mesh.xmin = -2.0
-mesh.xmax = 2.0
-mesh.ymin = -2.0
-mesh.ymax = 2.0
+for ip=1:mesh.npoin
+   mesh.xmin = min(mesh.xmin, mesh.x[ip])
+   mesh.xmax = max(mesh.xmax, mesh.x[ip])
+   if (mesh.nsd >1)
+       mesh.ymin = min(mesh.ymin, mesh.y[ip])
+       mesh.ymax = max(mesh.ymax, mesh.y[ip])
+       if (mesh.nsd > 2)
+           mesh.zmin = min(mesh.zmin, mesh.z[ip])
+           mesh.zmax = max(mesh.zmax, mesh.z[ip])
+       end
+   end
+end
+#mesh.xmin = -2.0
+#mesh.xmax = 2.0
+#mesh.ymin = -2.0
+#mesh.ymax = 2.0
 for ip=1:mesh.npoin
    if (AlmostEqual(mesh.xmin,mesh.x[ip]))
       xmin_npoin +=1
