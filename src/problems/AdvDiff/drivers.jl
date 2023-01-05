@@ -31,6 +31,7 @@ include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
+include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::CG,        #Space discretization type
                 PT::Wave1D,    #Equation subtype
@@ -182,7 +183,7 @@ function driver(DT::CG,       #Space discretization type
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    
+    error(" END READ MESH")
     #--------------------------------------------------------
     ND = build_nodal_Storage([Nξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
     ξ  = ND.ξ.ξ
@@ -266,9 +267,9 @@ function driver(DT::CG,       #Space discretization type
     Δt = inputs[:Δt]
     # add a function to find the mesh mininum resolution
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-
+    
     TD = RK5()
-    time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, TFloat)
+    time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, inputs, TFloat)
     
     error("QUI AdvDiff/drivers.jl")
     

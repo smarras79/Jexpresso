@@ -60,6 +60,7 @@ function rk!(q::St_SolutionVectors;
              basis, ω,
              M,
              Δt,
+             inputs::Dict,
              T)
     
     dq     = zeros(mesh.npoin)    
@@ -83,10 +84,9 @@ function rk!(q::St_SolutionVectors;
         end
         
         #
-        # B.C.: solid wall
+        #B.C.
         #
-        #q[1] = 0.0
-        #q[mesh.npoin_linear] = 0.0
+        apply_boundary_conditions!(q, mesh, inputs, SD)
         
     end #stages
 

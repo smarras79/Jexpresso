@@ -110,6 +110,16 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     conn_face_el      = Array{Int64}(undef, 0, 0, 0)
     face_in_elem      = Array{Int64}(undef, 0, 0, 0)
     
+    bc_xmin = Array{Int64}(undef, 0)
+    bc_xmax = Array{Int64}(undef, 0)
+    bc_ymin = Array{Int64}(undef, 0)
+    bc_ymax = Array{Int64}(undef, 0)
+    bc_zmin = Array{Int64}(undef, 0)
+    bc_zmax = Array{Int64}(undef, 0)
+    xperiodicity = Dict{Int64,Int64}()
+    yperiodicity = Dict{Int64,Int64}()
+    zperiodicity = Dict{Int64,Int64}()
+
 end
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
@@ -193,14 +203,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
     
     println(" # GMSH LINEAR GRID PROPERTIES")
-    println(" # N. elements       : ", mesh.nelem)
-    println(" # N. points         : ", mesh.npoin_linear)
-    println(" # N. edges          : ", mesh.nedges)
-    println(" # N. internal edges : ", mesh.nedges_int)
-    println(" # N. boundary edges : ", mesh.nedges_bdy)
-    println(" # N. faces          : ", mesh.nfaces) 
-    println(" # N. internal faces : ", mesh.nfaces_int)
-    println(" # N. boundary faces : ", mesh.nfaces_bdy)
+    println(" # N. space dimensions: ", mesh.nsd)
+    println(" # N. elements        : ", mesh.nelem)
+    println(" # N. points          : ", mesh.npoin_linear)
+    println(" # N. edges           : ", mesh.nedges)
+    println(" # N. internal edges  : ", mesh.nedges_int)
+    println(" # N. boundary edges  : ", mesh.nedges_bdy)
+    println(" # N. faces           : ", mesh.nfaces) 
+    println(" # N. internal faces  : ", mesh.nfaces_int)
+    println(" # N. boundary faces  : ", mesh.nfaces_bdy)
     println(" # GMSH LINEAR GRID PROPERTIES ...................... END")
     
     ngl                     = mesh.nop + 1
@@ -211,7 +222,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)^(mesh.nsd)
     
     el_edges_internal_nodes = mesh.NEDGES_EL*(ngl-2)
-    el_faces_internal_nodes = mesh.NFACES_EL*(ngl-2)^(ngl-2)
+    el_faces_internal_nodes = mesh.NFACES_EL*(ngl-2)*(ngl-2)
     el_vol_internal_nodes   = (ngl-2)^(mesh.nsd)
     
     #Update number of grid points from linear count to total high-order points
@@ -233,14 +244,22 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
     resize!(mesh.y, (mesh.npoin))
     resize!(mesh.z, (mesh.npoin))
 
-    mesh.conn_edge_el = Array{Int64}(undef, 2, mesh.NEDGES_EL, mesh.nelem)
-    mesh.conn_face_el = Array{Int64}(undef, 4, mesh.NFACES_EL, mesh.nelem)
-    mesh.face_in_elem = Array{Int64}(undef, 2, mesh.NFACES_EL, mesh.nelem)
+    mesh.conn_edge_el = Array{Int32, 3}(undef, 2, mesh.NEDGES_EL, mesh.nelem)
+    mesh.conn_face_el = Array{Int32, 3}(undef, 4, mesh.NFACES_EL, mesh.nelem)
+    mesh.face_in_elem = Array{Int32, 3}(undef, 2, mesh.NFACES_EL, mesh.nelem)
+
+    @info mesh.NNODES_EL
+    @info el_edges_internal_nodes
+    @info el_faces_internal_nodes
+    @info (mesh.nsd - 2)
+    @info el_vol_internal_nodes
     
     mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
 
-    mesh.conn = Array{Int64}(undef, mesh.npoin_el, mesh.nelem)
-        
+    @info mesh.npoin_el, mesh.nelem
+    @info mesh.npoin_el*mesh.nelem
+    mesh.conn = Array{Int32, 2}(undef, mesh.npoin_el, mesh.nelem)
+    return 
     #
     # Connectivity matrices
     #
@@ -439,6 +458,143 @@ for ip = mesh.npoin_linear+1:mesh.npoin
         mesh.z[ip] = mesh.z_ho[ip]
     end
 end
+#Determine boundary nodes and assign node numbers to appropriate arrays
+xmin_npoin = 0
+xmax_npoin = 0
+ymin_npoin = 0
+ymax_npoin = 0
+zmin_npoin = 0
+zmax_npoin = 0
+mesh.xmin = -2.0
+mesh.xmax = 2.0
+mesh.ymin = -2.0
+mesh.ymax = 2.0
+for ip=1:mesh.npoin
+   if (AlmostEqual(mesh.xmin,mesh.x[ip]))
+      xmin_npoin +=1
+   end
+   if (AlmostEqual(mesh.xmax,mesh.x[ip]))
+      xmax_npoin +=1
+   end
+   if (mesh.nsd > 1)
+      if (AlmostEqual(mesh.ymin,mesh.y[ip]))
+         ymin_npoin +=1
+      end
+      if (AlmostEqual(mesh.ymax,mesh.y[ip]))
+         ymax_npoin +=1
+      end
+      if (mesh.nsd > 2)
+         if (AlmostEqual(mesh.zmin,mesh.z[ip]))
+            zmin_npoin +=1
+         end
+         if (AlmostEqual(mesh.zmax,mesh.z[ip]))
+            zmax_npoin +=1
+         end
+      end
+   end
+end
+mesh.bc_xmin = Array{Int64}(undef,xmin_npoin)
+mesh.bc_xmax = Array{Int64}(undef,xmax_npoin)
+if (mesh.nsd > 1)
+   mesh.bc_ymin = Array{Int64}(undef,ymin_npoin)
+   mesh.bc_ymax = Array{Int64}(undef,ymax_npoin)
+end
+if (mesh.nsd > 2)
+   mesh.bc_zmin = Array{Int64}(undef,zmin_npoin)
+   mesh.bc_zmax = Array{Int64}(undef,zmax_npoin)
+end
+iterxmin=1
+iterxmax=1
+iterymin=1
+iterymax=1
+iterzmin=1
+iterzmax=1
+
+for ip=1:mesh.npoin
+   if (AlmostEqual(mesh.xmin,mesh.x[ip]))
+      mesh.bc_xmin[iterxmin]=ip
+      iterxmin +=1
+   end
+   if (AlmostEqual(mesh.xmax,mesh.x[ip]))
+      mesh.bc_xmax[iterxmax]=ip
+      iterxmax +=1
+   end
+   if (mesh.nsd > 1)
+      if (AlmostEqual(mesh.ymin,mesh.y[ip]))
+         mesh.bc_ymin[iterymin]=ip
+         iterymin +=1
+      end
+      if (AlmostEqual(mesh.ymax,mesh.y[ip]))
+         mesh.bc_ymax[iterymax]=ip
+         iterymax +=1
+      end
+      if (mesh.nsd > 2)
+         if (AlmostEqual(mesh.zmin,mesh.z[ip]))
+            mesh.bc_zmin[iterzmin]=ip
+            iterzmin +=1
+         end
+         if (AlmostEqual(mesh.zmax,mesh.z[ip]))
+            mesh.bc_zmax[iterzmax]=ip
+            iterzmax +=1
+         end
+      end
+   end
+end
+if (mesh.nsd > 1)
+
+# determine corresponding periodic boundary nodes in case of periodic boundary conditions
+#X periodicity
+    @info mesh.y[mesh.bc_xmin[:]]
+    @info mesh.y[mesh.bc_xmax[:]] 
+    @info mesh.bc_xmin
+    @info mesh.bc_xmax
+    matcher = zeros(1,xmin_npoin)
+    for ip=1:size(mesh.bc_xmin,1)
+       
+       for ip1=1:size(mesh.bc_xmax,1)
+          if (mesh.nsd == 2 && AlmostEqual(mesh.y[mesh.bc_xmin[ip]],mesh.y[mesh.bc_xmax[ip1]]))
+             matcher[ip] = mesh.bc_xmax[ip1]
+          elseif (mesh.nsd == 3 && AlmostEqual(mesh.y[mesh.bc_xmin[ip]],mesh.y[mesh.bc_xmax[ip1]]) && AlmostEqual(mesh.z[mesh.bc_xmin[ip]],mesh.z[mesh.bc_xmax[ip1]]) )
+             matcher[ip] = mesh.bc_xmax[ip1]
+          end
+       end 
+    end
+    mesh.xperiodicity = Dict{Int64,Int64}()
+    for ip=1:size(mesh.bc_xmin,1)
+       mesh.xperiodicity[mesh.bc_xmin[ip]]=matcher[ip]
+    end
+    #Y periodicity
+    matcher = zeros(1,ymin_npoin)
+    for ip=1:size(mesh.bc_ymin,1)
+       for ip1=1:size(mesh.bc_ymax,1)
+          if (mesh.nsd == 2 && AlmostEqual(mesh.x[mesh.bc_ymin[ip]],mesh.x[mesh.bc_ymax[ip1]]))
+             matcher[ip] = mesh.bc_ymax[ip1]
+          elseif (mesh.nsd == 3 && AlmostEqual(mesh.x[mesh.bc_ymin[ip]],mesh.x[mesh.bc_ymax[ip]]) && AlmostEqual(mesh.z[mesh.bc_ymin[ip]],mesh.z[mesh.bc_ymax[ip1]]) )
+             matcher[ip] = mesh.bc_ymax[ip1]
+          end
+       end 
+    end
+    mesh.yperiodicity = Dict{Int64,Int64}()
+    for ip=1:size(mesh.bc_ymin,1)
+       mesh.yperiodicity[mesh.bc_ymin[ip]]=matcher[ip]
+    end
+    if (mesh.nsd > 2)
+        matcher = zeros(1,zmin_npoin)
+        for ip=1:size(mesh.bc_zmin,1)
+           for ip1=1:size(mesh.bc_zmax,1)
+              if (AlmostEqual(mesh.x[mesh.bc_zmin[ip]],mesh.x[mesh.bc_zmax[ip]]) && AlmostEqual(mesh.y[mesh.bc_zmin[ip]],mesh.y[mesh.bc_zmax[ip1]]) )
+                 matcher[ip] = mesh.bc_zmax[ip1]
+              end
+           end
+        end
+        mesh.zperiodicity = Dict{Int64,Int64}()
+        for ip=1:size(mesh.bc_zmin,1)
+           mesh.zperiodicity[mesh.bc_zmin[ip]]=matcher[ip]
+        end 
+    end
+end
+
+#
 #
 # Free memory of obsolete arrays
 #
