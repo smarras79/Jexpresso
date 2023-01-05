@@ -9,6 +9,7 @@ function user_inputs()
         :Δt           => 0.01,
         :lexact_integration => false,
         :lread_gmsh   => true,
+        :Δt => 0.01,
         #:gmsh_filename => "./demo/gmsh_grids/hexa_TFI_2x2.msh",
         :gmsh_filename => "./demo/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_TFI_25x25.msh",
