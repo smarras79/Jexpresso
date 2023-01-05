@@ -92,7 +92,7 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
     # avoid sorting the x and q which would be
     # becessary for a smooth curve plot.
     #------------------------------------------
-    #jcontour(mesh.x, mesh.y, q.qn[:,1], "Initial conditions: tracer")
+    jcontour(mesh.x, mesh.y, q.qn[:,1], "Initial conditions: tracer")
 
     @info " Initialize fields for Adv2D ........................ DONE"
     
