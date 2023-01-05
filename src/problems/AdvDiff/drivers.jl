@@ -270,66 +270,11 @@ function driver(DT::CG,       #Space discretization type
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
         
     # add a function to find the mesh mininum resolution
- #=   Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-    
     TD = RK5()
     time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, inputs, TFloat)
-   =# 
 
-    #@info Δt = C*u*minimum(mesh.Δx)/mesh.nop
-    # add a function to find the mesh mininum resolution
-    #
-    #
-    # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
-    #
-    RK = RK_Integrator{TFloat}(zeros(TFloat,5),zeros(TFloat,5),zeros(TFloat,5))
-    buildRK5Integrator!(RK)
-    for it = 1:Nt
-        
-        dq = zeros(mesh.npoin);
-        qe = zeros(mesh.ngl);
-        for s = 1:length(RK.a)
-            
-            #
-            # rhs[ngl,ngl,nelem]
-            #
-            rhs_el = build_rhs(SD, QT, Adv2D(), qp, basis.ψ, basis.dψ, ω, mesh, metrics)
-            #
-            # RHS[npoin] = DSS(rhs)
-            #
-            RHS = DSSijk_rhs(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-            RHS .= RHS./M
-            for I=1:mesh.npoin
-                dq[I] = RK.a[s]*dq[I] + Δt*RHS[I]
-                qp.qn[I,1] = qp.qn[I,1] + RK.b[s]*dq[I]
-            end
-            apply_boundary_conditions!(qp,mesh,inputs,SD)   
-            #Left boundary
-            #
-            # B.C.: solid wall
-            #
-            #qp[1] = 0.0
-            #qp[mesh.npoin_linear] = 0.0
-
-        end #stages
-        #@info size(RHS) size(mesh.x) size(mesh.y)
-                
-        #clf()
-        #title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
-        #frhs = PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30)
-        #PyPlot.colorbar(frhs)        
-        #plt[:show]()
-
-        #title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
-        #display(PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30))
-        #PyPlot.colorbar(frhs)        
-        #plt[:show]()
-    end
-    #display(PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30))
-    #PyPlot.title("Solution at final step")
-    jcontour(mesh.x, mesh.y, q.qn[:,1], "Final solution at t=2π: tracer")
-    
-    error("QUI AdvDiff/drivers.jl")
+    #Plot final solution
+    jcontour(mesh.x, mesh.y, qp.qn[:,1], "Final solution at t=2π: tracer")
     
     return    
     

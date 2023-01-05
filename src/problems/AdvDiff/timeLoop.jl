@@ -27,7 +27,7 @@ function time_loop(TD::RK5,
             mesh, metrics, basis, ω, M, Δt, inputs, T)
         
     end
-    title = string("solution at final step ", Nt)
-    jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
+    #title = string("solution at final step ", Nt)
+    #jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
     
 end
