@@ -622,11 +622,75 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
             #    end
         end
     end
+end
+#Determine boundary nodes and assign node numbers to appropriate arrays
+xmin_npoin = 0
+xmax_npoin = 0
+ymin_npoin = 0
+ymax_npoin = 0
+zmin_npoin = 0
+zmax_npoin = 0
+for ip=1:mesh.npoin
+    mesh.xmin = min(mesh.xmin, mesh.x[ip])
+    mesh.xmax = max(mesh.xmax, mesh.x[ip])
+    if (mesh.nsd >1)
+        mesh.ymin = min(mesh.ymin, mesh.y[ip])
+        mesh.ymax = max(mesh.ymax, mesh.y[ip])
+        if (mesh.nsd > 2)
+            mesh.zmin = min(mesh.zmin, mesh.z[ip])
+            mesh.zmax = max(mesh.zmax, mesh.z[ip])
+        end
+    end
+end
+#mesh.xmin = -2.0
+#mesh.xmax = 2.0
+#mesh.ymin = -2.0
+#mesh.ymax = 2.0
+for ip=1:mesh.npoin
+    if (AlmostEqual(mesh.xmin,mesh.x[ip]))
+        xmin_npoin +=1
+    end
+    if (AlmostEqual(mesh.xmax,mesh.x[ip]))
+        xmax_npoin +=1
+    end
+    if (mesh.nsd > 1)
+        if (AlmostEqual(mesh.ymin,mesh.y[ip]))
+            ymin_npoin +=1
+        end
+        if (AlmostEqual(mesh.ymax,mesh.y[ip]))
+            ymax_npoin +=1
+        end
+        if (mesh.nsd > 2)
+            if (AlmostEqual(mesh.zmin,mesh.z[ip]))
+                zmin_npoin +=1
+            end
+            if (AlmostEqual(mesh.zmax,mesh.z[ip]))
+                zmax_npoin +=1
+            end
+        end
+    end
+end
+mesh.bc_xmin = Array{Int64}(undef,xmin_npoin)
+mesh.bc_xmax = Array{Int64}(undef,xmax_npoin)
+if (mesh.nsd > 1)
+    mesh.bc_ymin = Array{Int64}(undef,ymin_npoin)
+    mesh.bc_ymax = Array{Int64}(undef,ymax_npoin)
+end
+if (mesh.nsd > 2)
+    mesh.bc_zmin = Array{Int64}(undef,zmin_npoin)
+    mesh.bc_zmax = Array{Int64}(undef,zmax_npoin)
+end
+iterxmin=1
+iterxmax=1
+iterymin=1
+iterymax=1
+iterzmin=1
+iterzmax=1
 
-    #show(stdout, "text/plain", mesh.conn')
-    println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
+#show(stdout, "text/plain", mesh.conn')
+println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
 
-    #writevtk(model,"gmsh_grid")
+#writevtk(model,"gmsh_grid")
 end
 
 
