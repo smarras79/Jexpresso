@@ -176,7 +176,30 @@ function build_laplace_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, d
     
     L = zeros((N+1)^2, (N+1)^2, mesh.nelem)
     #L = zeros(N+1, N+1, N+1, N+1, mesh.nelem)
+
+    ξ = 
+     
+    for iel=1:mesh.nelem
     
+                for j = 1:MN
+                    for i = 1:MN     
+                        I = i + (j - 1)*(N + 1)
+                        
+                        for m = 1:N+1
+                            for n = 1:N+1
+                                J = m + (n - 1)*(N + 1)
+                                
+                                
+                                L[I,J,iel] = (1.0/3.0)*(0.25*
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    #=
     for iel=1:mesh.nelem
         
         for k = 1:QN
@@ -184,7 +207,7 @@ function build_laplace_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, d
                   
                 ωkl  = ω[k]*ω[l]
                 Jkle = metrics.Je[k, l, iel]
-                           
+                
                 for j = 1:MN
                     for i = 1:MN     
                         I = i + (j - 1)*(N + 1)
@@ -197,7 +220,7 @@ function build_laplace_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, d
 
                         dψJKdx = dhik_dξ*hjl*metrics.dξdx[k,l,iel] + hik*dhjl_dη*metrics.dηdx[k,l,iel]
                         dψJKdy = dhik_dξ*hjl*metrics.dξdy[k,l,iel] + hik*dhjl_dη*metrics.dηdy[k,l,iel]
-                        @info dψJKdx
+                       # @info dψJKdx
                         
                         for m = 1:N+1
                             for n = 1:N+1
@@ -221,6 +244,8 @@ function build_laplace_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, d
             end
         end
     end
+=#
+    
     @info size(L)
     show(stdout, "text/plain", L)
     
