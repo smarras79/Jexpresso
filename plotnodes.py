@@ -10,11 +10,18 @@ print_lables=True
 F = False
 T = True
 
+nsd = 1
+lplot_global_coords = F
+lplot_low_order_only = T
 plot_edge_nodes = T
 plot_face_nodes = T
-plot_vol_nodes  = F
+if nsd == 2:
+    plot_vol_nodes  = F
+else:
+    plot_vol_nodes  = T
 
 
+    
 #
 # USER: DO NO TOUCH from here on!
 #
@@ -24,24 +31,43 @@ ax3d = fig.add_subplot(projection='3d')
 ax3d.set_box_aspect(aspect = (1,1,1))
 
 
+if (lplot_global_coords == True):
+    coords = np.loadtxt('COORDS_GLOBAL.dat', usecols=range(4))
+
+    x=coords[:,0];
+    y=coords[:,1];
+    z=coords[:,2];
+    ip=coords[:,3];
+
+    scatter = ax3d.scatter(x, y, z, marker='x',  picker=True)
+    lplot_low_order_only = F
+    plot_edge_nodes = F
+    plot_face_nodes = F
+    
+    if (print_lables == True):
+        for xcoords, ycoords, zcoords, label in zip(x, y, z, ip):
+            ax3d.text(xcoords, ycoords, zcoords, int(label))
+
 #
 # Load coords
 #
 # 1) Low order:
-coords_lo = np.loadtxt('COORDS_LO.dat', usecols=range(4))
+if (lplot_low_order_only == True or nsd < 2):
+    coords_lo = np.loadtxt('COORDS_LO.dat', usecols=range(4))
+    
+    x=coords_lo[:,0];
+    y=coords_lo[:,1];
+    z=coords_lo[:,2];
+    ip=coords_lo[:,3];
+    
+    scatter = ax3d.scatter(x, y, z, marker='o',  picker=True)
+    
+    if (print_lables == True):
+        for xcoords, ycoords, zcoords, label in zip(x, y, z, ip):
+            ax3d.text(xcoords, ycoords, zcoords, int(label))
 
-x=coords_lo[:,0];
-y=coords_lo[:,1];
-z=coords_lo[:,2];
-ip=coords_lo[:,3];
 
-scatter = ax3d.scatter(x, y, z, marker='o',  picker=True)
-
-if (print_lables == True):
-    for xcoords, ycoords, zcoords, label in zip(x, y, z, ip):
-        ax3d.text(xcoords, ycoords, zcoords, int(label))
-
-if (plot_edge_nodes == True):
+if (plot_edge_nodes == True and nsd > 2):
     # 2) high order edges
     del x, y, z, ip
     coords_ho = np.loadtxt('COORDS_HO_edges.dat', usecols=range(4))
@@ -59,7 +85,7 @@ if (plot_edge_nodes == True):
             ax3d.text(xcoords, ycoords, zcoords, int(label))
         
 
-if (plot_face_nodes == True):
+if (plot_face_nodes == True and nsd > 2):
     # 3) high order faces
     del x, y, z, ip
     coords_ho = np.loadtxt('COORDS_HO_faces.dat', usecols=range(4))
@@ -76,7 +102,7 @@ if (plot_face_nodes == True):
             ax3d.text(xcoords, ycoords, zcoords, int(label))
         
 
-if (plot_vol_nodes == True):
+if (plot_vol_nodes == True and nsd > 2):
     # 4 high order internal
     del x, y, z, ip
     coords_ho = np.loadtxt('COORDS_HO_vol.dat', usecols=range(4))
@@ -92,17 +118,8 @@ if (plot_vol_nodes == True):
         for xcoords, ycoords, zcoords, label in zip(x, y, z, ip):
             ax3d.text(xcoords, ycoords, zcoords, int(label))
 
-# PICK currently not working correctly.
-# The values that it returns are incorrect.
-#def onpick3(event):
-#    point_index = int(event.ind)
-#    print('onpick3 scatter:', point_index)
-#    print("X=",x[point_index], " Y=",y[point_index], " Z=",z[point_index], " PointIdx=", point_index)
-#
-#fig.canvas.mpl_connect('pick_event', onpick3)
-
 # Make axes limits 
-my_aspect_ratio = max(x)/max(z)
+my_aspect_ratio = min(max(x)/max(z), max(x)/max(y))
 ax3d.set_box_aspect((my_aspect_ratio, 1, 1))
 
 xmax = max(x)
