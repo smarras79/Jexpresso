@@ -316,7 +316,7 @@ function driver(DT::CG,       #Space discretization type
         #PyPlot.colorbar(frhs)        
         #plt[:show]()
     end
-    title = string(" RHS for N=", Nξ, " & ", QT_String, " integration")        
+    title = string(" Tracer at final time 2π for N=", Nξ, " & Nop=", mesh.nop, " & ", QT_String, " integration")        
     display(PyPlot.tricontourf(mesh.x, mesh.y, qp.qn[:,1], levels=30))
     PyPlot.title("Solution at final step")
     error("QUI AdvDiff/drivers.jl")
