@@ -176,32 +176,7 @@ function build_laplace_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, d
     
     L = zeros((N+1)^2, (N+1)^2, mesh.nelem)
     #L = zeros(N+1, N+1, N+1, N+1, mesh.nelem)
-
-    ξ = range(-1,1,2)
-    η = range(-1,1,2)
-     
-    for iel=1:mesh.nelem
-        
-        for j = 1:MN
-            for i = 1:MN     
-                I = i + (j - 1)*(N + 1)
-                
-                for m = 1:N+1
-                    for n = 1:N+1
-                        J = m + (n - 1)*(N + 1)
-                        
-                        
-                        L[I,J,iel] = (1.0/3.0)*
-                            (0.25*ξ[i]*ξ[j]*(3 + η[i]η[j]) +
-                            0.25*η[i]*η[j]*(3 + ξ[i]ξ[j]))
-                    end
-                end
-            end
-        end
-    end
     
-    
-    #=
     for iel=1:mesh.nelem
         
         for k = 1:QN
@@ -246,7 +221,7 @@ function build_laplace_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, d
             end
         end
     end
-=#
+    
     
     @info size(L)
     show(stdout, "text/plain", L)
