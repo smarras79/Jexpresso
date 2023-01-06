@@ -12,9 +12,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St
     qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem,3)
     
     rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
-    #rhs_el = zeros(mesh.ngl*mesh.ngl,mesh.nelem)
-
-     for iel=1:mesh.nelem
+    for iel=1:mesh.nelem
         for i=1:mesh.ngl
             for j=1:mesh.ngl
                 m = mesh.connijk[i,j,iel]
@@ -25,13 +23,18 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St
                 
             end
         end
-     end
-    
+    end
+    #
+    # Note on the evaluation of  ∫rhsᵉ dξ ≈ ∑_k(w_k Jel_k ψ_i,k)rhs_k = wᵢJᵉᵢψᵢᵢrhsᵉᵢ:
+    #
+    # Note that the quadrature sum was removed by means of the cardinality of the basis function 
+    # in the tensor-product approach! See Sectopn 17.1.1 of Giraldo's book.
+    #
     for iel=1:mesh.nelem
         for i=1:mesh.ngl
             for j=1:mesh.ngl
                 m = i + (j-1)*mesh.ngl
-                                
+                
                 u  = qnel[i,j,iel,2]
                 v  = qnel[i,j,iel,3]
                 
@@ -49,6 +52,62 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St
             end
         end
     end
+
+    #
+    # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
+    #
+    rhsdiff_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
+    for iel=1:mesh.nelem
+        
+        for k = 1:QN
+            for l = 1:QN
+                  
+                ωkl  = ω[k]*ω[l]
+                Jkle = metrics.Je[k, l, iel]
+                
+                dqkl_dξ, dqkl_dη = 0, 0
+                for i = 1:MN
+                    dhik_dξ = dψ[i,k]
+                    dhil_dξ = dψ[i,l]
+                    
+                    dqkl_dξ += dhik_dξ*qnel[i,l,iel,1]
+                    dqkl_dη += dhil_dξ*qnel[k,i,iel,1]
+                end
+
+                for j = 1:MN
+                        I = i + (j - 1)*(N + 1)
+                       
+                       
+                        dhjl_dη = dψ[j,l]
+
+                        dψJKdx = dhik_dξ*hjl*metrics.dξdx[k,l,iel] + hik*dhjl_dη*metrics.dηdx[k,l,iel]
+                        dψJKdy = dhik_dξ*hjl*metrics.dξdy[k,l,iel] + hik*dhjl_dη*metrics.dηdy[k,l,iel]
+                       # @info dψJKdx
+                        
+                        for m = 1:N+1
+                            for n = 1:N+1
+                                J = m + (n - 1)*(N + 1)
+                                
+                                hnl = ψ[n,l]
+                                hmk = ψ[m,k]
+                                
+                                dhmk_dξ = dψ[m,k]
+                                dhnl_dη = dψ[n,l]
+                                
+                                dψIKdx = dhmk_dξ*hnl*metrics.dξdx[k,l,iel] + hmk*dhnl_dη*metrics.dηdx[k,l,iel]
+                                dψIKdy = dhmk_dξ*hnl*metrics.dξdy[k,l,iel] + hmk*dhnl_dη*metrics.dηdy[k,l,iel]
+                                
+                                #L[i,j,m,n,iel] = L[i,j,m,n,iel] + ωkl*Jkle*(dψIKdx*dψJKdx + dψIKdy*dψJKdy)
+                                rhsdiff_el[I,J,iel] = rhsdiff_el[I,J,iel] + ωkl*Jkle*(dψIKdx*dψJKdx + dψIKdy*dψJKdy)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    
     #show(stdout, "text/plain", el_matrices.D)
 
     return rhs_el
