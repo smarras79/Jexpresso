@@ -106,7 +106,7 @@ function build_element_matrices!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, d�
 end
 
 # Mass
-function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
 
     MN = N + 1
     QN = Q + 1
@@ -142,7 +142,7 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, ω, 
     return M
 end
 
-function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
 
     MN = (N+1)^2
     QN = MN
@@ -169,65 +169,80 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mes
 end
 
 # Laplace
-function build_laplace_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, dψ, ω, mesh, metrics, N, Q, T)
+function build_laplace_matrix(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
     
     L = zeros((N+1)^2, (N+1)^2, mesh.nelem)
-    #L = zeros(N+1, N+1, N+1, N+1, mesh.nelem)
+
+    show(stdout, "text/plain", ψ)
+    println("\n")
+    show(stdout, "text/plain", metrics.dξdx[:,:,1])
     
-    for iel=1:mesh.nelem
-        
-        for k = 1:QN
-            for l = 1:QN
-                  
-                ωkl  = ω[k]*ω[l]
-                Jkle = metrics.Je[k, l, iel]
+    println("\n")
+    show(stdout, "text/plain", metrics.dξdy[:,:,1])
+    
+    println("\n")
+    show(stdout, "text/plain", metrics.dηdx[:,:,1])
+    
+    println("\n")
+    show(stdout, "text/plain", metrics.dηdy[:,:,1])
+
+    #L = zeros((N+1), (N+1), N+1, N+1, mesh.nelem)
+    for iel=1:1#mesh.nelem
+        for l = 1:QN, k = 1:QN          
+            ωkl  = ω[k]*ω[l]
+            Jkle = metrics.Je[k, l, iel]
+            for j = 1:MN, i = 1:MN     
+                J = i + (j - 1)*(N + 1)
                 
-                for j = 1:MN
-                    for i = 1:MN     
-                        I = i + (j - 1)*(N + 1)
-                       
-                        hjl = ψ[j,l]
-                        hik = ψ[i,k]
+                hjl = ψ[j,l]
+                hik = ψ[i,k]
 
-                        dhik_dξ = dψ[i,k]
-                        dhjl_dη = dψ[j,l]
+                dhik_dξ = dψ[i,k]
+                dhjl_dη = dψ[j,l]
 
-                        dψJKdx = dhik_dξ*hjl*metrics.dξdx[k,l,iel] + hik*dhjl_dη*metrics.dηdx[k,l,iel]
-                        dψJKdy = dhik_dξ*hjl*metrics.dξdy[k,l,iel] + hik*dhjl_dη*metrics.dηdy[k,l,iel]
-                       # @info dψJKdx
-                        
-                        for m = 1:N+1
-                            for n = 1:N+1
-                                J = m + (n - 1)*(N + 1)
-                                
-                                hnl = ψ[n,l]
-                                hmk = ψ[m,k]
-                                
-                                dhmk_dξ = dψ[m,k]
-                                dhnl_dη = dψ[n,l]
-                                
-                                dψIKdx = dhmk_dξ*hnl*metrics.dξdx[k,l,iel] + hmk*dhnl_dη*metrics.dηdx[k,l,iel]
-                                dψIKdy = dhmk_dξ*hnl*metrics.dξdy[k,l,iel] + hmk*dhnl_dη*metrics.dηdy[k,l,iel]
-                                
-                                #L[i,j,m,n,iel] = L[i,j,m,n,iel] + ωkl*Jkle*(dψIKdx*dψJKdx + dψIKdy*dψJKdy)
-                                L[I,J,iel] = L[I,J,iel] + ωkl*Jkle*(dψIKdx*dψJKdx + dψIKdy*dψJKdy)
-                            end
-                        end
+                dψJK_dx = dhik_dξ*hjl*metrics.dξdx[k,l,iel] + hik*dhjl_dη*metrics.dηdx[k,i,iel]
+                dψJK_dy = dhik_dξ*hjl*metrics.dξdy[k,j,iel] + hik*dhjl_dη*metrics.dηdy[k,l,iel]
+                
+                for n = 1:N+1, m = 1:N+1
+                    I = m + (n - 1)*(N + 1)
+                   
+                    hnl, hmk        =  ψ[n,l],  ψ[m,k]
+                    dhmk_dξ,dhnl_dη = dψ[m,k], dψ[n,l]
+                    
+                   
+                    dψIK_dx = dhmk_dξ*hnl*metrics.dξdx[j,k,iel] + hmk*dhnl_dη*metrics.dηdx[j,k,iel]
+                    dψIK_dy = dhmk_dξ*hnl*metrics.dξdy[k,j,iel] + hmk*dhnl_dη*metrics.dηdy[k,i,iel]
+
+                    
+                    #L[m,n,i,j,iel] += (dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy) #ωkl*Jkle
+                    #L[I,J,iel] += (dψIK_dx*dψJK_dx) # + dψIK_dy*dψJK_dy)
+                    L[I,J,iel] +=  dψIK_dy*dψJK_dy
+                    if(iel < 2)
+                        @info  L[I,J,iel]
                     end
+                    #if (I == 1 && J == 1)
+                    #    @info m, n, i, j, l, k
+                    #    #@info  hnl, hmk
+                    #    #@info dhmk_dξ,dhnl_dη
+                    #    #@info dhik_dξ*hjl*metrics.dξdy[j,k,iel]
+                    #    #@info hik*dhjl_dη*metrics.dηdy[j,k,iel]
+                    #    @info dψIK_dy
+                    #    @info dψJK_dy
+                    #    @info  L[I,J,iel]
+                    #    println("\n")
+                    #end
+                    
                 end
             end
         end
     end
     
+    #@info size(L)
+    #show(stdout, "text/plain", L[:,:,1])
     
-    @info size(L)
-    show(stdout, "text/plain", L)
-    
-    
-    @info size(L)
     return L
 end
 
@@ -380,6 +395,24 @@ function DSSijk_rhs(SD::NSD_2D, QT::Inexact, Vel::AbstractArray, conn::AbstractA
                     error( "ELEMENT_MATRICES.jl ZEROOOOOO")
                 end
                 V[I] = V[I] + Vel[i,j,iel]
+            end
+        end
+    end
+    #show(stdout, "text/plain", V)
+    return V
+end
+
+function DSS_rhs(SD::NSD_2D, QT::Inexact, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
+    
+    V  = zeros(npoin)
+    for iel = 1:nelem
+        for i = 1:N+1
+            for j = 1:N+1
+                
+                I   = conn[i,j,iel]
+                Iel = i + (j - 1)*(N + 1)
+                
+                V[I] = V[I] + Vel[Iel,iel]
             end
         end
     end

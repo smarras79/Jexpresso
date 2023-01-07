@@ -55,8 +55,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
 
     ψ  = basis.ψ
     dψ = basis.dψ
-
-    @info " metric terms WIP"
+    
     for iel = 1:mesh.nelem
         for l = 1:Q+1
             for k = 1:Q+1
@@ -68,11 +67,11 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                         xij = mesh.x[ip]
                         yij = mesh.y[ip]
                         
-                        metrics.dxdξ[k, l, iel] = metrics.dxdξ[k, l, iel] + dψ[i,k]*ψ[j,l]*xij
-                        metrics.dxdη[k, l, iel] = metrics.dxdη[k, l, iel] + ψ[i,k]*dψ[j,l]*xij
+                        metrics.dxdξ[k, l, iel] += dψ[i,k]* ψ[j,l]*xij
+                        metrics.dxdη[k, l, iel] +=  ψ[i,k]*dψ[j,l]*xij
                         
-                        metrics.dydξ[k, l, iel] = metrics.dydξ[k, l, iel] + dψ[i,k]*ψ[j,l]*yij
-                        metrics.dydη[k, l, iel] = metrics.dydη[k, l, iel] + ψ[i,k]*dψ[j,l]*yij                        
+                        metrics.dydξ[k, l, iel] += dψ[i,k]* ψ[j,l]*yij
+                        metrics.dydη[k, l, iel] +=  ψ[i,k]*dψ[j,l]*yij                        
                         #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
                     end
                 end
@@ -117,7 +116,7 @@ function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagr
     ψ  = basis.ψ
     dψ = basis.dψ
 
-    @info " metric terms WIP"
+    @info " WIP CONTRAVIARIANT metric terms"
     for iel = 1:mesh.nelem
         for l = 1:Q+1
             for k = 1:Q+1

@@ -70,12 +70,13 @@ function rk!(q::St_SolutionVectors;
         #
         # rhs[ngl,ngl,nelem]
         #
-        rhs_el = build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics)
+        rhs_el = build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics, T)
 
         #
         # RHS[npoin] = DSS(rhs)
         #
-        RHS = DSSijk_rhs(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+        #RHS = DSSijk_rhs(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+        RHS = DSS_rhs(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
         RHS .= RHS./M
         
         for I=1:mesh.npoin
