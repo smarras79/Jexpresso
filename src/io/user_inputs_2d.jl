@@ -24,8 +24,8 @@ function user_inputs()
         :ymin_bc  => "periodic", #Use either dirichlet or periodic
         :zmin_bc  => "periodic", #Use either dirichlet or periodic
         :xmax_bc  => "periodic", #Use either dirichlet or periodic
-        :ymax_bc  => "dirichlet", #Use either dirichlet or periodic
-        :zmax_bc  => "dirichlet", #Use either dirichlet or periodic
+        :ymax_bc  => "periodic", #Use either dirichlet or periodic
+        :zmax_bc  => "periodic", #Use either dirichlet or periodic
         :bc_exact_xmin => [0.0 0.0 0.0],
         :bc_exact_xmax => [0.0 0.0 0.0],
         :bc_exact_ymin => [0.0 0.0 0.0],
@@ -34,7 +34,7 @@ function user_inputs()
         :bc_exact_zmax => [0.0 0.0 0.0],
         :nsd                 => 2,           #number of space dimensions
         :interpolation_nodes =>"lgl",        #Choice: lgl, cgl 
-        :nop                 => 16,         #Polynomila order
+        :nop                 => 1,         #Polynomila order
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter

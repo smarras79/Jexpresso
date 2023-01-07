@@ -249,17 +249,17 @@ function driver(DT::CG,       #Space discretization type
     #show(stdout, "text/plain", mesh.connijk)
     #@printf("\n")
     
-    Me = build_mass_matrix!(SD, QT, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    Me = build_mass_matrix(SD, QT, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     #show(stdout, "text/plain", Me[:,:,1:mesh.nelem])
     
     M =              DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     #show(stdout, "text/plain", M)
 
-    #Le = build_laplace_matrix!(SD, QT, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-
-#    L =              DSSijk_laplace(SD, QT, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    Le = build_laplace_matrix(SD, QT, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    show(stdout, "text/plain", Le)
+    error("QUI")
+    #L =              DSSijk_laplace(SD, QT, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
 #    show(stdout, "text/plain", L)
-    #error(".. QUI AdvDiff/drivers.jl")
     
     #Initialize q
     qp = initialize(Adv2D(), mesh, inputs, TFloat)
@@ -271,7 +271,7 @@ function driver(DT::CG,       #Space discretization type
         
     # add a function to find the mesh mininum resolution
     TD = RK5()
-    time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, inputs, TFloat)
+   # time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, inputs, TFloat)
 
     #Plot final solution
     jcontour(mesh.x, mesh.y, qp.qn[:,1], "Final solution at t=2π: tracer")
