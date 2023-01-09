@@ -1,3 +1,5 @@
+using Test
+
 include("../AbstractProblems.jl")
 
 include("../../kernel/abstractTypes.jl")
@@ -56,37 +58,55 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St
             end
         end
     end
-    
+   
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
     #
-    ν = 0.1
-
-    #rhsdiffξ_el = Array{T, 2}(undef, mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffη_el = Array{T, 2}(undef, mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffξ_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffη_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffξ_el = zeros(mesh.npoin*mesh.npoin, mesh.nelem)
-    #rhsdiffη_el = zeros(mesh.npoin*mesh.npoin, mesh.nelem)
+    ν = 1.0 #50.0
     
+   #= Le = build_laplace_matrix(SD, QT, TensorProduct(), ψ, dψ, ω, mesh, metrics, N, N, T)
+    for iel=1:mesh.nelem        
+        for i=1:MN
+            for j=1:MN
+
+                ωij  = ω[i]*ω[j]
+                Jije = metrics.Je[i,j,iel]
+                for k=1:MN
+                    for l=1:MN
+                        m = i + (j-1)*MN
+                        n = k + (l-1)*MN
+                        
+                        rhs_el[m, iel] += ωij*Jije*Le[m,n,iel]*qnel[m,iel,1]
+                    end
+                end
+            end
+        end
+    end=#
+    
+    
+    rhsdiffξ_el = zeros(T, mesh.ngl*mesh.ngl,mesh.nelem)
+    rhsdiffη_el = zeros(T, mesh.ngl*mesh.ngl,mesh.nelem)
     for iel=1:mesh.nelem
         
-        #rhsdiffξ_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
-        #rhsdiffη_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
+        rhsdiffξ_el = zeros(mesh.ngl*mesh.ngl,mesh.nelem)
+        rhsdiffη_el = zeros(mesh.ngl*mesh.ngl,mesh.nelem)
         for l = 1:QN, k = 1:QN
             ωkl  = ω[k]*ω[l]
             Jkle = metrics.Je[k, l, iel]
             
-            dqdξ, dqdη = 0.0, 0.0
+            dqkl_dξ, dqkl_dη = 0.0, 0.0
             for i = 1:MN
-                dqdξ = dqdξ + dψ[i,l]*qnel[i,k,iel,1]
-                dqdη = dqdη + dψ[i,k]*qnel[l,i,iel,1]
+                dhik_dξ = dψ[i,k]
+                dhil_dη = dψ[i,l]
+                
+                dqkl_dξ += dhik_dξ*qnel[i,l,iel,1]
+                dqkl_dη += dhil_dη*qnel[k,i,iel,1]
             end
-            dqdx = dqdξ*metrics.dξdx[l,k,iel] + dqdη*metrics.dηdx[l,k,iel]
-            dqdy = dqdξ*metrics.dξdy[l,k,iel] + dqdη*metrics.dηdy[l,k,iel]
+            dqkl_dx = dqkl_dξ*metrics.dξdx[k,l,iel] + dqkl_dη*metrics.dηdx[k,l,iel]
+            dqkl_dy = dqkl_dξ*metrics.dξdy[k,l,iel] + dqkl_dη*metrics.dηdy[k,l,iel]
             
-            ∇ξ∇q_kl = metrics.dξdx[k,l,iel]*dqdx + metrics.dξdy[k,l,iel]*dqdy
-            ∇η∇q_kl = metrics.dηdx[k,l,iel]*dqdx + metrics.dηdy[k,l,iel]*dqdy
+            ∇ξ∇q_kl = metrics.dξdx[k,l,iel]*dqkl_dx + metrics.dξdy[k,l,iel]*dqkl_dy
+            ∇η∇q_kl = metrics.dηdx[k,l,iel]*dqkl_dx + metrics.dηdy[k,l,iel]*dqkl_dy
             
             for i = 1:MN
                 Iξ = i + (l - 1)*(N + 1)
@@ -103,10 +123,11 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St
     
     #@info size(rhsdiffξ_el)
     #show(stdout, "text/plain", rhsdiffξ_el[:,1])
-    
+     
     return rhs_el
-    #return rhs_el + rhsdiffξ_el #+ rhsdiffη_el
+    #return rhsdiffξ_el #+ rhsdiffη_el
 end
+
 
 
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, el_mat, f)

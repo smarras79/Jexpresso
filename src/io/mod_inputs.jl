@@ -117,6 +117,16 @@ function mod_inputs_user_inputs()
         end
         println( " # nvars     ", nvars)
         
+    elseif (lowercase(inputs[:equation_set]) == "sw")
+        if (inputs[:nsd] == 1)
+            nvars = 2
+        elseif(inputs[:nsd] == 2)
+            nvars = 3
+        elseif(inputs[:nsd] == 3)
+            error(" :equation_set error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
+        end
+        println( " # nvars     ", nvars)
+        
     elseif (lowercase(inputs[:equation_set]) == "ns")
         if (inputs[:nsd] == 1)
             nvars = 3
