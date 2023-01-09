@@ -150,15 +150,14 @@ function driver(DT::CG,       #Space discretization type
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------
     Me = build_mass_matrix(SD, QT, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    show(stdout, "text/plain", Me[:,:,1])
+    #show(stdout, "text/plain", Me[:,:,1])
     
-    #M =              DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     #show(stdout, "text/plain", M)
     
     Le = build_laplace_matrix(SD, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    #
-    #L =              DSSijk_laplace(SD, QT, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    show(stdout, "text/plain", Le)
+    L = DSSijk_laplace(SD,  Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    show(stdout, "text/plain", L)
     error(" STOP in DRIVER.jl")
     #Initialize q
     qp = initialize(Adv2D(), mesh, inputs, TFloat)
@@ -167,7 +166,7 @@ function driver(DT::CG,       #Space discretization type
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
     println(" # CFL = ", CFL)    
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-        
+    
     # add a function to find the mesh mininum resolution
     TD = RK5()
     time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, inputs, TFloat)
