@@ -329,6 +329,30 @@ function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
     return A
 end
 
+
+function DSSijk_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+    
+    M  = zeros(npoin, npoin)
+    for iel=1:nelem
+        for j = 1:N+1
+            for i = 1:N+1
+                J = i + (j - 1)*(N + 1)
+                JP = conn[i,j,iel]
+                for n = 1:N+1
+                    for m = 1:N+1
+                        I = m + (n - 1)*(N + 1)
+                        IP = conn[m,n,iel]
+                        
+                        M[IP,JP] = M[IP,JP] + Mel[I,J,iel] #if exact
+                    end
+                end
+            end
+        end
+    end    
+    #show(stdout, "text/plain", M)
+    return M
+end
+
 function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
     M  = zeros(npoin)
@@ -342,7 +366,6 @@ function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstract
                         I = m + (n - 1)*(N + 1)
                         IP = conn[m,n,iel]
                         
-                        #M[IP,JP] = M[IP,JP] + Mel[I,J,iel] #if exact
                         M[IP] = M[IP] + Mel[I,J,iel] #if inexact
                     end
                 end
@@ -353,10 +376,9 @@ function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstract
     return M
 end
 
-function DSSijk_laplace(SD::NSD_2D, QT::Inexact, Lel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSSijk_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
-    L  = zeros(npoin, npoin)
-    
+    L  = zeros(npoin, npoin)    
     for iel=1:nelem
         for j = 1:N+1
             for i = 1:N+1
