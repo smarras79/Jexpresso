@@ -1,3 +1,5 @@
+using Test
+
 include("../AbstractProblems.jl")
 
 include("../../kernel/abstractTypes.jl")
@@ -60,19 +62,14 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
     #
-    ν = 0.1
-
-    #rhsdiffξ_el = Array{T, 2}(undef, mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffη_el = Array{T, 2}(undef, mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffξ_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffη_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffξ_el = zeros(mesh.npoin*mesh.npoin, mesh.nelem)
-    #rhsdiffη_el = zeros(mesh.npoin*mesh.npoin, mesh.nelem)
+    ν = 1.0 #50.0
     
+    rhsdiffξ_el::Array{T} #zeros(T, mesh.ngl*mesh.ngl,mesh.nelem)
+    rhsdiffη_el::Array{T} #zeros(T, mesh.ngl*mesh.ngl,mesh.nelem)
     for iel=1:mesh.nelem
         
-        #rhsdiffξ_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
-        #rhsdiffη_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
+        rhsdiffξ_el = zeros(T, mesh.ngl*mesh.ngl,mesh.nelem)
+        rhsdiffη_el = zeros(T, mesh.ngl*mesh.ngl,mesh.nelem)
         for l = 1:QN, k = 1:QN
             ωkl  = ω[k]*ω[l]
             Jkle = metrics.Je[k, l, iel]
@@ -82,8 +79,9 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St
                 dqdξ = dqdξ + dψ[i,l]*qnel[i,k,iel,1]
                 dqdη = dqdη + dψ[i,k]*qnel[l,i,iel,1]
             end
-            dqdx = dqdξ*metrics.dξdx[l,k,iel] + dqdη*metrics.dηdx[l,k,iel]
-            dqdy = dqdξ*metrics.dξdy[l,k,iel] + dqdη*metrics.dηdy[l,k,iel]
+            dqdx = dqdξ*metrics.dξdx[l,m,iel] + dqdη*metrics.dηdx[l,m,iel]
+            dqdy = dqdξ*metrics.dξdy[l,m,iel] + dqdη*metrics.dηdy[l,m,iel]
+            
             
             ∇ξ∇q_kl = metrics.dξdx[k,l,iel]*dqdx + metrics.dξdy[k,l,iel]*dqdy
             ∇η∇q_kl = metrics.dηdx[k,l,iel]*dqdx + metrics.dηdy[k,l,iel]*dqdy
@@ -101,11 +99,11 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St
         end
     end
     
-    #@info size(rhsdiffξ_el)
-    #show(stdout, "text/plain", rhsdiffξ_el[:,1])
+    @info size(rhsdiffξ_el)
+    show(stdout, "text/plain", rhsdiffξ_el[:,1])
     
-    return rhs_el
-    #return rhs_el + rhsdiffξ_el #+ rhsdiffη_el
+    #return rhs_el
+    return rhsdiffξ_el #+ rhsdiffη_el
 end
 
 

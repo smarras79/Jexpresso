@@ -1,14 +1,3 @@
-#--------------------------------------------------------
-# external packages
-#--------------------------------------------------------
-using Crayons.Box
-using Gridap
-using GridapGmsh
-using MPI
-using Revise
-using WriteVTK
-
-#Constants
 const TInt   = Int64
 const TFloat = Float64
 
@@ -17,8 +6,9 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("../src/io/mod_inputs.jl")
 include("../src/problems/AdvDiff/drivers.jl") #automate this based on input
-#--------------------------------------------------------
 
+#--------------------------------------------------------
+return 
 #MPI.Init()
 #comm = MPI.COMM_WORLD
 

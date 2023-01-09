@@ -3,13 +3,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :equation_set => "ns",
+        :equation_set => "NS",
         :problem      => "none",
-        :tend         => 2*π,
+        :tend         => 0.25,
         :Δt           => 0.01,
-        :lexact_integration => false,
+        :lexact_integration => true,
         :lread_gmsh   => true,
-        :Δt => 0.01,
         :gmsh_filename => "./demo/gmsh_grids/hexa_TFI_2x2.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_TFI_25x25.msh",
@@ -20,12 +19,12 @@ function user_inputs()
         #:gmsh_filename => "./demo/gmsh_grids/hexa_UNSTR_refine_coarse.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
-        :xmin_bc  => "periodic", #Use either dirichlet or periodic
-        :ymin_bc  => "periodic", #Use either dirichlet or periodic
-        :zmin_bc  => "periodic", #Use either dirichlet or periodic
-        :xmax_bc  => "periodic", #Use either dirichlet or periodic
-        :ymax_bc  => "periodic", #Use either dirichlet or periodic
-        :zmax_bc  => "periodic", #Use either dirichlet or periodic
+        :xmin_bc  => "dirichlet", #Use either dirichlet or periodic
+        :ymin_bc  => "dirichlet", #Use either dirichlet or periodic
+        :zmin_bc  => "dirichlet", #Use either dirichlet or periodic
+        :xmax_bc  => "dirichlet", #Use either dirichlet or periodic
+        :ymax_bc  => "dirichlet", #Use either dirichlet or periodic
+        :zmax_bc  => "dirichlet", #Use either dirichlet or periodic
         :bc_exact_xmin => [0.0 0.0 0.0],
         :bc_exact_xmax => [0.0 0.0 0.0],
         :bc_exact_ymin => [0.0 0.0 0.0],
