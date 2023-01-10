@@ -6,7 +6,7 @@ include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/basis/basis_structs.jl")
 
-function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, L, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
     qnel = zeros(T, mesh.ngl,mesh.ngl,mesh.nelem,3)
 
@@ -55,20 +55,22 @@ function build_rhs(SD::NSD_2D, QT::Inexact, AP::Adv2D, qp, ψ, dψ, ω, mesh::St
                 #rhs_el[i,j,iel] = ω[i]*ω[j]*metrics.Je[i,j,iel]*(u*dqdx + v*dqdy)
             end
         end
+        
+        #
+        # Add diffusion to rhs: νLij⋅qj (ν = const for now)
+        #
+        #for i=1:MN, j=1:MN
+        #    m = i + (j-1)*MN            
+        #    for k=1:MN, l=1:MN
+        #        n = k + (l-1)*MN  
+        #        rhs_el[m, iel] -= - 0.000001*L[m,n,iel]*qp.qn[n,1]
+        #    end
+        #end
     end
     
-    #
-    # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
-    #
-    ν = 0.1
-
-    #rhsdiffξ_el = Array{T, 2}(undef, mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffη_el = Array{T, 2}(undef, mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffξ_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffη_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
-    #rhsdiffξ_el = zeros(mesh.npoin*mesh.npoin, mesh.nelem)
-    #rhsdiffη_el = zeros(mesh.npoin*mesh.npoin, mesh.nelem)
-    
+    ν = 0.000001
+    rhsdiffξ_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
+    rhsdiffη_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
     for iel=1:mesh.nelem
         
         #rhsdiffξ_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
