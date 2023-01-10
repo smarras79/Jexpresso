@@ -5,9 +5,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :equation_set => "NS",
         :problem      => "none",
-        :tend         => 0.25,
+        :tend         => 0.2,
         :Δt           => 0.01,
-        :lexact_integration => true,
+        #:lexact_integration => true,
         :lread_gmsh   => true,
         :gmsh_filename => "./demo/gmsh_grids/hexa_TFI_2x2.msh",
         #:gmsh_filename => "./demo/gmsh_grids/hexa_TFI_10x10.msh",
@@ -33,7 +33,7 @@ function user_inputs()
         :bc_exact_zmax => [0.0 0.0 0.0],
         :nsd                 => 2,           #number of space dimensions
         :interpolation_nodes =>"lgl",        #Choice: lgl, cgl 
-        :nop                 => 1,         #Polynomila order
+        :nop                 => 16,         #Polynomila order
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter

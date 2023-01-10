@@ -157,8 +157,8 @@ function driver(DT::CG,       #Space discretization type
     
     Le = build_laplace_matrix(SD, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     L = DSSijk_laplace(SD,  Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    show(stdout, "text/plain", L)
-    error(" STOP in DRIVER.jl")
+    #show(stdout, "text/plain", L)
+    
     #Initialize q
     qp = initialize(Adv2D(), mesh, inputs, TFloat)
         
@@ -169,7 +169,7 @@ function driver(DT::CG,       #Space discretization type
     
     # add a function to find the mesh mininum resolution
     TD = RK5()
-    time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, inputs, TFloat)
+    time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Le, Nt, Δt, inputs, TFloat)
 
     #Plot final solution
     jcontour(mesh.x, mesh.y, qp.qn[:,1], "Final solution at t=2π: tracer")
