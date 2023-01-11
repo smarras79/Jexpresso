@@ -4,7 +4,7 @@ using Gridap.Arrays
 using Gridap.Arrays: Table
 using SparseArrays
 
-include("../AbstractTypes.jl")
+include("../abstractTypes.jl")
 include("../mesh/mesh.jl")
 include("../mesh/metric_terms.jl")
 include("../basis/basis_structs.jl")
