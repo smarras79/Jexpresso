@@ -23,8 +23,8 @@ function user_inputs()
         :ymin_bc  => "periodic", #Use either dirichlet or periodic
         :zmin_bc  => "periodic", #Use either dirichlet or periodic
         :xmax_bc  => "periodic", #Use either dirichlet or periodic
-        :ymax_bc  => "dirichlet", #Use either dirichlet or periodic
-        :zmax_bc  => "dirichlet", #Use either dirichlet or periodic
+        :ymax_bc  => "periodic", #Use either dirichlet or periodic
+        :zmax_bc  => "periodic", #Use either dirichlet or periodic
         :bc_exact_xmin => [0.0 0.0 0.0],
         :bc_exact_xmax => [0.0 0.0 0.0],
         :bc_exact_ymin => [0.0 0.0 0.0],
