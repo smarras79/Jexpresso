@@ -259,7 +259,6 @@ function driver(DT::CG,       #Space discretization type
 
 #    L =              DSSijk_laplace(SD, QT, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
 #    show(stdout, "text/plain", L)
-    #error(".. QUI AdvDiff/drivers.jl")
     
     #Initialize q
     qp = initialize(Adv2D(), mesh, inputs, TFloat)
