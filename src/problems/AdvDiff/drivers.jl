@@ -243,26 +243,21 @@ function driver(DT::CG,       #Space discretization type
     #
     # Return:
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
-    #--------------------------------------------------------
-    #show(stdout, "text/plain", mesh.conn)
-    #@printf("\n")
-    #show(stdout, "text/plain", mesh.connijk)
-    #@printf("\n")
-    
-    Me = build_mass_matrix!(SD, QT, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    #--------------------------------------------------------    
+    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     #show(stdout, "text/plain", Me[:,:,1:mesh.nelem])
     
-    M =              DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     #show(stdout, "text/plain", M)
+    
+    Le = build_laplace_matrix(SD, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
 
-    #Le = build_laplace_matrix!(SD, QT, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-
-#    L =              DSSijk_laplace(SD, QT, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-#    show(stdout, "text/plain", L)
+    L = DSSijk_laplace(SD, QT, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    #show(stdout, "text/plain", L)
     
     #Initialize q
     qp = initialize(Adv2D(), mesh, inputs, TFloat)
-        
+    
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
     println(" # CFL = ", CFL)    
