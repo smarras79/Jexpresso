@@ -25,7 +25,7 @@ function time_loop(TD::RK5,
     for it = 1:Nt
         
         rk!(qp; TD, SD, QT, PT,
-            mesh, metrics, basis, ω, M, L, Δt, inputs, T)
+            mesh, metrics, basis, ω, M, L, Δt, it, inputs, T)
         
     end
     #title = string("solution at final step ", Nt)
