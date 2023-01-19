@@ -195,7 +195,7 @@ function build_mass_matrix(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh
     return M
 end
 
-# Laplace
+# Element Laplace
 function build_laplace_matrix(SD::NSD_2D, MT::TensorProduct, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1

@@ -60,7 +60,7 @@ function rk!(q::St_SolutionVectors;
              basis, ω,
              M,
              L,
-             Δt,
+             Δt, it,
              inputs::Dict,
              T)
     
@@ -71,12 +71,18 @@ function rk!(q::St_SolutionVectors;
         #
         # rhs[ngl,ngl,nelem]
         #
-        rhs_el = build_rhs(SD, QT, PT, q, L, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+        rhs_el = build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics, T)
 
+        #
+        # rhs_diff[ngl,ngl,nelem]
+        #
+        rhsdiff_el = build_rhs_diffusion(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+
+        
         #
         # RHS[npoin] = DSS(rhs)
         #
-        RHS = DSS_rhs(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+        RHS = DSS_rhs(SD, QT, rhsdiff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
         RHS .= RHS./M
         
         for I=1:mesh.npoin
@@ -88,6 +94,15 @@ function rk!(q::St_SolutionVectors;
         #B.C.
         #
         apply_boundary_conditions!(q, mesh, inputs, SD)
+
+        #------------------------------------------
+        # Plot initial condition:
+        # Notice that I scatter the points to
+        # avoid sorting the x and q which would be
+        # becessary for a smooth curve plot.
+        #------------------------------------------
+        #title = string("solution at it=", it)
+        #jcontour(mesh.x, mesh.y, q.qn[:,1], "Initial conditions: tracer")
         
     end #stages
 
