@@ -105,9 +105,11 @@ function build_element_matrices!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, d�
     return el_matrices   
 end
 
-# Mass
-function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
-
+#
+# Element mass matrix
+# 
+function build_mass_matrix!(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+    
     MN = N + 1
     QN = Q + 1
     
@@ -168,93 +170,54 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mes
     return M
 end
 
-# Laplace
-function build_laplace_matrix!(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, dψ, ω, mesh, metrics, N, Q, T)
+#
+# Element Laplace matrix
+#
+function build_laplace_matrix(SD::NSD_2D, MT::TensorProduct, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
     
     L = zeros((N+1)^2, (N+1)^2, mesh.nelem)
-    #L = zeros(N+1, N+1, N+1, N+1, mesh.nelem)
-
-    ξ = range(-1,1,2)
-    η = range(-1,1,2)
-     
     for iel=1:mesh.nelem
-        
-        for j = 1:MN
-            for i = 1:MN     
-                I = i + (j - 1)*(N + 1)
+        for l = 1:QN, k = 1:QN          
+            ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
+            for j = 1:MN, i = 1:MN     
+                J = i + (j - 1)*(N + 1)
+                #J = mesh.connijk[i,j,iel]
                 
-                for m = 1:N+1
-                    for n = 1:N+1
-                        J = m + (n - 1)*(N + 1)
-                        
-                        
-                        L[I,J,iel] = (1.0/3.0)*
-                            (0.25*ξ[i]*ξ[j]*(3 + η[i]η[j]) +
-                            0.25*η[i]*η[j]*(3 + ξ[i]ξ[j]))
-                    end
+                hjl = ψ[j,l]
+                hik = ψ[i,k]
+
+                dhik_dξ = dψ[i,k]
+                dhjl_dη = dψ[j,l]
+
+                dψJK_dx = dhik_dξ*hjl*metrics.dξdx[k,l,iel] + hik*dhjl_dη*metrics.dηdx[k,l,iel]
+                dψJK_dy = dhik_dξ*hjl*metrics.dξdy[k,l,iel] + hik*dhjl_dη*metrics.dηdy[k,l,iel]
+                
+                for n = 1:N+1, m = 1:N+1
+                    I = m + (n - 1)*(N + 1)
+                    #I = mesh.connijk[m,n,iel]
+                   
+                    hnl, hmk        =  ψ[n,l],  ψ[m,k]
+                    dhmk_dξ,dhnl_dη = dψ[m,k], dψ[n,l]
+                    
+                   
+                    dψIK_dx = dhmk_dξ*hnl*metrics.dξdx[k,l,iel] + hmk*dhnl_dη*metrics.dηdx[k,l,iel]
+                    dψIK_dy = dhmk_dξ*hnl*metrics.dξdy[k,l,iel] + hmk*dhnl_dη*metrics.dηdy[k,l,iel]
+                    
+                    #L[m,n,i,j,iel] += (dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy) 
+                    L[I,J, iel] += ωJkl*(dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy)
                 end
             end
         end
     end
+    #@info size(L)
+    #show(stdout, "text/plain", L)
     
-    
-    #=
-    for iel=1:mesh.nelem
-        
-        for k = 1:QN
-            for l = 1:QN
-                  
-                ωkl  = ω[k]*ω[l]
-                Jkle = metrics.Je[k, l, iel]
-                
-                for j = 1:MN
-                    for i = 1:MN     
-                        I = i + (j - 1)*(N + 1)
-                       
-                        hjl = ψ[j,l]
-                        hik = ψ[i,k]
-
-                        dhik_dξ = dψ[i,k]
-                        dhjl_dη = dψ[j,l]
-
-                        dψJKdx = dhik_dξ*hjl*metrics.dξdx[k,l,iel] + hik*dhjl_dη*metrics.dηdx[k,l,iel]
-                        dψJKdy = dhik_dξ*hjl*metrics.dξdy[k,l,iel] + hik*dhjl_dη*metrics.dηdy[k,l,iel]
-                       # @info dψJKdx
-                        
-                        for m = 1:N+1
-                            for n = 1:N+1
-                                J = m + (n - 1)*(N + 1)
-                                
-                                hnl = ψ[n,l]
-                                hmk = ψ[m,k]
-                                
-                                dhmk_dξ = dψ[m,k]
-                                dhnl_dη = dψ[n,l]
-                                
-                                dψIKdx = dhmk_dξ*hnl*metrics.dξdx[k,l,iel] + hmk*dhnl_dη*metrics.dηdx[k,l,iel]
-                                dψIKdy = dhmk_dξ*hnl*metrics.dξdy[k,l,iel] + hmk*dhnl_dη*metrics.dηdy[k,l,iel]
-                                
-                                #L[i,j,m,n,iel] = L[i,j,m,n,iel] + ωkl*Jkle*(dψIKdx*dψJKdx + dψIKdy*dψJKdy)
-                                L[I,J,iel] = L[I,J,iel] + ωkl*Jkle*(dψIKdx*dψJKdx + dψIKdy*dψJKdy)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-=#
-    
-    @info size(L)
-    show(stdout, "text/plain", L)
-    
-    
-    @info size(L)
     return L
 end
+
 
 #
 # DSS
@@ -343,6 +306,30 @@ function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
     return A
 end
 
+
+function DSSijk_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+    
+    M  = zeros(npoin, npoin)
+    for iel=1:nelem
+        for j = 1:N+1
+            for i = 1:N+1
+                J = i + (j - 1)*(N + 1)
+                JP = conn[i,j,iel]
+                for n = 1:N+1
+                    for m = 1:N+1
+                        I = m + (n - 1)*(N + 1)
+                        IP = conn[m,n,iel]
+                        
+                        M[IP,JP] = M[IP,JP] + Mel[I,J,iel] #if exact
+                    end
+                end
+            end
+        end
+    end    
+    #show(stdout, "text/plain", M)
+    return M
+end
+
 function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
     M  = zeros(npoin)
@@ -356,7 +343,6 @@ function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstract
                         I = m + (n - 1)*(N + 1)
                         IP = conn[m,n,iel]
                         
-                        #M[IP,JP] = M[IP,JP] + Mel[I,J,iel] #if exact
                         M[IP] = M[IP] + Mel[I,J,iel] #if inexact
                     end
                 end
@@ -391,8 +377,6 @@ function DSSijk_laplace(SD::NSD_2D, QT::Inexact, Lel::AbstractArray, conn::Abstr
     return L
 end
 
-
-
 function DSSijk_rhs(SD::NSD_2D, QT::Inexact, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
     
     V  = zeros(npoin)
@@ -401,9 +385,6 @@ function DSSijk_rhs(SD::NSD_2D, QT::Inexact, Vel::AbstractArray, conn::AbstractA
             for i = 1:N+1
                 I = conn[i,j,iel]
                 
-                if (I == 0)
-                    error( "ELEMENT_MATRICES.jl ZEROOOOOO")
-                end
                 V[I] = V[I] + Vel[i,j,iel]
             end
         end
