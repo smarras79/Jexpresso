@@ -1,5 +1,5 @@
 include("../basis/basis_structs.jl")
-include("../../iO/plotting/jeplots.jl")
+include("../../io/plotting/jeplots.jl")
 
 """ DiscreteFourrierCoefficients(f)
         f:: array of length N
