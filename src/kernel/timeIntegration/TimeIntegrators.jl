@@ -1,3 +1,5 @@
+using PrettyTables
+
 #
 # Time discretization
 #
@@ -58,32 +60,29 @@ function rk!(q::St_SolutionVectors;
              mesh::St_mesh,
              metrics::St_metrics,
              basis, ω,
-             M,
-             L,
-             Δt, it,
+             M, Δt,
              inputs::Dict,
              T)
     
     dq     = zeros(mesh.npoin)    
     RKcoef = buildRKIntegrator!(TD, T)
+    
     for s = 1:length(RKcoef.a)
         
         #
         # rhs[ngl,ngl,nelem]
         #
-        rhs_el = build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+        rhs_el = build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics)
 
-        #
-        # rhs_diff[ngl,ngl,nelem]
-        #
-        rhsdiff_el = build_rhs_diffusion(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics, T)
-
-        
         #
         # RHS[npoin] = DSS(rhs)
         #
-        RHS = DSS_rhs(SD, QT, rhsdiff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
-        RHS .= RHS./M
+        RHS = DSSijk_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+        if (QT == Inexact())
+            RHS .= RHS./M
+        else
+            RHS = M\RHS
+        end
         
         for I=1:mesh.npoin
             dq[I] = RKcoef.a[s]*dq[I] + Δt*RHS[I]
@@ -94,15 +93,6 @@ function rk!(q::St_SolutionVectors;
         #B.C.
         #
         apply_boundary_conditions!(q, mesh, inputs, SD)
-
-        #------------------------------------------
-        # Plot initial condition:
-        # Notice that I scatter the points to
-        # avoid sorting the x and q which would be
-        # becessary for a smooth curve plot.
-        #------------------------------------------
-        #title = string("solution at it=", it)
-        #jcontour(mesh.x, mesh.y, q.qn[:,1], "Initial conditions: tracer")
         
     end #stages
 

@@ -105,9 +105,11 @@ function build_element_matrices!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, d�
     return el_matrices   
 end
 
-# Mass
-function build_mass_matrix(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
-
+#
+# Element mass matrix
+# 
+function build_mass_matrix!(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+    
     MN = N + 1
     QN = Q + 1
     
@@ -142,34 +144,7 @@ function build_mass_matrix(SD::NSD_2D, QT::Inexact, MT::TensorProduct, ψ, ω, m
     return M
 end
 
-# Mass
-function build_mass_matrix(SD::NSD_2D, QT::Exact, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
-
-    MN = N + 1
-    QN = Q + 1
-    
-    M = zeros((N+1)^2, (N+1)^2, mesh.nelem)
-    for iel=1:mesh.nelem
-        for l = 1:QN, k = 1:QN
-            ωkl  = ω[k]*ω[l]
-            Jkle = metrics.Je[k, l, iel]
-            for j = 1:MN, i = 1:MN
-                I = i + (j - 1)*(N + 1)
-                ψJK = ψ[i,k]*ψ[j,l]                
-                for n = 1:MN, m = 1:MN
-                    J = m + (n - 1)*(N + 1)                    
-                    ψIK = ψ[m,k]*ψ[n,l]
-                    M[I,J,iel] = M[I,J,iel] + ψIK*ψJK #Sparse
-                end
-            end
-        end
-    end
-    #show(stdout, "text/plain", M)
-    
-    return M
-end
-
-function build_mass_matrix(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
 
     MN = (N+1)^2
     QN = MN
@@ -195,7 +170,9 @@ function build_mass_matrix(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh
     return M
 end
 
-# Element Laplace
+#
+# Element Laplace matrix
+#
 function build_laplace_matrix(SD::NSD_2D, MT::TensorProduct, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
@@ -302,25 +279,14 @@ end
 function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
     A  = zeros(npoin)
-    #=
-    MN = (N+1)^2
-    for iel=1:nelem
-        for i=1:MN
-            @info I = conn[i,iel]
-    A[I] = A[I] + Ae[i,iel]
-    end
-    end
-    =#
+    
     for iel=1:nelem
         for i=1:N+1
             for j=1:N+1
                 m = i + (j - 1)*(N + 1)
                 
                 I = conn[i,j,iel]
-                #I = conn[m,iel] #this doesn't work if ngl>4! it returns a ZERO. CHECK and debug!
-                if (I == 0)
-                    error( "ELEMENT_MATRICES.jl ZEROOOOOO")
-                end
+                                
                 A[I] = A[I] + Ae[m,iel]
             end
         end
@@ -334,6 +300,9 @@ function DSSijk_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractAr
     
     M  = zeros(npoin, npoin)
     for iel=1:nelem
+        
+        #show(stdout, "text/plain", 36.0*Mel[:,:,iel])
+        
         for j = 1:N+1
             for i = 1:N+1
                 J = i + (j - 1)*(N + 1)
@@ -348,8 +317,9 @@ function DSSijk_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractAr
                 end
             end
         end
-    end    
-    #show(stdout, "text/plain", M)
+        #println("\n")
+        #show(stdout, "text/plain", M[:,:, iel])
+    end
     return M
 end
 
@@ -378,7 +348,8 @@ end
 
 function DSSijk_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
-    L  = zeros(npoin, npoin)    
+    L  = zeros(npoin, npoin)
+    
     for iel=1:nelem
         for j = 1:N+1
             for i = 1:N+1
@@ -399,9 +370,7 @@ function DSSijk_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nel
     return L
 end
 
-
-
-function DSSijk_rhs(SD::NSD_2D, QT::Inexact, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
+function DSSijk_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
     
     V  = zeros(npoin)
     for iel = 1:nelem
@@ -409,28 +378,7 @@ function DSSijk_rhs(SD::NSD_2D, QT::Inexact, Vel::AbstractArray, conn::AbstractA
             for i = 1:N+1
                 I = conn[i,j,iel]
                 
-                if (I == 0)
-                    error( "ELEMENT_MATRICES.jl ZEROOOOOO")
-                end
                 V[I] = V[I] + Vel[i,j,iel]
-            end
-        end
-    end
-    #show(stdout, "text/plain", V)
-    return V
-end
-
-function DSS_rhs(SD::NSD_2D, QT::Inexact, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
-    
-    V  = zeros(npoin)
-    for iel = 1:nelem
-        for i = 1:N+1
-            for j = 1:N+1
-                
-                I   = conn[i,j,iel]
-                Iel = i + (j - 1)*(N + 1)
-                
-                V[I] = V[I] + Vel[Iel,iel]
             end
         end
     end
