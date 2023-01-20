@@ -68,7 +68,7 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mes
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
     #
-    ν = 2.0
+    ν = 3.0
     for iel=1:mesh.nelem
 
         for j=1:mesh.ngl, i=1:mesh.ngl
@@ -79,8 +79,6 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mes
             qnel[i,j,iel,3] = qp.qn[m,3]
         end
         
-        #rhsdiffξ_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
-        #rhsdiffη_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
         for k = 1:mesh.ngl, l = 1:mesh.ngl
             ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
             
@@ -89,11 +87,6 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mes
             for i = 1:mesh.ngl
                 dqdξ = dqdξ + dψ[i,k]*qnel[i,l,iel,1]
                 dqdη = dqdη + dψ[i,l]*qnel[k,i,iel,1]
-                
-                if (dqdξ> 100.0 ||  dqdη >100.0)
-                    @printf "  ------ qnel = %.8f %.8f -- it=%d \n" dqdξ qnel[i,l,iel,1] it #dqdξ dqdη
-                    error("large error")
-                end
             end
             dqdx = dqdξ*metrics.dξdx[k,l,iel] + dqdη*metrics.dηdx[k,l,iel]
             dqdy = dqdξ*metrics.dξdy[k,l,iel] + dqdη*metrics.dηdy[k,l,iel]
@@ -107,26 +100,15 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mes
                 
                 hll,     hkk     =  ψ[l,l],  ψ[k,k]
                 dhdξ_ik, dhdη_il = dψ[i,k], dψ[i,l]
-                #@printf "  ------ hll     = %.2f \n" hll, metrics.dξdx[k,l,iel]
                 
-                #rhsdiffξ_el[Iξ,iel] += ωkl*Jkle*dhdξ_ik*hll*∇ξ∇q_kl*ν
-                #rhsdiffη_el[Iη,iel] += ωkl*Jkle*hkk*dhdη_il*∇η∇q_kl*ν
-
                 rhsdiffξ_el[i,l,iel] -= ωJkl*dhdξ_ik*hll*∇ξ∇q_kl
                 rhsdiffη_el[k,i,iel] -= ωJkl*hkk*dhdη_il*∇η∇q_kl
-
-                #@printf "  ------ ∇ξ∇q, dξdx, rhs_ξ= %.6f %.6f %.6f\n"   ∇ξ∇q_kl metrics.dξdx[k,l,iel] rhsdiffξ_el[i,l,iel]
             end
-            #show(stdout, "text/plain", rhsdiffξ_el[:,:,iel])
         end
     end
+
+    return (rhsdiffξ_el + rhsdiffη_el)*ν
     
-    #@info size(rhsdiffξ_el)
-    
-    
-    #return (rhsdiffξ_el + rhsdiffη_el)*ν
-    return rhsdiffξ_el*ν
-    #return rhs_el
 end
 
 
