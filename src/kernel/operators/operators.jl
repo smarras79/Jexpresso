@@ -17,3 +17,84 @@ function interpolate!(qh, qj, ψ)
     
     return qh
 end
+
+function build_gradient(SD::NSD_2D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
+    nvar = size(qp.qn,2)
+    gradq = zeros(2,mesh.npoin,nvar)
+
+    for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                ip = mesh.connijk[i,j,iel]
+                m = i + (j-1)*mesh.ngl
+                for var = 1:nvar
+                    dqdξ = 0
+                    dqdη = 0
+                    for k = 1:mesh.ngl
+                        dqdξ = dqdξ + dψ[k,i]*qp.qn[ip,1]
+                        dqdη = dqdη + dψ[k,j]*qp.qn[ip,1]
+                    end
+                    gradq[1,ip,var] = dqdξ*metrics.dξdx[i,j,iel] + dqdη*metrics.dηdx[i,j,iel]
+                    gradq[2,ip,var] = dqdξ*metrics.dξdy[i,j,iel] + dqdη*metrics.dηdy[i,j,iel]
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", el_matrices.D)
+
+    return gradq
+end
+
+function build_gradient(SD::NSD_3D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
+    nvar =size(qp.qn,2)
+    gradq = zeros(3,mesh.npoin,nvar)
+ 
+    for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                for k=1:mesh.ngl
+                    ip = mesh.connijk[i,j,k,iel]
+                    m = i + (j-1)*mesh.ngl
+                    for var=1:nvar
+                        dqdξ = 0.0
+                        dqdη = 0.0
+                        for l = 1:mesh.ngl
+                            dqdξ = dqdξ + dψ[l,i]*qp.qn[ip,1]
+                            dqdη = dqdη + dψ[l,j]*qp.qn[ip,1]
+                            dqdζ = dqdζ + dψ[l,k]*qp.qn[ip,1]
+                        end
+                        gradq[ip,1,var] = dqdξ*metrics.dξdx[i,j,k,iel] + dqdη*metrics.dηdx[i,j,k,iel] + dqdζ*metrics.dζdx[i,j,k,iel]
+                        gradq[ip,2,var] = dqdξ*metrics.dξdy[i,j,k,iel] + dqdη*metrics.dηdy[i,j,k,iel] + dqdζ*metrics.dζdy[i,j,k,iel]
+                        gradq[ip,3,var] = dqdξ*metrics.dξdz[i,j,k,iel] + dqdη*metrics.dηdz[i,j,k,iel] + dqdζ*metrics.dζdz[i,j,k,iel]
+                    end
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", el_matrices.D)
+
+    return dqdx, dqdy, dqdz
+end
+
+function build_gradient(SD::NSD_1D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
+    nvar = size(qp.qn,2)
+    gradq = zeros(1,mesh.npoin,nvar)
+
+    for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            ip = mesh.connijk[i,j,iel]
+            m = i + (j-1)*mesh.ngl
+
+            for var=1:nvar
+                dqdξ = 0.0
+                for k = 1:mesh.ngl
+                    dqdξ = dqdξ + dψ[k,i]*qp.qn[ip,1]
+                end
+                gradq[ip,var] = dqdξ*metrics.dξdx[i,j,iel]
+            end
+        end
+    end
+    #show(stdout, "text/plain", el_matrices.D)
+
+    return dqdx
+end
