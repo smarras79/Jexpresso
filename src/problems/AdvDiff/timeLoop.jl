@@ -30,7 +30,7 @@ function time_loop!(TD::RK5,
         t0 = t
         
         rk!(qp; TD, SD, QT, PT,
-            mesh, metrics, basis, ω, M, Δt, inputs, T)
+            mesh, metrics, basis, ω, M, Δt, it, inputs, T)
         
     end
     #title = string("solution at final step ", Nt)
