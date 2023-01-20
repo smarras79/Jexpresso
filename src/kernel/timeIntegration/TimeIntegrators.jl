@@ -60,7 +60,7 @@ function rk!(q::St_SolutionVectors;
              mesh::St_mesh,
              metrics::St_metrics,
              basis, ω,
-             M, Δt,
+             M, Δt, it,
              inputs::Dict,
              T)
     
@@ -72,12 +72,13 @@ function rk!(q::St_SolutionVectors;
         #
         # rhs[ngl,ngl,nelem]
         #
-        rhs_el = build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics)
+        rhs_el      =      build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics, it, T)
 
         #
         # RHS[npoin] = DSS(rhs)
         #
-        RHS = DSSijk_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+        RHS = DSSijk_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
         if (QT == Inexact())
             RHS .= RHS./M
         else

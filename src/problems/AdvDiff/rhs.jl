@@ -8,7 +8,7 @@ include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/basis/basis_structs.jl")
 
 
-function build_rhs(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
+function build_rhs(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
     qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem,3)
     
@@ -53,6 +53,80 @@ function build_rhs(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, me
     #show(stdout, "text/plain", el_matrices.D)
 
     return rhs_el
+end
+
+function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, it, T)
+
+    N = mesh.ngl - 1
+    
+    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem,3)
+    
+    rhsdiffξ_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
+    rhsdiffη_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
+    rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
+    
+    #
+    # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
+    #
+    ν = 2.0
+    for iel=1:mesh.nelem
+
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            m = mesh.connijk[i,j,iel]
+            
+            qnel[i,j,iel,1] = qp.qn[m,1]
+            qnel[i,j,iel,2] = qp.qn[m,2]
+            qnel[i,j,iel,3] = qp.qn[m,3]
+        end
+        
+        #rhsdiffξ_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
+        #rhsdiffη_el = zeros(mesh.ngl*mesh.ngl, mesh.nelem)
+        for k = 1:mesh.ngl, l = 1:mesh.ngl
+            ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
+            
+            dqdξ = 0.0
+            dqdη = 0.0
+            for i = 1:mesh.ngl
+                dqdξ = dqdξ + dψ[i,k]*qnel[i,l,iel,1]
+                dqdη = dqdη + dψ[i,l]*qnel[k,i,iel,1]
+                
+                if (dqdξ> 100.0 ||  dqdη >100.0)
+                    @printf "  ------ qnel = %.8f %.8f -- it=%d \n" dqdξ qnel[i,l,iel,1] it #dqdξ dqdη
+                    error("large error")
+                end
+            end
+            dqdx = dqdξ*metrics.dξdx[k,l,iel] + dqdη*metrics.dηdx[k,l,iel]
+            dqdy = dqdξ*metrics.dξdy[k,l,iel] + dqdη*metrics.dηdy[k,l,iel]
+            
+            ∇ξ∇q_kl = metrics.dξdx[k,l,iel]*dqdx + metrics.dξdy[k,l,iel]*dqdy
+            ∇η∇q_kl = metrics.dηdx[k,l,iel]*dqdx + metrics.dηdy[k,l,iel]*dqdy
+            
+            for i = 1:mesh.ngl
+                Iξ = i + (l - 1)*(N + 1)
+                Iη = k + (i - 1)*(N + 1)
+                
+                hll,     hkk     =  ψ[l,l],  ψ[k,k]
+                dhdξ_ik, dhdη_il = dψ[i,k], dψ[i,l]
+                #@printf "  ------ hll     = %.2f \n" hll, metrics.dξdx[k,l,iel]
+                
+                #rhsdiffξ_el[Iξ,iel] += ωkl*Jkle*dhdξ_ik*hll*∇ξ∇q_kl*ν
+                #rhsdiffη_el[Iη,iel] += ωkl*Jkle*hkk*dhdη_il*∇η∇q_kl*ν
+
+                rhsdiffξ_el[i,l,iel] -= ωJkl*dhdξ_ik*hll*∇ξ∇q_kl
+                rhsdiffη_el[k,i,iel] -= ωJkl*hkk*dhdη_il*∇η∇q_kl
+
+                #@printf "  ------ ∇ξ∇q, dξdx, rhs_ξ= %.6f %.6f %.6f\n"   ∇ξ∇q_kl metrics.dξdx[k,l,iel] rhsdiffξ_el[i,l,iel]
+            end
+            #show(stdout, "text/plain", rhsdiffξ_el[:,:,iel])
+        end
+    end
+    
+    #@info size(rhsdiffξ_el)
+    
+    
+    #return (rhsdiffξ_el + rhsdiffη_el)*ν
+    return rhsdiffξ_el*ν
+    #return rhs_el
 end
 
 
