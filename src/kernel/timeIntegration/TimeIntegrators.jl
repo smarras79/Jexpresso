@@ -61,6 +61,8 @@ function rk!(q::St_SolutionVectors;
              M,
              Δt,
              inputs::Dict,
+             BCT,
+             time,
              T)
     
     dq     = zeros(mesh.npoin)    
@@ -71,13 +73,13 @@ function rk!(q::St_SolutionVectors;
         # rhs[ngl,ngl,nelem]
         #
         rhs_el = build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω, mesh, metrics)
-
+        apply_boundary_conditions!(rhs_el,q, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT)
         #
         # RHS[npoin] = DSS(rhs)
         #
         RHS = DSSijk_rhs(SD, QT, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
         RHS .= RHS./M
-        
+        #apply_boundary_conditions!(RHS,q, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT)
         for I=1:mesh.npoin
             dq[I] = RKcoef.a[s]*dq[I] + Δt*RHS[I]
             q.qn[I,1] = q.qn[I,1] + RKcoef.b[s]*dq[I]
@@ -86,7 +88,7 @@ function rk!(q::St_SolutionVectors;
         #
         #B.C.
         #
-        apply_boundary_conditions!(q, mesh, inputs, SD)
+        apply_periodicity!(rhs_el,q, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT)
         
     end #stages
 

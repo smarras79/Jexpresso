@@ -271,7 +271,8 @@ function driver(DT::CG,       #Space discretization type
         
     # add a function to find the mesh mininum resolution
     TD = RK5()
-    time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, inputs, TFloat)
+    BCT = DefaultBC()
+    time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, inputs, BCT, TFloat)
 
     #Plot final solution
     jcontour(mesh.x, mesh.y, qp.qn[:,1], "Final solution at t=2π: tracer")

@@ -30,7 +30,7 @@ Base.@kwdef mutable struct St_metrics{TFloat}
     dζdx::Union{Array{TFloat}, Missing} = zeros(1)
     dζdy::Union{Array{TFloat}, Missing} = zeros(1)
     dζdz::Union{Array{TFloat}, Missing} = zeros(1)
-    
+    Jef ::Array{TFloat} = zeros(1)
     Je  ::Array{TFloat} = zeros(1)
 end
 
@@ -46,7 +46,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                             dηdx = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
                             dξdy = zeros(Q+1, Q+1, mesh.nelem), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
                             dηdy = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
-                            
+                            Jef  = zeros(Q+1, size(mesh.bound_elem,1)+4),  
                             Je   = zeros(Q+1, Q+1, mesh.nelem)) #   Je[1:Nq, 1:Nq, 1:nelem]
 
     ψ  = basis.ψ
@@ -90,7 +90,54 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         #show(stdout, "text/plain", metrics.Je[:,:,iel])
     end
     #show(stdout, "text/plain", metrics.Je)
-    
+    #face jacobians for boundary faces
+    for iface =1:size(mesh.xmin_faces,2)
+       for i=1:Q+1
+          ip = mesh.xmin_faces[i,iface]
+          if (i < Q+1)
+              ip1 = mesh.xmin_faces[i+1,iface]
+          else
+              ip1 = mesh.xmin_faces[i-1,iface]
+          end
+          metrics.Jef[i,iface] = abs(mesh.y[ip]-mesh.y[ip1])/2
+       end
+    end
+    disp = size(mesh.xmin_faces,2)
+    for iface =1:size(mesh.xmax_faces,2)
+       for i=1:Q+1
+          ip = mesh.xmax_faces[i,iface]
+          if (i < Q+1)
+              ip1 = mesh.xmax_faces[i+1,iface]
+          else
+              ip1 = mesh.xmax_faces[i-1,iface]
+          end
+          metrics.Jef[i,iface+disp] = abs(mesh.y[ip]-mesh.y[ip1])/2
+       end
+    end
+    disp += size(mesh.xmax_faces,2)
+    for iface =1:size(mesh.ymin_faces,2)
+       for i=1:Q+1
+          ip = mesh.ymin_faces[i,iface]
+          if (i < Q+1)
+              ip1 = mesh.ymin_faces[i+1,iface]
+          else
+              ip1 = mesh.ymin_faces[i-1,iface]
+          end
+          metrics.Jef[i,iface+disp] = abs(mesh.x[ip]-mesh.x[ip1])/2
+       end
+    end 
+    disp += size(mesh.ymin_faces,2) 
+    for iface =1:size(mesh.ymax_faces,2)
+       for i=1:Q+1
+          ip = mesh.ymax_faces[i,iface]
+          if (i < Q+1)
+              ip1 = mesh.ymax_faces[i+1,iface]
+          else
+              ip1 = mesh.ymax_faces[i-1,iface]
+          end
+          metrics.Jef[i,iface+disp] = abs(mesh.x[ip]-mesh.x[ip1])/2
+       end
+    end
     return metrics
 end
 
@@ -114,7 +161,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                              dξdz = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ξdz[2, 1:Nq, 1:Nq, 1:nelem]
                              dηdz = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ηdz[2, 1:Nq, 1:Nq, 1:nelem]
                              dζdz = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
-
+                             Jef  = zeros(Q+1, Q+1, size(mesh.bound_elem,1)),
                              Je   = zeros(Q+1, Q+1, Q+1, mesh.nelem))  #   Je[1:Nq, 1:Nq, 1:nelem]
     ψ  = basis.ψ
     dψ = basis.dψ
@@ -176,6 +223,60 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         end
         show(stdout, "text/plain", metrics.Je[:,:,:,iel])
     end
+    for iface = 1:size(mesh.xmin_faces,2) 
+        for l = 1:Q+1
+            for m = 1:Q+1
+                iel = mesh.xmin_facetoelem[iface]
+                metrics.Jef[l, m, iface] = metrics.dydη[1, l, m, iel]*metrics.dzdζ[1, l, m, iel] - metrics.dydζ[1, l, m, iel]*metrics.dzdη[1, l, m, iel]
+            end
+        end
+    end
+    disp = size(mesh.xmin_faces,2)
+    for iface = 1:size(mesh.xmax_faces,2)
+        for l = 1:Q+1
+            for m = 1:Q+1
+                iel = mesh.xmax_facetoelem[iface]
+                metrics.Jef[l, m, iface+disp] = metrics.dydη[Q+1, l, m, iel]*metrics.dzdζ[Q+1, l, m, iel] - metrics.dydζ[Q+1, l, m, iel]*metrics.dzdη[Q+1, l, m, iel]
+            end
+        end
+    end
+    disp += size(mesh.xmax_faces,2)
+    for iface = 1:size(mesh.ymin_faces,2)
+        for l = 1:Q+1
+            for m = 1:Q+1
+                iel = mesh.ymin_facetoelem[iface]
+                metrics.Jef[l, m, iface+disp] = metrics.dxdξ[l, 1, m, iel]*metrics.dzdζ[l, 1, m, iel] - metrics.dzdξ[l, 1, m, iel]*metrics.dxdζ[l, 1, m, iel]
+            end
+        end
+    end
+    disp += size(mesh.ymin_faces,2)
+    for iface = 1:size(mesh.ymax_faces,2)
+        for l = 1:Q+1
+            for m = 1:Q+1
+                iel = mesh.ymax_facetoelem[iface]
+                metrics.Jef[l, m, iface+disp] = metrics.dxdξ[l, Q+1, m, iel]*metrics.dzdζ[l, Q+1, m, iel] - metrics.dzdξ[l, Q+1, m, iel]*metrics.dxdζ[l, Q+1, m, iel]
+            end
+        end
+    end
+    disp += size(mesh.ymax_faces,2)
+    for iface = 1:size(mesh.zmin_faces,2)
+        for l = 1:Q+1
+            for m = 1:Q+1
+                iel = mesh.zmin_facetoelem[iface]
+                metrics.Jef[l, m, iface+disp] = metrics.dxdξ[l, m, 1, iel]*metrics.dydη[l, m, 1, iel] - metrics.dydξ[l, m, 1, iel]*metrics.dxdη[l, m, 1, iel]
+            end
+        end
+    end
+    disp += size(mesh.zmin_faces,2)
+    for iface = 1:size(mesh.zmax_faces,2)
+        for l = 1:Q+1
+            for m = 1:Q+1
+                iel = mesh.zmax_facetoelem[iface]
+                metrics.Jef[l, m, iface+disp] = metrics.dxdξ[l, m, Q+1, iel]*metrics.dydη[l, m, Q+1, iel] - metrics.dydξ[l, m, Q+1, iel]*metrics.dxdη[l, m, Q+1, iel]
+            end
+        end
+    end
+     
     #show(stdout, "text/plain", metrics.Je)    
     return metrics
 end
