@@ -75,7 +75,19 @@ function mod_inputs_user_inputs()
         @warn s
         
     end #lread_gmsh =#
-    
+
+    #
+    # Some physical constants and parameters:
+    #
+    if(!haskey(inputs, :νx))
+        inputs[:νx] = 0.0 #default diffusion coefficient
+    end
+    if(!haskey(inputs, :νy))
+        inputs[:νy] = 0.0 #default diffusion coefficient
+    end
+    if(!haskey(inputs, :νz))
+        inputs[:νz] = 0.0 #default diffusion coefficient
+    end
     
     #
     # Correct quantities based on a hierarchy of input variables

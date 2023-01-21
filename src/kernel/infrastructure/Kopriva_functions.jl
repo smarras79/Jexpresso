@@ -1775,7 +1775,6 @@ function ElementMassMatrix(N, Q, PT::MassMatrix1D, TFloat)
         end
     end
     
-    
     M = ElementMassMatrix_1D(ψ, ω, N, Q, TFloat)
     return M
 end

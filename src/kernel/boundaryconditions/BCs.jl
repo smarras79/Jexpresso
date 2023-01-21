@@ -5,8 +5,6 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
-
-
 include("../../io/mod_inputs.jl")
 
 include("../abstractTypes.jl")
