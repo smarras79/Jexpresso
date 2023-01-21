@@ -9,7 +9,6 @@ include("../mesh/mesh.jl")
 include("../mesh/metric_terms.jl")
 include("../basis/basis_structs.jl")
 
-
 abstract type AbstractMassType end
 mutable struct St_ElMat{TFloat} <: AbstractMassType
     M::Array{TFloat} #Mass
@@ -384,4 +383,13 @@ function DSSijk_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, 
     end
     #show(stdout, "text/plain", V)
     return V
+end
+
+
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
+    RHS = M\RHS #M may is sparse but not necessarily dsiagonal
+end
+
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact) 
+    RHS .= RHS./M #M is diagonal (stored as a vector)
 end

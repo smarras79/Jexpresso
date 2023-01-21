@@ -5,23 +5,23 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :equation_set        => "NS",
         :problem             => "none",
-        :tend                => 2π,
+        :tend                => π,
         :Δt                  => 0.001,
         :nsd                 => 2,      #number of space dims is overwritten by an external grid
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 8,      # Polynomila order
+        :nop                 => 5,      # Polynomila order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:νx                   => 1.0, #kinematic viscosity constant
-        #:νy                   => 1.0, #kinematic viscosity constant
+        :νx                   => 0.1, #kinematic viscosity constant
+        :νy                   => 0.1, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_2x2.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_10x10.msh",
+        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_2x2.msh",
+        :gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_25x25.msh",
         #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_1x1.msh",
         #:gmsh_filename       => "./demo/gmsh_grids/hexa_oneblock.msh",
