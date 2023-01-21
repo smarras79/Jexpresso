@@ -49,9 +49,9 @@ function initialize(ET::Wave1D, mesh::St_mesh, inputs::Dict, TFloat)
 end
 
 
-function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
+function initialize(ET::AdvDiff, mesh::St_mesh, inputs::Dict, TFloat)
 
-    @info " Initialize fields for Adv2D ........................ "
+    @info " Initialize fields for AdvDiff ........................ "
     
     ngl = mesh.nop + 1
     nsd = mesh.nsd
@@ -95,7 +95,7 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
     #------------------------------------------
     jcontour(mesh.x, mesh.y, q.qn[:,1], "Initial conditions: tracer")
 
-    @info " Initialize fields for Adv2D ........................ DONE"
+    @info " Initialize fields for AdvDiff ........................ DONE"
     
     return q
 end
