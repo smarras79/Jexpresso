@@ -19,7 +19,6 @@ function mod_inputs_user_inputs()
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
-    mod_inputs_check(inputs, :equation_set, "e")
     mod_inputs_check(inputs, :problem, "e")
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
@@ -121,7 +120,9 @@ function mod_inputs_user_inputs()
     # Define nvars based on the problem being solved
     #
     nvars::Int8 = 1
-    if (lowercase(inputs[:equation_set]) == "burgers")
+    if (lowercase(inputs[:problem]) == "burgers")
+        inputs[:problem] = burgers()
+        
         if(inputs[:nsd] == 1)
             nvars = 1
         elseif (inputs[:nsd] == 2)
@@ -129,17 +130,21 @@ function mod_inputs_user_inputs()
         end
         println( " # nvars     ", nvars)
         
-    elseif (lowercase(inputs[:equation_set]) == "sw")
+    elseif (lowercase(inputs[:problem]) == "sw")
+        inputs[:problem] = sw()
+        
         if (inputs[:nsd] == 1)
             nvars = 2
         elseif(inputs[:nsd] == 2)
             nvars = 3
         elseif(inputs[:nsd] == 3)
-            error(" :equation_set error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
+            error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
         end
         println( " # nvars     ", nvars)
         
-    elseif (lowercase(inputs[:equation_set]) == "ns")
+    elseif (lowercase(inputs[:problem]) == "ns")
+        inputs[:problem] = ns()
+        
         if (inputs[:nsd] == 1)
             nvars = 3
         elseif(inputs[:nsd] == 2)
@@ -148,16 +153,26 @@ function mod_inputs_user_inputs()
             nvars == 5
         end
         println( " # nvars     ", nvars)
+
+    elseif (lowercase(inputs[:problem]) == "advdiff" ||
+        lowercase(inputs[:problem]) == "advdif" ||
+        lowercase(inputs[:problem]) == "ad" ||
+        lowercase(inputs[:problem]) == "adv2d")
+        inputs[:problem] = AdvDiff()
+        
+        nvars = 1
+        println( " # nvars     ", nvars)
     else
         s = """
-            jexpresso  user_inputs.jl: equation_set ", inputs[:equation_set], " is not coded!
-            Chose among:
-                    [1] BURGERS
-                    [2] NS
-        """
+                jexpresso  user_inputs.jl: problem ", inputs[:problem, " is not coded!
+                Chose among:
+                        [1] "AdvDiff"/"AD"/"Adv"
+                        [2] "NS"
+                        [3] "SW"
+            """
+        
         @error s
     end
-    
     
     return inputs, nvars
 end

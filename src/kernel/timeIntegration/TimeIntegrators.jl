@@ -58,7 +58,7 @@ function rk!(q::St_SolutionVectors;
              TD::RK5,
              SD::NSD_2D,
              QT,
-             PT::Adv2D,
+             PT::AdvDiff,
              mesh::St_mesh,
              metrics::St_metrics,
              basis, ω,
