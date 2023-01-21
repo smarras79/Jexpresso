@@ -167,7 +167,7 @@ function driver(DT::CG,        #Space discretization type
 end
 
 function driver(DT::CG,       #Space discretization type
-                PT::Adv2D,    #Equation subtype
+                PT::AdvDiff,    #Equation subtype
                 inputs::Dict, #input parameters from src/user_input.jl
                 TFloat) 
     
@@ -289,7 +289,7 @@ function driver(DT::CG,       #Space discretization type
     #pretty_table(M, noheader = true, crop = :horizontal, formatters = ft_printf("%3.1e"))
     
     #Initialize q
-    qp = initialize(Adv2D(), mesh, inputs, TFloat)
+    qp = initialize(AdvDiff(), mesh, inputs, TFloat)
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))

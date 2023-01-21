@@ -3,19 +3,24 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :equation_set        => "NS",
-        :problem             => "none",
+        # problem:
+        #   AdvDiff/AD
+        #   NS
+        #   SW
+        #---------------------------------------------------------------------------
+        :problem             => "AdvDiff",
+        #---------------------------------------------------------------------------
         :tend                => π,
-        :Δt                  => 0.001,
-        :nsd                 => 2,      #number of space dims is overwritten by an external grid
+        :Δt                  => 0.01,
+        #:nsd                 => 2,      #number of space dims is overwritten by an external grid
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
         :nop                 => 5,      # Polynomila order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :νx                   => 0.1, #kinematic viscosity constant
-        :νy                   => 0.1, #kinematic viscosity constant
+        :νx                   => 0.01, #kinematic viscosity constant
+        :νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/basis/basis_structs.jl")
 
 
-function build_rhs(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
     qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem,3)
     
@@ -55,7 +55,7 @@ function build_rhs(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, me
     return rhs_el
 end
 
-function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_2D, QT, AP::AdvDiff, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
 
     N = mesh.ngl - 1
     
