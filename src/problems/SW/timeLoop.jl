@@ -8,7 +8,7 @@ include("../../io/plotting/jeplots.jl")
 function time_loop!(TD::RK5,
                     SD::NSD_2D,
                     QT,
-                    PT::Adv2D,
+                    PT::SW,
                     mesh::St_mesh,
                     metrics::St_metrics,
                     basis, ω,

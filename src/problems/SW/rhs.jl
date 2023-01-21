@@ -1,19 +1,14 @@
-using Test
-
 include("../AbstractProblems.jl")
-
 include("../../kernel/abstractTypes.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/basis/basis_structs.jl")
 
 
-function build_rhs(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs(SD::NSD_2D, QT, AP::SW, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
-    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem,3)
-    
+    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem,3)    
     rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
-    #rhs_el = zeros(mesh.ngl*mesh.ngl,mesh.nelem)
 
      for iel=1:mesh.nelem
         for i=1:mesh.ngl
@@ -44,8 +39,7 @@ function build_rhs(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, me
                 end
                 dqdx = dqdξ*metrics.dξdx[i,j,iel] + dqdη*metrics.dηdx[i,j,iel]
                 dqdy = dqdξ*metrics.dξdy[i,j,iel] + dqdη*metrics.dηdy[i,j,iel]
-
-                #rhs_el[m, iel] = ω[i]*ω[j]*metrics.Je[i,j,iel]*(u*dqdx + v*dqdy)
+                
                 rhs_el[i,j,iel] = ω[i]*ω[j]*metrics.Je[i,j,iel]*(u*dqdx + v*dqdy)
             end
         end
@@ -55,7 +49,7 @@ function build_rhs(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, me
     return rhs_el
 end
 
-function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_2D, QT, AP::SW, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
 
     N = mesh.ngl - 1
     
