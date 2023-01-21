@@ -35,7 +35,7 @@ include("../../kernel/timeIntegration/TimeIntegrators.jl")
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::CG,       #Space discretization type
-                PT::SW,    #Equation subtype
+                PT::AdvDiff,    #Equation subtype
                 inputs::Dict, #input parameters from src/user_input.jl
                 TFloat) 
     
