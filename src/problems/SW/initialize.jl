@@ -66,6 +66,7 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
     #Cone properties:
     σ = 32.0
     (xc, yc) = (-0.5, 0.0)
+    #(xc, yc) = (-0.0, 0.0)
     
     for iel_g = 1:mesh.nelem
         for i=1:ngl

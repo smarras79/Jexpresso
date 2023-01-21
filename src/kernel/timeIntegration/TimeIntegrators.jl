@@ -1,5 +1,7 @@
 using PrettyTables
 
+include("../infrastructure/element_matrices.jl")
+
 #
 # Time discretization
 #
@@ -66,9 +68,6 @@ function rk!(q::St_SolutionVectors;
     
     dq     = zeros(mesh.npoin)    
     RKcoef = buildRKIntegrator!(TD, T)
-
-    νx=inputs[:νx]
-    νy=inputs[:νy]
     
     for s = 1:length(RKcoef.a)
         
@@ -76,17 +75,13 @@ function rk!(q::St_SolutionVectors;
         # rhs[ngl,ngl,nelem]
         #
         rhs_el      =      build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω,         mesh, metrics, T)
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, q, basis.ψ, basis.dψ, ω, νx, νy, mesh, metrics, T)
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, q, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
 
         #
         # RHS[npoin] = DSS(rhs)
         #
         RHS = DSSijk_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
-        if (QT == Inexact())
-            RHS .= RHS./M
-        else
-            RHS = M\RHS
-        end
+        divive_by_mass_matrix!(RHS, M, QT)
         
         for I=1:mesh.npoin
             dq[I] = RKcoef.a[s]*dq[I] + Δt*RHS[I]
