@@ -2,6 +2,7 @@
 # external packages
 #--------------------------------------------------------
 using Crayons.Box
+using PrettyTables
 using Revise
 using WriteVTK
 
@@ -35,7 +36,7 @@ include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 
 function driver(DT::CG,       #Space discretization type
-                PT::SW2D,    #Equation subtype
+                PT::SW,       #Equation subtype
                 inputs::Dict, #input parameters from src/user_input.jl
                 TFloat) 
     
@@ -62,17 +63,14 @@ function driver(DT::CG,       #Space discretization type
     # Quadrature and interpolation orders coincide (Q = N)
     #
     QT  = Inexact() #Quadrature Type
-    QT_String = "Inexact"
     Qξ  = Nξ
     NDQ = ND
     ξq  = ξ
     ω   = ND.ξ.ω
-    
-    # NSD:
-    SD = NSD_2D()
+    SD  = NSD_2D()
     
     #--------------------------------------------------------
-    # Build polynomials:
+    # Build Lagrange polynomials:
     #
     # Return:
     # ψ     = basis.ψ[N+1, Q+1]
@@ -87,34 +85,27 @@ function driver(DT::CG,       #Space discretization type
     
     #--------------------------------------------------------
     # Build element mass matrix
-    #--------------------------------------------------------
-    
-    Me = build_mass_matrix(SD, QT, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    #show(stdout, "text/plain", Me[:,:,1:mesh.nelem])
-    
-    M =              DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    #show(stdout, "text/plain", M)
+    #--------------------------------------------------------    
+    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    M  = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
 
-    Le = build_laplace_matrix(SD, QT, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    show(stdout, "text/plain", Le)
-    error("QUI")
-    #L =              DSSijk_laplace(SD, QT, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-#    show(stdout, "text/plain", L)
-    
+    #--------------------------------------------------------
     #Initialize q
-    qp = initialize(SW2D(), mesh, inputs, TFloat)
-        
-    Δt = inputs[:Δt]
+    #--------------------------------------------------------
+    qp = initialize(PT, mesh, inputs, TFloat)
+    
+    Δt  = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
-    println(" # CFL = ", CFL)    
-    Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
+    Nt  = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
+    println(" # CFL = ", CFL)
         
     # add a function to find the mesh mininum resolution
     TD = RK5()
-   # time_loop(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, inputs, TFloat)
+    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, inputs, TFloat)
 
     #Plot final solution
-    jcontour(mesh.x, mesh.y, qp.qn[:,1], "Final solution at t=2π: tracer")
+    title = string("Final solution at t=inputs[:tend] for tracer")
+    jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
     
     return    
     
