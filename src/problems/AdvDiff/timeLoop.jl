@@ -1,8 +1,5 @@
 using PlotlyJS
 
-#include("./initialize.jl")
-#include("./rhs.jl")
-
 include("../../kernel/abstractTypes.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")
 include("../../io/plotting/jeplots.jl")
@@ -23,17 +20,17 @@ function time_loop!(TD::RK5,
     it = 0
     t  = inputs[:tinit]
     t0 = t
+
+    #Diffusion coefficient
     for it = 1:Nt
 
-        @printf "Solution at t=%.2f sec\n" t
+        @printf "Solution at t=%.6f sec\n" t
         t = t0 + Δt
         t0 = t
         
         rk!(qp; TD, SD, QT, PT,
-            mesh, metrics, basis, ω, M, Δt, it, inputs, T)
+            mesh, metrics, basis, ω, M, Δt, inputs, T)
         
     end
-    #title = string("solution at final step ", Nt)
-    #jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
     
 end

@@ -55,7 +55,7 @@ function build_rhs(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, me
     return rhs_el
 end
 
-function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, it, T)
+function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
 
     N = mesh.ngl - 1
     
@@ -63,12 +63,10 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mes
     
     rhsdiffξ_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
     rhsdiffη_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
-    rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
     
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
     #
-    ν = 3.0
     for iel=1:mesh.nelem
 
         for j=1:mesh.ngl, i=1:mesh.ngl
@@ -107,7 +105,7 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::Adv2D, qp, ψ, dψ, ω, mesh::St_mes
         end
     end
 
-    return (rhsdiffξ_el + rhsdiffη_el)*ν
+    return (rhsdiffξ_el*νx + rhsdiffη_el*νy)
     
 end
 

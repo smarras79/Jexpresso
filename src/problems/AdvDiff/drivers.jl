@@ -287,12 +287,6 @@ function driver(DT::CG,       #Space discretization type
     M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     #show(stdout, "text/plain", M)
     #pretty_table(M, noheader = true, crop = :horizontal, formatters = ft_printf("%3.1e"))
-        
-    Le = build_laplace_matrix(SD, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    #show(stdout, "text/plain", Le)
-    
-    L = DSSijk_laplace(SD, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    #show(stdout, "text/plain", L)
     
     #Initialize q
     qp = initialize(Adv2D(), mesh, inputs, TFloat)
