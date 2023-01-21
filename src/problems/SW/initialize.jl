@@ -17,41 +17,9 @@ mutable struct St_SolutionVectors{TFloat}
     
 end
 
-function initialize(ET::Wave1D, mesh::St_mesh, inputs::Dict, TFloat)
+function initialize(ET::SW, mesh::St_mesh, inputs::Dict, TFloat)
 
-    q = St_SolutionVectors{TFloat}(zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(1, 1))
-
-    ngl = mesh.nop + 1
-    for iel_g = 1:mesh.nelem
-        for l=1:ngl
-            ip       = mesh.conn[l, iel_g]
-            
-            x        = mesh.x[ip]
-            q.qn[ip] = exp(-64.0*x*x)
-        end
-    end
-    #------------------------------------------
-    # Plot initial condition:
-    # Notice that I scatter the points to
-    # avoid sorting the x and q which would be
-    # becessary for a smooth curve plot.
-    #------------------------------------------
-    #plt = scatter() #Clear plot
-    #display(scatter!(mesh.x, q.qn))
-    
-    return q
-end
-
-
-function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
-
-    @info " Initialize fields for Adv2D ........................ "
+    @info " Initialize fields for AdvDiff ........................ "
     
     ngl = mesh.nop + 1
     nsd = mesh.nsd
@@ -95,7 +63,7 @@ function initialize(ET::Adv2D, mesh::St_mesh, inputs::Dict, TFloat)
     #------------------------------------------
     jcontour(mesh.x, mesh.y, q.qn[:,1], "Initial conditions: tracer")
 
-    @info " Initialize fields for Adv2D ........................ DONE"
+    @info " Initialize fields for AdvDiff ........................ DONE"
     
     return q
 end
