@@ -66,9 +66,6 @@ function rk!(q::St_SolutionVectors;
     
     dq     = zeros(mesh.npoin)    
     RKcoef = buildRKIntegrator!(TD, T)
-
-    νx=inputs[:νx]
-    νy=inputs[:νy]
     
     for s = 1:length(RKcoef.a)
         
@@ -76,7 +73,7 @@ function rk!(q::St_SolutionVectors;
         # rhs[ngl,ngl,nelem]
         #
         rhs_el      =      build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω,         mesh, metrics, T)
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, q, basis.ψ, basis.dψ, ω, νx, νy, mesh, metrics, T)
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, q, basis.ψ, basis.dψ, ω, νx=inputs[:νx], νy=inputs[:νy], mesh, metrics, T)
 
         #
         # RHS[npoin] = DSS(rhs)
