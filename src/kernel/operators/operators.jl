@@ -63,9 +63,9 @@ function build_gradient(SD::NSD_3D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh,
                             dqdη = dqdη + dψ[l,j]*qp.qn[ip,1]
                             dqdζ = dqdζ + dψ[l,k]*qp.qn[ip,1]
                         end
-                        gradq[ip,1,var] = dqdξ*metrics.dξdx[i,j,k,iel] + dqdη*metrics.dηdx[i,j,k,iel] + dqdζ*metrics.dζdx[i,j,k,iel]
-                        gradq[ip,2,var] = dqdξ*metrics.dξdy[i,j,k,iel] + dqdη*metrics.dηdy[i,j,k,iel] + dqdζ*metrics.dζdy[i,j,k,iel]
-                        gradq[ip,3,var] = dqdξ*metrics.dξdz[i,j,k,iel] + dqdη*metrics.dηdz[i,j,k,iel] + dqdζ*metrics.dζdz[i,j,k,iel]
+                        gradq[1,ip,var] = dqdξ*metrics.dξdx[i,j,k,iel] + dqdη*metrics.dηdx[i,j,k,iel] + dqdζ*metrics.dζdx[i,j,k,iel]
+                        gradq[2,ip,var] = dqdξ*metrics.dξdy[i,j,k,iel] + dqdη*metrics.dηdy[i,j,k,iel] + dqdζ*metrics.dζdy[i,j,k,iel]
+                        gradq[3,ip,var] = dqdξ*metrics.dξdz[i,j,k,iel] + dqdη*metrics.dηdz[i,j,k,iel] + dqdζ*metrics.dζdz[i,j,k,iel]
                     end
                 end
             end

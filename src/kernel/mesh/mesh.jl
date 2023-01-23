@@ -634,13 +634,13 @@ if (mesh.nsd ==2)
                    ixmin = i
                 end
                 if (ymin == mesh.y[ip])
-                   iymin = i
+                   iymin = j
                 end
                 if (xmax == mesh.x[ip])
                    ixmax = i
                 end
                 if (ymax == mesh.y[ip])
-                   iymax = i
+                   iymax = j
                 end 
             end
         end

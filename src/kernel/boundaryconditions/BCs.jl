@@ -49,13 +49,12 @@ function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ
           calc_grad = true
       end
    end
-#   @info calc_grad
    dqdx_st = zeros(3,2)
    q_st = zeros(3,1)
    gradq = zeros(mesh.npoin,3,3)
    flux_q = zeros(mesh.npoin,2,3)
    exact = zeros(mesh.npoin,3)
-   penalty = 1.0#50000
+   penalty = 2.0#50000
    nx = zeros(mesh.npoin,1)
    ny = zeros(mesh.npoin,1)
    if (calc_grad)
@@ -70,17 +69,17 @@ function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ
           for k=1:mesh.ngl
               for i=1:mesh.ngl
                   iel = mesh.xmin_facetoelem[iface] 
-                  mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Je[1,k,iel]/metrics.Jef[k,iface]/2
+                  mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Jef[k,iface]/metrics.Je[1,k,iel]/2
                   ip = mesh.xmin_faces[k,iface]
                   dqdx_st[:,1] = 0.5*(gradq[1,ip,:] .+ flux_q[ip,1,:] - nx[ip]*mu.*(exact[ip,:].-qp.qn[ip,:]))
                   dqdx_st[:,2] = 0.5*(gradq[2,ip,:] .+ flux_q[ip,2,:]) #- ny[ip]*penalty.*(exact[ip,:].-qp.qn[ip,:]))
                   q_st[:] = 0.5*(qp.qn[ip,:] + exact[ip,:]) 
-                  rhs[ip] += ω[k]*metrics.Jef[k,iface]*ψ[i,k]*(nx[ip]*dqdx_st[1,1]) #+ ny[ip]*dqdx_st[1,2])
-                  rhs[ip] += ω[k]*metrics.Jef[k,iface]*(nx[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
+                  rhs[1,k,iel] -= ω[k]*metrics.Jef[k,iface]*ψ[i,k]*(nx[ip]*dqdx_st[1,1]) #+ ny[ip]*dqdx_st[1,2])
+                  rhs[1,k,iel] -= ω[k]*metrics.Jef[k,iface]*(nx[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
                   #if (qp.qn[ip,1] < -0.01)
-                   # @info calc_grad,rhs[ip],ω[k],metrics.Jef[k,iface],(nx[ip]),dψ[i,k],(qp.qn[ip,1] - q_st[1])
+             #       @info "xmin",rhs[1,k,iel],nx[ip],ny[ip],ω[k]*metrics.Jef[k,iface]*ψ[i,k]*(nx[ip]*dqdx_st[1,1]),ω[k]*metrics.Jef[k,iface]*(nx[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
                   #end
-                  qp.qn[ip,2:3] .= 0.0 
+#                  qp.qn[ip,2:3] .= 0.0 
               end
           end
       end
@@ -94,16 +93,16 @@ function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ
               for i=1:mesh.ngl
                   ip = mesh.xmax_faces[k,iface]
                   iel = mesh.xmax_facetoelem[iface] 
-                  mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Je[mesh.ngl,k,iel]/metrics.Jef[k,iface]/2
+                  mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Jef[k,iface+size(mesh.xmin_faces,2)]/metrics.Je[mesh.ngl,k,iel]/2
                   dqdx_st[:,1] = 0.5*(gradq[1,ip,:] .+ flux_q[ip,1,:] - nx[ip]*mu.*(exact[ip,:].-qp.qn[ip,:]))
                   dqdx_st[:,2] = 0.5*(gradq[2,ip,:] .+ flux_q[ip,2,:]) #- ny[ip]*penalty.*(exact[ip,:].-qp.qn[ip,:]))
                   q_st[:] = 0.5*(qp.qn[ip,:] + exact[ip,:])
-                  rhs[ip] += ω[k]*metrics.Jef[k,iface+size(mesh.xmin_faces,2)]*ψ[i,k]*(nx[ip]*dqdx_st[1,1]) #+ ny[ip]*dqdx_st[1,2])
-                  rhs[ip] += ω[k]*metrics.Jef[k,iface+size(mesh.xmin_faces,2)]*(nx[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
+                  rhs[mesh.ngl,k,iel] -= ω[k]*metrics.Jef[k,iface+size(mesh.xmin_faces,2)]*ψ[i,k]*(nx[ip]*dqdx_st[1,1]) #+ ny[ip]*dqdx_st[1,2])
+                  rhs[mesh.ngl,k,iel] -= ω[k]*metrics.Jef[k,iface+size(mesh.xmin_faces,2)]*(nx[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
                   #if (qp.qn[ip,1] < -0.01)
 #                      @info rhs[ip],ω[k],metrics.Jef[k,iface],(nx[ip]),dψ[i,k],(qp.qn[ip,1] - q_st[1]),q_st[1]
                   #end 
-                  qp.qn[ip,2:3] .= 0.0
+ #                 qp.qn[ip,2:3] .= 0.0
               end
           end
       end
@@ -116,16 +115,16 @@ function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ
               for i=1:mesh.ngl
                   ip = mesh.ymin_faces[k,iface]
                   iel = mesh.ymin_facetoelem[iface] 
-                  mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Je[k,1,iel]/metrics.Jef[k,iface]/2
+                  mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Jef[k,iface+disp]/metrics.Je[k,1,iel]/2
                   dqdx_st[:,1] = 0.5*(gradq[1,ip,:] .+ flux_q[ip,1,:]) #- nx[ip]*mu.*(exact[ip,:].-qp.qn[ip,:]))
                   dqdx_st[:,2] = 0.5*(gradq[2,ip,:] .+ flux_q[ip,2,:] - ny[ip]*mu.*(exact[ip,:].-qp.qn[ip,:]))
                   q_st[:] = 0.5*(qp.qn[ip,:] + exact[ip,:])
-                  rhs[ip] += ω[k]*metrics.Jef[k,iface+disp]*ψ[i,k]*(0.0*dqdx_st[1,1] + ny[ip]*dqdx_st[1,2])
-                  rhs[ip] += ω[k]*metrics.Jef[k,iface+disp]*(ny[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
+                  rhs[k,1,iel] -= ω[k]*metrics.Jef[k,iface+disp]*ψ[i,k]*(0.0*dqdx_st[1,1] + ny[ip]*dqdx_st[1,2])
+                  rhs[k,1,iel] -= ω[k]*metrics.Jef[k,iface+disp]*(ny[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
                   #if (qp.qn[ip,1] < -0.01)
-                   # @info rhs[ip],ω[k]*metrics.Jef[k,iface]*ψ[i,k]*(nx[ip]*dqdx_st[1,1]),ω[k]*metrics.Jef[k,iface]*(nx[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
+#                    @info "ymin",nx[ip],ny[ip],rhs[k,mesh.ngl,iel],ω[k]*metrics.Jef[k,iface]*ψ[i,k]*(ny[ip]*dqdx_st[1,2]),ω[k]*metrics.Jef[k,iface]*(ny[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
                   #end 
-                  qp.qn[ip,2:3] .= 0.0
+  #                qp.qn[ip,2:3] .= 0.0
               end
           end
       end
@@ -138,17 +137,17 @@ function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ
           for k=1:mesh.ngl
               for i=1:mesh.ngl
                    ip = mesh.ymax_faces[k,iface]
-                   iel = mesh.xmin_facetoelem[iface] 
-                   mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Je[k,mesh.ngl,iel]/metrics.Jef[k,iface]/2
+                   iel = mesh.ymax_facetoelem[iface] 
+                   mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Jef[k,iface+disp]/metrics.Je[k,mesh.ngl,iel]/2
                    dqdx_st[:,1] = 0.5*(gradq[1,ip,:] .+ flux_q[ip,1,:]) #- nx[ip]*penalty.*(exact[ip,:].-qp.qn[ip,:]))
                    dqdx_st[:,2] = 0.5*(gradq[2,ip,:] .+ flux_q[ip,2,:] - ny[ip]*mu.*(exact[ip,:].-qp.qn[ip,:]))
                    q_st[:] = 0.5*(qp.qn[ip,:] + exact[ip,:])
-                   rhs[ip] += ω[k]*metrics.Jef[k,iface+disp]*ψ[i,k]*(0.0*dqdx_st[1,1] + ny[ip]*dqdx_st[1,2])
-                   rhs[ip] += ω[k]*metrics.Jef[k,iface+disp]*(ny[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
+                   rhs[k,mesh.ngl,iel] -= ω[k]*metrics.Jef[k,iface+disp]*ψ[i,k]*(0.0*dqdx_st[1,1] + ny[ip]*dqdx_st[1,2])
+                   rhs[k,mesh.ngl,iel] -= ω[k]*metrics.Jef[k,iface+disp]*(ny[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
                   #if (qp.qn[ip,1] < -0.01)
-                   #   @info rhs[ip],ω[k]*metrics.Jef[k,iface]*ψ[i,k]*(nx[ip]*dqdx_st[1,1]),ω[k]*metrics.Jef[k,iface]*(nx[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
+                   #   @info "ymax",nx[ip],ny[ip],rhs[k,mesh.ngl,iel],ω[k]*metrics.Jef[k,iface]*ψ[i,k]*(ny[ip]*dqdx_st[1,2]),ω[k]*metrics.Jef[k,iface]*(ny[ip])*dψ[i,k]*(qp.qn[ip,1] - q_st[1])
                   #end  
-                  qp.qn[ip,2:3] .= 0.0
+   #               qp.qn[ip,2:3] .= 0.0
              end
           end
       end
@@ -367,41 +366,41 @@ function build_custom_bcs!(t,mesh,q,gradq,::NSD_2D,::DefaultBC,exact_q,flux_q,nx
       y = mesh.y[ip]
       nx[ip]=0.0
       ny[ip]=0.0
-      #=if (x == mesh.xmin && y == mesh.ymin)
+      if (AlmostEqual(x,mesh.xmin) && AlmostEqual(y,mesh.ymin))
         nx[ip]=sqrt(0.5)
         ny[ip]=sqrt(0.5)
-      elseif (x== mesh.xmin && y == mesh.ymax)
+      elseif (AlmostEqual(x,mesh.xmin) && AlmostEqual(y,mesh.ymax))
         nx[ip] = sqrt(0.5)
         ny[ip] = -sqrt(0.5)
-      elseif (x == mesh.xmax && y == mesh.ymin)
+      elseif (AlmostEqual(x,mesh.xmax) && AlmostEqual(y,mesh.ymin))
         nx[ip] = -sqrt(0.5)
         ny[ip] = sqrt(0.5)
-      elseif (x == mesh.xmax && y == mesh.ymin)
+      elseif (AlmostEqual(x,mesh.xmax) && AlmostEqual(y,mesh.ymax))
         nx[ip] = -sqrt(0.5)
-        ny[ip] = -sqrt(0.5)=#
-      if (x == mesh.xmin)
+        ny[ip] = -sqrt(0.5)
+      elseif (AlmostEqual(x,mesh.xmin))
          nx[ip]=1.0
-      end 
-      if (y == mesh.ymin)
+      elseif  (AlmostEqual(y,mesh.ymin))
          ny[ip] =1.0
-      end
-      if (x == mesh.xmax)
+      elseif  (AlmostEqual(x,mesh.xmax))
          nx[ip]=-1.0
-      end
-      if (y == mesh.ymax)
+      elseif  (AlmostEqual(y,mesh.ymax))
          ny[ip] =-1.0
       end
-      if (nx[ip] != 0.0 || ny[ip] != 0.0)
-          q.qn[ip,2:3] .= 0.0 
+      if (nx[ip] != 0.0)
+          q.qn[ip,2] = 0.0 
       end 
+      if (ny[ip] != 0.0)
+          q.qn[ip,3] = 0.0
+      end
       unl = nx[ip]*q.qn[ip,2]+ny[ip]*q.qn[ip,3]
       exact_q[ip,1] = -q.qn[ip,1]
       exact_q[ip,2] = q.qn[ip,2] - 2*unl*nx[ip]
       exact_q[ip,3] = q.qn[ip,3] - 2*unl*ny[ip]
       for var=1:3
-      #  unl = nx[ip]*gradq[1,ip,var]+ny[ip]*gradq[2,ip,var] 
-        flux_q[ip,1,var] = gradq[1,ip,var] - 2*gradq[1,ip,var]*nx[ip]
-        flux_q[ip,2,var] = gradq[2,ip,var] - 2*gradq[1,ip,var]*ny[ip]
+        unl = nx[ip]*gradq[1,ip,var]+ny[ip]*gradq[2,ip,var] 
+        flux_q[ip,1,var] = gradq[1,ip,var] - 2*gradq[1,ip,var]*unl
+        flux_q[ip,2,var] = gradq[2,ip,var] - 2*gradq[1,ip,var]*unl
       end
   end
    
@@ -414,7 +413,7 @@ function build_custom_bcs(t,mesh,q,gradq,::NSD_3D,::DefaultBC)
   for ip = 1:mesh.npoin
       x = mesh.x[ip]
       y = mesh.y[ip]
-      exact_q[ip] = -q.qn[ip]
+      exact_q[ip] = 0.01-q.qn[ip]
       flux_q[ip,1,:] = -gradq[ip,1,:]
       flux_q[ip,2,:] = -gradq[ip,2,:]
       flux_q[ip,3,:] = -gradq[ip,3,:]
