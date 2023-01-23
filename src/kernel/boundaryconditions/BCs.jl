@@ -388,18 +388,18 @@ function build_custom_bcs!(t,mesh,q,gradq,::NSD_2D,::DefaultBC,exact_q,flux_q,nx
          ny[ip] =-1.0
       end
       if (nx[ip] != 0.0)
-          q.qn[ip,2] = 0.0 
+          q.qn[ip,2] = 0.0
       end 
       if (ny[ip] != 0.0)
           q.qn[ip,3] = 0.0
       end
       unl = nx[ip]*q.qn[ip,2]+ny[ip]*q.qn[ip,3]
-      exact_q[ip,1] = -q.qn[ip,1]
+      exact_q[ip,1] = q.qn[ip,1]
       exact_q[ip,2] = q.qn[ip,2] - 2*unl*nx[ip]
       exact_q[ip,3] = q.qn[ip,3] - 2*unl*ny[ip]
       for var=1:3
         unl = nx[ip]*gradq[1,ip,var]+ny[ip]*gradq[2,ip,var] 
-        flux_q[ip,1,var] = gradq[1,ip,var] - 2*gradq[1,ip,var]*unl
+        flux_q[ip,1,var] = gradq[1,ip,var] - 2*gradq[1,ip,var]*unl 
         flux_q[ip,2,var] = gradq[2,ip,var] - 2*gradq[1,ip,var]*unl
       end
   end
