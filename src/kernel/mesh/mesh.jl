@@ -711,19 +711,19 @@ if (mesh.nsd ==3)
                         ixmin = i
                     end
                     if (ymin == mesh.y[ip])
-                        iymin = i
+                        iymin = j
                     end
                     if (xmax == mesh.x[ip])
                         ixmax = i
                     end
                     if (ymax == mesh.y[ip])
-                        iymax = i
+                        iymax = j
                     end
                     if (zmin == mesh.z[ip])
-                        izmin = i
+                        izmin = k
                     end
                     if (zmax == mesh.z[ip])
-                        izmax = i
+                        izmax = k
                     end
                 end
             end

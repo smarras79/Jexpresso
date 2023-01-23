@@ -5,7 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :equation_set => "ns",
         :problem      => "none",
-        :tend         => 0.5,
+        :tend         => 1.0,
         :lexact_integration => false,
         :lread_gmsh   => true,
         :Δt => 0.0001,
