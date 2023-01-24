@@ -1,21 +1,8 @@
 include("../AbstractProblems.jl")
+
+include("../../kernel/globalStructs.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../io/plotting/jeplots.jl")
-
-mutable struct St_SolutionVectors{TFloat}
-
-    qnp1::Array{TFloat} #qⁿ⁺¹
-    qn::Array{TFloat}   #qⁿ
-    qnm1::Array{TFloat} #qⁿ⁻¹
-    qnm2::Array{TFloat} #qⁿ⁻²
-    qnm3::Array{TFloat} #qⁿ⁻³
-    qe::Array{TFloat}   #qexact    
-    qnel::Array{TFloat} #qⁿ[ngl,ngl,ngl,nelem]
-    
-    #Finv ::Array{TFloat} #Inviscid flux
-    #Fvisc::Array{TFloat} #Viscous flux
-    
-end
 
 function initialize(ET::SW, mesh::St_mesh, inputs::Dict, TFloat)
 
@@ -23,14 +10,14 @@ function initialize(ET::SW, mesh::St_mesh, inputs::Dict, TFloat)
     
     ngl = mesh.nop + 1
     nsd = mesh.nsd
-    q = St_SolutionVectors{TFloat}(zeros(mesh.npoin, nsd+1),
-                                   zeros(mesh.npoin, nsd+1),
-                                   zeros(1, nsd+1),
-                                   zeros(1, nsd+1),
-                                   zeros(1, nsd+1),
-                                   zeros(1, nsd+1),
-                                   zeros(ngl, ngl, mesh.nelem, nsd+1) )
-
+    q   = St_SolutionVars{TFloat,Int8}(zeros(mesh.npoin, nsd+1),
+                                       zeros(mesh.npoin, nsd+1),
+                                       zeros(1, nsd+1),
+                                       zeros(1, nsd+1),
+                                       zeros(1, nsd+1),
+                                       zeros(1, nsd+1),
+                                       zeros(ngl, ngl, mesh.nelem, nsd+1))
+    
     #Cone properties:
     σ = 32.0
     (xc, yc) = (-0.5, 0.0)
