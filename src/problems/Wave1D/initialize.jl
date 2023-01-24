@@ -1,32 +1,19 @@
 include("../AbstractProblems.jl")
+
+include("../../kernel/globalStructs.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../io/plotting/jeplots.jl")
 
-mutable struct St_SolutionVectors{TFloat}
-
-    qnp1::Array{TFloat} #qⁿ⁺¹
-    qn::Array{TFloat}   #qⁿ
-    qnm1::Array{TFloat} #qⁿ⁻¹
-    qnm2::Array{TFloat} #qⁿ⁻²
-    qnm3::Array{TFloat} #qⁿ⁻³
-    qe::Array{TFloat}   #qexact    
-    qnel::Array{TFloat} #qⁿ[ngl,ngl,ngl,nelem]
-    
-    #Finv ::Array{TFloat} #Inviscid flux
-    #Fvisc::Array{TFloat} #Viscous flux
-    
-end
-
 function initialize(ET::Wave1D, mesh::St_mesh, inputs::Dict, TFloat)
 
-    q = St_SolutionVectors{TFloat}(zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(mesh.npoin),
-                                   zeros(1, 1))
-
+    q     = St_SolutionVars{TFloat}(zeros(mesh.npoin),
+                                    zeros(mesh.npoin),
+                                    zeros(mesh.npoin),
+                                    zeros(mesh.npoin),
+                                    zeros(mesh.npoin),
+                                    zeros(mesh.npoin),
+                                    zeros(1, 1))
+    
     ngl = mesh.nop + 1
     for iel_g = 1:mesh.nelem
         for l=1:ngl

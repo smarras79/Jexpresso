@@ -91,7 +91,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
-    #conn              = ElasticArray{Int64}(undef, ngl*nelem)
     connijk           = Array{Int64}(undef, 0)
     conn              = Array{Int64}(undef, 0)
     conn_unique_edges = ElasticArray{Int64}(undef,  1, 2)

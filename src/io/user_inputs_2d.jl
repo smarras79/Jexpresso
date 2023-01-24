@@ -9,13 +9,18 @@ function user_inputs()
         #   SW
         #---------------------------------------------------------------------------
         :problem             => "AdvDiff",
+        #:problem             => "LinearCLaw",
         #---------------------------------------------------------------------------
-        :tend                => π,
-        :Δt                  => 0.01,
-        #:nsd                 => 2,      #number of space dims is overwritten by an external grid
+        :tend                => 1.5, #2π,
+        #:Δt                  => 8.75e-4,
+        :Δt                  => 5e-4,
+        :diagnostics_interval=> 100,
+        #---------------------------------------------------------------------------
+        #Integration and quadrature properties
+        #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 5,      # Polynomila order
+        :nop                 => 8,      # Polynomila order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------

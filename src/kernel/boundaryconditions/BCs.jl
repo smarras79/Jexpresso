@@ -18,6 +18,9 @@ include("../mesh/mesh.jl")
 
 
 function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
+
+    nvars = length(qp.qn[1,1,:])
+    
     #Periodic boundaries
     if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="periodic" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="periodic")
         inputs[:xmax_bc] = "periodic"
@@ -25,8 +28,10 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         # B.C.: periodic
         for I in keys(mesh.xperiodicity)
             ip = mesh.xperiodicity[I]
-            qp.qn[I,:] .= 0.5*(qp.qn[I,:] .+ qp.qn[ip,:])
-            qp.qn[ip,:] .= qp.qn[I,:]
+            for ivar=1:nvars
+                qp.qn[I,:,ivar] .= 0.5*(qp.qn[I,:,ivar] .+ qp.qn[ip,:,ivar])
+                qp.qn[ip,:,ivar] .= qp.qn[I,:,ivar]
+            end
         end
     end 
     if (haskey(inputs, :ymin_bc) && inputs[:ymin_bc]=="periodic") || (haskey(inputs, :ymax_bc) && inputs[:ymax_bc]=="periodic")
@@ -34,8 +39,10 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         inputs[:ymin_bc] = "periodic"
         for I in keys(mesh.yperiodicity)
             ip = mesh.yperiodicity[I]
-            qp.qn[I,:] .= 0.5*(qp.qn[I,:] .+ qp.qn[ip,:])
-            qp.qn[ip,:] .= qp.qn[I,:]
+            for ivar=1:nvars
+                qp.qn[I,:,ivar] .= 0.5*(qp.qn[I,:,ivar] .+ qp.qn[ip,:,ivar])
+                qp.qn[ip,:,ivar] .= qp.qn[I,:,ivar]
+            end
         end
     end
 
@@ -45,7 +52,9 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         exact = inputs[:bc_exact_xmin] 
         for I=1:size(mesh.bc_xmin,1)
             ip = mesh.bc_xmin[I]
-            qp.qn[ip,:] .= exact[:]
+            for ivar=1:nvars
+                qp.qn[ip,:,ivar] .= exact[:]
+            end
         end
     end
     if (haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="dirichlet") 
@@ -53,7 +62,9 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         exact = inputs[:bc_exact_xmax]
         for I=1:size(mesh.bc_xmax,1)
             ip = mesh.bc_xmax[I]
-            qp.qn[ip,:] .= exact[:]
+            for ivar=1:nvars
+                qp.qn[ip,:,ivar] .= exact[:]
+            end
         end
     end
     if (haskey(inputs, :ymin_bc) && inputs[:ymin_bc]=="dirichlet")
@@ -61,7 +72,9 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         exact = inputs[:bc_exact_ymin]
         for I=1:size(mesh.bc_ymin,1)
             ip = mesh.bc_ymin[I]
-            qp.qn[ip,:] .= exact[:]
+            for ivar=1:nvars
+                qp.qn[ip,:,ivar] .= exact[:]
+            end
         end
     end
     if (haskey(inputs, :ymax_bc) && inputs[:ymax_bc]=="dirichlet") 
@@ -69,7 +82,9 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         exact = inputs[:bc_exact_ymax]
         for I=1:size(mesh.bc_ymax,1)
             ip = mesh.bc_ymax[I]
-            qp.qn[ip,:] .= exact[:]
+            for ivar=1:nvars
+                qp.qn[ip,:,ivar] .= exact[:]
+            end
         end
     end
 end

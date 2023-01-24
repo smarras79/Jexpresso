@@ -1,14 +1,9 @@
-using PrettyTables
+#using PrettyTables
 
+include("../abstractTypes.jl")
 include("../infrastructure/element_matrices.jl")
 
-#
-# Time discretization
-#
-abstract type AbstractTime end
-struct RK <: AbstractTime end
-struct RK3 <: AbstractTime end
-struct RK5 <: AbstractTime end
+include("../../io/plotting/jeplots.jl")
 
 mutable struct RK_Integrator{TFloat}
   a::Array{TFloat}
@@ -54,19 +49,20 @@ function buildRKIntegrator!(RKtype::RK5, TFloat)
 
 end
 
-function rk!(q::St_SolutionVectors;
-             TD::RK5,
-             SD::NSD_2D,
+function rk!(q::St_SolutionVars;
+             TD,
+             SD,
              QT,
-             PT::AdvDiff,
+             PT,
              mesh::St_mesh,
              metrics::St_metrics,
              basis, ω,
              M, Δt,
+             nvars, 
              inputs::Dict,
              T)
     
-    dq     = zeros(mesh.npoin)    
+    dq     = zeros(mesh.npoin, nvars)
     RKcoef = buildRKIntegrator!(TD, T)
     
     for s = 1:length(RKcoef.a)
@@ -74,27 +70,82 @@ function rk!(q::St_SolutionVectors;
         #
         # rhs[ngl,ngl,nelem]
         #
-        rhs_el      =      build_rhs(SD, QT, PT, q, basis.ψ, basis.dψ, ω,         mesh, metrics, T)
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, q, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+        rhs_el      = build_rhs(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω,
+                                mesh, metrics, T)
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω,
+                                     inputs[:νx], inputs[:νy], mesh, metrics, T)
         
         #
         # RHS[npoin] = DSS(rhs)
         #
-        RHS = DSSijk_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
-        divive_by_mass_matrix!(RHS, M, QT)
-        
-        for I=1:mesh.npoin
-            dq[I] = RKcoef.a[s]*dq[I] + Δt*RHS[I]
-            q.qn[I,1] = q.qn[I,1] + RKcoef.b[s]*dq[I]
+        for ivar=1:nvars
+            RHS = DSSijk_rhs(SD,
+                             rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
+                             mesh.connijk,
+                             mesh.nelem, mesh.npoin, mesh.nop,
+                             T)
+            divive_by_mass_matrix!(RHS, M, QT)
+            
+            for I=1:mesh.npoin
+                dq[I, ivar] = RKcoef.a[s]*dq[I, ivar] + Δt*RHS[I]
+                q.qn[I, ivar] = q.qn[I, ivar] + RKcoef.b[s]*dq[I, ivar]
+            end
+            
+            #
+            # B.C.
+            #
         end
-        
-        #
-        # B.C.
-        #
         apply_boundary_conditions!(q, mesh, inputs, SD)
         
-    end #stages
+        end #stages
 
     #return qp
+    
+end
+
+function time_loop!(TD,
+                    SD,
+                    QT,
+                    PT,
+                    mesh::St_mesh,
+                    metrics::St_metrics,
+                    basis, ω,
+                    qp,
+                    M,
+                    Nt, Δt,
+                    nvars, 
+                    inputs::Dict, 
+                    T)
+    it = 0
+    t  = inputs[:tinit]
+    t0 = t
+
+    plot_at_times = [0.25, 0.5, 1.0, 1.5]
+    
+    it_interval = inputs[:diagnostics_interval]
+    for it = 1:Nt
+
+        if (mod(it, it_interval) == 0 || it == Nt)
+            @printf "   Solution at t = %.6f sec\n" t
+            @printf "      min(q) = %.6f\n" minimum(qp.qn[:,1])
+            @printf "      max(q) = %.6f\n" maximum(qp.qn[:,1])
+            
+            #------------------------------------------
+            # Plot initial condition:
+            # Notice that I scatter the points to
+            # avoid sorting the x and q which would be
+            # becessary for a smooth curve plot.
+            #------------------------------------------
+            title = string(" solution at t=", t, " s")
+            jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
+            
+        end
+        t = t0 + Δt
+        t0 = t
+        
+        rk!(qp; TD, SD, QT, PT,
+            mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)
+        
+    end
     
 end

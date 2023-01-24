@@ -7,7 +7,8 @@ include("../../kernel/basis/basis_structs.jl")
 
 function build_rhs(SD::NSD_2D, QT, AP::SW, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
-    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem,3)    
+    qnel = zeros(mesh.ngl, mesh.ngl, mesh.nelem,        3)
+    F    = zeros(mesh.ngl, mesh.ngl, mesh.nelem, mesh.nsd)
     rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
 
      for iel=1:mesh.nelem
@@ -15,10 +16,11 @@ function build_rhs(SD::NSD_2D, QT, AP::SW, qp, ψ, dψ, ω, mesh::St_mesh, metri
             for j=1:mesh.ngl
                 m = mesh.connijk[i,j,iel]
 
-                qnel[i,j,iel,1] = qp.qn[m,1]
-                qnel[i,j,iel,2] = qp.qn[m,2]
-                qnel[i,j,iel,3] = qp.qn[m,3]
-                
+                qnel[i,j,iel,1] = qp.qn[m,1] #h
+                qnel[i,j,iel,2] = qp.qn[m,2] #uh
+                qnel[i,j,iel,3] = qp.qn[m,3] #vh
+
+                qnel[i,j,iel,3] = qp.qn[m,3] #vh
             end
         end
      end
