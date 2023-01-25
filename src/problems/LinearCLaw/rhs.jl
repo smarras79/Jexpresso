@@ -67,7 +67,7 @@ end
 
 function build_rhs_diff(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
 
-     N = mesh.ngl - 1
+    N = mesh.ngl - 1
     
     qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem,3)
     
@@ -116,6 +116,6 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, �
     end
 
     return (rhsdiffξ_el*νx + rhsdiffη_el*νy)
-   
+    
 end
 
