@@ -1,5 +1,3 @@
-#using PrettyTables
-
 include("../abstractTypes.jl")
 include("../infrastructure/element_matrices.jl")
 
@@ -144,8 +142,13 @@ function time_loop!(TD,
         t0 = t
         
         rk!(qp; TD, SD, QT, PT,
-            mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)
-        
+            mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)      
     end
+      
+    #Plot final solution
+    
+    #Plot final solution
+    title = string( "Tracer: final solution at t=%.8f", inputs[:tend])
+    jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
     
 end
