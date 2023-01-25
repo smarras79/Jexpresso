@@ -212,8 +212,8 @@ function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop::TI
     end
     if (mod(nop,2) == 0)
         LegendreAndDerivativeAndQ!(Legendre, nop+1, 0.0)
-        lg.ξ[Tint(nop/2)] = 0
-        lg.ω[Tint(nop/2)] = 2/Legendre.dlegendre^2
+        lg.ξ[Tint(nop/2)+1] = 0
+        lg.ω[Tint(nop/2)+1] = 2/Legendre.dlegendre^2
     end
 end
 
