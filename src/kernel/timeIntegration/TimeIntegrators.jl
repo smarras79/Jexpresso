@@ -136,8 +136,8 @@ function time_loop!(TD,
             # avoid sorting the x and q which would be
             # becessary for a smooth curve plot.
             #------------------------------------------
-            title = string(" solution at t=", t, " s")
-            jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
+            #title = string(" solution at t=", t, " s")
+            #jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
             
         end
         t = t0 + Δt

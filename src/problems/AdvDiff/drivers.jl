@@ -17,7 +17,6 @@ include("../AbstractProblems.jl")
 
 include("./rhs.jl")
 include("./initialize.jl")
-#include("./timeLoop.jl")
 
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
@@ -114,7 +113,7 @@ function driver(DT::CG,       #Space discretization type
     # Return:
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------    
-    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)   
+    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #--------------------------------------------------------

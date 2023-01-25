@@ -6,22 +6,24 @@ include("../../kernel/mesh/metric_terms.jl")
 
 function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
-    qnel   = zeros(mesh.ngl, mesh.ngl, mesh.nelem, 3)
+    #qnel = zeros(mesh.ngl, mesh.ngl, mesh.nelem, 1)
+    F    = zeros(mesh.ngl, mesh.ngl, mesh.nelem, 1)
+    G    = zeros(mesh.ngl, mesh.ngl, mesh.nelem, 1)
+    
     rhs_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqns)
     
     for iel=1:mesh.nelem
         for i=1:mesh.ngl
             for j=1:mesh.ngl
-                m = mesh.connijk[i,j,iel]
+                ip = mesh.connijk[i,j,iel]
 
-                qnel[i,j,iel,1] = qp.qn[m,1]
+                q = qp.qn[ip,1]
                 
-                q = qnel[i,j,iel,1]
-                u = qp.qe[m,2]
-                v = qp.qe[m,3]
+                u = qp.qe[ip,2] #u,v are constant, hence stored in qp.qe instead of qp.qn
+                v = qp.qe[ip,3] #u,v are constant, hence stored in qp.qe instead of qp.qn
                 
-                qp.F[i,j,iel,1] = q*u
-                qp.G[i,j,iel,1] = q*v
+                F[i,j,iel,1] = q*u
+                G[i,j,iel,1] = q*v
                 
             end
         end
@@ -35,11 +37,11 @@ function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St
                     dFdξ = dFdη = 0.0
                     dGdξ = dGdη = 0.0
                     for k = 1:mesh.ngl
-                        dFdξ = dFdξ + dψ[k, i]*qp.F[k, j, iel, 1]
-                        dFdη = dFdη + dψ[k, j]*qp.F[i, k, iel, 1]
+                        dFdξ = dFdξ + dψ[k, i]*F[k, j, iel, 1]
+                        dFdη = dFdη + dψ[k, j]*F[i, k, iel, 1]
 
-                        dGdξ = dGdξ + dψ[k, i]*qp.G[k, j, iel, 1]
-                        dGdη = dGdη + dψ[k, j]*qp.G[i, k, iel, 1]
+                        dGdξ = dGdξ + dψ[k, i]*G[k, j, iel, 1]
+                        dGdη = dGdη + dψ[k, j]*G[i, k, iel, 1]
                     end
                     dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                     dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
@@ -135,9 +137,6 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::AdvDiff, nvars, qp, ψ, dψ, ω, νx
             ∇η∇q_kl = metrics.dηdx[k,l,iel]*dqdx + metrics.dηdy[k,l,iel]*dqdy
             
             for i = 1:mesh.ngl
-                Iξ = i + (l - 1)*(N + 1)
-                Iη = k + (i - 1)*(N + 1)
-                
                 hll,     hkk     =  ψ[l,l],  ψ[k,k]
                 dhdξ_ik, dhdη_il = dψ[i,k], dψ[i,l]
                 
