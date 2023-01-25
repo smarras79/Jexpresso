@@ -6,7 +6,10 @@ include("../../kernel/mesh/metric_terms.jl")
 
 function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
-    qnel   = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)    
+    F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    
     rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     
     dFdx = dGdy = zeros(neqs)
@@ -19,23 +22,19 @@ function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::
 
         for i=1:mesh.ngl
             for j=1:mesh.ngl
-                m = mesh.connijk[i,j,iel]
+                ip = mesh.connijk[i,j,iel]
                 
-                qnel[i,j,iel,1] = qp.qn[m,1]
-                qnel[i,j,iel,2] = qp.qn[m,2]
-                qnel[i,j,iel,3] = qp.qn[m,3]
-
-                p = qnel[i,j,iel,1]
-                u = qnel[i,j,iel,2]
-                v = qnel[i,j,iel,3]
+                p = qp.qn[ip,1]
+                u = qp.qn[ip,2]
+                v = qp.qn[ip,3]
                 
-                qp.F[i,j,iel,1] = c^2*u
-                qp.F[i,j,iel,2] = p
-                qp.F[i,j,iel,3] = 0
+                F[i,j,iel,1] = c^2*u
+                F[i,j,iel,2] = p
+                F[i,j,iel,3] = 0
 
-                qp.G[i,j,iel,1] = c^2*v
-                qp.G[i,j,iel,2] = 0
-                qp.G[i,j,iel,3] = p
+                G[i,j,iel,1] = c^2*v
+                G[i,j,iel,2] = 0
+                G[i,j,iel,3] = p
                 
             end
         end

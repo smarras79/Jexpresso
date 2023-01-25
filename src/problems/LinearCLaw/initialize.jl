@@ -12,16 +12,16 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, TFloat)
     nsd   = mesh.nsd
 
     nvars = 3
-    q     = St_SolutionVars{TFloat}(zeros(mesh.npoin, nvars),
-                                    zeros(mesh.npoin, nvars),
-                                    zeros(1, nvars),
-                                    zeros(1, nvars),
-                                    zeros(1, nvars),
-                                    zeros(1, nvars),
-                                    zeros(ngl, ngl, mesh.nelem, nvars),
-                                    zeros(ngl, ngl, mesh.nelem, nvars),
-                                    zeros(ngl, ngl, mesh.nelem, nvars),
-                                    zeros(  1,   1,          1,     1))
+    q = St_SolutionVars{TFloat}(zeros(mesh.npoin, 3),            # qn+1
+                                zeros(mesh.npoin, 3),            # qn
+                                zeros(1, 1),                     # qn-1
+                                zeros(1, 1),                     # qn-2
+                                zeros(1, 1),                     # qn-3
+                                zeros(mesh.npoin, 3),            # qe
+                                zeros(1, 1, 1, 1),               # qnelⁿ
+                                zeros(1, 1, 1, 1),               # Fⁿ⁺¹
+                                zeros(1, 1, 1, 1),               # Gⁿ⁺¹
+                                zeros(1, 1, 1, 1))               # Hⁿ⁺¹
     
     #Cone properties:
     c  = 1.0
@@ -44,15 +44,15 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, TFloat)
                 v = q.qn[ip,3] = ky*e/c #v
                 
                 # [ip] -> [i,j,iel]
-                q.F[i,j,iel_g,1] = c^2*u
-                q.F[i,j,iel_g,2] = p
-                q.F[i,j,iel_g,3] = 0
-
-                q.G[i,j,iel_g,1] = c^2*v
-                q.G[i,j,iel_g,2] = 0
-                q.G[i,j,iel_g,3] = p
+                #q.F[i,j,iel_g,1] = c^2*u
+                #q.F[i,j,iel_g,2] = p
+                #q.F[i,j,iel_g,3] = 0
+                #
+                #q.G[i,j,iel_g,1] = c^2*v
+                #q.G[i,j,iel_g,2] = 0
+                #q.G[i,j,iel_g,3] = p
                 
-                #=e = exp(-log((x*x + y*y)/0.06^2))
+                #=e = exp(-log2((x*x + y*y)/0.06^2))
                 p = q.qn[ip,1] = e      #p
                 u = q.qn[ip,2] = 0.0 #u
                 v = q.qn[ip,3] = 0.0 #v
