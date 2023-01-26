@@ -36,6 +36,7 @@ include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::CG,       #Space discretization type
                 inputs::Dict, #input parameters from src/user_input.jl
+                OUTPUT_DIR::String,
                 TFloat) 
 
     Nξ = inputs[:nop]
@@ -119,7 +120,7 @@ function driver(DT::CG,       #Space discretization type
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = initialize(PT, mesh, inputs, TFloat)
+    qp = initialize(PT, mesh, inputs, OUTPUT_DIR, TFloat)
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
@@ -129,6 +130,6 @@ function driver(DT::CG,       #Space discretization type
     # NOTICE add a function to find the mesh mininum resolution
     
     TD = RK5()
-    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, TFloat)
+    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, OUTPUT_DIR, TFloat)
     
 end

@@ -19,7 +19,7 @@ const TFloat = Float64
 include("../src/io/mod_inputs.jl")
 parsed_args  = parse_commandline()
 problem_name = string(parsed_args["arg1"])
-problem_dir  = string("../src/problems/")
+problem_dir  = string("./problems/")
 driver_dir   = string(problem_dir, problem_name, "/drivers.jl")
 #--------------------------------------------------------
 include(driver_dir)
@@ -32,7 +32,15 @@ mod_inputs_print_welcome()
 inputs        = Dict{}()
 inputs, nvars = mod_inputs_user_inputs!(problem_name, problem_dir)
 
-
+#--------------------------------------------------------
+#Create output directory if it doesn't exist:
+OUTPUT_DIR = string(problem_dir, problem_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS"))
+if !isdir(OUTPUT_DIR)
+#if !ispath(string(OUTPUT_DIR))
+    @info "it doesnt exist " OUTPUT_DIR
+ #   mkdir(joinpath(problem_dir, OUTPUT_DIR))
+end
+error("assa")
 #--------------------------------------------------------
 # Problem setup
 # !!!!!!
@@ -41,4 +49,5 @@ inputs, nvars = mod_inputs_user_inputs!(problem_name, problem_dir)
 #--------------------------------------------------------
 driver(CG(),   # Space discretization type    
        inputs, # input parameters from src/user_input.jl
+       OUTPUT_DIR,
        TFloat)
