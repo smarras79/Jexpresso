@@ -1,10 +1,7 @@
+using Dates
+
 const TInt   = Int64
 const TFloat = Float64
-
-#--------------------------------------------------------
-# jexpresso modules
-#--------------------------------------------------------
-include("../src/io/mod_inputs.jl")
 
 #--------------------------------------------------------
 # The problem name is a command line argument:
@@ -19,12 +16,14 @@ include("../src/io/mod_inputs.jl")
 # then `AdvDiff` should be your problem name that is passed to jexpresso from
 # the command line.
 #--------------------------------------------------------
+include("../src/io/mod_inputs.jl")
 parsed_args  = parse_commandline()
 problem_name = string(parsed_args["arg1"])
 problem_dir  = string("../src/problems/")
 driver_dir   = string(problem_dir, problem_name, "/drivers.jl")
-include(driver_dir)
 #--------------------------------------------------------
+include(driver_dir)
+
 mod_inputs_print_welcome()
 
 #--------------------------------------------------------
@@ -32,6 +31,7 @@ mod_inputs_print_welcome()
 #--------------------------------------------------------
 inputs        = Dict{}()
 inputs, nvars = mod_inputs_user_inputs!(problem_name, problem_dir)
+
 
 #--------------------------------------------------------
 # Problem setup

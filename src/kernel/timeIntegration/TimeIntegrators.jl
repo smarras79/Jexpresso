@@ -119,6 +119,13 @@ function time_loop!(TD,
     t0 = t
 
     plot_at_times = [0.25, 0.5, 1.0, 1.5]
+
+    
+    #Create output directory if it doesn't exist:
+    OUTPUT_DIR = string("output-"Dates.now(),"-", inputs[:problem])
+    if !isdir(OUTPUT_DIR)
+        mkdir(OUTPUT_DIR)
+    end
     
     it_interval = inputs[:diagnostics_interval]
     for it = 1:Nt
@@ -142,13 +149,14 @@ function time_loop!(TD,
         t0 = t
         
         rk!(qp; TD, SD, QT, PT,
-            mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)      
+            mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)
+        
+        title = string( "Tracer: final solution at t=%.8f", t)
+        jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/", PT, "_", it, ".png"))
     end
       
     #Plot final solution
-    
-    #Plot final solution
     title = string( "Tracer: final solution at t=%.8f", inputs[:tend])
-    jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
+    jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/", PT, "_", it, ".png"))
     
 end
