@@ -15,8 +15,15 @@ julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
 You can test that things were installed properly with
 ```bash
-julia --project=. $JEXPRESSO_HOME/Jexpresso.jl
+julia --project=. $JEXPRESSO_HOME/src/run.jl PROBLEM_NAME
 ```
+
+```PROBLEM_NAME``` is must be the same as the problem directory in `$JEXPRESSO_HOME/src/problems/PROBLEM_NAME`
+Currently available problems:
+
+* AdvDiff
+* LinearCLaw
+
 
 where `$JEXPRESSO_HOME` is your path to the base JEXPRESSO directory (you can export it in your .bashrc or simply replace its value with the explicit name of the path)
 

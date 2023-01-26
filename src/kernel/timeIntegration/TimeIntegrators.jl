@@ -122,9 +122,8 @@ function time_loop!(TD,
     plot_at_times = [0.25, 0.5, 1.0, 1.5]    
    
     it_interval = inputs[:diagnostics_interval]
+    it_diagnostics = 1
     for it = 1:Nt
-
-        it_diagnostics = 1
         if (mod(it, it_interval) == 0 || it == Nt)
             @printf "   Solution at t = %.6f sec\n" t
             @printf "      min(q) = %.6f\n" minimum(qp.qn[:,1])
