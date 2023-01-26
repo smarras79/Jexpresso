@@ -4,10 +4,8 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
-include("../src/io/mod_inputs.jl")
-include("../src/problems/AdvDiff/drivers.jl") #automate this based on input
-#include("../src/problems/LinearCLaw/drivers.jl") #automate this based on input
-
+include("./drivers.jl") #automate this based on input
+include("../../io/mod_inputs.jl", ["user_inputs.jl"])
 
 #--------------------------------------------------------
 return 

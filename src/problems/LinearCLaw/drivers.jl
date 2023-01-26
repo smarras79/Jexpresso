@@ -17,6 +17,7 @@ include("../AbstractProblems.jl")
 
 include("./rhs.jl")
 include("./initialize.jl")
+include("./timeLoop.jl")
 
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
@@ -34,13 +35,13 @@ include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
-function driver(DT::CG,       #Space discretization type
-                PT::AdvDiff,  #Equation subtype
-                inputs::Dict, #input parameters from src/user_input.jl
+function driver(DT::CG,         #Space discretization type
+                PT::LinearCLaw, #Equation subtype
+                inputs::Dict,   #input parameters from src/user_input.jl
                 TFloat) 
     
     Nξ = inputs[:nop]
-    lexact_integration = inputs[:lexact_integration]
+    lexact_integration = inputs[:lexact_integration]    
     nvars = inputs[:nvars]
     
     #--------------------------------------------------------
@@ -113,7 +114,7 @@ function driver(DT::CG,       #Space discretization type
     # Return:
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------    
-    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)   
     M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #--------------------------------------------------------
@@ -129,11 +130,10 @@ function driver(DT::CG,       #Space discretization type
     # NOTICE add a function to find the mesh mininum resolution
     
     TD = RK5()
-    BCT = DefaultBC()
-    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, BCT, TFloat)
+    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, TFloat)
 
     #Plot final solution
-    title = @printf "Final solution at t=%.8f for tracer" inputs[:tend]
+    title = string("Final solution at t=inputs[:tend] for tracer")
     jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
     
     return    

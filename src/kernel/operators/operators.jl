@@ -18,16 +18,14 @@ function interpolate!(qh, qj, ψ)
     return qh
 end
 
-function build_gradient(SD::NSD_2D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
-    nvar = size(qp.qn,2)
-    gradq = zeros(2,mesh.npoin,nvar)
-
+function build_gradient(SD::NSD_2D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics,gradq,nvars)
+     
     for iel=1:mesh.nelem
         for i=1:mesh.ngl
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
                 m = i + (j-1)*mesh.ngl
-                for var = 1:nvar
+                for var = 1:nvars
                     dqdξ = 0
                     dqdη = 0
                     for k = 1:mesh.ngl
