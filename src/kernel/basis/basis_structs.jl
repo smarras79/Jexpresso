@@ -90,7 +90,7 @@ function build_Interpolation_basis!(TP::LagrangeBasis, ξ, ξq, T::Type{Float64}
 
     N  = (Nξ + 1)
     Q  = (Qξ + 1)
-    
+    @info N, Q
     basis = St_Lagrange{T}(zeros(N,Q), zeros(N,Q))
     (basis.ψ, basis.dψ) = LagrangeInterpolatingPolynomials_classic(ξ, ξq, T)
     
@@ -235,7 +235,7 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
     
     Δ  ::Float64=0.0
     
-    println( " # Compute LGL nodes ........................")
+    println( " #    LegendreGaussLobattoNodesAndWeights!...................")
     
     for j=1:nop+1
 	lgl.ξ[j] = 0.0;
@@ -297,10 +297,9 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
     end
 
     for j=1:nop+1       
-        println( " # ξ, ω =: ", " ", lgl.ξ[j], " " , lgl.ω[j])
+        println( " #   ξ, ω =: ", " ", lgl.ξ[j], " " , lgl.ω[j])
     end
-    
-    println(" # Compute LGL nodes ........................ DONE")
+    println( " #    LegendreGaussLobattoNodesAndWeights!.............. DONE")
     
 end
 
@@ -412,9 +411,11 @@ function ChebyshevPolynomial!(Chebyshev::St_Chebyshev,nop::TInt,x::TFloat,Ks::TI
         Chebyshev.chebyshev = T
     end
 end
+function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
+
 
 """
-    LagrangeInterpolatingPolynomials_classic(ξ, ξq, N, Q, TFloat)
+    LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
     ξ::set of N interpolation points (e.g. LGL points)
     ξq::point to interpolate to (e.g. quadrature points of points within the element)
     
@@ -423,8 +424,6 @@ end
     from https://github.com/fxgiraldo/Element-based-Galerkin-Methods/blob/master/Projects/Project_01_1D_Interpolation/For_Instructors/julia/lagrange_basis.jl
 
 """
-function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
-
     N = size(ξ,1) - 1
     Q = size(ξq,1) - 1
     

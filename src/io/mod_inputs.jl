@@ -8,22 +8,25 @@ export mod_inputs_print_welcome
 include("../../user_inputs.jl")
 
 function mod_inputs_user_inputs()
-
+    
     error_flag::Int8 = 0
     
     inputs = user_inputs() # user_inputs is a Dict
-
+    
     print(GREEN_FG(" # User inputs from ...IO/user_inputs.jl .............. \n"))
     pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
     print(GREEN_FG(" # User inputs: ................................... DONE\n"))    
+
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
-    mod_inputs_check(inputs, :equation_set, "e")
     mod_inputs_check(inputs, :problem, "e")
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
     #Time:
+    if(!haskey(inputs, :diagnostics_interval))
+        inputs[:diagnostics_interval] = Int8(1)
+    end
     mod_inputs_check(inputs, :tend, "e") #Final time
     mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
@@ -75,7 +78,19 @@ function mod_inputs_user_inputs()
         @warn s
         
     end #lread_gmsh =#
-    
+
+    #
+    # Some physical constants and parameters:
+    #    
+    if(!haskey(inputs, :νx))
+        inputs[:νx] = Float16(0.0) #default kinematic viscosity
+    end
+    if(!haskey(inputs, :νy))
+        inputs[:νy] = Float16(0.0) #default kinematic viscosity
+    end
+    if(!haskey(inputs, :νz))
+        inputs[:νz] = Float16(0.0) #default kinematic viscosity
+    end
     
     #
     # Correct quantities based on a hierarchy of input variables
@@ -85,39 +100,70 @@ function mod_inputs_user_inputs()
     if(haskey(inputs, :nelx))
         inputs[:npx] = inputs[:nelx] + 1
     else
-        inputs[:npx] = 2
+        inputs[:npx] = Int8(2)
     end
     if(haskey(inputs, :nely))
         inputs[:npy] = inputs[:nely] + 1
     else
-        inputs[:npy] = 2
+        inputs[:npy] = Int8(2)
     end
     if(haskey(inputs, :nelz))
         inputs[:npz] = inputs[:nelz] + 1
     else
-        inputs[:npz] = 2
+        inputs[:npz] = Int8(2)
     end
     
     if (inputs[:nsd] == 1)
-        inputs[:npy] = 1
-        inputs[:npz] = 1
+        inputs[:npy] = Int8(1)
+        inputs[:npz] = Int8(1)
     elseif(inputs[:nsd] == 2)
-        inputs[:npz] = 1
+        inputs[:npz] = Int8(1)
     end
 
-    #
+        
+    """
+    To add a new set of governing equations, add a new :problem key 
+    and add the following lines 
+
+     elseif (lowercase(inputs[:problem]) == "new problem name")
+        inputs[:problem] = NewProblemName()
+        
+        nvars = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
+        println( " # nvars     ", nvars)
+
+    """
+    
+    #------------------------------------------------------------------------
     # Define nvars based on the problem being solved
-    #
+    #------------------------------------------------------------------------
     nvars::Int8 = 1
-    if (lowercase(inputs[:equation_set]) == "burgers")
+    if (lowercase(inputs[:problem]) == "burgers")
+        inputs[:problem] = burgers()
+        
         if(inputs[:nsd] == 1)
             nvars = 1
         elseif (inputs[:nsd] == 2)
             nvars = 2
         end
+        inputs[:nvars] = nvars
         println( " # nvars     ", nvars)
         
-    elseif (lowercase(inputs[:equation_set]) == "ns")
+    elseif (lowercase(inputs[:problem]) == "sw")
+        inputs[:problem] = sw()
+        
+        if (inputs[:nsd] == 1)
+            nvars = 2
+        elseif(inputs[:nsd] == 2)
+            nvars = 3
+        elseif(inputs[:nsd] == 3)
+            error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
+        end
+        inputs[:nvars] = nvars
+        println( " # nvars     ", nvars)
+        
+    elseif (lowercase(inputs[:problem]) == "ns")
+        inputs[:problem] = ns()
+        
         if (inputs[:nsd] == 1)
             nvars = 3
         elseif(inputs[:nsd] == 2)
@@ -125,14 +171,38 @@ function mod_inputs_user_inputs()
         elseif(inputs[:nsd] == 3)
             nvars == 5
         end
+        inputs[:nvars] = nvars
+        println( " # nvars     ", nvars)
+        
+    elseif (lowercase(inputs[:problem]) == "linearclaw()" ||
+            lowercase(inputs[:problem]) == "linclaw" ||
+            lowercase(inputs[:problem]) == "lclaw")
+        inputs[:problem] = LinearCLaw()
+        
+        inputs[:nvars] = nvars = 3
+        println( " # nvars     ", nvars)
+        
+    elseif (lowercase(inputs[:problem]) == "advdiff" ||
+        lowercase(inputs[:problem]) == "advdif" ||
+        lowercase(inputs[:problem]) == "ad" ||
+        lowercase(inputs[:problem]) == "adv2d")
+        inputs[:problem] = AdvDiff()
+        
+        inputs[:nvars] = nvars = 1
         println( " # nvars     ", nvars)
     else
+        
+        inputs[:nvars] = 1 #default
+        
         s = """
-            jexpresso  user_inputs.jl: equation_set ", inputs[:equation_set], " is not coded!
-            Chose among:
-                    [1] BURGERS
-                    [2] NS
-        """
+                jexpresso  user_inputs.jl: problem ", inputs[:problem, " is not coded!
+                Chose among:
+                    - "AdvDiff"/"AD"/"Adv"
+                    - "LinearCLaw"/"LinClaw"
+                    - "NS"
+                    - "SW"
+            """
+        
         @error s
     end
     

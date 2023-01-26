@@ -60,11 +60,13 @@ end
 function jcontour(x1, y1, z1, title)
     
     data = PlotlyJS.contour(;z=z1, x=x1, y=y1,
-                   colorbar=attr(;title="",titleside="right",
-                                 titlefont=attr(;size=14,
-                                                family="Arial, sans-serif")))
+                            colorbar=attr(;title="",titleside="right",
+                                          titlefont=attr(;size=14,
+                                                         family="Arial, sans-serif")
+                                          )
+                            )
 
     layout = Layout(;title=title)
-    display(PlotlyJS.plot(data, layout))
+    display(PlotlyJS.plot(data, layout)) #WARNING aspect ratio doesn't seem to work
 
 end

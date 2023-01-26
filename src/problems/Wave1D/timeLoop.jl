@@ -11,7 +11,7 @@ include("../../io/plotting/jeplots.jl")
 function time_loop(TD::RK5,
                    SD::NSD_2D,
                    QT::Inexact,
-                   PT::Adv2D,
+                   PT::Wave1D,
                    mesh::St_mesh,
                    metrics::St_metrics,
                    basis, ω,

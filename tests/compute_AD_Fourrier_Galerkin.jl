@@ -1,6 +1,6 @@
-include("../src/Infrastructure/Kopriva_functions.jl")
-include("../src/basis/basis_structs.jl")
-include("../src/IO/plotting/jeplots.jl")
+include("../src/kernel/infrastructure/Kopriva_functions.jl")
+include("../src/kernel/basis/basis_structs.jl")
+include("../src/io/plotting/jeplots.jl")
 
 a=zeros(Float64,3)
 b=zeros(Float64,3)
