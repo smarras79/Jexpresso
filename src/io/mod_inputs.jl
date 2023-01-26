@@ -205,7 +205,7 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
         inputs[:nvars] = nvars
         println( " # nvars     ", nvars)
         
-    elseif (lowercase(problem_name) == "linearclaw()" ||
+    elseif (lowercase(problem_name) == "linearclaw" ||
             lowercase(problem_name) == "linclaw" ||
             lowercase(problem_name) == "lclaw")
         inputs[:problem] = LinearCLaw()

@@ -24,7 +24,6 @@ function initialize(ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String
 
     test_case = "kopriva.5.3.5"
     #test_case = "giraldo.15.8"
-
     if (test_case == "kopriva.5.3.5")
         #Cone properties:
         ν = inputs[:νx] 
@@ -44,8 +43,8 @@ function initialize(ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String
 
                     q.qn[ip,1] = exp(-σ*((x - xc)*(x - xc) + (y - yc)*(y - yc)))
                     q.qe[ip,1] = q.qn[ip,1]
-                    q.qe[ip,2] = 0.8
-                    q.qe[ip,3] = 0.8
+                    q.qe[ip,2] = 0.8 #constant
+                    q.qe[ip,3] = 0.8 #constant
                     
                     #q.qnel[i,j,iel_g,1] = q.qn[ip,1]
                 end
@@ -65,8 +64,8 @@ function initialize(ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String
 
                     q.qn[ip,1] = exp(-σ*((x - xc)*(x - xc) + (y - yc)*(y - yc)))
                     q.qe[ip,1] = q.qn[ip,1]             
-                    q.qe[ip,2] = +y
-                    q.qe[ip,3] = -x
+                    q.qe[ip,2] = +y #constant
+                    q.qe[ip,3] = -x #constant
 
                     #q.qnel[i,j,iel_g,1] = q.qn[ip,1]
                 end

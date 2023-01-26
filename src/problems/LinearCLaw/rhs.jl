@@ -6,7 +6,7 @@ include("../../kernel/mesh/metric_terms.jl")
 
 function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
-    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)    
+    #qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)    
     F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     
@@ -45,18 +45,18 @@ function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::
                 dFdξ = dFdξ = zeros(T, neqs)
                 dGdξ = dGdη = zeros(T, neqs)
                 for k = 1:mesh.ngl
-                    dFdξ[1:neqs] = dFdξ[1:neqs] + dψ[k,i]*qp.F[k,j,iel,1:3]
-                    dFdη[1:neqs] = dFdη[1:neqs] + dψ[k,j]*qp.F[i,k,iel,1:3]
+                    dFdξ[1:neqs] = dFdξ[1:neqs] + dψ[k,i]*F[k,j,iel,1:neqs]
+                    dFdη[1:neqs] = dFdη[1:neqs] + dψ[k,j]*F[i,k,iel,1:neqs]
                     
-                    dGdξ[1:neqs] = dGdξ[1:neqs] + dψ[k,i]*qp.G[k,j,iel,1:3]
-                    dGdη[1:neqs] = dGdη[1:neqs] + dψ[k,j]*qp.G[i,k,iel,1:3]
+                    dGdξ[1:neqs] = dGdξ[1:neqs] + dψ[k,i]*G[k,j,iel,1:neqs]
+                    dGdη[1:neqs] = dGdη[1:neqs] + dψ[k,j]*G[i,k,iel,1:neqs]
                 end
                 dFdx[1:neqs] = dFdξ[1:neqs]*metrics.dξdx[i,j,iel] + dFdη[1:neqs]*metrics.dηdx[i,j,iel]
                 dGdy[1:neqs] = dGdξ[1:neqs]*metrics.dξdy[i,j,iel] + dGdη[1:neqs]*metrics.dηdy[i,j,iel]
                 
-                rhs_el[i,j,iel,1] = ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1] + dGdy[1])
-                rhs_el[i,j,iel,2] = ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[2] + dGdy[2])
-                rhs_el[i,j,iel,3] = ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[3] + dGdy[3])
+                rhs_el[i,j,iel,1] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1] + dGdy[1])
+                rhs_el[i,j,iel,2] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[2] + dGdy[2])
+                rhs_el[i,j,iel,3] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[3] + dGdy[3])
             end
         end
     end

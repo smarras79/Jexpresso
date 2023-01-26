@@ -4,7 +4,7 @@ include("../../kernel/globalStructs.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../io/plotting/jeplots.jl")
 
-function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, TFloat)
+function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
     @info " Initialize fields for system of Linear Conservation Laws ........................ "
     
@@ -70,16 +70,18 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, TFloat)
             end
         end
     end
-    
+     
     #------------------------------------------
-    # Plot initial conditions:
+    # Plot initial condition:
+    # Notice that I scatter the points to
+    # avoid sorting the x and q which would be
+    # becessary for a smooth curve plot.
     #------------------------------------------
     varnames = ["p", "u", "v"]
     for ivar=1:nvars
-        title = string(" Initial conditions variable ", varnames[ivar])
-        jcontour(mesh.x, mesh.y, q.qn[:,ivar], title)
+        title = string(varnames[ivar], ": initial condition")
+        jcontour(mesh.x, mesh.y, q.qn[:,1], title, string(OUTPUT_DIR, "/", varnames[ivar], "-INIT.png"))
     end
-
     @info " Initialize fields for system of Linear Conservation Laws ........................ DONE"
     
     return q
