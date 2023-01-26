@@ -1,12 +1,13 @@
 include("../basis/basis_structs.jl")
 include("../../io/plotting/jeplots.jl")
 
-""" DiscreteFourrierCoefficients(f)
-        f:: array of length N
-        computes the Discrete fourrier coefficients of f
-        f̃ using Algorithm 1 of Kopriva
-    """
+
 function DiscreteFourierCoefficients(f)
+    """ DiscreteFourrierCoefficients(f)
+            f:: array of length N
+            computes the Discrete fourrier coefficients of f
+            f̃ using Algorithm 1 of Kopriva
+    """
     N=Int32(size(f,1))
     for k=-(N/2):N/2
         s=0
@@ -17,12 +18,14 @@ function DiscreteFourierCoefficients(f)
     end
     return f̃
 end
-""" FourrierInterpolantFromModes(f̃,x)
+
+function FourierInterpolantFromModes(f̃,x)
+    
+    """ FourrierInterpolantFromModes(f̃,x)
          f̃:: array of length N of discrete fourrier coefficients
          computes the fourrier interpolant of f at the point x using the coefficients f̃
          using Algorithm 2 of Kopriva
     """
-function FourierInterpolantFromModes(f̃,x)
     i=Complex(0,1)
     N=size(f̂)
     s=(f̃[1] * exp(-i * N * x / 2) + f̃[N] * exp(i * N * x * 2)) / 2
@@ -31,12 +34,14 @@ function FourierInterpolantFromModes(f̃,x)
     end
     return Real(s)
 end
-"""
+
+function AlmostEqual(a,b)
+    
+    """
        AlmostEqual(a,b)
        uses algorithm 139 of Kopriva's book to
        determine if two floating point numbers a and b are nearly equal or not
     """
-function AlmostEqual(a,b)
     #ϵ=eps(typeof(a))
     ϵ = 0.000001
     if (a == 0) || (b == 0) || (a <=ϵ) || (b <= ϵ) 
@@ -53,13 +58,15 @@ function AlmostEqual(a,b)
         end
     end
 end
-""" FourrierInterpolantFromNodes(f,x,x_j)
+
+function FourierInterpolantFromNodes(f,x,x_j)
+    
+    """ FourrierInterpolantFromNodes(f,x,x_j)
          f:: array of length N
          x::real
          computes the fourrier interpolant of f at the point x using the coefficients the value of f at the nodes x_j
          using Algorithm 3 of Kopriva
      """
-function FourierInterpolantFromNodes(f,x,x_j)
     N=Int32(size(f,1))
     for j=0:N-1
         if AlmostEqual(x,x_j[j+1])
@@ -74,13 +81,15 @@ function FourierInterpolantFromNodes(f,x,x_j)
     Intf = s
     return Intf
 end
-"""
+
+function LegendreDerivativeCoefficients(f̂)
+    
+    """
       LegendreDerivativeCoefficients(f̂)
       f̂:: coefficients due to polynomial truncation of f
       determines the coefficients of the derivative of a truncated Legendre polynomial series
       using Algorithm 4 of Kopriva's book
     """
-function LegendreDerivativeCoefficients(f̂)
     N=Int32(size(f,1))-1
     f̅_1[N+1]=0.0
     f̅_1[N] = (2*N-1)*f̂[N+1]
@@ -89,13 +98,15 @@ function LegendreDerivativeCoefficients(f̂)
     end
     return f̅_1
 end
-"""
+
+function ChebyshevDerivativeCoefficients(f̂)
+    
+    """
        ChebyshevDerivativeCoefficients(f̂)
        f̂:: coefficients to due to polynomial truncation of f
        determines the coefficients of the derivative of a truncated Chebyshev polynomial series
        using Algorithm 5 of Kopriva's book
     """
-function ChebyshevDerivativeCoefficients(f̂)
     N=Int32(size(f,1))-1
     f̅_1[N+1]=0.0
     f̅_1[N] = 2*N*f̂[N+1]
@@ -105,14 +116,16 @@ function ChebyshevDerivativeCoefficients(f̂)
     f̅_1=f̂[2]+f̅_1[3]/2
     return f̅_1
 end
-"""
+
+
+function  DFT(f,s)
+    """
        DFT(f,s)
        f::array of size N
        s::Int32
        computes the discrete forward or backwards fourrier transform of f
        depending on the sign of s using Algorithm 6 of Kopriva's book
     """
-function  DFT(f,s)
     N=size(f)
     if (s>0)
         s=1
@@ -127,14 +140,15 @@ function  DFT(f,s)
     end
     return F
 end
-"""
+
+function InitializeFFT(N,s)
+    """
        InitializeFFT(N,s)
        N:Int32
        s:Int32
        Initializes the exp(-2*s*π*i*j/N) terms necessary for an FFT
        using Algorithm 7 of Kopriva's book
     """
-function InitializeFFT(N,s)
     w=zeros(Float64,N)
     if (s>0)
         s=1
@@ -147,7 +161,9 @@ function InitializeFFT(N,s)
     end
     return w_j
 end
-"""
+
+function Radix2FFT(f,w)
+    """
        Radix2FFT(f,w)
        f::Array of size N
        w::Array of size N
@@ -155,7 +171,6 @@ end
        using the complex trigonometric factors computed by InitializeFFT
        uses Algorithm 8 of Kopriva's book
     """
-function Radix2FFT(f,w)
     N=size(f)
     Ndiv2 = Int32(N/2)
     m = Int32(log2(N))
@@ -197,14 +212,15 @@ function Radix2FFT(f,w)
     end
     return f
 end
-"""
+
+function  FFTOfTwoRealVectors_forward(x,y,w)
+    """
       FFTOfTwoRealVectors_forward(x,y,w)
       x::real array of size N
       y::real array of size N
       w::trignometric coefficients
       computes the forward FFT of two real vectors x and y using Algorithm 9 of Kopriva
     """
-function  FFTOfTwoRealVectors_forward(x,y,w)
     N=size(x)
     for j =0:N-1
         Z[j+1]=x[j+1],y[j+1]im
@@ -218,14 +234,15 @@ function  FFTOfTwoRealVectors_forward(x,y,w)
     end
     return X,Y
 end
-"""
+
+function  FFTOfTwoRealVectors_backward(X,Y,w)
+    """
         FFTOfTwoRealVectors_backward(x,y,w)
         x::real array of size N
         y::real array of size N
         w::trignometric coefficients
         computes the backward FFT of two real vectors x and y using Algorithm 10 of Kopriva
     """
-function  FFTOfTwoRealVectors_backward(X,Y,w)
     N=size(x)
     for j =0:N-1
         Z[j+1]=X[j+1],Y[j+1]im
@@ -237,14 +254,15 @@ function  FFTOfTwoRealVectors_backward(X,Y,w)
     end
     return x,y
 end
-"""
+
+function FFFTEO(f,wf)
+    """
        FFFTEO(f,w)
        f::real vector of size N
        wf:trigonometric coefficients for a forward transform
        computes the forward FFT of a real vector f using even-odd decomposition
        using algorithm 11 of Kopriva's book
     """
-function FFFTEO(f,wf)
     N=size(f)
     for j=0:Int32(N/2)-1
         Z[j+1]=f[2*j+1]+f[2*j+2]im
@@ -261,14 +279,16 @@ function FFFTEO(f,wf)
     end
     return F
 end
-"""
+
+
+function BFFTEO(F,wb)
+    """
        BFFTEO(F,wb)
        F:real vecotr of size N
        wb:trigonometric coefficients for a backwards transform
        computes the real backward FFT of of the Vector F using even-odd decomposition
        using algorithm 12 of Kopriva's book
     """
-function BFFTEO(F,wb)
     N=size(F)
     M=Int32(N/2)
     for k=0:M-1
@@ -284,14 +304,15 @@ function BFFTEO(F,wb)
     end
     return f
 end
-"""
+
+function Forward2DFFT(f,w1,w2)
+    """
        Forward2DFFT(f,w1,w2)
        f::real matrix of size NxM
        w1,w2::forward trigonometric coefficients corresponding to N and M respectively
        computes the forward FFT of a real 2D array with an even number of points in each direction
        using Algorithm 13 of Kopriva's book
     """
-function Forward2DFFT(f,w1,w2)
     N=size(f,1)
     M=size(f,2)
     for k=0:M-2:2
@@ -307,14 +328,15 @@ function Forward2DFFT(f,w1,w2)
     end
     return F
 end
-"""
+
+function Backward2DFFT(F,w1,w2)
+    """
        Backward2DFFT(F,w1,w2)
        F::complex matrix of size NxM
        w1,w2::backward trigonometric coefficients corresponding to N and M respectively
        computes the real backward FFT of a 2D array with an even number of points in each direction
        using Algorithm 14 of Kopriva's book
     """
-function Backward2DFFT(F,w1,w2)
     for n=0:N-1
         F̄[n+1,:]=Radix2FFT(F[n+1,:],w2)
     end
@@ -323,13 +345,15 @@ function Backward2DFFT(F,w1,w2)
     end
     return f
 end
-"""
+
+
+function ForwardRealFFT(x,w)
+    """
        ForwardRealFFT(x,w)
        x::real vector of size N
        w::forward trigonometric coefficients corresponding to N
        computes the forward Real transform of x using algorithm 15 of Kopriva's book
     """
-function ForwardRealFFT(x,w)
     X=FFFTEO(x,w)
     for k=0:N/2
         a[k+1]=2*X[k+1].re
@@ -339,14 +363,16 @@ function ForwardRealFFT(x,w)
     b[Int32(N/2)+1]=0
     return a,b
 end
-"""
+
+
+function ForwardRealFFT_efficient(x,w)
+    """
        ForwardRealFFT_efficient(x,w)
        x::real vector of size N
        w::forward trigonometric coefficients corresponding to N
        computes the forward Real transform of x using algorithm 15 of Kopriva's book
        but excludes the computation of unneccesary coefficients by FFFTEO
     """
-function ForwardRealFFT_efficient(x,w)
     N=size(X)
     for j=0:Int32(N/2)-1
         Z[j+1]=x[2*j+1]+f[2*j+2]im
@@ -366,13 +392,15 @@ function ForwardRealFFT_efficient(x,w)
     b[Int32(N/2)+1]=0
     return a,b
 end
-"""
+
+
+function BackwardRealFFT(a,b)
+    """
        BackwardRealFFT(a,b)
        a,b::real vectors of size N/2
        computes the backward real transform of two vectors a,b of equal size N/2
        using algorithm 16 of Kopriva's book
     """
-function BackwardRealFFT(a,b)
     N2=size(a)
     w=InitializeFFT(N2*2,1)
     X[1]=a[1]/2
@@ -386,7 +414,9 @@ function BackwardRealFFT(a,b)
     x=BFFTEO(X,w)
     return x
 end
-"""
+
+function  FourierDerivativeByFFT(f,wf,wb)
+    """
        FourierDerviativeByFFT(f,wf,wb)
        f::real vector of size N
        wf::forward trigonometric coefficients
@@ -394,7 +424,6 @@ end
        computes the derivative of F via FFT using algorithm 17 of Kopriva's book
     """
 
-function  FourierDerivativeByFFT(f,wf,wb)
     F=FFFTEO(f,wf)
     N=size(f)
     for k=0:Int32(N/2)-1
@@ -408,7 +437,8 @@ function  FourierDerivativeByFFT(f,wf,wb)
     return DF
 end
 
-"""
+function FourierDerivativeMatrix(N)
+    """
        FourierDerivativeMatrix(N)
        N::Integer
        computes the Fourier Derivative Matrix for an N point discretization
@@ -416,7 +446,6 @@ end
        TODO!!!!!!
        Implement sorted and ordered version if this is important for later
     """
-function FourierDerivativeMatrix(N)
     D=zeros(Float64,N,N)
     for i=0:N-1
         D[i+1,i+1]=0
@@ -430,7 +459,10 @@ function FourierDerivativeMatrix(N)
     @info D
     return D
 end
-"""
+
+
+function MxVDerivative(D,f)
+    """
        MxVDerivative(D,f)
        D::NxN Matrix
        V:vector of size N
@@ -438,7 +470,6 @@ end
        TODO!!!
        either use use a BLAS library or implement our own optimized version (BLAS much more likely) This is for demonstration purposes and will likely be abandoned
     """
-function MxVDerivative(D,f)
     N=size(f,1)
     Idf = zeros(Float64,N)
     for i=1:N
@@ -452,18 +483,18 @@ function MxVDerivative(D,f)
 end
 
 """
-       NOTE this ends the section on fourrier transform implementations,
-       TODO implement 3D routines as necessary, Test vs FFTW
-       Determine what can used from existing libraries FFTW, NUFFT etc.
-    """
-
+    NOTE this ends the section on fourrier transform implementations,
+    TODO implement 3D routines as necessary, Test vs FFTW
+    Determine what can used from existing libraries FFTW, NUFFT etc.
 """
-       InitializeFCosT(N)
+
+function InitializeCosT(N)
+    """ 
+    InitializeFCosT(N)
        N::Integer
        Determines the N cosine and sine coefficients necessary for a fast
        cosine transform of an array of size N+1
     """
-function InitializeCosT(N)
     C=zeros(Float64,N+1)
     S=zeros(Float64,N+1)
     for j=0:N
@@ -472,7 +503,9 @@ function InitializeCosT(N)
     end
     return C,S
 end
-"""
+
+function FastCosineTransform(f,w,C,S,s)
+    """
        FastCosineTransform(f,w,C,S,s)
        f::vector of size N+1
        w::trigonometric coefficients for FFT
@@ -482,7 +515,6 @@ end
        computes the fast cosine transform of a vector f using 
        algorithm 28 of Kopriva's book
     """
-function FastCosineTransform(f,w,C,S,s)
     N=size(f)-1
     for j=0:N-1
         e[j+1]=0.5*(f[j+1]+f[N-j+1])-S[j+1]*(f[j+1]-f[N-j+1])
@@ -506,7 +538,9 @@ function FastCosineTransform(f,w,C,S,s)
     end
     return a
 end
-"""
+
+function FastChebyshevTransform(f,w,C,S,s)
+    """
        FastChebyshevTransform(f,w,C,S,s)
        f::vector of size N+1
        w::trigonometric coefficients for FFT
@@ -516,7 +550,6 @@ end
        computes the fast Chebyshev transform of a vector f using
        algorithm 29 of Kopriva's book
     """
-function FastChebyshevTransform(f,w,C,S,s)
     N=size(f)-1
     for j=0:N
         g[j+1]=f[j+1]
@@ -532,13 +565,15 @@ function FastChebyshevTransform(f,w,C,S,s)
     end
     return a
 end
-"""
+
+
+function  BarycentricWeights(x)
+    """
        BarycentricWeights(x)
        x:set points x[j]=x_j
        computes the Barycentric weights for a set of interpolation points x_j
        using algorithm 30 of Kopriva's book
     """
-function  BarycentricWeights(x)
     N=size(x,1)-1
     w=zeros(Float64,N+1)
     for j=1:N+1
@@ -555,7 +590,10 @@ function  BarycentricWeights(x)
     end
     return w
 end
-"""
+
+
+function LagrangeInterpolation(x,x_j,f,w)
+    """
        LagnrangeInterpolation(x,x_j,f,w)
        x::point to interpolate to
        x_j::set of interpolation points
@@ -565,7 +603,6 @@ end
        to onto the point x
        using Algorithm 31 of Kopriva's book
     """
-function LagrangeInterpolation(x,x_j,f,w)
     num::Float64=0.0
     den::Float64=0.0
     N=size(x_j,1)-1
@@ -580,7 +617,10 @@ function LagrangeInterpolation(x,x_j,f,w)
     end
     return num/den
 end
-"""
+
+
+function PolynomialInterpolationMatrix(x,w,ξ)
+    """
        PolynomialInterpolationMatrix(x,w,ξ)
        x::set of interpolation points
        w::barcyentric weights associated with x
@@ -588,7 +628,6 @@ end
        computes the interpolation matrix needed to interpolate between the points x and ξ
        using algorithm 32 of Kopriva's book
     """
-function PolynomialInterpolationMatrix(x,w,ξ)
     M=size(ξ,1)
     N=size(x,1)
     T = zeros(Float64,M,N)
@@ -615,7 +654,9 @@ function PolynomialInterpolationMatrix(x,w,ξ)
     end
     return T
 end
-"""
+
+function  InterpolateToNewPoints(T,f)
+    """
        IterpolateToNewPoints(T,f)
        T::Interpolation matrix
        f::values to use for interpolation
@@ -623,7 +664,6 @@ end
        uses Algorithm 33 of Kopriva's book
        NOTE use BLAS for this if possible
     """
-function  InterpolateToNewPoints(T,f)
     M=size(T,1)
     N=size(T,2)
     finterp=zeros(Float64,M)
@@ -639,7 +679,8 @@ end
 
 
 
-"""
+function LagrangeInterpolatingPolynomials(x,x_j,w)
+    """
        LagrangeInterpolatingPolynomials(x,x_j,w)
        x::point to interpolate to
        x_j::set of N interpolation points
@@ -648,7 +689,6 @@ end
        with x_j and w at x
        using algorithm 34 of Kopriva's book
     """
-function LagrangeInterpolatingPolynomials(x,x_j,w)
     N=size(x_j,1)
     l=zeros(Float64,N)
     xMatchesNode = false
@@ -673,7 +713,9 @@ function LagrangeInterpolatingPolynomials(x,x_j,w)
     end
     return l
 end
-"""
+
+function D2CoarseToFineInterpolation(x,y,f,ξ,η)
+    """
        2DCoarseToFineInterpolation(x,y,f,ξ,η)
        x::x coordinates on the coarse grid
        y::y coordinates on the coarse grid
@@ -682,7 +724,6 @@ end
        η::y coordinates on the fine grid
        interpolates from coarse to a fine grid in 2D using algorithm 35 of Kopriva's book
     """
-function D2CoarseToFineInterpolation(x,y,f,ξ,η)
     N_o = size(x)
     M_o = size(y)
     N_n = size(ξ)
@@ -700,7 +741,8 @@ function D2CoarseToFineInterpolation(x,y,f,ξ,η)
     return F
 end
 
-"""
+function D3CoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
+    """
        3DCoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
        x::x coordinates on the coarse grid
        y::y coordinates on the coarse grid
@@ -711,7 +753,6 @@ end
        ζ::z coordinates on the fine grid
        interpolates from a coarse to a fine grid in 3D extending algorithm 35 of Kopriva's book
     """
-function D3CoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
     N_o = size(x)
     M_o = size(y)
     P_o = size(z)
@@ -741,7 +782,10 @@ function D3CoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
     end
     return F
 end
-"""
+
+
+function LagrangeInterpolantDerivative(x,x_j,f,w)
+    """
        LagrangeInterpolantDerivative(x,x_j,f,w)
        x::evaluation point
        x_j::interpolation points
@@ -750,7 +794,6 @@ end
        evaluates the derivative of the lagrange interpolant of f at x using the point x_j of weight w
        using algorithm 36 of Kopriva's book
     """
-function LagrangeInterpolantDerivative(x,x_j,f,w)
     N=size(x)
     atNode = false
     num::Float64=0.0
@@ -779,6 +822,9 @@ function LagrangeInterpolantDerivative(x,x_j,f,w)
     end
     return num/den
 end
+
+
+function PolynomialDerivativeMatrix(x)
 """
        PolynomialDerivativeMatrix(x)
        x::Interpolation points
@@ -786,7 +832,6 @@ end
        using algorithm 37 of Kopriva's book
        !!!!TODO implement sorting to reduce round-off errors
     """
-function PolynomialDerivativeMatrix(x)
     N=size(x,1)
     w=BarycentricWeights(x)
     D=zeros(Float64,N,N)
@@ -804,12 +849,14 @@ function PolynomialDerivativeMatrix(x)
     end
     return D
 end
+
+
+function CGLDerivativeMatrix(x,N)
 """
        CGLDerivativeMatrix(N)
        x::CGL points
        returns the Derivative matrix for the N Chebyshev Gauss-Lobatto points
     """
-function CGLDerivativeMatrix(x,N)
     for i=1:N+1
         if (i>1 && i<N+1)
             D[i,i] = -0.5*x[i]/(sinpi(i/N))^2
@@ -834,6 +881,9 @@ function CGLDerivativeMatrix(x,N)
     end
     return D
 end
+
+
+function mthOrderPolynomialDerivativeMatrix(m,x)
 """
        mthOrderPolynomialDerivativeMatrix(m,x)
        m::order of the derivative
@@ -841,7 +891,6 @@ end
        computes the mth Polynomial Derivative Matrix using the set of interpolation points x
        using algorithm 38 of Kopriva's book
     """
-function mthOrderPolynomialDerivativeMatrix(m,x)
     w = BarycentricWeights(x)
     Dtemp = PolynomialDerivativeMatrix(x)
     N=size(x,1)
@@ -863,6 +912,9 @@ function mthOrderPolynomialDerivativeMatrix(m,x)
     end
     return Dtemp
 end
+
+
+function EOMatrixDerivative(D,f)
 """
        EOMatrixDerivative(D,f)
        D::Derivative matrix
@@ -870,7 +922,6 @@ end
        computes the first derivative of f using Even Odd decomposition for speedup
        using algorithm 39 of Kopriva's book
     """
-function EOMatrixDerivative(D,f)
     N=size(f)
 
     M::Int32=floor(Int32,(N)/2)
@@ -904,6 +955,9 @@ function EOMatrixDerivative(D,f)
     end
     return Df
 end
+
+
+function FastChebyshevDerivative(f)
 """
        FastChebyshevDerivative(f)
        f:: function array
@@ -911,7 +965,6 @@ end
        Note that this is not efficient until N>60
        at least not without building a tuned FFT
     """
-function FastChebyshevDerivative(f)
     N=size(f)-1
     w=InitialzeFFT(N,1)
     C,S = InitializeCosT(N)
@@ -921,6 +974,7 @@ function FastChebyshevDerivative(f)
     return Df
 end
 
+function  FourierCollocationTimeDerivative(Φ,D)
 """
        FourierCollocationTimeDerivative(Φ,D)
        Φ::Approximated function
@@ -930,7 +984,6 @@ end
        using the Fourrier Collocation method
        Algorithm 41 of Koopriva's book
     """
-function  FourierCollocationTimeDerivative(Φ,D)
     F=MxVDerivative(D,Φ)
     N=size(Φ,1)
     for j=1:N
@@ -940,6 +993,7 @@ function  FourierCollocationTimeDerivative(Φ,D)
     return Φt
 end
 
+function CollocationStepByRK3(tn,Δt,Φ,D,ν,a,b,g)
 """
        CollocationStepByRK3(tn,Δt,Φ,D,ν,a,b,g)
        tn::current time
@@ -951,7 +1005,6 @@ end
        Advance the advection diffusion equation in time using RK3
        Algorithm 42 of Kopriva's book
     """
-function CollocationStepByRK3(tn,Δt,Φ,D,ν,a,b,g)
     N=size(Φ,1)
     G=zeros(Float64,N)
     for m=1:3
@@ -965,6 +1018,7 @@ function CollocationStepByRK3(tn,Δt,Φ,D,ν,a,b,g)
     return Φ
 end
 
+function  FourierCollocationDriver(N,NT,T,Φ,ν,a,b,g)
 """
        FourierCollocationDriver(N,NT,T,Φ,ν,a,b,g)
        N::Number of collocation points
@@ -977,7 +1031,6 @@ end
        Algorithm 43 of Kopriva's book
     """
 
-function  FourierCollocationDriver(N,NT,T,Φ,ν,a,b,g)
     N1=size(Φ,1)
     D=FourierDerivativeMatrix(N1)
     Δt = T/NT
@@ -991,6 +1044,7 @@ end
 
 
 
+function ADTimeDerivative(Φ̂,ν)
 """
        ADTimeDerivative(Φ̂)
        Φ̂::set of N+1 fourrier coefficients of Φ
@@ -999,7 +1053,6 @@ end
        uses Algorithm 44 of Kopriva's book
     """
 
-function ADTimeDerivative(Φ̂,ν)
     N=size(Φ̂,1)-1
     N2=floor(Int64,N/2)
     Φ̂t = zeros(Complex,N+1)
@@ -1010,6 +1063,7 @@ function ADTimeDerivative(Φ̂,ν)
     return Φ̂t
 end
 
+function FourrierGalerkinStep(tn,Δt,Φ̂,ν,a,b,g)
 """
        FourrierGalerkinStep(tn,Δt,Φ̂,ν,a,b,g)
        Φ̂::set of N+1 Fourrier coefficients of Φ
@@ -1021,7 +1075,6 @@ end
        Algorithm 45 of Kopriva's book
     """
 
-function FourrierGalerkinStep(tn,Δt,Φ̂,ν,a,b,g)
     N=size(Φ̂,1)
     G=zeros(Complex,N)
     for m=1:3
@@ -1035,6 +1088,7 @@ function FourrierGalerkinStep(tn,Δt,Φ̂,ν,a,b,g)
     return Φ̂
 end
 
+function EvaluateFourierGalerkinSolution(x,Φ̂)
 """
        EvaluateFourierGalerkinSolution(x,Φ̂)
        x::evaluation point
@@ -1043,7 +1097,6 @@ end
        Algorithm 46 of Kopriva's book
     """
 
-function EvaluateFourierGalerkinSolution(x,Φ̂)
     N=size(Φ̂,1)-1
     N2=floor(Int64,N/2)
     Φ::Complex=0.0
@@ -1054,6 +1107,7 @@ function EvaluateFourierGalerkinSolution(x,Φ̂)
     return Φ
 end
 
+function FourierGalerkinDriver(Φ̂,N,NT,T,Nout,ν,a,b,g)
 """
        FourierGalerkinDriver(Φ̂,N,NT,T,Nout,ν,a,b,g)
        Φ̂:: initial Fourrier coefficients of Φ
@@ -1067,7 +1121,6 @@ end
        Algorithm 47 of Kopriva's book
     """
 
-function FourierGalerkinDriver(Φ̂,N,NT,T,Nout,ν,a,b,g)
     Δt = T/NT
     tn = 0.0
     for n=0:NT-1
@@ -1087,6 +1140,7 @@ function FourierGalerkinDriver(Φ̂,N,NT,T,Nout,ν,a,b,g)
 end
 #TODO build driver for scalar advection
 
+function  DirectConvolutionSum(V̂,Ŵ)
 """
        DirectConvolutionSum(V̂,Ŵ)
        V̂::Fourrier Coefficients of V
@@ -1095,7 +1149,6 @@ end
        Algorithm48 of Kopriva's book
     """
 
-function  DirectConvolutionSum(V̂,Ŵ)
     N=size(V̂,1)-1
     N2=floor(Int64,N/2)
     VW=zeros(Complex,N+1)
@@ -1110,6 +1163,7 @@ function  DirectConvolutionSum(V̂,Ŵ)
     return VW
 end
 
+function FastConvolutionSum(V̂,Ŵ)
 """
        FastConvolutionSum(V̂,Ŵ)
        V::Fourrier Coefficients of V
@@ -1118,7 +1172,6 @@ end
        Algorithm 49 of Kopriva's book
     """
 
-function FastConvolutionSum(V̂,Ŵ)
     N=size(V̂,1)-1
     N2=floor(Int64,N/2)
     M=2*N
@@ -1151,6 +1204,7 @@ function FastConvolutionSum(V̂,Ŵ)
     return VW
 end
 
+function  CollocationStepByRK3(tn,Δt,Φ,D,D2,gL,gR,a,b,g,o)
 """
        CollocationStepByRK3(tn,Δt,Φ,D,gL,gR)
        tn::current time
@@ -1165,7 +1219,6 @@ end
        Algorithm 50 of Kopriva's book
     """
 
-function  CollocationStepByRK3(tn,Δt,Φ,D,D2,gL,gR,a,b,g,o)
     N=size(Φ,1)
     G=zeros(Float64,N)
     Φt=zeros(Float64,N)
@@ -1190,6 +1243,8 @@ function  CollocationStepByRK3(tn,Δt,Φ,D,D2,gL,gR,a,b,g,o)
     return Φ
 end
 
+
+function  LegendreCollocationIntegrator(N,NT,Nout,T,Φ,a,b,g,gL,gR,ad)
 """
        LegendreCollocationIntegrator(N,NT,Nout,T,Φ,a,b,g)
        N::Number of points
@@ -1205,8 +1260,6 @@ end
        solves the diffusion equation using a Legendre Collocation integrator operating on RK3
        Algorithm 51 of Kopriva's book
     """
-
-function  LegendreCollocationIntegrator(N,NT,Nout,T,Φ,a,b,g,gL,gR,ad)
     Legendre = St_Legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
     lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
                               zeros(TFloat, N+1))
@@ -1242,6 +1295,7 @@ function  LegendreCollocationIntegrator(N,NT,Nout,T,Φ,a,b,g,gL,gR,ad)
 end
 
 
+function ModifiedLegendreBasis(nop,x)
 """
        ModifiedLegendreBasis(nop,x)
        nop::PolynomialOrder
@@ -1250,7 +1304,6 @@ end
        Algorithm 52 of Kopriva's book
     """
 
-function ModifiedLegendreBasis(nop,x)
     Legendre = St_Legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
     LegendreAndDerivativeAndQ!(Legendre,nop,x)
     L1 = Legendre
@@ -1260,6 +1313,7 @@ function ModifiedLegendreBasis(nop,x)
     Φ=Φ/sqrt(4*nop+6)
 end
 
+function EvaluateLegendreGalerkinSolution(N,x,Φ̂)
 """
        EvaluateLegendreGalerkinSolution(N,x,Φ̂)
        N::polynomial order
@@ -1269,7 +1323,6 @@ end
        Algorithm 53 of Kopriva's book
     """
 
-function EvaluateLegendreGalerkinSolution(N,x,Φ̂)
     Φ=0.0
     for k=0:N-2
         Φ = Φ +Φ̂[k+1]*ModifiedLegendreBasis(N,x)
@@ -1277,6 +1330,7 @@ function EvaluateLegendreGalerkinSolution(N,x,Φ̂)
     return Φ
 end
 
+function InitMatrix(N,p)
 """
        InitTMatrix(N,p)
        N::polynomial order
@@ -1285,7 +1339,6 @@ end
        Algorithm 54 of Kopriva's book
     """
 
-function InitMatrix(N,p)
     d=zeros(Float64,N+1)
     l=zeros(Float64,N)
     u=zeros(Float64,N)
@@ -1299,6 +1352,7 @@ function InitMatrix(N,p)
     return d,l,u
 end
 
+function  TriDiagonalSolve(l,d,u,y)
 """
        TriDiagonalSolve(l,d,u,y)
        l::lower diagonal
@@ -1309,7 +1363,6 @@ end
        Algorithm 141 of Kopriva's book
     """
 
-function  TriDiagonalSolve(l,d,u,y)
     N=size(d,1)
     d̂=zeros(Float64,N)
     for j=1:N
@@ -1327,6 +1380,7 @@ function  TriDiagonalSolve(l,d,u,y)
     return x
 end
 
+function  ModifiedCoefsFromLegendreCoefs(ϕ̂)
 """
        ModifiedCoefsFromLegendreCoefs(Φ̂)
        ϕ̂::Legendre expansion coefficients
@@ -1334,7 +1388,6 @@ end
        Algorithm 55 of Kopriva's book
     """
 
-function  ModifiedCoefsFromLegendreCoefs(ϕ̂)
     N=size(ϕ̂,1)-1
     M=floor(Int64,N/2)
     d,l,u = InitMatrix(M+1,0)
@@ -1361,6 +1414,7 @@ function  ModifiedCoefsFromLegendreCoefs(ϕ̂)
     return Φ̂
 end
 
+function LegendreGalerkinStep(Δt,Φ̂)
 """
        LegendreGalerkinStep(Δt,Φ̂n)
        Δt::time step
@@ -1369,7 +1423,6 @@ end
        Algorithm 56 of Kopriva's book
     """
 
-function LegendreGalerkinStep(Δt,Φ̂)
     N=size(Φ̂,1)
     #Even indexed coefficients
     M=floor(Int64,(N-1)/2)
@@ -1408,6 +1461,7 @@ function LegendreGalerkinStep(Δt,Φ̂)
     return Φ̂n1
 end
 
+function LegendreGalerkinDriver(N,NT,T,Nout,Φ̂,a,b,g)
 """
        LegendreGalerkinDriver((N,NT,T,Nout,Φ,a,b,g)
        N::Order of the approximation
@@ -1419,7 +1473,6 @@ end
        Driver for the Legendre Galerkin method
     """
 
-function LegendreGalerkinDriver(N,NT,T,Nout,Φ̂,a,b,g)
     Δt = T/Nout
     tn = 0.0
     for n=0:NT-1
@@ -1437,6 +1490,7 @@ function LegendreGalerkinDriver(N,NT,T,Nout,Φ̂,a,b,g)
 end
 
 
+function  CGDerivativeMatrix(N)
 """
        CGDerivativeMatrix(N)
        N::Polynomial order
@@ -1444,7 +1498,6 @@ end
        Algorithm 57 of Kopriva's book
     """
 
-function  CGDerivativeMatrix(N)
     Legendre = St_Legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
     lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
                               zeros(TFloat, N+1))
@@ -1485,6 +1538,8 @@ function CGDerivativeMatrixĜ(N)
     end
     return G
 end
+
+function  CGDriver(N,NT,Nout,T,Φ,a,b,g,gL,gR)
 """
        CGDriver(N,NT,Nout,T,Φ,a,b,g,gL,gR)
        N::Order of approximation
@@ -1495,7 +1550,6 @@ end
        gL,gR::boundary conditions
        CG Driver
     """
-function  CGDriver(N,NT,Nout,T,Φ,a,b,g,gL,gR)
     D = zeros(Float64,N+1,N+1)
     D2 = -CGDerivativeMatrixĜ(N)
     Δt = T/NT
@@ -1516,6 +1570,8 @@ function  CGDriver(N,NT,Nout,T,Φ,a,b,g,gL,gR)
     return ΦI
 end
 
+
+mutable struct NodalDiscontinuousGalerkin
 """
        NodalDiscontinuousGalerkin
        N::Polynomial order
@@ -1526,8 +1582,6 @@ end
        A class for the Nodal Discontinuous Galerkin method
        Algorithm 58 of Kopriva's book
     """
-
-mutable struct NodalDiscontinuousGalerkin
     N::TInt
     D̂::Array{TFloat}
     lL::Array{TFloat}
@@ -1536,6 +1590,7 @@ mutable struct NodalDiscontinuousGalerkin
     Φ::Array{TFloat}
 end
 
+function  buildNodalDiscontinuousGalerkin!(N,DG::NodalDiscontinuousGalerkin)
 """
        BuildNodalDiscontinuousGalerkin(N)
        N::Polynomial order
@@ -1543,7 +1598,6 @@ end
        Algorithm 59 of Kopriva's book
     """
 
-function  buildNodalDiscontinuousGalerkin!(N,DG::NodalDiscontinuousGalerkin)
     DG.N = N
     Legendre = St_Legendre{TFloat}(0.0, 0.0, 0.0, 0.0)
     lgl      = St_lgl{TFloat}(zeros(TFloat, N+1),
@@ -1563,6 +1617,7 @@ function  buildNodalDiscontinuousGalerkin!(N,DG::NodalDiscontinuousGalerkin)
     end
 end
 
+function  DGDerivative(DG::NodalDiscontinuousGalerkin,ΦL,ΦR,Φ)
 """
        DGDerivative(DG,ΦL,ΦR,Φ)
        DG::Discontinuous Galerkin class
@@ -1573,7 +1628,6 @@ end
        Algorithm 60 of Kopriva's book
     """
 
-function  DGDerivative(DG::NodalDiscontinuousGalerkin,ΦL,ΦR,Φ)
     Φ1 = MxVDerivative(DG.D̂,Φ)
     N=DG.N
     for j=1:N+1
@@ -1582,6 +1636,7 @@ function  DGDerivative(DG::NodalDiscontinuousGalerkin,ΦL,ΦR,Φ)
     return Φ1
 end
 
+function  InterpolateToBoundary(Φ,l)
 """
        InterpolateToBoundary(Φ,l)
        Φ::Nodal values
@@ -1589,7 +1644,6 @@ end
        Interpolates the nodal values to the boundary
        Part of Algorithm 61 of Kopriva's book
     """
-function  InterpolateToBoundary(Φ,l)
     interpolatedValue = 0.0
     N=size(Φ,1)
     for j=1:N
@@ -1598,6 +1652,7 @@ function  InterpolateToBoundary(Φ,l)
     return interpolatedValue
 end
 
+function  DGTimeDerivative(DG::NodalDiscontinuousGalerkin,t,c,g,Δt,tn)
 """
        DGTimeDerivative(DG,t,c)
        DG::Discontinous Galerkin class
@@ -1608,7 +1663,6 @@ end
        Algorithm 61 of Kopriva's book
     """
 
-function  DGTimeDerivative(DG::NodalDiscontinuousGalerkin,t,c,g,Δt,tn)
     if (c>0)
         ΦL= sinpi(-t)
         ΦR = InterpolateToBoundary(DG.Φ,DG.lR)
@@ -1621,6 +1675,7 @@ function  DGTimeDerivative(DG::NodalDiscontinuousGalerkin,t,c,g,Δt,tn)
 end
 
 #TODO Replace interpolate to boundary with BLAS x dot for efficiency in the future
+function  DGStepByRK3!(tn,Δt,DG::NodalDiscontinuousGalerkin,a,b,g,c,gb)
 """
        DGStepByRK3(tn,Δt,DG,a,b,g,c,gb)
        tn::current time
@@ -1632,8 +1687,6 @@ end
        Advances the DG method in time using RK3
        Algorithm 62 of Kopriva's book
     """
-
-function  DGStepByRK3!(tn,Δt,DG::NodalDiscontinuousGalerkin,a,b,g,c,gb)
     N=size(DG.Φ,1)
     G=zeros(Float64,N)
     for m=1:3
@@ -1646,6 +1699,7 @@ function  DGStepByRK3!(tn,Δt,DG::NodalDiscontinuousGalerkin,a,b,g,c,gb)
     end
 end
 
+function  DGDriver!(N,NT,Nout,T,DG::NodalDiscontinuousGalerkin,a,b,g,c,gb)
 """
        DGDriver(N,NT,Nout,T,DG,a,b,g,c,gb)
        N::Order of approximation
@@ -1657,7 +1711,6 @@ end
        gb::boundary values
     """
 
-function  DGDriver!(N,NT,Nout,T,DG::NodalDiscontinuousGalerkin,a,b,g,c,gb)
     Δt = T/NT
     tn=0.0
     for n=0:NT-1
@@ -1721,7 +1774,6 @@ function ElementMassMatrix(N, Q, PT::MassMatrix1D, TFloat)
             ψ[i,k] = L[i]
         end
     end
-    
     
     M = ElementMassMatrix_1D(ψ, ω, N, Q, TFloat)
     return M

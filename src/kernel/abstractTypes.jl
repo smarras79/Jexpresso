@@ -29,6 +29,13 @@ struct NSD_3D <: AbstractSpaceDimensions end
 abstract type AbstractDiscretization end
 struct CG <:  AbstractDiscretization end
 
+#
+# System of reference
+#
+abstract type AbstractMetricForm end
+struct COVAR <: AbstractMetricForm end
+struct CNVAR <: AbstractMetricForm end
+
 
 #
 # Time discretization
