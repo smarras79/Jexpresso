@@ -52,4 +52,5 @@ struct RK5 <: AbstractTime end
 abstract type AbstractBC end
 struct PERIODIC1D_CG <: AbstractBC end
 struct DefaultBC <: AbstractBC end
+struct LinearClaw_NR <: AbstractBC end
 struct DirichletExample <: AbstractBC end

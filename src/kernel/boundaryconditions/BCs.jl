@@ -408,6 +408,54 @@ function build_custom_bcs!(t,mesh,q,gradq,::NSD_2D,::DefaultBC,exact_q,flux_q,nx
   end
    
 end
+
+function build_custom_bcs!(t,mesh,q,gradq,::NSD_2D,::LinearClaw_NR,exact_q,flux_q,nx,ny,nvars)
+  npoin = mesh.npoin
+  for ip = 1:mesh.npoin
+      x = mesh.x[ip]
+      y = mesh.y[ip]
+      nx[ip]=0.0
+      ny[ip]=0.0
+      if (AlmostEqual(x,mesh.xmin) && AlmostEqual(y,mesh.ymin))
+        nx[ip]=sqrt(0.5)
+        ny[ip]=sqrt(0.5)
+      elseif (AlmostEqual(x,mesh.xmin) && AlmostEqual(y,mesh.ymax))
+        nx[ip] = sqrt(0.5)
+        ny[ip] = -sqrt(0.5)
+      elseif (AlmostEqual(x,mesh.xmax) && AlmostEqual(y,mesh.ymin))
+        nx[ip] = -sqrt(0.5)
+        ny[ip] = sqrt(0.5)
+      elseif (AlmostEqual(x,mesh.xmax) && AlmostEqual(y,mesh.ymax))
+        nx[ip] = -sqrt(0.5)
+        ny[ip] = -sqrt(0.5)
+      elseif (AlmostEqual(x,mesh.xmin))
+         nx[ip]=1.0
+      elseif  (AlmostEqual(y,mesh.ymin))
+         ny[ip] =1.0
+      elseif  (AlmostEqual(x,mesh.xmax))
+         nx[ip]=-1.0
+      elseif  (AlmostEqual(y,mesh.ymax))
+         ny[ip] =-1.0
+      end
+      if (nx[ip] != 0.0)
+          q.qe[ip,2] = 0.0
+      end
+      if (ny[ip] != 0.0)
+          q.qe[ip,3] = 0.0
+      end
+      unl = nx[ip]*q.qn[ip,2]+ny[ip]*q.qn[ip,3]
+      exact_q[ip,1] = q.qn[ip,1]
+      exact_q[ip,2] = q.qn[ip,2] - 2*unl*nx[ip]
+      exact_q[ip,3] = q.qn[ip,3] - 2*unl*ny[ip]
+      for var=1:nvars
+        unl = nx[ip]*gradq[1,ip,var]+ny[ip]*gradq[2,ip,var]
+        flux_q[ip,1,var] = gradq[1,ip,var] - 2*gradq[1,ip,var]*unl
+        flux_q[ip,2,var] = gradq[2,ip,var] - 2*gradq[2,ip,var]*unl
+      end
+  end
+
+end
+
 function build_custom_bcs!(t,mesh,q,gradq,::NSD_3D,::DefaultBC,exact_q,flux_q,nx,ny,nz,nvars)
   npoin = mesh.npoin
   for ip = 1:mesh.npoin
