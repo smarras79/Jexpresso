@@ -57,7 +57,7 @@ end
 #
 # Contours with PlotlyJS
 #
-function jcontour(x1, y1, z1, title, fout_name)
+function jcontour(x1, y1, z1, title::String, fout_name::String)
     
     data = PlotlyJS.contour(;z=z1, x=x1, y=y1,
                             colorbar=attr(;title="",titleside="right",

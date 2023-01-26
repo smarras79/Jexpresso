@@ -112,24 +112,19 @@ function time_loop!(TD,
                     M,
                     Nt, Δt,
                     nvars, 
-                    inputs::Dict, 
+                    inputs::Dict,
+                    OUTPUT_DIR::String,
                     T)
     it = 0
     t  = inputs[:tinit]
     t0 = t
 
-    plot_at_times = [0.25, 0.5, 1.0, 1.5]
-
-    
-    #Create output directory if it doesn't exist:
-    OUTPUT_DIR = string("output-"Dates.now(),"-", inputs[:problem])
-    if !isdir(OUTPUT_DIR)
-        mkdir(OUTPUT_DIR)
-    end
-    
+    plot_at_times = [0.25, 0.5, 1.0, 1.5]    
+   
     it_interval = inputs[:diagnostics_interval]
     for it = 1:Nt
 
+        it_diagnostics = 1
         if (mod(it, it_interval) == 0 || it == Nt)
             @printf "   Solution at t = %.6f sec\n" t
             @printf "      min(q) = %.6f\n" minimum(qp.qn[:,1])
@@ -141,22 +136,20 @@ function time_loop!(TD,
             # avoid sorting the x and q which would be
             # becessary for a smooth curve plot.
             #------------------------------------------
-            #title = string(" solution at t=", t, " s")
-            #jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
-            
+            title = string( "Tracer: final solution at t=%.8f", t)
+            jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
+            it_diagnostics = it_diagnostics + 1
         end
         t = t0 + Δt
         t0 = t
         
         rk!(qp; TD, SD, QT, PT,
             mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)
-        
-        title = string( "Tracer: final solution at t=%.8f", t)
-        jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/", PT, "_", it, ".png"))
+       
     end
       
     #Plot final solution
     title = string( "Tracer: final solution at t=%.8f", inputs[:tend])
-    jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/", PT, "_", it, ".png"))
+    jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/END.png"))
     
 end
