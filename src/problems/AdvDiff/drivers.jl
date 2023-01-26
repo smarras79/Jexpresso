@@ -35,12 +35,13 @@ include("../../kernel/timeIntegration/TimeIntegrators.jl")
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::CG,       #Space discretization type
-                PT::AdvDiff,  #Equation subtype
                 inputs::Dict, #input parameters from src/user_input.jl
+                OUTPUT_DIR::String,
                 TFloat) 
-    
+
     Nξ = inputs[:nop]
-    lexact_integration = inputs[:lexact_integration]
+    lexact_integration = inputs[:lexact_integration]    
+    PT    = inputs[:problem]
     nvars = inputs[:nvars]
     
     #--------------------------------------------------------
@@ -119,7 +120,7 @@ function driver(DT::CG,       #Space discretization type
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = initialize(PT, mesh, inputs, TFloat)
+    qp = initialize(PT, mesh, inputs, OUTPUT_DIR, TFloat)
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
@@ -130,12 +131,6 @@ function driver(DT::CG,       #Space discretization type
     
     TD = RK5()
     BCT = DefaultBC()
-    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, BCT, TFloat)
+    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, OUTPUT_DIR, BCT, TFloat)
 
-    #Plot final solution
-    title = @printf "Final solution at t=%.8f for tracer" inputs[:tend]
-    jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
-    
-    return    
-    
 end

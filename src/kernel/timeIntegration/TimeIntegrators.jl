@@ -1,5 +1,3 @@
-#using PrettyTables
-
 include("../abstractTypes.jl")
 include("../infrastructure/element_matrices.jl")
 
@@ -82,7 +80,7 @@ function rk!(q::St_SolutionVars;
         #
         for ivar=1:nvars
             RHS = DSSijk_rhs(SD,
-                             rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
+                             rhs_el[:,:,:,ivar], # + rhs_diff_el[:,:,:,ivar],
                              mesh.connijk,
                              mesh.nelem, mesh.npoin, mesh.nop,
                              T)
@@ -118,16 +116,17 @@ function time_loop!(TD,
                     nvars, 
                     inputs::Dict,
                     BCT,
+                    OUTPUT_DIR::String,
                     T)
     it = 0
     t  = inputs[:tinit]
     t0 = t
 
-    plot_at_times = [0.25, 0.5, 1.0, 1.5]
-    
+    plot_at_times = [0.25, 0.5, 1.0, 1.5]    
+   
     it_interval = inputs[:diagnostics_interval]
+    it_diagnostics = 1
     for it = 1:Nt
-
         if (mod(it, it_interval) == 0 || it == Nt)
             @printf "   Solution at t = %.6f sec\n" t
             @printf "      min(q) = %.6f\n" minimum(qp.qn[:,1])
@@ -139,16 +138,19 @@ function time_loop!(TD,
             # avoid sorting the x and q which would be
             # becessary for a smooth curve plot.
             #------------------------------------------
-            #title = string(" solution at t=", t, " s")
-            #jcontour(mesh.x, mesh.y, qp.qn[:,1], title)
-            
+            title = string( "Tracer: final solution at t=%.8f", t)
+            jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
+            it_diagnostics = it_diagnostics + 1
         end
         t = t0 + Δt
         t0 = t
         
         rk!(qp; TD, SD, QT, PT,
             mesh, metrics, basis, ω, M, Δt, nvars, inputs, BCT, time=t, T)
-        
     end
+      
+    #Plot final solution
+    title = string( "Tracer: final solution at t=%.8f", inputs[:tend])
+    jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/END.png"))
     
 end
