@@ -68,17 +68,15 @@ function rk!(q::St_SolutionVars;
         #
         # rhs[ngl,ngl,nelem]
         #
-        rhs_el      = build_rhs(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω,
-                                mesh, metrics, T)
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω,
-                                     inputs[:νx], inputs[:νy], mesh, metrics, T)
+        rhs_el      = build_rhs(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
         
         #
         # RHS[npoin] = DSS(rhs)
         #
         for ivar=1:nvars
             RHS = DSSijk_rhs(SD,
-                             rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
+                             rhs_el[:,:,:,ivar], # + rhs_diff_el[:,:,:,ivar],
                              mesh.connijk,
                              mesh.nelem, mesh.npoin, mesh.nop,
                              T)
