@@ -1,5 +1,7 @@
 # JEXPRESSO
-JEXPRESSO
+A research and educational software for the numerical solution of 1D, 2D, and 3D PDEs using spectral and spectral element methods on CPUs and GPUs. DISCLAIMER: this is WIP.
+
+If you are interested in contributing, please get in touch.
 
 # Some notes on using JEXPRESSO
 
@@ -31,3 +33,7 @@ Currently available problem names:
 ## Plotting
 For plotting we rely on `PlotlyJS`. If you want to use a different package,
 modify ./src/io/plotting/jplots.jl accordinly.
+
+## Contacts
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
+
