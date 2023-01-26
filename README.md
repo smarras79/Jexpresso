@@ -23,6 +23,7 @@ julia --project=. $JEXPRESSO_HOME/src/run.jl PROBLEM_NAME
 `$JEXPRESSO_HOME` is the path to the base JEXPRESSO directory on your computer (you can export it in your .bashrc or simply replace its value with the explicit name of the path)
 
 `PROBLEM_NAME` must be the same as the problem directory in `$JEXPRESSO_HOME/src/problems/PROBLEM_NAME`
+
 Currently available problem names:
 
 * AdvDiff
