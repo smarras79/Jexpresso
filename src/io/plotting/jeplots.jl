@@ -57,7 +57,7 @@ end
 #
 # Contours with PlotlyJS
 #
-function jcontour(x1, y1, z1, title)
+function jcontour(x1, y1, z1, title::String, fout_name::String)
     
     data = PlotlyJS.contour(;z=z1, x=x1, y=y1,
                             colorbar=attr(;title="",titleside="right",
@@ -67,6 +67,7 @@ function jcontour(x1, y1, z1, title)
                             )
 
     layout = Layout(;title=title)
-    display(PlotlyJS.plot(data, layout)) #WARNING aspect ratio doesn't seem to work
-
+    #display(PlotlyJS.plot(data, layout)) #WARNING aspect ratio doesn't seem to work
+    PlotlyJS.savefig(PlotlyJS.plot(data, layout), fout_name)
+    
 end

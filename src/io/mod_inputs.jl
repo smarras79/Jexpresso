@@ -1,3 +1,4 @@
+using ArgParse
 using Crayons.Box
 using PrettyTables
 using Revise
@@ -5,22 +6,49 @@ using Revise
 export mod_inputs_user_inputs
 export mod_inputs_print_welcome
 
-include("../../user_inputs.jl")
+function parse_commandline()
+    s = ArgParseSettings()
 
-function mod_inputs_user_inputs()
-    
+    @add_arg_table s begin
+        "--opt1"
+            help = "an option with an argument"
+        "--opt2", "-o"
+            help = "another option with an argument"
+            arg_type = Int
+            default = 0
+        "--flag1"
+            help = "an option without argument, i.e. a flag"
+            action = :store_true
+        "arg1"
+            help = "a positional argument"
+            required = true
+    end
+
+    return parse_args(s)
+end
+
+
+function mod_inputs_user_inputs!(problem_name, problem_dir::String)
+
     error_flag::Int8 = 0
     
-    inputs = user_inputs() # user_inputs is a Dict
+    #
+    # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
+    # was definied within this same function via the include(input_dir) above.
+    # 
+    input_dir = string(problem_dir, "/", problem_name, "/user_inputs.jl")
+    include(input_dir)
+    inputs = @Base.invokelatest(user_inputs())
     
-    print(GREEN_FG(" # User inputs from ...IO/user_inputs.jl .............. \n"))
+    #
+    print(GREEN_FG(string(" # Read inputs dict from ", input_dir, " ... \n")))
     pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
-    print(GREEN_FG(" # User inputs: ................................... DONE\n"))    
-
+    print(GREEN_FG(string(" # Read inputs dict from ", input_dir, " ... DONE\n")))
+    
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
-    mod_inputs_check(inputs, :problem, "e")
+    #mod_inputs_check(inputs, :problem, "e")
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
     #Time:
@@ -122,14 +150,16 @@ function mod_inputs_user_inputs()
 
         
     """
-    To add a new set of governing equations, add a new :problem key 
+    To add a new set of governing equations, add a new problem director
+    to src/problems and call it `ANY_NAME_YOU_WANT` 
     and add the following lines 
 
-     elseif (lowercase(inputs[:problem]) == "new problem name")
-        inputs[:problem] = NewProblemName()
-        
+     elseif (lowercase(problem_name) == "ANY_NAME_YOU_WANT")
+        inputs[:problem] = ANY_NAME_YOU_WANT()
+            
         nvars = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
-        println( " # nvars     ", nvars)
+        prinetln( " # nvars     ", nvars)
+     end
 
     """
     
@@ -137,7 +167,8 @@ function mod_inputs_user_inputs()
     # Define nvars based on the problem being solved
     #------------------------------------------------------------------------
     nvars::Int8 = 1
-    if (lowercase(inputs[:problem]) == "burgers")
+    #if (lowercase(inputs[:problem]) == "burgers")
+    if (lowercase(problem_name) == "burgers")
         inputs[:problem] = burgers()
         
         if(inputs[:nsd] == 1)
@@ -148,7 +179,7 @@ function mod_inputs_user_inputs()
         inputs[:nvars] = nvars
         println( " # nvars     ", nvars)
         
-    elseif (lowercase(inputs[:problem]) == "sw")
+    elseif (lowercase(problem_name) == "sw")
         inputs[:problem] = sw()
         
         if (inputs[:nsd] == 1)
@@ -161,7 +192,7 @@ function mod_inputs_user_inputs()
         inputs[:nvars] = nvars
         println( " # nvars     ", nvars)
         
-    elseif (lowercase(inputs[:problem]) == "ns")
+    elseif (lowercase(problem_name) == "ns")
         inputs[:problem] = ns()
         
         if (inputs[:nsd] == 1)
@@ -174,18 +205,18 @@ function mod_inputs_user_inputs()
         inputs[:nvars] = nvars
         println( " # nvars     ", nvars)
         
-    elseif (lowercase(inputs[:problem]) == "linearclaw()" ||
-            lowercase(inputs[:problem]) == "linclaw" ||
-            lowercase(inputs[:problem]) == "lclaw")
+    elseif (lowercase(problem_name) == "linearclaw" ||
+            lowercase(problem_name) == "linclaw" ||
+            lowercase(problem_name) == "lclaw")
         inputs[:problem] = LinearCLaw()
         
         inputs[:nvars] = nvars = 3
         println( " # nvars     ", nvars)
         
-    elseif (lowercase(inputs[:problem]) == "advdiff" ||
-        lowercase(inputs[:problem]) == "advdif" ||
-        lowercase(inputs[:problem]) == "ad" ||
-        lowercase(inputs[:problem]) == "adv2d")
+    elseif (lowercase(problem_name) == "advdiff" ||
+        lowercase(problem_name) == "advdif" ||
+        lowercase(problem_name) == "ad" ||
+        lowercase(problem_name) == "adv2d")
         inputs[:problem] = AdvDiff()
         
         inputs[:nvars] = nvars = 1
