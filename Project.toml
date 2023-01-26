@@ -3,6 +3,7 @@ authors = ["Simone <smarras@njit.edu>"]
 version = "0.1.0"
 
 [deps]
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
@@ -11,6 +12,7 @@ DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Dierckx = "39dd38d3-220a-591b-8e3c-4c3a8c710a94"
 DiffEqOperators = "9fdde737-9c7f-55bf-ade8-46b3f136cc48"
+DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 ElasticArrays = "fdbdab4c-e67f-52f5-8c3f-e7b388dad3d4"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 GR = "28b8d3ca-fb5f-59d9-8090-bfdbd6d07a71"
