@@ -18,14 +18,14 @@ You can test that things were installed properly with
 julia --project=. $JEXPRESSO_HOME/src/run.jl PROBLEM_NAME
 ```
 
-```PROBLEM_NAME``` is must be the same as the problem directory in `$JEXPRESSO_HOME/src/problems/PROBLEM_NAME`
-Currently available problems:
+`$JEXPRESSO_HOME` is the path to the base JEXPRESSO directory on your computer (you can export it in your .bashrc or simply replace its value with the explicit name of the path)
+
+`PROBLEM_NAME` must be the same as the problem directory in `$JEXPRESSO_HOME/src/problems/PROBLEM_NAME`
+Currently available problem names:
 
 * AdvDiff
 * LinearCLaw
 
-
-where `$JEXPRESSO_HOME` is your path to the base JEXPRESSO directory (you can export it in your .bashrc or simply replace its value with the explicit name of the path)
 
 
 ## Plotting
