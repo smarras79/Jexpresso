@@ -21,16 +21,16 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_2x2.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_10x10.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_25x25.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_1x1.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_oneblock.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_UNSTR_refine.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_UNSTR_refine_coarse.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_oneblock.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_coarse.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_refine.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_refine_coarse.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_oneblock-2x1x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_oneblock-1x1x1.msh",
         #---------------------------------------------------------------------------
         # Boundary conditions:
         #---------------------------------------------------------------------------
