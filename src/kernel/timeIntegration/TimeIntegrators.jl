@@ -76,7 +76,7 @@ function rk!(q::St_SolutionVars;
         #
         for ivar=1:nvars
             RHS = DSSijk_rhs(SD,
-                             rhs_el[:,:,:,ivar], # + rhs_diff_el[:,:,:,ivar],
+                             rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
                              mesh.connijk,
                              mesh.nelem, mesh.npoin, mesh.nop,
                              T)
