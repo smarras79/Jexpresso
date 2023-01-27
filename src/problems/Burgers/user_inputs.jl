@@ -3,24 +3,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        # problem:
-        #   AdvDiff/AD
-        #   NS
-        #   SW
-        #---------------------------------------------------------------------------
-        :problem             => "AdvDiff",
-        #:problem             => "LinearCLaw",
-        #---------------------------------------------------------------------------
-        :tend                => 1.5, #2π,
-        #:Δt                  => 8.75e-4,
+        :tend                => 3.0/π,
         :Δt                  => 5e-4,
-        :diagnostics_interval=> 100,
+        :diagnostics_interval=> 20, #these are steps, not seconds
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 8,      # Polynomila order
+        :nop                 => 12,      # Polynomila order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -30,16 +21,16 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_2x2.msh",
-        :gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_10x10.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_25x25.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_1x1.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_oneblock.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_UNSTR_refine.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_UNSTR_refine_coarse.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_oneblock.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_coarse.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_refine.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_refine_coarse.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_oneblock-2x1x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_oneblock-1x1x1.msh",
         #---------------------------------------------------------------------------
         # Boundary conditions:
         #---------------------------------------------------------------------------
