@@ -5,8 +5,7 @@ include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
 
 function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
-
-    #qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)    
+ 
     F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     
@@ -17,7 +16,6 @@ function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::
     dGdξ = dGdη = zeros(neqs)
     
     c = 1.0
-    
     for iel=1:mesh.nelem
         
         for i=1:mesh.ngl
@@ -35,7 +33,6 @@ function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::
                 G[i,j,iel,1] = c^2*v
                 G[i,j,iel,2] = 0
                 G[i,j,iel,3] = p
-                
             end
         end
         
@@ -53,10 +50,7 @@ function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::
                 end
                 dFdx[1:neqs] = dFdξ[1:neqs]*metrics.dξdx[i,j,iel] + dFdη[1:neqs]*metrics.dηdx[i,j,iel]
                 dGdy[1:neqs] = dGdξ[1:neqs]*metrics.dξdy[i,j,iel] + dGdη[1:neqs]*metrics.dηdy[i,j,iel]
-                
-                rhs_el[i,j,iel,1] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1] + dGdy[1])
-                rhs_el[i,j,iel,2] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[2] + dGdy[2])
-                rhs_el[i,j,iel,3] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[3] + dGdy[3])
+                rhs_el[i,j,iel,1:neqs] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqs] + dGdy[1:neqs])
             end
         end
     end

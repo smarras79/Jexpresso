@@ -5,7 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                => 1.5,
         :Δt                  => 5e-4,
-        :diagnostics_interval=> 20, #these are steps, not seconds
+        :diagnostics_interval=> 100, #these are steps, not seconds
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

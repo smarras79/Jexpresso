@@ -47,10 +47,9 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 #v = q.qn[ip,3] = ky*p/c                                    #v 
                 
                 
-                #p = q.qn[ip,1] = exp(-log2((x*x + y*y)/0.06^2))
-                p = q.qn[ip,1] = 5*exp(-((x*x + y*y)/0.025)) #p
-                u = q.qn[ip,2] = 0.0                         #u
-                v = q.qn[ip,3] = 0.0                         #v
+                p = q.qn[ip,1] = exp(-(log(2))*((x*x + y*y)/0.06^2))
+                u = q.qn[ip,2] = 0.0
+                v = q.qn[ip,3] = 0.0
                 
                 # [ip] -> [i,j,iel]
                 q.F[i,j,iel_g,1] = c^2*u

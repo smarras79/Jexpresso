@@ -4,7 +4,7 @@ include("../../kernel/abstractTypes.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
 
-function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs(SD::NSD_2D, QT, AP::Burgers, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
     
     F    = zeros(mesh.ngl, mesh.ngl, mesh.nelem, 1)
     G    = zeros(mesh.ngl, mesh.ngl, mesh.nelem, 1)
@@ -16,13 +16,10 @@ function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
 
-                q = qp.qn[ip,1]
+                u = qp.qn[ip,1]
                 
-                u = qp.qe[ip,2] #u,v are constant, hence stored in qp.qe instead of qp.qn
-                v = qp.qe[ip,3] #u,v are constant, hence stored in qp.qe instead of qp.qn
-                
-                F[i,j,iel,1] = q*u
-                G[i,j,iel,1] = q*v
+                F[i,j,iel,1] = u*u
+                G[i,j,iel,1] = 0.0
                 
             end
         end
@@ -55,12 +52,11 @@ function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St
     return rhs_el
 end
 
-
-function build_rhs_diff(SD::NSD_2D, QT, AP::AdvDiff, nvars, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_2D, QT, AP::Burgers, nvars, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
 
     N = mesh.ngl - 1
     
-    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem,3)
+    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem, 1)
     
     rhsdiffξ_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
     rhsdiffη_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
