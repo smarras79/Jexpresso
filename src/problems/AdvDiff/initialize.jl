@@ -11,9 +11,9 @@ function initialize(ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String
     ngl = mesh.nop + 1
     nsd = mesh.nsd
     
-    q = St_SolutionVars{TFloat}(zeros(mesh.npoin, 3),            # qn+1
+    q = St_SolutionVars{TFloat}(zeros(1, 1),                     # qn+1
                                 zeros(mesh.npoin, 3),            # qn
-                                zeros(1, 1),                     # qn-1
+                                zeros(mesh.npoin, 3),            # qn-1
                                 zeros(1, 1),                     # qn-2
                                 zeros(1, 1),                     # qn-3
                                 zeros(mesh.npoin, 3),            # qe
@@ -45,7 +45,8 @@ function initialize(ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String
                     q.qe[ip,1] = q.qn[ip,1]
                     q.qe[ip,2] = 0.8 #constant
                     q.qe[ip,3] = 0.8 #constant
-                    
+
+                    q.qnm1[ip,1] = q.qn[ip,1]                    
                     #q.qnel[i,j,iel_g,1] = q.qn[ip,1]
                 end
             end

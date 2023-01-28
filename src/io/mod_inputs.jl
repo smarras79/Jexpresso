@@ -167,9 +167,8 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     # Define nvars based on the problem being solved
     #------------------------------------------------------------------------
     nvars::Int8 = 1
-    #if (lowercase(inputs[:problem]) == "burgers")
     if (lowercase(problem_name) == "burgers")
-        inputs[:problem] = burgers()
+        inputs[:problem] = Burgers()
         
         if(inputs[:nsd] == 1)
             nvars = 1
@@ -188,19 +187,6 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
             nvars = 3
         elseif(inputs[:nsd] == 3)
             error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
-        end
-        inputs[:nvars] = nvars
-        println( " # nvars     ", nvars)
-        
-    elseif (lowercase(problem_name) == "ns")
-        inputs[:problem] = ns()
-        
-        if (inputs[:nsd] == 1)
-            nvars = 3
-        elseif(inputs[:nsd] == 2)
-            nvars = 4
-        elseif(inputs[:nsd] == 3)
-            nvars == 5
         end
         inputs[:nvars] = nvars
         println( " # nvars     ", nvars)
@@ -230,7 +216,7 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
                 Chose among:
                     - "AdvDiff"/"AD"/"Adv"
                     - "LinearCLaw"/"LinClaw"
-                    - "NS"
+                    - "Burgers"
                     - "SW"
             """
         

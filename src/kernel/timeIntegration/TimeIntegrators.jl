@@ -99,6 +99,78 @@ function rk!(q::St_SolutionVars;
     
 end
 
+
+function rk4!(q::St_SolutionVars;
+             TD,
+             SD,
+             QT,
+             PT,
+             mesh::St_mesh,
+             metrics::St_metrics,
+             basis, ω,
+             M, Δt,
+             nvars, 
+             inputs::Dict,
+             T)
+    
+    dq      = zeros(T, mesh.npoin, nvars)
+    Q1 = Q2 = zeros(T, mesh.npoin, nvars)
+
+    #
+    # Stage 1
+    #   
+    rhs_el      = build_rhs(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    for ivar=1:nvars
+        RHS = DSSijk_rhs(SD,
+                         rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
+                         mesh.connijk,
+                         mesh.nelem, mesh.npoin, mesh.nop,
+                         T)
+        divive_by_mass_matrix!(RHS, M, QT)
+        
+        Q1[I,ivar] = q.qn[I,ivar] + Δt*RHS[I]
+        apply_boundary_conditions!(Q1[:,ivar], mesh, inputs, SD)
+    end
+
+    #
+    # Stage 2
+    #   
+    rhs_el      = build_rhs(SD, QT, PT, nvars, Q1, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, Q1, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    for ivar=1:nvars
+        RHS = DSSijk_rhs(SD,
+                         rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
+                         mesh.connijk,
+                         mesh.nelem, mesh.npoin, mesh.nop,
+                         T)
+        divive_by_mass_matrix!(RHS, M, QT)
+        
+        Q2[:,ivar] = 0.75*q.qn[:,ivar] + 0.25*(Q1[:, ivar] + Δt*RHS[I])
+        apply_boundary_conditions!(Q2[:,ivar], mesh, inputs, SD)
+    end
+
+    
+    #
+    # Stage 3: qⁿ⁺¹
+    #   
+    rhs_el      = build_rhs(SD, QT, PT, nvars, Q1, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, Q1, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    for ivar=1:nvars
+        RHS = DSSijk_rhs(SD,
+                         rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
+                         mesh.connijk,
+                         mesh.nelem, mesh.npoin, mesh.nop,
+                         T)
+        divive_by_mass_matrix!(RHS, M, QT)
+        
+        q.qn[:,ivar] = (1.0/3.0)*q.qn[:,ivar] + (2.0/3.0)*(Q2[:, ivar] + Δt*RHS[I])
+        apply_boundary_conditions!(q.qn[:,ivar], mesh, inputs, SD)
+    end
+    
+    
+end
+
 function time_loop!(TD,
                     SD,
                     QT,
@@ -112,7 +184,7 @@ function time_loop!(TD,
                     nvars, 
                     inputs::Dict,
                     OUTPUT_DIR::String,
-                    T)
+                     T)
     it = 0
     t  = inputs[:tinit]
     t0 = t
@@ -121,11 +193,15 @@ function time_loop!(TD,
    
     it_interval = inputs[:diagnostics_interval]
     it_diagnostics = 1
-    for it = 1:Nt
+    for it = 1:Nt 
+
+        qp.qnm1[:,:] = qp.qn[:,:] #[npoin, nvar]
+        rk!(qp; TD, SD, QT, PT, mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)
+        #rk4!(qp; TD, SD, QT, PT, mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)
+       
         if (mod(it, it_interval) == 0 || it == Nt)
             @printf "   Solution at t = %.6f sec\n" t
-            @printf "      min(q) = %.6f\n" minimum(qp.qn[:,1])
-            @printf "      max(q) = %.6f\n" maximum(qp.qn[:,1])
+            @printf "      min(qⁿ), max(qⁿ) = %.6f, %.6f\n" minimum(qp.qn[:,1]) maximum(qp.qn[:,1])
             
             #------------------------------------------
             # Plot initial condition:
@@ -133,15 +209,15 @@ function time_loop!(TD,
             # avoid sorting the x and q which would be
             # becessary for a smooth curve plot.
             #------------------------------------------
-            title = string( "Tracer: final solution at t=%.8f", t)
+            title = string( "Tracer: final solution at t=", t)
             jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
+            #title = string( "Tracer: final solution at t=", t)
+            #jcontour(mesh.x, mesh.y, qp.qnm1[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, "Nm1.png"))
+
             it_diagnostics = it_diagnostics + 1
         end
         t = t0 + Δt
         t0 = t
-        
-        rk!(qp; TD, SD, QT, PT,
-            mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)
        
     end
       

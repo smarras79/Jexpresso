@@ -19,7 +19,7 @@ include("../mesh/mesh.jl")
 
 function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
 
-    nvars = length(qp.qn[1,1,:])
+    nvars = length(qp.qn[1,:])
     
     #Periodic boundaries
     if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="periodic" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="periodic")
@@ -29,8 +29,8 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         for I in keys(mesh.xperiodicity)
             ip = mesh.xperiodicity[I]
             for ivar=1:nvars
-                qp.qn[I,:,ivar] .= 0.5*(qp.qn[I,:,ivar] .+ qp.qn[ip,:,ivar])
-                qp.qn[ip,:,ivar] .= qp.qn[I,:,ivar]
+                qp.qn[I,ivar] .= 0.5*(qp.qn[I,ivar] .+ qp.qn[ip,ivar])
+                qp.qn[ip,ivar] .= qp.qn[I,ivar]
             end
         end
     end 
@@ -40,8 +40,8 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         for I in keys(mesh.yperiodicity)
             ip = mesh.yperiodicity[I]
             for ivar=1:nvars
-                qp.qn[I,:,ivar] .= 0.5*(qp.qn[I,:,ivar] .+ qp.qn[ip,:,ivar])
-                qp.qn[ip,:,ivar] .= qp.qn[I,:,ivar]
+                qp.qn[I,ivar] .= 0.5*(qp.qn[I,ivar] .+ qp.qn[ip,ivar])
+                qp.qn[ip,ivar] .= qp.qn[I,ivar]
             end
         end
     end
@@ -53,7 +53,7 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         for I=1:size(mesh.bc_xmin,1)
             ip = mesh.bc_xmin[I]
             for ivar=1:nvars
-                qp.qn[ip,:,ivar] .= exact[:]
+                qp.qn[ip,ivar] .= exact[:]
             end
         end
     end
@@ -63,7 +63,7 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         for I=1:size(mesh.bc_xmax,1)
             ip = mesh.bc_xmax[I]
             for ivar=1:nvars
-                qp.qn[ip,:,ivar] .= exact[:]
+                qp.qn[ip,ivar] .= exact[:]
             end
         end
     end
@@ -73,7 +73,7 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         for I=1:size(mesh.bc_ymin,1)
             ip = mesh.bc_ymin[I]
             for ivar=1:nvars
-                qp.qn[ip,:,ivar] .= exact[:]
+                qp.qn[ip,ivar] .= exact[:]
             end
         end
     end
@@ -83,7 +83,7 @@ function apply_boundary_conditions!(qp,mesh,inputs,::NSD_2D)
         for I=1:size(mesh.bc_ymax,1)
             ip = mesh.bc_ymax[I]
             for ivar=1:nvars
-                qp.qn[ip,:,ivar] .= exact[:]
+                qp.qn[ip,ivar] .= exact[:]
             end
         end
     end
