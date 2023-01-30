@@ -95,11 +95,7 @@ function rk!(q::St_SolutionVars;
             # B.C.
             #
         end
-        #for var=1:nvars
-        #for I=1:mesh.npoin
-         #   q.qn[I,1] = max(0.0,q.qn[I,1])
-        #end 
-        #end 
+        
         apply_periodicity!(rhs_el,q, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,nvars)
         
         end #stages
@@ -134,19 +130,16 @@ function time_loop!(TD,
     for it = 1:Nt
         if (mod(it, it_interval) == 0 || it == Nt)
             @printf "   Solution at t = %.6f sec\n" t
-            @printf "      min(q) = %.6f\n" minimum(qp.qn[:,1])
-            @printf "      max(q) = %.6f\n" maximum(qp.qn[:,1])
-            @printf "      min(q) = %.6f\n" minimum(qp.qn[:,3])
-            @printf "      max(q) = %.6f\n" maximum(qp.qn[:,3])
-            @printf "      min(q) = %.6f\n" minimum(qp.qn[:,2])
-            @printf "      max(q) = %.6f\n" maximum(qp.qn[:,2])             
+            @printf "      min/max(q1) = %.6f\n" minimum(qp.qn[:,1], maximum(qp.qn[:,1]))
+            @printf "      min/max(q2) = %.6f\n" minimum(qp.qn[:,2], maximum(qp.qn[:,2]))
+            @printf "      min/max(q3) = %.6f\n" minimum(qp.qn[:,3], maximum(qp.qn[:,3]))
             #------------------------------------------
             # Plot initial condition:
             # Notice that I scatter the points to
             # avoid sorting the x and q which would be
             # becessary for a smooth curve plot.
             #------------------------------------------
-            title = string( "Tracer: final solution at t=%.8f", t)
+            title = string( "Tracer: final solution at t=", t)
             jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
             it_diagnostics = it_diagnostics + 1
         end
@@ -158,7 +151,7 @@ function time_loop!(TD,
     end
       
     #Plot final solution
-    title = string( "Tracer: final solution at t=%.8f", inputs[:tend])
+    title = string( "Tracer: final solution at t=", inputs[:tend])
     jcontour(mesh.x, mesh.y, qp.qn[:,3], title, string(OUTPUT_DIR, "/END.png"))
     
 end
