@@ -80,7 +80,7 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     varnames = ["p", "u", "v"]
     for ivar=1:nvars
         title = string(varnames[ivar], ": initial condition")
-        jcontour(mesh.x, mesh.y, q.qn[:,1], title, string(OUTPUT_DIR, "/", varnames[ivar], "-INIT.png"))
+        jcontour(mesh.x, mesh.y, q.qn[:,ivar], title, string(OUTPUT_DIR, "/", varnames[ivar], "-INIT.png"))
     end
     @info " Initialize fields for system of Linear Conservation Laws ........................ DONE"
     

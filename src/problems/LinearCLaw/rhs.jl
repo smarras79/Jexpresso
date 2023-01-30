@@ -45,15 +45,21 @@ function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::
                 dFdξ = dFdξ = zeros(T, neqs)
                 dGdξ = dGdη = zeros(T, neqs)
                 for k = 1:mesh.ngl
-                    dFdξ[1:neqs] = dFdξ[1:neqs] + dψ[k,i]*F[k,j,iel,1:neqs]
-                    dFdη[1:neqs] = dFdη[1:neqs] + dψ[k,j]*F[i,k,iel,1:neqs]
-                    
-                    dGdξ[1:neqs] = dGdξ[1:neqs] + dψ[k,i]*G[k,j,iel,1:neqs]
-                    dGdη[1:neqs] = dGdη[1:neqs] + dψ[k,j]*G[i,k,iel,1:neqs]
+                    dFdξ = dFdξ[1:neqs] .+ dψ[k,i]*F[k,j,iel,1:neqs]
+                    dFdη = dFdη[1:neqs] .+ dψ[k,j]*F[i,k,iel,1:neqs]
+                    ip = mesh.connijk[i,j,iel]
+                #    if (mesh.x[ip] == -1.0 && mesh.y[ip] == -1.0)
+                 #       @info dψ[k,i]*F[k,j,iel,1:neqs],dψ[k,i]*G[k,j,iel,1:neqs]
+                  #  end
+                    dGdξ = dGdξ[1:neqs] .+ dψ[k,i]*G[k,j,iel,1:neqs]
+                    dGdη = dGdη[1:neqs] .+ dψ[k,j]*G[i,k,iel,1:neqs]
                 end
-                dFdx[1:neqs] = dFdξ[1:neqs]*metrics.dξdx[i,j,iel] + dFdη[1:neqs]*metrics.dηdx[i,j,iel]
-                dGdy[1:neqs] = dGdξ[1:neqs]*metrics.dξdy[i,j,iel] + dGdη[1:neqs]*metrics.dηdy[i,j,iel]
-                
+                dFdx = dFdξ[1:neqs]*metrics.dξdx[i,j,iel] .+dFdη[1:neqs]*metrics.dηdx[i,j,iel]
+                dGdy = dGdξ[1:neqs]*metrics.dξdy[i,j,iel] .+ dGdη[1:neqs]*metrics.dηdy[i,j,iel]
+                ip = mesh.connijk[i,j,iel]
+              #  if (mesh.x[ip] == -1.0 && mesh.y[ip] == -1.0)
+               #    @info dFdx, dGdy, dFdξ,dFdη,dGdξ,dGdη
+             #   end 
                 rhs_el[i,j,iel,1] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1] + dGdy[1])
                 rhs_el[i,j,iel,2] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[2] + dGdy[2])
                 rhs_el[i,j,iel,3] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[3] + dGdy[3])
