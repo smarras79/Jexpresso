@@ -95,6 +95,11 @@ function rk!(q::St_SolutionVars;
             # B.C.
             #
         end
+        #for var=1:nvars
+        #for I=1:mesh.npoin
+         #   q.qn[I,1] = max(0.0,q.qn[I,1])
+        #end 
+        #end 
         apply_periodicity!(rhs_el,q, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,nvars)
         
         end #stages
@@ -131,7 +136,10 @@ function time_loop!(TD,
             @printf "   Solution at t = %.6f sec\n" t
             @printf "      min(q) = %.6f\n" minimum(qp.qn[:,1])
             @printf "      max(q) = %.6f\n" maximum(qp.qn[:,1])
-            
+            @printf "      min(q) = %.6f\n" minimum(qp.qn[:,3])
+            @printf "      max(q) = %.6f\n" maximum(qp.qn[:,3])
+            @printf "      min(q) = %.6f\n" minimum(qp.qn[:,2])
+            @printf "      max(q) = %.6f\n" maximum(qp.qn[:,2])             
             #------------------------------------------
             # Plot initial condition:
             # Notice that I scatter the points to
@@ -151,6 +159,6 @@ function time_loop!(TD,
       
     #Plot final solution
     title = string( "Tracer: final solution at t=%.8f", inputs[:tend])
-    jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/END.png"))
+    jcontour(mesh.x, mesh.y, qp.qn[:,3], title, string(OUTPUT_DIR, "/END.png"))
     
 end

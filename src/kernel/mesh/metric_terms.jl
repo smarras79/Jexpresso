@@ -93,7 +93,53 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         #show(stdout, "text/plain", metrics.Je[:,:,iel])
     end
     #show(stdout, "text/plain", metrics.Je)
-    
+    for iface =1:size(mesh.xmin_faces,2)
+       for i=1:Q+1
+          ip = mesh.xmin_faces[i,iface]
+          if (i < Q+1)
+              ip1 = mesh.xmin_faces[i+1,iface]
+          else
+              ip1 = mesh.xmin_faces[i-1,iface]
+          end
+          metrics.Jef[i,iface] = abs(mesh.y[ip]-mesh.y[ip1])/2
+       end
+    end
+    disp = size(mesh.xmin_faces,2)
+    for iface =1:size(mesh.xmax_faces,2)
+       for i=1:Q+1
+          ip = mesh.xmax_faces[i,iface]
+          if (i < Q+1)
+              ip1 = mesh.xmax_faces[i+1,iface]
+          else
+              ip1 = mesh.xmax_faces[i-1,iface]
+          end
+          metrics.Jef[i,iface+disp] = abs(mesh.y[ip]-mesh.y[ip1])/2
+       end
+    end
+    disp += size(mesh.xmax_faces,2)
+    for iface =1:size(mesh.ymin_faces,2)
+       for i=1:Q+1
+          ip = mesh.ymin_faces[i,iface]
+          if (i < Q+1)
+              ip1 = mesh.ymin_faces[i+1,iface]
+          else
+              ip1 = mesh.ymin_faces[i-1,iface]
+          end
+          metrics.Jef[i,iface+disp] = abs(mesh.x[ip]-mesh.x[ip1])/2
+       end
+    end 
+    disp += size(mesh.ymin_faces,2) 
+    for iface =1:size(mesh.ymax_faces,2)
+       for i=1:Q+1
+          ip = mesh.ymax_faces[i,iface]
+          if (i < Q+1)
+              ip1 = mesh.ymax_faces[i+1,iface]
+          else
+              ip1 = mesh.ymax_faces[i-1,iface]
+          end
+          metrics.Jef[i,iface+disp] = abs(mesh.x[ip]-mesh.x[ip1])/2
+       end
+    end 
     return metrics
 end
 
@@ -110,7 +156,7 @@ function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagr
                             dηdy = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
 
                             vⁱ = zeros(3, Q+1, Q+1, mesh.nelem), #contravariant unit vectors
-                            
+                            Jef  = zeros(Q+1, size(mesh.bound_elem,1)+4),                            
                             Je   = zeros(Q+1, Q+1, mesh.nelem)) #   Je[1:Nq, 1:Nq, 1:nelem]
 
     ψ  = basis.ψ
