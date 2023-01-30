@@ -58,6 +58,8 @@ function rk!(q::St_SolutionVars;
              M, Δt,
              nvars, 
              inputs::Dict,
+             BCT,
+             time,
              T)
     
     dq     = zeros(mesh.npoin, nvars)
@@ -68,9 +70,11 @@ function rk!(q::St_SolutionVars;
         #
         # rhs[ngl,ngl,nelem]
         #
-        rhs_el      = build_rhs(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω, mesh, metrics, T)
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-        
+        rhs_el      = build_rhs(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω,
+                                mesh, metrics, T)
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω,
+                                     inputs[:νx], inputs[:νy], mesh, metrics, T)
+        apply_boundary_conditions!(rhs_el,q, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,nvars)
         #
         # RHS[npoin] = DSS(rhs)
         #
@@ -91,7 +95,8 @@ function rk!(q::St_SolutionVars;
             # B.C.
             #
         end
-        apply_boundary_conditions!(q, mesh, inputs, SD)
+        
+        apply_periodicity!(rhs_el,q, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,nvars)
         
         end #stages
 
@@ -183,6 +188,7 @@ function time_loop!(TD,
                     Nt, Δt,
                     nvars, 
                     inputs::Dict,
+                    BCT,
                     OUTPUT_DIR::String,
                      T)
     it = 0
@@ -201,8 +207,9 @@ function time_loop!(TD,
        
         if (mod(it, it_interval) == 0 || it == Nt)
             @printf "   Solution at t = %.6f sec\n" t
-            @printf "      min(qⁿ), max(qⁿ) = %.6f, %.6f\n" minimum(qp.qn[:,1]) maximum(qp.qn[:,1])
-            
+            @printf "      min/max(q1) = %.6f\n" minimum(qp.qn[:,1], maximum(qp.qn[:,1]))
+            @printf "      min/max(q2) = %.6f\n" minimum(qp.qn[:,2], maximum(qp.qn[:,2]))
+            @printf "      min/max(q3) = %.6f\n" minimum(qp.qn[:,3], maximum(qp.qn[:,3]))
             #------------------------------------------
             # Plot initial condition:
             # Notice that I scatter the points to
@@ -218,11 +225,14 @@ function time_loop!(TD,
         end
         t = t0 + Δt
         t0 = t
-       
+
+        rk!(qp; TD, SD, QT, PT,
+            mesh, metrics, basis, ω, M, Δt, nvars, inputs, BCT, time=t, T)
+        
     end
       
     #Plot final solution
-    title = string( "Tracer: final solution at t=%.8f", inputs[:tend])
-    jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/END.png"))
+    title = string( "Tracer: final solution at t=", inputs[:tend])
+    jcontour(mesh.x, mesh.y, qp.qn[:,3], title, string(OUTPUT_DIR, "/END.png"))
     
 end

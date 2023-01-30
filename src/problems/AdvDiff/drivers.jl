@@ -130,6 +130,7 @@ function driver(DT::CG,       #Space discretization type
     # NOTICE add a function to find the mesh mininum resolution
     
     TD = RK5()
-    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, OUTPUT_DIR, TFloat)
-    
+    BCT = DefaultBC()
+    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, OUTPUT_DIR, BCT, TFloat)
+
 end
