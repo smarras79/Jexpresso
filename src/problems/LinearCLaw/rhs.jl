@@ -5,8 +5,7 @@ include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
 
 function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
-
-    #qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)    
+    
     F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     
@@ -47,19 +46,13 @@ function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::
                 for k = 1:mesh.ngl
                     dFdξ = dFdξ[1:neqs] .+ dψ[k,i]*F[k,j,iel,1:neqs]
                     dFdη = dFdη[1:neqs] .+ dψ[k,j]*F[i,k,iel,1:neqs]
-                    ip = mesh.connijk[i,j,iel]
-                #    if (mesh.x[ip] == -1.0 && mesh.y[ip] == -1.0)
-                 #       @info dψ[k,i]*F[k,j,iel,1:neqs],dψ[k,i]*G[k,j,iel,1:neqs]
-                  #  end
+                    
                     dGdξ = dGdξ[1:neqs] .+ dψ[k,i]*G[k,j,iel,1:neqs]
                     dGdη = dGdη[1:neqs] .+ dψ[k,j]*G[i,k,iel,1:neqs]
                 end
                 dFdx = dFdξ[1:neqs]*metrics.dξdx[i,j,iel] .+dFdη[1:neqs]*metrics.dηdx[i,j,iel]
                 dGdy = dGdξ[1:neqs]*metrics.dξdy[i,j,iel] .+ dGdη[1:neqs]*metrics.dηdy[i,j,iel]
-                ip = mesh.connijk[i,j,iel]
-              #  if (mesh.x[ip] == -1.0 && mesh.y[ip] == -1.0)
-               #    @info dFdx, dGdy, dFdξ,dFdη,dGdξ,dGdη
-             #   end 
+                
                 rhs_el[i,j,iel,1] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1] + dGdy[1])
                 rhs_el[i,j,iel,2] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[2] + dGdy[2])
                 rhs_el[i,j,iel,3] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[3] + dGdy[3])
@@ -109,8 +102,6 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, �
             ∇η∇q_kl = metrics.dηdx[k,l,iel]*dqdx + metrics.dηdy[k,l,iel]*dqdy
             
             for i = 1:mesh.ngl
-                Iξ = i + (l - 1)*(N + 1)
-                Iη = k + (i - 1)*(N + 1)
                 
                 hll,     hkk     =  ψ[l,l],  ψ[k,k]
                 dhdξ_ik, dhdη_il = dψ[i,k], dψ[i,l]
