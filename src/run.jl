@@ -37,8 +37,6 @@ OUTPUT_DIR = string(dirname(@__DIR__()), "/src/", problem_dir, "/", problem_name
 if !isdir(OUTPUT_DIR)
     mkdir(OUTPUT_DIR)
 end
-#Copy the user_inputs.jl used for the current run into the output directory:
-cp(string(dirname(@__DIR__()), "/src/", problem_dir, "/", problem_name, "/user_inputs.jl"), "user_inputs.jl.current", force=true)
 
 #--------------------------------------------------------
 # Problem setup
