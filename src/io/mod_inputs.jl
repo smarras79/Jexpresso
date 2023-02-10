@@ -11,17 +11,17 @@ function parse_commandline()
 
     @add_arg_table s begin
         "--opt1"
-            help = "an option with an argument"
+        help = "an option with an argument"
         "--opt2", "-o"
-            help = "another option with an argument"
-            arg_type = Int
-            default = 0
+        help = "another option with an argument"
+        arg_type = Int
+        default = 0
         "--flag1"
-            help = "an option without argument, i.e. a flag"
-            action = :store_true
+        help = "an option without argument, i.e. a flag"
+        action = :store_true
         "arg1"
-            help = "a positional argument"
-            required = true
+        help = "a positional argument"
+        required = true
     end
 
     return parse_args(s)
@@ -98,15 +98,13 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
         mod_inputs_check(inputs, :zmin, Float64(-1.0), "-")
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
 
-        s= """ 
-           jexpresso: Some undefined (but unnecessary) user inputs 
-           MAY have been given some default values.
-           User needs not to worry about them.
-           """
-        @warn s
+        s= string("jexpresso: Some undefined (but unnecessary) user inputs 
+                              MAY have been given some default values.
+                              User needs not to worry about them.")
         
-    end #lread_gmsh =#
-
+        #@warn s
+        
+    end #lread_gmsh
     #
     # Some physical constants and parameters:
     #    
@@ -148,91 +146,105 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
         inputs[:npz] = Int8(1)
     end
 
-        
-    """
-    To add a new set of governing equations, add a new problem director
-    to src/problems and call it `ANY_NAME_YOU_WANT` 
-    and add the following lines 
-
-     elseif (lowercase(problem_name) == "ANY_NAME_YOU_WANT")
-        inputs[:problem] = ANY_NAME_YOU_WANT()
-            
-        nvars = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
-        prinetln( " # nvars     ", nvars)
-     end
-
-    """
-    
-    #------------------------------------------------------------------------
-    # Define nvars based on the problem being solved
-    #------------------------------------------------------------------------
-    nvars::Int8 = 1
-    if (lowercase(problem_name) == "burgers")
-        inputs[:problem] = Burgers()
-        
-        if(inputs[:nsd] == 1)
-            nvars = 1
-        elseif (inputs[:nsd] == 2)
-            nvars = 2
-        end
-        inputs[:nvars] = nvars
-        println( " # nvars     ", nvars)
-        
-    elseif (lowercase(problem_name) == "sw")
-        inputs[:problem] = sw()
-        
-        if (inputs[:nsd] == 1)
-            nvars = 2
-        elseif(inputs[:nsd] == 2)
-            nvars = 3
-        elseif(inputs[:nsd] == 3)
-            error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
-        end
-        inputs[:nvars] = nvars
-        println( " # nvars     ", nvars)
-        
-    elseif (lowercase(problem_name) == "linearclaw" ||
-            lowercase(problem_name) == "linclaw" ||
-            lowercase(problem_name) == "lclaw")
-        inputs[:problem] = LinearCLaw()
-        
-        inputs[:nvars] = nvars = 3
-        println( " # nvars     ", nvars)
-        
-    elseif (lowercase(problem_name) == "advdiff" ||
-        lowercase(problem_name) == "advdif" ||
-        lowercase(problem_name) == "ad" ||
-        lowercase(problem_name) == "adv2d")
-        inputs[:problem] = AdvDiff()
-        
-        inputs[:nvars] = nvars = 1
-        println( " # nvars     ", nvars)
-    else
-        
-        inputs[:nvars] = 1 #default
-        
-        s = """
-                jexpresso  user_inputs.jl: problem ", inputs[:problem, " is not coded!
-                Chose among:
-                    - "AdvDiff"/"AD"/"Adv"
-                    - "LinearCLaw"/"LinClaw"
-                    - "Burgers"
-                    - "SW"
-            """
-        
-        @error s
+    #Penalty constant for SIPG
+    if(!haskey(inputs, :penalty))
+        inputs[:penalty] = Float16(0.0) #default kinematic viscosity
     end
     
     
-    return inputs, nvars
+    #------------------------------------------------------------------------
+    #To add a new set of governing equations, add a new problem director
+    #to src/problems and call it `ANY_NAME_YOU_WANT` 
+    #and add the following lines 
+    #
+    #elseif (lowercase(problem_name) == "ANY_NAME_YOU_WANT")
+    #inputs[:problem] = ANY_NAME_YOU_WANT()
+    #
+    #neqns = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
+    #prinetln( " # neqns     ", neqns)
+    #end
+    #------------------------------------------------------------------------
+    
+    #------------------------------------------------------------------------
+    # Define neqns based on the problem being solved
+    #------------------------------------------------------------------------
+    neqns::Int8 = 1
+if (lowercase(problem_name) == "burgers")
+    inputs[:problem] = Burgers()
+    
+    if(inputs[:nsd] == 1)
+        neqns = 1
+    elseif (inputs[:nsd] == 2)
+        neqns = 2
+    end
+    inputs[:neqns] = neqns
+    println( " # Number of equations ", neqns)
+    
+elseif (lowercase(problem_name) == "sw")
+    inputs[:problem] = sw()
+    
+    if (inputs[:nsd] == 1)
+        neqns = 2
+    elseif(inputs[:nsd] == 2)
+        neqns = 3
+    elseif(inputs[:nsd] == 3)
+        error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
+    end
+    inputs[:neqns] = neqns
+    println( " # Number of equations ", neqns)
+    
+elseif (lowercase(problem_name) == "linearclaw" ||
+        lowercase(problem_name) == "linclaw" ||
+        lowercase(problem_name) == "lclaw")
+    inputs[:problem] = LinearCLaw()
+    
+    inputs[:neqns] = neqns = 3
+    println( " # neqns     ", neqns)
+    
+elseif (lowercase(problem_name) == "advdiff" ||
+        lowercase(problem_name) == "advdif" ||
+        lowercase(problem_name) == "ad" ||
+        lowercase(problem_name) == "adv2d")
+    inputs[:problem] = AdvDiff()
+    
+    inputs[:neqns] = neqns = 1
+    println( " # neqns     ", neqns)
+else
+    
+    inputs[:neqns] = 1 #default
+    
+    s = """
+            jexpresso  user_inputs.jl: problem ", inputs[:problem, " is not coded!
+            Chose among:
+                     - "AdvDiff"/"AD"/"Adv"
+                     - "LinearCLaw"/"LinClaw"
+                     - "Burgers"
+                     - "SW"
+          """
+    
+    @error s
+end
+
+#------------------------------------------------------------------------
+# The following quantities stored in the inputs[] dictionary are only
+# auxiliary and are NEVER to be defined by the user
+#------------------------------------------------------------------------
+if ((inputs[:νx] != 0.0) || (inputs[:νy] != 0.0) || (inputs[:νz] != 0.0))
+    inputs[:δvisc] = 1.0
+else
+    inputs[:δvisc] = 0.0
+end
+
+
+return inputs, neqns
 end
 
 function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
     
     if (!haskey(inputs, key))
         s = """
-            jexpresso: $key is missing in .../IO/user_inputs.jl
-            """
+                jexpresso: $key is missing in .../IO/user_inputs.jl
+                """
         if (error_or_warning=="e")
             error(s)
         elseif (error_or_warning=="w")
@@ -240,7 +252,7 @@ function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
         end
         error_flag = 1
     end
-       
+    
 end
 
 
@@ -248,9 +260,9 @@ function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
 
     if (!haskey(inputs, key))
         s = """
-            jexpresso: $key is missing in .../IO/user_inputs.jl
-            The default value $key=$value will be used.
-            """
+                jexpresso: $key is missing in .../IO/user_inputs.jl
+                The default value $key=$value will be used.
+                """
         if (error_or_warning=="e")
             error(s)
         elseif (error_or_warning=="w")

@@ -42,7 +42,7 @@ function driver(DT::CG,       #Space discretization type
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:problem]
-    nvars = inputs[:nvars]
+    neqns = inputs[:neqns]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -131,6 +131,6 @@ function driver(DT::CG,       #Space discretization type
     
     TD = RK5()
     BCT = DefaultBC()
-    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, OUTPUT_DIR, BCT, TFloat)
+    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, neqns, inputs, BCT, OUTPUT_DIR, TFloat)
 
 end

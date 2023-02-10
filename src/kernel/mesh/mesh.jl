@@ -47,6 +47,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     Δx::Union{Array{TFloat}, Missing} = zeros(2)
     Δy::Union{Array{TFloat}, Missing} = zeros(2)
     Δz::Union{Array{TFloat}, Missing} = zeros(2)
+
+    #Δelem::Union{Array{TFloat}, Missing} = 0.0 #element characteristic size as if it were linear
+    #Δmean::Union{Array{TFloat}, Missing} = 0.0 #effective resolution considering the order Δmean = Δelem/nop
     
     xmin::Union{TFloat, Missing} = -1.0;
     xmax::Union{TFloat, Missing} = +1.0;
@@ -436,7 +439,12 @@ for ip = mesh.npoin_linear+1:mesh.npoin
         mesh.z[ip] = mesh.z_ho[ip]
     end
 end
-#Determine boundary nodes and assign node numbers to appropriate arrays
+
+compute_element_size_driver(mesh, SD, TFloat)
+error("assasasa")
+#
+# Determine boundary nodes and assign node numbers to appropriate arrays
+#
 xmin_npoin = 0
 xmax_npoin = 0
 ymin_npoin = 0
@@ -2486,138 +2494,86 @@ function mod_mesh_mesh_driver(inputs::Dict)
     
 end
 
-
-#=
-function populate_face_in_elem!(face_in_elem::Array{Int64, 3}, nelem, NFACES_EL, conn_face_el_sort::Array{Int64, 3})
-
-iface = Int64(0)
-for ifac = 1:NFACES_EL
-for iel = 1:nelem	    
-for jfac = 1:NFACES_EL
-for jel = iel:nelem
-
-if(     conn_face_el_sort[iel,ifac,1] === conn_face_el_sort[jel,jfac,1] && 
-conn_face_el_sort[iel,ifac,2] === conn_face_el_sort[jel,jfac,2] && 
-conn_face_el_sort[iel,ifac,3] === conn_face_el_sort[jel,jfac,3] && 
-conn_face_el_sort[iel,ifac,4] === conn_face_el_sort[jel,jfac,4] && 
-iel ≠ jel) 
-
-face_in_elem[1, ifac, iel] = iel
-face_in_elem[2, ifac, iel] = jel
-
-face_in_elem[1, jfac, jel] = jel
-face_in_elem[2, jfac, jel] = iel
-
-#@info " SHARED FACE:  face %d of ELEMENT %d is shared with face %d of ELEMENT %d - (%d %d %d %d) = (%d %d %d %d)\n", ifac+1,iel+1, jfac+1, jel+1, conn_face_el_sort[iel,ifac,1], conn_face_el_sort[iel,ifac,2], conn_face_el_sort[iel,ifac,3], conn_face_el_sort[iel,ifac,4],  conn_face_el_sort[jel,jfac,1], conn_face_el_sort[jel,jfac,2], conn_face_el_sort[jel,jfac,3], conn_face_el_sort[jel,jfac,4]
-iface = iface + 1;
-end
-end
-end
-end
-end     
-nfaces_int = Int64(iface)    
-end
-=#
-
-#=
-function  add_high_order_nodes_edges1!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
-
-if (mesh.nop < 2) return end
-
-println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES")
-println(" # ...")
-
-x1, y1 = Float64(0.0), Float64(0.0)
-x2, y2 = Float64(0.0), Float64(0.0)
-
-ξ::typeof(lgl.ξ[1]) = 0.0
-
-ngl                      = mesh.nop + 1
-tot_linear_poin          = mesh.npoin_linear
-tot_edges_internal_nodes = mesh.nedges*(ngl-2)
-tot_vol_internal_nodes   = mesh.nelem*(ngl-2)*(ngl-2)
-
-el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
-
-#Increase number of grid points from linear count to total high-order points
-mesh.npoin = mesh.npoin_linear + tot_edges_internal_nodes + tot_vol_internal_nodes
-
-if length(mesh.x_ho) < mesh.npoin
-resize!(mesh.x_ho, (mesh.npoin))
-end
-if length(mesh.y_ho) < mesh.npoin        
-resize!(mesh.y_ho, (mesh.npoin))
-end
-
-conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-@info size(mesh.cell_edge_ids)
-@info size(mesh.cell_edge_ids,2)
-@info mesh.cell_edge_ids
-
-open("./COORDS_HO_edges.dat", "w") do f
+#-----------------------------------------------------------------------
+# This subroutine computes size of the element hexa 
+# and the mean spacing !between the lgl points inside the element.
 #
-# First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
+# The following local node numbering is assumed
 #
-for iel = 1:mesh.nelem
-for iedg_el = 1:length(mesh.conn_edge_el[1, :, iel])
-
-ip = tot_linear_poin + 1
-for iedge_g = 1:mesh.nedges
-if iedge_g == mesh.cell_edge_ids[iel][iedg_el]
-
-ip1 = mesh.conn_edge_el[1, iedg_el, iel]
-ip2 = mesh.conn_edge_el[2, iedg_el, iel]
-#ip1 = mesh.conn_unique_edges[iedge_g][1]
-#ip2 = mesh.conn_unique_edges[iedge_g][2]
-
-conn_edge_poin[iedge_g,        1] = ip1
-conn_edge_poin[iedge_g, mesh.ngl] = ip2
-
-x1, y1 = mesh.x[ip1], mesh.y[ip1]
-x2, y2 = mesh.x[ip2], mesh.y[ip2]
-
-#@printf(" Iel[%d]: (iedg_el, iedge_g)=(%d,%d) --> (ip1, ip2)=(%d, %d), (x1,y1)=(%f,%f), (x2, y2)=(%f,%f)\n", iel,      iedg_el, iedge_g,              conn_edge_poin[iedge_g,1],conn_edge_poin[iedge_g,mesh.ngl], x1,y1, x2,y2)
-
-for l=2:ngl-1
-ξ = lgl.ξ[l];
-
-mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-
-conn_edge_poin[iedge_g, l] = ip
-
-#@printf(" Iel[%d]: lgl %d: %d %d %d\n", iel, l, iedg_el, iedge_g, conn_edge_poin[iedge_g, l])
-@printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
-ip = ip + 1
-end
-end
-end
-end
-end
-end #do f
-#show(stdout, "text/plain", conn_edge_poin)
-#@info "-----2D edges"
-
+#  3----------4
+#  |          |
+#  |          |
+#  |          |
+#  |          |
+#  1----------2
 #
-# Second pass: populate mesh.conn[1:8+el_edges_internal_nodes, ∀ elem]\n")
+# The following local node numbering is assumed
 #
-cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here  
-for iel = 1:mesh.nelem
-edge_ids = getindex!(cache_edge_ids, mesh.cell_edge_ids, iel)
-iconn = 1
-for iedge_el = 1:length(edge_ids)
-iedge_g = edge_ids[iedge_el]
-for l = 2:ngl-1
-ip = conn_edge_poin[iedge_g, l]
-mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
-iconn = iconn + 1
-end
-end
-end
-#show(stdout, "text/plain", mesh.conn')
+#      7---------8
+#     /| Top    /|
+#    / |       / |
+#   5---------6  |
+#   |  |      |  |
+#   |  3------|--4
+#   | /  Bott | /
+#   |/        |/
+#   1---------2
+#
+# WARNING: this only gives an estimate if the grid is not cartesian
+#
+#----------------------------------------------------------------------
+function compute_element_size_driver(mesh::St_mesh, SD, T)
 
-println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
-
-return 
+    Δlocal = zeros(T, mesh.nelem)
+    for ie = 1:mesh.nelem
+        Δlocal[ie] = compute_element_size(ie, mesh::St_mesh, SD, T)
+    end
+    Δelem      = minimum(Δlocal)
+    Δeffective = Float64(Δelem/mesh.nop)
+    @info Δelem
+    @info Δeffective
+    
 end
-=#
+
+#------------------------------------------------------------------------------------
+#Computes element size assuming flow in a straght-sided cube
+#------------------------------------------------------------------------------------
+function compute_element_size(ie, mesh::St_mesh, SD::NSD_2D, T)
+    
+    #local arrays
+    ngl = mesh.ngl    
+    x = y = zeros(T, 4)
+    inode = zeros(Int64, 4)
+    
+    inode[1] = mesh.connijk[1,   ngl, ie]
+    inode[2] = mesh.connijk[1,     1, ie]
+    inode[3] = mesh.connijk[ngl, ngl, ie]
+    inode[4] = mesh.connijk[ngl,   1, ie]
+    
+    #Store Coordinates
+    for m = 1:4
+        x[m] = mesh.x[inode[m]]
+        y[m] = mesh.y[inode[m]]
+
+        @info m, x[m], y[m]
+    end
+    error("aa")
+    #Diagonal distance:
+    Δ12 = sqrt((x[1]-x[2])*(x[1]-x[2]) + (y[1]-y[2])*(y[1]-y[2]))
+    Δ24 = sqrt((x[2]-x[4])*(x[2]-x[4]) + (y[2]-y[4])*(y[2]-y[4]))
+    Δ34 = sqrt((x[3]-x[4])*(x[3]-x[4]) + (y[3]-y[4])*(y[3]-y[4]))
+    Δ13 = sqrt((x[3]-x[1])*(x[3]-x[1]) + (y[3]-y[1])*(y[3]-y[1]))
+
+    @info Δ12
+    @info Δ24
+    @info Δ34
+    @info Δ13
+    
+    #Diagonal distance:
+    Δ14 = sqrt((x[1]-x[4])*(x[1]-x[4]) + (y[1]-y[4])*(y[1]-y[4]))
+    Δ23 = sqrt((x[2]-x[3])*(x[2]-x[3]) + (y[2]-y[3])*(y[2]-y[3]))
+    
+    Δelem = min(Δ14, Δ23, Δ12, Δ24, Δ34, Δ13)
+    
+    return Δelem
+end

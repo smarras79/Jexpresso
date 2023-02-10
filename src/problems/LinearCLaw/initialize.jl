@@ -30,9 +30,9 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     #Cone properties:
     c  = 1.0
     x0 = y0 = -0.8
-    kx = ky = sqrt(2)/2
+    kx = ky = sqrt(2.0)/2.0
     ω  = 0.2
-    d  = 0.5*ω/sqrt(log(2)); d2 = d*d
+    d  = 0.5*ω/sqrt(log(2.0)); d2 = d*d
         
     for iel_g = 1:mesh.nelem
         for i=1:ngl
@@ -42,14 +42,14 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 x  = mesh.x[ip]
                 y  = mesh.y[ip]
 
-                #p = q.qn[ip,1] = exp(- ((kx*(x - x0) + ky*(y - y0))^2)/d2) #p
-                #u = q.qn[ip,2] = kx*p/c                                    #u
-                #v = q.qn[ip,3] = ky*p/c                                    #v 
+                p = q.qn[ip,1] = exp(- ((kx*(x - x0) + ky*(y - y0))^2)/d2) #p
+                u = q.qn[ip,2] = kx*p/c                                      #u
+                v = q.qn[ip,3] = ky*p/c                                      #v 
                 
                 
-                p = q.qn[ip,1] = exp(-(log(2))*((x*x + y*y)/0.06^2))
-                u = q.qn[ip,2] = 0.0
-                v = q.qn[ip,3] = 0.0
+                #p = q.qn[ip,1] = exp(-(log(2))*((x*x + y*y)/0.06^2))
+                #u = q.qn[ip,2] = 0.0
+                #v = q.qn[ip,3] = 0.0
                 
                 # [ip] -> [i,j,iel]
                 q.F[i,j,iel_g,1] = c^2*u
