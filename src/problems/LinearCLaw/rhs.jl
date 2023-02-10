@@ -22,9 +22,9 @@ function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
                 
-                p = qp.qn[ip,1]
-                u = qp.qn[ip,2]
-                v = qp.qn[ip,3]
+                p = qp[ip,1]
+                u = qp[ip,2]
+                v = qp[ip,3]
                 
                 F[i,j,iel,1] = c^2*u
                 F[i,j,iel,2] = p
@@ -48,7 +48,7 @@ function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::
                     dGdξ = dGdξ[1:neqs] .+ dψ[k,i]*G[k,j,iel,1:neqs]
                     dGdη = dGdη[1:neqs] .+ dψ[k,j]*G[i,k,iel,1:neqs]
                 end
-                dFdx = dFdξ[1:neqs]*metrics.dξdx[i,j,iel] .+dFdη[1:neqs]*metrics.dηdx[i,j,iel]
+                dFdx = dFdξ[1:neqs]*metrics.dξdx[i,j,iel] .+ dFdη[1:neqs]*metrics.dηdx[i,j,iel]
                 dGdy = dGdξ[1:neqs]*metrics.dξdy[i,j,iel] .+ dGdη[1:neqs]*metrics.dηdy[i,j,iel]
                 
                 rhs_el[i,j,iel,1:neqs] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqs] + dGdy[1:neqs])
@@ -76,7 +76,7 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, �
 
         for j=1:mesh.ngl, i=1:mesh.ngl
             m = mesh.connijk[i,j,iel]
-            qnel[i,j,iel,1:neqs] = qp.qn[m,1:neqs]
+            qnel[i,j,iel,1:neqs] = qp[m,1:neqs]
         end
         
         for k = 1:mesh.ngl, l = 1:mesh.ngl
@@ -127,7 +127,7 @@ function oldbuild_rhs_diff(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω
 
         for j=1:mesh.ngl, i=1:mesh.ngl
             m = mesh.connijk[i,j,iel]
-            qnel[i,j,iel,1:neqs] = qp.qn[m,1:neqs]
+            qnel[i,j,iel,1:neqs] = qp[m,1:neqs]
         end
         
         for k = 1:mesh.ngl, l = 1:mesh.ngl

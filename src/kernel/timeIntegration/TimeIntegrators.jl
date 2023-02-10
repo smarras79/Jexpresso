@@ -56,13 +56,13 @@ function rk!(q::St_SolutionVars;
              metrics::St_metrics,
              basis, ω,
              M, Δt,
-             nvars, 
+             neqns, 
              inputs::Dict,
              BCT,
              time,
              T)
     
-    dq     = zeros(mesh.npoin, nvars)
+    dq     = zeros(mesh.npoin, neqns)
     RKcoef = buildRKIntegrator!(TD, T)
     
     for s = 1:length(RKcoef.a)
@@ -70,33 +70,32 @@ function rk!(q::St_SolutionVars;
         #
         # rhs[ngl,ngl,nelem]
         #
-        rhs_el      = build_rhs(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω,
+        rhs_el      = build_rhs(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω,
                                 mesh, metrics, T)
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω,
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω,
                                      inputs[:νx], inputs[:νy], mesh, metrics, T)
-        apply_boundary_conditions!(rhs_el,q, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,nvars)
+        apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
         #
         # RHS[npoin] = DSS(rhs)
         #
-        for ivar=1:nvars
+        for ieqn=1:neqns
             RHS = DSSijk_rhs(SD,
-                             rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
+                             rhs_el[:,:,:,ieqn] + inputs[:δvisc]*rhs_diff_el[:,:,:,ieqn],
                              mesh.connijk,
                              mesh.nelem, mesh.npoin, mesh.nop,
                              T)
             divive_by_mass_matrix!(RHS, M, QT)
             
             for I=1:mesh.npoin
-                dq[I, ivar] = RKcoef.a[s]*dq[I, ivar] + Δt*RHS[I]
-                q.qn[I, ivar] = q.qn[I, ivar] + RKcoef.b[s]*dq[I, ivar]
+                dq[I, ieqn] = RKcoef.a[s]*dq[I, ieqn] + Δt*RHS[I]
+                q.qn[I, ieqn] = q.qn[I, ieqn] + RKcoef.b[s]*dq[I, ieqn]
             end
             
             #
             # B.C.
             #
         end
-        
-        apply_periodicity!(rhs_el,q, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,nvars)
+        apply_periodicity!(rhs_el,q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
         
         end #stages
 
@@ -104,77 +103,6 @@ function rk!(q::St_SolutionVars;
     
 end
 
-
-function rk4!(q::St_SolutionVars;
-             TD,
-             SD,
-             QT,
-             PT,
-             mesh::St_mesh,
-             metrics::St_metrics,
-             basis, ω,
-             M, Δt,
-             nvars, 
-             inputs::Dict,
-             T)
-    
-    dq      = zeros(T, mesh.npoin, nvars)
-    Q1 = Q2 = zeros(T, mesh.npoin, nvars)
-
-    #
-    # Stage 1
-    #   
-    rhs_el      = build_rhs(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω, mesh, metrics, T)
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, q, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-    for ivar=1:nvars
-        RHS = DSSijk_rhs(SD,
-                         rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
-                         mesh.connijk,
-                         mesh.nelem, mesh.npoin, mesh.nop,
-                         T)
-        divive_by_mass_matrix!(RHS, M, QT)
-        
-        Q1[I,ivar] = q.qn[I,ivar] + Δt*RHS[I]
-        apply_boundary_conditions!(Q1[:,ivar], mesh, inputs, SD)
-    end
-
-    #
-    # Stage 2
-    #   
-    rhs_el      = build_rhs(SD, QT, PT, nvars, Q1, basis.ψ, basis.dψ, ω, mesh, metrics, T)
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, Q1, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-    for ivar=1:nvars
-        RHS = DSSijk_rhs(SD,
-                         rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
-                         mesh.connijk,
-                         mesh.nelem, mesh.npoin, mesh.nop,
-                         T)
-        divive_by_mass_matrix!(RHS, M, QT)
-        
-        Q2[:,ivar] = 0.75*q.qn[:,ivar] + 0.25*(Q1[:, ivar] + Δt*RHS[I])
-        apply_boundary_conditions!(Q2[:,ivar], mesh, inputs, SD)
-    end
-
-    
-    #
-    # Stage 3: qⁿ⁺¹
-    #   
-    rhs_el      = build_rhs(SD, QT, PT, nvars, Q1, basis.ψ, basis.dψ, ω, mesh, metrics, T)
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, nvars, Q1, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-    for ivar=1:nvars
-        RHS = DSSijk_rhs(SD,
-                         rhs_el[:,:,:,ivar] + rhs_diff_el[:,:,:,ivar],
-                         mesh.connijk,
-                         mesh.nelem, mesh.npoin, mesh.nop,
-                         T)
-        divive_by_mass_matrix!(RHS, M, QT)
-        
-        q.qn[:,ivar] = (1.0/3.0)*q.qn[:,ivar] + (2.0/3.0)*(Q2[:, ivar] + Δt*RHS[I])
-        apply_boundary_conditions!(q.qn[:,ivar], mesh, inputs, SD)
-    end
-    
-    
-end
 
 function time_loop!(TD,
                     SD,
@@ -186,11 +114,11 @@ function time_loop!(TD,
                     qp,
                     M,
                     Nt, Δt,
-                    nvars, 
+                    neqns, 
                     inputs::Dict,
                     BCT,
                     OUTPUT_DIR::String,
-                     T)
+                    T)
     it = 0
     t  = inputs[:tinit]
     t0 = t
@@ -199,17 +127,13 @@ function time_loop!(TD,
    
     it_interval = inputs[:diagnostics_interval]
     it_diagnostics = 1
-    for it = 1:Nt 
-
-        qp.qnm1[:,:] = qp.qn[:,:] #[npoin, nvar]
-        rk!(qp; TD, SD, QT, PT, mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)
-        #rk4!(qp; TD, SD, QT, PT, mesh, metrics, basis, ω, M, Δt, nvars, inputs, T)
-       
+    for it = 1:Nt
         if (mod(it, it_interval) == 0 || it == Nt)
             @printf "   Solution at t = %.6f sec\n" t
-            @printf "      min/max(q1) = %.6f\n" minimum(qp.qn[:,1], maximum(qp.qn[:,1]))
-            @printf "      min/max(q2) = %.6f\n" minimum(qp.qn[:,2], maximum(qp.qn[:,2]))
-            @printf "      min/max(q3) = %.6f\n" minimum(qp.qn[:,3], maximum(qp.qn[:,3]))
+            @printf "      min/max(q1) = %.6f %.6f\n" minimum(qp.qn[:,1]) maximum(qp.qn[:,1])
+            @printf "      min/max(q2) = %.6f %.6f\n" minimum(qp.qn[:,2]) maximum(qp.qn[:,2])
+            @printf "      min/max(q3) = %.6f %.6f\n" minimum(qp.qn[:,3]) maximum(qp.qn[:,3])
+
             #------------------------------------------
             # Plot initial condition:
             # Notice that I scatter the points to
@@ -218,21 +142,17 @@ function time_loop!(TD,
             #------------------------------------------
             title = string( "Tracer: final solution at t=", t)
             jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
-            #title = string( "Tracer: final solution at t=", t)
-            #jcontour(mesh.x, mesh.y, qp.qnm1[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, "Nm1.png"))
-
             it_diagnostics = it_diagnostics + 1
         end
         t = t0 + Δt
         t0 = t
-
-        rk!(qp; TD, SD, QT, PT,
-            mesh, metrics, basis, ω, M, Δt, nvars, inputs, BCT, time=t, T)
         
+        rk!(qp; TD, SD, QT, PT,
+            mesh, metrics, basis, ω, M, Δt, neqns, inputs, BCT, time=t, T)
     end
       
     #Plot final solution
-    title = string( "Tracer: final solution at t=", inputs[:tend])
+    title = string( "Tracer: final solution at t=f", inputs[:tend])
     jcontour(mesh.x, mesh.y, qp.qn[:,3], title, string(OUTPUT_DIR, "/END.png"))
     
 end
