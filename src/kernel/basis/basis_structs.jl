@@ -344,20 +344,11 @@ function LegendreAndDerivativeAndQ!(Legendre::St_Legendre, nop::TInt, x::TFloat)
         dϕ   = 0.0
         q    = x
         dq   = 1.0
-	#Legendre.legendre  = 1.0
-	#Legendre.dlegendre = 0.0
-        #Legendre.q = x
-        #Legendre.dq = 1.0
     elseif (nop == 1)
         ϕ    = x
         dϕ   = 1.0
         q    = 0.5*(3*x^2 - 2) - 1
         dq   = 3*x
-        
-	#Legendre.legendre  = x
-	#Legendre.dlegendre = 1.0
-        #Legendre.q = 0.5*(3*x^2-2)-1
-        #Legendre.dq = 3*x
     else
         ϕm2  = 1.0
 	ϕm1  = x
@@ -381,21 +372,6 @@ function LegendreAndDerivativeAndQ!(Legendre::St_Legendre, nop::TInt, x::TFloat)
 
 	    dϕm2 = dϕm1
 	    dϕm1 = dϕ
-            #=
-            L    = x*Lm1*(2.0*k - 1.0)/k - Lm2*(k - 1.0)/k
-	    dL   = dLm2 + (2.0*k - 1.0)*Lm1
-	    
-	    Lp1  = x*L*(2.0*k + 1.0)/(k+1) - Lm1*k/(k+1)
-	    dLp1 = dLm1 + (2.0*k - 1.0)*L
-            
-            q  =  Lp1 -  Lm1
-            dq = dLp1 - dLm1
-            
-	    Lm2 = Lm1
-	    Lm1 = L
-
-	    dLm2 = dLm1
-	    dLm1 = dL=#
             
 	end
     end
