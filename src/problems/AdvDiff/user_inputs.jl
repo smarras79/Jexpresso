@@ -12,7 +12,6 @@ function user_inputs()
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
         :nop                 => 6,      # Polynomila order
-
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
