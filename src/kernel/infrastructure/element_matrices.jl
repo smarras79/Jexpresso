@@ -7,7 +7,7 @@ using SparseArrays
 include("../abstractTypes.jl")
 include("../mesh/mesh.jl")
 include("../mesh/metric_terms.jl")
-include("../basis/basis_structs.jl")
+include("../bases/basis_structs.jl")
 
 abstract type AbstractMassType end
 mutable struct St_ElMat{TFloat} <: AbstractMassType

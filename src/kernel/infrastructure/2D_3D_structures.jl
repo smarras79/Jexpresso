@@ -1,5 +1,5 @@
 using LinearAlgebra
-include("../basis/basis_structs.jl")
+include("../bases/basis_structs.jl")
 include("Kopriva_functions.jl")
 abstract type NodalStorage end
 abstract type Abstract_Integration_Points end

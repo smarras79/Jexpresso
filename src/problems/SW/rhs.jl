@@ -2,7 +2,7 @@ include("../AbstractProblems.jl")
 include("../../kernel/abstractTypes.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
-include("../../kernel/basis/basis_structs.jl")
+include("../../kernel/bases/basis_structs.jl")
 
 
 function build_rhs(SD::NSD_2D, QT, AP::SW, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)

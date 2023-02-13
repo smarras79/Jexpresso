@@ -1,6 +1,6 @@
 include("../abstractTypes.jl")
 include("../mesh/mesh.jl")
-include("../basis/basis_structs.jl")
+include("../bases/basis_structs.jl")
 
 Base.@kwdef mutable struct St_metrics{TFloat}
     dxdξ::Union{Array{TFloat}, Missing} = zeros(1)

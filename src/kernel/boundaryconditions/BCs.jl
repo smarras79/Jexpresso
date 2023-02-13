@@ -8,7 +8,7 @@ const TFloat = Float64
 include("../../io/mod_inputs.jl")
 include("../operators/operators.jl")
 include("../AbstractTypes.jl")
-include("../basis/basis_structs.jl")
+include("../bases/basis_structs.jl")
 include("../infrastructure/element_matrices.jl")
 include("../infrastructure/Kopriva_functions.jl")
 include("../infrastructure/2D_3D_structures.jl")
