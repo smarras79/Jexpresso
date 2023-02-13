@@ -25,7 +25,7 @@ const VERTEX_NODES = UInt64(1)
 const EDGE_NODES   = UInt64(2)
 const FACE_NODES   = UInt64(4)
 
-include("../basis/basis_structs.jl")
+include("../bases/basis_structs.jl")
 #include("../../auxiliary/nodeRenumbering/src/create_adjacency_graph.jl")
 #include("../../auxiliary/nodeRenumbering/src/node_degrees.jl")
 #include("../../auxiliary/nodeRenumbering/src/RCM.jl")

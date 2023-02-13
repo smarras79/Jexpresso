@@ -6,7 +6,7 @@ include("../../kernel/abstractTypes.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
-include("../../kernel/basis/basis_structs.jl")
+include("../../kernel/bases/basis_structs.jl")
 
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, el_mat, f)
 
