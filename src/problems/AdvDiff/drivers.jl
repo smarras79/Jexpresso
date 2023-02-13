@@ -34,8 +34,8 @@ include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
-function driver(DT::CG,       #Space discretization type
-                inputs::Dict, #input parameters from src/user_input.jl
+function driver(DT::ContGal,       #Space discretization type
+                inputs::Dict,      #input parameters from src/user_input.jl
                 OUTPUT_DIR::String,
                 TFloat) 
 
@@ -56,9 +56,10 @@ function driver(DT::CG,       #Space discretization type
     mesh = mod_mesh_mesh_driver(inputs)
     
     #--------------------------------------------------------
-    ND = build_nodal_Storage([Nξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
-    ξ  = ND.ξ.ξ
-    
+    # Build interpolation and quadrature points/weights
+    #--------------------------------------------------------
+    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)    
+    ξ,ω = ξω.ξ, ξω.ω
     if lexact_integration
         #
         # Exact quadrature:
@@ -68,10 +69,8 @@ function driver(DT::CG,       #Space discretization type
         QT_String = "Exact"
         Qξ  = Nξ + 1
         
-        NDQ = build_nodal_Storage([Qξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
-        ξq  = NDQ.ξ.ξ
-        ω   = NDQ.ξ.ω
-        
+        ξωQ   = basis_structs_ξ_ω!(inputs[:quadrature_nodes], mesh.nop)
+        ξq, ω = ξωQ.ξ, ξωQ.ω
     else  
         #
         # Inexact quadrature:
@@ -80,9 +79,9 @@ function driver(DT::CG,       #Space discretization type
         QT  = Inexact() #Quadrature Type
         QT_String = "Inexact"
         Qξ  = Nξ
-        NDQ = ND
-        ξq  = ξ
-        ω   = ND.ξ.ω
+        ξωq = ξω
+        ξq  = ξ        
+        ω   = ξω.ω
     end
     SD = NSD_2D()
     
@@ -94,7 +93,7 @@ function driver(DT::CG,       #Space discretization type
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
-
+    
     #--------------------------------------------------------
     # Build metric terms
     #

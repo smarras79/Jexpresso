@@ -44,7 +44,7 @@ end
 # !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
 # !!!!!!
 #--------------------------------------------------------
-driver(CG(),   # Space discretization type    
+driver(ContGal(),   # Space discretization type    
        inputs, # input parameters from src/user_input.jl
        OUTPUT_DIR,
        TFloat)

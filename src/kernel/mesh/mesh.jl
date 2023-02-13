@@ -133,14 +133,14 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
  
 end
 
-function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
+function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 
     #
     # Read GMSH grid from file
     #
-    model    = GmshDiscreteModel(gmsh_filename, renumber=true)
-    topology = get_grid_topology(model)
-    mesh.nsd = num_cell_dims(model)
+    model         = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+    topology      = get_grid_topology(model)
+    mesh.nsd      = num_cell_dims(model)
     
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
     #@show labels = FaceLabeling(d_to_num_dfaces)
@@ -405,11 +405,7 @@ end
 # Add high-order points to edges, faces, and elements (volumes)
 #
 # initialize LGL struct and buyild Gauss-Lobatto-xxx points
-Legendre = St_Legendre{Float64}(0.0, 0.0, 0.0, 0.0)
-lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
-                           zeros(mesh.nop+1))
-build_lgl!(Legendre, lgl, mesh.nop)
-
+lgl = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)
 
 println(" # POPULATE GRID with SPECTRAL NODES ............................ ")
 #
@@ -440,8 +436,8 @@ for ip = mesh.npoin_linear+1:mesh.npoin
     end
 end
 
-compute_element_size_driver(mesh, SD, TFloat)
-error("assasasa")
+#compute_element_size_driver(mesh, SD, TFloat)
+#error("assasasa")
 #
 # Determine boundary nodes and assign node numbers to appropriate arrays
 #
@@ -1034,18 +1030,18 @@ end #populate_face_el
 
 function  add_high_order_nodes!(mesh::St_mesh) end
 
-function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
+function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_nodes)
     
     if (mesh.nop < 2) return end
     
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ ")
     println(" # ...")
 
-    Legendre = St_Legendre{Float64}(0.0, 0.0, 0.0, 0.0)
-    lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
-                               zeros(mesh.nop+1))
-    build_lgl!(Legendre, lgl, mesh.nop)
-
+    #Legendre = St_Legendre{Float64}(0.0, 0.0, 0.0, 0.0)
+    #lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
+    #                           zeros(mesh.nop+1))
+    #build_lgl!(Legendre, lgl, mesh.nop)
+    lgl = basis_structs_ξ_ω!(ξT, mesh.nop)
     
     x1, x2 = Float64(0.0), Float64(0.0)    
     ξ::typeof(lgl.ξ[1]) = 0.0
@@ -1090,7 +1086,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh)
     return 
 end
 
-function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
+function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
     
     if (mesh.nop < 2) return end
     
@@ -1243,7 +1239,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
 end
 
 
-function  add_high_order_nodes_edges!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
+function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
     
     if (mesh.nop < 2) return end
     
@@ -1612,7 +1608,7 @@ return
 end
 
 
-function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
+function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
 
     if (mesh.nop < 2) return end
     
@@ -1796,7 +1792,7 @@ println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES
 
 end
 
-function  add_high_order_nodes_faces!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
+function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
 
     if (mesh.nop < 2) return end
     
@@ -2168,11 +2164,11 @@ println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES
 
 end
 
-function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl, SD::NSD_2D)
+function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_2D)
     nothing
 end
 
-function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl::St_lgl, SD::NSD_3D)
+function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
 
     if (mesh.nop < 2) return end
     
@@ -2344,7 +2340,7 @@ println(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUM
 
 end
 
-function mod_mesh_build_mesh!(mesh::St_mesh)
+function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
 
     if (mesh.nsd > 1)
         @error(" USE GMSH to build a higher-dimensional grid!")
@@ -2403,7 +2399,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh)
     end
     
     #Add high-order nodes
-    add_high_order_nodes_1D_native_mesh!(mesh)
+    add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes)
 
     #plot_1d_grid(mesh)
     
@@ -2423,14 +2419,13 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                     nop=Int64(inputs[:nop]))
         
         # Read gmsh grid using the GridapGmsh reader
-        mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
+        mod_mesh_read_gmsh!(mesh, inputs)
         
         println(" # Read gmsh grid and populate with high-order points ........................ DONE")
         
     else
         
         println(" # Build native grid")
-
         # Initialize mesh struct for native structured grid:
         if (haskey(inputs, :nsd))
             
@@ -2480,7 +2475,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                         nop=Int64(inputs[:nop]))
         end
         
-        mod_mesh_build_mesh!(mesh)
+        mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes])
         
         #Write structured grid to VTK
         #vtkfile = vtk_grid("mySTRUCTURED_GRID", mesh.x, mesh.y, mesh.z) # 3-D
@@ -2557,7 +2552,7 @@ function compute_element_size(ie, mesh::St_mesh, SD::NSD_2D, T)
 
         @info m, x[m], y[m]
     end
-    error("aa")
+    
     #Diagonal distance:
     Δ12 = sqrt((x[1]-x[2])*(x[1]-x[2]) + (y[1]-y[2])*(y[1]-y[2]))
     Δ24 = sqrt((x[2]-x[4])*(x[2]-x[4]) + (y[2]-y[4])*(y[2]-y[4]))

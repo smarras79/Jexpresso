@@ -42,6 +42,7 @@ mutable struct Nodal3DStorage <: NodalStorage
 end
 
 
+struct LG_1D <: Abstract_Integration_Points end
 struct LGL_1D <: Abstract_Integration_Points end
 struct CGL_1D <: Abstract_Integration_Points end
 struct LGL_2D <: Abstract_Integration_Points end
@@ -81,6 +82,23 @@ mutable struct NodalAdvDiff <: Nodal_Solver
 end
 
 #1D
+####
+function build_nodal_1DStorage_lgl(N,T::NodalGalerkin)
+    lg      = St_lgl{TFloat}(zeros(TFloat, N+1),
+                             zeros(TFloat, N+1))
+    #WIP LG
+    build_Integration_points!(lg,N)
+    ξ = lg
+    
+    Dξ = PolynomialDerivativeMatrix(lg.ξ)
+    D2ξ = CGDerivativeMatrix(N)
+    
+    ND = Nodal1DStorage(N,ξ,Dξ,D2ξ)
+    return ND
+end
+
+
+####
 function build_nodal_1DStorage_cgl(N,T::Collocation)
     cgl      = St_cgl{TFloat}(zeros(TFloat, N+1),
                               zeros(TFloat, N+1))
@@ -272,6 +290,12 @@ function build_nodal_3DStorage_lgl(N,M,L,T::NodalGalerkin)
     return ND
 end 
 
+
+#1D LG
+function build_nodal_Storage(dims,PT::LG_1D,T)
+    ND = build_nodal_1DStorage_lg(dims[1],T)
+    return ND
+end
 
 #1D LGL
 function build_nodal_Storage(dims,PT::LGL_1D,T)
