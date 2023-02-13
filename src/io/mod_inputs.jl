@@ -65,9 +65,76 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
     end
 
-    mod_inputs_check(inputs, :interpolation_nodes, String("lgl"), "w")
-    if(haskey(inputs, :interpolation_nodes) && inputs[:interpolation_nodes] == "llg" || inputs[:interpolation_nodes] == "gll")
-        inputs[:interpolation_nodes] = "lgl"
+    if(haskey(inputs, :interpolation_nodes))
+        
+        if(lowercase(inputs[:interpolation_nodes]) == "llg" ||
+           lowercase(inputs[:interpolation_nodes]) == "gll" ||
+           lowercase(inputs[:interpolation_nodes]) == "lgl")
+            inputs[:interpolation_nodes] = LGL()
+
+        elseif(lowercase(inputs[:interpolation_nodes]) == "lg" ||
+               lowercase(inputs[:interpolation_nodes]) == "gl")
+            inputs[:interpolation_nodes] = LG()
+            
+        elseif(lowercase(inputs[:interpolation_nodes]) == "cg" ||
+               lowercase(inputs[:interpolation_nodes]) == "gc")
+            inputs[:interpolation_nodes] = CG()
+            
+        elseif(lowercase(inputs[:interpolation_nodes]) == "cgl" ||
+               lowercase(inputs[:interpolation_nodes]) == "gcl")
+            inputs[:interpolation_nodes] = CGL()
+        else
+            s = """
+                ERROR in user_inputs.jl --> :interpolation_nodes
+                
+                    Chose among:
+                     - "lgl"
+                     - "lg"
+                     - "cg"
+                     - "cgl"
+              """
+    
+            error(s)
+        end
+    else
+        #default are LGL
+        inputs[:interpolation_nodes] = LGL()
+    end
+
+    if(haskey(inputs, :quadrature_nodes))
+        
+        if(lowercase(inputs[:quadrature_nodes]) == "llg" ||
+           lowercase(inputs[:quadrature_nodes]) == "gll" ||
+           lowercase(inputs[:quadrature_nodes]) == "lgl")
+            inputs[:quadrature_nodes] = LGL()
+
+        elseif(lowercase(inputs[:quadrature_nodes]) == "lg" ||
+               lowercase(inputs[:quadrature_nodes]) == "gl")
+            inputs[:quadrature_nodes] = LG()
+            
+        elseif(lowercase(inputs[:quadrature_nodes]) == "cg" ||
+               lowercase(inputs[:quadrature_nodes]) == "gc")
+            inputs[:quadrature_nodes] = CG()
+            
+        elseif(lowercase(inputs[:quadrature_nodes]) == "cgl" ||
+               lowercase(inputs[:quadrature_nodes]) == "gcl")
+            inputs[:quadrature_nodes] = CGL()
+        else
+            s = """
+                ERROR in user_inputs.jl --> :quadrature_nodes
+                
+                    Chose among:
+                     - "lgl"
+                     - "lg"
+                     - "cg"
+                     - "cgl"
+              """
+            
+            error(s)            
+        end
+    else
+        #default are LGL
+        inputs[:quadrature_nodes] = LGL()
     end
     
     #Grid entries:
@@ -166,9 +233,9 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     #------------------------------------------------------------------------
     
     #------------------------------------------------------------------------
-    # Define neqns based on the problem being solved
-    #------------------------------------------------------------------------
-    neqns::Int8 = 1
+# Define neqns based on the problem being solved
+#------------------------------------------------------------------------
+neqns::Int8 = 1
 if (lowercase(problem_name) == "burgers")
     inputs[:problem] = Burgers()
     

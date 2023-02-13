@@ -1,12 +1,23 @@
 #
 # This file contains all the structs definitions
 # S. Marras, Feb 2022
-# 
+#
+include("../abstractTypes.jl")
+
 export St_Lagrange
 export St_Legendre
 export St_lgl
+export St_lg
+export St_cg
 export build_lgl!
 export LegendreGaussLobattoNodesAndWeights
+
+
+abstract type AbstractIntegrationPointAndWeights end
+abstract type AbstractInterpolationBasis end
+abstract type AbstractSpaceDimensions end
+
+struct LagrangeBasis <: AbstractInterpolationBasis end
 
 mutable struct St_Legendre{TFloat}
     
@@ -24,15 +35,6 @@ mutable struct St_Legendre{TFloat}
     q         :: TFloat
     dq        :: TFloat
 end
-
-abstract type AbstractIntegrationPointAndWeights end
-abstract type AbstractInterpolationBasis end
-abstract type AbstractSpaceDimensions end
-
-struct LagrangeBasis <: AbstractInterpolationBasis end
-struct NSD_1D <: AbstractSpaceDimensions end
-struct NSD_2D <: AbstractSpaceDimensions end
-struct NSD_3D <: AbstractSpaceDimensions end
 
 mutable struct St_Chebyshev{TFloat} <:AbstractIntegrationPointAndWeights
     chebyshev ::TFloat
@@ -62,6 +64,50 @@ mutable struct St_Lagrange{TFloat} <:AbstractInterpolationBasis
     ψ::Matrix{TFloat}
     dψ::Matrix{TFloat}
 end
+
+function basis_structs_ξ_ω!(::AbstractPointsType, nop::TInt) end
+
+function basis_structs_ξ_ω!(ξωtype::LG, nop::TInt)
+    
+    lg = St_lg{TFloat}(zeros(TFloat, nop+1),
+                       zeros(TFloat, nop+1))
+    
+    build_Integration_points!(lg, nop)
+
+    return lg
+end
+
+function basis_structs_ξ_ω!(ξωtype::LGL, nop::TInt)
+    
+    lgl = St_lgl{TFloat}(zeros(TFloat, nop+1),
+                         zeros(TFloat, nop+1))
+    
+    build_Integration_points!(lgl, nop)
+
+    return lgl
+end
+
+function basis_structs_ξ_ω!(ξωtype::CG, nop::TInt)
+    
+    cg = St_cg{TFloat}(zeros(TFloat, nop+1),
+                       zeros(TFloat, nop+1))
+    
+    build_Integration_points!(cg, nop)
+
+    return cg
+end
+
+
+function basis_structs_ξ_ω!(ξωtype::CGL, nop::TInt)
+    
+    cgl = St_cgl{TFloat}(zeros(TFloat, nop+1),
+                         zeros(TFloat, nop+1))
+    
+    build_Integration_points!(cgl, nop)
+
+    return cgl
+end
+
 
 function build_Integration_points!(::AbstractIntegrationPointAndWeights,nop::TInt) end
  
@@ -128,22 +174,39 @@ end
 
 
 function build_cg!(cg::St_cg, nop::TInt)
+    
+    println(" # Compute Chebyshev-Gauss nodes ........................ ")
     size::Int8=nop+1
     cg.ξ = zeros(Float64, size)
     cg.ω = zeros(Float64, size)
 
     #CG nodes
     ChebyshevGaussNodesAndWeights!(cg,nop)
+    
+    for j=1:size
+        println( " # ξ cheby, ω =: ", " ", cg.ξ[j], " " , cg.ω[j])
+    end
+
+    println(" # Compute Chebyshev-Gauss nodes ........................ DONE")
     return cg
 end
 
 function build_cgl!(cgl::St_cgl, nop::TInt)
+    
+    println(" # Compute Chebyshev-Gauss-Lobatto nodes ........................ ")
+    
     size::Int8=nop+1
     cgl.ξ = zeros(Float64, size)
     cgl.ω = zeros(Float64, size)
 
     #CGL nodes
     ChebyshevGaussLobattoNodesAndWeights!(cgl,nop)
+    
+    for j=1:size        
+        println( " # ξ cheby, ω =: ", " ", cgl.ξ[j], " " , cgl.ω[j])
+    end
+    
+    println(" # Compute Chebyshev-Gauss-Lobatto nodes ........................ DONE")
     return cgl
 end
 
@@ -153,12 +216,13 @@ function build_lg!(Legendre::St_Legendre,lg::St_lg,nop)
     lg.ω = zeros(Float64, size)
 
     #LG nodes
-    LegendreGaussNodesAndWeights(Legendre,lg,nop)
+    LegendreGaussNodesAndWeights!(Legendre,lg,nop)
     return lg
 end
-function ChebyshevGaussNodesAndWeights!(cg::St_lg, nop::TInt)
+
+function ChebyshevGaussNodesAndWeights!(cg::St_cg, nop::TInt)
     """
-         Compute the Nodes for the Chebyshev Gauss Quadrature
+         Compute the Nodes for the Chebyshev-Gauss Quadrature
          using Algorithm 26 of Kopriva's book 
       """
     for j=0:nop
@@ -168,6 +232,10 @@ function ChebyshevGaussNodesAndWeights!(cg::St_lg, nop::TInt)
 end
 
 function ChebyshevGaussLobattoNodesAndWeights!(cgl::St_cgl,nop::TInt)
+    """
+         Compute the Nodes for the Chebyshev-Gauss-Lobatto Quadrature
+         using Algorithm 26 of Kopriva's book 
+      """
     for j=0:nop
         cgl.ξ[j+1]=-cospi(j/nop)
         cgl.ω[j+1]=π/nop
@@ -179,9 +247,11 @@ end
 
 function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop::TInt)
     """
-          Compute the Nodes and Weights for the Legendre Gauss Quadrature
+          Compute the Nodes and Weights for the Legendre-Gauss Quadrature
           using Algorithm 23 of Kopriva's book valid for nop ≤  200
-       """
+    """
+
+    println( " # Compute LG nodes ........................")
     NITER = 100
     TOL = 4*eps(Float64)
     Δ::Float64=0.0
@@ -212,13 +282,24 @@ function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop::TI
     end
     if (mod(nop,2) == 0)
         LegendreAndDerivativeAndQ!(Legendre, nop+1, 0.0)
-        lg.ξ[Tint(nop/2)+1] = 0
-        lg.ω[Tint(nop/2)+1] = 2/Legendre.dlegendre^2
+        lg.ξ[TInt(nop/2)+1] = 0
+        lg.ω[TInt(nop/2)+1] = 2/Legendre.dlegendre^2
     end
+
+    
+    for j=1:nop+1       
+        println( " # ξ, ω =: ", " ", lg.ξ[j], " " , lg.ω[j])
+    end
+    
+    println(" # Compute LG nodes ........................ DONE")
+    
 end
 
 function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl, nop::TInt)
-    
+     """
+          Compute the Nodes and Weights for the Legendre-Gauss-Lobatto Quadrature
+     """
+
     NITER = 100
     TOL = 4*eps()
     

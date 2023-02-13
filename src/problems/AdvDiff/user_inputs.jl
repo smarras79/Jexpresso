@@ -9,9 +9,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
+        :interpolation_nodes => "cg", # Choice: "lgl", "cg", "cgl"
+        :nop                 => 6,     # Polynomial order
         :lexact_integration  => false,
-        :nop                 => 6,      # Polynomila order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -34,12 +34,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Boundary conditions:
         #---------------------------------------------------------------------------
-        :xmin_bc       => "periodic", #Use either dirichlet or periodic
-        :ymin_bc       => "periodic", #Use either dirichlet or periodic
-        :zmin_bc       => "periodic", #Use either dirichlet or periodic
-        :xmax_bc       => "periodic", #Use either dirichlet or periodic
-        :ymax_bc       => "periodic", #Use either dirichlet or periodic
-        :zmax_bc       => "periodic", #Use either dirichlet or periodic
+        :xmin_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :ymin_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :zmin_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :xmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :ymax_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :zmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
         :bc_exact_xmin => [0.0 0.0 0.0],
         :bc_exact_xmax => [0.0 0.0 0.0],
         :bc_exact_ymin => [0.0 0.0 0.0],
