@@ -3,14 +3,14 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 1.5,
+        :tend                => 0.5,
         :Δt                  => 5e-4,
         :diagnostics_interval=> 100, #these are steps, not seconds
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :interpolation_nodes => "cg", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 6,     # Polynomial order
+        :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
+        :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
@@ -21,6 +21,7 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
+        #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
