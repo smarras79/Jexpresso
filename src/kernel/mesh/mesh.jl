@@ -65,13 +65,15 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     npz::Union{TInt, Missing} = 1
     
     nelem::Union{TInt, Missing} = 1
+    nelem_int::Union{TInt, Missing} = 1    # internal elements
     npoin::Union{TInt, Missing} = 1        # This is updated after populating with high-order nodes
     npoin_linear::Union{TInt, Missing} = 1 # This is always the original number of the first-order grid
-
+    nelem_bdy::Union{TInt, Missing} = 1    # bdy elements
+    
     nedges::Union{TInt, Missing} = 1       # total number of edges
     nedges_bdy::Union{TInt, Missing} = 1   # bdy edges
     nedges_int::Union{TInt, Missing} = 1   # internal edges
-
+    
     nfaces::Union{TInt, Missing} = 1       # total number of faces
     nfaces_bdy::Union{TInt, Missing} = 1   # bdy faces
     nfaces_int::Union{TInt, Missing} = 1   # internal faces
@@ -86,7 +88,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     NFACES_EL::Union{TInt, Missing}  =  6
     EDGE_NODES::Union{TInt, Missing} =  2
     FACE_NODES::Union{TInt, Missing} =  4
-
     
     #low and high order connectivity tables
     cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
@@ -99,10 +100,16 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     conn_unique_edges = ElasticArray{Int64}(undef,  1, 2)
     conn_unique_faces = ElasticArray{Int64}(undef,  1, 4)
 
+    conn_edge_poin    = Array{Int64}(undef, 0, 0)
     conn_edge_el      = Array{Int64}(undef, 0, 0, 0)
+
+    conn_face_poin    = Array{Int64}(undef, 0, 0)
     conn_face_el      = Array{Int64}(undef, 0, 0, 0)
     face_in_elem      = Array{Int64}(undef, 0, 0, 0)
-    
+
+    #Auxiliary arrays for boundary conditions
+    bdy_edge_in_elem = Array{Int64}(undef, 1)
+    poin_in_bdy_edge = Array{Int64}(undef, 1, 1)
     bc_xmin = Array{Int64}(undef, 0)
     bc_xmax = Array{Int64}(undef, 0)
     bc_ymin = Array{Int64}(undef, 0)
@@ -202,25 +209,30 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     # Mesh elements, nodes, faces, edges
     #
     mesh.npoin_linear = num_faces(model,POIN_flg)    
-    mesh.npoin        = mesh.npoin_linear     #This will be updated for the high order grid
+    mesh.npoin        = mesh.npoin_linear         #This will be updated for the high order grid
     mesh.nedges       = num_faces(model,EDGE_flg)
     mesh.nfaces       = num_faces(model,FACE_flg)   
     mesh.nelem        = num_faces(model,ELEM_flg)
-
     
+    mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
+    mesh.nelem_int    = mesh.nelem - mesh.nelem_bdy
     mesh.nfaces_bdy   = count(get_isboundary_face(topology,mesh.nsd-1))
     mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
     mesh.nedges_bdy   = count(get_isboundary_face(topology,mesh.nsd-2))
     mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
     
+    #get_isboundary_face(topology,mesh.nsd-1)
+    
     println(" # GMSH LINEAR GRID PROPERTIES")
-    println(" # N. elements       : ", mesh.nelem)
     println(" # N. points         : ", mesh.npoin_linear)
+    println(" # N. elements       : ", mesh.nelem)
     println(" # N. edges          : ", mesh.nedges)
-    println(" # N. internal edges : ", mesh.nedges_int)
+    println(" # N. faces          : ", mesh.nfaces)    
+    println(" # N. internal elem  : ", mesh.nelem_int)
+    println(" # N. internal edges : ", mesh.nedges_int) 
+    println(" # N. internal faces : ", mesh.nfaces_int)    
+    println(" # N. boundary elem  : ", mesh.nelem_bdy)
     println(" # N. boundary edges : ", mesh.nedges_bdy)
-    println(" # N. faces          : ", mesh.nfaces) 
-    println(" # N. internal faces : ", mesh.nfaces_int)
     println(" # N. boundary faces : ", mesh.nfaces_bdy)
     println(" # GMSH LINEAR GRID PROPERTIES ...................... END")
     
@@ -254,10 +266,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     resize!(mesh.y, (mesh.npoin))
     resize!(mesh.z, (mesh.npoin))
 
-    mesh.conn_edge_el = Array{Int64}(undef, 2, mesh.NEDGES_EL, mesh.nelem)
-    mesh.conn_face_el = Array{Int64}(undef, 4, mesh.NFACES_EL, mesh.nelem)
-    mesh.face_in_elem = Array{Int64}(undef, 2, mesh.NFACES_EL, mesh.nelem)
-    
+    mesh.conn_edge_el     = Array{Int64}(undef, 2, mesh.NEDGES_EL, mesh.nelem)    
+    mesh.conn_face_el     = Array{Int64}(undef, 4, mesh.NFACES_EL, mesh.nelem)
+    mesh.bdy_edge_in_elem = Array{Int64}(undef, mesh.nedges_bdy)
+    mesh.poin_in_bdy_edge = Array{Int64}(undef, mesh.nedges_bdy, mesh.ngl)
+    mesh.conn_edge_poin   = Array{Int64}(undef, mesh.nedges, mesh.ngl)
+        
     mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
 
     mesh.conn = Array{Int64}(undef, mesh.npoin_el, mesh.nelem)
@@ -270,7 +284,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.conn_unique_edges = get_face_nodes(model, EDGE_flg) #edges --> 2 nodes
 
     mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
-mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
+    mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
 
 if (mesh.nsd == 1)
     nothing
@@ -436,6 +450,41 @@ for ip = mesh.npoin_linear+1:mesh.npoin
     end
 end
 
+#----------------------------------------------------------------------
+# Extract boundary edge nodes:
+#----------------------------------------------------------------------
+#Bdy edges
+isboundary_edge = compute_isboundary_face(topology, mesh.nsd-1)
+iedge_bdy = 1
+for iedge = 1:mesh.nedges #total nedges
+    if isboundary_edge[iedge] == true
+        for igl = 1:mesh.ngl
+            mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.conn_edge_poin[iedge, igl]
+        end
+        iedge_bdy += 1
+    end
+end
+
+for iel = 1:mesh.nelem
+    for iedge_bdy = 1:mesh.nedges_bdy
+        if issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[:, :, iel])
+            mesh.bdy_edge_in_elem[iedge_bdy] = iel
+        end
+    end
+end
+
+#=for iedge_bdy = 1:mesh.nedges_bdy
+    @printf(" bdy edge %d ∈ elem %d with nodes\n", iedge_bdy,  mesh.bdy_edge_in_elem[iedge_bdy])
+    for igl = 1:mesh.ngl
+        @printf(" %d",  mesh.poin_in_bdy_edge[iedge_bdy, igl])
+    end
+    @printf("\n")  
+end=#
+#----------------------------------------------------------------------
+# END Extract boundary edge nodes:
+#----------------------------------------------------------------------
+
+
 #compute_element_size_driver(mesh, SD, TFloat)
 #error("assasasa")
 #
@@ -459,10 +508,6 @@ for ip=1:mesh.npoin
         end
     end
 end
-#mesh.xmin = -2.0
-#mesh.xmax = 2.0
-#mesh.ymin = -2.0
-#mesh.ymax = 2.0
 for ip=1:mesh.npoin
     if (AlmostEqual(mesh.xmin,mesh.x[ip]))
         xmin_npoin +=1
@@ -497,16 +542,8 @@ if (mesh.nsd > 2)
     mesh.bc_zmin = Array{Int64}(undef,zmin_npoin)
     mesh.bc_zmax = Array{Int64}(undef,zmax_npoin)
 end
-mesh.bound_elem = Array{Int64}(undef,2)
-if (mesh.nsd == 2)
-    nbce = ceil(size(mesh.bc_xmin,1)/ngl)+ceil(size(mesh.bc_xmax,1)/ngl)+ceil(size(mesh.bc_ymin,1)/ngl)+ceil(size(mesh.bc_ymax,1)/ngl)
-    mesh.bound_elem = Array{Int64}(undef,Int64(nbce)) 
-end
-
-if (mesh.nsd == 3)
-    nbce = ceil(size(mesh.bc_zmin,1)/ngl)+ceil(size(mesh.bc_zmax,1)/ngl)+ ceil(size(mesh.bc_xmin,1)/ngl)+ceil(size(mesh.bc_xmax,1)/ngl)+ceil(size(mesh.bc_ymin,1)/ngl)+ceil(size(mesh.bc_ymax,1)/ngl)
-    mesh.bound_elem = Array{Int64}(undef,Int64(nbce))
-end
+nbce = mesh.nelem_bdy
+mesh.bound_elem = Array{Int64}(undef, nbce)
 
 iteratelem=1
 iterxmin=1
@@ -1115,7 +1152,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
         resize!(mesh.y_ho, (mesh.npoin))
     end
     
-    conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
+    #conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
     open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
@@ -1126,8 +1163,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
             
-            conn_edge_poin[iedge_g,        1] = ip1
-            conn_edge_poin[iedge_g, mesh.ngl] = ip2
+            mesh.conn_edge_poin[iedge_g,        1] = ip1
+            mesh.conn_edge_poin[iedge_g, mesh.ngl] = ip2
             
             x1, y1 = mesh.x[ip1], mesh.y[ip1]
             x2, y2 = mesh.x[ip2], mesh.y[ip2]
@@ -1139,9 +1176,9 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
                 mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
 	        mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
                 
-                conn_edge_poin[iedge_g, l] = ip
+                mesh.conn_edge_poin[iedge_g, l] = ip
                 
-                #@printf(" lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
+                #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.conn_edge_poin[iedge_g, l])
                 @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                 ip = ip + 1
             end
@@ -1172,7 +1209,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
             stepper =-1
         end
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
         end
@@ -1190,7 +1227,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
             stepper =-1
         end 
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
         end
@@ -1208,7 +1245,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
             stepper =-1
         end
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
         end
@@ -1226,7 +1263,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
             stepper =-1
         end 
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
         end
@@ -1271,7 +1308,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
         resize!(mesh.z_ho, (mesh.npoin))
     end
     
-    conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
+    #conn_edge_poin::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
     open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into conn_edge_poin[iedge_g, l]
@@ -1282,8 +1319,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
             
-            conn_edge_poin[iedge_g,        1] = ip1
-            conn_edge_poin[iedge_g, mesh.ngl] = ip2
+            mesh.conn_edge_poin[iedge_g,        1] = ip1
+            mesh.conn_edge_poin[iedge_g, mesh.ngl] = ip2
             
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
@@ -1296,15 +1333,15 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
 	        mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
 	        mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
                 
-                conn_edge_poin[iedge_g, l] = ip
+                mesh.conn_edge_poin[iedge_g, l] = ip
                 
-                #@printf(" lgl %d: %d %d ", l, iedge_g, conn_edge_poin[iedge_g, l])
+                #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.conn_edge_poin[iedge_g, l])
                 @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip = ip + 1
             end
         end
     end #do f
-    #show(stdout, "text/plain", conn_edge_poin)
+    #show(stdout, "text/plain", mesh.conn_edge_poin)
     #@info "-----3D edges"
     
     #
@@ -1328,7 +1365,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             stepper =-1
         end
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
             #mesh.connijk[1,l,iel] = ip
@@ -1347,7 +1384,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             stepper =-1
         end
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
             #   mesh.connijk[1,l,iel] = ip
@@ -1366,7 +1403,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             stepper =-1
         end
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
             #   mesh.connijk[1,l,iel] = ip
@@ -1385,7 +1422,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             stepper =-1
         end
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
             #   mesh.connijk[1,l,iel] = ip
@@ -1404,7 +1441,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             stepper =-1
         end
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
             #   mesh.connijk[1,l,iel] = ip
@@ -1423,7 +1460,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             stepper =-1
         end
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
             #   mesh.connijk[1,l,iel] = ip
@@ -1442,7 +1479,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             stepper =-1
         end
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
             #   mesh.connijk[1,l,iel] = ip
@@ -1461,7 +1498,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             stepper =-1
         end
         for l = starter:stepper:ender
-            ip = conn_edge_poin[iedge_g, l]
+            ip = mesh.conn_edge_poin[iedge_g, l]
             mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
             iconn = iconn + 1
             #   mesh.connijk[1,l,iel] = ip
@@ -1480,7 +1517,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             stepper =-1
         end
 for l = starter:stepper:ender
-    ip = conn_edge_poin[iedge_g, l]
+    ip = mesh.conn_edge_poin[iedge_g, l]
     mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
     iconn = iconn + 1
     #   mesh.connijk[1,l,iel] = ip
@@ -1499,7 +1536,7 @@ else
     stepper =-1
 end
 for l = starter:stepper:ender
-    ip = conn_edge_poin[iedge_g, l]
+    ip = mesh.conn_edge_poin[iedge_g, l]
     mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
     iconn = iconn + 1
     #   mesh.connijk[1,l,iel] = ip
@@ -1518,7 +1555,7 @@ else
     stepper =-1
 end
 for l = starter:stepper:ender
-    ip = conn_edge_poin[iedge_g, l]
+    ip = mesh.conn_edge_poin[iedge_g, l]
     mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
     iconn = iconn + 1
     #   mesh.connijk[1,l,iel] = ip
@@ -1537,7 +1574,7 @@ else
     stepper =-1
 end
 for l = starter:stepper:ender
-    ip = conn_edge_poin[iedge_g, l]
+    ip = mesh.conn_edge_poin[iedge_g, l]
     mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
     iconn = iconn + 1
     #   mesh.connijk[1,l,iel] = ip
@@ -1594,7 +1631,7 @@ end
 #= for iedge_el = 1:length(edge_ids)
 iedge_g = edge_ids[iedge_el]
 for l = 2:ngl-1
-ip = conn_edge_poin[iedge_g, l]
+ip = mesh.conn_edge_poin[iedge_g, l]
 mesh.conn[2^mesh.nsd + iconn, iel] = ip #OK
 iconn = iconn + 1
 end
