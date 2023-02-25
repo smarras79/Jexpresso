@@ -1,5 +1,4 @@
 include("../AbstractProblems.jl")
-
 include("../../kernel/globalStructs.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../io/plotting/jeplots.jl")
@@ -8,19 +7,11 @@ function initialize(ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String
 
     @info " Initialize fields for AdvDiff ........................ "
         
-    ngl = mesh.nop + 1
-    nsd = mesh.nsd
+    ngl  = mesh.nop + 1
+    nsd  = mesh.nsd
+    neqs = 1
     
-    q = St_SolutionVars{TFloat}(zeros(1, 1),                     # qn+1
-                                zeros(mesh.npoin, 3),            # qn
-                                zeros(mesh.npoin, 3),            # qn-1
-                                zeros(1, 1),                     # qn-2
-                                zeros(1, 1),                     # qn-3
-                                zeros(mesh.npoin, 3),            # qe
-                                zeros(1, 1, 1, 1),               # qnelⁿ
-                                zeros(1, 1, 1, 1),               # Fⁿ⁺¹
-                                zeros(1, 1, 1, 1),               # Gⁿ⁺¹
-                                zeros(1, 1, 1, 1))               # Hⁿ⁺¹
+    q = allocate_q(mesh.nelem, mesh.npoin, ngl, neqs)
 
     test_case = "kopriva.5.3.5"
     #test_case = "giraldo.15.8"

@@ -13,19 +13,10 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     ngl   = mesh.ngl
     nsd   = mesh.nsd
     nelem = mesh.nelem
-    
-    nvars = 3
+    npoin = mesh.npoin
     neqs  = 3
-    q = St_SolutionVars{TFloat}(zeros(mesh.npoin, 3),            # qⁿ⁺¹
-                                zeros(mesh.npoin, 3),            # qⁿ
-                                zeros(1, 1),                     # qⁿ⁻¹
-                                zeros(1, 1),                     # qⁿ⁻²
-                                zeros(1, 1),                     # qⁿ⁻³
-                                zeros(mesh.npoin, 3),            # qe
-                                zeros(1, 1, 1, 1),               # qelⁿ[ngl,ngl,ngl,nelem]
-                                zeros(ngl, ngl, nelem, neqs),    # Fⁿ
-                                zeros(ngl, ngl, nelem, neqs),    # Gⁿ
-                                zeros(1, 1, 1, 1))               # Hⁿ
+
+    q = allocate_q(npoin, nelem, ngl, neqs)
     
     #Cone properties:
     c  = 1.0
@@ -71,7 +62,7 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # becessary for a smooth curve plot.
     #------------------------------------------
     varnames = ["p", "u", "v"]
-    for ivar=1:nvars
+    for ivar=1:length(varnames)
         title = string(varnames[ivar], ": initial condition")
         jcontour(mesh.x, mesh.y, q.qn[:,ivar], title, string(OUTPUT_DIR, "/", varnames[ivar], "-INIT.png"))
     end
