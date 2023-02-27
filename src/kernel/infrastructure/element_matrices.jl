@@ -143,6 +143,221 @@ function build_mass_matrix!(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics
     return M
 end
 
+function build_mass_matrix_absorbing!(SD::NSD_2D, MT::TensorProduct, ψ, ω, ψGR, ωGR, mesh, metrics, N, Q, NGR, QGR, T;dir = "x", side = "min")
+
+    MN = N + 1
+    QN = Q + 1
+    MNGR = NGR + 1
+    QNGR = QGR + 1
+    
+    if (dir == "x")
+        MN1 = MNGR
+        MN2 = MN
+        QN1 = QNGR
+        QN2 = QN
+        ψ1 = ψGR
+        ψ2 = ψ
+        ω1 = ωGR
+        ω2 = ω
+        if (side == "min")
+            nelem = size(mesh.xmin_faces,2)
+        else
+            nelem = size(mesh.xmax_faces,2)
+        end 
+    else
+        MN2 = MNGR
+        MN1 = MN
+        QN2 = QNGR
+        QN1 = QN
+        ψ2 = ψGR
+        ψ1 = ψ
+        ω2 = ωGR
+        ω1 = ω
+        if (side == "min")
+            nelem = size(mesh.ymin_faces,2)
+        else
+            nelem = size(mesh.ymax_faces,2)
+        end
+    end
+
+    M = zeros((N+1)^2, (N+1)^2, nelem)
+
+    for iel=1:nelem
+
+        for l = 1:QN2
+            for k = 1:QN1
+
+                ωkl  = ω1[k]*ω2[l]
+                Jkle = metrics.Je[k, l, iel]
+
+                for j = 1:MN2
+                    for i = 1:MN1
+                        I = i + (j - 1)*(N + 1)
+                        ψJK = ψ1[i,k]*ψ2[j,l]
+                        for n = 1:MN2
+                            for m = 1:MN1
+                                J = m + (n - 1)*(N + 1)
+                                ψIK = ψ1[m,k]*ψ2[n,l]
+                                M[I,J,iel] = M[I,J,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", M)
+
+    return M
+end
+
+function expand_mass_matrix_laguerre!(SD::NSD_2D, QT::Inexact, mesh, M1,M2,M3,M4,M5,inputs)
+    if(M2 == 0.0)
+        npoin1 = 0
+    else
+        npoin1 = size(M2,1)
+    end
+    if(M3 == 0.0)
+        npoin2 = 0
+    else
+        npoin2 = size(M3,1)
+    end
+    if(M4 == 0.0)
+        npoin3 = 0
+    else
+        npoin3 = size(M4,1)
+    end
+    if(M5 == 0.0)
+        npoin4 = 0
+    else
+        npoin4 = size(M5,1)
+    end
+    npoint = mesh.npoin+npoin1+npoin2+npoin3+npoin4
+    M = zeros(npoint)
+    M[1:mesh.npoin] .= M1[:]
+    if (npoin1 > 0.1)
+       #add contribution to in-domain (boundary) nodes
+       for e =1:size(mesh.xmin_faces,2)
+           i=1
+           for j=1:mesh.ngl
+               J = i + (j - 1)*(mesh.ngl)
+               for m=1:mesh.ngl
+                   I = i + (m - 1)*(mesh.ngl)
+                   ip = mesh.xmin_faces[m,e]
+                   M[ip] += M2[I,J,e]
+               end
+           end
+       end
+       #append new nodes
+       for e =1:size(mesh.xmin_faces,2)
+           for i=2:mesh.ngr
+               for j=1:mesh.ngl
+                   J = i + (j - 1)*(mesh.ngl)
+                   for n=2:mesh.ngr
+                       for j=1:mesh.ngl
+                           I = n + (m - 1)*(mesh.ngl)
+                           ip = mesh.npoin + mesh.conn_xminlag[i,j,e]
+                           M[ip] += M2[I,J,e]
+                       end
+                   end
+               end
+           end
+       end
+   end
+   
+   if (npoin2 > 0.1)
+       #add contribution to in-domain (boundary) nodes
+       for e =1:size(mesh.xmax_faces,2)
+           i=1
+           for j=1:mesh.ngl
+               J = i + (j - 1)*(mesh.ngl)
+               for m=1:mesh.ngl
+                   I = i + (m - 1)*(mesh.ngl)
+                   ip = mesh.xmax_faces[m,e]
+                   M[ip] += M3[I,J,e]
+               end
+           end
+       end
+       #append new nodes
+       for e =1:size(mesh.xmax_faces,2)
+           for i=2:mesh.ngr
+               for j=1:mesh.ngl
+                   J = i + (j - 1)*(mesh.ngl)
+                   for n=2:mesh.ngr
+                       for j=1:mesh.ngl
+                           I = n + (m - 1)*(mesh.ngl)
+                           ip = mesh.npoin + npoin1 + mesh.conn_xmaxlag[i,j,e]
+                           M[ip] += M3[I,J,e]
+                       end
+                   end
+               end
+           end
+       end
+   end
+   if (npoin3 > 0.1)
+       #add contribution to in-domain (boundary) nodes
+       for e =1:size(mesh.ymin_faces,2)
+           j=1
+           for i=1:mesh.ngl
+               J = i + (j - 1)*(mesh.ngl)
+               for m=1:mesh.ngl
+                   I = m + (i - 1)*(mesh.ngl)
+                   ip = mesh.ymin_faces[m,e]
+                   M[ip] += M4[I,J,e]
+               end
+           end
+       end
+       #append new nodes
+       for e =1:size(mesh.ymin_faces,2)
+           for i=1:mesh.ngl
+               for j=2:mesh.ngr
+                   J = i + (j - 1)*(mesh.ngl)
+                   for n=1:mesh.ngl
+                       for j=2:mesh.ngr
+                           I = n + (m - 1)*(mesh.ngl)
+                           ip = mesh.npoin + npoin1 + npoin2 + mesh.conn_yminlag[i,j,e]
+                           M[ip] += M4[I,J,e]
+                       end
+                   end
+               end
+           end
+       end
+   end
+   
+   if (npoin4 > 0.1)
+       #add contribution to in-domain (boundary) nodes
+       for e =1:size(mesh.ymax_faces,2)
+           j=1
+           for i=1:mesh.ngl
+               J = i + (j - 1)*(mesh.ngl)
+               for m=1:mesh.ngl
+                   I = m + (i - 1)*(mesh.ngl)
+                   ip = mesh.ymax_faces[m,e]
+                   M[ip] += M5[I,J,e]
+               end
+           end
+       end
+       #append new nodes
+       for e =1:size(mesh.ymax_faces,2)
+           for i=1:mesh.ngl
+               for j=2:mesh.ngr
+                   J = i + (j - 1)*(mesh.ngl)
+                   for n=1:mesh.ngl
+                       for j=2:mesh.ngr
+                           I = n + (m - 1)*(mesh.ngl)
+                           ip = mesh.npoin + npoin1 + npoin2 + npoin3 + mesh.conn_ymaxlag[i,j,e]
+                           M[ip] += M5[I,J,e]
+                       end
+                   end
+               end
+           end
+       end
+   end 
+               
+   return M
+end   
+            
+
 function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
 
     MN = (N+1)^2
@@ -168,6 +383,8 @@ function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mes
     
     return M
 end
+
+
 
 #
 # Element Laplace matrix

@@ -53,7 +53,7 @@ function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ
    gradq = zeros(2,mesh.npoin,nvars)
    flux_q = zeros(mesh.ngl,nface,2,nvars)
    exact = zeros(mesh.ngl,nface,nvars)
-   penalty =160.0#50000
+   penalty =640.0#50000
    nx = zeros(mesh.ngl,nface)
    ny = zeros(mesh.ngl,nface)
    if (calc_grad)
@@ -604,17 +604,31 @@ function build_custom_bcs!(t,mesh,q,gradq,::NSD_2D,::LinearClaw_KopRefxmax,exact
               unl = nx[i,kf]*q.qn[ip,2]+ny[i,kf]*q.qn[ip,3]
               x = mesh.x[ip]
               y = mesh.y[ip]
-              e = exp(- ((kx*(x - x0) + ky*(y - y0)-c*t)^2)/d2)
-              unl = nx[i,k]*q.qn[ip,2]+ny[i,k]*q.qn[ip,3]
-              exact_q[i,kf,1] = e
-              exact_q[i,kf,2] = kx*e/c
-              exact_q[i,kf,3] = ky*e/c
-              flux_q[i,kf,1,1] = -((2*kx^2)*x+(2*kx*ky*(y-y0)-(2*kx^2)*x0-2*kx*c*t))*e
-              flux_q[i,kf,2,1] = -((2*ky^2)*y+(2*kx*ky*(x-x0)-(2*ky^2)*y0-2*ky*c*t))*e
-              flux_q[i,kf,1,2] = flux_q[i,kf,1,1]*kx/c
-              flux_q[i,kf,2,2] = flux_q[i,kf,2,1]*kx/c
-              flux_q[i,kf,1,3] = flux_q[i,kf,1,1]*ky/c
-              flux_q[i,kf,2,3] = flux_q[i,kf,2,1]*ky/c
+              if (t <= 1.0)
+                  e = exp(- ((kx*(x - x0) + ky*(y - y0)-c*t)^2)/d2)
+                  unl = nx[i,k]*q.qn[ip,2]+ny[i,k]*q.qn[ip,3]
+                  exact_q[i,kf,1] = e
+                  exact_q[i,kf,2] = kx*e/c
+                  exact_q[i,kf,3] = ky*e/c
+                  flux_q[i,kf,1,1] = -((2*kx^2)*x+(2*kx*ky*(y-y0)-(2*kx^2)*x0-2*kx*c*t))*e
+                  flux_q[i,kf,2,1] = -((2*ky^2)*y+(2*kx*ky*(x-x0)-(2*ky^2)*y0-2*ky*c*t))*e
+                  flux_q[i,kf,1,2] = flux_q[i,kf,1,1]*kx/c
+                  flux_q[i,kf,2,2] = flux_q[i,kf,2,1]*kx/c
+                  flux_q[i,kf,1,3] = flux_q[i,kf,1,1]*ky/c
+                  flux_q[i,kf,2,3] = flux_q[i,kf,2,1]*ky/c
+              else
+                  e = exp(- ((kx*(-x -x0) + ky*(y - y0)+c*(t-3.645))^2)/d2)
+                  unl = nx[i,k]*q.qn[ip,2]+ny[i,k]*q.qn[ip,3]
+                  exact_q[i,kf,1] = e
+                  exact_q[i,kf,2] = kx*e/c
+                  exact_q[i,kf,3] = ky*e/c
+                  flux_q[i,kf,1,1] = -((2*kx^2)*x-(2*kx*ky*(y-y0)+(2*kx^2)*x0+2*kx*c*(t-3.645)))*e
+                  flux_q[i,kf,2,1] = -((2*ky^2)*y-(2*kx*ky*(x-x0)+(2*ky^2)*y0+2*ky*c*(t-3.645)))*e
+                  flux_q[i,kf,1,2] = flux_q[i,kf,1,1]*kx/c
+                  flux_q[i,kf,2,2] = flux_q[i,kf,2,1]*kx/c
+                  flux_q[i,kf,1,3] = flux_q[i,kf,1,1]*ky/c
+                  flux_q[i,kf,2,3] = flux_q[i,kf,2,1]*ky/c
+              end
           end
       end
       disp = size(mesh.xmin_faces,2) + size(mesh.xmax_faces,2) + size(mesh.ymin_faces,2)

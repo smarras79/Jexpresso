@@ -1,17 +1,21 @@
 #
 # This file contains all the structs definitions
 # S. Marras, Feb 2022
-# 
+#
+using  Polynomials 
 export St_Lagrange
 export St_Legendre
 export St_lgl
+export St_Laguerre
+export St_gr
 export build_lgl!
 export LegendreGaussLobattoNodesAndWeights
-
+export build_gr!
+ 
 mutable struct St_Legendre{TFloat}
     
     """
-    struct St_Legendrea{TFloat<:Real}
+    struct St_Legendre{TFloat<:Real}
           legendre  :: TFloat
           dlegendre :: TFloat
            q        :: TFloat -> q  = legendre(p+1)  - legendre(p-1)
@@ -25,11 +29,24 @@ mutable struct St_Legendre{TFloat}
     dq        :: TFloat
 end
 
+mutable struct St_Laguerre{TFloat}
+   
+   """
+   struct St_Laguerre{TFloat<:Real}
+        Laguerre  :: TFloat
+        dLaguerre :: TFloat
+   end
+   """
+   Laguerre  :: Polynomial{TFloat}
+   dLaguerre :: Polynomial{TFloat}
+end
+ 
 abstract type AbstractIntegrationPointAndWeights end
 abstract type AbstractInterpolationBasis end
 abstract type AbstractSpaceDimensions end
 
 struct LagrangeBasis <: AbstractInterpolationBasis end
+struct ScaledLaguerreBasis <: AbstractInterpolationBasis end
 struct NSD_1D <: AbstractSpaceDimensions end
 struct NSD_2D <: AbstractSpaceDimensions end
 struct NSD_3D <: AbstractSpaceDimensions end
@@ -58,7 +75,18 @@ mutable struct St_cgl{TFloat} <:AbstractIntegrationPointAndWeights
     ω::Array{TFloat}
 end
 
+mutable struct St_gr{TFloat} <:AbstractIntegrationPointAndWeights
+    ξ::Array{TFloat}
+    ω::Array{TFloat}
+end
+
+
 mutable struct St_Lagrange{TFloat} <:AbstractInterpolationBasis
+    ψ::Matrix{TFloat}
+    dψ::Matrix{TFloat}
+end
+
+mutable struct St_ScaledLaguerre{TFloat} <:AbstractInterpolationBasis
     ψ::Matrix{TFloat}
     dψ::Matrix{TFloat}
 end
@@ -94,6 +122,20 @@ function build_Interpolation_basis!(TP::LagrangeBasis, ξ, ξq, T::Type{Float64}
     basis = St_Lagrange{T}(zeros(N,Q), zeros(N,Q))
     (basis.ψ, basis.dψ) = LagrangeInterpolatingPolynomials_classic(ξ, ξq, T)
     
+    return basis
+end
+
+function build_Interpolation_basis!(TP::ScaledLaguerreBasis, ξ, ξq, T::Type{Float64})
+
+    Nξ = size(ξ,1)  - 1
+    Qξ = size(ξq,1) - 1
+
+    N  = (Nξ + 1)
+    Q  = (Qξ + 1)
+    @info N, Q
+    basis = St_Laguerre{T}(zeros(N,Q), zeros(N,Q))
+    (basis.ψ, basis.dψ) = LagrangeLaguerreBasis(ξ)
+
     return basis
 end
 
@@ -155,6 +197,16 @@ function build_lg!(Legendre::St_Legendre,lg::St_lg,nop)
     #LG nodes
     LegendreGaussNodesAndWeights(Legendre,lg,nop)
     return lg
+end
+
+function build_gr!(Laguerre::St_Laguerre,gr::St_gr,nop,scale)
+    size::Int8=nop+1
+    gr.ξ = zeros(Float64, size)
+    gr.ω = zeros(Float64, size)
+
+    #LG nodes
+    GaussRadauLaguerreNodesAndWeights!(Laguerre,gr,nop,scale)
+    return gr
 end
 function ChebyshevGaussNodesAndWeights!(cg::St_lg, nop::TInt)
     """
@@ -466,3 +518,98 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
 
     return (L, dLdx)
 end
+
+function LaguerreAndDerivative!(nop,SL::St_Laguerre)
+  Laguerre = zeros(nop+1,1)
+  if (nop == 0)
+     Laguerre[1] = 1.0
+  elseif (nop == 1)
+     Laguerre[1] = 1.0
+     Laguerre[2] = -1.0
+  else
+    Lkm2 = zeros(nop+1,1);
+    Lkm2[nop+1] = 1;
+    Lkm1 = zeros(nop+1,1);
+    Lkm1[nop] = -1;
+    Lkm1[nop+1] = 1;
+
+    for k=2:nop
+        
+        Laguerre = zeros(nop+1,1);
+
+        for e=nop-k+1:nop
+            Laguerre[e] = (2*k-1)*Lkm1[e] - Lkm1[e+1] + (1-k)*Lkm2[e];
+        end
+        
+        Laguerre[nop+1] = (2*k-1)*Lkm1[nop+1] + (1-k)*Lkm2[nop+1];
+        Laguerre = Laguerre/k;
+        
+        Lkm2 .= Lkm1;
+        Lkm1 .= Laguerre;
+    end
+    for k=1:nop+1
+      Laguerre[k] = Lkm1[nop+2-k]
+    end
+  end
+  
+  SL.Laguerre = Polynomial(Laguerre)
+  SL.dLaguerre = derivative(SL.Laguerre) 
+end
+
+function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, nop::TInt,scale)
+    Pp1 = nop+1
+    LaguerreAndDerivative!(nop+1,Laguerre)
+    xgr =  roots(Laguerre.dLaguerre)  
+    gr.ξ[1] = 0.0
+    for i=0:nop-1
+      gr.ξ[i+2] = xgr[i+1]
+    end
+   
+
+
+    LaguerreAndDerivative!(nop,Laguerre)
+    Lkx = zeros(nop+1,1)
+    for i=1:nop+1
+      Lkx[i] = Laguerre.Laguerre(gr.ξ[i])
+    end
+    gr.ω .= 1 ./((Pp1.*Lkx).^2)
+    if(scale)
+      gr.ω .= exp.(gr.ξ).*gr.ω 
+    end
+    @info gr.ξ
+    @info gr.ω
+end
+
+function LagrangeLaguerreBasis(xgr)
+    nbasis = size(xgr,1)
+    N = nbasis -1
+    Np1 = N+1
+    
+    psi = zeros(nbasis,nbasis)
+    dpsi = zeros(nbasis,nbasis)
+    dpsi[1,1]=-(N +1)./2.0
+
+    for i = 1:nbasis
+        xi = xgr[i]
+        for j = 1:nbasis
+            xj = xgr[j]
+            if(i != j)
+                psi[j,i] = 1
+                dpsi[j,i] = scaled_laguerre(xi,Np1)/(scaled_laguerre(xj,Np1)*(xi -xj));
+            end
+        end
+    end
+    return (psi,dpsi)
+
+end
+
+
+function scaled_laguerre(x,n)
+Laguerre = St_Laguerre(Polynomial(2.0),Polynomial(2.0))
+LaguerreAndDerivative!(n,Laguerre)
+Lkx = Laguerre.Laguerre(x)
+#Lkx = real(laguerreL(n,x))
+y = exp(-x/2)*Lkx
+return y
+end 
+  
