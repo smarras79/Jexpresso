@@ -13,8 +13,8 @@
 	*/
 
 
-	nelx = 50;
- 	nelz = 10; 
+	nelx = 5;
+ 	nelz = 2; 
  
 	xmax = 100;
 	xmin = 0;
@@ -70,11 +70,10 @@
 	  Surface{12}; Layers{1}; Recombine;
 	}
 	Coherence;
- /*
+
 	Physical Surface("symmetryLine") = {51, 37, 73};
 	Physical Surface("frontAndBack") = {60, 38, 82, 16, 14, 12};
 	Physical Surface("wall") = {59, 29, 81};
 	Physical Surface("inlet") = {47};
 	Physical Surface("outlet") = {77};
 	Physical Volume("volume") = {2, 1, 3};
-	*/

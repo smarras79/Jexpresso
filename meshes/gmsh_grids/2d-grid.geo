@@ -34,10 +34,10 @@ Point(4) = {-1,  1, 0, gridsize_top};
 // `1' for our first curve. And as a general rule, elementary entity tags in
 // Gmsh have to be unique per geometrical dimension.
 
-Line(1) = {1, 2};
-Line(2) = {3, 2};
-Line(3) = {3, 4};
-Line(4) = {4, 1};
+Line(1) = {1, 2}; //bottom
+Line(2) = {3, 2}; //right
+Line(3) = {3, 4}; //top
+Line(4) = {4, 1}; //left
 
 // The third elementary entity is the surface. In order to define a simple
 // rectangular surface from the four curves defined above, a curve loop has
@@ -45,16 +45,17 @@ Line(4) = {4, 1};
 // curve loops) and defined by an ordered list of connected curves, a sign being
 // associated with each curve (depending on the orientation of the curve to form
 // a loop):
-
 Curve Loop(1) = {4, 1, -2, 3};
 
 // We can then define the surface as a list of curve loops (only one here,
 // representing the external contour, since there are no holes--see `t4.geo' for
 // an example of a surface with a hole):
-
 Plane Surface(1) = {1};
 Recombine Surface {1}; 
 
+//-------------------------------------------------------------------------------
+//Boundary tagging
+//-------------------------------------------------------------------------------
 // At this level, Gmsh knows everything to display the rectangular surface 1 and
 // to mesh it. An optional step is needed if we want to group elementary
 // geometrical entities into more meaningful groups, e.g. to define some
@@ -72,33 +73,16 @@ Recombine Surface {1};
 // Here we define a physical curve that groups the left, bottom and right curves
 // in a single group (with prescribed tag 5); and a physical surface with name
 // "My surface" (with an automatic tag) containing the geometrical surface 1:
-
-Physical Curve(5) = {1, 2, 4};
-Physical Surface("My surface") = {1};
-
-// Now that the geometry is complete, you can
-// - either open this file with Gmsh and select `2D' in the `Mesh' module to
-//   create a mesh; then select `Save' to save it to disk in the default format
-//   (or use `File->Export' to export in other formats);
-// - or run `gmsh t1.geo -2` to mesh in batch mode on the command line.
-
-// You could also uncomment the following lines in this script:
 //
-//   Mesh 2;
-//   Save "t1.msh";
-//
-// which would lead Gmsh to mesh and save the mesh every time the file is
-// parsed. (To simply parse the file from the command line, you can use `gmsh
-// t1.geo -')
+Physical Point("boundary",   1) = {1, 2, 3, 4};
+Physical Curve("inflow",     2) = {4};
+Physical Curve("outflow",    3) = {2};
+Physical Curve("free_sleep", 4) = {3};
+Physical Curve("no_sleep",   5) = {1};
+Physical Surface("domain") = {1};
 
-// By default, Gmsh saves meshes in the latest version of the Gmsh mesh file
-// format (the `MSH' format). You can save meshes in other mesh formats by
-// specifying a filename with a different extension in the GUI, on the command
-// line or in scripts. For example
 //
-//   Save "t1.unv";
-//
-// will save the mesh in the UNV format. You can also save the mesh in older
+// You can save the mesh in older
 // versions of the MSH format:
 //
 // - In the GUI: open `File->Export', enter your `filename.msh' and then pick
