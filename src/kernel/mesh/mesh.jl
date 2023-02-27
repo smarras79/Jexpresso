@@ -127,10 +127,42 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     ymin_facetoelem = Array{Int64}(undef, 0)
     zmin_facetoelem = Array{Int64}(undef, 0)
     
+    #Data_structures for absorbing BCs using scaled Laguerre basis
+    mesh.conn_xminlag = Array{Int64}(undef, 0)
+    mesh.xmin_xtra = zeros(2)
+    mesh.ymin_xtra = zeros(2)
+    mesh.zmin_xtra = zeros(2)
+    
+    mesh.conn_yminlag = Array{Int64}(undef, 0)
+    mesh.xmin_ytra = zeros(2)
+    mesh.ymin_ytra = zeros(2)
+    mesh.zmin_ytra = zeros(2)
+    
+    mesh.conn_zminlag = Array{Int64}(undef, 0)
+    mesh.xmin_ztra = zeros(2)
+    mesh.ymin_ztra = zeros(2)
+    mesh.zmin_ztra = zeros(2)
+
+    mesh.conn_xmaxlag = Array{Int64}(undef, 0)
+    mesh.xmax_xtra = zeros(2)
+    mesh.ymax_xtra = zeros(2)
+    mesh.zmax_xtra = zeros(2)
+
+    mesh.conn_ymaxlag = Array{Int64}(undef, 0)
+    mesh.xmax_ytra = zeros(2)
+    mesh.ymax_ytra = zeros(2)
+    mesh.zmax_ytra = zeros(2)
  
+    mesh.conn_zmaxlag = Array{Int64}(undef, 0)
+    mesh.xmax_ztra = zeros(2)
+    mesh.ymax_ztra = zeros(2)
+    mesh.zmax_ztra = zeros(2)
+
+    npoin2 = 0
+   # end of scaled Laguerre section
 end
 
-function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String)
+function mod_mesh_read_gmsh!(mesh::St_mesh, gmsh_filename::String, inputs::Dict)
 
     #
     # Read GMSH grid from file
@@ -819,7 +851,943 @@ if (mesh.nsd > 1)
     end
 end
 
+#build DG communication structs
+nbound = 1000
+nface =2
+for iel=1:mesh.nelem
+    if (mesh.nsd == 2)
+        xmin = mesh.x[mesh.connijk[1,1,iel]]
+        ymin = mesh.y[mesh.connijk[1,1,iel]]
+        xmax = mesh.x[mesh.connijk[1,1,iel]]
+        ymax = mesh.y[mesh.connijk[1,1,iel]]
+        ixmin = 1
+        iymin = 1
+        ixmax = mesh.ngl
+        iymax = mesh.ngl
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                ip = mesh.connijk[i,j,iel]
+                xmin = min(xmin,mesh.x[ip])
+                xmax = max(xmax,mesh.x[ip])
+                ymin = min(ymin,mesh.y[ip])
+                ymax = max(ymax,mesh.y[ip])
+                if (xmin == mesh.x[ip])
+                   ixmin = i
+                end
+                if (ymin == mesh.y[ip])
+                   iymin = j
+                end
+                if (xmax == mesh.x[ip])
+                   ixmax = i
+                end
+                if (ymax == mesh.y[ip])
+                   iymax = j
+                end
+            end
+        end
+        xminbound = 0
+        yminbound = 0
+        xmaxbound = 0
+        ymaxbound = 0
+        if (xmin == mesh.xmin)
+           for j=1:mesh.ngl
+               mesh.faces[nbound,j] = mesh.connijk[ixmin,j,iel]
+           end
+           nbound += 1
+           xminbound = 1
+        end
+        if (ymin == mesh.ymin)
+           for i=1:mesh.ngl
+               mesh.faces[nbound,i] = mesh.connijk[i,iymin,iel]
+           end
+           nbound += 1
+           yminbound = 1
+        end
+        if (xmax == mesh.xmax)
+           for j=1:mesh.ngl
+               mesh.faces[nbound,j] = mesh.connijk[ixmax,j,iel]
+           end
+           nbound += 1
+           xmaxbound = 1
+        end
+        if (ymax == mesh.ymax)
+           for i=1:mesh.ngl
+               mesh.faces[nbound,i] = mesh.connijk[i,iymax,iel]
+           end
+           nbound += 1
+           ymaxbound = 1
+        end
+        if (xminbound < 1)
+            for j=1:mesh.ngl
+                mesh.faces[nface,j] = mesh.connijk[ixmin,j,iel]
+            end
+            #find the matching face
+            for e = iel+1:mesh.nelem
+                xmax1 = mesh.x[mesh.connijk[1,1,e]]
+                ixmax1 = mesh.ngl
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        ip = mesh.connijk[i,j,e]
+                        xmax1 = max(xmax1,mesh.x[ip])
+                        if (xmax1 == mesh.x[ip])
+                            ixmax1 = i
+                        end
+                    end
+                end
+                if (AlmostEquals(xmin,xmax1)
+                    for j=1:mesh.ngl
+                        mesh.faces[nface+1,j] mesh.connijk[ixmax,j,e]
+                    end
+                    nface += 2
+                    break
+                end
+            end
+        end
+        if (yminbound < 1)
+           for i=1:mesh.ngl
+               mesh.faces[nface,i] = mesh.connijk[i,iymin,iel]
+           end
+           for e = iel+1:mesh.nelem
+                ymax1 = mesh.y[mesh.connijk[1,1,e]]
+                iymax1 = mesh.ngl
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        ip = mesh.connijk[i,j,e]
+                        ymax1 = max(ymax1,mesh.y[ip])
+                        if (ymax1 == mesh.y[ip])
+                            iymax1 = i
+                        end
+                    end
+                end
+                if (AlmostEquals(ymin,ymax1)
+                    for j=1:mesh.ngl
+                        mesh.faces[nface+1,j] mesh.connijk[j,iymax,e]
+                    end
+                    nface += 2
+                    break
+                end
+            end
+        end
+        if (xmaxbound < 1)
+            for j=1:mesh.ngl
+                mesh.faces[nface,j] = mesh.connijk[ixmax,j,iel]
+            end
+            #find the matching face
+            for e = iel+1:mesh.nelem
+                xmin1 = mesh.x[mesh.connijk[1,1,e]]
+                ixmin1 = mesh.ngl
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        ip = mesh.connijk[i,j,e]
+                        xmin1 = min(xmin1,mesh.x[ip])
+                        if (xmin1 == mesh.x[ip])
+                            ixmin1 = i
+                        end
+                    end
+                end
+                if (AlmostEquals(xmax,xmin1)
+                    for j=1:mesh.ngl
+                        mesh.faces[nface+1,j] mesh.connijk[ixmin,j,e]
+                    end
+                    nface += 2
+                    break
+                end
+            end
+        end
+        if (ymaxbound < 1)
+           for i=1:mesh.ngl
+               mesh.faces[nface,i] = mesh.connijk[i,iymax,iel]
+           end
+           for e = iel+1:mesh.nelem
+                ymin1 = mesh.y[mesh.connijk[1,1,e]]
+                iymin1 = mesh.ngl
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        ip = mesh.connijk[i,j,e]
+                        ymin1 = min(ymin1,mesh.y[ip])
+                        if (ymin1 == mesh.y[ip])
+                            iymin1 = i
+                        end
+                    end
+                end
+                if (AlmostEquals(ymax,ymin1)
+                    for j=1:mesh.ngl
+                        mesh.faces[nface+1,j] mesh.connijk[j,iymin,e]
+                    end
+                    nface += 2
+                    break
+                end
+            end
+        end
+    elseif (mesh.nsd == 3)
+        xmin = mesh.x[mesh.connijk[1,1,1,iel]]
+        ymin = mesh.y[mesh.connijk[1,1,1,iel]]
+        xmax = mesh.x[mesh.connijk[1,1,1,iel]]
+        ymax = mesh.y[mesh.connijk[1,1,1,iel]]
+        zmin = mesh.z[mesh.connijk[1,1,1,iel]]
+        zmax = mesh.z[mesh.connijk[1,1,1,iel]]
+        ixmin = 1
+        iymin = 1
+        ixmax = mesh.ngl
+        iymax = mesh.ngl
+        izmin = 1
+        izmax = mesh.ngl
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                for k=1:mesh.ngl
+                    ip = mesh.connijk[i,j,k,iel]
+                    xmin = min(xmin,mesh.x[ip])
+                    xmax = max(xmax,mesh.x[ip])
+                    ymin = min(ymin,mesh.y[ip])
+                    ymax = max(ymax,mesh.y[ip])
+                    zmin = min(zmin,mesh.z[ip])
+                    zmax = max(zmax,mesh.z[ip])
+                    if (xmin == mesh.x[ip])
+                        ixmin = i
+                    end
+                    if (ymin == mesh.y[ip])
+                        iymin = j
+                    end
+                    if (xmax == mesh.x[ip])
+                        ixmax = i
+                    end
+                    if (ymax == mesh.y[ip])
+                        iymax = j
+                    end
+                    if (zmin == mesh.z[ip])
+                        izmin = k
+                    end
+                    if (zmax == mesh.z[ip])
+                        izmax = k
+                    end
+                end
+            end
+        end
+        xminbound = 0
+        yminbound = 0
+        zminbound = 0
+        xmaxbound = 0
+        ymaxbound = 0
+        zmaxbound = 0
+        if (xmin == mesh.xmin)
+           for j=1:mesh.ngl
+               for k=1:mesh.ngl
+                   mesh.faces[nbound,j,k] = mesh.connijk[ixmin,j,k,iel]
+               end
+           end
+           nbound += 1
+           xminbound = 1
+        end
+        if (ymin == mesh.ymin)
+           for i=1:mesh.ngl
+               for k=1:mesh.ngl
+                   mesh.faces[nbound,i,k] = mesh.connijk[i,iymin,k,iel]
+               end
+           end
+           nbound += 1
+           yminbound = 1
+        end
+        if (zmin == mesh.zmin)
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    mesh.faces[nbound,i,j] = mesh.connijk[i,j,izmin,iel]
+                end
+            end
+            nbound += 1
+            zminbound = 1
+        end
+        if (xmax == mesh.xmax)
+           for j=1:mesh.ngl
+               for k=1:mesh.ngl
+                   mesh.faces[nbound,j,k] = mesh.connijk[ixmax,j,k,iel]
+               end
+           end
+           nbound += 1
+           xmaxbound = 1
+        end
+        if (ymax == mesh.ymax)
+           for i=1:mesh.ngl
+               for k=1:mesh.ngl
+                   mesh.faces[nbound,i,k] = mesh.connijk[i,iymax,k,iel]
+               end
+           end
+           nbound += 1
+           ymaxbound = 1
+        end
+        if (zmax == mesh.zmax)
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    mesh.faces[nbound,i,j] = mesh.connijk[i,j,izmax,iel]
+                end
+            end
+            nbound += 1
+            zmaxbound = 1
+        end
+        if (xminbound < 1)
+            for j=1:mesh.ngl
+                for k=1:mesh.ngl
+                    mesh.faces[nface,j,k] = mesh.connijk[ixmin,j,k,iel]
+                end
+            end
+            #find the matching face
+            for e = iel+1:mesh.nelem
+                xmax1 = mesh.x[mesh.connijk[1,1,1,e]]
+                ixmax1 = mesh.ngl
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            ip = mesh.connijk[i,j,k,e]
+                            xmax1 = max(xmax1,mesh.x[ip])
+                            if (xmax1 == mesh.x[ip])
+                                ixmax1 = i
+                            end
+                        end
+                    end
+                end
+                if (AlmostEquals(xmin,xmax1)
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            mesh.faces[nface+1,j,k] = mesh.connijk[ixmax1,j,k,e]
+                        end
+                    end
+                    nface += 2
+                    break
+                end
+            end
+        end
+        if (yminbound < 1)
+            for i=1:mesh.ngl
+                for k=1:mesh.ngl
+                    mesh.faces[nface,i,k] = mesh.connijk[i,iymin,k,iel]
+                end
+            end 
+            #find the matching face
+            for e = iel+1:mesh.nelem
+                ymax1 = mesh.y[mesh.connijk[1,1,1,e]]
+                iymax1 = mesh.ngl
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            ip = mesh.connijk[i,j,k,e]
+                            ymax1 = max(ymax1,mesh.y[ip])
+                            if (ymax1 == mesh.y[ip])
+                                iymax1 = i
+                            end
+                        end
+                    end
+                end 
+                if (AlmostEquals(ymin,ymax1)
+                    for i=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            mesh.faces[nface+1,i,k] = mesh.connijk[i,iymax1,k,e]
+                        end
+                    end
+                    nface += 2
+                    break
+                end
+            end
+        end
+        if (zminbound < 1)
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    mesh.faces[nface,i,j] = mesh.connijk[i,j,izmin,iel]
+                end
+            end 
+            #find the matching face
+            for e = iel+1:mesh.nelem
+                zmax1 = mesh.z[mesh.connijk[1,1,1,e]]
+                izmax1 = mesh.ngl
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            ip = mesh.connijk[i,j,k,e]
+                            zmax1 = max(zmax1,mesh.z[ip])
+                            if (zmax1 == mesh.z[ip])
+                                izmax1 = i
+                            end
+                        end
+                    end
+                end 
+                if (AlmostEquals(zmin,zmax1)
+                    for i=1:mesh.ngl
+                        for j=1:mesh.ngl
+                            mesh.faces[nface+1,i,j] = mesh.connijk[i,j,izmax1,e]
+                        end
+                    end
+                    nface += 2
+                    break
+                end
+            end
+        end
+        if (xmaxbound < 1)
+            for j=1:mesh.ngl
+                for k=1:mesh.ngl
+                mesh.faces[nface,j,k] = mesh.connijk[ixmax,j,k,iel]
+            end
+            #find the matching face
+            for e = iel+1:mesh.nelem
+                xmin1 = mesh.x[mesh.connijk[1,1,1,e]]
+                ixmin1 = mesh.ngl
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            ip = mesh.connijk[i,j,k,e]
+                            xmin1 = min(xmin1,mesh.x[ip])
+                            if (xmin1 == mesh.x[ip])
+                                ixmin1 = i
+                            end
+                        end
+                    end
+                end
+                if (AlmostEquals(xmax,xmin1)
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            mesh.faces[nface+1,j,k] = mesh.connijk[ixmin1,j,k,e]
+                        end
+                    end
+                    nface += 2
+                    break
+                end
+            end
+        end
+        if (ymaxbound < 1)
+            for i=1:mesh.ngl
+                for k=1:mesh.ngl
+                    mesh.faces[nface,i,k] = mesh.connijk[i,iymax,k,iel]
+                end
+            end
+            #find the matching face
+            for e = iel+1:mesh.nelem
+                ymin1 = mesh.y[mesh.connijk[1,1,1,e]]
+                iymin1 = mesh.ngl
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            ip = mesh.connijk[i,j,k,e]
+                            ymin1 = min(ymin1,mesh.y[ip])
+                            if (ymin1 == mesh.y[ip])
+                                iymin1 = i
+                            end
+                        end
+                    end
+                end
+                if (AlmostEquals(ymax,ymin1)
+                    for i=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            mesh.faces[nface+1,i,k] = mesh.connijk[i,iymin1,k,e]
+                        end
+                    end
+                    nface += 2
+                    break
+                end
+            end
+        end
+        if (zmaxbound < 1)
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    mesh.faces[nface,i,j] = mesh.connijk[i,j,izmax,iel]
+                end
+            end
+            #find the matching face
+            for e = iel+1:mesh.nelem
+                zmin1 = mesh.z[mesh.connijk[1,1,1,e]]
+                izmin1 = mesh.ngl
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        for k=1:mesh.ngl
+                            ip = mesh.connijk[i,j,k,e]
+                            zmin1 = min(zmax1,mesh.z[ip])
+                            if (zmin1 == mesh.z[ip])
+                                izmin1 = i
+                            end
+                        end
+                    end
+                end
+                if (AlmostEquals(zmax,zmin1)
+                    for i=1:mesh.ngl
+                        for j=1:mesh.ngl
+                            mesh.faces[nface+1,i,j] = mesh.connijk[i,j,izmin1,e]
+                        end
+                    end
+                    nface += 2
+                    break
+                end
+            end
+        end 
+    end 
+end 
+            
+        
+         
+
+
+            
+
+mesh.npoin2 = mesh.npoin
+#build ghost type elements for absorbing boundary conditions with scaled laguerre basis
+if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="absorbing")
+    if (mesh.nsd == 2)
+        mesh.conn_xminlag = zeros(mesh.ngr,mesh.ngl,size(mesh.xmin_face,2))
+        mesh.xmin_xtra = zeros(size(mesh.xmin_faces,2)*mesh.ngl*mesh.ngr,1)
+        mesh.ymin_xtra = zeros(size(mesh.xmin_faces,2)*mesh.ngl*mesh.ngr,1)
+        iter = 1
+        for e = 1:size(mesh.xmin_faces,2)
+            for i=1:mesh.ngr
+                for j=1:mesh.ngl
+                    x = mesh.x[mesh.xmin_faces[j,e]] - gr.ξ[i]*xminscale
+                    y = mesh.y[mesh.xmin_faces[j,e]]
+                    shared = 0
+                    for k=1:iter-1
+                        if (y == mesh.ymin_xtra[k])
+                            shareid = k
+                            shared = 1
+                            break
+                        end
+                    end
+                    if (shared > 0) 
+                        mesh.conn_xminlag[i,j,e] = shareid
+                    else
+                     
+                        mesh.xmin_xtra[iter] = x 
+                        mesh.ymin_xtra[iter] = y
+                        mesh.conn_xminlag[i,j,e] = iter
+                        iter +=1
+                    end
+                end
+            end
+        end
+        mesh.npoin2 = mesh.npoin+iter-1
+        aux .= mesh.x
+        mesh.x = zeros(mesh.npoin2,1)
+        mesh.x[1:mesh.npoin] .= aux[:]
+        mesh.x[mesh.npoin+1:mesh.npoin2] .= mesh.xmin_xtra[:]
+        aux .= mesh.y
+        mesh.y = zeros(mesh.npoin2,1)
+        mesh.y[1:mesh.npoin] .= aux[:]
+        mesh.y[mesh.npoin+1:mesh.npoin2] .= mesh.ymin_xtra[:]
+    elseif (mesh.nsd == 3)
+        mesh.conn_xminlag = zeros(mesh.ngr,mesh.ngl,mesh.ngl,size(mesh.xmin_face,3))
+        mesh.xmin_xtra = zeros(size(mesh.xmin_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.ymin_xtra = zeros(size(mesh.xmin_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.zmin_xtra = zeros(size(mesh.xmin_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        iter = 1
+        for e = 1:size(mesh.xmin_faces,2)
+            for i=1:mesh.ngr
+                for j=1:mesh.ngl
+                    for k=1:mesh.ngl 
+                        x = mesh.x[mesh.xmin_faces[j,k,e]] - gr.ξ[i]*xminscale
+                        y = mesh.y[mesh.xmin_faces[j,k,e]]
+                        z = mesh.z[mesh.xmin_faces[j,k,e]]
+                        shared = 0
+                        for k=1:iter-1
+                            if (y == mesh.ymin_xtra[k] || z == mesh.zmin_xtra[k])
+                                shareid = k
+                                shared = 1
+                                break
+                            end
+                        end
+                        if (shared > 0)
+                            mesh.conn_xminlag[i,j,k,e] = shareid
+                        else
+
+                            mesh.xmin_xtra[iter] = x
+                            mesh.ymin_xtra[iter] = y
+                            mesh.zmin_xtra[iter] = z
+                            mesh.conn_xminlag[i,j,k,e] = iter
+                            iter +=1
+                        end
+                    end
+                end
+            end
+        end
+        mesh.npoin2 = mesh.npoin+iter-1
+        aux .= mesh.x
+        mesh.x = zeros(mesh.npoin2,1)
+        mesh.x[1:mesh.npoin] .= aux[:]
+        mesh.x[mesh.npoin+1:mesh.npoin2] .= mesh.xmin_xtra[:]
+        aux .= mesh.y
+        mesh.y = zeros(mesh.npoin2,1)
+        mesh.y[1:mesh.npoin] .= aux[:]
+        mesh.y[mesh.npoin+1:mesh.npoin2] .= mesh.ymin_xtra[:]
+        aux .= mesh.z
+        mesh.z = zeros(mesh.npoin2,1)
+        mesh.z[1:mesh.npoin] .= aux[:]
+        mesh.z[mesh.npoin+1:mesh.npoin2] .= mesh.zmin_xtra[:]
+    end
+end
+if (haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="absorbing")
+    if (mesh.nsd == 2)
+        mesh.conn_xmaxlag = zeros(mesh.ngr,mesh.ngl,size(mesh.xmax_face,2))
+        mesh.xmax_xtra = zeros(size(mesh.xmax_faces,2)*mesh.ngl*mesh.ngr,1)
+        mesh.ymax_xtra = zeros(size(mesh.xmax_faces,2)*mesh.ngl*mesh.ngr,1)
+        iter = 1
+        for e = 1:size(mesh.xmax_faces,2)
+            for i=1:mesh.ngr
+                for j=1:mesh.ngl 
+                    x = mesh.x[mesh.xmax_faces[j,e]] + gr.ξ[i]*xmaxscale
+                    y = mesh.y[mesh.xmax_faces[j,e]]
+                    shared = 0
+                    for k=1:iter-1
+                        if (y == mesh.ymax_xtra[k])
+                            shareid = k
+                            shared = 1
+                            break
+                        end
+                    end
+                    if (shared > 0)
+                        mesh.conn_xmaxlag[i,j,e] = shareid
+                    else
+
+                        mesh.xmax_xtra[iter] = x
+                        mesh.ymax_xtra[iter] = y
+                        mesh.conn_xmaxlag[i,j,e] = iter
+                        iter +=1
+                    end
+                end
+            end
+        end
+        mesh.npoin2 = mesh.npoin2+iter-1
+        aux .= mesh.x
+        mesh.x = zeros(mesh.npoin2,1)
+        mesh.x[1:mesh.npoin] .= aux[:]
+        mesh.x[mesh.npoin+1:mesh.npoin2] .= mesh.xmax_xtra[:]
+        aux .= mesh.y
+        mesh.y = zeros(mesh.npoin2,1)
+        mesh.y[1:mesh.npoin] .= aux[:]
+        mesh.y[mesh.npoin+1:mesh.npoin2] .= mesh.ymax_xtra[:]
+    elseif (mesh.nsd == 3)
+        mesh.conn_xmaxlag = zeros(mesh.ngr,mesh.ngl,mesh.ngl,size(mesh.xmax_face,3))
+        mesh.xmax_xtra = zeros(size(mesh.xmax_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.ymax_xtra = zeros(size(mesh.xmax_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.zmax_xtra = zeros(size(mesh.xmax_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        iter = 1
+        for e = 1:size(mesh.xmax_faces,2)
+            for i=1:mesh.ngr
+                for j=1:mesh.ngl
+                    for k=1:mesh.ngl
+                        x = mesh.x[mesh.xmax_faces[j,k,e]] + gr.ξ[i]*xmaxscale
+                        y = mesh.y[mesh.xmax_faces[j,k,e]]
+                        z = mesh.z[mesh.xmax_faces[j,k,e]]
+                        shared = 0
+                        for k=1:iter-1
+                            if (y == mesh.ymax_xtra[k] || z == mesh.zmax_xtra[k])
+                                shareid = k
+                                shared = 1
+                                break
+                            end
+                        end
+                        if (shared > 0)
+                            mesh.conn_xmaxlag[i,j,k,e] = shareid
+                        else
+
+                            mesh.xmax_xtra[iter] = x
+                            mesh.ymax_xtra[iter] = y
+                            mesh.zmax_xtra[iter] = z
+                            mesh.conn_xmaxlag[i,j,k,e] = iter
+                            iter +=1
+                        end
+                    end
+                end
+            end
+        end
+        mesh.npoin2 = mesh.npoin2+iter-1
+        aux .= mesh.x
+        mesh.x = zeros(mesh.npoin2,1)
+        mesh.x[1:mesh.npoin] .= aux[:]
+        mesh.x[mesh.npoin+1:mesh.npoin2] .= mesh.xmax_xtra[:]
+        aux .= mesh.y
+        mesh.y = zeros(mesh.npoin2,1)
+        mesh.y[1:mesh.npoin] .= aux[:]
+        mesh.y[mesh.npoin+1:mesh.npoin2] .= mesh.ymax_xtra[:]
+        aux .= mesh.z
+        mesh.z = zeros(mesh.npoin2,1)
+        mesh.z[1:mesh.npoin] .= aux[:]
+        mesh.z[mesh.npoin+1:mesh.npoin2] .= mesh.zmax_xtra[:]
+    end
+end
+if (haskey(inputs, :ymin_bc) && inputs[:ymin_bc]=="absorbing")
+    if (mesh.nsd == 2)
+        conn_yminlag = zeros(mesh.ngr,mesh.ngl,size(mesh.ymin_face,2))
+        mesh.xmin_ytra = zeros(size(mesh.ymin_faces,2)*mesh.ngl*mesh.ngr,1)
+        mesh.ymin_ytra = zeros(size(mesh.ymin_faces,2)*mesh.ngl*mesh.ngr,1)
+        iter = 1
+        for e = 1:size(mesh.xmin_faces,2)
+            for i=1:mesh.ngl
+                for j=1:mesh.ngr
+                    x = mesh.x[mesh.ymin_faces[j,e]]
+                    y = mesh.y[mesh.ymin_faces[j,e]] - gr.ξ[i]*yminscale
+                    shared = 0
+                    for k=1:iter-1
+                        if (x == mesh.xmin_xtra[k])
+                            shareid = k
+                            shared = 1
+                            break
+                        end
+                    end
+                    if (shared > 0)
+                        mesh.conn_yminlag[i,j,e] = shareid
+                    else
+
+                        mesh.xmin_ytra[iter] = x
+                        mesh.ymin_ytra[iter] = y
+                        mesh.conn_yminlag[i,j,e] = iter
+                        iter +=1
+                    end
+                end
+            end
+        end
+        mesh.npoin2 = mesh.npoin2+iter-1
+        aux .= mesh.x
+        mesh.x = zeros(mesh.npoin2,1)
+        mesh.x[1:mesh.npoin] .= aux[:]
+        mesh.x[mesh.npoin+1:mesh.npoin2] .= mesh.xmin_ytra[:]
+        aux .= mesh.y
+        mesh.y = zeros(mesh.npoin2,1)
+        mesh.y[1:mesh.npoin] .= aux[:]
+        mesh.y[mesh.npoin+1:mesh.npoin2] .= mesh.ymin_ytra[:]
+    elseif (mesh.nsd == 3)
+        mesh.conn_yminlag = zeros(mesh.ngr,mesh.ngl,mesh.ngl,size(mesh.ymin_face,3))
+        mesh.xmin_ytra = zeros(size(mesh.ymin_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.ymin_ytra = zeros(size(mesh.ymin_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.zmin_ytra = zeros(size(mesh.ymin_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        iter = 1
+        for e = 1:size(mesh.ymin_faces,2)
+            for i=1:mesh.ngl
+                for j=1:mesh.ngr
+                    for k=1:mesh.ngl
+                        x = mesh.x[mesh.ymin_faces[j,k,e]]
+                        y = mesh.y[mesh.ymin_faces[j,k,e]] - gr.ξ[i]*yminscale
+                        z = mesh.z[mesh.ymin_faces[j,k,e]]
+                        shared = 0
+                        for k=1:iter-1
+                            if (x == mesh.xmin_ytra[k] || z == mesh.zmin_ytra[k])
+                                shareid = k
+                                shared = 1
+                                break
+                            end
+                        end
+                        if (shared > 0)
+                            mesh.conn_yminlag[i,j,k,e] = shareid
+                        else
+
+                            mesh.xmin_ytra[iter] = x
+                            mesh.ymin_ytra[iter] = y
+                            mesh.zmin_ytra[iter] = z
+                            mesh.conn_yminlag[i,j,k,e] = iter
+                            iter +=1
+                        end
+                    end 
+                end
+            end
+        end
+        mesh.npoin2 = mesh.npoin2+iter-1
+        aux .= mesh.x
+        mesh.x = zeros(mesh.npoin2,1)
+        mesh.x[1:mesh.npoin] .= aux[:]
+        mesh.x[mesh.npoin+1:mesh.npoin2] .= mesh.xmin_ytra[:]
+        aux .= mesh.y
+        mesh.y = zeros(mesh.npoin2,1)
+        mesh.y[1:mesh.npoin] .= aux[:]
+        mesh.y[mesh.npoin+1:mesh.npoin2] .= mesh.ymin_ytra[:]
+        aux .= mesh.z
+        mesh.z = zeros(mesh.npoin2,1)
+        mesh.z[1:mesh.npoin] .= aux[:]
+        mesh.z[mesh.npoin+1:mesh.npoin2] .= mesh.zmin_ytra[:]
+    end
+end 
+if (haskey(inputs, :ymax_bc) && inputs[:ymax_bc]=="absorbing")
+    if (mesh.nsd == 2)
+        mesh.conn_ymaxlag = zeros(mesh.ngr,mesh.ngl,size(mesh.ymax_face,2))
+        mesh.xmax_ytra = zeros(size(mesh.ymax_faces,2)*mesh.ngl*mesh.ngr,1)
+        mesh.ymax_ytra = zeros(size(mesh.ymax_faces,2)*mesh.ngl*mesh.ngr,1)
+        iter = 1
+        for e = 1:size(mesh.xmax_faces,2)
+            for i=1:mesh.ngl
+                for j=1:mesh.ngr
+                    x = mesh.x[mesh.ymax_faces[j,e]]
+                    y = mesh.y[mesh.ymax_faces[j,e]] - gr.ξ[i]*yminscale
+                    shared = 0
+                    for k=1:iter-1
+                        if (x == mesh.xmax_xtra[k])
+                            shareid = k
+                            shared = 1
+                            break
+                        end
+                    end
+                    if (shared > 0)
+                        mesh.conn_ymaxlag[i,j,e] = shareid
+                    else
+
+                        mesh.xmax_ytra[iter] = x
+                        mesh.ymax_ytra[iter] = y
+                        mesh.conn_ymaxlag[i,j,e] = iter
+                        iter +=1
+                    end
     
+                end
+            end
+        end
+        mesh.npoin2 = mesh.npoin2+iter-1
+        aux .= mesh.x
+        mesh.x = zeros(mesh.npoin2,1)
+        mesh.x[1:mesh.npoin] .= aux[:]
+        mesh.x[mesh.npoin+1:mesh.npoin2] .= mesh.xmax_ytra[:]
+        aux .= mesh.y
+        mesh.y = zeros(mesh.npoin2,1)
+        mesh.y[1:mesh.npoin] .= aux[:]
+        mesh.y[mesh.npoin+1:mesh.npoin2] .= mesh.ymax_ytra[:]
+    elseif (mesh.nsd == 3)
+        mesh.conn_ymaxlag = zeros(mesh.ngr,mesh.ngl,mesh.ngl,size(mesh.ymax_face,3))
+        mesh.xmax_ytra = zeros(size(mesh.ymax_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.ymax_ytra = zeros(size(mesh.ymax_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.zmax_ytra = zeros(size(mesh.ymax_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        iter = 1
+        for e = 1:size(mesh.ymax_faces,2)
+            for i=1:mesh.ngl
+                for j=1:mesh.ngr
+                    for k=1:mesh.ngl
+                        x = mesh.x[mesh.ymax_faces[j,k,e]]
+                        y = mesh.y[mesh.ymax_faces[j,k,e]] - gr.ξ[i]*ymaxscale
+                        z = mesh.z[mesh.ymax_faces[j,k,e]]
+                        shared = 0
+                        for k=1:iter-1
+                            if (x == mesh.xmax_ytra[k] || z == mesh.zmax_ytra[k])
+                                shareid = k
+                                shared = 1
+                                break
+                            end
+                        end
+                        if (shared > 0)
+                            mesh.conn_ymaxlag[i,j,k,e] = shareid
+                        else
+
+                            mesh.xmax_ytra[iter] = x
+                            mesh.ymax_ytra[iter] = y
+                            mesh.zmax_ytra[iter] = z
+                            mesh.conn_ymaxlag[i,j,k,e] = iter
+                            iter +=1
+                        end    
+                    end
+                end
+            end
+        end
+         mesh.npoin2 = mesh.npoin2+iter-1
+        aux .= mesh.x
+        mesh.x = zeros(mesh.npoin2,1)
+        mesh.x[1:mesh.npoin] .= aux[:]
+        mesh.x[mesh.npoin+1:mesh.npoin2] .= mesh.xmax_ytra[:]
+        aux .= mesh.y
+        mesh.y = zeros(mesh.npoin2,1)
+        mesh.y[1:mesh.npoin] .= aux[:]
+        mesh.y[mesh.npoin+1:mesh.npoin2] .= mesh.ymax_ytra[:]
+        aux .= mesh.z
+        mesh.z = zeros(mesh.npoin2,1)
+        mesh.z[1:mesh.npoin] .= aux[:] 
+        mesh.z[mesh.npoin+1:mesh.npoin2] .= mesh.zmax_ytra[:]
+    end
+end 
+if (haskey(inputs, :zmin_bc) && inputs[:zmin_bc]=="absorbing")
+    if (mesh.nsd == 3)
+        mesh.conn_zminlag = zeros(mesh.ngr,mesh.ngl,mesh.ngl,size(mesh.zmin_face,3))
+        mesh.xmin_ztra = zeros(size(mesh.zmin_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.ymin_ztra = zeros(size(mesh.zmin_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.zmin_ztra = zeros(size(mesh.zmin_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        iter = 1
+        for e = 1:size(mesh.zmin_faces,2)
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    for k=1:mesh.ngr
+                        x = mesh.x[mesh.zmin_faces[j,k,e]]
+                        y = mesh.y[mesh.zmin_faces[j,k,e]]
+                        z = mesh.z[mesh.zmin_faces[j,k,e]] - gr.ξ[i]*zminscale
+                        shared = 0
+                        for k=1:iter-1
+                            if (x == mesh.xmin_ztra[k] || y == mesh.ymin_ztra[k])
+                                shareid = k
+                                shared = 1
+                                break
+                            end
+                        end
+                        if (shared > 0)
+                            mesh.conn_zminlag[i,j,k,e] = shareid
+                        else
+
+                            mesh.xmin_ztra[iter] = x
+                            mesh.ymin_ztra[iter] = y
+                            mesh.zmin_ztra[iter] = z
+                            mesh.conn_zminlag[i,j,k,e] = iter
+                            iter +=1
+                        end
+                    end
+                end
+            end
+        end
+         mesh.npoin2 = mesh.npoin2+iter-1
+        aux .= mesh.x
+        mesh.x = zeros(mesh.npoin2,1)
+        mesh.x[1:mesh.npoin] .= aux[:]
+        mesh.x[mesh.npoin+1:mesh.npoin2] .= mesh.xmin_ztra[:]
+        aux .= mesh.y
+        mesh.y = zeros(mesh.npoin2,1)
+        mesh.y[1:mesh.npoin] .= aux[:]
+        mesh.y[mesh.npoin+1:mesh.npoin2] .= mesh.ymin_ztra[:]
+        aux .= mesh.z
+        mesh.z = zeros(mesh.npoin2,1)
+        mesh.z[1:mesh.npoin] .= aux[:] 
+        mesh.z[mesh.npoin+1:mesh.npoin2] .= mesh.zmin_ztra[:]
+    end
+end
+if (haskey(inputs, :zmax_bc) && inputs[:zmax_bc]=="absorbing")
+    if (mesh.nsd == 3)
+        mesh.conn_zmaxlag = zeros(mesh.ngr,mesh.ngl,mesh.ngl,size(mesh.zmax_face,3))
+        mesh.xmax_ztra = zeros(size(mesh.zmax_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.ymax_ztra = zeros(size(mesh.zmax_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        mesh.zmax_ztra = zeros(size(mesh.zmax_faces,3)*mesh.ngl*mesh.ngl*mesh.ngr,1)
+        iter = 1
+        for e = 1:size(mesh.zmax_faces,2)
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    for k=1:mesh.ngr
+                        x = mesh.x[mesh.zmax_faces[j,k,e]]
+                        y = mesh.y[mesh.zmax_faces[j,k,e]] 
+                        z = mesh.z[mesh.zmax_faces[j,k,e]] - gr.ξ[i]*zmaxscale
+                        shared = 0
+                        for k=1:iter-1
+                            if (x == mesh.xmax_ztra[k] || y == mesh.ymax_ztra[k])
+                                shareid = k
+                                shared = 1
+                                break
+                            end
+                        end
+                        if (shared > 0)
+                            mesh.conn_zmaxlag[i,j,k,e] = shareid
+                        else
+
+                            mesh.xmax_ztra[iter] = x
+                            mesh.ymax_ztra[iter] = y
+                            mesh.zmax_ztra[iter] = z
+                            mesh.conn_zmaxlag[i,j,k,e] = iter
+                            iter +=1
+                        end    
+                    end 
+                end
+            end
+        end
+         mesh.npoin2 = mesh.npoin2+iter-1
+        aux .= mesh.x
+        mesh.x = zeros(mesh.npoin2,1)
+        mesh.x[1:mesh.npoin] .= aux[:]
+        mesh.x[mesh.npoin+1:mesh.npoin2] .= mesh.xmax_ztra[:]
+        aux .= mesh.y
+        mesh.y = zeros(mesh.npoin2,1)
+        mesh.y[1:mesh.npoin] .= aux[:]
+        mesh.y[mesh.npoin+1:mesh.npoin2] .= mesh.ymax_ztra[:]
+        aux .= mesh.z
+        mesh.z = zeros(mesh.npoin2,1)
+        mesh.z[1:mesh.npoin] .= aux[:] 
+        mesh.z[mesh.npoin+1:mesh.npoin2] .= mesh.zmax_ztra[:]
+    end
+end
 #
 #
 # Free memory of obsolete arrays
@@ -2415,7 +3383,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                     nop=Int64(inputs[:nop]))
         
         # Read gmsh grid using the GridapGmsh reader
-        mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename])
+        mod_mesh_read_gmsh!(mesh, inputs[:gmsh_filename], inputs)
         
         println(" # Read gmsh grid and populate with high-order points ........................ DONE")
         

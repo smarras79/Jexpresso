@@ -4,14 +4,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :tend                => 2.0, #2π,
-        :Δt                  => 0.5e-4,#8.75e-4,
-        :diagnostics_interval=> 400,
+        :Δt                  => 1e-4,#8.75e-4,
+        :diagnostics_interval=> 100,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 16,      # Polynomila order
+        :nop                 => 6,      # Polynomila order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
