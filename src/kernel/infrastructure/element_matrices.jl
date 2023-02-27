@@ -53,10 +53,8 @@ function build_element_matrices!(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, 
         
         for iq=1:Q+1
             for i=1:N+1
+                el_matrices.M[i,iel] = el_matrices.M[i,iel] + Jac*ω[iq] #Store only the diagonal elements
                 for j=1:N+1
-                    if (i == j)
-                        el_matrices.M[i,iel] = el_matrices.M[i,iel] + Jac*ω[iq]*ψ[i,iq]*ψ[j,iq] #Store only the diagonal elements
-                    end
                     el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] +      ω[iq]*ψ[i,iq]*dψdξ[j,iq] #Sparse
                 end
             end
