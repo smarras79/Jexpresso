@@ -1,0 +1,22 @@
+// 
+lc = 0.25;
+//
+Point(1) = {-1, -1, -1, lc};
+Point(2) = {-1, 1, -1, lc};
+Point(3) = {1, -1, 1, lc};
+Point(4) = {1, 1, 1, lc};
+//
+Line(1) = {1, 2};
+Line(2) = {4, 3};
+Line(3) = {3, 1};
+Line(4) = {2, 4};
+//
+Curve Loop(1) = {1, 4, 2, 3};
+//
+Plane Surface(1) = {1};
+Recombine Surface{1};
+//
+Physical Point("solidPoints", 1) = {1, 2, 3, 4};
+Physical Curve("boundary", 2) = {1, 2, 3};
+Physical Curve("top",      3) = {4};
+Physical Surface("domain") = {1};
