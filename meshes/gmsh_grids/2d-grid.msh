@@ -6,8 +6,8 @@ $PhysicalNames
 0 1 "boundary"
 1 2 "inflow"
 1 3 "outflow"
-1 4 "free_sleep"
-1 5 "no_sleep"
+1 4 "free_slip"
+1 5 "no_slip"
 2 6 "domain"
 $EndPhysicalNames
 $Entities

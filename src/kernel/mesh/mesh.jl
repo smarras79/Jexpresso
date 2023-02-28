@@ -110,6 +110,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     poin_in_bdy_edge = Array{Int64}(undef, 1, 1)
     bdy_face_in_elem = Array{Int64}(undef, 1)
     poin_in_bdy_face = Array{Int64}(undef, 1, 1)
+    edge_type        = Array{String}(undef, 1)
+    bdy_edge_type    = Array{String}(undef, 1)
+    
 
     #@YASSINE REMOVE WHAT NO LONGER NEEDED 
     bc_xmin = Array{Int64}(undef, 0)
@@ -270,6 +273,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.poin_in_edge     = Array{Int64}(undef, mesh.nedges, mesh.ngl)
     mesh.poin_in_bdy_edge = Array{Int64}(undef, mesh.nedges_bdy, mesh.ngl)
     mesh.poin_in_face     = Array{Int64}(undef, mesh.nfaces, mesh.ngl, mesh.ngl)
+    mesh.edge_type        = Array{String}(undef, mesh.nedges)
+    mesh.bdy_edge_type    = Array{String}(undef, mesh.nedges_bdy)
     if mesh.nsd > 2
         mesh.poin_in_bdy_face = Array{Int64}(undef, mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
     end
@@ -457,12 +462,30 @@ end
 # Bdy edges
 #
 if mesh.nsd == 2
-    isboundary_edge = compute_isboundary_face(topology, mesh.nsd-1)
+    isboundary_edge = compute_isboundary_face(topology, EDGE_flg)
+    #
+    # Get labels contained in the current GMSH grid:
+    #
+    #mesh.type_of_edge = view(labels.tag_to_name, :)
+    labels = get_face_labeling(model)
+    for ilabel in labels.tag_to_name
+        @info "ilabel " ilabel
+        edges_to_tag  = get_face_tag_index(labels,ilabel,EDGE_flg)
+        #@info edges_to_tag
+        idx_edges_inflow = findall( x -> x == 1, edges_to_tag)
+        
+        #Tag the boundary edge with its type as defined in the user-provided GMSH file:
+        for idx in idx_edges_inflow
+            mesh.edge_type[idx] = ilabel
+        end
+    end
+
     iedge_bdy = 1
     for iedge = 1:mesh.nedges #total nedges
         if isboundary_edge[iedge] == true
             for igl = 1:mesh.ngl
                 mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
+                mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
             end
             iedge_bdy += 1
         end
@@ -475,16 +498,29 @@ if mesh.nsd == 2
             end
         end
     end
-    @info count(get_face_mask(get_face_labeling(model),"solidPoints",0)) #bdy nodes with tag "top"
-    @info count(get_face_mask(get_face_labeling(model),"top",1)) #bdy faces with tag "top"
-error("asasassa")
-    #=for iedge_bdy = 1:mesh.nedges_bdy
+
+    
+    for iedge = 1:mesh.nedges_bdy
+        @printf(" Bdy edge %d is of type %s\n", iedge, mesh.bdy_edge_type[iedge])
+    end
+
+    for iedge_bdy = 1:mesh.nedges_bdy
         @printf(" bdy edge %d ∈ elem %d with nodes\n", iedge_bdy,  mesh.bdy_edge_in_elem[iedge_bdy])
         for igl = 1:mesh.ngl
             @printf(" %d",  mesh.poin_in_bdy_edge[iedge_bdy, igl])
         end
-        @printf("\n")  
-    end=#
+        @printf("\n")
+    end
+    
+#    @info count(get_face_mask(get_face_labeling(model),"inflow",1)) #bdy faces with tag "top"
+#    face_to_tag = get_face_tag_index(get_face_labeling(model),["boundary","interior"],1)
+#    face_to_tag = get_face_tag_index(labels,["boundary","interior"],1)
+#    d_to_dface_to_tag = [ get_face_tag_index(labels, dirichlet_tags,d)  for d in 0:2]
+#    cell_to_faces = Table(get_cell_faces(topology))
+#    @info d_to_dface_to_tag
+#    @info cell_to_faces
+error("asasassa")
+   
 elseif mesh.nsd > 2
     nothing
  #=   num_faces(topology, mesh.nsd)
@@ -512,7 +548,7 @@ elseif mesh.nsd > 2
     end
     =#
 end
-error("saasas")
+
 #----------------------------------------------------------------------
 # END Extract boundary edges and faces nodes
 #----------------------------------------------------------------------
