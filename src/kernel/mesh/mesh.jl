@@ -466,20 +466,18 @@ if mesh.nsd == 2
     #
     # Get labels contained in the current GMSH grid:
     #
-    #mesh.type_of_edge = view(labels.tag_to_name, :)
     labels = get_face_labeling(model)
     for ilabel in labels.tag_to_name
         @info "ilabel " ilabel
         edges_to_tag  = get_face_tag_index(labels,ilabel,EDGE_flg)
-        #@info edges_to_tag
         idx_edges_inflow = findall( x -> x == 1, edges_to_tag)
-        
-        #Tag the boundary edge with its type as defined in the user-provided GMSH file:
+        #    
+        # Tag the boundary edge with its type as defined in the user-provided GMSH file:
+        #
         for idx in idx_edges_inflow
             mesh.edge_type[idx] = ilabel
         end
     end
-
     iedge_bdy = 1
     for iedge = 1:mesh.nedges #total nedges
         if isboundary_edge[iedge] == true
@@ -499,28 +497,14 @@ if mesh.nsd == 2
         end
     end
 
-    
-    for iedge = 1:mesh.nedges_bdy
-        @printf(" Bdy edge %d is of type %s\n", iedge, mesh.bdy_edge_type[iedge])
-    end
-
-    for iedge_bdy = 1:mesh.nedges_bdy
-        @printf(" bdy edge %d ∈ elem %d with nodes\n", iedge_bdy,  mesh.bdy_edge_in_elem[iedge_bdy])
+    #=for iedge_bdy = 1:mesh.nedges_bdy
+        @printf(" bdy edge %d of type %s ∈ elem %d with nodes\n", iedge_bdy, mesh.bdy_edge_type[iedge_bdy], mesh.bdy_edge_in_elem[iedge_bdy])
         for igl = 1:mesh.ngl
             @printf(" %d",  mesh.poin_in_bdy_edge[iedge_bdy, igl])
         end
         @printf("\n")
-    end
+    end=#
     
-#    @info count(get_face_mask(get_face_labeling(model),"inflow",1)) #bdy faces with tag "top"
-#    face_to_tag = get_face_tag_index(get_face_labeling(model),["boundary","interior"],1)
-#    face_to_tag = get_face_tag_index(labels,["boundary","interior"],1)
-#    d_to_dface_to_tag = [ get_face_tag_index(labels, dirichlet_tags,d)  for d in 0:2]
-#    cell_to_faces = Table(get_cell_faces(topology))
-#    @info d_to_dface_to_tag
-#    @info cell_to_faces
-error("asasassa")
-   
 elseif mesh.nsd > 2
     nothing
  #=   num_faces(topology, mesh.nsd)
