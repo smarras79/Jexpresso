@@ -106,6 +106,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     face_in_elem      = Array{Int64}(undef, 0, 0, 0)
 
     #Auxiliary arrays for boundary conditions
+    bdy_edge_comp     = Arrayt{Int64}(undef, 1)
     bdy_edge_in_elem = Array{Int64}(undef, 1)
     poin_in_bdy_edge = Array{Int64}(undef, 1, 1)
 
@@ -265,6 +266,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.conn_edge_el     = Array{Int64}(undef, 2, mesh.NEDGES_EL, mesh.nelem)    
     mesh.conn_face_el     = Array{Int64}(undef, 4, mesh.NFACES_EL, mesh.nelem)  
     mesh.bdy_edge_in_elem = Array{Int64}(undef, mesh.nedges_bdy)  
+    mesh.bdy_edge_comp = Array{Int64}(under, mesh.nedges_bdy)
     mesh.poin_in_edge   = Array{Int64}(undef, mesh.nedges, mesh.ngl)
     mesh.poin_in_bdy_edge = Array{Int64}(undef, mesh.nedges_bdy, mesh.ngl)
         
@@ -466,8 +468,19 @@ for iel = 1:mesh.nelem
         if issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[:, :, iel])
             mesh.bdy_edge_in_elem[iedge_bdy] = iel
         end
+        if (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[1, :, iel]))
+            mesh.bdy_edge_comp[iedge_bdy] = 1
+        elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[:, 1, iel]))
+            mesh.bdy_edge_comp[iedge_bdy] = 2
+        end
+        if (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[mesh.ngl, :, iel]))
+            mesh.bdy_edge_comp[iedge_bdy] = 3
+        elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[:, mesh.ngl, iel]))
+            mesh.bdy_edge_comp[iedge_bdy] = 4
+        end
     end
 end
+
 
 #=for iedge_bdy = 1:mesh.nedges_bdy
     @printf(" bdy edge %d ∈ elem %d with nodes\n", iedge_bdy,  mesh.bdy_edge_in_elem[iedge_bdy])

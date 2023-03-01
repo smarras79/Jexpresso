@@ -56,103 +56,42 @@ function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ
    penalty =160.0#50000
    nx = zeros(mesh.ngl,nface)
    ny = zeros(mesh.ngl,nface)
+   #TODO remake build custom_bcs for new boundary data
    if (calc_grad)
        gradq = build_gradient(SD, QT::Inexact, qp, ψ, dψ, ω, mesh, metrics,gradq,nvars)
        build_custom_bcs!(t,mesh,qp,gradq,SD,BCT,exact,flux_q,nx,ny,nvars)
    end
    #Dirichlet/Neumann boundaries using SIPG
    # NOTE We do not need to compute a RHS contribution for the Right element as it represents the outside of the computational domain here we only compute it's effect on the Left element
-   if (haskey(inputs, :xmin_bc) && (inputs[:xmin_bc]!="periodic"))
-#      @info "applying sipg" 
-      for iface=1:size(mesh.xmin_faces,2)
-          for k=1:mesh.ngl
-              for i=1:mesh.ngl
-                  iel = mesh.xmin_facetoelem[iface] 
-                  mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Jef[k,iface]/metrics.Je[1,k,iel]/2
-                  ip = mesh.xmin_faces[k,iface]
-                  #@info "1",rhs[1,k,iel,1:nvars], mesh.x[ip],mesh.y[ip]
-                  dqdx_st[:,1] .= 0.5*(gradq[1,ip,:] .+ flux_q[k,iface,1,:] .- nx[k,iface]*mu.*(exact[k,iface,:].-qp[ip,1:nvars]))
-                  dqdx_st[:,2] .= 0.5*(gradq[2,ip,:] .+ flux_q[k,iface,2,:] .- ny[k,iface]*mu.*(exact[k,iface,:].-qp[ip,1:nvars]))
-                  q_st[:] .= 0.5*(qp[ip,1:nvars] + exact[k,iface,:]) 
-                  rhs[1,k,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iface]*ψ[i,k].*(nx[k,iface]*dqdx_st[1:nvars,1]) #.+ ny[ip]*dqdx_st[1:nvars,2])
-                  #@info "2",rhs[1,k,iel,1:nvars],mesh.x[ip],mesh.y[ip]
-                  rhs[1,k,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iface]*(nx[k,iface])*dψ[i,k].*(qp[ip,1:nvars] .- q_st[1:nvars])
-                  #@info "3",rhs[1,k,iel,1:nvars],mesh.x[ip],mesh.y[ip]
-                  #end
-              end
-          end
-      end
-  end
-          
-  if (haskey(inputs, :xmax_bc) && (inputs[:xmax_bc]!="periodic"))
-            #Right boundary
- #@info "applying sipg"
-      disp = size(mesh.xmin_faces,2)
-      for iface=1:size(mesh.xmax_faces,2)
-          for k=1:mesh.ngl
-              for i=1:mesh.ngl
-                  ip = mesh.xmax_faces[k,iface]
-                  iel = mesh.xmax_facetoelem[iface] 
-                  mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Jef[k,iface+size(mesh.xmin_faces,2)]/metrics.Je[mesh.ngl,k,iel]/2
-                  dqdx_st[:,1] .= 0.5*(gradq[1,ip,:] .+ flux_q[k,iface+disp,1,:] - nx[k,iface+disp]*mu.*(exact[k,iface+disp,:].-qp[ip,1:nvars]))
-                  dqdx_st[:,2] .= 0.5*(gradq[2,ip,:] .+ flux_q[k,iface+disp,2,:] - ny[k,iface+disp]*mu.*(exact[k,iface+disp,:].-qp[ip,1:nvars]))
-                  q_st[:] = 0.5*(qp[ip,1:nvars] + exact[k,iface+disp,:])
-                  rhs[mesh.ngl,k,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iface+size(mesh.xmin_faces,2)]*ψ[i,k].*(nx[k,iface+disp]*dqdx_st[1:nvars,1]) #.+ ny[ip]*dqdx_st[1:nvars,2])
-                  rhs[mesh.ngl,k,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iface+size(mesh.xmin_faces,2)]*(nx[k,iface+disp])*dψ[i,k].*(qp[ip,1:nvars] .- q_st[1:nvars])
-                  #if (qp[ip,1] < -0.01)
-#                      @info rhs[ip],ω[k],metrics.Jef[k,iface],(nx[ip]),dψ[i,k],(qp[ip,1] - q_st[1]),q_st[1]
-                  #end 
-              end
-          end
-      end
-  end
-  if (haskey(inputs, :ymin_bc) && (inputs[:ymin_bc]!="periodic"))
-         #bottom boundary
-       disp = size(mesh.xmin_faces,2)+size(mesh.xmax_faces,2)
-       for iface=1:size(mesh.ymin_faces,2)
-          for k=1:mesh.ngl
-              for i=1:mesh.ngl
-                  ip = mesh.ymin_faces[k,iface]
-                  iel = mesh.ymin_facetoelem[iface] 
-                  mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Jef[k,iface+disp]/metrics.Je[k,1,iel]/2
-                  dqdx_st[:,1] .= 0.5*(gradq[1,ip,:] .+ flux_q[k,iface+disp,1,:] - nx[k,iface+disp]*mu.*(exact[k,iface+disp,:].-qp[ip,1:nvars]))
-                  dqdx_st[:,2] .= 0.5*(gradq[2,ip,:] .+ flux_q[k,iface+disp,2,:] - ny[k,iface+disp]*mu.*(exact[k,iface+disp,:].-qp[ip,1:nvars]))
-                  q_st[:] = 0.5*(qp[ip,1:nvars] + exact[k,iface+disp,:])
-                #  @info "1",rhs[k,1,iel,1:nvars], mesh.x[ip],mesh.y[ip]
-                   rhs[k,1,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iface+disp]*ψ[i,k]*(ny[k,iface+disp]*dqdx_st[1:nvars,2])
-                #  @info "2",rhs[k,1,iel,1:nvars], mesh.x[ip],mesh.y[ip]
-                  rhs[k,1,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iface+disp]*(ny[k,iface+disp])*dψ[i,k].*(qp[ip,1:nvars] .- q_st[1:nvars])
-                #  @info "3",rhs[k,1,iel,1:nvars], mesh.x[ip],mesh.y[ip]
-                   #if (qp[ip,1] < -0.01)
-              #   @info "ymin", rhs[k,1,iel,3],rhs[k,1,iel,2]
-#     @info "ymin",mesh.x[mesh.connijk[k,1,iel]],mesh.y[mesh.connijk[k,1,iel]],rhs[k,1,iel,3],ψ[i,k]*(ny[k,iface+disp]*dqdx_st[3,2]),(ny[k,iface+disp])*dψ[i,k]*(qp[ip,3] - q_st[3]),q_st[3]
-                  #end 
-              end
-          end
-      end
-
-   end
-   if (haskey(inputs, :ymax_bc) && (inputs[:ymax_bc]!="periodic"))
-            #top boundary
-      disp = size(mesh.xmin_faces,2)+size(mesh.xmax_faces,2) + size(mesh.ymin_faces,2)
-      for iface=1:size(mesh.ymax_faces,2)
-          for k=1:mesh.ngl
-              for i=1:mesh.ngl
-                   ip = mesh.ymax_faces[k,iface]
-                   iel = mesh.ymax_facetoelem[iface] 
-                   mu = penalty * (mesh.ngl)*(mesh.ngl-1)*metrics.Jef[k,iface+disp]/metrics.Je[k,mesh.ngl,iel]/2
-                   dqdx_st[:,1] .= 0.5*(gradq[1,ip,:] .+ flux_q[k,iface+disp,1,:] - nx[k,iface+disp]*mu.*(exact[k,iface+disp,:].-qp[ip,1:nvars]))
-                   dqdx_st[:,2] .= 0.5*(gradq[2,ip,:] .+ flux_q[k,iface+disp,2,:] - ny[k,iface+disp]*mu.*(exact[k,iface+disp,:].-qp[ip,1:nvars]))
-                   q_st[:] = 0.5*(qp[ip,1:nvars] + exact[k,iface+disp,:])
-                   rhs[k,mesh.ngl,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iface+disp]*ψ[i,k].*(0.0*dqdx_st[1:nvars,1] .+ ny[k,iface+disp]*dqdx_st[1:nvars,2])
-                   rhs[k,mesh.ngl,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iface+disp]*(ny[k,iface+disp])*dψ[i,k].*(qp[ip,1:nvars] .- q_st[1:nvars])
-                  #if (qp[ip,1] < -0.01)
-                   #   @info "ymax",nx[ip],ny[ip],rhs[k,mesh.ngl,iel],ω[k]*metrics.Jef[k,iface]*ψ[i,k]*(ny[ip]*dqdx_st[1,2]),ω[k]*metrics.Jef[k,iface]*(ny[ip])*dψ[i,k]*(qp[ip,1] - q_st[1])
-                  #end  
+ # Remaking boundary conditions custom BCs will apply periodicity or other types of boundary conditions with the exception of absorbing
+ for iedge = 1:size(mesh.bdy_edge_comp,1)
+     iel = mesh.bdy_edge_in_elem[iedge] 
+     comp = mesh.bdy_edge_comp[idege]
+     for k=1:mesh.ngl
+         for i=1:mesh.ngl
+             if (comp == 1)
+                 l=1
+                 m=k
+             elseif (comp == 2)
+                 l=k
+                 m=1
+             elseif (comp == 3)
+                 l=mesh.ngl
+                 m=k
+             elseif (comp == 4)
+                 l=k
+                 m=mesh.ngl
              end
-          end
-      end
-   end
+             mu = penalty * (mesh.ngl) * (mesh.ngl-1)*metrics.Jef[k,iedge]/metrics.Je[l,m,iel]/2
+             ip = mesh.poin_in_bdy_edge[iedge,k]
+             dqdx_st[:,1] .= 0.5*(gradq[1,ip,:] .+ flux_q[k,iedge,1,:] .- nx[k,iedge]*mu.*(exact[k,iedge,:].-qp[ip,1:nvars]))
+             dqdx_st[:,2] .= 0.5*(gradq[1,ip,:] .+ flux_q[k,iedge,1,:] .- ny[k,iedge]*mu.*(exact[k,iedge,:].-qp[ip,1:nvars]))
+             q_st[:] .= 0.5*(qp.[ip,1:nvars] + exact[k,iedge,:])
+             rhs[l,m,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iedge]*ψ[i,k].*(nx[k,iedge]*dqdx_st[1:nvars,1] .+ ny[k,iedge]*dqdx_st[1:nvars,2])
+             rhs[l,m,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iedge]*(nx[k,iedge]*dψ[i,k].*(qp[ip,1:nvars] .-q_st[1:nvars])+ny[k,iedge]*dψ[i,k].*(qp[ip,1:nvars] .-q_st[1:nvars]))
+         end
+     end
+ end
 end
 function apply_periodicity!(qp,mesh,inputs,SD::NSD_3D,QT,metrics,ψ,dψ, ω,t,BCT,nvars)
 
