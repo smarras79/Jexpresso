@@ -483,7 +483,8 @@ if mesh.nsd == 2
         if isboundary_edge[iedge] == true
             for igl = 1:mesh.ngl
                 mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
-                mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
+                mesh.bdy_edge_type[iedge_bdy] = "ciao" #mesh.edge_type[iedge]
+                @info iedge, mesh.edge_type[iedge]
             end
             iedge_bdy += 1
         end
