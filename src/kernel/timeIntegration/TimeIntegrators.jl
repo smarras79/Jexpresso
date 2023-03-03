@@ -46,7 +46,10 @@ function buildRKIntegrator!(RKtype::RK5, TFloat)
 
 end
 
-function rk!(q::St_SolutionVars;
+function rk!(q::St_SolutionVars,
+             RHSn,
+             RHSnm1,
+             RHSnm2;
              TD,
              SD,
              QT,
@@ -54,7 +57,7 @@ function rk!(q::St_SolutionVars;
              mesh::St_mesh,
              metrics::St_metrics,
              basis, ω,
-             M, Δt,
+             M, L, Δt,
              neqns, 
              inputs::Dict,
              BCT,
@@ -78,15 +81,16 @@ function rk!(q::St_SolutionVars;
         # RHS[npoin] = DSS(rhs)
         #
         for ieqn=1:neqns
-            RHS = DSSijk_rhs(SD,
-                             rhs_el[:,:,:,ieqn] + inputs[:δvisc]*rhs_diff_el[:,:,:,ieqn],
+            RHSn = DSSijk_rhs(SD,
+                             rhs_el[:,:,:,ieqn], # + inputs[:δvisc]*rhs_diff_el[:,:,:,ieqn],
                              mesh.connijk,
                              mesh.nelem, mesh.npoin, mesh.nop,
-                             T)
-            divive_by_mass_matrix!(RHS, M, QT)
+                              T)
+            RHSn = RHSn + inputs[:ν]*L*q.qn[:,ieqn]
+            divive_by_mass_matrix!(RHSn, M, QT)
             
             for I=1:mesh.npoin
-                dq[I, ieqn] = RKcoef.a[s]*dq[I, ieqn] + Δt*RHS[I]
+                dq[I, ieqn] = RKcoef.a[s]*dq[I, ieqn] + Δt*RHSn[I]
                 q.qn[I, ieqn] = q.qn[I, ieqn] + RKcoef.b[s]*dq[I, ieqn]
             end
             
@@ -101,7 +105,10 @@ function rk!(q::St_SolutionVars;
 end
 
 
-function bdf2!(q::St_SolutionVars;
+function bdf2!(q::St_SolutionVars,
+               RHSn,
+               RHSnm1,
+               RHSnm2;
                TD,
                SD,
                QT,
@@ -118,47 +125,29 @@ function bdf2!(q::St_SolutionVars;
     
     dq     = zeros(mesh.npoin, neqns)
     RKcoef = buildRKIntegrator!(TD, T)
-    rhs_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     
     #
     # rhs[ngl,ngl,nelem]
     #
-    #rhs_elnm2 .= rhs_elnm1
-    #rhs_elnm2 .= rhs_el
-    rhs_eln     = build_rhs(SD, QT, PT, neqns, q.qn,   basis.ψ, basis.dψ, ω, mesh, metrics, T)
-    rhs_elnm1   = build_rhs(SD, QT, PT, neqns, q.qnm1, basis.ψ, basis.dψ, ω, mesh, metrics, T)
-    rhs_elnm2   = build_rhs(SD, QT, PT, neqns, q.qnm2, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+    rhs_el      = build_rhs(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω,
+                            mesh, metrics, T)
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω,
+                                 inputs[:νx], inputs[:νy], mesh, metrics, T)
     
-    for ieq = 1:neqns
-        for iel=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    ip = mesh.connijk[i,j,iel]
-                    
-                    rhs_el[i,j,iel,ieq] = ω[i]*ω[j]*(18.0*q.qn[ip,ieq] - 9.0*q.qnm1[ip,ieq] + 2.0*q.qnm2[ip,ieq])/11.0 -
-                        (6.0*Δt/11.0)*(3.0*rhs_eln[i,j,iel,ieq] - 3.0*rhs_elnm1[i,j,iel,ieq] + rhs_elnm2[i,j,iel,ieq])
-                end
-            end
-        end
-    end
-                    
-    #rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω,
-    #                             inputs[:νx], inputs[:νy], mesh, metrics, T)
     apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
     #
     # RHS[npoin] = DSS(rhs)
     #
     for ieqn=1:neqns
-        RHS = DSSijk_rhs(SD,
+        RHSn = DSSijk_rhs(SD,
                          rhs_el[:,:,:,ieqn] ,# + inputs[:δvisc]*rhs_diff_el[:,:,:,ieqn],
                          mesh.connijk,
                          mesh.nelem, mesh.npoin, mesh.nop,
                          T)
-        divive_by_mass_matrix!(RHS, M, QT)
-        
-        for I=1:mesh.npoin
-            q.qn[I, ieqn] = RHS[I]
-        end
+        divive_by_mass_matrix!(RHSn, M, QT)
+
+        for ip = 1:mesh.npoin
+            q.qn[ip,ieqn] = (18.0*q.qn[ip,ieqn] - 9.0*q.qnm1[ip,ieqn] + 2.0*q.qnm2[ip,ieqn])/11.0 + (6.0*Δt/11.0)*(3.0*RHSn[ip,ieqn] - 3.0*RHSnm1[ip,ieqn] + RHSnm2[ip,ieqn])        end
         
         #
         # B.C.
@@ -177,7 +166,7 @@ function time_loop!(TD,
                     metrics::St_metrics,
                     basis, ω,
                     qp,
-                    M,
+                    M, L, 
                     Nt, Δt,
                     neqns, 
                     inputs::Dict,
@@ -188,13 +177,19 @@ function time_loop!(TD,
     t  = inputs[:tinit]
     t0 = t
 
+    
+
     plot_at_times = [0.25, 0.5, 1.0, 1.5]    
    
     it_interval = inputs[:diagnostics_interval]
     it_diagnostics = 1
+
     #
     # RK for first 2 steps
     #
+    RHSn     = zeros(T, mesh.npoin)
+    RHSnm1   = copy(RHSn)
+    RHSnm2   = copy(RHSnm1)
     qp.qnm1 .= qp.qn
     for it = 1:2
         if (mod(it, it_interval) == 0 || it == Nt)
@@ -216,14 +211,10 @@ function time_loop!(TD,
         t = t0 + Δt
         t0 = t
         
-        rk!(qp; TD, SD, QT, PT,
-            mesh, metrics, basis, ω, M, Δt, neqns, inputs, BCT, time=t, T)
+        rk!(qp, RHSn, RHSnm1, RHSnm2; TD, SD, QT, PT,
+            mesh, metrics, basis, ω, M, L, Δt, neqns, inputs, BCT, time=t, T)
         
     end
-    @printf "----------\n"
-    @printf "  n   min/max(qn)  = %.6f %.6f\n" minimum(qp.qn[:,1]) maximum(qp.qn[:,1])
-    @printf "  Mn1 min/max(qm1) = %.6f %.6f\n" minimum(qp.qnm1[:,1]) maximum(qp.qnm1[:,1])
-    @printf "----------\n"
     #
     # DBF2 from now on:
     #    
@@ -232,11 +223,14 @@ function time_loop!(TD,
         #OK don't touch
         qp.qnm2 .= qp.qnm1
         qp.qnm1 .= qp.qn
+        
+        RHSnm2 .= RHSnm1
+        RHSnm1 .= RHSn
         #this needs to be here BEFORE the time stepper
         #ok don't touch above.
 
-        rk!(qp; TD, SD, QT, PT,  mesh, metrics, basis, ω, M, Δt, neqns, inputs, BCT, time=t, T)
-        #bdf2!(qp; TD, SD, QT, PT, mesh, metrics, basis, ω, M, Δt, neqns, inputs, BCT, time=t, T)
+        rk!(qp, RHSn, RHSnm1, RHSnm2; TD, SD, QT, PT,  mesh, metrics, basis, ω, M, L, Δt, neqns, inputs, BCT, time=t, T)
+        #bdf2!(qp, RHSn, RHSnm1, RHSnm2; TD, SD, QT, PT, mesh, metrics, basis, ω, M, Δt, neqns, inputs, BCT, time=t, T)
                 
         if (mod(itbdf, it_interval) == 0 || itbdf == Nt)
             @printf "   Solution at t = %.6f sec\n" t

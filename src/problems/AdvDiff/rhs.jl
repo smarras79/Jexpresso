@@ -97,6 +97,12 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::AdvDiff, nvars, qp, ψ, dψ, ω, νx
     
 end
 
+function build_rhs_diff_MxV(SD::NSD_2D, QT, AP::AdvDiff, nvars, qn, L, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+
+    nothing
+    
+end
+
 
 
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, el_mat, f)

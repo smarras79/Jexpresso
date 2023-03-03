@@ -19,7 +19,7 @@ end
 #
 # Element matrices:
 #
-function build_element_matrices!(SD::NSD_1D, QT::Exact, ψ, dψdξ, ω, mesh, N, Q, T)
+function build_element_matrices(SD::NSD_1D, QT::Exact, ψ, dψdξ, ω, mesh, N, Q, T)
 
     el_matrices = St_ElMat{T}(zeros(N+1, N+1, mesh.nelem),
                               zeros(N+1, N+1, mesh.nelem),
@@ -42,7 +42,7 @@ function build_element_matrices!(SD::NSD_1D, QT::Exact, ψ, dψdξ, ω, mesh, N,
     return el_matrices
 end
 
-function build_element_matrices!(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
+function build_element_matrices(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
     
     el_matrices = St_ElMat{T}(zeros(N+1,      mesh.nelem),
                               zeros(N+1, N+1, mesh.nelem),
@@ -65,7 +65,7 @@ function build_element_matrices!(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, 
 end
 
 
-function build_element_matrices!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
+function build_element_matrices(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
     
     el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem),
                               zeros(N+1, N+1, N+1, N+1, mesh.nelem),
@@ -103,7 +103,7 @@ end
 #
 # Element mass matrix
 # 
-function build_mass_matrix!(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -139,7 +139,7 @@ function build_mass_matrix!(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics
     return M
 end
 
-function build_mass_matrix!(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
 
     MN = (N+1)^2
     QN = MN
@@ -197,12 +197,10 @@ function build_laplace_matrix(SD::NSD_2D, MT::TensorProduct, ψ, dψ, ω, mesh, 
                     hnl, hmk        =  ψ[n,l],  ψ[m,k]
                     dhmk_dξ,dhnl_dη = dψ[m,k], dψ[n,l]
                     
-                   
                     dψIK_dx = dhmk_dξ*hnl*metrics.dξdx[k,l,iel] + hmk*dhnl_dη*metrics.dηdx[k,l,iel]
                     dψIK_dy = dhmk_dξ*hnl*metrics.dξdy[k,l,iel] + hmk*dhnl_dη*metrics.dηdy[k,l,iel]
                     
-                    #L[m,n,i,j,iel] += (dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy) 
-                    L[I,J, iel] += ωJkl*(dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy)
+                    L[I,J, iel] -= ωJkl*(dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy)
                 end
             end
         end
@@ -367,7 +365,7 @@ end
 
 function DSSijk_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
     
-    V  = zeros(npoin)
+    V  = zeros(T, npoin)
     for iel = 1:nelem
         for j = 1:N+1
             for i = 1:N+1
