@@ -113,8 +113,10 @@ function driver(DT::ContGal,       #Space discretization type
     # Return:
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------    
-    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    Me = build_mass_matrix(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    M  = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    Le = build_laplace_matrix(SD, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    L  = DSSijk_laplace(SD, Le,  mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #--------------------------------------------------------
     # Initialize q
@@ -130,6 +132,6 @@ function driver(DT::ContGal,       #Space discretization type
     
     TD = RK5()
     BCT = DefaultBC()
-    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, neqns, inputs, BCT, OUTPUT_DIR, TFloat)
+    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, L, Nt, Δt, neqns, inputs, BCT, OUTPUT_DIR, TFloat)
 
 end
