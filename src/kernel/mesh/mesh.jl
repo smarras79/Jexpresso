@@ -468,7 +468,6 @@ if mesh.nsd == 2
     #
     labels = get_face_labeling(model)
     for ilabel in labels.tag_to_name
-        #@info "ilabel " ilabel
         edges_to_tag  = get_face_tag_index(labels,ilabel,EDGE_flg)
         idx_edges_inflow = findall( x -> x == 1, edges_to_tag)
         #    
@@ -483,8 +482,7 @@ if mesh.nsd == 2
         if isboundary_edge[iedge] == true
             for igl = 1:mesh.ngl
                 mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
-                mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
-                #@info iedge, mesh.edge_type[iedge]
+                mesh.bdy_edge_type[iedge_bdy] = "ciao" #mesh.edge_type[iedge]
             end
             iedge_bdy += 1
         end
@@ -508,6 +506,30 @@ if mesh.nsd == 2
     
 elseif mesh.nsd > 2
     nothing
+ #=   num_faces(topology, mesh.nsd)
+    get_cell_faces(topology)
+    
+    isboundary_face = compute_isboundary_face(topology, mesh.nsd-1)
+    @info  size(compute_isboundary_face(topology, mesh.nsd))
+    @info  size(compute_isboundary_face(topology, mesh.nsd-1))
+    @info  size(compute_isboundary_face(topology, mesh.nsd-2))
+    @info  size(compute_isboundary_face(topology, mesh.nsd-3))
+    iface_bdy = 1
+    for iface = 1:mesh.nfaces #total nedges
+        if isboundary_face[iface] == true
+            mesh.poin_in_bdy_face[iface_bdy, :, :] = mesh.poin_in_face[iface, :, :]
+            iface_bdy += 1
+        end
+    end
+
+    for iel = 1:mesh.nelem
+        for iface_bdy = 1:mesh.nfaces_bdy
+            if issubset(mesh.poin_in_bdy_face[iface_bdy, :, :], mesh.connijk[:, :, iel])
+                mesh.bdy_face_in_elem[iface_bdy] = iel
+            end
+        end
+    end
+    =#
 end
 
 #----------------------------------------------------------------------
