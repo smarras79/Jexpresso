@@ -3,7 +3,47 @@ include("../../kernel/globalStructs.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../io/plotting/jeplots.jl")
 
-function initialize(ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+
+    @info " Initialize fields for AdvDiff ........................ "
+    
+    neqs = 1
+    q = allocate_q(mesh.nelem, mesh.npoin, mesh.ngl, neqs)
+
+    σ = Float64(64.0)
+    for iel_g = 1:mesh.nelem
+        for i=1:mesh.ngl
+            
+            ip = mesh.connijk[i,iel_g]
+            x  = mesh.x[ip]
+            
+            q.qn[ip,1] = exp(-σ*x*x)
+            q.qe[ip,1] = q.qn[ip,1]
+            q.qn[ip,2] = 0.8 #constant
+            q.qnm1[ip,1] = q.qn[ip,1]                    
+        end
+    end
+
+    for ip=1:mesh.npoin
+        @printf( " IP%d: %f %f\n", ip, mesh.x[ip], q.qn[ip,1])
+    end
+    
+    #------------------------------------------
+    # Plot initial condition:
+    # Notice that I scatter the points to
+    # avoid sorting the x and q which would be
+    # becessary for a smooth curve plot.
+    #------------------------------------------
+    title = string( "Tracer: initial condition")
+    plot_curve(mesh.x, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
+    
+    @info " Initialize fields for AdvDiff ........................ DONE"
+    
+    return q
+end
+
+
+function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
     @info " Initialize fields for AdvDiff ........................ "
         

@@ -10,7 +10,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 3,     # Polynomial order
+        :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
@@ -20,11 +20,17 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh          => true, #If false, a 1D problem will be enforced
+        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
+        #---------------------------------------------------------------------------
+        # 1D (lread_gmsh => faluse): the grid is built by jexpresso
+        #---------------------------------------------------------------------------
+        :xmin          => -1.0,
+        :xmax          =>  1.0,
+        :nelx          =>   20,
         #---------------------------------------------------------------------------
         # Boundary conditions:
         #---------------------------------------------------------------------------
