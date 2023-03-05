@@ -38,6 +38,13 @@ Base.@kwdef mutable struct St_metrics{TFloat}
     Je  ::Array{TFloat} = zeros(1)
 end
 
+function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, T)
+    
+    metrics = St_metrics{T}(dxdξ = zeros(1))
+    
+    return metrics
+end
+
 
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, T)
     

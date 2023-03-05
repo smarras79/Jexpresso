@@ -1085,12 +1085,8 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ ")
     println(" # ...")
-
-    #Legendre = St_Legendre{Float64}(0.0, 0.0, 0.0, 0.0)
-    #lgl      = St_lgl{Float64}(zeros(mesh.nop+1),
-    #                           zeros(mesh.nop+1))
-    #build_lgl!(Legendre, lgl, mesh.nop)
-    lgl = basis_structs_ξ_ω!(ξT, mesh.nop)
+    
+    lgl = basis_structs_ξ_ω!(interpolation_nodes, mesh.nop)
     
     x1, x2 = Float64(0.0), Float64(0.0)    
     ξ::typeof(lgl.ξ[1]) = 0.0
@@ -1123,13 +1119,13 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
             
-            #mesh.conn[2 + iconn, iel_g] = ip #OK
             mesh.conn[l, iel_g] = ip #OK
             iconn = iconn + 1
             
             ip = ip + 1
         end
     end
+    mesh.connijk = copy(mesh.conn)
     
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
