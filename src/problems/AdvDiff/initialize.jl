@@ -23,10 +23,6 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
             q.qnm1[ip,1] = q.qn[ip,1]                    
         end
     end
-
-    for ip=1:mesh.npoin
-        @printf( " IP%d: %f %f\n", ip, mesh.x[ip], q.qn[ip,1])
-    end
     
     #------------------------------------------
     # Plot initial condition:
