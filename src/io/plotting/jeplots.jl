@@ -1,9 +1,26 @@
-#using Plots; gr()
-using PlotlyJS
+using Plots; plotlyjs()
 using LaTeXStrings
 using ColorSchemes
 
 include("../../kernel/mesh/mesh.jl")
+
+function plot_curve(x, y,  title::String, fout_name::String)
+    
+    default(titlefont=(14, "Arial, sans-serif"),
+            legendfontsize = 18,
+            guidefont = (18, :darkgreen),
+            tickfont = (12, :orange),
+            guide = "x",
+            framestyle = :zerolines, yminorgrid = true)
+    
+    data = scatter(x, y, title=title,
+                   markersize = 5, markercolor="Blue",
+                   xlabel = "x", ylabel = "q(x)",
+                   legend = :none)
+    
+    Plots.savefig(data, fout_name)
+    
+end
 
 function plot_error(x, y, title::String, legend_labels; yscale)
 
@@ -12,14 +29,6 @@ function plot_error(x, y, title::String, legend_labels; yscale)
     
     plot_curve!(x, y, title::String, xlabel, ylabel, legend_labels, yscale)
     
-end
-
-function plot_curve(ξ, ψ, title)
-    
-    plt = plot() #Clear plot
-    display(plot!(ξ, ψ, title = title, legend=false, lw = 3,
-                 xtickfontsize=16, ytickfontsize=16, reuse=false,
-                 xlabel="ξ",ylabel="ψ(ξ)"))
 end
 
 function scatter_curve(ξ, ψ, title)
@@ -67,7 +76,6 @@ function jcontour(x1, y1, z1, title::String, fout_name::String)
                             )
 
     layout = Layout(;title=title)
-    #display(PlotlyJS.plot(data, layout)) #WARNING aspect ratio doesn't seem to work
     PlotlyJS.savefig(PlotlyJS.plot(data, layout), fout_name)
     
 end
