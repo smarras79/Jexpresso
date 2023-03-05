@@ -46,116 +46,6 @@ function buildRKIntegrator!(RKtype::RK5, TFloat)
 
 end
 
-function rk!(q::St_SolutionVars,
-             RHSn,
-             RHSnm1,
-             RHSnm2;
-             TD,
-             SD,
-             QT,
-             PT,
-             mesh::St_mesh,
-             metrics::St_metrics,
-             basis, ω,
-             M, L, Δt,
-             neqns, 
-             inputs::Dict,
-             BCT,
-             time,
-             T)
-    
-    dq     = zeros(mesh.npoin, neqns)
-    RKcoef = buildRKIntegrator!(TD, T)
-    
-    for s = 1:length(RKcoef.a)
-        
-        #
-        # rhs[ngl,ngl,nelem]
-        #
-        rhs_el      = build_rhs(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω,
-                                mesh, metrics, T)
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω,
-                                     inputs[:νx], inputs[:νy], mesh, metrics, T)
-        apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
-        #
-        # RHS[npoin] = DSS(rhs)
-        #
-        for ieqn=1:neqns
-            RHSn = DSSijk_rhs(SD,
-                             rhs_el[:,:,:,ieqn], # + inputs[:δvisc]*rhs_diff_el[:,:,:,ieqn],
-                             mesh.connijk,
-                             mesh.nelem, mesh.npoin, mesh.nop,
-                              T)
-            RHSn = RHSn + inputs[:ν]*L*q.qn[:,ieqn]
-            divive_by_mass_matrix!(RHSn, M, QT)
-            
-            for I=1:mesh.npoin
-                dq[I, ieqn] = RKcoef.a[s]*dq[I, ieqn] + Δt*RHSn[I]
-                q.qn[I, ieqn] = q.qn[I, ieqn] + RKcoef.b[s]*dq[I, ieqn]
-            end
-            
-            #
-            # B.C.
-            #
-        end
-        apply_periodicity!(rhs_el,q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
-        
-    end #stages
-    
-end
-
-
-function bdf2!(q::St_SolutionVars,
-               RHSn,
-               RHSnm1,
-               RHSnm2;
-               TD,
-               SD,
-               QT,
-               PT,
-               mesh::St_mesh,
-               metrics::St_metrics,
-               basis, ω,
-               M, Δt,
-               neqns, 
-               inputs::Dict,
-               BCT,
-               time,
-               T)
-    
-    dq     = zeros(mesh.npoin, neqns)
-    RKcoef = buildRKIntegrator!(TD, T)
-    
-    #
-    # rhs[ngl,ngl,nelem]
-    #
-    rhs_el      = build_rhs(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω,
-                            mesh, metrics, T)
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω,
-                                 inputs[:νx], inputs[:νy], mesh, metrics, T)
-    
-    apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
-    #
-    # RHS[npoin] = DSS(rhs)
-    #
-    for ieqn=1:neqns
-        RHSn = DSSijk_rhs(SD,
-                         rhs_el[:,:,:,ieqn] ,# + inputs[:δvisc]*rhs_diff_el[:,:,:,ieqn],
-                         mesh.connijk,
-                         mesh.nelem, mesh.npoin, mesh.nop,
-                         T)
-        divive_by_mass_matrix!(RHSn, M, QT)
-
-        for ip = 1:mesh.npoin
-            q.qn[ip,ieqn] = (18.0*q.qn[ip,ieqn] - 9.0*q.qnm1[ip,ieqn] + 2.0*q.qnm2[ip,ieqn])/11.0 + (6.0*Δt/11.0)*(3.0*RHSn[ip,ieqn] - 3.0*RHSnm1[ip,ieqn] + RHSnm2[ip,ieqn])        end
-        
-        #
-        # B.C.
-        #
-    end
-    apply_periodicity!(rhs_el,q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
-    
-end
 
 
 function time_loop!(TD,
@@ -205,7 +95,8 @@ function time_loop!(TD,
             # becessary for a smooth curve plot.
             #------------------------------------------
             title = string( "Tracer: final solution at t=", t)
-            jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
+            #plot_curve(mesh.x, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
+            #jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
             it_diagnostics = it_diagnostics + 1
         end
         t = t0 + Δt
@@ -245,7 +136,8 @@ function time_loop!(TD,
             # becessary for a smooth curve plot.
             #------------------------------------------
             title = string( "Tracer: final solution at t=", t)
-            jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, "N.png"))
+            #jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, "N.png"))
+            #plot_curve(mesh.x, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
             
             it_diagnostics = it_diagnostics + 1
         end
@@ -256,6 +148,112 @@ function time_loop!(TD,
       
     #Plot final solution
     title = string( "Tracer: final solution at t=f", inputs[:tend])
-    jcontour(mesh.x, mesh.y, qp.qn[:,3], title, string(OUTPUT_DIR, "/END.png"))
+    #jcontour(mesh.x, mesh.y, qp.qn[:,3], title, string(OUTPUT_DIR, "/END.png"))
+    
+end
+
+
+function rk!(q::St_SolutionVars,
+             RHSn,
+             RHSnm1,
+             RHSnm2;
+             TD,
+             SD,
+             QT,
+             PT,
+             mesh::St_mesh,
+             metrics::St_metrics,
+             basis, ω,
+             M, L, Δt,
+             neqns, 
+             inputs::Dict,
+             BCT,
+             time,
+             T)
+    
+    dq     = zeros(mesh.npoin, neqns)
+    RKcoef = buildRKIntegrator!(TD, T)
+    
+    for s = 1:length(RKcoef.a)
+        
+        #
+        # rhs[ngl,ngl,nelem]
+        #
+        rhs_el      = build_rhs(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+        #apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
+        #
+        # RHS[npoin] = DSS(rhs)
+        #
+        for ieqn=1:neqns
+            RHSn = DSSijk_rhs(SD,
+                              rhs_el[:,:,:,ieqn], # + inputs[:δvisc]*rhs_diff_el[:,:,:,ieqn],
+                              mesh.connijk,
+                              mesh.nelem, mesh.npoin, mesh.nop,
+                              T)
+            RHSn = RHSn + inputs[:νx]*L*q.qn[:,ieqn]
+            divive_by_mass_matrix!(RHSn, M, QT)
+            
+            for I=1:mesh.npoin
+                dq[I, ieqn] = RKcoef.a[s]*dq[I, ieqn] + Δt*RHSn[I]
+                q.qn[I, ieqn] = q.qn[I, ieqn] + RKcoef.b[s]*dq[I, ieqn]
+            end
+            
+            #
+            # B.C.
+            #
+        end
+        #apply_periodicity!(rhs_el,q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
+        
+    end #stages
+    
+end
+
+
+function bdf2!(q::St_SolutionVars,
+               RHSn,
+               RHSnm1,
+               RHSnm2;
+               TD,
+               SD,
+               QT,
+               PT,
+               mesh::St_mesh,
+               metrics::St_metrics,
+               basis, ω,
+               M, Δt,
+               neqns, 
+               inputs::Dict,
+               BCT,
+               time,
+               T)
+    
+    dq     = zeros(mesh.npoin, neqns)
+    RKcoef = buildRKIntegrator!(TD, T)
+    
+    #
+    # rhs[ngl,ngl,nelem]
+    #
+    rhs_el      = build_rhs(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    
+    apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
+
+    #
+    # RHS[npoin] = DSS(rhs) ∀ equation
+    #
+    for ieqn=1:neqns
+        RHSn = DSSijk_rhs(SD,
+                         rhs_el[:,:,:,ieqn] ,# + inputs[:δvisc]*rhs_diff_el[:,:,:,ieqn],
+                         mesh.connijk,
+                         mesh.nelem, mesh.npoin, mesh.nop,
+                         T)
+        divive_by_mass_matrix!(RHSn, M, QT)
+
+        for ip = 1:mesh.npoin
+            q.qn[ip,ieqn] = (18.0*q.qn[ip,ieqn] - 9.0*q.qnm1[ip,ieqn] + 2.0*q.qnm2[ip,ieqn])/11.0 + (6.0*Δt/11.0)*(3.0*RHSn[ip,ieqn] - 3.0*RHSnm1[ip,ieqn] + RHSnm2[ip,ieqn])
+        end
+    end
+    apply_periodicity!(rhs_el,q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
     
 end
