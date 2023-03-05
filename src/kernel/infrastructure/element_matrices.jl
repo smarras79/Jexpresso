@@ -54,7 +54,7 @@ function build_element_matrices(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N
         for i=1:N+1
             el_matrices.M[i,iel] += Jac*ω[iq] #Store only the diagonal elements
             for iq=1:Q+1, j=1:N+1
-                    el_matrices.D[i,j,iel] += ω[iq]*ψ[i,iq]*dψdξ[j,iq] #Sparse
+                el_matrices.D[i,j,iel] += ω[iq]*ψ[i,iq]*dψdξ[j,iq] #Sparse
             end
         end
     end
@@ -102,13 +102,54 @@ end
 
 #
 # Element mass matrix
-# 
+#
+function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+
+    Me = St_ElMat{T}(zeros(N+1, mesh.nelem))
+    
+    for iel=1:mesh.nelem
+        Jac = mesh.Δx[iel]/2
+        
+        for i=1:N+1
+            Me[i,iel] += Jac*ω[i]
+        end
+    end
+    #show(stdout, "text/plain", Me)
+    
+    return Me
+    
+end
+
+function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+    
+    MN = N + 1
+    QN = Q + 1
+    
+    M = zeros((N+1), (N+1), mesh.nelem)
+    
+    for iel=1:mesh.nelem
+        for k = 1:QN
+            ωk = ω[k]*mesh.Δx[iel]
+            for i = 1:MN
+                ψik = ψ[i,k]
+                for j = 1:MN
+                    ψjk = ψ[j,k]
+                    M[i,j,iel] += ωk*ψik*ψjk
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", M)
+    
+    return M
+end
+
 function build_mass_matrix(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
     
-    M = zeros((N+1)^2, (N+1)^2, mesh.nelem)
+    Me = zeros((N+1)^2, (N+1)^2, mesh.nelem)
     
     for iel=1:mesh.nelem
         
@@ -126,7 +167,7 @@ function build_mass_matrix(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics,
                             for m = 1:MN
                                 J = m + (n - 1)*(N + 1)
                                 ψIK = ψ[m,k]*ψ[n,l]
-                                M[I,J,iel] = M[I,J,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
+                                Me[I,J,iel] += ωkl*Jkle*ψIK*ψJK #Sparse
                             end
                         end
                     end
@@ -134,39 +175,41 @@ function build_mass_matrix(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics,
             end
         end
     end
-    #show(stdout, "text/plain", M)
+    #show(stdout, "text/plain", Me)
     
-    return M
-end
-
-function build_mass_matrix(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, ω, mesh, metrics, N, Q, T)
-
-    MN = (N+1)^2
-    QN = MN
-    M = zeros((N+1)^2, mesh.nelem)
-    
-    for iel=1:mesh.nelem
-        
-        for i = 1:N+1
-            for j = 1:N+1
-
-                ωij  = ω[i]*ω[j]
-                Jije = metrics.Je[i, j, iel]
-
-                m = i + (j - 1)*(N + 1)
-                n = m
-                
-                M[m,iel] = M[m,iel] + ωij*Jije #Sparse
-            end
-        end
-    end
-    #show(stdout, "text/plain", M)
-    
-    return M
+    return Me
 end
 
 #
 # Element Laplace matrix
+#
+function build_laplace_matrix(SD::NSD_1D, MT::TensorProduct, _, dψ, ω, mesh, metrics, N, Q, T)
+    
+    MN = N + 1
+    QN = Q + 1
+    
+    L = zeros(MN, MN, mesh.nelem)
+    for iel=1:mesh.nelem
+        Jac = mesh.Δx[iel]/2.0
+        dξdx = 2.0/mesh.Δx[iel]
+        
+        for k = 1:QN
+            ωJk = ω[k]*Jac
+            
+            for i = 1:MN, j = 1:MN
+
+                dψik_dx = dψ[i,k]*dξdx
+                dψjk_dx = dψ[j,k]*dξdx
+                
+                L[i,j,iel] -= ωJk*(dψik_dx*dψjk_dx)
+            end
+        end
+    end
+    #@info size(L)
+    #show(stdout, "text/plain", L)
+    
+    return L
+end
 #
 function build_laplace_matrix(SD::NSD_2D, MT::TensorProduct, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
@@ -210,6 +253,7 @@ function build_laplace_matrix(SD::NSD_2D, MT::TensorProduct, ψ, dψ, ω, mesh, 
     
     return L
 end
+
 
 
 #
@@ -316,6 +360,21 @@ function DSSijk_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractAr
     return M
 end
 
+function DSSijk_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+    
+    M  = zeros(npoin)
+    for iel=1:nelem
+        for i = 1:N+1
+            I = conn[i,iel]
+            for j = 1:N+1
+                M[I] = M[I] + Mel[i,j,iel] #if inexact
+            end
+        end
+    end
+    #show(stdout, "text/plain", M)
+    return M
+end
+
 function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
     M  = zeros(npoin)
@@ -338,6 +397,23 @@ function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstract
     #show(stdout, "text/plain", M)
     return M
 end
+
+function DSSijk_laplace(SD::NSD_1D, Le::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+
+    L = zeros(npoin, npoin)    
+    for iel=1:nelem
+        for i=1:N+1
+            I = conn[i,iel]
+            for j=1:N+1
+                J = conn[j,iel]
+                L[I,J] = L[I,J] + Le[i,j,iel]                
+            end
+        end
+    end
+        
+    return L
+end
+
 
 function DSSijk_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
@@ -363,6 +439,22 @@ function DSSijk_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nel
     return L
 end
 
+function DSSijk_rhs(SD::NSD_1D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
+    
+    V  = zeros(T, npoin)
+    for iel = 1:nelem
+        for i = 1:N+1
+            I = conn[i,iel]
+            
+            V[I] = V[I] + Vel[i,iel]
+        end
+    end
+    #show(stdout, "text/plain", V)
+    return V
+end
+
+
+
 function DSSijk_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
     
     V  = zeros(T, npoin)
@@ -378,6 +470,7 @@ function DSSijk_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, 
     #show(stdout, "text/plain", V)
     return V
 end
+
 
 
 function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
