@@ -83,8 +83,15 @@ function driver(DT::ContGal,       #Space discretization type
         ξq  = ξ        
         ω   = ξω.ω
     end
-    SD = NSD_2D()
-    
+    if (mesh.nsd == 1)
+        SD = NSD_1D()
+    elseif (mesh.nsd == 2)
+        SD = NSD_2D()
+    elseif (mesh.nsd == 3)
+        SD = NSD_3D()
+    else
+        error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
+    end
     #--------------------------------------------------------
     # Build Lagrange polynomials:
     #
@@ -96,17 +103,9 @@ function driver(DT::ContGal,       #Space discretization type
     
     #--------------------------------------------------------
     # Build metric terms
-    #
-    # Return:
-    # dxdξ,dη[1:Q+1, 1:Q+1, 1:nelem]
-    # dydξ,dη[1:Q+1, 1:Q+1, 1:nelem]
-    # dzdξ,dη[1:Q+1, 1:Q+1, 1:nelem]
-    # dξdx,dy[1:Q+1, 1:Q+1, 1:nelem]
-    # dηdx,dy[1:Q+1, 1:Q+1, 1:nelem]
-    #      Je[1:Q+1, 1:Q+1, 1:nelem]
     #--------------------------------------------------------
     metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
-    
+        
     #--------------------------------------------------------
     # Build element mass matrix
     #
@@ -116,12 +115,12 @@ function driver(DT::ContGal,       #Space discretization type
     Me = build_mass_matrix(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     M  = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     Le = build_laplace_matrix(SD, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    L  = DSSijk_laplace(SD, Le,  mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    L  = DSSijk_laplace(SD, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = initialize(PT, mesh, inputs, OUTPUT_DIR, TFloat)
+    qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
@@ -129,9 +128,6 @@ function driver(DT::ContGal,       #Space discretization type
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
     
     # NOTICE add a function to find the mesh mininum resolution
-    
-    TD = RK5()
-    BCT = DefaultBC()
-    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, L, Nt, Δt, neqns, inputs, BCT, OUTPUT_DIR, TFloat)
+    time_loop!(RK5(), SD, QT, PT, mesh, metrics, basis, ω, qp, M, L, Nt, Δt, neqns, inputs, DefaultBC(), OUTPUT_DIR, TFloat)
 
 end
