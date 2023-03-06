@@ -22,23 +22,6 @@ function plot_curve(x, y,  title::String, fout_name::String)
     
 end
 
-function plot_error(x, y, title::String, legend_labels; yscale)
-
-    xlabel = "nop"
-    ylabel = "log10(ε)"
-    
-    plot_curve!(x, y, title::String, xlabel, ylabel, legend_labels, yscale)
-    
-end
-
-function scatter_curve(ξ, ψ, title)
-    
-    plt = plot() #Clear plot
-    display(scatter!(ξ, ψ, title = title, legend=false, lw = 3,
-                     xtickfontsize=16, ytickfontsize=16, reuse=false,
-                     xlabel="ξ",ylabel="ψ(ξ)"))
-end
-
 
 function plot_surf()
 
@@ -64,18 +47,37 @@ function plot_1d_grid(mesh::St_mesh)
 end
 
 #
-# Contours with PlotlyJS
+# Curves (1D) or Contours (2D) with PlotlyJS
 #
-function jcontour(x1, y1, z1, title::String, fout_name::String)
+function jcontour(SD::NSD_1D, x1, y1, _, title::String, fout_name::String)
     
-    data = PlotlyJS.contour(;z=z1, x=x1, y=y1,
-                            colorbar=attr(;title="",titleside="right",
-                                          titlefont=attr(;size=14,
-                                                         family="Arial, sans-serif")
-                                          )
-                            )
+    default(titlefont=(14, "Arial, sans-serif"),
+            legendfontsize = 18,
+            guidefont = (18, :darkgreen),
+            tickfont = (12, :orange),
+            guide = "x",
+            framestyle = :zerolines, yminorgrid = true)
+    
+    data = scatter(x1, y1, title=title,
+                   markersize = 5, markercolor="Blue",
+                   xlabel = "x", ylabel = "q(x)",
+                   legend = :none)
+    
+    Plots.savefig(data, fout_name)
+    
+end
 
-    layout = Layout(;title=title)
-    PlotlyJS.savefig(PlotlyJS.plot(data, layout), fout_name)
+
+function jcontour(SD::NSD_2D, x1, y1, z1, title::String, fout_name::String)
+    
+    data = PlotlyJS.contour(;z=z1, x=x1, y=y1)#,
+                            #colorbar=attr(;title="",titleside="right",
+                            #              titlefont=attr(;size=14,
+                            #                             family="Arial, sans-serif")
+                            #              )
+                            #)
+
+    #layout = Layout(;title=title)
+    PlotlyJS.savefig(PlotlyJS.plot(data), fout_name)
     
 end

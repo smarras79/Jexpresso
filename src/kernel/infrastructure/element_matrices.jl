@@ -198,10 +198,10 @@ function build_laplace_matrix(SD::NSD_1D, MT::TensorProduct, _, dψ, ω, mesh, m
             
             for i = 1:MN, j = 1:MN
 
-                dψik_dx = dψ[i,k]*dξdx
-                dψjk_dx = dψ[j,k]*dξdx
+                dψik_dx = dψ[i,k]
+                dψjk_dx = dψ[j,k]
                 
-                L[i,j,iel] -= ωJk*(dψik_dx*dψjk_dx)
+                L[i,j,iel] -= ωJk*(dψik_dx*dψjk_dx)*dξdx
             end
         end
     end
