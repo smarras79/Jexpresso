@@ -24,7 +24,7 @@ include("../../io/print_matrix.jl")
 
 include("../../kernel/abstractTypes.jl")
 include("../../kernel/globalStructs.jl")
-include("../../kernel/basis/basis_structs.jl")
+include("../../kernel/bases/basis_structs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
@@ -34,15 +34,15 @@ include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
-function driver(DT::CG,       #Space discretization type
-                inputs::Dict, #input parameters from src/user_input.jl
+function driver(DT::ContGal,       #Space discretization type
+                inputs::Dict,      #input parameters from src/user_input.jl
                 OUTPUT_DIR::String,
                 TFloat) 
 
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:problem]
-    nvars = inputs[:nvars]
+    neqns = inputs[:neqns]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -56,9 +56,10 @@ function driver(DT::CG,       #Space discretization type
     mesh = mod_mesh_mesh_driver(inputs)
     
     #--------------------------------------------------------
-    ND = build_nodal_Storage([Nξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
-    ξ  = ND.ξ.ξ
-    
+    # Build interpolation and quadrature points/weights
+    #--------------------------------------------------------
+    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)    
+    ξ,ω = ξω.ξ, ξω.ω
     if lexact_integration
         #
         # Exact quadrature:
@@ -68,10 +69,8 @@ function driver(DT::CG,       #Space discretization type
         QT_String = "Exact"
         Qξ  = Nξ + 1
         
-        NDQ = build_nodal_Storage([Qξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
-        ξq  = NDQ.ξ.ξ
-        ω   = NDQ.ξ.ω
-        
+        ξωQ   = basis_structs_ξ_ω!(inputs[:quadrature_nodes], mesh.nop)
+        ξq, ω = ξωQ.ξ, ξωQ.ω
     else  
         #
         # Inexact quadrature:
@@ -80,12 +79,19 @@ function driver(DT::CG,       #Space discretization type
         QT  = Inexact() #Quadrature Type
         QT_String = "Inexact"
         Qξ  = Nξ
-        NDQ = ND
-        ξq  = ξ
-        ω   = ND.ξ.ω
+        ξωq = ξω
+        ξq  = ξ        
+        ω   = ξω.ω
     end
-    SD = NSD_2D()
-    
+    if (mesh.nsd == 1)
+        SD = NSD_1D()
+    elseif (mesh.nsd == 2)
+        SD = NSD_2D()
+    elseif (mesh.nsd == 3)
+        SD = NSD_3D()
+    else
+        error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
+    end
     #--------------------------------------------------------
     # Build Lagrange polynomials:
     #
@@ -94,33 +100,27 @@ function driver(DT::CG,       #Space discretization type
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
-
+    
     #--------------------------------------------------------
     # Build metric terms
-    #
-    # Return:
-    # dxdξ,dη[1:Q+1, 1:Q+1, 1:nelem]
-    # dydξ,dη[1:Q+1, 1:Q+1, 1:nelem]
-    # dzdξ,dη[1:Q+1, 1:Q+1, 1:nelem]
-    # dξdx,dy[1:Q+1, 1:Q+1, 1:nelem]
-    # dηdx,dy[1:Q+1, 1:Q+1, 1:nelem]
-    #      Je[1:Q+1, 1:Q+1, 1:nelem]
     #--------------------------------------------------------
     metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
-    
+        
     #--------------------------------------------------------
     # Build element mass matrix
     #
     # Return:
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------    
-    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    Me = build_mass_matrix(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    M  = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    Le = build_laplace_matrix(SD, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    L  = DSSijk_laplace(SD, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = initialize(PT, mesh, inputs, OUTPUT_DIR, TFloat)
+    qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
@@ -128,8 +128,6 @@ function driver(DT::CG,       #Space discretization type
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
     
     # NOTICE add a function to find the mesh mininum resolution
-    
-    TD = RK5()
-    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, OUTPUT_DIR, TFloat)
-    
+    time_loop!(RK5(), SD, QT, PT, mesh, metrics, basis, ω, qp, M, L, Nt, Δt, neqns, inputs, DefaultBC(), OUTPUT_DIR, TFloat)
+
 end

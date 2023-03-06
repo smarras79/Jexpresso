@@ -27,7 +27,14 @@ struct NSD_3D <: AbstractSpaceDimensions end
 # Space discretization
 #
 abstract type AbstractDiscretization end
-struct CG <:  AbstractDiscretization end
+struct ContGal <: AbstractDiscretization end
+struct DiscGal <: AbstractDiscretization end
+
+abstract type AbstractPointsType end
+struct LG <: AbstractPointsType end
+struct LGL <: AbstractPointsType end
+struct CG <: AbstractPointsType end
+struct CGL <: AbstractPointsType end
 
 #
 # System of reference
@@ -51,3 +58,7 @@ struct RK5 <: AbstractTime end
 #
 abstract type AbstractBC end
 struct PERIODIC1D_CG <: AbstractBC end
+struct DefaultBC <: AbstractBC end
+struct LinearClaw_KopNR <: AbstractBC end
+struct LinearClaw_KopRefxmax <: AbstractBC end
+struct DirichletExample <: AbstractBC end

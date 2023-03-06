@@ -3,15 +3,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 1.5,
+        :tend                => 0.5,
         :Δt                  => 5e-4,
-        :diagnostics_interval=> 10, #these are steps, not seconds
+        :diagnostics_interval=> 100, #these are steps, not seconds
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
+        :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
+        :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
-        :nop                 => 12,      # Polynomila order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -20,26 +20,26 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_2x2.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_10x10.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_25x25.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_TFI_1x1.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_oneblock.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_UNSTR_coarse.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_UNSTR_refine.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_UNSTR_refine_coarse.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_oneblock-2x1x1.msh",
-        #:gmsh_filename       => "./demo/gmsh_grids/hexa_oneblock-1x1x1.msh",
+        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
+        #---------------------------------------------------------------------------
+        # 1D (lread_gmsh => faluse): the grid is built by jexpresso
+        #---------------------------------------------------------------------------
+        :xmin          =>  -1.0,
+        :xmax          =>   1.0,
+        :nelx          =>   20,
         #---------------------------------------------------------------------------
         # Boundary conditions:
         #---------------------------------------------------------------------------
-        :xmin_bc       => "periodic", #Use either dirichlet or periodic
-        :ymin_bc       => "periodic", #Use either dirichlet or periodic
-        :zmin_bc       => "periodic", #Use either dirichlet or periodic
-        :xmax_bc       => "periodic", #Use either dirichlet or periodic
-        :ymax_bc       => "periodic", #Use either dirichlet or periodic
-        :zmax_bc       => "periodic", #Use either dirichlet or periodic
+        :xmin_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :ymin_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :zmin_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :xmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :ymax_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :zmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
         :bc_exact_xmin => [0.0 0.0 0.0],
         :bc_exact_xmax => [0.0 0.0 0.0],
         :bc_exact_ymin => [0.0 0.0 0.0],

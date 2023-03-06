@@ -23,7 +23,7 @@ include("../../io/plotting/jeplots.jl")
 include("../../io/print_matrix.jl")
 
 include("../../kernel/abstractTypes.jl")
-include("../../kernel/basis/basis_structs.jl")
+include("../../kernel/bases/basis_structs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")

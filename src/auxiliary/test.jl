@@ -10,7 +10,7 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
-include("./basis/basis_structs.jl")
+include("./bases/basis_structs.jl")
 include("./IO/mod_inputs.jl")
 include("./operators/operators.jl")
 include("./Infrastructure/2D_3D_structures.jl")
