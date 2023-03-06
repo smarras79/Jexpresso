@@ -49,7 +49,7 @@ end
 #
 # Curves (1D) or Contours (2D) with PlotlyJS
 #
-function jcontour(SD::NSD_1D, x1, y1, _, title::String, fout_name::String)
+function jcontour(SD::NSD_1D, x1, _, z1, title::String, fout_name::String)
     
     default(titlefont=(14, "Arial, sans-serif"),
             legendfontsize = 18,
@@ -58,7 +58,7 @@ function jcontour(SD::NSD_1D, x1, y1, _, title::String, fout_name::String)
             guide = "x",
             framestyle = :zerolines, yminorgrid = true)
     
-    data = scatter(x1, y1, title=title,
+    data = scatter(x1, z1, title=title,
                    markersize = 5, markercolor="Blue",
                    xlabel = "x", ylabel = "q(x)",
                    legend = :none)
