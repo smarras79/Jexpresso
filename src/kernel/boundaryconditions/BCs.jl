@@ -17,7 +17,20 @@ include("../mesh/mesh.jl")
 
 
 function apply_periodicity!(rhs,qp,mesh,inputs, SD::NSD_1D,QT,metrics,ψ,dψ, ω,t,BCT,nvars)
-    nothing
+    
+    if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="periodic" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="periodic")
+        #
+        # B.C.: 1D periodic
+        #
+        qp[mesh.npoin_linear,:] .= 0.5*(qp[mesh.npoin_linear,:] .+ qp[1,:])
+        qp[1,:] .= qp[mesh.npoin_linear,:]
+    elseif (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="dirichlet" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="dirichlet")
+        #
+        # B.C.: solid wall
+        #
+        qp[1] = 0.0
+        qp[mesh.npoin_linear] = 0.0
+    end
 end
 
 function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_1D,QT,metrics,ψ,dψ, ω,t,BCT,nvars)
