@@ -95,8 +95,7 @@ function time_loop!(TD,
             # becessary for a smooth curve plot.
             #------------------------------------------
             title = string( "Tracer: final solution at t=", t)
-            #plot_curve(mesh.x, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
-            #jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
+            jcontour(SD, mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
             it_diagnostics = it_diagnostics + 1
         end
         t = t0 + Δt
@@ -136,9 +135,8 @@ function time_loop!(TD,
             # becessary for a smooth curve plot.
             #------------------------------------------
             title = string( "Tracer: final solution at t=", t)
-            #jcontour(mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, "N.png"))
-            #plot_curve(mesh.x, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
-            
+            jcontour(SD, mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, "N.png"))
+
             it_diagnostics = it_diagnostics + 1
         end
         t = t0 + Δt
@@ -181,7 +179,8 @@ function rk!(q::St_SolutionVars,
         #
         rhs_el      = build_rhs(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω, mesh, metrics, T)
         rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-        #apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
+        
+        apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
         #
         # RHS[npoin] = DSS(rhs)
         #
@@ -203,7 +202,7 @@ function rk!(q::St_SolutionVars,
             # B.C.
             #
         end
-        #apply_periodicity!(rhs_el,q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
+        apply_periodicity!(rhs_el,q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
         
     end #stages
     

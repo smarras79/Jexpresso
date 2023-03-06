@@ -16,7 +16,14 @@ include("../mesh/metric_terms.jl")
 include("../mesh/mesh.jl")
 
 
+function apply_periodicity!(rhs,qp,mesh,inputs, SD::NSD_1D,QT,metrics,ψ,dψ, ω,t,BCT,nvars)
+    nothing
+end
 
+function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_1D,QT,metrics,ψ,dψ, ω,t,BCT,nvars)
+    nothing
+end
+    
 function apply_periodicity!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ,dψ, ω,t,BCT,nvars)
    #Periodic boundaries
    if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="periodic" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="periodic")
