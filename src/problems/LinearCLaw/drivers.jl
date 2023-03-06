@@ -17,7 +17,6 @@ include("../AbstractProblems.jl")
 
 include("./rhs.jl")
 include("./initialize.jl")
-include("./timeLoop.jl")
 
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
@@ -25,7 +24,7 @@ include("../../io/print_matrix.jl")
 
 include("../../kernel/abstractTypes.jl")
 include("../../kernel/globalStructs.jl")
-include("../../kernel/basis/basis_structs.jl")
+include("../../kernel/bases/basis_structs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
@@ -37,13 +36,14 @@ include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::CG,       #Space discretization type
                 inputs::Dict, #input parameters from src/user_input.jl
+                OUTPUT_DIR::String,
                 TFloat) 
 
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:problem]
     nvars = inputs[:nvars]
-        
+    
     #--------------------------------------------------------
     # Create/read mesh
     # return mesh::St_mesh
@@ -114,13 +114,13 @@ function driver(DT::CG,       #Space discretization type
     # Return:
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------    
-    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)   
+    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = initialize(PT, mesh, inputs, TFloat)
+    qp = initialize(PT, mesh, inputs, OUTPUT_DIR, TFloat)
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
@@ -130,8 +130,8 @@ function driver(DT::CG,       #Space discretization type
     # NOTICE add a function to find the mesh mininum resolution
     
     TD = RK5()
-    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, TFloat)
-
-    return    
+    #BCT = LinearClaw_KopNR()
+    BCT = LinearClaw_KopRefxmax()
+    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, BCT, OUTPUT_DIR, TFloat)
     
 end

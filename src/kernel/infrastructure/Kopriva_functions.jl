@@ -1,4 +1,4 @@
-include("../basis/basis_structs.jl")
+include("../bases/basis_structs.jl")
 include("../../io/plotting/jeplots.jl")
 
 

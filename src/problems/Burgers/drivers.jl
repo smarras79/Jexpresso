@@ -2,6 +2,7 @@
 # external packages
 #--------------------------------------------------------
 using Crayons.Box
+using PrettyTables
 using Revise
 using WriteVTK
 
@@ -16,13 +17,13 @@ include("../AbstractProblems.jl")
 
 include("./rhs.jl")
 include("./initialize.jl")
-include("./timeLoop.jl")
 
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
 include("../../io/print_matrix.jl")
 
 include("../../kernel/abstractTypes.jl")
+include("../../kernel/globalStructs.jl")
 include("../../kernel/bases/basis_structs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
@@ -33,13 +34,15 @@ include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
-function driver(DT::CG,        #Space discretization type
-                PT::Wave1D,    #Equation subtype
-                inputs::Dict,  #input parameters from src/user_input.jl
+function driver(DT::CG,       #Space discretization type
+                inputs::Dict, #input parameters from src/user_input.jl
+                OUTPUT_DIR::String,
                 TFloat) 
-    
+
     Nξ = inputs[:nop]
-    lexact_integration = inputs[:lexact_integration]
+    lexact_integration = inputs[:lexact_integration]    
+    PT    = inputs[:problem]
+    nvars = inputs[:nvars]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -51,7 +54,7 @@ function driver(DT::CG,        #Space discretization type
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-        
+    
     #--------------------------------------------------------
     ND = build_nodal_Storage([Nξ], LGL_1D(), NodalGalerkin()) # --> ξ <- ND.ξ.ξ
     ξ  = ND.ξ.ξ
@@ -80,10 +83,9 @@ function driver(DT::CG,        #Space discretization type
         NDQ = ND
         ξq  = ξ
         ω   = ND.ξ.ω
-    end 
+    end
+    SD = NSD_2D()
     
-    SD = NSD_1D()
-     
     #--------------------------------------------------------
     # Build Lagrange polynomials:
     #
@@ -93,74 +95,41 @@ function driver(DT::CG,        #Space discretization type
     #--------------------------------------------------------
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
 
-    MT = COVAR() #Metric type: COVAR or CNVAR
-    mestrics = build_metric_terms(SD, MT, mesh, basis, Nξ, Qξ, ξ, TFloat)
-   
+    #--------------------------------------------------------
+    # Build metric terms
+    #
+    # Return:
+    # dxdξ,dη[1:Q+1, 1:Q+1, 1:nelem]
+    # dydξ,dη[1:Q+1, 1:Q+1, 1:nelem]
+    # dzdξ,dη[1:Q+1, 1:Q+1, 1:nelem]
+    # dξdx,dy[1:Q+1, 1:Q+1, 1:nelem]
+    # dηdx,dy[1:Q+1, 1:Q+1, 1:nelem]
+    #      Je[1:Q+1, 1:Q+1, 1:nelem]
+    #--------------------------------------------------------
+    metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
     
     #--------------------------------------------------------
     # Build element mass matrix
     #
     # Return:
-    # el_mat.M[iel, i, j] <-- if exact (full)
-    # el_mat.M[iel, i]    <-- if inexact (diagonal)
-    # el_mat.D[iel, i, j] <-- either exact (full) OR inexact (sparse)
+    # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
+    #--------------------------------------------------------    
+    Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    
     #--------------------------------------------------------
-    el_mat    = build_element_matrices!(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
-    
-    #show(stdout, "text/plain", mesh.conn)
-    (M, Minv) = DSS(SD, QT,      el_mat.M, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    (D, ~)    = DSS(SD, Exact(), el_mat.D, mesh.conn, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    
-    #Initialize q
-    q = initialize(Wave1D(), mesh, inputs, TFloat)
-
-    dq   = zeros(mesh.npoin);   
-    qp   = copy(q.qn)
-    
-    #Plot I.C.
-    plt1 = plot(mesh.x, q.qn, seriestype = :scatter,  title="Initial", reuse = false)
-    display(plt1)
+    # Initialize q
+    #--------------------------------------------------------
+    qp = initialize(PT, mesh, inputs, OUTPUT_DIR, TFloat)
     
     Δt = inputs[:Δt]
-    C = 0.25
-    u = 2.0
-    Δt = C*u*minimum(mesh.Δx)/mesh.nop
-    Nt = floor((inputs[:tend] - inputs[:tinit])/Δt)
+    CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
+    println(" # CFL = ", CFL)    
+    Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
     
-    #
-    # ALGO 5.6 FROM GIRALDO: GLOBAL VERSION WITH SOLID-WALL B.C. AS A FIRST TEST
-    #
-    plt2 = scatter() #Clear plot
+    # NOTICE add a function to find the mesh mininum resolution
     
-    RK = RK_Integrator{TFloat}(zeros(TFloat,5),zeros(TFloat,5),zeros(TFloat,5))
-    buildRK5Integrator!(RK)
-    for it = 1:Nt
-        
-        dq = zeros(mesh.npoin);
-        qe = zeros(mesh.ngl);
-        for s = 1:length(RK.a)
-            
-            #
-            # RHS
-            #
-            rhs = build_rhs(SD, QT, Wave1D(), mesh, metrics, M, el_mat, u*qp)
-
-            for I=1:mesh.npoin
-                dq[I] = RK.a[s]*dq[I] + Δt*rhs[I]
-                qp[I] = qp[I] + RK.b[s]*dq[I]
-            end
-
-            #
-            # B.C.: solid wall
-            #
-            qp[1] = 0.0
-            qp[mesh.npoin_linear] = 0.0
-
-        end #stages
-
-        title = string("Solution for N=", Nξ, " & ", QT_String, " integration")
-        plt2 = scatter(mesh.x, qp,  title=title)
-        display(plt2)
-    end
-
+    TD = RK5()
+    time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, OUTPUT_DIR, TFloat)
+    
 end

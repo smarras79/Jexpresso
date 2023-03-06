@@ -1,6 +1,6 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.8.3"
+julia_version = "1.8.5"
 manifest_format = "2.0"
 project_hash = "6c36fc600e533f443ce2defbebca6e0d63a4fa8d"
 
@@ -252,7 +252,7 @@ version = "3.46.0"
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-version = "0.5.2+0"
+version = "1.0.1+0"
 
 [[deps.CompositeTypes]]
 git-tree-sha1 = "02d2316b7ffceff992f3096ae48c7829a8aa0638"
@@ -1762,9 +1762,9 @@ version = "0.6.6"
 
 [[deps.WriteVTK]]
 deps = ["Base64", "CodecZlib", "FillArrays", "LightXML", "TranscodingStreams"]
-git-tree-sha1 = "bff2f6b5ff1e60d89ae2deba51500ce80014f8f6"
+git-tree-sha1 = "f50c47d715199601a54afdd5267f24c8174842ae"
 uuid = "64499a7a-5c06-52f2-abe2-ccb03c286192"
-version = "1.14.2"
+version = "1.16.0"
 
 [[deps.XML2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libiconv_jll", "Pkg", "Zlib_jll"]

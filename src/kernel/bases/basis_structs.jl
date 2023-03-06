@@ -1,12 +1,23 @@
 #
 # This file contains all the structs definitions
 # S. Marras, Feb 2022
-# 
+#
+include("../abstractTypes.jl")
+
 export St_Lagrange
 export St_Legendre
 export St_lgl
+export St_lg
+export St_cg
 export build_lgl!
 export LegendreGaussLobattoNodesAndWeights
+
+
+abstract type AbstractIntegrationPointAndWeights end
+abstract type AbstractInterpolationBasis end
+abstract type AbstractSpaceDimensions end
+
+struct LagrangeBasis <: AbstractInterpolationBasis end
 
 mutable struct St_Legendre{TFloat}
     
@@ -24,15 +35,6 @@ mutable struct St_Legendre{TFloat}
     q         :: TFloat
     dq        :: TFloat
 end
-
-abstract type AbstractIntegrationPointAndWeights end
-abstract type AbstractInterpolationBasis end
-abstract type AbstractSpaceDimensions end
-
-struct LagrangeBasis <: AbstractInterpolationBasis end
-struct NSD_1D <: AbstractSpaceDimensions end
-struct NSD_2D <: AbstractSpaceDimensions end
-struct NSD_3D <: AbstractSpaceDimensions end
 
 mutable struct St_Chebyshev{TFloat} <:AbstractIntegrationPointAndWeights
     chebyshev ::TFloat
@@ -63,6 +65,50 @@ mutable struct St_Lagrange{TFloat} <:AbstractInterpolationBasis
     dψ::Matrix{TFloat}
 end
 
+function basis_structs_ξ_ω!(::AbstractPointsType, nop::TInt) end
+
+function basis_structs_ξ_ω!(ξωtype::LG, nop::TInt)
+    
+    lg = St_lg{TFloat}(zeros(TFloat, nop+1),
+                       zeros(TFloat, nop+1))
+    
+    build_Integration_points!(lg, nop)
+
+    return lg
+end
+
+function basis_structs_ξ_ω!(ξωtype::LGL, nop::TInt)
+    
+    lgl = St_lgl{TFloat}(zeros(TFloat, nop+1),
+                         zeros(TFloat, nop+1))
+    
+    build_Integration_points!(lgl, nop)
+
+    return lgl
+end
+
+function basis_structs_ξ_ω!(ξωtype::CG, nop::TInt)
+    
+    cg = St_cg{TFloat}(zeros(TFloat, nop+1),
+                       zeros(TFloat, nop+1))
+    
+    build_Integration_points!(cg, nop)
+
+    return cg
+end
+
+
+function basis_structs_ξ_ω!(ξωtype::CGL, nop::TInt)
+    
+    cgl = St_cgl{TFloat}(zeros(TFloat, nop+1),
+                         zeros(TFloat, nop+1))
+    
+    build_Integration_points!(cgl, nop)
+
+    return cgl
+end
+
+
 function build_Integration_points!(::AbstractIntegrationPointAndWeights,nop::TInt) end
  
 function build_Integration_points!(cg::St_cg, nop::TInt)
@@ -90,7 +136,7 @@ function build_Interpolation_basis!(TP::LagrangeBasis, ξ, ξq, T::Type{Float64}
 
     N  = (Nξ + 1)
     Q  = (Qξ + 1)
-    @info N, Q
+    
     basis = St_Lagrange{T}(zeros(N,Q), zeros(N,Q))
     (basis.ψ, basis.dψ) = LagrangeInterpolatingPolynomials_classic(ξ, ξq, T)
     
@@ -128,22 +174,39 @@ end
 
 
 function build_cg!(cg::St_cg, nop::TInt)
+    
+    println(" # Compute Chebyshev-Gauss nodes ........................ ")
     size::Int8=nop+1
     cg.ξ = zeros(Float64, size)
     cg.ω = zeros(Float64, size)
 
     #CG nodes
     ChebyshevGaussNodesAndWeights!(cg,nop)
+    
+    for j=1:size
+        println( " # ξ cheby, ω =: ", " ", cg.ξ[j], " " , cg.ω[j])
+    end
+
+    println(" # Compute Chebyshev-Gauss nodes ........................ DONE")
     return cg
 end
 
 function build_cgl!(cgl::St_cgl, nop::TInt)
+    
+    println(" # Compute Chebyshev-Gauss-Lobatto nodes ........................ ")
+    
     size::Int8=nop+1
     cgl.ξ = zeros(Float64, size)
     cgl.ω = zeros(Float64, size)
 
     #CGL nodes
     ChebyshevGaussLobattoNodesAndWeights!(cgl,nop)
+    
+    for j=1:size        
+        println( " # ξ cheby, ω =: ", " ", cgl.ξ[j], " " , cgl.ω[j])
+    end
+    
+    println(" # Compute Chebyshev-Gauss-Lobatto nodes ........................ DONE")
     return cgl
 end
 
@@ -153,12 +216,13 @@ function build_lg!(Legendre::St_Legendre,lg::St_lg,nop)
     lg.ω = zeros(Float64, size)
 
     #LG nodes
-    LegendreGaussNodesAndWeights(Legendre,lg,nop)
+    LegendreGaussNodesAndWeights!(Legendre,lg,nop)
     return lg
 end
-function ChebyshevGaussNodesAndWeights!(cg::St_lg, nop::TInt)
+
+function ChebyshevGaussNodesAndWeights!(cg::St_cg, nop::TInt)
     """
-         Compute the Nodes for the Chebyshev Gauss Quadrature
+         Compute the Nodes for the Chebyshev-Gauss Quadrature
          using Algorithm 26 of Kopriva's book 
       """
     for j=0:nop
@@ -168,6 +232,10 @@ function ChebyshevGaussNodesAndWeights!(cg::St_lg, nop::TInt)
 end
 
 function ChebyshevGaussLobattoNodesAndWeights!(cgl::St_cgl,nop::TInt)
+    """
+         Compute the Nodes for the Chebyshev-Gauss-Lobatto Quadrature
+         using Algorithm 26 of Kopriva's book 
+      """
     for j=0:nop
         cgl.ξ[j+1]=-cospi(j/nop)
         cgl.ω[j+1]=π/nop
@@ -179,9 +247,11 @@ end
 
 function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop::TInt)
     """
-          Compute the Nodes and Weights for the Legendre Gauss Quadrature
+          Compute the Nodes and Weights for the Legendre-Gauss Quadrature
           using Algorithm 23 of Kopriva's book valid for nop ≤  200
-       """
+    """
+
+    println( " # Compute LG nodes ........................")
     NITER = 100
     TOL = 4*eps(Float64)
     Δ::Float64=0.0
@@ -212,13 +282,24 @@ function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop::TI
     end
     if (mod(nop,2) == 0)
         LegendreAndDerivativeAndQ!(Legendre, nop+1, 0.0)
-        lg.ξ[Tint(nop/2)] = 0
-        lg.ω[Tint(nop/2)] = 2/Legendre.dlegendre^2
+        lg.ξ[TInt(nop/2)+1] = 0
+        lg.ω[TInt(nop/2)+1] = 2/Legendre.dlegendre^2
     end
+
+    
+    for j=1:nop+1       
+        println( " # ξ, ω =: ", " ", lg.ξ[j], " " , lg.ω[j])
+    end
+    
+    println(" # Compute LG nodes ........................ DONE")
+    
 end
 
 function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl, nop::TInt)
-    
+     """
+          Compute the Nodes and Weights for the Legendre-Gauss-Lobatto Quadrature
+     """
+
     NITER = 100
     TOL = 4*eps()
     
@@ -235,7 +316,7 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
     
     Δ  ::Float64=0.0
     
-    println( " #    LegendreGaussLobattoNodesAndWeights!...................")
+    println( " # Compute LGL nodes ........................")
     
     for j=1:nop+1
 	lgl.ξ[j] = 0.0;
@@ -297,9 +378,10 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
     end
 
     for j=1:nop+1       
-        println( " #   ξ, ω =: ", " ", lgl.ξ[j], " " , lgl.ω[j])
+        println( " # ξ, ω =: ", " ", lgl.ξ[j], " " , lgl.ω[j])
     end
-    println( " #    LegendreGaussLobattoNodesAndWeights!.............. DONE")
+    
+    println(" # Compute LGL nodes ........................ DONE")
     
 end
 
@@ -327,59 +409,59 @@ function LegendreAndDerivativeAndQ!(Legendre::St_Legendre, nop::TInt, x::TFloat)
     
     a   ::TFloat=0.0
     b   ::TFloat=0.0
-    L   ::TFloat=0.0
-    dL  ::TFloat=0.0
-    Lp1 ::TFloat=0.0
-    dLp1::TFloat=0.0
-    Lm1 ::TFloat=0.0
-    dLm1::TFloat=0.0
-    Lm2 ::TFloat=0.0
-    dLm2::TFloat=0.0
+    ϕ   ::TFloat=0.0
+    dϕ  ::TFloat=0.0
+    ϕp1 ::TFloat=0.0
+    dϕp1::TFloat=0.0
+    ϕm1 ::TFloat=0.0
+    dϕm1::TFloat=0.0
+    ϕm2 ::TFloat=0.0
+    dϕm2::TFloat=0.0
     
     
-    #st_legendre Legendre;
-    
+    #st_legendre Legendre;  
     if (nop == 0) #Order 0 case
-	Legendre.legendre  = 1.0
-	Legendre.dlegendre = 0.0
-        Legendre.q = x
-        Legendre.dq = 1.0
+        ϕ    = 1.0
+        dϕ   = 0.0
+        q    = x
+        dq   = 1.0
     elseif (nop == 1)
-	Legendre.legendre  = x
-	Legendre.dlegendre = 1.0
-        Legendre.q = 0.5*(3*x^2-2)-1
-        Legendre.dq = 3*x
+        ϕ    = x
+        dϕ   = 1.0
+        q    = 0.5*(3*x^2 - 2) - 1
+        dq   = 3*x
     else
-	Lm2  = 1.0
-	Lm1  = x
-	dLm2 = 0.0
-	dLm1 = 1.0
-	
-	#Construct Nth Order Legendre Polynomial
-	for k=2:nop
-            
-	    a = TFloat((2.0*k - 1.0)/k)
-	    b = TFloat((k - 1.0)/k)
-            
-	    L  = a*x*Lm1 - b*Lm2
-	    dL = dLm2 + (2.0*k - 1.0)*Lm1
-	    
-	    a = TFloat((2.0*(k+1) - 1.0)/(k+1))
-	    b = TFloat((k+1 - 1.0)/(k+1))
-	    Lp1  = a*x*L - b*Lm1
-	    dLp1 = dLm1 + (2.0*k - 1.0)*L
-	    
-	    Lm2 = Lm1
-	    Lm1 = L
+        ϕm2  = 1.0
+	ϕm1  = x
+	dϕm2 = 0.0
+	dϕm1 = 1.0
 
-	    dLm2 = dLm1
-	    dLm1 = dL
+        #Construct Nth Order Legendre Polynomial
+	for k=2:nop
+             
+            ϕ    = x*ϕm1*(2.0*k - 1.0)/k - ϕm2*(k - 1.0)/k
+	    dϕ   = dϕm2 + (2.0*k - 1.0)*ϕm1
+	    
+	    ϕp1  = x*ϕ*(2.0*k + 1.0)/(k+1) - ϕm1*k/(k+1)
+	    dϕp1 = dϕm1 + (2.0*k - 1.0)*ϕ
+            
+            q  =  ϕp1 -  ϕm1
+            dq = dϕp1 - dϕm1
+            
+	    ϕm2 = ϕm1
+	    ϕm1 = ϕ
+
+	    dϕm2 = dϕm1
+	    dϕm1 = dϕ
+            
 	end
-        Legendre.legendre = L
-        Legendre.dlegendre = dL
-        Legendre.q = Lp1 - Lm2
-        Legendre.dq = dLp1 - dLm2
     end
+    
+    Legendre.legendre  =  ϕ
+    Legendre.dlegendre = dϕ
+    Legendre.q         =  q
+    Legendre.dq        = dq
+    
 end
 
 function ChebyshevPolynomial!(Chebyshev::St_Chebyshev,nop::TInt,x::TFloat,Ks::TInt)
@@ -411,11 +493,9 @@ function ChebyshevPolynomial!(Chebyshev::St_Chebyshev,nop::TInt,x::TFloat,Ks::TI
         Chebyshev.chebyshev = T
     end
 end
-function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
-
 
 """
-    LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
+    LagrangeInterpolatingPolynomials_classic(ξ, ξq, N, Q, TFloat)
     ξ::set of N interpolation points (e.g. LGL points)
     ξq::point to interpolate to (e.g. quadrature points of points within the element)
     
@@ -424,6 +504,8 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
     from https://github.com/fxgiraldo/Element-based-Galerkin-Methods/blob/master/Projects/Project_01_1D_Interpolation/For_Instructors/julia/lagrange_basis.jl
 
 """
+function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
+
     N = size(ξ,1) - 1
     Q = size(ξq,1) - 1
     

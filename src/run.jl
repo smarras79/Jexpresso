@@ -33,7 +33,7 @@ inputs, nvars = mod_inputs_user_inputs!(problem_name, problem_dir)
 #--------------------------------------------------------
 #Create output directory if it doesn't exist:
 #--------------------------------------------------------
-OUTPUT_DIR = string(dirname(@__DIR__()), "/src/", problem_dir, "/", problem_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS"))
+OUTPUT_DIR = string(dirname(@__DIR__()), "/src/", problem_dir, "/", problem_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS/"))
 if !isdir(OUTPUT_DIR)
     mkdir(OUTPUT_DIR)
 end
@@ -44,7 +44,7 @@ end
 # !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
 # !!!!!!
 #--------------------------------------------------------
-driver(CG(),   # Space discretization type    
+driver(ContGal(),   # Space discretization type    
        inputs, # input parameters from src/user_input.jl
        OUTPUT_DIR,
        TFloat)
