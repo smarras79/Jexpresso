@@ -26,9 +26,6 @@ julia --project=. $JEXPRESSO_HOME/src/run.jl PROBLEM_NAME
 Currently available problem names:
 
 * AdvDiff
-* LinearCLaw
-
-
 
 ## Plotting
 For plotting we rely on `PlotlyJS`. If you want to use a different package,
