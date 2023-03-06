@@ -6,7 +6,7 @@ If you are interested in contributing, please get in touch.
 # Some notes on using JEXPRESSO
 
 To install and run the code assume Julia
-version 1.7.2.
+version 1.7.2 or higher (tested up to 1.8.5)
 
 The [MPI.jl][0] package that is used assumes that you have a working MPI installation
 
