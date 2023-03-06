@@ -70,14 +70,8 @@ end
 
 function jcontour(SD::NSD_2D, x1, y1, z1, title::String, fout_name::String)
     
-    data = PlotlyJS.contour(;z=z1, x=x1, y=y1)#,
-                            #colorbar=attr(;title="",titleside="right",
-                            #              titlefont=attr(;size=14,
-                            #                             family="Arial, sans-serif")
-                            #              )
-                            #)
-
-    #layout = Layout(;title=title)
+    data = PlotlyJS.contour(;z=z1, x=x1, y=y1)
+    
     PlotlyJS.savefig(PlotlyJS.plot(data), fout_name)
     
 end
