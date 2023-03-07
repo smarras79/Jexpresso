@@ -7,7 +7,7 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("../../io/mod_inputs.jl")
 include("../operators/operators.jl")
-include("../AbstractTypes.jl")
+include("../abstractTypes.jl")
 include("../bases/basis_structs.jl")
 include("../infrastructure/element_matrices.jl")
 include("../infrastructure/Kopriva_functions.jl")
@@ -24,6 +24,7 @@ function apply_periodicity!(rhs,qp,mesh,inputs, SD::NSD_1D,QT,metrics,ψ,dψ, ω
         #
         qp[mesh.npoin_linear,:] .= 0.5*(qp[mesh.npoin_linear,:] .+ qp[1,:])
         qp[1,:] .= qp[mesh.npoin_linear,:]
+                                              
     elseif (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="dirichlet" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="dirichlet")
         #
         # Dirichlet q(1,t) = q(mesh.npoin_linear,t) = 0.0
