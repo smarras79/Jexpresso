@@ -66,9 +66,7 @@ function time_loop!(TD,
     it = 0
     t  = inputs[:tinit]
     t0 = t
-
     
-
     plot_at_times = [0.25, 0.5, 1.0, 1.5]    
    
     it_interval = inputs[:diagnostics_interval]
@@ -94,7 +92,7 @@ function time_loop!(TD,
             # avoid sorting the x and q which would be
             # becessary for a smooth curve plot.
             #------------------------------------------
-            title = string( "Tracer: final solution at t=", t)
+            title = @sprintf("Tracer: final solution at t=%6.4f", t)
             jcontour(SD, mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, ".png"))
             it_diagnostics = it_diagnostics + 1
         end
@@ -134,8 +132,8 @@ function time_loop!(TD,
             # avoid sorting the x and q which would be
             # becessary for a smooth curve plot.
             #------------------------------------------
-            title = string( "Tracer: final solution at t=", t)
-            jcontour(SD, mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, "N.png"))
+            title = @sprintf( "Tracer: final solution at t=%6.4f", t)
+            jcontour(SD, mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it.", it_diagnostics, "N.pdf"))
 
             it_diagnostics = it_diagnostics + 1
         end
@@ -145,7 +143,7 @@ function time_loop!(TD,
     end
       
     #Plot final solution
-    title = string( "Tracer: final solution at t=f", inputs[:tend])
+    title = title = @sprintf( "Tracer: final solution at t=%6.4f", inputs[:tend])
     #jcontour(mesh.x, mesh.y, qp.qn[:,3], title, string(OUTPUT_DIR, "/END.png"))
     
 end
