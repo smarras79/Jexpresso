@@ -1,7 +1,17 @@
 using Dates
+using Revise
 
 const TInt   = Int64
 const TFloat = Float64
+
+#--------------------------------------------------------
+# USER INPUT ARGUMENT:
+#--------------------------------------------------------
+problem_name = "advdiff"
+#--------------------------------------------------------
+# END USER INPUT ARGUMENT:
+#--------------------------------------------------------
+
 
 #--------------------------------------------------------
 # The problem name is a command line argument:
@@ -16,6 +26,13 @@ const TFloat = Float64
 # then `AdvDiff` should be your problem name that is passed to jexpresso from
 # the command line.
 #--------------------------------------------------------
+if !isempty(ARGS)
+    empty!(ARGS)
+    push!(ARGS, problem_name)
+else
+    push!(ARGS, problem_name)
+end
+
 include("../src/io/mod_inputs.jl")
 parsed_args  = parse_commandline()
 problem_name = string(parsed_args["arg1"])
