@@ -3,20 +3,19 @@ include("../AbstractProblems.jl")
 include("../../kernel/abstractTypes.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
+include("./user_flux.jl")
+include("./user_source.jl")
 
 function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
     
+    Fuser  = user_flux(SD, mesh.npoin, qp, T)
     F      = zeros(mesh.ngl, mesh.nelem)
     rhs_el = zeros(mesh.ngl, mesh.nelem)
     
     for iel=1:mesh.nelem
         for i=1:mesh.ngl
-            ip = mesh.connijk[i,iel]
-
-            ρ = qp[ip, 1]
-            u = qp[ip, 2]            
-            F[i,iel] = ρ*u
-                
+            ip = mesh.connijk[i,iel]            
+            F[i, iel] = Fuser[ip]
         end
     end
 
@@ -37,40 +36,10 @@ function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St
     return rhs_el
 end
 
-function build_rhs_or(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
-    
-    F      = zeros(mesh.ngl, mesh.nelem)
-    rhs_el = zeros(mesh.ngl, mesh.nelem)
-    
-    for iel=1:mesh.nelem
-        for i=1:mesh.ngl
-            ip = mesh.connijk[i,iel]
-
-            u = qp[ip, 2]            
-            F[i,iel] = u*qp[ip,1]
-                
-        end
-    end
-
-    for iel=1:mesh.nelem
-        dξdx = 2.0/mesh.Δx[iel]
-        for i=1:mesh.ngl
-            
-            dFdξ = 0.0
-            for k = 1:mesh.ngl
-                dFdξ = dFdξ + dψ[k, i]*F[k,iel]
-            end
-            dFdx = dFdξ*dξdx
-            
-            rhs_el[i, iel] = -ω[i]*dFdx
-        end
-    end
-    
-    return rhs_el
-end
 
 function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
-    
+
+    Fuser, Guser = user_flux(SD, qp, mesh.npoin, T)
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     G      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     rhs_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -80,8 +49,8 @@ function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
                 
-                F[i,j,iel] = qp[ip,1]*qp[ip,2]
-                G[i,j,iel] = qp[ip,1]*qp[ip,3]
+                F[i,j,iel] = Fuser[ip] #qp[ip,1]*qp[ip,2]
+                G[i,j,iel] = Guser[ip] #qp[ip,1]*qp[ip,3]
                 
             end
         end
@@ -116,7 +85,40 @@ end
 
 function build_rhs_diff(SD::NSD_1D, QT, AP::AdvDiff, nvars, qp, ψ, dψ, ω, νx, _, mesh::St_mesh, metrics::St_metrics, T)
 
+    N           = mesh.ngl - 1
+    qnel        = zeros(mesh.ngl, mesh.nelem)
     rhsdiffξ_el = zeros(mesh.ngl, mesh.nelem)
+    
+    #
+    # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
+    #
+    for iel=1:mesh.nelem
+        Jac = mesh.Δx[iel]/2.0
+        dξdx = 2.0/mesh.Δx[iel]
+        
+        for i=1:mesh.ngl
+            qnel[i,iel,1] = qp[mesh.connijk[i,iel], 1]
+        end
+        
+        for k = 1:mesh.ngl
+            ωJk = ω[k]*Jac
+            
+            dqdξ = 0.0
+            for i = 1:mesh.ngl
+                dqdξ = dqdξ + dψ[i,k]*qnel[i,iel]
+            end
+            dqdx = dqdξ*dξdx            
+            ∇ξ∇q = dξdx*dqdx
+            
+            for i = 1:mesh.ngl
+                hll     =  ψ[k,k]
+                dhdξ_ik = dψ[i,k]
+                
+                rhsdiffξ_el[i, iel] -= ωJk * dψ[i,k] * ψ[k,k]*∇ξ∇q
+            end
+        end
+    end
+    #rhsdiffξ_el = zeros(mesh.ngl, mesh.nelem)
 
     return rhsdiffξ_el
 end

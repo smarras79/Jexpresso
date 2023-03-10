@@ -7,9 +7,10 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
 
     @info " Initialize fields for AdvDiff ........................ "
     
-    neqs = 1
-    q = allocate_q(mesh.nelem, mesh.npoin, mesh.ngl, neqs)
-
+    qinit = Array{TFloat}(undef, mesh.npoin, 1)
+    
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, 1)
+    
     σ = Float64(64.0)
     for iel_g = 1:mesh.nelem
         for i=1:mesh.ngl
@@ -17,10 +18,9 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
             ip = mesh.connijk[i,iel_g]
             x  = mesh.x[ip]
             
-            q.qn[ip,1] = exp(-σ*x*x)
-            q.qe[ip,1] = q.qn[ip,1]
-            q.qn[ip,2] = 0.8 #constant
-            q.qnm1[ip,1] = q.qn[ip,1]                    
+            q.qn[ip, 1] = exp(-σ*x*x)
+            u           = 0.8
+                   
         end
     end
     
