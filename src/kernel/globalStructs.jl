@@ -70,3 +70,23 @@ function define_q(SD::NSD_1D, nelem, npoin, ngl, neqs)
     
     return q
 end
+
+function define_q(SD::NSD_2D, nelem, npoin, ngl, neqs)
+    
+    q = St_SolutionVars{TFloat}(qn = zeros(npoin, neqs), # qⁿ
+                                F  = zeros(ngl, nelem),  # Fⁿ
+                                G  = zeros(ngl, nelem))  # Gⁿ
+    
+    return q
+end
+
+
+function define_q(SD::NSD_3D, nelem, npoin, ngl, neqs)
+    
+    q = St_SolutionVars{TFloat}(qn = zeros(npoin, neqs), # qⁿ
+                                F  = zeros(ngl, nelem, neqs),  # Fⁿ
+                                G  = zeros(ngl, nelem, neqs),  # Gⁿ
+                                H  = zeros(ngl, nelem, neqs))  # Hⁿ
+    
+    return q
+end

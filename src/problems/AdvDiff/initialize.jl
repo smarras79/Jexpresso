@@ -8,8 +8,8 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
     @info " Initialize fields for AdvDiff ........................ "
     
     qinit = Array{TFloat}(undef, mesh.npoin, 1)
-    
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, 1)
+    neqs  = 1
+    q     = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs)
     
     σ = Float64(64.0)
     for iel_g = 1:mesh.nelem
@@ -45,10 +45,9 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
         
     ngl  = mesh.nop + 1
     nsd  = mesh.nsd
-    neqs = 1
+    neqs = 1    
+    q    = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs)
     
-    q = allocate_q(mesh.nelem, mesh.npoin, ngl, neqs)
-
     test_case = "kopriva.5.3.5"
     #test_case = "giraldo.15.8"
     if (test_case == "kopriva.5.3.5")
@@ -69,12 +68,9 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
                     y  = mesh.y[ip]
 
                     q.qn[ip,1] = exp(-σ*((x - xc)*(x - xc) + (y - yc)*(y - yc)))
-                    q.qe[ip,1] = q.qn[ip,1]
-                    q.qn[ip,2] = 0.8 #constant
-                    q.qn[ip,3] = 0.8 #constant
+                    u          = 0.8 #constant
+                    v          = 0.8 #constant
 
-                    q.qnm1[ip,1] = q.qn[ip,1]                    
-                    #q.qnel[i,j,iel_g,1] = q.qn[ip,1]
                 end
             end
         end
