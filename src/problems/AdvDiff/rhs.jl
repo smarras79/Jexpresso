@@ -8,7 +8,7 @@ include("./user_source.jl")
 
 function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
     
-    Fuser  = user_flux(SD, mesh.npoin, qp, T)
+    Fuser  = user_flux(T, SD, qp, mesh.npoin)
     F      = zeros(mesh.ngl, mesh.nelem)
     rhs_el = zeros(mesh.ngl, mesh.nelem)
     
@@ -39,7 +39,7 @@ end
 
 function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
-    Fuser, Guser = user_flux(SD, qp, mesh.npoin, T)
+    Fuser, Guser = user_flux(T, SD, qp, mesh.npoin)
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     G      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     rhs_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -49,8 +49,8 @@ function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
                 
-                F[i,j,iel] = Fuser[ip] #qp[ip,1]*qp[ip,2]
-                G[i,j,iel] = Guser[ip] #qp[ip,1]*qp[ip,3]
+                F[i,j,iel] = Fuser[ip]
+                G[i,j,iel] = Guser[ip]
                 
             end
         end
@@ -118,9 +118,8 @@ function build_rhs_diff(SD::NSD_1D, QT, AP::AdvDiff, nvars, qp, ψ, dψ, ω, νx
             end
         end
     end
-    #rhsdiffξ_el = zeros(mesh.ngl, mesh.nelem)
-
-    return rhsdiffξ_el
+    
+    return rhsdiffξ_el*νx
 end
 
 function build_rhs_diff(SD::NSD_2D, QT, AP::AdvDiff, nvars, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
@@ -168,12 +167,6 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::AdvDiff, nvars, qp, ψ, dψ, ω, νx
     end
 
     return (rhsdiffξ_el*νx + rhsdiffη_el*νy)
-    
-end
-
-function build_rhs_diff_MxV(SD::NSD_2D, QT, AP::AdvDiff, nvars, qn, L, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
-
-    nothing
     
 end
 
