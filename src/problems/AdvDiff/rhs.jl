@@ -13,6 +13,39 @@ function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St
         for i=1:mesh.ngl
             ip = mesh.connijk[i,iel]
 
+            ρ = qp[ip, 1]
+            u = qp[ip, 2]            
+            F[i,iel] = ρ*u
+                
+        end
+    end
+
+    for iel=1:mesh.nelem
+        dξdx = 2.0/mesh.Δx[iel]
+        for i=1:mesh.ngl
+            
+            dFdξ = 0.0
+            for k = 1:mesh.ngl
+                dFdξ = dFdξ + dψ[k, i]*F[k,iel]
+            end
+            dFdx = dFdξ*dξdx
+            
+            rhs_el[i, iel] = -ω[i]*dFdx
+        end
+    end
+    
+    return rhs_el
+end
+
+function build_rhs_or(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
+    
+    F      = zeros(mesh.ngl, mesh.nelem)
+    rhs_el = zeros(mesh.ngl, mesh.nelem)
+    
+    for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            ip = mesh.connijk[i,iel]
+
             u = qp[ip, 2]            
             F[i,iel] = u*qp[ip,1]
                 
