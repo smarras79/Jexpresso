@@ -52,8 +52,8 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
     #Time:
-    if(!haskey(inputs, :diagnostics_interval))
-        inputs[:diagnostics_interval] = Int8(1)
+    if(!haskey(inputs, :ndiagnostics_outputs))
+        inputs[:ndiagnostics_outputs] = 2
     end
     mod_inputs_check(inputs, :tend, "e") #Final time
     mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on

@@ -78,13 +78,13 @@ function rhs_old!(du, u, params, t)
     rhs_el      = build_rhs(SD, QT, PT, neqns, u, basis.ψ, basis.dψ, ω, mesh, metrics, T)
     rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, u, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
     
-    apply_boundary_conditions!(rhs_el, u, mesh, inputs, SD, QT, metrics, basis.ψ, basis.dψ, ω,t, BCT, neqns)
+    apply_boundary_conditions!(SD, rhs_el, u, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω,t, BCT, neqns)
     
     du = DSSijk_rhs(SD, rhs_el + inputs[:δvisc]*rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
 
     divive_by_mass_matrix!(du, M, QT)
     
-    apply_periodicity!(rhs_el, u, mesh, inputs, SD, QT, metrics, basis.ψ, basis.dψ, ω, t, BCT, neqns)
+    apply_periodicity!(SD, rhs_el, u, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, t, BCT, neqns)
     
     @info "" maximum(u) maximum(du)
     #error("sasa")
@@ -92,7 +92,7 @@ function rhs_old!(du, u, params, t)
 end
 
 
-function rhs!(du, u, params, t)
+function rhs!(du, u, params, time)
 
     #SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, el_mat, u)
     T       = Float64
@@ -109,29 +109,8 @@ function rhs!(du, u, params, t)
     ω       = params.ω
     M       = params.M
     el_mat  = params.el_mat
-    
-    #
-    # Linear RHS in flux form: f = u*u
-    #  
-    RHS = zeros(mesh.npoin)
-    fe  = zeros(mesh.ngl)
-    for iel=1:mesh.nelem
-        for i=1:mesh.ngl
-            I = mesh.conn[i,iel]
-            fe[i] = u[I,1] #f[I]
-        end
-        for i=1:mesh.ngl
-            I = mesh.conn[i,iel]
-            for j=1:mesh.ngl
-                RHS[I] = RHS[I] - el_mat.D[i,j,iel]*fe[j]
-            end
-        end
-    end
 
-    # M⁻¹*rhs where M is diagonal
-    RHS .= RHS./M
-
-    apply_periodicity!(~, u, mesh, inputs, SD, QT, ~, ~, ~, ω, t, BCT, ~)
+    RHS = build_rhs(SD, QT, PT, neqns, u, basis.ψ, basis.dψ, ω, mesh, metrics, M, el_mat, time, T)
     
     du .= RHS
 
@@ -149,17 +128,14 @@ function time_loop!(TD,
                     metrics::St_metrics,
                     basis, ω,
                     qp::St_SolutionVars,
-                    M, el_mat, 
+                    M, el_mat,
                     Nt, Δt,
                     neqns, 
                     inputs::Dict,
                     BCT,
                     OUTPUT_DIR::String,
                     T)
-
-    it_interval    = inputs[:diagnostics_interval]
-    it_diagnostics = 1
-
+    
     #
     # ODE
     #
@@ -180,24 +156,30 @@ function time_loop!(TD,
     #       Tsit5(),    #3
     #       RK4())      #4
     println(" # Solving ODE with ................................" , string(alg), "\n")
-    @info " " Δt inputs[:tinit] inputs[:tend]
+    @info " " Δt inputs[:tinit] inputs[:tend] alg
+    
     sol = solve(prob,
                 alg,
                 dt = Δt,
-                saveat = range(T(0.), Nt*T(Δt), length=5),
+                saveat = range(T(0.), Nt*T(Δt), length=inputs[:ndiagnostics_outputs]),
                 progress = true,
                 progress_message = (dt, u, p, t) -> t)
-    println(" # Solving ODE with    ................................ DONE\n")
+    println(" # Solving ODE with    ................................", string(alg), " DONE\n")
 
-
-    p1 = Plots.scatter()
+    #Plot
+    for iout = 1: inputs[:ndiagnostics_outputs]
+        title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+        jcontour(SD, mesh.x, mesh.y, sol.u[iout], title, string(OUTPUT_DIR, "/it.", iout, ".png"))
+    end
+    
+  #=  p1 = Plots.scatter()
     p1 = Plots.scatter( p1, mesh.x, sol.u[1], label = "1", markershape = :diamond)
     p1 = Plots.scatter!(p1, mesh.x, sol.u[2], label = "2", markershape = :circle)
     p1 = Plots.scatter!(p1, mesh.x, sol.u[3], label = "3", markershape = :square)
     p1 = Plots.scatter!(p1, mesh.x, sol.u[4], label = "4", markershape = :star)
     p1 = Plots.scatter!(p1, mesh.x, sol.u[end], label = "5", markershape = :diamond)
     p1 = Plots.scatter!(p1, title = " q₁")
-    Plots.plot(p1)
+    Plots.plot(p1)=#
     
     #Plot final solution
     #    title = @sprintf "Tracer: final solution at t=%6.4f" inputs[:tend]
@@ -240,7 +222,7 @@ function time_loop_old!(TD,
             it_diagnostics = it_diagnostics + 1
             
         end
-            
+        
         rk!(qp, TD, SD, QT, PT, mesh, metrics, basis, ω, M, el_mat, Δt, neqns, inputs, BCT, t, T)
   
         t += Δt

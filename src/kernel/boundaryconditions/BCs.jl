@@ -16,7 +16,7 @@ include("../mesh/metric_terms.jl")
 include("../mesh/mesh.jl")
 
 
-function apply_periodicity!(rhs, qp, mesh, inputs, SD::NSD_1D, QT, metrics, ψ, dψ, ω, t, BCT, nvars)
+function apply_periodicity!(SD::NSD_1D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, BCT, nvars)
     
     if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="periodic" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="periodic")
         #
@@ -34,11 +34,11 @@ function apply_periodicity!(rhs, qp, mesh, inputs, SD::NSD_1D, QT, metrics, ψ, 
     end
 end
 
-function apply_boundary_conditions!(rhs, qp, mesh,inputs, SD::NSD_1D, QT, metrics, ψ, dψ, ω, t, BCT, nvars)
+function apply_boundary_conditions!(SD::NSD_1D, rhs, qp, mesh,inputs, QT, metrics, ψ, dψ, ω, t, BCT, nvars)
     nothing
 end
     
-function apply_periodicity!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ,dψ, ω,t,BCT,nvars)
+function apply_periodicity!(SD::NSD_2D, rhs,qp,mesh,inputs, QT,metrics,ψ,dψ, ω,t,BCT,nvars)
    #Periodic boundaries
    if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="periodic" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="periodic")
       inputs[:xmax_bc] = "periodic"
@@ -60,7 +60,7 @@ function apply_periodicity!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ,dψ, ω
         end
     end
 end
-function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ,dψ, ω,t,BCT,nvars)
+function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, BCT, nvars)
    #If Neumann conditions are needed compute gradient
    calc_grad = false
    for key in keys(inputs)
@@ -175,7 +175,7 @@ function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_2D,QT,metrics,ψ
       end
    end
 end
-function apply_periodicity!(qp,mesh,inputs,SD::NSD_3D,QT,metrics,ψ,dψ, ω,t,BCT,nvars)
+function apply_periodicity!(SD::NSD_3D, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, BCT, nvars)
 
     if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="periodic" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="periodic")
         inputs[:xmax_bc] = "periodic"
@@ -206,7 +206,7 @@ function apply_periodicity!(qp,mesh,inputs,SD::NSD_3D,QT,metrics,ψ,dψ, ω,t,BC
         end
     end
 end
-function apply_boundary_conditions!(rhs,qp,mesh,inputs, SD::NSD_3D,QT,metrics,ψ,dψ, ω,t,BCT,nvars)
+function apply_boundary_conditions!(SD::NSD_3D, rhs,qp,mesh,inputs, QT,metrics,ψ,dψ, ω,t,BCT,nvars)
    calc_grad = false
    for key in keys(inputs)
       if (inputs[key] == "dirichlet" || inputs[key] == "neumann" || inputs[key] == "dirichlet/neumann")
