@@ -55,7 +55,7 @@ function buildRKIntegrator!(RKtype::RK5, TFloat)
 end
 
 
-function rhs!(du, u, params, t)
+function rhs_old!(du, u, params, t)
 
     T       = Float64
     TD      = params.TD
@@ -92,8 +92,56 @@ function rhs!(du, u, params, t)
 end
 
 
+function rhs!(du, u, params, t)
 
-function time_loop_new!(TD,
+    #SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, el_mat, u)
+    T       = Float64
+    TD      = params.TD
+    SD      = params.SD
+    QT      = params.QT
+    PT      = params.PT
+    BCT     = params.BCT
+    neqns   = params.neqns
+    basis   = params.basis
+    mesh    = params.mesh
+    metrics = params.metrics
+    inputs  = params.inputs
+    ω       = params.ω
+    M       = params.M
+    el_mat  = params.el_mat
+    
+    #
+    # Linear RHS in flux form: f = u*u
+    #  
+    RHS = zeros(mesh.npoin)
+    fe  = zeros(mesh.ngl)
+    for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            I = mesh.conn[i,iel]
+            fe[i] = u[I,1] #f[I]
+        end
+        for i=1:mesh.ngl
+            I = mesh.conn[i,iel]
+            for j=1:mesh.ngl
+                RHS[I] = RHS[I] - el_mat.D[i,j,iel]*fe[j]
+            end
+        end
+    end
+
+    # M⁻¹*rhs where M is diagonal
+    RHS .= RHS./M
+
+    apply_periodicity!(~, u, mesh, inputs, SD, QT, ~, ~, ~, ω, t, BCT, ~)
+    
+    du .= RHS
+
+    
+    return du #This is already DSSed
+end
+
+
+
+function time_loop!(TD,
                     SD,
                     QT,
                     PT,
@@ -101,7 +149,7 @@ function time_loop_new!(TD,
                     metrics::St_metrics,
                     basis, ω,
                     qp::St_SolutionVars,
-                    M, L, 
+                    M, el_mat, 
                     Nt, Δt,
                     neqns, 
                     inputs::Dict,
@@ -117,30 +165,31 @@ function time_loop_new!(TD,
     #
     u = zeros(T, mesh.npoin);
     u .= qp.qn[:,1];
-    params = (; T, TD, SD, QT, PT, BCT, neqns, basis, ω, mesh, metrics, inputs, M)
+    params = (; T, TD, SD, QT, PT, BCT, neqns, basis, ω, mesh, metrics, inputs, M, el_mat)
     tspan = (inputs[:tinit], inputs[:tend])
+    
     prob = ODEProblem(rhs!,
                       u,
                       tspan,
                       params);
 
-    #alg=()
-    #alg = RK4()
-    #alg = Tsit5()
-    alg = [SSPRK104(), #1
-           SSPRK53(),  #2
-           Tsit5(),    #3
-           RK4()]      #4
+    alg = RK4()     #RK4() WORK like a jewl
+    #alg = SSPRK53()
+    #alg = (SSPRK104(), #1
+    #       SSPRK53(),  #2
+    #       Tsit5(),    #3
+    #       RK4())      #4
     println(" # Solving ODE with ................................" , string(alg), "\n")
     @info " " Δt inputs[:tinit] inputs[:tend]
     sol = solve(prob,
-                alg[1],
+                alg,
                 dt = Δt,
-                saveat = range(T(0.), Nt*T(Δt), length=1000),
+                saveat = range(T(0.), Nt*T(Δt), length=5),
                 progress = true,
                 progress_message = (dt, u, p, t) -> t)
     println(" # Solving ODE with    ................................ DONE\n")
-    
+
+
     p1 = Plots.scatter()
     p1 = Plots.scatter( p1, mesh.x, sol.u[1], label = "1", markershape = :diamond)
     p1 = Plots.scatter!(p1, mesh.x, sol.u[2], label = "2", markershape = :circle)
@@ -156,7 +205,7 @@ function time_loop_new!(TD,
     
 end
 
-function time_loop!(TD,
+function time_loop_old!(TD,
                       SD,
                       QT,
                       PT,
@@ -164,7 +213,7 @@ function time_loop!(TD,
                       metrics::St_metrics,
                       basis, ω,
                       qp::St_SolutionVars,
-                      M, L, 
+                      M, el_mat, 
                       Nt, Δt,
                       neqns, 
                       inputs::Dict,
@@ -192,7 +241,7 @@ function time_loop!(TD,
             
         end
             
-        rk!(qp, TD, SD, QT, PT, mesh, metrics, basis, ω, M, L, Δt, neqns, inputs, BCT, t, T)
+        rk!(qp, TD, SD, QT, PT, mesh, metrics, basis, ω, M, el_mat, Δt, neqns, inputs, BCT, t, T)
   
         t += Δt
     end
@@ -211,7 +260,7 @@ function rk!(q::St_SolutionVars,
              mesh::St_mesh,
              metrics::St_metrics,
              basis, ω,
-             M, L, Δt,
+             M, el_mat, Δt,
              neqns, 
              inputs::Dict,
              BCT,
@@ -232,7 +281,8 @@ function rk!(q::St_SolutionVars,
         
         for s = 1:length(RKcoef.a)
             
-            RHS = rhs!(RHS, q.qn, params, time)
+            # RHS = rhs!(RHS, q.qn, params, time)
+            RHS = rhs!(SD, QT, Wave1D(), mesh, metrics, M, el_mat, q.qn)
             
             for I=1:mesh.npoin
                 dq[I, ieqn] = RKcoef.a[s]*dq[I, ieqn] + Δt*RHS[I]
