@@ -20,8 +20,7 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
             
             #q.qn[ip, 1] = exp(-σ*x*x)
             q.qn[ip, 1] = exp(-200.0*(x - 0.25)^2)
-            u           = 0.8
-                   
+            
         end
     end
     

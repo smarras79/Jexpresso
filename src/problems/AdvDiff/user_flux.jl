@@ -4,7 +4,7 @@ function user_flux(T, SD::NSD_1D, q::Array, npoin::Int64)
     #
     F = zeros(T, npoin)
     
-    F .= 0.8*q[:,1]
+    F .= 1.0*q[:,1]
     
     return F
     
