@@ -1,8 +1,8 @@
 using DifferentialEquations
 using LinearAlgebra
-#using DiffEqBase
-#using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
-#import SciMLBase
+using DiffEqBase
+using OrdinaryDiffEq: SplitODEProblem, solve
+import SciMLBase
 
 include("../abstractTypes.jl")
 include("../infrastructure/element_matrices.jl")
@@ -52,7 +52,7 @@ function buildRKIntegrator!(RKtype::RK5, TFloat)
 
 end
 
-function rhs!(RHS, q, params, time)
+function rhs!(RHS, qn::Array, params, time)
 
     T       = Float64
     TD      = params.TD
@@ -71,16 +71,16 @@ function rhs!(RHS, q, params, time)
     #
     # rhs[ngl,ngl,nelem]
     #
-    rhs_el      = build_rhs(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω, mesh, metrics, T)
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    rhs_el      = build_rhs(SD, QT, PT, neqns, qn, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, qn, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
     
-    apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD, QT, metrics, basis.ψ, basis.dψ, ω,time, BCT, neqns)
+    apply_boundary_conditions!(rhs_el, qn, mesh, inputs, SD, QT, metrics, basis.ψ, basis.dψ, ω,time, BCT, neqns)
     
     RHS = DSSijk_rhs(SD, rhs_el + inputs[:δvisc]*rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
     
     divive_by_mass_matrix!(RHS, M, QT)
     
-    apply_periodicity!(rhs_el, q.qn, mesh, inputs, SD, QT, metrics, basis.ψ, basis.dψ, ω, time, BCT, neqns)
+    apply_periodicity!(rhs_el, qn, mesh, inputs, SD, QT, metrics, basis.ψ, basis.dψ, ω, time, BCT, neqns)
 
     return RHS
 end
@@ -94,7 +94,60 @@ function time_loop!(TD,
                     mesh::St_mesh,
                     metrics::St_metrics,
                     basis, ω,
-                    qp,
+                    qp::St_SolutionVars,
+                    M, L, 
+                    Nt, Δt,
+                    neqns, 
+                    inputs::Dict,
+                    BCT,
+                    OUTPUT_DIR::String,
+                    T)
+
+    it_interval    = inputs[:diagnostics_interval]
+    it_diagnostics = 1
+
+    #
+    # ODE
+    #
+    u = zeros(T, mesh.npoin);
+    u[:] .= qp.qn[:,1];
+    params = (; T, TD, SD, QT, PT, BCT, neqns, basis, ω, mesh, metrics, inputs, M)
+    tspan = (inputs[:tinit], inputs[:tend])
+    prob = ODEProblem(rhs!,
+                      u,
+                      tspan,
+                      params);
+
+    alg=SSPRK53()
+    println(" # Solving ODE with %s ................................\n" , string(alg))
+    sol = solve(prob,
+                alg,
+                dt = Δt,
+                saveat = range(inputs[:tinit], inputs[:tend]),
+                progress = true,
+                progress_message = (dt, u, p, t) -> t);
+    println(" # Solving ODE with    ................................ DONE\n")
+    
+    p1 = scatter()
+    p1 = Plots.scatter( p1, mesh.x, sol.u[1],   label = "numerical", markershape = :diamond)
+    p1 = Plots.scatter!(p1, mesh.x, sol.u[end], label = "numerical", markershape = :diamond)
+    p1 = Plots.scatter!(p1, title = " q₁")
+    Plots.plot(p1)
+    
+    #Plot final solution
+    #    title = @sprintf "Tracer: final solution at t=%6.4f" inputs[:tend]
+    #    jcontour(SD, mesh.x, mesh.y, qp.qn[:,1], title, string(OUTPUT_DIR, "/it", "end", ".png"))
+    
+end
+
+function time_loop_or!(TD,
+                    SD,
+                    QT,
+                    PT,
+                    mesh::St_mesh,
+                    metrics::St_metrics,
+                    basis, ω,
+                    qp::St_SolutionVars,
                     M, L, 
                     Nt, Δt,
                     neqns, 
@@ -163,7 +216,7 @@ function rk!(q::St_SolutionVars,
         
         for s = 1:length(RKcoef.a)
             
-            RHS = rhs!(RHS, q, params, time)
+            RHS = rhs!(RHS, q.qn, params, time)
             
             for I=1:mesh.npoin
                 dq[I, ieqn] = RKcoef.a[s]*dq[I, ieqn] + Δt*RHS[I]
