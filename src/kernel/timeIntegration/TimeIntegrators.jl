@@ -1,8 +1,10 @@
-using DifferentialEquations
+import Plots
 using LinearAlgebra
 using DiffEqBase
-using OrdinaryDiffEq: SplitODEProblem, solve
+using OrdinaryDiffEq
+using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
 import SciMLBase
+
 
 include("../abstractTypes.jl")
 include("../infrastructure/element_matrices.jl")
@@ -52,7 +54,8 @@ function buildRKIntegrator!(RKtype::RK5, TFloat)
 
 end
 
-function rhs!(RHS, qn::Array, params, time)
+
+function rhs!(du, u, params, t)
 
     T       = Float64
     TD      = params.TD
@@ -67,27 +70,30 @@ function rhs!(RHS, qn::Array, params, time)
     inputs  = params.inputs
     ω       = params.ω
     M       = params.M
-
+    
+    u[mesh.npoin_linear] = 0.0
     #
     # rhs[ngl,ngl,nelem]
     #
-    rhs_el      = build_rhs(SD, QT, PT, neqns, qn, basis.ψ, basis.dψ, ω, mesh, metrics, T)
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, qn, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    rhs_el      = build_rhs(SD, QT, PT, neqns, u, basis.ψ, basis.dψ, ω, mesh, metrics, T)
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, u, basis.ψ, basis.dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
     
-    apply_boundary_conditions!(rhs_el, qn, mesh, inputs, SD, QT, metrics, basis.ψ, basis.dψ, ω,time, BCT, neqns)
+    apply_boundary_conditions!(rhs_el, u, mesh, inputs, SD, QT, metrics, basis.ψ, basis.dψ, ω,t, BCT, neqns)
     
-    RHS = DSSijk_rhs(SD, rhs_el + inputs[:δvisc]*rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
-    
-    divive_by_mass_matrix!(RHS, M, QT)
-    
-    apply_periodicity!(rhs_el, qn, mesh, inputs, SD, QT, metrics, basis.ψ, basis.dψ, ω, time, BCT, neqns)
+    du = DSSijk_rhs(SD, rhs_el + inputs[:δvisc]*rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
 
-    return RHS
+    divive_by_mass_matrix!(du, M, QT)
+    
+    apply_periodicity!(rhs_el, u, mesh, inputs, SD, QT, metrics, basis.ψ, basis.dψ, ω, t, BCT, neqns)
+    
+    @info "" maximum(u) maximum(du)
+    #error("sasa")
+    return du
 end
 
 
 
-function time_loop!(TD,
+function time_loop_new!(TD,
                     SD,
                     QT,
                     PT,
@@ -110,7 +116,7 @@ function time_loop!(TD,
     # ODE
     #
     u = zeros(T, mesh.npoin);
-    u[:] .= qp.qn[:,1];
+    u .= qp.qn[:,1];
     params = (; T, TD, SD, QT, PT, BCT, neqns, basis, ω, mesh, metrics, inputs, M)
     tspan = (inputs[:tinit], inputs[:tend])
     prob = ODEProblem(rhs!,
@@ -118,19 +124,29 @@ function time_loop!(TD,
                       tspan,
                       params);
 
-    alg=SSPRK53()
-    println(" # Solving ODE with %s ................................\n" , string(alg))
+    #alg=()
+    #alg = RK4()
+    #alg = Tsit5()
+    alg = [SSPRK104(), #1
+           SSPRK53(),  #2
+           Tsit5(),    #3
+           RK4()]      #4
+    println(" # Solving ODE with ................................" , string(alg), "\n")
+    @info " " Δt inputs[:tinit] inputs[:tend]
     sol = solve(prob,
-                alg,
+                alg[1],
                 dt = Δt,
-                saveat = range(inputs[:tinit], inputs[:tend]),
+                saveat = range(T(0.), Nt*T(Δt), length=1000),
                 progress = true,
-                progress_message = (dt, u, p, t) -> t);
+                progress_message = (dt, u, p, t) -> t)
     println(" # Solving ODE with    ................................ DONE\n")
     
-    p1 = scatter()
-    p1 = Plots.scatter( p1, mesh.x, sol.u[1],   label = "numerical", markershape = :diamond)
-    p1 = Plots.scatter!(p1, mesh.x, sol.u[end], label = "numerical", markershape = :diamond)
+    p1 = Plots.scatter()
+    p1 = Plots.scatter( p1, mesh.x, sol.u[1], label = "1", markershape = :diamond)
+    p1 = Plots.scatter!(p1, mesh.x, sol.u[2], label = "2", markershape = :circle)
+    p1 = Plots.scatter!(p1, mesh.x, sol.u[3], label = "3", markershape = :square)
+    p1 = Plots.scatter!(p1, mesh.x, sol.u[4], label = "4", markershape = :star)
+    p1 = Plots.scatter!(p1, mesh.x, sol.u[end], label = "5", markershape = :diamond)
     p1 = Plots.scatter!(p1, title = " q₁")
     Plots.plot(p1)
     
@@ -140,21 +156,21 @@ function time_loop!(TD,
     
 end
 
-function time_loop_or!(TD,
-                    SD,
-                    QT,
-                    PT,
-                    mesh::St_mesh,
-                    metrics::St_metrics,
-                    basis, ω,
-                    qp::St_SolutionVars,
-                    M, L, 
-                    Nt, Δt,
-                    neqns, 
-                    inputs::Dict,
-                    BCT,
-                    OUTPUT_DIR::String,
-                    T)
+function time_loop!(TD,
+                      SD,
+                      QT,
+                      PT,
+                      mesh::St_mesh,
+                      metrics::St_metrics,
+                      basis, ω,
+                      qp::St_SolutionVars,
+                      M, L, 
+                      Nt, Δt,
+                      neqns, 
+                      inputs::Dict,
+                      BCT,
+                      OUTPUT_DIR::String,
+                      T)
 
     it_interval    = inputs[:diagnostics_interval]
     it_diagnostics = 1

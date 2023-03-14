@@ -3,10 +3,49 @@ include("../AbstractProblems.jl")
 include("../../kernel/abstractTypes.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/mesh/metric_terms.jl")
+include("../../io/print_matrix.jl")
 include("./user_flux.jl")
 include("./user_source.jl")
 
-function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
+    
+    rhs_el = zeros(mesh.ngl^mesh.nsd, mesh.nelem)
+    f      = zeros(mesh.ngl^mesh.nsd)
+    u      = 1.0 #m/s
+    
+    D = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
+    for iel=1:mesh.nelem
+        Jac = mesh.Δx[iel]/2
+        for iq=1:mesh.ngl
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    D[i,j,iel] += ω[iq]*ψ[iq,i]*dψ[iq,j]
+                end
+            end
+        end
+    end
+    
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl
+            ip = mesh.conn[i, iel]
+            f[i] = u*qp[ip]
+        end
+    end
+    
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl
+            rhs_el[i, iel] = 0.0
+            for j = 1:mesh.ngl
+                rhs_el[i, iel] = -D[i,j,iel]*f[j]
+            end
+        end
+    end
+    
+    return rhs_el    
+end
+
+
+function build_rhs_or(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
     
     Fuser  = user_flux(T, SD, qp, mesh.npoin)
     F      = zeros(mesh.ngl, mesh.nelem)
@@ -15,10 +54,10 @@ function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St
     for iel=1:mesh.nelem
         for i=1:mesh.ngl
             ip = mesh.connijk[i,iel]            
-            F[i, iel] = Fuser[ip]
+            F[i, iel] = 1.0*qp[ip,1] #Fuser[ip]
         end
     end
-
+    
     for iel=1:mesh.nelem
         dξdx = 2.0/mesh.Δx[iel]
         for i=1:mesh.ngl
@@ -37,7 +76,7 @@ function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St
 end
 
 
-function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
     Fuser, Guser = user_flux(T, SD, qp, mesh.npoin)
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -83,7 +122,7 @@ function build_rhs(SD::NSD_2D, QT, AP::AdvDiff, neqns, qp, ψ, dψ, ω, mesh::St
     return rhs_el
 end
 
-function build_rhs_diff(SD::NSD_1D, QT, AP::AdvDiff, nvars, qp, ψ, dψ, ω, νx, _, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_1D, QT, AP::AdvDiff, nvars, qp::Array, ψ, dψ, ω, νx, _, mesh::St_mesh, metrics::St_metrics, T)
 
     N           = mesh.ngl - 1
     qnel        = zeros(mesh.ngl, mesh.nelem)
@@ -122,7 +161,7 @@ function build_rhs_diff(SD::NSD_1D, QT, AP::AdvDiff, nvars, qp, ψ, dψ, ω, νx
     return rhsdiffξ_el*νx
 end
 
-function build_rhs_diff(SD::NSD_2D, QT, AP::AdvDiff, nvars, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_2D, QT, AP::AdvDiff, nvars, qp::Array, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
 
     N = mesh.ngl - 1
     
