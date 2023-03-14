@@ -7,7 +7,7 @@ include("../../io/print_matrix.jl")
 include("./user_flux.jl")
 include("./user_source.jl")
 
-function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_new(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
     
     rhs_el = zeros(mesh.ngl^mesh.nsd, mesh.nelem)
     f      = zeros(mesh.ngl^mesh.nsd)
@@ -15,7 +15,6 @@ function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp::Array, ψ, dψ, ω, m
     
     D = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     for iel=1:mesh.nelem
-        Jac = mesh.Δx[iel]/2
         for iq=1:mesh.ngl
             for i=1:mesh.ngl
                 for j=1:mesh.ngl
@@ -40,12 +39,18 @@ function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp::Array, ψ, dψ, ω, m
             end
         end
     end
-    
+     for iel = 1:mesh.nelem
+         for i = 1:mesh.ngl
+             if (rhs_el[i, iel] > 1.0e-2)
+                 @info rhs_el[i, iel]
+             end
+         end
+     end
     return rhs_el    
 end
 
 
-function build_rhs_or(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
     
     Fuser  = user_flux(T, SD, qp, mesh.npoin)
     F      = zeros(mesh.ngl, mesh.nelem)
@@ -68,7 +73,7 @@ function build_rhs_or(SD::NSD_1D, QT, AP::AdvDiff, neqns, qp::Array, ψ, dψ, ω
             end
             dFdx = dFdξ*dξdx
             
-            rhs_el[i, iel] = -ω[i]*dFdx
+            rhs_el[i, iel] = -ω[i]*dFdξ
         end
     end
     
