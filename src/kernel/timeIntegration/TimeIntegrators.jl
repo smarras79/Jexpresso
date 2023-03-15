@@ -24,8 +24,9 @@ function time_loop!(SD,
                     T)
     
     #
-    # ODE
+    # ODE: solvers come from DifferentialEquations.j;
     #
+    #Initialize
     u      = zeros(T, mesh.npoin);
     u     .= qp.qn[:,1];
     tspan  = (inputs[:tinit], inputs[:tend])    
@@ -34,7 +35,6 @@ function time_loop!(SD,
                         u,
                         tspan,
                         params);
-    
     
     println(" # Solving ODE with ................................\n")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]

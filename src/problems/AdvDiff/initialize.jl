@@ -5,7 +5,7 @@ include("../../io/plotting/jeplots.jl")
 
 function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
-    println(" # Initialize fields for AdvDiff ........................ \n")
+    println(" # Initialize fields for AdvDiff ........................")
     
     qinit = Array{TFloat}(undef, mesh.npoin, 1)
     neqs  = 1
@@ -33,7 +33,7 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
     title = string( "Tracer: initial condition")
     plot_curve(mesh.x, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
     
-    println(" # Initialize fields for AdvDiff ........................ DONE\n")
+    println(" # Initialize fields for AdvDiff ........................ DONE")
     
     return q
 end
@@ -41,7 +41,7 @@ end
 
 function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
-    println(" # Initialize fields for AdvDiff ........................ \n")
+    println(" # Initialize fields for AdvDiff ........................")
         
     ngl  = mesh.nop + 1
     nsd  = mesh.nsd
@@ -106,7 +106,7 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
     title = string( "Tracer: initial condition")
     plot_results(SD, mesh.x, mesh.y, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
     
-    println(" # Initialize fields for AdvDiff ........................ DONE\n")
+    println(" # Initialize fields for AdvDiff ........................ DONE")
     
     return q
 end
