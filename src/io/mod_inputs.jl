@@ -175,9 +175,13 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     end
 
 if(haskey(inputs, :outformat))
-    inputs[:outformat] = lowercase(inputs[:outformat])
+    if lowercase(inputs[:outformat]) == "png"
+        inputs[:outformat] = PNG()
+    elseif lowercase(inputs[:outformat]) == "ascii"
+        inputs[:outformat] = ASCII()
+    end
 else
-    inputs[:outformat] = "png"
+    inputs[:outformat] = PNG()
 end
 
     #Grid entries:
