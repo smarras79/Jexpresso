@@ -1,6 +1,6 @@
 // Gmsh project created on Fri Oct  1 15:50:24 2021
-nelx  = 10;
-nely  = 10;
+nelx  = 5;
+nely  = 5;
 nelz  = 1;
 
 xmin =  -1;

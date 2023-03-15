@@ -51,12 +51,10 @@ function build_element_matrices!(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, 
     for iel=1:mesh.nelem
         Jac = mesh.Δx[iel]/2
         
-        for iq=1:Q+1
-            for i=1:N+1
-                el_matrices.M[i,iel] = el_matrices.M[i,iel] + Jac*ω[iq] #Store only the diagonal elements
-                for j=1:N+1
-                    el_matrices.D[i,j,iel] = el_matrices.D[i,j,iel] +      ω[iq]*ψ[i,iq]*dψdξ[j,iq] #Sparse
-                end
+        for i=1:N+1
+            el_matrices.M[i,iel] += Jac*ω[iq] #Store only the diagonal elements
+            for iq=1:Q+1, j=1:N+1
+                    el_matrices.D[i,j,iel] += ω[iq]*ψ[i,iq]*dψdξ[j,iq] #Sparse
             end
         end
     end
