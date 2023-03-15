@@ -11,13 +11,13 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 3,     # Polynomial order
+        :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:νx                   => 0.01, #kinematic viscosity constant
-        #:νy                   => 0.01, #kinematic viscosity constant
+        :νx                   => 0.01, #kinematic viscosity constant
+        :νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
