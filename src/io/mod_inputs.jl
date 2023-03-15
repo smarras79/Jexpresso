@@ -52,8 +52,8 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
     #Time:
-    if(!haskey(inputs, :diagnostics_interval))
-        inputs[:diagnostics_interval] = Int8(1)
+    if(!haskey(inputs, :ndiagnostics_outputs))
+        inputs[:ndiagnostics_outputs] = 2
     end
     mod_inputs_check(inputs, :tend, "e") #Final time
     mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on
@@ -137,6 +137,53 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
         inputs[:quadrature_nodes] = LGL()
     end
     
+    #
+    # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
+    #
+    if(haskey(inputs, :ode_solver))
+        if(uppercase(inputs[:ode_solver]) == "RK4")
+            inputs[:ode_solver] = RK4()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK22")
+            inputs[:ode_solver] = SSPRK22()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK33")
+            inputs[:ode_solver] = SSPRK33()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK53")
+            inputs[:ode_solver] = SSPRK53()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK54")
+            inputs[:ode_solver] =SSPRK54()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK63")
+            inputs[:ode_solver] = SSPRK63()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK73")
+            inputs[:ode_solver] = SSPRK73()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK104")
+            inputs[:ode_solver] = SSPRK104()
+        elseif(uppercase(inputs[:ode_solver]) == "CARPENTERKENNEDY2N54")
+            inputs[:ode_solver] = CarpenterKennedy2N54()
+        else
+            s = """
+                    WARNING in user_inputs.jl --> :ode_solver
+                    
+                        See usable solvers at
+                        https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
+
+                    RK4 will be used by default.
+                        """            
+            inputs[:ode_solver] = RK4()
+
+            @warn s
+        end
+    end
+
+if(haskey(inputs, :outformat))
+    if lowercase(inputs[:outformat]) == "png"
+        inputs[:outformat] = PNG()
+    elseif lowercase(inputs[:outformat]) == "ascii"
+        inputs[:outformat] = ASCII()
+    end
+else
+    inputs[:outformat] = PNG()
+end
+
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         

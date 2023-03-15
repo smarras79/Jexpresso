@@ -52,7 +52,7 @@ function build_element_matrices(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N
         Jac = mesh.Δx[iel]/2
         
         for i=1:N+1
-            el_matrices.M[i,iel] += Jac*ω[iq] #Store only the diagonal elements
+            el_matrices.M[i,iel] += Jac*ω[i] #Store only the diagonal elements
             for iq=1:Q+1, j=1:N+1
                 el_matrices.D[i,j,iel] += ω[iq]*ψ[i,iq]*dψdξ[j,iq] #Sparse
             end
@@ -64,48 +64,49 @@ function build_element_matrices(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N
     
 end
 
+function build_element_matrices(SD::NSD_2D, QT, ψ, dψdξ, ω, mesh, N, Q, T)
+    nothing
+end
 
-function build_element_matrices(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
-    
-    el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem),
-                              zeros(N+1, N+1, N+1, N+1, mesh.nelem),
-                              zeros(N+1, N+1, N+1, N+1, mesh.nelem))
+function build_element_matrices(SD::NSD_3D, QT, ψ, dψdξ, ω, mesh, N, Q, T)
+    nothing
+end
 
+
+function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
     
+    Del = zeros(N+1, N+1, mesh.nelem)
+
     for iel=1:mesh.nelem
+        Jac = mesh.Δx[iel]/2
         
-        for k = 1:Q+1
-            for l = 1:Q+1
-
-                ωkl  = ω[k]*ω[l]
-                Jkle = metrics.Je[k, l, iel]
-                
-                for i = 1:N+1
-                    for j = 1:N+1
-                        ψJK = ψ[i,k]*ψ[j,l]
-
-                        for m = 1:N+1
-                            for n = 1:N+1
-                                ψIK = ψ[m,k]*ψ[n,l]                                
-                                el_matrices.M[i,j,m,n,iel] = el_matrices.M[i,j,m,n,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
-                            end
-                        end
-                    end
-                end
+        for i=1:N+1
+            for iq=1:Q+1, j=1:N+1
+                Del[i,j,iel] += ω[iq]*ψ[i,iq]*dψdξ[j,iq] #Sparse
             end
         end
     end
     #show(stdout, "text/plain", el_matrices.D)
     
-    return el_matrices   
+    return Del
+    
 end
+
+function build_differentiation_matrix(SD::NSD_2D, ψ, dψdξ, ω, mesh, N, Q, T)
+    nothing
+end
+
+function build_differentiation_matrix(SD::NSD_3D, ψ, dψdξ, ω, mesh, N, Q, T)
+    nothing
+end
+
 
 #
 # Element mass matrix
 #
-function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
-
-    Me = St_ElMat{T}(zeros(N+1, mesh.nelem))
+function build_mass_matrix(SD::NSD_1D, QT::Inexact, ψ, ω, mesh, metrics, N, Q, T)
+        
+    Me = zeros(T, N+1, mesh.nelem)
     
     for iel=1:mesh.nelem
         Jac = mesh.Δx[iel]/2
@@ -120,7 +121,7 @@ function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics,
     
 end
 
-function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix(SD::NSD_1D, QT::Exact, ψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -144,7 +145,7 @@ function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics,
     return M
 end
 
-function build_mass_matrix(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix(SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -183,7 +184,7 @@ end
 #
 # Element Laplace matrix
 #
-function build_laplace_matrix(SD::NSD_1D, MT::TensorProduct, _, dψ, ω, mesh, metrics, N, Q, T)
+function build_laplace_matrix(SD::NSD_1D, _, dψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -211,7 +212,7 @@ function build_laplace_matrix(SD::NSD_1D, MT::TensorProduct, _, dψ, ω, mesh, m
     return L
 end
 #
-function build_laplace_matrix(SD::NSD_2D, MT::TensorProduct, ψ, dψ, ω, mesh, metrics, N, Q, T)
+function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -278,24 +279,6 @@ function DSS(SD::NSD_1D, QT::Exact, Me::AbstractArray, conn, nelem, npoin, N, T)
     return M , Minv
 end
 
-
-function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
-
-    A = zeros(npoin)
-    Ainv = zeros(npoin)
-    
-    for iel=1:nelem
-        for i=1:N+1
-            I = conn[i,iel]
-            A[I] = A[I] + Ae[i,iel]
-        end
-    end
-    Ainv = 1.0./A
-    
-    return A, Ainv
-end
-
-
 function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
 
     A = zeros(npoin)
@@ -333,7 +316,7 @@ function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
 end
 
 
-function DSSijk_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
     M  = zeros(npoin, npoin)
     for iel=1:nelem
@@ -360,22 +343,21 @@ function DSSijk_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractAr
     return M
 end
 
-function DSSijk_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+
     
-    M  = zeros(npoin)
+    M = zeros(npoin)
     for iel=1:nelem
-        for i = 1:N+1
+        for i=1:N+1
             I = conn[i,iel]
-            for j = 1:N+1
-                M[I] = M[I] + Mel[i,j,iel] #if inexact
-            end
+            M[I] = M[I] + Mel[i,iel]
         end
     end
     #show(stdout, "text/plain", M)
     return M
 end
 
-function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
     M  = zeros(npoin)
     for iel=1:nelem
@@ -398,7 +380,7 @@ function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstract
     return M
 end
 
-function DSSijk_laplace(SD::NSD_1D, Le::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_laplace(SD::NSD_1D, Le::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
     L = zeros(npoin, npoin)    
     for iel=1:nelem
@@ -415,7 +397,7 @@ function DSSijk_laplace(SD::NSD_1D, Le::AbstractArray, conn::AbstractArray, nele
 end
 
 
-function DSSijk_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
     L  = zeros(npoin, npoin)
     
@@ -439,23 +421,38 @@ function DSSijk_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nel
     return L
 end
 
-function DSSijk_rhs(SD::NSD_1D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
+function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+
+    A = zeros(npoin)
+    Ainv = zeros(npoin)
     
-    V  = zeros(T, npoin)
-    for iel = 1:nelem
-        for i = 1:N+1
+    for iel=1:nelem
+        for i=1:N+1
             I = conn[i,iel]
-            
-            V[I] = V[I] + Vel[i,iel]
+            A[I] = A[I] + Ae[i,iel]
         end
     end
-    #show(stdout, "text/plain", V)
-    return V
+    Ainv = 1.0./A
+    
+    return A, Ainv
 end
 
 
+function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
-function DSSijk_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
+    V = zeros(npoin)
+    for iel=1:nelem
+        for i=1:N+1
+            I = conn[i,iel]
+            V[I] = V[I] + Ve[i,iel]
+        end
+    end
+    Ainv = 1.0./A
+    
+    return A, Ainv
+end
+
+function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
     
     V  = zeros(T, npoin)
     for iel = 1:nelem
@@ -474,9 +471,10 @@ end
 
 
 function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
-    RHS = M\RHS #M may is sparse but not necessarily dsiagonal
+    RHS = M\RHS #M is not iagonal
 end
 
 function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact) 
     RHS .= RHS./M #M is diagonal (stored as a vector)
 end
+

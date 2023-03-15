@@ -5,11 +5,12 @@ include("../../io/plotting/jeplots.jl")
 
 function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
-    @info " Initialize fields for AdvDiff ........................ "
+    println(" # Initialize fields for AdvDiff ........................")
     
-    neqs = 1
-    q = allocate_q(mesh.nelem, mesh.npoin, mesh.ngl, neqs)
-
+    qinit = Array{TFloat}(undef, mesh.npoin, 1)
+    neqs  = 1
+    q     = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs)
+    
     σ = Float64(64.0)
     for iel_g = 1:mesh.nelem
         for i=1:mesh.ngl
@@ -17,10 +18,9 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
             ip = mesh.connijk[i,iel_g]
             x  = mesh.x[ip]
             
-            q.qn[ip,1] = exp(-σ*x*x)
-            q.qe[ip,1] = q.qn[ip,1]
-            q.qn[ip,2] = 0.8 #constant
-            q.qnm1[ip,1] = q.qn[ip,1]                    
+            #q.qn[ip, 1] = exp(-σ*x*x)
+            q.qn[ip, 1] = exp(-200.0*(x - 0.25)^2)
+            
         end
     end
     
@@ -33,7 +33,7 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
     title = string( "Tracer: initial condition")
     plot_curve(mesh.x, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
     
-    @info " Initialize fields for AdvDiff ........................ DONE"
+    println(" # Initialize fields for AdvDiff ........................ DONE")
     
     return q
 end
@@ -41,14 +41,13 @@ end
 
 function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
-    @info " Initialize fields for AdvDiff ........................ "
+    println(" # Initialize fields for AdvDiff ........................")
         
     ngl  = mesh.nop + 1
     nsd  = mesh.nsd
-    neqs = 1
+    neqs = 1    
+    q    = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs)
     
-    q = allocate_q(mesh.nelem, mesh.npoin, ngl, neqs)
-
     test_case = "kopriva.5.3.5"
     #test_case = "giraldo.15.8"
     if (test_case == "kopriva.5.3.5")
@@ -69,12 +68,9 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
                     y  = mesh.y[ip]
 
                     q.qn[ip,1] = exp(-σ*((x - xc)*(x - xc) + (y - yc)*(y - yc)))
-                    q.qe[ip,1] = q.qn[ip,1]
-                    q.qn[ip,2] = 0.8 #constant
-                    q.qn[ip,3] = 0.8 #constant
+                    u          = 0.8 #constant
+                    v          = 0.8 #constant
 
-                    q.qnm1[ip,1] = q.qn[ip,1]                    
-                    #q.qnel[i,j,iel_g,1] = q.qn[ip,1]
                 end
             end
         end
@@ -108,9 +104,9 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
     # becessary for a smooth curve plot.
     #------------------------------------------
     title = string( "Tracer: initial condition")
-    jcontour(SD, mesh.x, mesh.y, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
+    plot_results(SD, mesh.x, mesh.y, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
     
-    @info " Initialize fields for AdvDiff ........................ DONE"
+    println(" # Initialize fields for AdvDiff ........................ DONE")
     
     return q
 end
