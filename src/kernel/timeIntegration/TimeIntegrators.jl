@@ -47,7 +47,7 @@ function time_loop!(SD,
                          progress_message = (dt, u, p, t) -> t)
     println(" # Solving ODE with  ................................ DONE\n")
     
-    write_output(sol, SD, mesh, OUTPUT_DIR, inputs; outformat=inputs[:outformat])
+    write_output(sol, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
     
 end
