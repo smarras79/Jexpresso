@@ -104,7 +104,7 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
     # becessary for a smooth curve plot.
     #------------------------------------------
     title = string( "Tracer: initial condition")
-    jcontour(SD, mesh.x, mesh.y, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
+    plot_results(SD, mesh.x, mesh.y, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
     
     @info " Initialize fields for AdvDiff ........................ DONE"
     

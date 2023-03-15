@@ -48,7 +48,7 @@ end
 
 function rhs!(du, u, params, time)
 
-    #SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, el_mat, u)
+    #SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, De, u)
     T       = Float64
     TD      = params.TD
     SD      = params.SD
@@ -62,9 +62,9 @@ function rhs!(du, u, params, time)
     inputs  = params.inputs
     ω       = params.ω
     M       = params.M
-    el_mat  = params.el_mat
+    De      = params.De
 
-    RHS = build_rhs(SD, QT, PT, BCT, neqns, u, basis.ψ, basis.dψ, ω, mesh, metrics, M, el_mat, time, inputs, T)    
+    RHS = build_rhs(SD, QT, PT, BCT, neqns, u, basis.ψ, basis.dψ, ω, mesh, metrics, M, De, time, inputs, T)    
     du .= RHS
     
     return du #This is already DSSed
@@ -80,7 +80,8 @@ function time_loop!(TD,
                     metrics::St_metrics,
                     basis, ω,
                     qp::St_SolutionVars,
-                    M, el_mat,
+                    M,
+                    De,
                     Nt, Δt,
                     neqns, 
                     inputs::Dict,
@@ -93,7 +94,7 @@ function time_loop!(TD,
     #
     u = zeros(T, mesh.npoin);
     u .= qp.qn[:,1];
-    params = (; T, TD, SD, QT, PT, BCT, neqns, basis, ω, mesh, metrics, inputs, M, el_mat)
+    params = (; T, TD, SD, QT, PT, BCT, neqns, basis, ω, mesh, metrics, inputs, M, De)
     tspan = (inputs[:tinit], inputs[:tend])
     
     prob = ODEProblem(rhs!,
