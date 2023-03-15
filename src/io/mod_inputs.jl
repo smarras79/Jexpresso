@@ -174,6 +174,11 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
         end
     end
 
+if(haskey(inputs, :outformat))
+    inputs[:outformat] = lowercase(inputs[:outformat])
+else
+    inputs[:outformat] = "png"
+end
 
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
