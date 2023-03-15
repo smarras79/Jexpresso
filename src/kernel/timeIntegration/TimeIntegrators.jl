@@ -36,7 +36,7 @@ function time_loop!(SD,
                         tspan,
                         params);
     
-    println(" # Solving ODE with ................................\n")
+    println(" # Solving ODE with ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
     
     @time    sol = solve(prob,
@@ -45,7 +45,7 @@ function time_loop!(SD,
                          saveat = range(T(0.), Nt*T(Δt), length=inputs[:ndiagnostics_outputs]),
                          progress = true,
                          progress_message = (dt, u, p, t) -> t)
-    println(" # Solving ODE with  ................................ DONE\n")
+    println(" # Solving ODE with  ................................ DONE")
     
     write_output(sol, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
