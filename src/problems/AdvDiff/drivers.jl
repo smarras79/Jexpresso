@@ -4,7 +4,6 @@
 using Crayons.Box
 using PrettyTables
 using Revise
-using WriteVTK
 
 #Constants
 const TInt   = Int64
@@ -132,8 +131,9 @@ function driver(DT::ContGal,       #Space discretization type
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
     println(" # CFL = ", CFL)    
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-    
+
     # NOTICE add a function to find the mesh mininum resolution
     time_loop!(RK5(), SD, QT, PT, mesh, metrics, basis, ω, qp, M, el_mat, Nt, Δt, neqns, inputs, DefaultBC(), OUTPUT_DIR, TFloat)
+    
 
 end
