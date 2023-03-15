@@ -111,14 +111,11 @@ function driver(DT::ContGal,       #Space discretization type
     # Return:
     # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
     #--------------------------------------------------------    
-    Me = build_mass_matrix(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    M  = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    #Le = build_laplace_matrix(SD, TensorProduct(), basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    #L  = DSSijk_laplace(SD, Le, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    De= build_differentiation_matrix(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
-    
-    #el_mat   = build_element_matrices(SD, QT, basis.ψ, basis.dψ, ω, mesh, Nξ, Qξ, TFloat)
-    
+    Le =         build_laplace_matrix(SD,     basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    De = build_differentiation_matrix(SD,     basis.ψ, basis.dψ, ω, mesh,          Nξ, Qξ, TFloat)
+    Me =            build_mass_matrix(SD, QT, basis.ψ,           ω, mesh, metrics, Nξ, Qξ, TFloat)
+    M  =                     DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+   
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
@@ -130,7 +127,7 @@ function driver(DT::ContGal,       #Space discretization type
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
 
     # NOTICE add a function to find the mesh mininum resolution
-    time_loop!(RK5(), SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Nt, Δt, neqns, inputs, DefaultBC(), OUTPUT_DIR, TFloat)
+    time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, DefaultBC(), OUTPUT_DIR, TFloat)
     
 
 end
