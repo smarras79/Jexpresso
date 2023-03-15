@@ -470,7 +470,6 @@ if mesh.nsd == 2
     #
     labels = get_face_labeling(model)
     for ilabel in labels.tag_to_name
-        @info "ilabel " ilabel
         edges_to_tag  = get_face_tag_index(labels,ilabel,EDGE_flg)
         idx_edges_inflow = findall( x -> x == 1, edges_to_tag)
         #    
