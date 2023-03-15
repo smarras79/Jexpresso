@@ -12,7 +12,6 @@ include("../../io/plotting/jeplots.jl")
 function rhs_old!(du, u, params, t)
 
     T       = Float64
-    TD      = params.TD
     SD      = params.SD
     QT      = params.QT
     PT      = params.PT
@@ -34,7 +33,8 @@ function rhs_old!(du, u, params, t)
     
     apply_boundary_conditions!(SD, rhs_el, u, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω,t, BCT, neqns)
     
-    du = DSSijk_rhs(SD, rhs_el + inputs[:δvisc]*rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+    #du = DSSijk_rhs(SD, rhs_el + inputs[:δvisc]*rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+    du =     DSS(SD, QT, rhs_el + inputs[:δvisc]*rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
 
     divive_by_mass_matrix!(du, M, QT)
     
@@ -50,7 +50,6 @@ function rhs!(du, u, params, time)
 
     #SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, De, u)
     T       = Float64
-    TD      = params.TD
     SD      = params.SD
     QT      = params.QT
     PT      = params.PT
@@ -72,8 +71,7 @@ end
 
 
 
-function time_loop!(TD,
-                    SD,
+function time_loop!(SD,
                     QT,
                     PT,
                     mesh::St_mesh,
@@ -81,7 +79,7 @@ function time_loop!(TD,
                     basis, ω,
                     qp::St_SolutionVars,
                     M,
-                    De,
+                    De, Le,
                     Nt, Δt,
                     neqns, 
                     inputs::Dict,
@@ -94,7 +92,7 @@ function time_loop!(TD,
     #
     u = zeros(T, mesh.npoin);
     u .= qp.qn[:,1];
-    params = (; T, TD, SD, QT, PT, BCT, neqns, basis, ω, mesh, metrics, inputs, M, De)
+    params = (; T, SD, QT, PT, BCT, neqns, basis, ω, mesh, metrics, inputs, M, De)
     tspan = (inputs[:tinit], inputs[:tend])
     
     prob = ODEProblem(rhs!,

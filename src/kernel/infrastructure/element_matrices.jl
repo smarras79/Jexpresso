@@ -64,12 +64,16 @@ function build_element_matrices(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N
     
 end
 
-function build_element_matrices(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
+function build_element_matrices(SD::NSD_2D, QT, ψ, dψdξ, ω, mesh, N, Q, T)
+    nothing
+end
+
+function build_element_matrices(SD::NSD_3D, QT, ψ, dψdξ, ω, mesh, N, Q, T)
     nothing
 end
 
 
-function build_differentiation_matrix(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
+function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
     
     Del = zeros(N+1, N+1, mesh.nelem)
 
@@ -88,7 +92,11 @@ function build_differentiation_matrix(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, m
     
 end
 
-function build_differentiation_matrix(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
+function build_differentiation_matrix(SD::NSD_2D, ψ, dψdξ, ω, mesh, N, Q, T)
+    nothing
+end
+
+function build_differentiation_matrix(SD::NSD_3D, ψ, dψdξ, ω, mesh, N, Q, T)
     nothing
 end
 
@@ -96,9 +104,8 @@ end
 #
 # Element mass matrix
 #
-function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
-
-    #Me = St_ElMat{T}(zeros(N+1, mesh.nelem))
+function build_mass_matrix(SD::NSD_1D, QT::Inexact, ψ, ω, mesh, metrics, N, Q, T)
+        
     Me = zeros(T, N+1, mesh.nelem)
     
     for iel=1:mesh.nelem
@@ -114,7 +121,7 @@ function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics,
     
 end
 
-function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix(SD::NSD_1D, QT::Exact, ψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -138,7 +145,7 @@ function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics,
     return M
 end
 
-function build_mass_matrix(SD::NSD_2D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix(SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -177,7 +184,7 @@ end
 #
 # Element Laplace matrix
 #
-function build_laplace_matrix(SD::NSD_1D, MT::TensorProduct, _, dψ, ω, mesh, metrics, N, Q, T)
+function build_laplace_matrix(SD::NSD_1D, _, dψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -205,7 +212,7 @@ function build_laplace_matrix(SD::NSD_1D, MT::TensorProduct, _, dψ, ω, mesh, m
     return L
 end
 #
-function build_laplace_matrix(SD::NSD_2D, MT::TensorProduct, ψ, dψ, ω, mesh, metrics, N, Q, T)
+function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -272,24 +279,6 @@ function DSS(SD::NSD_1D, QT::Exact, Me::AbstractArray, conn, nelem, npoin, N, T)
     return M , Minv
 end
 
-
-function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
-
-    A = zeros(npoin)
-    Ainv = zeros(npoin)
-    
-    for iel=1:nelem
-        for i=1:N+1
-            I = conn[i,iel]
-            A[I] = A[I] + Ae[i,iel]
-        end
-    end
-    Ainv = 1.0./A
-    
-    return A, Ainv
-end
-
-
 function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
 
     A = zeros(npoin)
@@ -327,7 +316,7 @@ function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
 end
 
 
-function DSSijk_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
     M  = zeros(npoin, npoin)
     for iel=1:nelem
@@ -354,22 +343,21 @@ function DSSijk_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractAr
     return M
 end
 
-function DSSijk_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+
     
-    M  = zeros(npoin)
+    M = zeros(npoin)
     for iel=1:nelem
-        for i = 1:N+1
+        for i=1:N+1
             I = conn[i,iel]
-            for j = 1:N+1
-                M[I] = M[I] + Mel[i,j,iel] #if inexact
-            end
+            M[I] = M[I] + Mel[i,iel]
         end
     end
     #show(stdout, "text/plain", M)
     return M
 end
 
-function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
     M  = zeros(npoin)
     for iel=1:nelem
@@ -392,7 +380,7 @@ function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstract
     return M
 end
 
-function DSSijk_laplace(SD::NSD_1D, Le::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_laplace(SD::NSD_1D, Le::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
     L = zeros(npoin, npoin)    
     for iel=1:nelem
@@ -409,7 +397,7 @@ function DSSijk_laplace(SD::NSD_1D, Le::AbstractArray, conn::AbstractArray, nele
 end
 
 
-function DSSijk_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
     L  = zeros(npoin, npoin)
     
@@ -433,6 +421,7 @@ function DSSijk_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nel
     return L
 end
 
+#=
 function DSSijk_rhs(SD::NSD_1D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
     
     V  = zeros(T, npoin)
@@ -446,6 +435,24 @@ function DSSijk_rhs(SD::NSD_1D, Vel::AbstractArray, conn::AbstractArray, nelem, 
     #show(stdout, "text/plain", V)
     return V
 end
+=#
+
+function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+
+    A = zeros(npoin)
+    Ainv = zeros(npoin)
+    
+    for iel=1:nelem
+        for i=1:N+1
+            I = conn[i,iel]
+            A[I] = A[I] + Ae[i,iel]
+        end
+    end
+    Ainv = 1.0./A
+    
+    return A, Ainv
+end
+
 
 
 
