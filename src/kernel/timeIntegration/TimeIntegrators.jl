@@ -5,7 +5,6 @@ using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
 import SciMLBase
 
 include("../abstractTypes.jl")
-#include("../infrastructure/element_matrices.jl")
 include("../../io/write_output.jl")
 
 function time_loop!(SD,
