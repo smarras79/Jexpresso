@@ -64,48 +64,42 @@ function build_element_matrices(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N
     
 end
 
+function build_element_matrices(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
+    nothing
+end
 
-function build_element_matrices(SD::NSD_2D, QT::Inexact, MT::Monolithic, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
-    
-    el_matrices = St_ElMat{T}(zeros(N+1, N+1, N+1, N+1, mesh.nelem),
-                              zeros(N+1, N+1, N+1, N+1, mesh.nelem),
-                              zeros(N+1, N+1, N+1, N+1, mesh.nelem))
 
+function build_differentiation_matrix(SD::NSD_1D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
     
+    Del = zeros(N+1, N+1, mesh.nelem)
+
     for iel=1:mesh.nelem
+        Jac = mesh.Δx[iel]/2
         
-        for k = 1:Q+1
-            for l = 1:Q+1
-
-                ωkl  = ω[k]*ω[l]
-                Jkle = metrics.Je[k, l, iel]
-                
-                for i = 1:N+1
-                    for j = 1:N+1
-                        ψJK = ψ[i,k]*ψ[j,l]
-
-                        for m = 1:N+1
-                            for n = 1:N+1
-                                ψIK = ψ[m,k]*ψ[n,l]                                
-                                el_matrices.M[i,j,m,n,iel] = el_matrices.M[i,j,m,n,iel] + ωkl*Jkle*ψIK*ψJK #Sparse
-                            end
-                        end
-                    end
-                end
+        for i=1:N+1
+            for iq=1:Q+1, j=1:N+1
+                Del[i,j,iel] += ω[iq]*ψ[i,iq]*dψdξ[j,iq] #Sparse
             end
         end
     end
     #show(stdout, "text/plain", el_matrices.D)
     
-    return el_matrices   
+    return Del
+    
 end
+
+function build_differentiation_matrix(SD::NSD_2D, QT::Inexact, ψ, dψdξ, ω, mesh, N, Q, T)
+    nothing
+end
+
 
 #
 # Element mass matrix
 #
 function build_mass_matrix(SD::NSD_1D, MT::TensorProduct, ψ, ω, mesh, metrics, N, Q, T)
 
-    Me = St_ElMat{T}(zeros(N+1, mesh.nelem))
+    #Me = St_ElMat{T}(zeros(N+1, mesh.nelem))
+    Me = zeros(T, N+1, mesh.nelem)
     
     for iel=1:mesh.nelem
         Jac = mesh.Δx[iel]/2

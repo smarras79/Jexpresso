@@ -7,7 +7,7 @@ include("../../io/print_matrix.jl")
 include("./user_flux.jl")
 include("./user_source.jl")
 
-function build_rhs(SD::NSD_1D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, el_mat, time, inputs, T)
+function build_rhs(SD::NSD_1D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, time, inputs, T)
     
     #
     # Linear RHS in flux form: f = u*u
@@ -22,7 +22,7 @@ function build_rhs(SD::NSD_1D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, 
         for i=1:mesh.ngl
             I = mesh.conn[i,iel]
             for j=1:mesh.ngl
-                RHS[I] = RHS[I] - el_mat.D[i,j,iel]*fe[j]
+                RHS[I] = RHS[I] - De[i,j,iel]*fe[j]
             end
         end
     end
@@ -37,7 +37,7 @@ function build_rhs(SD::NSD_1D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, 
 end
 
 
-function build_rhs(SD::NSD_2D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, el_mat, time, inputs, T)
+function build_rhs(SD::NSD_2D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, ~, time, inputs, T)
 
     Fuser, Guser = user_flux(T, SD, qp, mesh.npoin)
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -49,7 +49,7 @@ function build_rhs(SD::NSD_2D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, 
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
                 
-                F[i,j,iel] = Fuser[ip]
+                 F[i,j,iel] = Fuser[ip]
                 G[i,j,iel] = Guser[ip]
                 
             end
@@ -80,15 +80,16 @@ function build_rhs(SD::NSD_2D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, 
     #end
     #show(stdout, "text/plain", el_matrices.D)
 
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, qp, ψ, dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    #rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, qp, ψ, dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
     
-    apply_boundary_conditions!(SD, rhs_el, u, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω,t, BCT, neqns)
-    
-    RHS = DSSijk_rhs(SD, rhs_el + inputs[:δvisc]*rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+    RHS = DSSijk_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
 
     divive_by_mass_matrix!(RHS, M, QT)
+
     
-    apply_periodicity!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, ~)
+    apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
+    
+    apply_periodicity!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
     
     return RHS
         
