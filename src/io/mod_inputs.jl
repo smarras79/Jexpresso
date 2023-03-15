@@ -137,6 +137,44 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
         inputs[:quadrature_nodes] = LGL()
     end
     
+    #
+    # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
+    #
+    if(haskey(inputs, :ode_solver))
+        if(uppercase(inputs[:ode_solver]) == "RK4")
+            inputs[:ode_solver] = RK4()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK22")
+            inputs[:ode_solver] = SSPRK22()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK33")
+            inputs[:ode_solver] = SSPRK33()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK53")
+            inputs[:ode_solver] = SSPRK53()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK54")
+            inputs[:ode_solver] =SSPRK54()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK63")
+            inputs[:ode_solver] = SSPRK63()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK73")
+            inputs[:ode_solver] = SSPRK73()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK104")
+            inputs[:ode_solver] = SSPRK104()
+        elseif(uppercase(inputs[:ode_solver]) == "CARPENTERKENNEDY2N54")
+            inputs[:ode_solver] = CarpenterKennedy2N54()
+        else
+            s = """
+                    WARNING in user_inputs.jl --> :ode_solver
+                    
+                        See usable solvers at
+                        https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
+
+                    RK4 will be used by default.
+                        """            
+            inputs[:ode_solver] = RK4()
+
+            @warn s
+        end
+    end
+
+
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         

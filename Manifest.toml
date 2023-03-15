@@ -2,7 +2,7 @@
 
 julia_version = "1.8.5"
 manifest_format = "2.0"
-project_hash = "71ff01cacb37b7fa6fee1847f9aecf613c976541"
+project_hash = "bb39204d4d5537b0a7c97992f1ba3fd630b106ea"
 
 [[deps.ATK_jll]]
 deps = ["Artifacts", "Glib_jll", "JLLWrappers", "Libdl", "Pkg"]
@@ -1825,6 +1825,12 @@ deps = ["ManualMemory"]
 git-tree-sha1 = "f8629df51cab659d70d2e5618a430b4d3f37f2c3"
 uuid = "8290d209-cae3-49c0-8002-c8c24d57dab5"
 version = "0.5.0"
+
+[[deps.TimerOutputs]]
+deps = ["ExprTools", "Printf"]
+git-tree-sha1 = "f2fd3f288dfc6f507b0c3a2eb3bac009251e548b"
+uuid = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
+version = "0.5.22"
 
 [[deps.TranscodingStreams]]
 deps = ["Random", "Test"]

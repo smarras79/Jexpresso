@@ -6,6 +6,7 @@ function user_inputs()
         :tend                 => 1.2,
         :Δt                   => 1e-3,
         :ndiagnostics_outputs => 5, #these are steps, not seconds
+        :ode_solver           => "SSPRK53",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
