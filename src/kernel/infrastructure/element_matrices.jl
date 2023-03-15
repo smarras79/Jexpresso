@@ -421,22 +421,6 @@ function DSS_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nelem,
     return L
 end
 
-#=
-function DSSijk_rhs(SD::NSD_1D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
-    
-    V  = zeros(T, npoin)
-    for iel = 1:nelem
-        for i = 1:N+1
-            I = conn[i,iel]
-            
-            V[I] = V[I] + Vel[i,iel]
-        end
-    end
-    #show(stdout, "text/plain", V)
-    return V
-end
-=#
-
 function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
     A = zeros(npoin)
@@ -454,9 +438,21 @@ function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
 end
 
 
+function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
+    V = zeros(npoin)
+    for iel=1:nelem
+        for i=1:N+1
+            I = conn[i,iel]
+            V[I] = V[I] + Ve[i,iel]
+        end
+    end
+    Ainv = 1.0./A
+    
+    return A, Ainv
+end
 
-function DSSijk_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
+function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)   
     
     V  = zeros(T, npoin)
     for iel = 1:nelem
@@ -475,9 +471,10 @@ end
 
 
 function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
-    RHS = M\RHS #M may is sparse but not necessarily dsiagonal
+    RHS = M\RHS #M is not iagonal
 end
 
 function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact) 
     RHS .= RHS./M #M is diagonal (stored as a vector)
 end
+

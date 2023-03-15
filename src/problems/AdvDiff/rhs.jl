@@ -7,7 +7,7 @@ include("../../io/print_matrix.jl")
 include("./user_flux.jl")
 include("./user_source.jl")
 
-function build_rhs(SD::NSD_1D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
 
     Fuser = user_flux(T, SD, qp, mesh.npoin)
     
@@ -40,8 +40,10 @@ function build_rhs(SD::NSD_1D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, 
     
 end
 
+function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, BCT, qp::Array, neqns, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T) nothing end
 
-function build_rhs(SD::NSD_2D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
+
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
 
     Fuser, Guser = user_flux(T, SD, qp, mesh.npoin)
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -84,12 +86,13 @@ function build_rhs(SD::NSD_2D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, 
     #end
     #show(stdout, "text/plain", el_matrices.D)
 
-    #Build diffusion
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, qp, ψ, dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-    #RHS         = DSSijk_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
-    RHS          = DSS(SD, QT, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
-    divive_by_mass_matrix!(RHS, M, QT)
+    #Build rhs_el(diffusion)
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, ψ, dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
 
+    #DSS(rhs_el)
+    RHS         = DSS_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+    divive_by_mass_matrix!(RHS, M, QT)
+    
     #B.C.
     apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
     apply_periodicity!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
@@ -98,7 +101,9 @@ function build_rhs(SD::NSD_2D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, 
     
 end
 
-function build_rhs_diff(SD::NSD_1D, QT, AP::AdvDiff, nvars, qp::Array, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs(SD::NSD_2D, QT::Exact, PT::AdvDiff, BCT, qp::Array, neqns, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T) nothing end
+
+function build_rhs_diff(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
 
     N           = mesh.ngl - 1
     qnel        = zeros(mesh.ngl, mesh.nelem)
@@ -137,7 +142,7 @@ function build_rhs_diff(SD::NSD_1D, QT, AP::AdvDiff, nvars, qp::Array, ψ, dψ, 
     return rhsdiffξ_el*νx
 end
 
-function build_rhs_diff(SD::NSD_2D, QT, AP::AdvDiff, nvars, qp::Array, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
 
     N = mesh.ngl - 1
     
@@ -183,57 +188,4 @@ function build_rhs_diff(SD::NSD_2D, QT, AP::AdvDiff, nvars, qp::Array, ψ, dψ, 
 
     return (rhsdiffξ_el*νx + rhsdiffη_el*νy)
     
-end
-
-
-function build_rhs(SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, D, f)
-
-    #
-    # Linear RHS in flux form: f = u*q
-    #  
-    rhs = zeros(mesh.npoin)
-    fe  = zeros(mesh.ngl)
-    for iel=1:mesh.nelem
-        for i=1:mesh.ngl
-            I = mesh.conn[i,iel]
-            fe[i] = f[I]
-        end
-        for i=1:mesh.ngl
-            I = mesh.conn[i,iel]
-            for j=1:mesh.ngl
-                rhs[I] = rhs[I] - D[i,j,iel]*fe[j]
-            end
-        end
-    end
-    # M⁻¹*rhs where M is diagonal
-    rhs .= rhs./M
-    
-    return rhs
-end
-
-function build_rhs(SD::NSD_1D, QT::Exact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, el_mat, f)
-
-    #
-    # Linear RHS in flux form: f = u*q
-    #
-    
-    rhs = zeros(mesh.npoin)
-    fe  = zeros(mesh.ngl)
-    for iel=1:mesh.nelem
-        for i=1:mesh.ngl
-            I = mesh.conn[i,iel]
-            fe[i] = f[I]
-        end
-        for i=1:mesh.ngl
-            I = mesh.conn[i,iel]
-            for j=1:mesh.ngl
-                rhs[I] = rhs[I] - el_mat.D[i,j,iel]*fe[j]
-            end
-        end
-    end
-    
-    # M⁻¹*rhs where M is not full
-    rhs = M\rhs
-    
-    return rhs
 end
