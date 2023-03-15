@@ -80,9 +80,9 @@ function build_rhs(SD::NSD_2D, QT, PT::AdvDiff, BCT, neqns, qp::Array, ψ, dψ, 
     #end
     #show(stdout, "text/plain", el_matrices.D)
 
-    #rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, qp, ψ, dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, qp, ψ, dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
     
-    RHS = DSSijk_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+    RHS = DSSijk_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
 
     divive_by_mass_matrix!(RHS, M, QT)
 
