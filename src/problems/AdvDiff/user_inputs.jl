@@ -1,15 +1,17 @@
 function user_inputs()
     inputs = Dict(
         #---------------------------------------------------------------------------
+        #
         # User define your inputs below: the order doesn't matter
+        # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
         :tend                 => 1.2,
         :Δt                   => 1e-3,
-        :ndiagnostics_outputs => 5, #these are steps, not seconds
-        :ode_solver           => "SSPRK53",
+        :ndiagnostics_outputs => 5,         #these are steps, not seconds
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
+        :ode_solver          => "SSPRK53",
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
@@ -26,6 +28,10 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
+        #---------------------------------------------------------------------------
+        # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
+        #---------------------------------------------------------------------------
+        :outformat     => "png", #choice: "png", "ascii"
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------

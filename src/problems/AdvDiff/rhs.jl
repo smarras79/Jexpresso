@@ -7,6 +7,33 @@ include("../../io/print_matrix.jl")
 include("./user_flux.jl")
 include("./user_source.jl")
 
+
+function rhs!(du, u, params, time)
+
+    #SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, De, u)
+    T       = params.T
+    SD      = params.SD
+    QT      = params.QT
+    PT      = params.PT
+    BCT     = params.BCT
+    neqns   = params.neqns
+    basis   = params.basis
+    mesh    = params.mesh
+    metrics = params.metrics
+    inputs  = params.inputs
+    ω       = params.ω
+    M       = params.M
+    De      = params.De
+    Le      = params.Le
+
+    RHS = build_rhs(SD, QT, PT, BCT, u, neqns, basis.ψ, basis.dψ, ω, mesh, metrics, M, De, Le, time, inputs, T)    
+    du .= RHS
+    
+    return du #This is already DSSed
+end
+
+
+
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
 
     Fuser = user_flux(T, SD, qp, mesh.npoin)
