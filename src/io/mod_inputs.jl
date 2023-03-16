@@ -181,7 +181,7 @@ if(haskey(inputs, :outformat))
         inputs[:outformat] = ASCII()
     end
 else
-    inputs[:outformat] = PNG()
+    inputs[:outformat] = ASCII()
 end
 
     #Grid entries:
@@ -323,6 +323,15 @@ elseif (lowercase(problem_name) == "advdiff" ||
     
     inputs[:neqns] = neqns = 1
     println( " # neqns     ", neqns)
+    
+elseif (lowercase(problem_name) == "elliptic" ||
+        lowercase(problem_name) == "diffusion" ||
+        lowercase(problem_name) == "helmholtz")
+    inputs[:problem] = Elliptic()
+    
+    inputs[:neqns] = neqns = 1
+    println( " # neqns     ", neqns)
+    
 else
     
     inputs[:neqns] = 1 #default
