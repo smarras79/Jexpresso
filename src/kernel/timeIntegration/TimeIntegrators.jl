@@ -2,6 +2,7 @@ using LinearAlgebra
 using DiffEqBase
 using OrdinaryDiffEq
 using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
+using LinearSolve
 import SciMLBase
 
 include("../abstractTypes.jl")
@@ -36,7 +37,7 @@ function time_loop!(SD,
                         tspan,
                         params);
     
-    println(" # Solving ODE with ................................\n")
+    println(" # Solving ODE with ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
     
     @time    sol = solve(prob,
@@ -45,7 +46,46 @@ function time_loop!(SD,
                          saveat = range(T(0.), Nt*T(Δt), length=inputs[:ndiagnostics_outputs]),
                          progress = true,
                          progress_message = (dt, u, p, t) -> t)
-    println(" # Solving ODE with  ................................ DONE\n")
+    println(" # Solving ODE with  ................................ DONE")
+    
+    write_output(sol, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
+    
+    
+end
+
+function solveAx!(SD,
+                  QT,
+                  PT,
+                  mesh::St_mesh,
+                  metrics::St_metrics,
+                  basis, ω,
+                  qp::St_SolutionVars,
+                  M, L,
+                  neqns,
+                  inputs::Dict,
+                  BCT,
+                  OUTPUT_DIR::String,
+                  T)
+    
+    #
+    # Ax=b solve come from LinearSolve.jl;
+    #
+    println(" # Solve Ax=b with ................................")
+    A = rand(10,10)
+    b = rand(10)
+
+    RHS = build_rhs_source(SD,
+                          QT,
+                          PT,
+                          qp.qn,
+                          mesh,
+                          M, #M is sparse for exact integration
+                          T)
+
+    prob = LinearProblem(L, RHS);
+    @time sol = solve(prob, IterativeSolversJL_GMRES())
+
+    println(" # Solving Ax=b with  ................................ DONE")
     
     write_output(sol, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
