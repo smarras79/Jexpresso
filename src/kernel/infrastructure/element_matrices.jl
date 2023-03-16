@@ -184,7 +184,7 @@ end
 #
 # Element Laplace matrix
 #
-function build_laplace_matrix(SD::NSD_1D, _, dψ, ω, mesh, metrics, N, Q, T)
+function build_laplace_matrix(SD::NSD_1D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -380,14 +380,14 @@ function DSS_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArr
     return M
 end
 
-function DSS_laplace(SD::NSD_1D, Le::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_laplace(SD::NSD_1D, Lel::AbstractArray, mesh::St_mesh, T)
 
-    L = zeros(npoin, npoin)    
-    for iel=1:nelem
-        for i=1:N+1
-            I = conn[i,iel]
-            for j=1:N+1
-                J = conn[j,iel]
+    L = zeros(mesh.npoin, mesh.npoin)    
+    for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            I = mesh.connijk[i,iel]
+            for j=1:mesh.ngl
+                J = mesh.connijl[j,iel]
                 L[I,J] = L[I,J] + Le[i,j,iel]                
             end
         end
@@ -397,19 +397,18 @@ function DSS_laplace(SD::NSD_1D, Le::AbstractArray, conn::AbstractArray, nelem, 
 end
 
 
-function DSS_laplace(SD::NSD_2D, Lel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_laplace(SD::NSD_2D, Lel::AbstractArray, mesh::St_mesh, T)
     
-    L  = zeros(npoin, npoin)
-    
-    for iel=1:nelem
-        for j = 1:N+1
-            for i = 1:N+1
-                J = i + (j - 1)*(N + 1)
-                JP = conn[i,j,iel]
-                for n = 1:N+1
-                    for m = 1:N+1
-                        I = m + (n - 1)*(N + 1)
-                        IP = conn[m,n,iel]
+    L  = zeros(mesh.npoin, mesh.npoin)
+    for iel=1:mesh.nelem
+        for j = 1:mesh.ngl
+            for i = 1:mesh.ngl
+                J = i + (j - 1)*mesh.ngl
+                JP = mesh.connijk[i,j,iel]
+                for n = 1:mesh.ngl
+                    for m = 1:mesh.ngl
+                        I = m + (n - 1)*mesh.ngl
+                        IP = mesh.connijk[m,n,iel]
                         
                         L[IP,JP] = L[IP,JP] + Lel[I,J,iel] #if exact
                     end

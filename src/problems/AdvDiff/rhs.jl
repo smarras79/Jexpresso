@@ -53,7 +53,7 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, 
         for i=1:mesh.ngl
             I = mesh.conn[i,iel]
             for j=1:mesh.ngl
-                RHS[I] = RHS[I] - De[i,j,iel]*fe[j] #+ inputs[:νx]*Le[i,j,iel]*qe[j]
+                RHS[I] = RHS[I] - De[i,j,iel]*fe[j] + inputs[:νx]*Le[i,j,iel]*qe[j]
             end
         end
     end
