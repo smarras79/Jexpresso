@@ -5,3 +5,4 @@ struct AdvDiff <: AbstractProblem end
 struct LinearCLaw <: AbstractProblem end
 struct Burgers <: AbstractProblem end
 struct SW <: AbstractProblem end
+struct Elliptic <: AbstractProblem end

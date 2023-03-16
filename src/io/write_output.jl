@@ -4,6 +4,11 @@ abstract type AbstractOutFormat end
 struct PNG <: AbstractOutFormat end
 struct ASCII <: AbstractOutFormat end 
 
+#----------------------------------------------------------------------------------------------------------------------------------------------
+# ∂q/∂t = RHS -> q(x,t)
+#----------------------------------------------------------------------------------------------------------------------------------------------
+
+# PNG 
 function write_output(sol::ODESolution, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
     
     for iout = 1: inputs[:ndiagnostics_outputs]
@@ -13,7 +18,7 @@ function write_output(sol::ODESolution, SD, mesh::St_mesh, OUTPUT_DIR::String, i
     
 end
 
-
+# ASCII
 function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII)
     
     for iout = 1: inputs[:ndiagnostics_outputs]
@@ -25,11 +30,8 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
             end
         end #f
      
-    end
-    
+    end 
 end
-
-
 function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII)
     
     for iout = 1: inputs[:ndiagnostics_outputs]
@@ -44,3 +46,31 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
     end
     
 end
+
+
+
+#----------------------------------------------------------------------------------------------------------------------------------------------
+# Aq = b -> q(x)
+#----------------------------------------------------------------------------------------------------------------------------------------------
+
+# PNG
+function write_output(sol::SciMLBase.LinearSolution, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
+    @info size(sol.u)
+    title = @sprintf "Solution to ∇⋅∇(q) = f"
+    plot_results(SD, mesh.x, mesh.y, sol.u, title, string(OUTPUT_DIR, "Axb.png"))
+    
+end
+
+# ASCII
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII)    
+    title = @sprintf "Solution to ∇⋅∇(q) = f"
+    fname = @sprintf "Axb.dat"
+    open(string(OUTPUT_DIR, "/", fname), "w") do f
+        for ip = 1:length(sol.u)
+            @printf(f, " %d %.6f %.6f %.6f \n", ip, mesh.x[ip], mesh.y[ip], sol.u[ip])
+        end #f
+    end  
+end
+
