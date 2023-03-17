@@ -8,12 +8,11 @@ If you are interested in contributing, please get in touch.
 To install and run the code assume Julia
 version 1.7.2 or higher (tested up to 1.8.5)
 
-The [MPI.jl][0] package that is used assumes that you have a working MPI installation
-
 ## Setup with CPUs
 
 ```bash
-julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
+>> cd $JEXPRESSO_HOME
+>> julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
 followed by the following:
 
@@ -36,6 +35,7 @@ Currently available problem names:
 * AdvDiff
 * Elliptic
 
+More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
 ## Plotting
 For plotting we rely on `PlotlyJS`. If you want to use a different package,
