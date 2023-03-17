@@ -26,8 +26,8 @@ function user_inputs()
         #:lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
