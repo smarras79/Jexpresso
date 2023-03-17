@@ -7,8 +7,8 @@ const TFloat = Float64
 #--------------------------------------------------------
 # USER INPUT ARGUMENT:
 #--------------------------------------------------------
-#problem_name = "Elliptic"
-problem_name = "AdvDiff"
+problem_name = "Elliptic"
+#problem_name = "AdvDiff"
 #--------------------------------------------------------
 # END USER INPUT ARGUMENT:
 #--------------------------------------------------------

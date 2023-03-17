@@ -5,7 +5,7 @@ function user_source(q::Array, mesh::St_mesh, T)
     #
     # S(x,y) .= sinpi.(c*(x .- xc)).*sinpi(c*(y .- yc))    
     #
-    c = 1.0
+    c = 2.0
     xc, yc = (maximum(mesh.x) + minimum(mesh.x))/2, (maximum(mesh.y) + minimum(mesh.y))/2
     for iel_g = 1:mesh.nelem
         for i=1:mesh.ngl

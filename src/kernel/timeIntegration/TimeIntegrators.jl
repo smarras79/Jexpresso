@@ -71,9 +71,23 @@ function solveAx!(SD,
     # Ax=b solve come from LinearSolve.jl;
     #
     println(" # Solve Ax=b with ................................")
-    A = rand(10,10)
-    b = rand(10)
 
+    #B.C.
+    # NOTICE: THESE ARE WRONGLY IMPOSED BUT I PUT THEM JUST TO RUN IT WHILE YASSINE FINISHES HIS flux implementation
+    ϵ = eps(Float32)
+    for iel=1:mesh.nelem, i=1:mesh.ngl, j=1:mesh.ngl
+        ip = mesh.connijk[i,j,iel]
+        x = mesh.x[ip]
+        y = mesh.y[ip]
+        if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
+            qp.qn[ip,1] = sinpi(2*y)
+        end
+        if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
+            qp.qn[ip,1] = 0.0
+        end        
+    end
+    #END notice on B.C..
+    
     RHS = build_rhs_source(SD,
                           QT,
                           PT,
@@ -82,6 +96,7 @@ function solveAx!(SD,
                           M, #M is sparse for exact integration
                           T)
 
+    
     prob = LinearProblem(L, RHS);
     @time sol = solve(prob, IterativeSolversJL_GMRES())
 

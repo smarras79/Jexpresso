@@ -10,7 +10,7 @@ end
 
 function initialize(SD::NSD_2D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
-    println(" # Initialize fields for  ∇^2(q) = f........................")
+    println(" # Initialize fields for  ∇²(q) = f........................")
         
     ngl  = mesh.nop + 1
     nsd  = mesh.nsd
@@ -20,7 +20,7 @@ function initialize(SD::NSD_2D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPU
     test_case = "giraldo.12.14"
     if (test_case == "giraldo.12.14")
 
-        c = 1.0
+        c = 2.0
         xc, yc = (maximum(mesh.x) + minimum(mesh.x))/2, (maximum(mesh.y) + minimum(mesh.y))/2
         
         for iel_g = 1:mesh.nelem
@@ -46,7 +46,7 @@ function initialize(SD::NSD_2D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPU
     title = string( "Initial condition")
     plot_results(SD, mesh.x, mesh.y, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
     
-    println(" # Initialize fields for ∇^2(q) = f........................ DONE")
+    println(" # Initialize fields for ∇²(q) = f........................ DONE")
     
     return q
 end

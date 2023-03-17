@@ -178,8 +178,7 @@ function build_rhs_source(SD::NSD_2D,
 
     S = user_source(q, mesh, T)
     
-    return M.*S
-    
+    return M.*S    
 end
 
 function build_rhs_source(SD::NSD_2D,
@@ -192,7 +191,6 @@ function build_rhs_source(SD::NSD_2D,
 
     S = user_source(q, mesh, T)
     
-    return M*S
-    
+    return M*S   
 end
 
