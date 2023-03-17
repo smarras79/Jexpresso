@@ -181,6 +181,10 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
         end
     end
 
+if(!haskey(inputs, :output_dir))
+    inputs[:output_dir] = ""
+end
+
 if(haskey(inputs, :outformat))
     if lowercase(inputs[:outformat]) == "png"
         inputs[:outformat] = PNG()

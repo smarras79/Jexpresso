@@ -15,19 +15,26 @@ The [MPI.jl][0] package that is used assumes that you have a working MPI install
 ```bash
 julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
-You can test that things were installed properly with
+followed by the following:
+
+Push problem name to ARGS
+You need to do this only when you run a new problem
 ```bash
-julia --project=. $JEXPRESSO_HOME/src/run.jl PROBLEM_NAME
+julia> push!(empty!(ARGS), PROBLEM_NAME::String);
+julia> include(./src/run.jl)
 ```
 
-`$JEXPRESSO_HOME` is the path to the base JEXPRESSO directory on your computer (you can export it in your .bashrc or simply replace its value with the explicit name of the path)
+PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name
+Ex. If you run the Advection Diffusion problem in $JEXPRESSO/src/problems/AdvDiff
+```bash
+julia> push!(empty!(ARGS), "AdvDiff");
+julia> include(./src/run.jl)
+```
 
-`PROBLEM_NAME` must be the same as the problem directory in `$JEXPRESSO_HOME/src/problems/PROBLEM_NAME`
 Currently available problem names:
 
 * AdvDiff
-* LinearCLaw
-
+* Elliptic
 
 
 ## Plotting
