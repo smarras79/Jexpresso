@@ -160,7 +160,9 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
             inputs[:ode_solver] = SSPRK104()
         elseif(uppercase(inputs[:ode_solver]) == "CARPENTERKENNEDY2N54")
             inputs[:ode_solver] = CarpenterKennedy2N54()
-        elseif(uppercase(inputs[:ode_solver]) == "BICGSTAB" || uppercase(inputs[:ode_solver]) == "IterativeSolversJL_BICGSTAB")
+        elseif(uppercase(inputs[:ode_solver]) == "BICGSTAB" ||
+               uppercase(inputs[:ode_solver]) == "BICGSTABLE" ||
+               uppercase(inputs[:ode_solver]) == "IterativeSolversJL_BICGSTAB") 
             inputs[:ode_solver] = IterativeSolversJL_BICGSTAB()
         elseif(uppercase(inputs[:ode_solver]) == "GMRES"|| uppercase(inputs[:ode_solver]) == "IterativeSolversJL_GMRES")
             inputs[:ode_solver] = IterativeSolversJL_GMRES()
