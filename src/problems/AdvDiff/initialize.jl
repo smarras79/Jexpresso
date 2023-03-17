@@ -96,16 +96,6 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
             end
         end
     end
-        
-    #------------------------------------------
-    # Plot initial condition:
-    # Notice that I scatter the points to
-    # avoid sorting the x and q which would be
-    # becessary for a smooth curve plot.
-    #------------------------------------------
-    title = string( "Tracer: initial condition")
-    plot_results(SD, mesh.x, mesh.y, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
-    
     println(" # Initialize fields for AdvDiff ........................ DONE")
     
     return q
