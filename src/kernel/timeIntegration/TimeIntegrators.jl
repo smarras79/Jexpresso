@@ -81,22 +81,22 @@ function solveAx!(SD,
         if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
             qp.qn[ip,1] = sinpi(2*y)
 
-         #=   for jp=1:mesh.npoin
+            for jp=1:mesh.npoin
                 L[ip,jp] = 0.0
                 if (ip==jp)
                     L[ip,jp] = 1.0
                 end
-            end=#
+            end
         end
         if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
             qp.qn[ip,1] = 0.0
             
-         #=   for jp=1:mesh.npoin
+            for jp=1:mesh.npoin
                 L[ip,jp] = 0.0
                 if (ip==jp)
                     L[ip,jp] = 1.0
                 end
-            end=#
+            end
         end        
     end
     #END notice on B.C..
