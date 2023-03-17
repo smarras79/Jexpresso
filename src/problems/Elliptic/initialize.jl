@@ -36,7 +36,7 @@ function initialize(SD::NSD_2D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPU
             end
         end
     end
-        
+    
     #------------------------------------------
     # Plot initial condition:
     # Notice that I scatter the points to
