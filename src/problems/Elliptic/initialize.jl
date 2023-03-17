@@ -10,7 +10,7 @@ end
 
 function initialize(SD::NSD_2D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
-    println(" # Initialize fields for  ∇²(q) = f........................")
+    println(" # Initialize fields for ∇²(q) = f........................")
         
     ngl  = mesh.nop + 1
     nsd  = mesh.nsd
@@ -36,7 +36,7 @@ function initialize(SD::NSD_2D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPU
             end
         end
     end
-        
+    
     #------------------------------------------
     # Plot initial condition:
     # Notice that I scatter the points to

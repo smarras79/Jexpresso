@@ -71,32 +71,28 @@ function solveAx!(SD,
     #
     # Ax=b solve come from LinearSolve.jl;
     #
-    println(" # Solve Ax=b with ................................")
-
-    #B.C.
+    println(" # Solve Ax=b ................................")
+    println(" #  ", inputs[:ode_solver])
+    # Naive B.C.
     ϵ = eps(Float32)
     for ip=1:mesh.npoin
-        x = mesh.x[ip]
-        y = mesh.y[ip]
+        x, y = mesh.x[ip], mesh.y[ip]
         if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
             qp.qn[ip,1] = sinpi(2*y)
-
             for jp=1:mesh.npoin
                 L[ip,jp] = 0.0
             end
             L[ip,ip] = 1.0
-
         end
         if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
             qp.qn[ip,1] = 0.0
-            
             for jp=1:mesh.npoin
                 L[ip,jp] = 0.0
             end
             L[ip,ip] = 1.0
         end        
     end
-    #END notice on B.C..
+    #END Naive B.C..
     
     RHS = build_rhs_source(SD,
                           QT,
@@ -108,11 +104,10 @@ function solveAx!(SD,
 
     
     prob = LinearProblem(L, RHS);
+    
+    @time sol = solve(prob, inputs[:ode_solver])
 
-    ST =inputs[:ode_solver]
-    @time sol = solve(prob, ST)
-
-    println(" # Solving Ax=b with  ................................ DONE")
+    println(" # Solving Ax=b ................................ DONE")
     
     write_output(sol, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
