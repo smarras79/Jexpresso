@@ -161,8 +161,10 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
             inputs[:ode_solver] = SSPRK104()
         elseif(uppercase(inputs[:ode_solver]) == "CARPENTERKENNEDY2N54")
             inputs[:ode_solver] = CarpenterKennedy2N54()
+        elseif(uppercase(inputs[:ode_solver]) == "BICGSTAB")
+            inputs[:ode_solver] = IterativeSolversJL_BICGSTAB()
         elseif(uppercase(inputs[:ode_solver]) == "GMRES")
-            #inputs[:ode_solver] = GMRES()
+            inputs[:ode_solver] = IterativeSolversJL_GMRES()
         else
             s = """
                     WARNING in user_inputs.jl --> :ode_solver

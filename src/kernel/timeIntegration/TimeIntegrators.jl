@@ -75,15 +75,28 @@ function solveAx!(SD,
     #B.C.
     # NOTICE: THESE ARE WRONGLY IMPOSED BUT I PUT THEM JUST TO RUN IT WHILE YASSINE FINISHES HIS flux implementation
     ϵ = eps(Float32)
-    for iel=1:mesh.nelem, i=1:mesh.ngl, j=1:mesh.ngl
-        ip = mesh.connijk[i,j,iel]
+    for ip=1:mesh.npoin
         x = mesh.x[ip]
         y = mesh.y[ip]
         if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
             qp.qn[ip,1] = sinpi(2*y)
+
+         #=   for jp=1:mesh.npoin
+                L[ip,jp] = 0.0
+                if (ip==jp)
+                    L[ip,jp] = 1.0
+                end
+            end=#
         end
         if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
             qp.qn[ip,1] = 0.0
+            
+         #=   for jp=1:mesh.npoin
+                L[ip,jp] = 0.0
+                if (ip==jp)
+                    L[ip,jp] = 1.0
+                end
+            end=#
         end        
     end
     #END notice on B.C..
