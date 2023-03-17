@@ -48,17 +48,18 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
-    #mod_inputs_check(inputs, :problem, "e")
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
     #Time:
     if(!haskey(inputs, :ndiagnostics_outputs))
         inputs[:ndiagnostics_outputs] = 2
     end
-    mod_inputs_check(inputs, :tend, "e") #Final time
     mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
+    end
+     if(!haskey(inputs, :tend))
+        inputs[:tend] = 0.0  #end time is 0.0 by default
     end
     
     if(!haskey(inputs, :lexact_integration))
@@ -159,6 +160,10 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
             inputs[:ode_solver] = SSPRK104()
         elseif(uppercase(inputs[:ode_solver]) == "CARPENTERKENNEDY2N54")
             inputs[:ode_solver] = CarpenterKennedy2N54()
+        elseif(uppercase(inputs[:ode_solver]) == "BICGSTAB" || uppercase(inputs[:ode_solver]) == "IterativeSolversJL_BICGSTAB")
+            inputs[:ode_solver] = IterativeSolversJL_BICGSTAB()
+        elseif(uppercase(inputs[:ode_solver]) == "GMRES"|| uppercase(inputs[:ode_solver]) == "IterativeSolversJL_GMRES")
+            inputs[:ode_solver] = IterativeSolversJL_GMRES()
         else
             s = """
                     WARNING in user_inputs.jl --> :ode_solver
@@ -166,9 +171,9 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
                         See usable solvers at
                         https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
 
-                    RK4 will be used by default.
+                    SSPRK53 will be used by default.
                         """            
-            inputs[:ode_solver] = RK4()
+            inputs[:ode_solver] = SSPRK53()
 
             @warn s
         end

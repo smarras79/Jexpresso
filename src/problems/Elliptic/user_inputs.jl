@@ -5,33 +5,30 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                 => 1.5,
-        :Δt                   => 1e-3,
-        :ndiagnostics_outputs => 5,         #these are steps, not seconds
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :ode_solver          => "SSPRK53",
+        :ode_solver          => "GMRES",
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :νx                   => 0.01, #kinematic viscosity constant
-        :νy                   => 0.01, #kinematic viscosity constant
+        #:νx                   => 0.01, #kinematic viscosity constant
+        #:νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
+        :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        #:outformat     => "png", #choice: "png", "ascii" (default is ascii)
+        #:outformat     => "png", #choice: "png", "ascii"
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
