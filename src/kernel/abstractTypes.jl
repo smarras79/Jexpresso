@@ -44,14 +44,9 @@ struct COVAR <: AbstractMetricForm end
 struct CNVAR <: AbstractMetricForm end
 
 
-#
-# Time discretization
-#
-abstract type AbstractTime end
-struct RK <: AbstractTime end
-struct RK3 <: AbstractTime end
-struct RK5 <: AbstractTime end
-
+abstract type AbstractOutFormat end
+struct PNG <: AbstractOutFormat end
+struct ASCII <: AbstractOutFormat end
 
 #
 # Boundary flags/conditions
@@ -62,3 +57,4 @@ struct DefaultBC <: AbstractBC end
 struct LinearClaw_KopNR <: AbstractBC end
 struct LinearClaw_KopRefxmax <: AbstractBC end
 struct DirichletExample <: AbstractBC end
+
