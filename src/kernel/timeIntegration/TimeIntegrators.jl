@@ -98,7 +98,10 @@ function solveAx!(SD,
 
     
     prob = LinearProblem(L, RHS);
-    @time sol = solve(prob, IterativeSolversJL_GMRES())
+
+    #ST = IterativeSolversJL_GMRES()
+    ST = IterativeSolversJL_BICGSTAB()
+    @time sol = solve(prob, ST)
 
     println(" # Solving Ax=b with  ................................ DONE")
     
