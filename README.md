@@ -30,6 +30,9 @@ Notice: command line arguments have been de-activated while we add several solve
 Currently available problem names:
 
 * AdvDiff
+* Elliptic
+
+More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
 ## Plotting
 For plotting we rely on `PlotlyJS`. If you want to use a different package,
