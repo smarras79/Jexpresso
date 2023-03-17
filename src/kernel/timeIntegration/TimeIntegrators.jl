@@ -3,6 +3,7 @@ using DiffEqBase
 using OrdinaryDiffEq
 using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
 using LinearSolve
+using SnoopCompile
 import SciMLBase
 
 include("../abstractTypes.jl")
@@ -43,13 +44,13 @@ function time_loop!(SD,
     @time    sol = solve(prob,
                          inputs[:ode_solver],
                          dt = Δt,
+                         save_everystep=false,
                          saveat = range(T(0.), Nt*T(Δt), length=inputs[:ndiagnostics_outputs]),
                          progress = true,
                          progress_message = (dt, u, p, t) -> t)
     println(" # Solving ODE with  ................................ DONE")
     
     write_output(sol, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
-    
     
 end
 
@@ -73,7 +74,6 @@ function solveAx!(SD,
     println(" # Solve Ax=b with ................................")
 
     #B.C.
-    # NOTICE: THESE ARE WRONGLY IMPOSED BUT I PUT THEM JUST TO RUN IT WHILE YASSINE FINISHES HIS flux implementation
     ϵ = eps(Float32)
     for ip=1:mesh.npoin
         x = mesh.x[ip]
@@ -82,7 +82,6 @@ function solveAx!(SD,
             qp.qn[ip,1] = sinpi(2*y)
 
             for jp=1:mesh.npoin
-                L[ip,jp] = 0.0
                 if (ip==jp)
                     L[ip,jp] = 1.0
                 end
@@ -92,7 +91,6 @@ function solveAx!(SD,
             qp.qn[ip,1] = 0.0
             
             for jp=1:mesh.npoin
-                L[ip,jp] = 0.0
                 if (ip==jp)
                     L[ip,jp] = 1.0
                 end
