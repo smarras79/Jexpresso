@@ -11,7 +11,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :ode_solver          => "SSPRK53",
+        :ode_solver          => "GMRES",
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
@@ -23,7 +23,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
+        :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
@@ -31,7 +31,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        #:outformat     => "png", #choice: "png", "ascii" (default is ascii)
+        :outformat     => "png", #choice: "png", "ascii"
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
