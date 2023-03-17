@@ -72,7 +72,6 @@ function solveAx!(SD,
     # Ax=b solve come from LinearSolve.jl;
     #
     println(" # Solve Ax=b ................................")
-    println(" #  ", inputs[:ode_solver])
     # Naive B.C.
     ϵ = eps(Float32)
     for ip=1:mesh.npoin
@@ -110,6 +109,5 @@ function solveAx!(SD,
     println(" # Solving Ax=b ................................ DONE")
     
     write_output(sol, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
-    
-    
+        
 end
