@@ -82,19 +82,18 @@ function solveAx!(SD,
             qp.qn[ip,1] = sinpi(2*y)
 
             for jp=1:mesh.npoin
-                if (ip==jp)
-                    L[ip,jp] = 1.0
-                end
+                L[ip,jp] = 0.0
             end
+            L[ip,ip] = 1.0
+
         end
         if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
             qp.qn[ip,1] = 0.0
             
             for jp=1:mesh.npoin
-                if (ip==jp)
-                    L[ip,jp] = 1.0
-                end
+                L[ip,jp] = 0.0
             end
+            L[ip,ip] = 1.0
         end        
     end
     #END notice on B.C..
@@ -110,8 +109,8 @@ function solveAx!(SD,
     
     prob = LinearProblem(L, RHS);
 
-    #ST = IterativeSolversJL_GMRES()
-    ST = IterativeSolversJL_BICGSTAB()
+    ST = IterativeSolversJL_GMRES()
+    #ST = IterativeSolversJL_BICGSTAB()
     @time sol = solve(prob, ST)
 
     println(" # Solving Ax=b with  ................................ DONE")
