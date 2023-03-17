@@ -1,4 +1,9 @@
 using LinearSolve
+using LinearSolve: solve
+using SnoopCompile
+
+include("../abstractTypes.jl")
+
 """
     solveAx(L, RHS, linear_solver... preconditionr)
 
@@ -10,9 +15,11 @@ This function is a wrapper to the LinearSolve.jl library to solve the linear sys
 
 """
 function solveAx(L, RHS, linear_solver...)
+
+    @info linear_solver
     
     prob = LinearProblem(L, RHS);    
-    @time solution = solve(prob, linear_solver)
+    @time sol = solve(prob, linear_solver)
 
-    return solution
+    return sol
 end

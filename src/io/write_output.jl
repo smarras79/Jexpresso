@@ -1,3 +1,7 @@
+using LinearSolve
+using SnoopCompile
+import SciMLBase
+
 include("./plotting/jeplots.jl")
 
 abstract type AbstractOutFormat end
@@ -52,7 +56,6 @@ end
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # Aq = b -> q(x)
 #----------------------------------------------------------------------------------------------------------------------------------------------
-
 # PNG
 function write_output(sol::SciMLBase.LinearSolution, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
     @info size(sol.u)
