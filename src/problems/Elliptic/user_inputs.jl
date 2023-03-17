@@ -28,7 +28,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        :outformat     => "png", #choice: "png", "ascii"
+        :outformat     => "ascii", #choice: "png", "ascii"
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
