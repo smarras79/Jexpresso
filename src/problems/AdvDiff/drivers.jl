@@ -29,8 +29,7 @@ include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
 include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/mesh/mesh.jl")
-include("../../kernel/solver/mod_solution.jl")
-include("../../kernel/timeIntegration/TimeIntegrators.jl")  
+include("../../kernel/solvers/TimeIntegrators.jl")  
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type

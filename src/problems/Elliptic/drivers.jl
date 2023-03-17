@@ -29,8 +29,7 @@ include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
 include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/mesh/mesh.jl")
-include("../../kernel/solver/mod_solution.jl")
-include("../../kernel/timeIntegration/TimeIntegrators.jl")  
+include("../../kernel/solvers/Axb.jl")
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
@@ -104,24 +103,49 @@ function driver(DT::ContGal,       #Space discretization type
     # Build metric terms
     #--------------------------------------------------------
     metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
-        
-    #--------------------------------------------------------
-    # Build element mass matrix
-    #
-    # Return:
-    # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
-    #--------------------------------------------------------    
+    
+    #Build L = DSS(∫∇ψᵢ∇ψⱼdΩₑ)
     Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     L  =          DSS_laplace(SD, Le, mesh, TFloat)
+
+    #Build M = DSS(∫ψᵢψⱼdΩₑ)
     Me =    build_mass_matrix(SD, QT, basis.ψ,           ω, mesh, metrics, Nξ, Qξ, TFloat)
     M  =             DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-
+    
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
     qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
-    
-    # NOTICE add a function to find the mesh mininum resolution
-    solveAx!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, L, neqns, inputs, DefaultBC(), OUTPUT_DIR, TFloat)
+
+    #Build ∫S(q)dΩ
+    RHS = build_rhs_source(SD, QT, inputs[:problem], qp.qn, mesh, M, TFloat)
+
+    # Dirichlet B.C.
+    ϵ = eps(Float32)
+    for ip=1:mesh.npoin
+        x, y = mesh.x[ip], mesh.y[ip]
+        if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
+            qp.qn[ip,1] = sinpi(2*y)
+            for jp=1:mesh.npoin
+                L[ip,jp] = 0.0
+            end
+            L[ip,ip] = 1.0
+        end
+        if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
+            qp.qn[ip,1] = 0.0
+            for jp=1:mesh.npoin
+                L[ip,jp] = 0.0
+            end
+            L[ip,ip] = 1.0
+        end        
+    end
+    #END Dirichlet B.C..
+
+    println(" # Solve Lq=RHS ................................")    
+    solution = solveAx(L, RHS, inputs[:ode_solver])
+    println(" # Solve Lq=RHS ................................ DONE")
+
+    #Out-to-file:
+    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
 end

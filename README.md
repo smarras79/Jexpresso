@@ -12,21 +12,24 @@ version 1.7.2 or higher (tested up to 1.8.5)
 
 ```bash
 >> cd $JEXPRESSO_HOME
-```
-
-```bash
 >> julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
+followed by the following:
 
-
+Push problem name to ARGS
+You need to do this only when you run a new problem
 ```bash
-julia > include("/src/run.jl")
+julia> push!(empty!(ARGS), PROBLEM_NAME::String);
+julia> include(./src/run.jl)
 ```
 
-`$JEXPRESSO_HOME` is the path to the base JEXPRESSO directory on your computer (you can export it in your .bashrc or simply replace its value with the explicit name of the path)
+PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name
+Ex. If you run the Advection Diffusion problem in $JEXPRESSO/src/problems/AdvDiff
+```bash
+julia> push!(empty!(ARGS), "AdvDiff");
+julia> include(./src/run.jl)
+```
 
-Notice: command line arguments have been de-activated while we add several solvers beyond the AdvDiff equation
-`PROBLEM_NAME` must be the same as the problem directory in `$JEXPRESSO_HOME/src/problems/PROBLEM_NAME`
 Currently available problem names:
 
 * AdvDiff
