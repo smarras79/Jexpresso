@@ -58,7 +58,6 @@ end
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # PNG
 function write_output(sol::SciMLBase.LinearSolution, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
-    @info size(sol.u)
     title = @sprintf "Solution to ∇⋅∇(q) = f"
     plot_results(SD, mesh.x, mesh.y, sol.u, title, string(OUTPUT_DIR, "Axb.png"))
     
