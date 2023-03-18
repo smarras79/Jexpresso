@@ -18,7 +18,7 @@ include("./rhs.jl")
 include("./initialize.jl")
 
 include("../../io/mod_inputs.jl")
-include("../../io/plotting/jeplots.jl")
+include("../../io/write_output.jl")
 include("../../io/print_matrix.jl")
 
 include("../../kernel/abstractTypes.jl")
