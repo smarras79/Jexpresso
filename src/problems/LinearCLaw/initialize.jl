@@ -16,7 +16,7 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     npoin = mesh.npoin
     neqs  = 3
 
-    q = allocate_q(npoin, nelem, ngl, neqs)
+    q = allocate_q(nelem, npoin, ngl, neqs)
     
     #Cone properties:
     c  = 1.0
@@ -32,7 +32,6 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 ip = mesh.connijk[i,j,iel_g]
                 x  = mesh.x[ip]
                 y  = mesh.y[ip]
-
                 p = q.qn[ip,1] = exp(- ((kx*(x - x0) + ky*(y - y0))^2)/d2) #p
                 u = q.qn[ip,2] = kx*p/c                                      #u
                 v = q.qn[ip,3] = ky*p/c                                      #v 

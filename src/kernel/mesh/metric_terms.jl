@@ -35,6 +35,9 @@ Base.@kwdef mutable struct St_metrics{TFloat}
     #
     # Element jacobian determinant
     #
+    nx  ::Array{TFloat} = zeros(1)
+    ny  ::Array{TFloat} = zeros(1)
+    nz  ::Array{TFloat} = zeros(1)
     Je  ::Array{TFloat} = zeros(1)
 end
 
@@ -107,7 +110,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             x1 = mesh.x[ip]
             x2 = mesh.x[ip1]
             y1 = mesh.y[ip]
-            y2 = mesh.y[ip2]
+            y2 = mesh.y[ip1]
             mag = sqrt((x1-x2)^2+(y1-y2)^2)
             metrics.Jef[k,iedge] = mag/2
             comp1 = (x1-x2)/mag
