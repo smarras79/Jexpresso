@@ -318,7 +318,7 @@ function DSSijk_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractAr
 end
 
 function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
-    
+     @info npoin
     M  = zeros(npoin)
     for iel=1:nelem
         for j = 1:N+1

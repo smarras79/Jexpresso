@@ -3,9 +3,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 0.5,
-        :Δt                  => 5e-4,
-        :diagnostics_interval=> 100, #these are steps, not seconds
+        :tend                => 1.0,
+        :Δt                  => 1e-4,
+        :diagnostics_interval=> 1, #these are steps, not seconds
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -15,15 +15,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :νx                   => 0.01, #kinematic viscosity constant
-        :νy                   => 0.01, #kinematic viscosity constant
+        :νx                   => 0.001, #kinematic viscosity constant
+        :νy                   => 0.001, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #---------------------------------------------------------------------------
         # Boundary conditions:
@@ -34,6 +34,8 @@ function user_inputs()
         :xmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
         :ymax_bc       => "periodic", #Use either "dirichlet" or "periodic"
         :zmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :per1          => [1.0 0.0],
+        :per2          => [0.0 1.0],
         :bc_exact_xmin => [0.0 0.0 0.0],
         :bc_exact_xmax => [0.0 0.0 0.0],
         :bc_exact_ymin => [0.0 0.0 0.0],

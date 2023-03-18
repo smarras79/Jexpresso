@@ -73,7 +73,7 @@ function rk!(q::St_SolutionVars;
                                 mesh, metrics, T)
         rhs_diff_el = build_rhs_diff(SD, QT, PT, neqns, q.qn, basis.ψ, basis.dψ, ω,
                                      inputs[:νx], inputs[:νy], mesh, metrics, T)
-        apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
+        #apply_boundary_conditions!(rhs_el, q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
         #
         # RHS[npoin] = DSS(rhs)
         #
@@ -94,7 +94,7 @@ function rk!(q::St_SolutionVars;
             # B.C.
             #
         end
-        apply_periodicity!(rhs_el,q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
+        #apply_periodicity!(rhs_el,q.qn, mesh, inputs, SD,QT,metrics,basis.ψ,basis.dψ, ω,time,BCT,neqns)
         
     end #stages
     

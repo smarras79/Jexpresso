@@ -106,7 +106,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     face_in_elem      = Array{Int64}(undef, 0, 0, 0)
 
     #Auxiliary arrays for boundary conditions
-    bdy_edge_comp     = Arrayt{Int64}(undef, 1)
+    bdy_edge_comp     = Array{Int64}(undef, 1)
     bdy_edge_in_elem = Array{Int64}(undef, 1)
     poin_in_bdy_edge = Array{Int64}(undef, 1, 1)
     bdy_face_in_elem = Array{Int64}(undef, 1)
@@ -271,7 +271,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.conn_edge_el     = Array{Int64}(undef, 2, mesh.NEDGES_EL, mesh.nelem)    
     mesh.conn_face_el     = Array{Int64}(undef, 4, mesh.NFACES_EL, mesh.nelem)  
     mesh.bdy_edge_in_elem = Array{Int64}(undef, mesh.nedges_bdy)  
-    mesh.bdy_edge_comp    = Array{Int64}(under, mesh.nedges_bdy)
+    mesh.bdy_edge_comp    = Array{Int64}(undef, mesh.nedges_bdy)
     mesh.poin_in_edge     = Array{Int64}(undef, mesh.nedges, mesh.ngl)
     mesh.poin_in_bdy_edge = Array{Int64}(undef, mesh.nedges_bdy, mesh.ngl)
     mesh.poin_in_face     = Array{Int64}(undef, mesh.nfaces, mesh.ngl, mesh.ngl)
@@ -506,7 +506,132 @@ if mesh.nsd == 2
             end
         end
     end
-
+    per1 = inputs[:per1]
+    per2 = inputs[:per2]
+    xx = zeros(size(mesh.x,1),1)
+    yy = zeros(size(mesh.y,1),1)
+    poin_bdy=zeros(Int64,size(mesh.poin_in_bdy_edge))
+    xx .= mesh.x
+    yy .= mesh.y
+    poin_bdy .=mesh.poin_in_bdy_edge
+    @info mesh.npoin
+    # New periodicity interface
+        for iedge_bdy =1:size(mesh.bdy_edge_comp,1)
+            if (mesh.bdy_edge_type[iedge_bdy] == "periodic")
+               comp = mesh.bdy_edge_comp[iedge_bdy]
+               iel = mesh.bdy_edge_in_elem[iedge_bdy]
+               for k =1:mesh.ngl
+                   ip = poin_bdy[iedge_bdy, k]
+                   x1 = xx[ip]
+                   y1 = yy[ip]
+                   m=1
+                   l=1
+                   for ii=1:mesh.ngl
+                       for jj=1:mesh.ngl
+                           if (mesh.connijk[ii,jj,iel] == ip)
+                               l=ii
+                               m=jj
+                           end
+                       end
+                   end
+                   if (k < mesh.ngl)
+                     ip1 = poin_bdy[iedge_bdy,k+1]
+                   else
+                     ip1 = poin_bdy[iedge_bdy,k-1]
+                   end
+                   x3 = xx[ip1]
+                   y3 = yy[ip1]
+                   vec_bdy = [x1-x3,y1-y3]
+                   if (determine_colinearity(vec_bdy,per1))
+                       per = per2
+                   elseif (determine_colinearity(vec_bdy,per2))
+                       per = per1
+                   else
+                       error("periodicity requested but boundaries cannot match any vectors")
+                   end
+                   @info "bdy vector", per,vec_bdy,x1,y1 
+                   # find corresponding periodic edge point
+                   for iedge_per = iedge_bdy+1:size(mesh.bdy_edge_comp,1)
+                       if (mesh.bdy_edge_type[iedge_per] == "periodic")
+                           comp_per = mesh.bdy_edge_comp[iedge_per]
+                           iel_per = mesh.bdy_edge_in_elem[iedge_per]
+                           for k_per=1:mesh.ngl
+                               ip_per = poin_bdy[iedge_per,k_per]
+                               x2 = xx[ip_per]
+                               y2 = yy[ip_per]
+                               if (k_per < mesh.ngl)
+                                   ip_per1 = poin_bdy[iedge_per,k_per+1]
+                               else
+                                   ip_per1 = poin_bdy[iedge_per,k_per-1]
+                               end
+                               x4 = xx[ip_per1] 
+                               y4 = yy[ip_per1]
+                               vec_per = [x2-x4, y2-y4]
+                               
+                               vec = [x1 - x2, y1 - y2]
+                               #check colinearity with periodicity vectors 
+                               #@info "looking for match", vec,per,vec_bdy,vec_per,determine_colinearity(vec,per), determine_colinearity(vec_per,vec_bdy)
+                               
+                               if (determine_colinearity(vec,per) && determine_colinearity(vec_per,vec_bdy))
+                                   @info "found match",vec,per,x1,y1,x2,y2,ip,ip_per
+                                   m1=1
+                                   l1=1
+                                   for ii=1:mesh.ngl
+                                       for jj=1:mesh.ngl
+                                           if (mesh.connijk[ii,jj,iel_per] == ip_per)
+                                               l1=ii
+                                               m1=jj
+                                           end 
+                                       end
+                                   end
+                                   if (ip < ip_per)
+                                      ip_dest = ip
+                                      ip_kill = ip_per
+                                   elseif (ip >= ip_per)
+                                      ip_dest = ip_per
+                                      ip_kill = ip
+                                   end
+                                   @info mesh.connijk[l1,m1,iel_per], mesh.connijk[l,m,iel], ip_dest,ip_kill
+                                   mesh.connijk[l1,m1,iel_per] = ip_dest
+                                   mesh.connijk[l,m,iel] = ip_dest
+                                   mesh.poin_in_bdy_edge[iedge_per,k_per] = ip_dest
+                                   mesh.poin_in_bdy_edge[iedge_bdy,k] = ip_dest
+                                   @info ip_dest, ip_kill, mesh.connijk
+                                   if !(ip_kill in mesh.connijk)
+                                        for i=ip_kill:mesh.npoin-1
+                                            mesh.x[i] = mesh.x[i+1]
+                                            mesh.y[i] = mesh.y[i+1]
+                                        end
+                                        @info ip_kill, mesh.npoin
+                                        mesh.npoin = mesh.npoin-1
+                                        for iedge =1:size(mesh.poin_in_bdy_edge,1)
+                                            for kk=1:mesh.ngl
+                                                val = mesh.poin_in_bdy_edge[iedge,kk]
+                                                if (val > ip_kill)
+                                                     mesh.poin_in_bdy_edge[iedge,kk] = val - 1
+                                                end
+                                            end
+                                        end
+                                   
+                                        for e=1:mesh.nelem
+                                            for ii=1:mesh.ngl
+                                                for jj=1:mesh.ngl
+                                                    ip = mesh.connijk[ii,jj,e]
+                                                    if (ip >= ip_kill)
+                                                        mesh.connijk[ii,jj,e] -= 1
+                                                    end 
+                                                end
+                                            end
+                                        end
+                                    end
+                                        
+                               end
+                           end
+                       end
+                   end
+                end
+            end
+        end
     #=for iedge_bdy = 1:mesh.nedges_bdy
         @printf(" bdy edge %d of type %s ∈ elem %d with nodes\n", iedge_bdy, mesh.bdy_edge_type[iedge_bdy], mesh.bdy_edge_in_elem[iedge_bdy])
         for igl = 1:mesh.ngl
@@ -546,7 +671,7 @@ end
 #----------------------------------------------------------------------
 # END Extract boundary edges and faces nodes
 #----------------------------------------------------------------------
-
+#=
 
 #compute_element_size_driver(mesh, SD, TFloat)
 #error("assasasa")
@@ -922,7 +1047,7 @@ if (mesh.nsd == 2)
         end 
     end
 end
-
+=#
     
 #
 #
@@ -956,7 +1081,22 @@ println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"
 #writevtk(model,"gmsh_grid")
 end
 
+function determine_colinearity(vec1,vec2)
+  match = false
+  if (AlmostEqual(vec1[1],0.0) && AlmostEqual(vec2[1],0.0))
+      match = (abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7)
+  elseif (AlmostEqual(vec1[2],0.0) && AlmostEqual(vec2[2],0.0))
+      match = (abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7)
+  elseif (abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7) && (abs(vec1[1]) > 1e-7 && abs(vec2[1] > 1e-7))
 
+      rat1 = (vec[1]+1e-16) / (per1[1]+1e-16)
+      rat2 = (vec[2]+1e-16) / (per1[2]+1e-16)
+      rat3 = (vec[1]+1e-16) / (per2[1]+1e-16)
+      rat4 = (vec[2]+1e-16) / (per2[2]+1e-16)
+      match = (AlmostEqual(rat1,rat2) || AlmostEqual(rat3,rat4))
+  end
+  return match
+end
 function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_2D)
     
     for iel = 1:mesh.nelem
