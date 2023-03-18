@@ -49,6 +49,17 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
+
+    
+    if(!haskey(inputs, :outformat))
+        inputs[:outformat] = ASCII()
+    else
+        if lowercase(inputs[:outformat]) == "png"
+            inputs[:outformat] = PNG()
+        elseif lowercase(inputs[:outformat]) == "ascii"
+            inputs[:outformat] = ASCII()
+        end
+    end
     
     #Time:
     if(!haskey(inputs, :ndiagnostics_outputs))
@@ -183,16 +194,6 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
 
 if(!haskey(inputs, :output_dir))
     inputs[:output_dir] = ""
-end
-
-if(haskey(inputs, :outformat))
-    if lowercase(inputs[:outformat]) == "png"
-        inputs[:outformat] = PNG()
-    elseif lowercase(inputs[:outformat]) == "ascii"
-        inputs[:outformat] = ASCII()
-    end
-else
-    inputs[:outformat] = ASCII()
 end
 
     #Grid entries:
@@ -336,9 +337,14 @@ elseif (lowercase(problem_name) == "advdiff" ||
     println( " # neqns     ", neqns)
     
 elseif (lowercase(problem_name) == "elliptic" ||
-        lowercase(problem_name) == "diffusion" ||
-        lowercase(problem_name) == "helmholtz")
+        lowercase(problem_name) == "diffusion")
     inputs[:problem] = Elliptic()
+    
+    inputs[:neqns] = neqns = 1
+    println( " # neqns     ", neqns)
+    
+elseif (lowercase(problem_name) == "helmholtz")
+    inputs[:problem] = Helmholtz()
     
     inputs[:neqns] = neqns = 1
     println( " # neqns     ", neqns)
@@ -400,7 +406,7 @@ function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
         if (error_or_warning=="e")
             error(s)
         elseif (error_or_warning=="w")
-            @warn s     
+            @warn s
         end
         
         #assign a dummy default value

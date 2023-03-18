@@ -2,7 +2,6 @@ using LinearAlgebra
 using DiffEqBase
 using OrdinaryDiffEq
 using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
-using LinearSolve
 using SnoopCompile
 import SciMLBase
 
