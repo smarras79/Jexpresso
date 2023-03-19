@@ -7,7 +7,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                 => 1.0,
         :Δt                   => 1e-3,
-        :ndiagnostics_outputs => 5, #these are steps, not seconds
+        :ndiagnostics_outputs => 20, #these are steps, not seconds
         #:output_dir          => "/Users/simone/runs/",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -19,20 +19,21 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :νx                   => 0.01, #kinematic viscosity constant
-        :νy                   => 0.01, #kinematic viscosity constant
+        :νx                   => 0.0, #kinematic viscosity constant
+        :νy                   => 0.0, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
+
+        #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh", 
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
+
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        #:outformat     => "png", #choice: "png", "ascii" (default is ascii)
+        :outformat     => "png", #choice: "png", "ascii" (default is ascii)
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------

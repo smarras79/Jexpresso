@@ -17,9 +17,8 @@ function user_source(q::Array, mesh::St_mesh, T)
     # S(x,y) .= k²q(x,y) - W 
     #
     k2     = 1.0^2
-    Wnoise = add_gauss(q[:,1], 0.1)
-
-    S .= k2*q .- W
+    
+    S .= k2*q .- add_gauss(q[:,1], 0.1)
     
     return  S
     

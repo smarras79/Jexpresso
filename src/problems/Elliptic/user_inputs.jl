@@ -8,7 +8,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :ode_solver          => "BICGSTABLE",
+        #:ode_solver          => "BICGSTABLE",
+        :ode_solver          => "GMRES",
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
@@ -22,14 +23,16 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/circle.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        #:outformat     => "png", #choice: "png", "ascii"
+        :outformat     => "png", #choice: "png", "ascii"
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------

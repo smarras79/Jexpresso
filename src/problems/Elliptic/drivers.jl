@@ -122,30 +122,53 @@ function driver(DT::ContGal,       #Space discretization type
 
     # Dirichlet B.C.
     ϵ = eps(Float32)
-    for ip=1:mesh.npoin
-        x, y = mesh.x[ip], mesh.y[ip]
-        if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
-            qp.qn[ip,1] = sinpi(2*y)
-            for jp=1:mesh.npoin
-                L[ip,jp] = 0.0
+    iscircle = true
+    if iscircle
+        rmax = (maximum(mesh.x) - minimum(mesh.x))/2
+        for ip=1:mesh.npoin
+            x, y = mesh.x[ip], mesh.y[ip]
+            r    = sqrt(x*x + y*y)
+            if (r > rmax - ϵ)
+                qp.qn[ip,1] = 0.0
+                for jp=1:mesh.npoin
+                    L[ip,jp] = 0.0
+                end
+                L[ip,ip] = 1.0
             end
-            L[ip,ip] = 1.0
         end
-        if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
-            qp.qn[ip,1] = 0.0
-            for jp=1:mesh.npoin
-                L[ip,jp] = 0.0
+    else
+        for ip=1:mesh.npoin
+            x, y = mesh.x[ip], mesh.y[ip]
+            if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
+                qp.qn[ip,1] = sinpi(2*y)
+                for jp=1:mesh.npoin
+                    L[ip,jp] = 0.0
+                end
+                L[ip,ip] = 1.0
             end
-            L[ip,ip] = 1.0
-        end        
+            if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
+                qp.qn[ip,1] = 0.0
+                for jp=1:mesh.npoin
+                    L[ip,jp] = 0.0
+                end
+                L[ip,ip] = 1.0
+            end        
+        end
     end
-    #END Dirichlet B.C..
+    #End Dirichlet B.C..
+    
 
     println(" # Solve Lq=RHS ................................")    
     solution = solveAx(L, RHS, inputs[:ode_solver])
     println(" # Solve Lq=RHS ................................ DONE")
 
-    #Out-to-file:
-    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
+    #write Output to file:
+    write_vtk(solution, mesh)
+    
+    #cells = [MeshCell(VTKCellTypes.VTK_VERTEX, (i, )) for i = 1:mesh.npoin]
+    #vtk_grid("./qsolution", mesh.x, mesh.y, solution.u, cells) do vtk
+    #    vtk["qsolution", VTKPointData()] = solution.u
+    #end
+    #write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
 end

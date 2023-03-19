@@ -4,6 +4,7 @@ using OrdinaryDiffEq
 using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
 using SnoopCompile
 import SciMLBase
+using WriteVTK
 
 include("../abstractTypes.jl")
 include("../../io/write_output.jl")
@@ -40,15 +41,20 @@ function time_loop!(SD,
     println(" # Solving ODE with ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
     
-    @time    sol = solve(prob,
-                         inputs[:ode_solver],
-                         dt = Δt,
-                         save_everystep=false,
-                         saveat = range(T(0.), Nt*T(Δt), length=inputs[:ndiagnostics_outputs]),
-                         progress = true,
-                         progress_message = (dt, u, p, t) -> t)
+    @time    solution = solve(prob,
+                              inputs[:ode_solver],
+                              dt = Δt,
+                              save_everystep=false,
+                              saveat = range(T(0.), Nt*T(Δt), length=inputs[:ndiagnostics_outputs]),
+                              progress = true,
+                              progress_message = (dt, u, p, t) -> t)
     println(" # Solving ODE with  ................................ DONE")
     
-    write_output(sol, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
+    cells = [MeshCell(VTKCellTypes.VTK_VERTEX, (i, )) for i = 1:mesh.npoin]
+    vtk_grid(string(OUTPUT_DIR, "points"), mesh.x, mesh.y, solution.u[end], cells) do vtk
+        vtk["qsolution", VTKPointData()] = solution.u[end]
+    end
+    #write_vtk(solution, mesh, "qfinal", OUTPUT_DIR)
+    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
 end
