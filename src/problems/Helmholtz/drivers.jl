@@ -119,28 +119,43 @@ function driver(DT::ContGal,       #Space discretization type
 
     #Build ∫S(q)dΩ
     RHS = build_rhs_source(SD, QT, inputs[:problem], qp.qn, mesh, M, TFloat)
-
+    
     # Dirichlet B.C.
-    ϵ = eps(Float32)
-    for ip=1:mesh.npoin
-        x, y = mesh.x[ip], mesh.y[ip]
-        if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
-            qp.qn[ip,1] = sinpi(2*y)
-            for jp=1:mesh.npoin
-                L[ip,jp] = 0.0
+    iscircle = true
+    if iscircle
+        rmax = (maximum(mesh.x) - minimum(mesh.x))/2
+        for ip=1:mesh.npoin
+            x, y = mesh.x[ip], mesh.y[ip]
+            r    = sqrt(x*x + y*y)
+            if (r > rmax - ϵ)
+                qp.qn[ip,1] = 0.0
+                for jp=1:mesh.npoin
+                    L[ip,jp] = 0.0
+                end
+                L[ip,ip] = 1.0
             end
-            L[ip,ip] = 1.0
         end
-        if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
-            qp.qn[ip,1] = 0.0
-            for jp=1:mesh.npoin
-                L[ip,jp] = 0.0
+    else
+        for ip=1:mesh.npoin
+            x, y = mesh.x[ip], mesh.y[ip]
+            if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
+                qp.qn[ip,1] = sinpi(2*y)
+                for jp=1:mesh.npoin
+                    L[ip,jp] = 0.0
+                end
+                L[ip,ip] = 1.0
             end
-            L[ip,ip] = 1.0
-        end        
-    end
+            if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
+                qp.qn[ip,1] = 0.0
+                for jp=1:mesh.npoin
+                    L[ip,jp] = 0.0
+                end
+                L[ip,ip] = 1.0
+            end        
+        end
+    end   
     #END Dirichlet B.C..
-
+    
     println(" # Solve Lq=RHS ................................")    
     solution = solveAx(L, RHS, inputs[:ode_solver])
     println(" # Solve Lq=RHS ................................ DONE")

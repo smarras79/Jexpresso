@@ -36,7 +36,7 @@ end
 
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
 
-    Fuser = user_flux(T, SD, qp, mesh.npoin)
+    Fuser = user_flux(T, SD, qp, mesh)
     
     #
     # Linear RHS in flux form: f = u*u
@@ -71,8 +71,8 @@ function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, BCT, qp::Array, neqns, ψ
 
 
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
-
-    Fuser, Guser = user_flux(T, SD, qp, mesh.npoin)
+    
+    Fuser, Guser = user_flux(T, SD, qp, mesh)
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     G      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     rhs_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -82,8 +82,8 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, 
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
                 
-                F[i,j,iel] = Fuser[ip]
-                G[i,j,iel] = Guser[ip]
+                F[i,j,iel] = 0.8*qp[ip,1] #Fuser[ip]
+                G[i,j,iel] = 0.8*qp[ip,1] #Guser[ip]
                 
             end
         end
@@ -115,11 +115,42 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, 
 
     #Build rhs_el(diffusion)
     rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, ψ, dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-
+    
+    #B.C.
+    #apply_boundary_conditions!(SD, rhs_el + rhs_diff_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
+    ϵ = eps(Float32)
+    iscircle = false
+   #= if iscircle
+        rmax = (maximum(mesh.x) - minimum(mesh.x))/2
+        for ip=1:mesh.npoin
+            x, y = mesh.x[ip], mesh.y[ip]
+            r    = sqrt(x*x + y*y)
+            if (r > rmax - ϵ)
+                qp[ip,1] = 0.0
+            end
+        end
+    else
+        xmin = ymin = -1.0 + ϵ
+        xmax = ymax =  1.0 - ϵ
+        
+        for ip=1:mesh.npoin
+            x, y = mesh.x[ip], mesh.y[ip]
+            if( (x > xmax) || (x < xmin))
+                qp[ip,1] = 0.0
+            end
+            if( (y > ymax) || (y < ymin))
+                qp[ip,1] = 0.0
+            end
+        end
+    end=#
+    #End Dirichlet B.C..
+    
+    
     #DSS(rhs_el)
     RHS         = DSS_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
     divive_by_mass_matrix!(RHS, M, QT)
-    
+
+     
     #B.C.
     apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
     apply_periodicity!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)

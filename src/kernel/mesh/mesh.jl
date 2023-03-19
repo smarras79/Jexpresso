@@ -596,7 +596,7 @@ for ip=1:mesh.npoin
 end
 ##add boundary element numbers to array for ease of access, and set up boundary face arrays
 #Arrange boundary face array
-
+#=SM=#
 if (mesh.nsd == 2)
     mesh.xmin_faces = Array{Int64}(undef,mesh.ngl,Int64(floor(size(mesh.bc_xmin,1)/(mesh.ngl-1))))
     mesh.xmax_faces = Array{Int64}(undef,mesh.ngl,Int64(floor(size(mesh.bc_xmax,1)/(mesh.ngl-1))))

@@ -11,8 +11,8 @@
 
 lc = 1e-2;
 
-gridsize_bottom = 1;
-gridsize_top    = 1;
+gridsize_bottom = 0.2;
+gridsize_top    = 0.2;
 
 // This variable can then be used in the definition of Gmsh's simplest
 // `elementary entity', a `Point'. A Point is uniquely identified by a tag (a

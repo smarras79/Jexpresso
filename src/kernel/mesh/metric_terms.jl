@@ -100,9 +100,10 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         #show(stdout, "text/plain", metrics.Je[:,:,iel])
     end
     #show(stdout, "text/plain", metrics.Je)
-    for iface =1:size(mesh.xmin_faces,2)
+
+   #= for iface =1:size(mesh.xmin_faces,2)
        for i=1:Q+1
-          ip = mesh.xmin_faces[i,iface]
+           ip = mesh.xmin_faces[i,iface]
           if (i < Q+1)
               ip1 = mesh.xmin_faces[i+1,iface]
           else
@@ -146,7 +147,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
           end
           metrics.Jef[i,iface+disp] = abs(mesh.x[ip]-mesh.x[ip1])/2
        end
-    end 
+    end =#
     return metrics
 end
 
