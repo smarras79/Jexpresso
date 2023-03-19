@@ -6,7 +6,7 @@ struct NSD_1D <: AbstractSpaceDimensions end
 struct NSD_2D <: AbstractSpaceDimensions end
 struct NSD_3D <: AbstractSpaceDimensions end
 
-Base.@kwdef mutable struct St_SolutionVars{TFloat}
+Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
 
     qnp1 = Array{TFloat}(undef, 0, 0)       #1 qⁿ⁺¹
     qn   = Array{TFloat}(undef, 0, 0)       #2 qⁿ
@@ -25,8 +25,8 @@ end
 
 TBW
 """
-function allocate_q(nelem, npoin, ngl, neqs)
-
+function allocate_q(nelem, npoin, ngl, neqs, TFloat)
+    
     q = St_SolutionVars{TFloat}(zeros(1, 1),               # qn+1
                                 zeros(1, 1),               # qn
                                 zeros(1, 1),               # qn-1
@@ -41,7 +41,7 @@ function allocate_q(nelem, npoin, ngl, neqs)
     return q
 end
 
-function define_q(SD::NSD_1D, nelem, npoin, ngl, neqs)
+function define_q(SD::NSD_1D, nelem, npoin, ngl, neqs, TFloat)
 
     q = St_SolutionVars{TFloat}(qn = zeros(npoin, neqs),    # qn
                                 F  = zeros(ngl, nelem))  # Fⁿ
@@ -49,7 +49,7 @@ function define_q(SD::NSD_1D, nelem, npoin, ngl, neqs)
     return q
 end
 
-function define_q(SD::NSD_2D, nelem, npoin, ngl, neqs)
+function define_q(SD::NSD_2D, nelem, npoin, ngl, neqs, TFloat)
     
     q = St_SolutionVars{TFloat}(qn = zeros(npoin, neqs), # qⁿ
                                 F  = zeros(ngl, nelem),  # Fⁿ
@@ -59,7 +59,7 @@ function define_q(SD::NSD_2D, nelem, npoin, ngl, neqs)
 end
 
 
-function define_q(SD::NSD_3D, nelem, npoin, ngl, neqs)
+function define_q(SD::NSD_3D, nelem, npoin, ngl, neqs, TFloat)
     
     q = St_SolutionVars{TFloat}(qn = zeros(npoin, neqs), # qⁿ
                                 F  = zeros(ngl, nelem, neqs),  # Fⁿ

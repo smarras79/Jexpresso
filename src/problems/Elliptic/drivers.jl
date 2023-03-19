@@ -27,8 +27,6 @@ include("../../kernel/bases/basis_structs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
-include("../../kernel/mesh/metric_terms.jl")
-include("../../kernel/mesh/mesh.jl")
 include("../../kernel/solvers/Axb.jl")
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
@@ -115,12 +113,16 @@ function driver(DT::ContGal,       #Space discretization type
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
+    qp = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqns, TFloat)
+    #qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
 
     #Build ∫S(q)dΩ
+    qp.qn = zeros(TFloat, mesh.npoin)
     RHS = build_rhs_source(SD, QT, inputs[:problem], qp.qn, mesh, M, TFloat)
 
     # Dirichlet B.C.
+    # NOTICE these will be replaced with tbe general way of building B.C.
+    # Yassine is working on it.
     ϵ = eps(Float32)
     for ip=1:mesh.npoin
         x, y = mesh.x[ip], mesh.y[ip]
