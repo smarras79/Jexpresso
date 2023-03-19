@@ -27,8 +27,6 @@ include("../../kernel/bases/basis_structs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
-include("../../kernel/mesh/metric_terms.jl")
-include("../../kernel/mesh/mesh.jl")
 include("../../kernel/solvers/Axb.jl")
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
@@ -115,60 +113,41 @@ function driver(DT::ContGal,       #Space discretization type
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
+    qp = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqns, TFloat)
+    #qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
 
     #Build ∫S(q)dΩ
+    qp.qn = zeros(TFloat, mesh.npoin)
     RHS = build_rhs_source(SD, QT, inputs[:problem], qp.qn, mesh, M, TFloat)
 
     # Dirichlet B.C.
+    # NOTICE these will be replaced with tbe general way of building B.C.
+    # Yassine is working on it.
     ϵ = eps(Float32)
-    iscircle = true
-    if iscircle
-        rmax = (maximum(mesh.x) - minimum(mesh.x))/2
-        for ip=1:mesh.npoin
-            x, y = mesh.x[ip], mesh.y[ip]
-            r    = sqrt(x*x + y*y)
-            if (r > rmax - ϵ)
-                qp.qn[ip,1] = 0.0
-                for jp=1:mesh.npoin
-                    L[ip,jp] = 0.0
-                end
-                L[ip,ip] = 1.0
+    for ip=1:mesh.npoin
+        x, y = mesh.x[ip], mesh.y[ip]
+        if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
+            qp.qn[ip,1] = sinpi(2*y)
+            for jp=1:mesh.npoin
+                L[ip,jp] = 0.0
             end
+            L[ip,ip] = 1.0
         end
-    else
-        for ip=1:mesh.npoin
-            x, y = mesh.x[ip], mesh.y[ip]
-            if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
-                qp.qn[ip,1] = sinpi(2*y)
-                for jp=1:mesh.npoin
-                    L[ip,jp] = 0.0
-                end
-                L[ip,ip] = 1.0
+        if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
+            qp.qn[ip,1] = 0.0
+            for jp=1:mesh.npoin
+                L[ip,jp] = 0.0
             end
-            if( (y > 1.0 - ϵ) || (y < -1.0 + ϵ))
-                qp.qn[ip,1] = 0.0
-                for jp=1:mesh.npoin
-                    L[ip,jp] = 0.0
-                end
-                L[ip,ip] = 1.0
-            end        
-        end
+            L[ip,ip] = 1.0
+        end        
     end
-    #End Dirichlet B.C..
-    
+    #END Dirichlet B.C..
 
     println(" # Solve Lq=RHS ................................")    
     solution = solveAx(L, RHS, inputs[:ode_solver])
     println(" # Solve Lq=RHS ................................ DONE")
 
-    #write Output to file:
-    write_vtk(solution, mesh)
-    
-    #cells = [MeshCell(VTKCellTypes.VTK_VERTEX, (i, )) for i = 1:mesh.npoin]
-    #vtk_grid("./qsolution", mesh.x, mesh.y, solution.u, cells) do vtk
-    #    vtk["qsolution", VTKPointData()] = solution.u
-    #end
-    #write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
+    #Out-to-file:
+    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
 end
