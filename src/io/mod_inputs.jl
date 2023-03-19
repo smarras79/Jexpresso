@@ -58,6 +58,8 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
             inputs[:outformat] = PNG()
         elseif lowercase(inputs[:outformat]) == "ascii"
             inputs[:outformat] = ASCII()
+        elseif lowercase(inputs[:outformat]) == "vtk"
+            inputs[:outformat] = VTK()
         end
     end
     
