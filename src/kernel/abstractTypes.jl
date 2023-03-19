@@ -47,6 +47,7 @@ struct CNVAR <: AbstractMetricForm end
 abstract type AbstractOutFormat end
 struct PNG <: AbstractOutFormat end
 struct ASCII <: AbstractOutFormat end
+struct VTK <: AbstractOutFormat end
 
 #
 # Boundary flags/conditions
