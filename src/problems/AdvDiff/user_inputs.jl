@@ -5,7 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                => 1.0,
         :Δt                  => 1e-4,
-        :diagnostics_interval=> 1, #these are steps, not seconds
+        :diagnostics_interval=> 100, #these are steps, not seconds
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -22,8 +22,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #---------------------------------------------------------------------------
         # Boundary conditions:

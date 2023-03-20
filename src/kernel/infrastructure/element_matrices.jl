@@ -329,7 +329,7 @@ function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstract
                     for m = 1:N+1
                         I = m + (n - 1)*(N + 1)
                         IP = conn[m,n,iel]
-                        
+                        @info IP,Mel[I,J,iel] 
                         M[IP] = M[IP] + Mel[I,J,iel] #if inexact
                     end
                 end
