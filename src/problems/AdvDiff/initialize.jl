@@ -57,7 +57,7 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
             ν = 0.01
         end
         σ = 1.0/ν
-        (xc, yc) = (-0.5, -0.5)
+        (xc, yc) = (0.75, 0.75)
         
         for iel_g = 1:mesh.nelem
             for i=1:ngl
