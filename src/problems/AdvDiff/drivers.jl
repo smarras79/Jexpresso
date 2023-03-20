@@ -106,8 +106,10 @@ function driver(DT::ContGal,       #Space discretization type
     # dηdx,dy[1:Q+1, 1:Q+1, 1:nelem]
     #      Je[1:Q+1, 1:Q+1, 1:nelem]
     #--------------------------------------------------------
+    @info mesh.connijk
     metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
     periodicity_restructure!(mesh,inputs)    
+    @info mesh.connijk
     #--------------------------------------------------------
     # Build element mass matrix
     #
@@ -116,7 +118,6 @@ function driver(DT::ContGal,       #Space discretization type
     #--------------------------------------------------------    
     Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    @info M
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------

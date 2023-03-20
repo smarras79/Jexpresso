@@ -34,7 +34,7 @@ function initialize(ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String
 
                     q.qn[ip,1] = exp(-σ*((x - xc)*(x - xc) + (y - yc)*(y - yc)))
                     q.qe[ip,1] = q.qn[ip,1]
-                    q.qn[ip,2] = 0.8 #constant
+                    q.qn[ip,2] = 0.0 #constant
                     q.qn[ip,3] = 0.8 #constant
 
                     q.qnm1[ip,1] = q.qn[ip,1]                    
