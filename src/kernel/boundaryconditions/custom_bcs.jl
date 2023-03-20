@@ -20,3 +20,14 @@ function neumann(q,gradq,x,y,t,mesh,metrics,tag,::LinearClaw_1)
     rhs[3] = 0.0
     return rhs
 end
+
+function dirichlet!(q,gradq,x,y,t,mesh,metrics,tag,::AdvDiff_Circ)
+    q[1] = 0.0
+    return q
+end
+
+function neumann(q,gradq,x,y,t,mesh,metrics,tag,::AdvDiff_Circ)
+    rhs = zeros(1,1)
+    rhs[1] = 0.0
+    return rhs
+end

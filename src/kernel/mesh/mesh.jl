@@ -1017,7 +1017,7 @@ if (mesh.nsd > 1)
     end
 end
 end #if circle (thermorary. this part will disappear with new B.C. detection
-    
+=#    
 #
 #
 # Free memory of obsolete arrays

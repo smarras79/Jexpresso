@@ -119,7 +119,7 @@ function driver(DT::ContGal,       #Space discretization type
     # Initialize q
     #--------------------------------------------------------
     qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
-    write_vtk(qp.qn[:,1], mesh, "initial", OUTPUT_DIR)
+    write_vtk(qp.qn[:,1], SD, mesh, OUTPUT_DIR,inputs)
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
@@ -128,7 +128,7 @@ function driver(DT::ContGal,       #Space discretization type
 
     
     # NOTICE add a function to find the mesh mininum resolution
-    time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, DefaultBC(), OUTPUT_DIR, TFloat)
+    time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, AdvDiff_Circ(), OUTPUT_DIR, TFloat)
     
 
 end
