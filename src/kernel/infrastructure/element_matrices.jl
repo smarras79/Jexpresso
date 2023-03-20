@@ -363,7 +363,6 @@ function DSS_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArr
                     for m = 1:N+1
                         I = m + (n - 1)*(N + 1)
                         IP = conn[m,n,iel]
-
                         M[IP] = M[IP] + Mel[I,J,iel] #if inexact
                     end
                 end

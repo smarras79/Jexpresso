@@ -30,6 +30,7 @@ include("../../kernel/infrastructure/2D_3D_structures.jl")
 include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/solvers/TimeIntegrators.jl")  
+include("../../kernel/mesh/restructure_for_periodicity.jl")
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
@@ -104,6 +105,7 @@ function driver(DT::ContGal,       #Space discretization type
     #--------------------------------------------------------
     metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
         
+    periodicity_restructure!(mesh,inputs)    
     #--------------------------------------------------------
     # Build element mass matrix
     #
