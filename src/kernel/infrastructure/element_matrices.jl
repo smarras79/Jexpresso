@@ -348,6 +348,33 @@ function DSS_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray
     return M
 end
 
+function DSS_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+
+    M  = zeros(npoin)
+    for iel=1:nelem
+
+        #show(stdout, "text/plain", 36.0*Mel[:,:,iel])
+
+        for j = 1:N+1
+            for i = 1:N+1
+                J = i + (j - 1)*(N + 1)
+                JP = conn[i,j,iel]
+                for n = 1:N+1
+                    for m = 1:N+1
+                        I = m + (n - 1)*(N + 1)
+                        IP = conn[m,n,iel]
+
+                        M[IP] = M[IP] + Mel[I,J,iel] #if inexact
+                    end
+                end
+            end
+        end
+        #println("\n")
+        #show(stdout, "text/plain", M[:,:, iel])
+    end
+    return M
+end
+
 function DSS_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
     
@@ -362,7 +389,6 @@ function DSS_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArr
     return M
 end
 
-function DSS_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
 function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     M  = zeros(npoin)

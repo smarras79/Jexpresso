@@ -58,4 +58,4 @@ struct DefaultBC <: AbstractBC end
 struct LinearClaw_1 <: AbstractBC end
 struct LinearClaw_KopRefxmax <: AbstractBC end
 struct DirichletExample <: AbstractBC end
-
+struct AdvDiff_Circ <: AbstractBC end

@@ -63,11 +63,11 @@ end
 function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, BCT, nvars)
    #If Neumann conditions are needed compute gradient
    calc_grad = false
-   for key in keys(inputs)
-      if (inputs[key] == "dirichlet" || inputs[key] == "neumann" || inputs[key] == "dirichlet/neumann")
+#   for key in keys(inputs)
+ #     if (inputs[key] == "dirichlet" || inputs[key] == "neumann" || inputs[key] == "dirichlet/neumann")
           calc_grad = true
-      end
-   end
+  #    end
+ #  end
    nface = size(mesh.bdy_edge_comp,1)
    dqdx_st = zeros(nvars,2)
    q_st = zeros(nvars,1)
