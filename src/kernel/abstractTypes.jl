@@ -55,7 +55,7 @@ struct VTK <: AbstractOutFormat end
 abstract type AbstractBC end
 struct PERIODIC1D_CG <: AbstractBC end
 struct DefaultBC <: AbstractBC end
-struct LinearClaw_KopNR <: AbstractBC end
+struct LinearClaw_1 <: AbstractBC end
 struct LinearClaw_KopRefxmax <: AbstractBC end
 struct DirichletExample <: AbstractBC end
 

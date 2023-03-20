@@ -4,8 +4,8 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :tend                => 2.0, #2π,
-        :Δt                  => 1.0e-2,#8.75e-4,
-        :diagnostics_interval=> 20,
+        :Δt                  => 1.0e-3,#8.75e-4,
+        :diagnostics_interval=> 100,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

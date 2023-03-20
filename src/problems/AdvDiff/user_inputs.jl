@@ -49,6 +49,8 @@ function user_inputs()
         :xmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
         :ymax_bc       => "periodic", #Use either "dirichlet" or "periodic"
         :zmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
+        :per1          => [1.0 0.0],
+        :per2          => [0.0 1.0],
         :bc_exact_xmin => [0.0 0.0 0.0],
         :bc_exact_xmax => [0.0 0.0 0.0],
         :bc_exact_ymin => [0.0 0.0 0.0],
