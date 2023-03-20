@@ -484,7 +484,7 @@ if mesh.nsd == 2
         if isboundary_edge[iedge] == true
             for igl = 1:mesh.ngl
                 mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
-                mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
+                mesh.bdy_edge_type[iedge_bdy] = "periodic"#mesh.edge_type[iedge]
             end
             iedge_bdy += 1
         end
@@ -522,13 +522,14 @@ if mesh.nsd == 2
                iel = mesh.bdy_edge_in_elem[iedge_bdy]
                for k =1:mesh.ngl
                    ip = poin_bdy[iedge_bdy, k]
+                   ip_true = mesh.poin_in_bdy_edge[iedge_bdy,k]
                    x1 = xx[ip]
                    y1 = yy[ip]
                    m=1
                    l=1
                    for ii=1:mesh.ngl
                        for jj=1:mesh.ngl
-                           if (mesh.connijk[ii,jj,iel] == ip)
+                           if (mesh.connijk[ii,jj,iel] == ip_true)
                                l=ii
                                m=jj
                            end
@@ -557,6 +558,7 @@ if mesh.nsd == 2
                            iel_per = mesh.bdy_edge_in_elem[iedge_per]
                            for k_per=1:mesh.ngl
                                ip_per = poin_bdy[iedge_per,k_per]
+                               ip_true1 = mesh.poin_in_bdy_edge[iedge_per,k_per]
                                x2 = xx[ip_per]
                                y2 = yy[ip_per]
                                if (k_per < mesh.ngl)
@@ -578,26 +580,29 @@ if mesh.nsd == 2
                                    l1=1
                                    for ii=1:mesh.ngl
                                        for jj=1:mesh.ngl
-                                           if (mesh.connijk[ii,jj,iel_per] == ip_per)
+                                           if (mesh.connijk[ii,jj,iel_per] == ip_true1)
                                                l1=ii
                                                m1=jj
                                            end 
                                        end
                                    end
-                                   if (ip < ip_per)
-                                      ip_dest = ip
-                                      ip_kill = ip_per
-                                   elseif (ip >= ip_per)
-                                      ip_dest = ip_per
-                                      ip_kill = ip
+                                   if (ip_true < ip_true1)
+                                      ip_dest = ip_true
+                                      ip_kill = ip_true1
+                                   elseif (ip_true >= ip_true1)
+                                      ip_dest = ip_true1
+                                      ip_kill = ip_true
                                    end
-                                   @info mesh.connijk[l1,m1,iel_per], mesh.connijk[l,m,iel], ip_dest,ip_kill
+                                   @info ip_dest, ip_kill, mesh.connijk[:,:,iel],mesh.connijk[:,:,iel_per]
+                                   @info iel, iel_per, mesh.connijk[l1,m1,iel_per], mesh.connijk[l,m,iel], ip_dest,ip_kill,ip_true,ip_true1
                                    mesh.connijk[l1,m1,iel_per] = ip_dest
                                    mesh.connijk[l,m,iel] = ip_dest
                                    mesh.poin_in_bdy_edge[iedge_per,k_per] = ip_dest
                                    mesh.poin_in_bdy_edge[iedge_bdy,k] = ip_dest
-                                   @info ip_dest, ip_kill, mesh.connijk
+                                   @info mesh.connijk
+                                   ip_true = ip_dest
                                    if !(ip_kill in mesh.connijk)
+                                  
                                         for i=ip_kill:mesh.npoin-1
                                             mesh.x[i] = mesh.x[i+1]
                                             mesh.y[i] = mesh.y[i+1]
@@ -610,14 +615,17 @@ if mesh.nsd == 2
                                                 if (val > ip_kill)
                                                      mesh.poin_in_bdy_edge[iedge,kk] = val - 1
                                                 end
+                                                if (val == ip_kill)
+                                                     mesh.poin_in_bdy_edge[iedge,kk] = ip_dest
+                                                end
                                             end
                                         end
                                    
                                         for e=1:mesh.nelem
                                             for ii=1:mesh.ngl
                                                 for jj=1:mesh.ngl
-                                                    ip = mesh.connijk[ii,jj,e]
-                                                    if (ip >= ip_kill)
+                                                    ipp = mesh.connijk[ii,jj,e]
+                                                    if (ipp > ip_kill)
                                                         mesh.connijk[ii,jj,e] -= 1
                                                     end 
                                                 end
