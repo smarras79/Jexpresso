@@ -30,6 +30,7 @@ include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
 include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/mesh/mesh.jl")
+include("../../kernel/mesh/restructure_for_periodicity.jl")
 include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
 include("../../kernel/boundaryconditions/BCs.jl")
@@ -106,7 +107,7 @@ function driver(DT::ContGal,       #Space discretization type
     #      Je[1:Q+1, 1:Q+1, 1:nelem]
     #--------------------------------------------------------
     metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
-    
+    periodicity_restructure!(mesh,inputs)    
     #--------------------------------------------------------
     # Build element mass matrix
     #
@@ -115,7 +116,7 @@ function driver(DT::ContGal,       #Space discretization type
     #--------------------------------------------------------    
     Me = build_mass_matrix!(SD, TensorProduct(), basis.ψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
     M = DSSijk_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-    @info M 
+    @info M
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------

@@ -506,6 +506,7 @@ if mesh.nsd == 2
             end
         end
     end
+    #=
     per1 = inputs[:per1]
     per2 = inputs[:per2]
     xx = zeros(size(mesh.x,1),1)
@@ -639,7 +640,7 @@ if mesh.nsd == 2
                    end
                 end
             end
-        end
+        end=#
     #=for iedge_bdy = 1:mesh.nedges_bdy
         @printf(" bdy edge %d of type %s ∈ elem %d with nodes\n", iedge_bdy, mesh.bdy_edge_type[iedge_bdy], mesh.bdy_edge_in_elem[iedge_bdy])
         for igl = 1:mesh.ngl
