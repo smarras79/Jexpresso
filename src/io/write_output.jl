@@ -58,10 +58,10 @@ end
 #----------------------------------------------------------------------------------------------------------------------------------------------
 #VTK:
 function write_vtk(sol::Array, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict)
-    cells = [MeshCell(VTKCellTypes.VTK_VERTEX, (i, )) for i = 1:mesh.npoin]
-    vtk_grid(string(OUTPUT_DIR, "qsolution"), mesh.x, mesh.y, mesh.z, cells) do vtk
-        vtk["q", VTKPointData()] = sol[:,1]
-    end
+    #cells = [MeshCell(VTKCellTypes.VTK_VERTEX, (i, )) for i = 1:mesh.npoin]
+    #vtk_grid(string(OUTPUT_DIR, "qsolution"), mesh.x, mesh.y, mesh.z, cells) do vtk
+     #   vtk["q", VTKPointData()] = sol[:,1]
+    #end
 end
 
 
