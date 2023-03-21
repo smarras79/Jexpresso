@@ -122,6 +122,7 @@ function driver(DT::ContGal,       #Space discretization type
     # NOTICE these will be replaced with tbe general way of building B.C.
     # Yassine is working on it.
     ϵ = eps(Float32)
+    #=
     if (occursin(lowercase(inputs[:gmsh_filename]), "circle"))
         rmax = (maximum(mesh.x) - minimum(mesh.x))/2
         for ip=1:mesh.npoin
@@ -153,9 +154,14 @@ function driver(DT::ContGal,       #Space discretization type
                 L[ip,ip] = 1.0
             end        
         end
-    end
+    en=#
     #END Dirichlet B.C..
 
+    apply_boundary_conditions!(SD, rhs_el, qp.qn, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
+
+    #B.C.
+    #apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
+    
     println(" # Solve Lq=RHS ................................")    
     solution = solveAx(L, RHS, inputs[:ode_solver])
     println(" # Solve Lq=RHS ................................ DONE")
