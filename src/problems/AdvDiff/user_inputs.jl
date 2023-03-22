@@ -39,25 +39,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :xmin          =>   0.0,
         :xmax          =>   1.0,
-        :nelx          =>   25,
-        #---------------------------------------------------------------------------
-        # Boundary conditions:
-        #---------------------------------------------------------------------------
-        :xmin_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :ymin_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :zmin_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :xmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :ymax_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :zmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :per1          => [1.0 0.0],
-        :per2          => [0.0 1.0],
-        :bc_exact_xmin => [0.0 0.0 0.0],
-        :bc_exact_xmax => [0.0 0.0 0.0],
-        :bc_exact_ymin => [0.0 0.0 0.0],
-        :bc_exact_ymax => [0.0 0.0 0.0],
-        :bc_exact_zmin => [0.0 0.0 0.0],
-        :bc_exact_zmax => [0.0 0.0 0.0],
-        
+        :nelx          =>   25,        
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
