@@ -32,7 +32,7 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
     #------------------------------------------
     title = string( "Tracer: initial condition")
     #plot_curve(mesh.x, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))    
-    write_output(q.qn[:,1], SD, mesh, OUTPUT_DIR, inputs, ASCII())
+    #write_output(q.qn[:,1], SD, mesh, OUTPUT_DIR, inputs, ASCII())
     
     println(" # Initialize fields for AdvDiff ........................ DONE")
     
