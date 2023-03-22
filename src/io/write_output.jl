@@ -6,7 +6,7 @@ include("./plotting/jeplots.jl")
 
 abstract type AbstractOutFormat end
 struct PNG <: AbstractOutFormat end
-struct ASCII <: AbstractOutFormat end 
+struct ASCII <: AbstractOutFormat end
 
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # ∂q/∂t = RHS -> q(x,t)
@@ -36,6 +36,24 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
      
     end 
 end
+
+
+function write_output(sol::Array, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII)
+    
+    for iout = 1: inputs[:ndiagnostics_outputs]
+        #Write out data at final timestep
+	fname = @sprintf "it-%d.dat" iout
+    	open(string(OUTPUT_DIR, "/", fname), "w") do f
+            for ip = 1:mesh.npoin
+                @printf(f, " %d %.6f %.6f \n", ip, mesh.x[ip], sol[ip])
+            end
+        end #f
+     
+    end 
+end
+
+function write_output(sol::Array, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG) nothing end
+
 function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII)
     
     for iout = 1: inputs[:ndiagnostics_outputs]
