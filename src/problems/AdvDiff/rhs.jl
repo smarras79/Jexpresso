@@ -117,10 +117,11 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, 
     rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, ψ, dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
     
     #B.C.
-    apply_boundary_conditions!(SD, rhs_el + rhs_diff_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
+    @time apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
+    #=    
     ϵ = eps(Float32)
     iscircle = false
-   #= if iscircle
+    if iscircle
         rmax = (maximum(mesh.x) - minimum(mesh.x))/2
         for ip=1:mesh.npoin
             x, y = mesh.x[ip], mesh.y[ip]
@@ -147,13 +148,9 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, 
     
     
     #DSS(rhs_el)
-    RHS         = DSS_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
+    RHS = DSS_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
     divive_by_mass_matrix!(RHS, M, QT)
 
-     
-    #B.C.
-    apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
-    #apply_periodicity!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
     
     return RHS
     

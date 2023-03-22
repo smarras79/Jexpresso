@@ -56,15 +56,15 @@ function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metri
     nx = metrics.nx
     ny = metrics.ny
     #TODO remake build custom_bcs for new boundary data
-    if (calc_grad)
-        gradq = build_gradient(SD, QT::Inexact, qp, ψ, dψ, ω, mesh, metrics,gradq,nvars)
+    #if (calc_grad)
+    #    gradq = build_gradient(SD, QT::Inexact, qp, ψ, dψ, ω, mesh, metrics,gradq,nvars)
         build_custom_bcs!(t,mesh,qp,gradq,rhs,SD,nvars,metrics,ω,dirichlet!,neumann,BCT,L)
-    end
+    #end
     #Dirichlet/Neumann boundaries using SIPG
     # NOTE We do not need to compute a RHS contribution for the Right element as it represents the outside of the computational domain here we only compute it's effect on the Left element
     # Remaking boundary conditions custom BCs will apply periodicity or other types of boundary conditions with the exception of absorbing
-    for iedge = 1:size(mesh.bdy_edge_comp,1)
-        iel = mesh.bdy_edge_in_elem[iedge] 
+   #= for iedge = 1:size(mesh.bdy_edge_comp,1)
+        iel = mesh.bdy_edge_in_elem[iedge]
         comp = mesh.bdy_edge_comp[iedge]
         for k=1:mesh.ngl
             for i=1:mesh.ngl
@@ -90,7 +90,7 @@ function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metri
                 #rhs[l,m,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iedge]*(nx[k,iedge]*dψ[i,k].*(qp[ip,1:nvars] .-q_st[1:nvars])+ny[k,iedge]*dψ[i,k].*(qp[ip,1:nvars] .-q_st[1:nvars]))
             end
         end
-    end
+    end =#
 end
 
 function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,BCT,L)
