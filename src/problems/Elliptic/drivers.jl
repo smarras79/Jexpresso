@@ -158,7 +158,6 @@ function driver(DT::ContGal,       #Space discretization type
     #END Dirichlet B.C..
     BCT = AdvDiff_Circ()
     apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, BCT, neqns;L=L)
-
     #B.C.
     #apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
     
