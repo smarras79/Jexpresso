@@ -13,6 +13,7 @@ function user_inputs()
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         #:output_dir          => "/Users/simone/runs/",
+        :outformat           => "png",
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
