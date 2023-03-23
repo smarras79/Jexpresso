@@ -12,12 +12,12 @@ end
 
 function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh)
     #
-    # F(q(x)) = 0.8*q
-    # G(q(x)) = 0.8*q
+     #F(q(x)) = 0.8*q
+     #G(q(x)) = 0.8*q
     #
     F = G = zeros(T, mesh.npoin)
     
-    #F .= 0.8*q[:,1]
+   # F .= 0.8*q[:,1]
     #G .= 0.8*q[:,1]
 
     for ip=1:mesh.npoin

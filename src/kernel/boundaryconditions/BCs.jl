@@ -38,7 +38,7 @@ function apply_boundary_conditions!(SD::NSD_1D, rhs, qp, mesh,inputs, QT, metric
     nothing
 end
 
-function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, BCT, nvars)
+function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, BCT, nvars;L="undefined")
     #If Neumann conditions are needed compute gradient
     calc_grad = false
     #   for key in keys(inputs)
@@ -56,15 +56,15 @@ function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metri
     nx = metrics.nx
     ny = metrics.ny
     #TODO remake build custom_bcs for new boundary data
-    if (calc_grad)
-        gradq = build_gradient(SD, QT::Inexact, qp, ψ, dψ, ω, mesh, metrics,gradq,nvars)
-        build_custom_bcs!(t,mesh,qp,gradq,rhs,SD,nvars,metrics,ω,dirichlet!,neumann,BCT)
-    end
+    #if (calc_grad)
+    #    gradq = build_gradient(SD, QT::Inexact, qp, ψ, dψ, ω, mesh, metrics,gradq,nvars)
+        build_custom_bcs!(t,mesh,qp,gradq,rhs,SD,nvars,metrics,ω,dirichlet!,neumann,BCT,L)
+    #end
     #Dirichlet/Neumann boundaries using SIPG
     # NOTE We do not need to compute a RHS contribution for the Right element as it represents the outside of the computational domain here we only compute it's effect on the Left element
     # Remaking boundary conditions custom BCs will apply periodicity or other types of boundary conditions with the exception of absorbing
-    for iedge = 1:size(mesh.bdy_edge_comp,1)
-        iel = mesh.bdy_edge_in_elem[iedge] 
+   #= for iedge = 1:size(mesh.bdy_edge_comp,1)
+        iel = mesh.bdy_edge_in_elem[iedge]
         comp = mesh.bdy_edge_comp[iedge]
         for k=1:mesh.ngl
             for i=1:mesh.ngl
@@ -90,15 +90,15 @@ function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metri
                 #rhs[l,m,iel,1:nvars] .-= ω[k]*metrics.Jef[k,iedge]*(nx[k,iedge]*dψ[i,k].*(qp[ip,1:nvars] .-q_st[1:nvars])+ny[k,iedge]*dψ[i,k].*(qp[ip,1:nvars] .-q_st[1:nvars]))
             end
         end
-    end
+    end =#
 end
 
-function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,BCT)
+function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,BCT,L)
     for iedge = 1:size(mesh.bdy_edge_comp,1)
         iel = mesh.bdy_edge_in_elem[iedge]
         comp = mesh.bdy_edge_comp[iedge]
         for k=1:mesh.ngl
-            if (mesh.bdy_edge_type[iedge] != "periodic")
+            if (mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] !="periodic2")
                 tag = mesh.bdy_edge_type[iedge]
                 ip = mesh.poin_in_bdy_edge[iedge,k]
                 m=1
@@ -115,7 +115,16 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                 y = mesh.y[ip]
                 q[ip,:] = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag,BCT)
                 flux = (ω[k]*metrics.Jef[k,iedge]).*neumann(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag,BCT)
-                rhs[l,m,iel,:] .= rhs[l,m,iel,:] .+ flux[:] 
+                rhs[l,m,iel,:] .= rhs[l,m,iel,:] .+ flux[:]
+                if (L != "undefined")
+                    for ii=1:mesh.npoin
+                        if (ii == ip)
+                            L[ip,ii] = 1.0
+                        else
+                            L[ip,ii] = 0.0
+                        end
+                    end
+                end
             end
         end
     end
