@@ -14,8 +14,10 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("../AbstractProblems.jl")
 
-include("./rhs.jl")
 include("./initialize.jl")
+
+include("../../kernel/operators/rhs.jl")
+
 
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
@@ -127,10 +129,7 @@ function driver(DT::ContGal,       #Space discretization type
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
     println(" # CFL = ", CFL)    
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-
     
     # NOTICE add a function to find the mesh mininum resolution
     time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, AdvDiff_Circ(), OUTPUT_DIR, TFloat)
-    
-
 end
