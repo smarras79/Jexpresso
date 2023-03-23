@@ -169,11 +169,10 @@ end
 
 function build_rhs_source(SD::NSD_2D,
                           QT::Inexact,
-                          PT::Elliptic,
                           q::Array,
                           mesh::St_mesh,
-                          M::AbstractArray, #M is a vector for inexact integration
-                          T)
+                          M::AbstractArray; #M is sparse for exact integration
+                          TFLoat) where TFloat <: Float64
 
     S = user_source(q, mesh, T)
     
@@ -182,11 +181,10 @@ end
 
 function build_rhs_source(SD::NSD_2D,
                           QT::Exact,
-                          PT::Elliptic,
                           q::Array,
                           mesh::St_mesh,
-                          M::Matrix, #M is sparse for exact integration
-                          T)
+                          M::Matrix; #M is sparse for exact integration
+                          TFLoat) where TFloat <: Float64
 
     S = user_source(q, mesh, T)
     
