@@ -25,7 +25,7 @@ end
 
 TBW
 """
-function allocate_q(nelem, npoin, ngl, neqs, TFloat;)
+function allocate_q(nelem, npoin, ngl, neqs, TFloat)
     
     q = St_SolutionVars{TFloat}(zeros(1, 1),               # qn+1
                                 zeros(1, 1),               # qn

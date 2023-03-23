@@ -219,8 +219,13 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     L = zeros((N+1)^2, (N+1)^2, mesh.nelem)
     for iel=1:mesh.nelem
-        for l = 1:QN, k = 1:QN          
-            ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
+        for l = 1:QN, k = 1:QN
+            if (metrics.Je[k, l, iel] < 0)
+                @info " NEGATIVE JACOBIAN:" metrics.Je[k, l, iel] iel                
+            end
+            
+            ωJkl = ω[k]*ω[l]
+            #ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
             for j = 1:MN, i = 1:MN     
                 J = i + (j - 1)*(N + 1)
                 #J = mesh.connijk[i,j,iel]
@@ -230,7 +235,7 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
 
                 dhik_dξ = dψ[i,k]
                 dhjl_dη = dψ[j,l]
-
+                
                 dψJK_dx = dhik_dξ*hjl*metrics.dξdx[k,l,iel] + hik*dhjl_dη*metrics.dηdx[k,l,iel]
                 dψJK_dy = dhik_dξ*hjl*metrics.dξdy[k,l,iel] + hik*dhjl_dη*metrics.dηdy[k,l,iel]
                 
@@ -343,6 +348,32 @@ function DSS_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray
     return M
 end
 
+function DSS_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+
+    M  = zeros(npoin)
+    for iel=1:nelem
+
+        #show(stdout, "text/plain", 36.0*Mel[:,:,iel])
+
+        for j = 1:N+1
+            for i = 1:N+1
+                J = i + (j - 1)*(N + 1)
+                JP = conn[i,j,iel]
+                for n = 1:N+1
+                    for m = 1:N+1
+                        I = m + (n - 1)*(N + 1)
+                        IP = conn[m,n,iel]
+                        M[IP] = M[IP] + Mel[I,J,iel] #if inexact
+                    end
+                end
+            end
+        end
+        #println("\n")
+        #show(stdout, "text/plain", M[:,:, iel])
+    end
+    return M
+end
+
 function DSS_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
     
@@ -357,8 +388,8 @@ function DSS_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArr
     return M
 end
 
-function DSS_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
+function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     M  = zeros(npoin)
     for iel=1:nelem
         for j = 1:N+1

@@ -7,7 +7,6 @@ include("../../io/print_matrix.jl")
 include("./user_flux.jl")
 include("./user_source.jl")
 
-
 function rhs!(du, u, params, time)
     
     T       = params.T
@@ -117,7 +116,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, 
     
     #B.C.
     apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
-    apply_periodicity!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
+    #apply_periodicity!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
     
     #DSS(rhs_el)
     RHS         = DSS_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
@@ -170,11 +169,10 @@ end
 
 function build_rhs_source(SD::NSD_2D,
                           QT::Inexact,
-                          PT::Elliptic,
                           q::Array,
                           mesh::St_mesh,
-                          M::AbstractArray, #M is a vector for inexact integration
-                          T)
+                          M::AbstractArray; #M is sparse for exact integration
+                          TFLoat) where TFloat <: Float64
 
     S = user_source(q, mesh, T)
     
@@ -183,11 +181,10 @@ end
 
 function build_rhs_source(SD::NSD_2D,
                           QT::Exact,
-                          PT::Elliptic,
                           q::Array,
                           mesh::St_mesh,
-                          M::Matrix, #M is sparse for exact integration
-                          T)
+                          M::Matrix; #M is sparse for exact integration
+                          TFLoat) where TFloat <: Float64
 
     S = user_source(q, mesh, T)
     

@@ -8,4 +8,4 @@ tmp/
 .vscode/
 *.code-workspace
 *.DS_Store
-*~
+*~./src/problems/Elliptic/user_inputs.jl

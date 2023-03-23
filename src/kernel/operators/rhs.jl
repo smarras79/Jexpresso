@@ -1,13 +1,18 @@
-include("../AbstractProblems.jl")
+include("../abstractTypes.jl")
+include("../mesh/mesh.jl")
+include("../mesh/metric_terms.jl")
+include("../../problems/AbstractProblems.jl")
+#include("../../io/print_matrix.jl")
 
-include("../../kernel/abstractTypes.jl")
-include("../../kernel/mesh/mesh.jl")
-include("../../kernel/mesh/metric_terms.jl")
-include("../../io/print_matrix.jl")
-include("./user_flux.jl")
-include("./user_source.jl")
-
-
+#---------------------------------------------------------------------------
+# Fetch problem name to access the user_rhs functions
+#---------------------------------------------------------------------------
+problem_name = ARGS[1]
+user_flux_dir = string("../../problems/", problem_name, "/user_flux.jl")
+user_source_dir = string("../../problems/", problem_name, "/user_source.jl")
+include(user_flux_dir)
+include(user_source_dir)
+#---------------------------------------------------------------------------
 function rhs!(du, u, params, time)
 
     #SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, De, u)
@@ -117,35 +122,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, BCT, qp::Array, neqns, 
     rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, ψ, dψ, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
     
     #B.C.
-    @time apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
-    #=    
-    ϵ = eps(Float32)
-    iscircle = false
-    if iscircle
-        rmax = (maximum(mesh.x) - minimum(mesh.x))/2
-        for ip=1:mesh.npoin
-            x, y = mesh.x[ip], mesh.y[ip]
-            r    = sqrt(x*x + y*y)
-            if (r > rmax - ϵ)
-                qp[ip,1] = 0.0
-            end
-        end
-    else
-        xmin = ymin = -1.0 + ϵ
-        xmax = ymax =  1.0 - ϵ
-        
-        for ip=1:mesh.npoin
-            x, y = mesh.x[ip], mesh.y[ip]
-            if( (x > xmax) || (x < xmin))
-                qp[ip,1] = 0.0
-            end
-            if( (y > ymax) || (y < ymin))
-                qp[ip,1] = 0.0
-            end
-        end
-    end=#
-    #End Dirichlet B.C..
-    
+    apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
     
     #DSS(rhs_el)
     RHS = DSS_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, mesh.nop, T)
@@ -244,3 +221,30 @@ function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, 
     return (rhsdiffξ_el*νx + rhsdiffη_el*νy)
     
 end
+
+
+
+function build_rhs_source(SD::NSD_2D,
+                          QT::Inexact,
+                          q::Array,
+                          mesh::St_mesh,
+                          M::AbstractArray, #M is sparse for exact integration
+                          T)
+
+    S = user_source(q, mesh, T)
+    
+    return M.*S    
+end
+
+function build_rhs_source(SD::NSD_2D,
+                          QT::Exact,
+                          q::Array,
+                          mesh::St_mesh,
+                          M::Matrix, #M is sparse for exact integration
+                          T)
+
+    S = user_source(q, mesh, T)
+    
+    return M*S   
+end
+

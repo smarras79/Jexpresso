@@ -29,8 +29,8 @@ function build_gradient(SD::NSD_2D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh,
                     dqdξ = 0
                     dqdη = 0
                     for k = 1:mesh.ngl
-                        dqdξ = dqdξ + dψ[k,i]*qp.qn[ip,1]
-                        dqdη = dqdη + dψ[k,j]*qp.qn[ip,1]
+                        dqdξ = dqdξ + dψ[k,i]*qp[ip,1]
+                        dqdη = dqdη + dψ[k,j]*qp[ip,1]
                     end
                     gradq[1,ip,var] = dqdξ*metrics.dξdx[i,j,iel] + dqdη*metrics.dηdx[i,j,iel]
                     gradq[2,ip,var] = dqdξ*metrics.dξdy[i,j,iel] + dqdη*metrics.dηdy[i,j,iel]
