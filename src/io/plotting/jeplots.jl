@@ -1,6 +1,8 @@
-using Plots; plotlyjs()
+using Plots #; plotlyjs()
 using LaTeXStrings
 using ColorSchemes
+using CairoMakie
+using GLMakie
 
 include("../../kernel/mesh/mesh.jl")
 
@@ -68,10 +70,14 @@ function plot_results(SD::NSD_1D, x1, _, z1, title::String, fout_name::String)
 end
 
 
-function plot_results(SD::NSD_2D, x1, y1, z1, title::String, fout_name::String)
+"""
+    This function uses the amazing package Mackie to plot arbitrarily gridded
+    unstructured data to filled contour plot
+"""
+function plot_triangulation(SD::NSD_2D, x, y, q, title::String, fout_name::String)
     
-    data = PlotlyJS.contour(;z=z1, x=x1, y=y1)
-    
-    PlotlyJS.savefig(PlotlyJS.plot(data), fout_name)
+    fig = Makie.tricontourf(x, y, q, colormap = :heat)
+    save(fout_name, fig, resolution = (600, 600))
+    fig
     
 end

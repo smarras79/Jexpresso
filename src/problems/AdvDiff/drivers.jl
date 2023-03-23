@@ -14,8 +14,10 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("../AbstractProblems.jl")
 
-include("./rhs.jl")
 include("./initialize.jl")
+
+include("../../kernel/operators/rhs.jl")
+
 
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
@@ -30,6 +32,7 @@ include("../../kernel/infrastructure/2D_3D_structures.jl")
 include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/solvers/TimeIntegrators.jl")  
+include("../../kernel/mesh/restructure_for_periodicity.jl")
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
@@ -104,6 +107,7 @@ function driver(DT::ContGal,       #Space discretization type
     #--------------------------------------------------------
     metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
         
+    periodicity_restructure!(mesh,inputs)    
     #--------------------------------------------------------
     # Build element mass matrix
     #
@@ -119,14 +123,17 @@ function driver(DT::ContGal,       #Space discretization type
     # Initialize q
     #--------------------------------------------------------
     qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
+    write_vtk(qp.qn[:,1], SD, mesh, OUTPUT_DIR,inputs)
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
     println(" # CFL = ", CFL)    
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-
-    # NOTICE add a function to find the mesh mininum resolution
-    time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, DefaultBC(), OUTPUT_DIR, TFloat)
     
+    # NOTICE add a function to find the mesh mininum resolution
+    solution = time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, AdvDiff_Circ(), OUTPUT_DIR, TFloat)
 
+    #Out-to-file:
+    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
+    
 end

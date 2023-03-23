@@ -47,6 +47,7 @@ struct CNVAR <: AbstractMetricForm end
 abstract type AbstractOutFormat end
 struct PNG <: AbstractOutFormat end
 struct ASCII <: AbstractOutFormat end
+struct VTK <: AbstractOutFormat end
 
 #
 # Boundary flags/conditions
@@ -54,7 +55,7 @@ struct ASCII <: AbstractOutFormat end
 abstract type AbstractBC end
 struct PERIODIC1D_CG <: AbstractBC end
 struct DefaultBC <: AbstractBC end
-struct LinearClaw_KopNR <: AbstractBC end
+struct LinearClaw_1 <: AbstractBC end
 struct LinearClaw_KopRefxmax <: AbstractBC end
 struct DirichletExample <: AbstractBC end
-
+struct AdvDiff_Circ <: AbstractBC end

@@ -1,57 +1,39 @@
-// -----------------------------------------------------------------------------
-//
-//  Gmsh GEO tutorial 1
-//
-//  Geometry basics, elementary entities, physical groups
-//
-// -----------------------------------------------------------------------------
+nelemx = 10;
+nelemy = 10;
+nelemz = 1;
 
-// The simplest construction in Gmsh's scripting language is the
-// `affectation'. The following command defines a new variable `lc':
+xmin = -1;
+xmax =	1;
+ymin = -1;
+ymax =  1;
+gridsize = (xmax-xmin) / nelemx;
 
-lc = 1e-2;
+Point(1) = {xmin, ymin, gridsize};
+Point(2) = {xmax, ymin, gridsize};
+Point(3) = {xmax, ymax, gridsize};
+Point(4) = {xmin, ymax, gridsize};
 
-gridsize_bottom = 0.2;
-gridsize_top    = 0.2;
+Line(1) = {1, 2};
+Line(2) = {2, 3};
+Line(3) = {3, 4};
+Line(4) = {4, 1};
 
-// This variable can then be used in the definition of Gmsh's simplest
-// `elementary entity', a `Point'. A Point is uniquely identified by a tag (a
-// strictly positive integer; here `1') and defined by a list of four numbers:
-// three coordinates (X, Y and Z) and the target mesh size (lc) close to the
-// point:
 
-Point(1) = {-1, -1, 0, gridsize_bottom};
-Point(2) = { 1, -1, 0, gridsize_bottom};
-Point(3) = { 1,  1, 0, gridsize_top};
-Point(4) = {-1,  1, 0, gridsize_top};
+npx = nelemx + 1;
+npy = nelemy + 1;
 
-// Curves are Gmsh's second type of elementary entities, and, amongst curves,
-// straight lines are the simplest. A straight line is identified by a tag and
-// is defined by a list of two point tags. In the commands below, for example,
-// the line 1 starts at point 1 and ends at point 2.
-//
-// Note that curve tags are separate from point tags - hence we can reuse tag
-// `1' for our first curve. And as a general rule, elementary entity tags in
-// Gmsh have to be unique per geometrical dimension.
+//Horizontal sides
+Transfinite Line {1, 3} = npx; //Ceil((xmax-xmin)/gridsize) Using Progression 1;
+//Vertical sides
+Transfinite Line {4, -2} = npy Using Progression 1.0;
 
-Line(1) = {1, 2}; //bottom
-Line(2) = {3, 2}; //right
-Line(3) = {3, 4}; //top
-Line(4) = {4, 1}; //left
 
-// The third elementary entity is the surface. In order to define a simple
-// rectangular surface from the four curves defined above, a curve loop has
-// first to be defined. A curve loop is also identified by a tag (unique amongst
-// curve loops) and defined by an ordered list of connected curves, a sign being
-// associated with each curve (depending on the orientation of the curve to form
-// a loop):
-Curve Loop(1) = {4, 1, -2, 3};
+Line Loop(11) = {4, 1, 2, 3};
+Plane Surface(12) = {11};
 
-// We can then define the surface as a list of curve loops (only one here,
-// representing the external contour, since there are no holes--see `t4.geo' for
-// an example of a surface with a hole):
-Plane Surface(1) = {1};
-Recombine Surface {1}; 
+Transfinite Surface {12};
+Recombine Surface {12};
+
 
 //-------------------------------------------------------------------------------
 //Boundary tagging
@@ -75,10 +57,8 @@ Recombine Surface {1};
 // "My surface" (with an automatic tag) containing the geometrical surface 1:
 //
 Physical Point("boundary",   1) = {1, 2, 3, 4};
-Physical Curve("inflow",     2) = {4};
-Physical Curve("outflow",    3) = {2};
-Physical Curve("free_slip", 4) = {3};
-Physical Curve("no_slip",   5) = {1};
+Physical Curve("periodic1",  2) = {1, 3};
+Physical Curve("periodic2",  3) = {2, 4};
 Physical Surface("domain") = {1};
 
 //

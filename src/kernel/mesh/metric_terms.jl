@@ -35,6 +35,9 @@ Base.@kwdef mutable struct St_metrics{TFloat}
     #
     # Element jacobian determinant
     #
+    nx  ::Array{TFloat} = zeros(1)
+    ny  ::Array{TFloat} = zeros(1)
+    nz  ::Array{TFloat} = zeros(1)
     Je  ::Array{TFloat} = zeros(1)
 end
 
@@ -57,7 +60,9 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                             dηdx = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
                             dξdy = zeros(Q+1, Q+1, mesh.nelem), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
                             dηdy = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
-                            Jef  = zeros(Q+1, size(mesh.bound_elem,1)+4),  
+                            Jef  = zeros(Q+1, mesh.nedges_bdy),
+                            nx   = zeros(Q+1, mesh.nedges_bdy),
+                            ny   = zeros(Q+1, mesh.nedges_bdy),
                             Je   = zeros(Q+1, Q+1, mesh.nelem)) #   Je[1:Nq, 1:Nq, 1:nelem]
 
     ψ  = basis.ψ
@@ -100,53 +105,28 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         #show(stdout, "text/plain", metrics.Je[:,:,iel])
     end
     #show(stdout, "text/plain", metrics.Je)
-    for iface =1:size(mesh.xmin_faces,2)
-       for i=1:Q+1
-          ip = mesh.xmin_faces[i,iface]
-          if (i < Q+1)
-              ip1 = mesh.xmin_faces[i+1,iface]
-          else
-              ip1 = mesh.xmin_faces[i-1,iface]
-          end
-          metrics.Jef[i,iface] = abs(mesh.y[ip]-mesh.y[ip1])/2
-       end
+    for iedge =1:size(mesh.bdy_edge_comp,1)
+        comp = mesh.bdy_edge_comp[iedge]
+        for k=1:Q+1
+            ip = mesh.poin_in_bdy_edge[iedge,k]
+            if (k < Q+1)
+              ip1 = mesh.poin_in_bdy_edge[iedge,k+1]
+            else
+              ip1 = mesh.poin_in_bdy_edge[iedge,k-1]
+            end
+            x1 = mesh.x[ip]
+            x2 = mesh.x[ip1]
+            y1 = mesh.y[ip]
+            y2 = mesh.y[ip1]
+            mag = sqrt((x1-x2)^2+(y1-y2)^2)
+            metrics.Jef[k,iedge] = mag/2
+            comp1 = (x1-x2)/mag
+            comp2 = (y1-y2)/mag
+            metrics.nx[k,iedge] = comp2
+            metrics.ny[k,iedge] = -comp1
+        end
     end
-    disp = size(mesh.xmin_faces,2)
-    for iface =1:size(mesh.xmax_faces,2)
-       for i=1:Q+1
-          ip = mesh.xmax_faces[i,iface]
-          if (i < Q+1)
-              ip1 = mesh.xmax_faces[i+1,iface]
-          else
-              ip1 = mesh.xmax_faces[i-1,iface]
-          end
-          metrics.Jef[i,iface+disp] = abs(mesh.y[ip]-mesh.y[ip1])/2
-       end
-    end
-    disp += size(mesh.xmax_faces,2)
-    for iface =1:size(mesh.ymin_faces,2)
-       for i=1:Q+1
-          ip = mesh.ymin_faces[i,iface]
-          if (i < Q+1)
-              ip1 = mesh.ymin_faces[i+1,iface]
-          else
-              ip1 = mesh.ymin_faces[i-1,iface]
-          end
-          metrics.Jef[i,iface+disp] = abs(mesh.x[ip]-mesh.x[ip1])/2
-       end
-    end 
-    disp += size(mesh.ymin_faces,2) 
-    for iface =1:size(mesh.ymax_faces,2)
-       for i=1:Q+1
-          ip = mesh.ymax_faces[i,iface]
-          if (i < Q+1)
-              ip1 = mesh.ymax_faces[i+1,iface]
-          else
-              ip1 = mesh.ymax_faces[i-1,iface]
-          end
-          metrics.Jef[i,iface+disp] = abs(mesh.x[ip]-mesh.x[ip1])/2
-       end
-    end 
+
     return metrics
 end
 
@@ -163,7 +143,9 @@ function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagr
                             dηdy = zeros(Q+1, Q+1, mesh.nelem), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
 
                             vⁱ = zeros(3, Q+1, Q+1, mesh.nelem), #contravariant unit vectors
-                            Jef  = zeros(Q+1, size(mesh.bound_elem,1)+4),                            
+                            Jef  = zeros(Q+1, mesh.nedges_bdy),
+                            nx   = zeros(Q+1, mesh.nedges_bdy),
+                            ny   = zeros(Q+1, mesh.nedges_bdy),
                             Je   = zeros(Q+1, Q+1, mesh.nelem)) #   Je[1:Nq, 1:Nq, 1:nelem]
 
     ψ  = basis.ψ
@@ -212,52 +194,26 @@ function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagr
     end
     #show(stdout, "text/plain", metrics.Je)
     #face jacobians for boundary faces
-    for iface =1:size(mesh.xmin_faces,2)
-       for i=1:Q+1
-          ip = mesh.xmin_faces[i,iface]
-          if (i < Q+1)
-              ip1 = mesh.xmin_faces[i+1,iface]
-          else
-              ip1 = mesh.xmin_faces[i-1,iface]
-          end
-          metrics.Jef[i,iface] = abs(mesh.y[ip]-mesh.y[ip1])/2
-       end
-    end
-    disp = size(mesh.xmin_faces,2)
-    for iface =1:size(mesh.xmax_faces,2)
-       for i=1:Q+1
-          ip = mesh.xmax_faces[i,iface]
-          if (i < Q+1)
-              ip1 = mesh.xmax_faces[i+1,iface]
-          else
-              ip1 = mesh.xmax_faces[i-1,iface]
-          end
-          metrics.Jef[i,iface+disp] = abs(mesh.y[ip]-mesh.y[ip1])/2
-       end
-    end
-    disp += size(mesh.xmax_faces,2)
-    for iface =1:size(mesh.ymin_faces,2)
-       for i=1:Q+1
-          ip = mesh.ymin_faces[i,iface]
-          if (i < Q+1)
-              ip1 = mesh.ymin_faces[i+1,iface]
-          else
-              ip1 = mesh.ymin_faces[i-1,iface]
-          end
-          metrics.Jef[i,iface+disp] = abs(mesh.x[ip]-mesh.x[ip1])/2
-       end
-    end 
-    disp += size(mesh.ymin_faces,2) 
-    for iface =1:size(mesh.ymax_faces,2)
-       for i=1:Q+1
-          ip = mesh.ymax_faces[i,iface]
-          if (i < Q+1)
-              ip1 = mesh.ymax_faces[i+1,iface]
-          else
-              ip1 = mesh.ymax_faces[i-1,iface]
-          end
-          metrics.Jef[i,iface+disp] = abs(mesh.x[ip]-mesh.x[ip1])/2
-       end
+    for iedge =1:size(mesh.bdy_edge_comp,1)
+        comp = mesh.bdy_edge_comp[iedge]
+        for k=1:Q+1
+            ip = mesh.poin_in_bdy_edge[iedge,k]
+            if (k < Q+1)
+              ip1 = mesh.poin_in_bdy_edge[iedge,k+1]
+            else
+              ip1 = mesh.poin_in_bdy_edge[iedge,k-1]
+            end
+            x1 = mesh.x[ip]
+            x2 = mesh.x[ip1] 
+            y1 = mesh.y[ip]
+            y2 = mesh.y[ip2]
+            mag = sqrt((x1-x2)^2+(y1-y2)^2)
+            metrics.Jef[k,iedge] = mag/2
+            comp1 = (x1-x2)/mag
+            comp2 = (y1-y2)/mag
+            metrics.nx[k,iedge] = comp2
+            metrics.ny[k,iedge] = -comp1
+        end
     end
     return metrics
 end

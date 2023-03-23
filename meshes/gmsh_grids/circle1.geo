@@ -9,10 +9,10 @@
 // The simplest construction in Gmsh's scripting language is the
 // `affectation'. The following command defines a new variable `lc':
 
-lc = 1e-2;
+lc = 0.25;
 
-gridsize_bottom = 0.2;
-gridsize_top    = 0.2;
+gridsize_bottom = 1;
+gridsize_top    = 1;
 
 // This variable can then be used in the definition of Gmsh's simplest
 // `elementary entity', a `Point'. A Point is uniquely identified by a tag (a
@@ -20,35 +20,36 @@ gridsize_top    = 0.2;
 // three coordinates (X, Y and Z) and the target mesh size (lc) close to the
 // point:
 
-Point(1) = {-1, -1, 0, gridsize_bottom};
-Point(2) = { 1, -1, 0, gridsize_bottom};
-Point(3) = { 1,  1, 0, gridsize_top};
-Point(4) = {-1,  1, 0, gridsize_top};
+x2 =  Sqrt(2.0)/2;
+x4 = -Sqrt(2.0)/2;
+x6 = x4;
+x8 = x2;
 
-// Curves are Gmsh's second type of elementary entities, and, amongst curves,
-// straight lines are the simplest. A straight line is identified by a tag and
-// is defined by a list of two point tags. In the commands below, for example,
-// the line 1 starts at point 1 and ends at point 2.
-//
-// Note that curve tags are separate from point tags - hence we can reuse tag
-// `1' for our first curve. And as a general rule, elementary entity tags in
-// Gmsh have to be unique per geometrical dimension.
+y2 = Sqrt(2.0)/2;
+y4 = Sqrt(2.0)/2;
+y6 = -y4;
+y8 = -y2;
 
-Line(1) = {1, 2}; //bottom
-Line(2) = {3, 2}; //right
-Line(3) = {3, 4}; //top
-Line(4) = {4, 1}; //left
+radius = 1.0;
+Point(1) = {radius, 0, 0, lc};
+Point(2) = {x2, y2, 0, lc};
+Point(3) = {0, radius, 0, lc};
+Point(4) = {x4, y4, 0, lc};
+Point(5) = {-radius, 0, 0, lc};
+Point(6) = {x6, y6, 0, lc};
+Point(7) = {0, -radius, 0, lc};
+Point(8) = {x8, y8, 0, lc}; 
 
-// The third elementary entity is the surface. In order to define a simple
-// rectangular surface from the four curves defined above, a curve loop has
-// first to be defined. A curve loop is also identified by a tag (unique amongst
-// curve loops) and defined by an ordered list of connected curves, a sign being
-// associated with each curve (depending on the orientation of the curve to form
-// a loop):
-Curve Loop(1) = {4, 1, -2, 3};
+Line(1) = {1, 2};
+Line(2) = {2, 3};
+Line(3) = {3, 4};
+Line(4) = {4, 5};
+Line(5) = {5, 6};
+Line(6) = {6, 7};
+Line(7) = {7, 8};
+Line(8) = {8, 1};
+Curve Loop(1) = {1, 2, 3, 4, 5, 6, 7, 8};
 
-// We can then define the surface as a list of curve loops (only one here,
-// representing the external contour, since there are no holes--see `t4.geo' for
 // an example of a surface with a hole):
 Plane Surface(1) = {1};
 Recombine Surface {1}; 
@@ -73,15 +74,12 @@ Recombine Surface {1};
 // Here we define a physical curve that groups the left, bottom and right curves
 // in a single group (with prescribed tag 5); and a physical surface with name
 // "My surface" (with an automatic tag) containing the geometrical surface 1:
-//
-Physical Point("boundary",   1) = {1, 2, 3, 4};
-Physical Curve("inflow",     2) = {4};
-Physical Curve("outflow",    3) = {2};
-Physical Curve("free_slip", 4) = {3};
-Physical Curve("no_slip",   5) = {1};
+
+Physical Point("boundary",   1) = {1, 2, 3, 4, 5, 6, 7, 8};
+Physical Curve("free_slip",  2) = {1, 2, 3, 4, 5, 6, 7, 8};
 Physical Surface("domain") = {1};
 
-//
+
 // You can save the mesh in older
 // versions of the MSH format:
 //

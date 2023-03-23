@@ -34,7 +34,7 @@ include("../../kernel/solver/mod_solution.jl")
 include("../../kernel/timeIntegration/TimeIntegrators.jl")  
 include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
-function driver(DT::CG,       #Space discretization type
+function driver(DT::ContGal,       #Space discretization type
                 inputs::Dict, #input parameters from src/user_input.jl
                 OUTPUT_DIR::String,
                 TFloat) 
@@ -42,7 +42,7 @@ function driver(DT::CG,       #Space discretization type
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:problem]
-    nvars = inputs[:nvars]
+    neqns = inputs[:neqns]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -130,8 +130,8 @@ function driver(DT::CG,       #Space discretization type
     # NOTICE add a function to find the mesh mininum resolution
     
     TD = RK5()
-    #BCT = LinearClaw_KopNR()
-    BCT = LinearClaw_KopRefxmax()
+    BCT = LinearClaw_1()
+    #BCT = LinearClaw_KopRefxmax()
     time_loop!(TD, SD, QT, PT, mesh, metrics, basis, ω, qp, M, Nt, Δt, nvars, inputs, BCT, OUTPUT_DIR, TFloat)
     
 end

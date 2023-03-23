@@ -4,6 +4,7 @@ using OrdinaryDiffEq
 using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
 using SnoopCompile
 import SciMLBase
+using WriteVTK
 
 include("../abstractTypes.jl")
 include("../../io/write_output.jl")
@@ -40,15 +41,15 @@ function time_loop!(SD,
     println(" # Solving ODE with ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
     
-    @time    sol = solve(prob,
-                         inputs[:ode_solver],
-                         dt = Δt,
-                         save_everystep=false,
-                         saveat = range(T(0.), Nt*T(Δt), length=inputs[:ndiagnostics_outputs]),
-                         progress = true,
-                         progress_message = (dt, u, p, t) -> t)
+    @time    solution = solve(prob,
+                              inputs[:ode_solver],
+                              dt = Δt,
+                              save_everystep=false,
+                              saveat = range(T(0.), Nt*T(Δt), length=inputs[:ndiagnostics_outputs]),
+                              progress = true,
+                              progress_message = (dt, u, p, t) -> t)
     println(" # Solving ODE with  ................................ DONE")
     
-    write_output(sol, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
+    return solution
     
 end

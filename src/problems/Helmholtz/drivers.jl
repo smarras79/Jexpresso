@@ -14,6 +14,7 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("../AbstractProblems.jl")
 
+include("./rhs.jl")
 include("./initialize.jl")
 
 include("../../io/mod_inputs.jl")
@@ -21,18 +22,15 @@ include("../../io/write_output.jl")
 include("../../io/print_matrix.jl")
 
 include("../../kernel/abstractTypes.jl")
-include("../../kernel/bases/basis_structs.jl")
-include("../../kernel/boundaryconditions/BCs.jl")
 include("../../kernel/globalStructs.jl")
+include("../../kernel/bases/basis_structs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
-<<<<<<< HEAD
-=======
-include("../../kernel/operators/rhs.jl")
->>>>>>> yt/ODESolver_NewBC
+include("../../kernel/mesh/metric_terms.jl")
+include("../../kernel/mesh/mesh.jl")
 include("../../kernel/solvers/Axb.jl")
-
+include("../../kernel/boundaryconditions/BCs.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
                 inputs::Dict,      #input parameters from src/user_input.jl
@@ -108,31 +106,28 @@ function driver(DT::ContGal,       #Space discretization type
     
     #Build L = DSS(∫∇ψᵢ∇ψⱼdΩₑ)
     Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    L  = DSS_laplace(SD, Le, mesh, TFloat)
+    L  =          DSS_laplace(SD, Le, mesh, TFloat)
 
     #Build M = DSS(∫ψᵢψⱼdΩₑ)
-    Me = build_mass_matrix(SD, QT, basis.ψ,   ω, mesh, metrics, Nξ, Qξ, TFloat)
-    M  = DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    Me =    build_mass_matrix(SD, QT, basis.ψ,           ω, mesh, metrics, Nξ, Qξ, TFloat)
+    M  =             DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqns, TFloat)
+    qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
 
     #Build ∫S(q)dΩ
-    RHS = build_rhs_source(SD, QT, qp.qn, mesh, M, TFloat)
+    RHS = build_rhs_source(SD, QT, inputs[:problem], qp.qn, mesh, M, TFloat)
     
     # Dirichlet B.C.
-    # NOTICE these will be replaced with tbe general way of building B.C.
-    # Yassine is working on it.
-    ϵ = eps(Float32)
-    
-    if (occursin(lowercase(inputs[:gmsh_filename]), "circle"))
+    iscircle = true
+    if iscircle
         rmax = (maximum(mesh.x) - minimum(mesh.x))/2
         for ip=1:mesh.npoin
             x, y = mesh.x[ip], mesh.y[ip]
-            r = sqrt(x*x + y*y)
-            if( (r > rmax - ϵ) || (r < -rmax + ϵ))
+            r    = sqrt(x*x + y*y)
+            if (r > rmax - ϵ)
                 qp.qn[ip,1] = 0.0
                 for jp=1:mesh.npoin
                     L[ip,jp] = 0.0
@@ -158,11 +153,8 @@ function driver(DT::ContGal,       #Space discretization type
                 L[ip,ip] = 1.0
             end        
         end
-    end
+    end   
     #END Dirichlet B.C..
-
-    #BCT = AdvDiff_Circ()
-    #apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, BCT, neqns; L=L)
     
     println(" # Solve Lq=RHS ................................")    
     solution = solveAx(L, RHS, inputs[:ode_solver])
