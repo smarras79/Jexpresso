@@ -17,7 +17,7 @@ function write_output(sol::ODESolution, SD, mesh::St_mesh, OUTPUT_DIR::String, i
     
     for iout = 1: inputs[:ndiagnostics_outputs]
         title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-        plot_results(SD, mesh.x, mesh.y, sol.u[iout], title, string(OUTPUT_DIR, "/it.", iout, ".png"))
+        plot_triangulation(SD, mesh.x, mesh.y, sol.u[iout], title, string(OUTPUT_DIR, "/it.", iout, ".png"))
     end
     
 end
@@ -68,7 +68,7 @@ end
 # PNG
 function write_output(sol::SciMLBase.LinearSolution, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
     title = @sprintf "Solution to ∇⋅∇(q) = f"
-    plot_results(SD, mesh.x, mesh.y, sol.u, title, string(OUTPUT_DIR, "Axb.png"))
+    plot_triangulation(SD, mesh.x, mesh.y, sol.u, title, string(OUTPUT_DIR, "Axb.png"))
     
 end
 

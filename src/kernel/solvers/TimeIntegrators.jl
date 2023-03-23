@@ -50,11 +50,6 @@ function time_loop!(SD,
                               progress_message = (dt, u, p, t) -> t)
     println(" # Solving ODE with  ................................ DONE")
     
-#    cells = [MeshCell(VTKCellTypes.VTK_VERTEX, (i, )) for i = 1:mesh.npoin]
- #   vtk_grid(string(OUTPUT_DIR, "points"), mesh.x, mesh.y, solution.u[end], cells) do vtk
-  #      vtk["qsolution", VTKPointData()] = solution.u[end]
-   # end
-    #write_vtk(solution, mesh, "qfinal", OUTPUT_DIR)
     write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
 end
