@@ -118,7 +118,7 @@ function driver(DT::ContGal,       #Space discretization type
 
     #Build ∫S(q)dΩ
     RHS = build_rhs_source(SD, QT, qp.qn, mesh, M, TFloat)
-
+    
     # Dirichlet B.C.
     # NOTICE these will be replaced with tbe general way of building B.C.
     # Yassine is working on it.
