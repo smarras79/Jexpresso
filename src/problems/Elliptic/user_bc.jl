@@ -32,7 +32,7 @@ function user_bc_dirichlet!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractF
         qibdy[2] = 300.0  #T
     end
     
-    qibdy = 0.0
+    return qibdy
 end
 
 function user_bc_neumann!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::Abstractfloat, tag::String) where TFloat <: Float64
@@ -50,8 +50,8 @@ function user_bc_robin!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat
     if (tag === "heat_flux")
         gradq[1] = 400.0
     elseif (tag === "fix_temperature")
-        q[1] = 0.0
+        qibdy[1] = 0.0
     end
-    
-    qibdy = 0.0
+
+    return gradq, qibdy
 end
