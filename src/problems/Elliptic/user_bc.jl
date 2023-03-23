@@ -24,7 +24,7 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::Abstractfloat, tag::String) where TFloat <: Float64
+function user_bc_dirichlet!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String) where TFloat <: Float64
     
     if (tag === "zero_all")
         qibdy[1] = 3.0    #u
@@ -33,7 +33,7 @@ function user_bc_dirichlet!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractF
     return qibdy
 end
 
-function user_bc_neumann!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::Abstractfloat, tag::String) where TFloat <: Float64
+function user_bc_neumann!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String) where TFloat <: Float64
     
     if (tag === "heat_flux")
         gradq[1] = 400.0
@@ -43,7 +43,7 @@ function user_bc_neumann!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFlo
 end
 
 
-function user_bc_robin!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::Abstractfloat, tag::String) where TFloat <: Float64
+function user_bc_robin!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String) where TFloat <: Float64
     
     if (tag === "heat_flux")
         gradq[1] = 400.0
