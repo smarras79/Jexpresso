@@ -5,9 +5,9 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                 => 1e-3,
+        :tend                 => 1.5,
         :Δt                   => 1e-3,
-        :ndiagnostics_outputs => 2, #these are steps, not seconds
+        :ndiagnostics_outputs => 20, #these are steps, not seconds
         #:output_dir          => "/Users/simone/runs/",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -33,7 +33,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        :outformat     => "ascii", #choice: "png", "ascii" (default is ascii)
+        :outformat     => "png", #choice: "png", "ascii" (default is ascii)
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------

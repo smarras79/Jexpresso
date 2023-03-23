@@ -105,11 +105,11 @@ function driver(DT::ContGal,       #Space discretization type
     
     #Build L = DSS(∫∇ψᵢ∇ψⱼdΩₑ)
     Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    L  =          DSS_laplace(SD, Le, mesh, TFloat)
+    L  = DSS_laplace(SD, Le, mesh, TFloat)
 
     #Build M = DSS(∫ψᵢψⱼdΩₑ)
-    Me =    build_mass_matrix(SD, QT, basis.ψ,           ω, mesh, metrics, Nξ, Qξ, TFloat)
-    M  =             DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    Me = build_mass_matrix(SD, QT, basis.ψ,   ω, mesh, metrics, Nξ, Qξ, TFloat)
+    M  = DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     
     #--------------------------------------------------------
     # Initialize q
@@ -158,15 +158,14 @@ function driver(DT::ContGal,       #Space discretization type
     end
     #END Dirichlet B.C..
 
-    BCT = AdvDiff_Circ()
-    apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, BCT, neqns; L=L)
+    #BCT = AdvDiff_Circ()
+    #apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, BCT, neqns; L=L)
     
     println(" # Solve Lq=RHS ................................")    
     solution = solveAx(L, RHS, inputs[:ode_solver])
     println(" # Solve Lq=RHS ................................ DONE")
 
     #Out-to-file:
-    write_vtk(solution.u, SD, mesh, OUTPUT_DIR, inputs)
     write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
 end
