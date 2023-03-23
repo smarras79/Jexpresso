@@ -1,4 +1,4 @@
-include("../AbstractTypes.jl")
+include("../abstractTypes.jl")
 
 function dirichlet!(q,gradq,x,y,t,mesh,metrics,tag,::LinearClaw_1)
     c  = 1.0
