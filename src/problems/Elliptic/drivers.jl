@@ -123,13 +123,13 @@ function driver(DT::ContGal,       #Space discretization type
     # NOTICE these will be replaced with tbe general way of building B.C.
     # Yassine is working on it.
     ϵ = eps(Float32)
-    
-    if (occursin(lowercase(inputs[:gmsh_filename]), "circle"))
+    #=if (occursin(lowercase(inputs[:gmsh_filename]), "circle"))
         rmax = (maximum(mesh.x) - minimum(mesh.x))/2
         for ip=1:mesh.npoin
             x, y = mesh.x[ip], mesh.y[ip]
             r = sqrt(x*x + y*y)
             if( (r > rmax - ϵ) || (r < -rmax + ϵ))
+                @info ip
                 qp.qn[ip,1] = 0.0
                 for jp=1:mesh.npoin
                     L[ip,jp] = 0.0
@@ -138,7 +138,7 @@ function driver(DT::ContGal,       #Space discretization type
             end
         end
     else
-        for ip=1:mesh.npoin
+       for ip=1:mesh.npoin
             x, y = mesh.x[ip], mesh.y[ip]
             if( (x > 1.0 - ϵ) || (x < -1.0 + ϵ))
                 qp.qn[ip,1] = sinpi(2*y)
@@ -155,11 +155,11 @@ function driver(DT::ContGal,       #Space discretization type
                 L[ip,ip] = 1.0
             end        
         end
-    end
+    end=#
     #END Dirichlet B.C..
 
-    #BCT = AdvDiff_Circ()
-    #apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, BCT, neqns; L=L)
+    BCT = AdvDiff_Circ()
+    apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, BCT, neqns; L=L)
     
     println(" # Solve Lq=RHS ................................")    
     solution = solveAx(L, RHS, inputs[:ode_solver])
