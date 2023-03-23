@@ -26,10 +26,8 @@
 """
 function user_bc_dirichlet!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::Abstractfloat, tag::String) where TFloat <: Float64
     
-    if (tag === "inflow")
+    if (tag === "zero_all")
         qibdy[1] = 3.0    #u
-    elseif (tag === "fix_temperature")
-        qibdy[2] = 300.0  #T
     end
     
     return qibdy
