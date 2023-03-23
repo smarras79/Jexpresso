@@ -38,7 +38,7 @@ function apply_boundary_conditions!(SD::NSD_1D, rhs, qp, mesh,inputs, QT, metric
     nothing
 end
 
-function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, BCT, nvars;L="undefined")
+function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, BCT, nvars;L=zeros(1,1))
     #If Neumann conditions are needed compute gradient
     calc_grad = false
     #   for key in keys(inputs)
@@ -86,15 +86,11 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                 q[ip,:] = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag,BCT)
                 flux = (ω[k]*metrics.Jef[k,iedge]).*neumann(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag,BCT)
                 rhs[l,m,iel,:] .= rhs[l,m,iel,:] .+ flux[:]
-                if (L != "undefined")
-                    @show " BDY POIN global index: " ip
+                if (size(L,1)>1)
                     for ii=1:mesh.npoin
-                        if (ii == ip)
-                            L[ip,ii] = 1.0
-                        else
-                            L[ip,ii] = 0.0
-                        end
+                        L[ip,ii] = 0.0
                     end
+                    L[ip,ip] =1.0
                 end
             end
         end
