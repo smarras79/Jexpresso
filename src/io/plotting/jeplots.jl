@@ -1,8 +1,8 @@
-using Plots #; plotlyjs()
+using Plots
 using LaTeXStrings
 using ColorSchemes
 using CairoMakie
-using GLMakie
+using Makie
 
 #= CITE Mackie:
 @article{DanischKrumbiegel2021,
