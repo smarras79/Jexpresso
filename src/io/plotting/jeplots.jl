@@ -4,6 +4,21 @@ using ColorSchemes
 using CairoMakie
 using GLMakie
 
+#= CITE Mackie:
+@article{DanischKrumbiegel2021,
+  doi = {10.21105/joss.03349},
+  url = {https://doi.org/10.21105/joss.03349},
+  year = {2021},
+  publisher = {The Open Journal},
+  volume = {6},
+  number = {65},
+  pages = {3349},
+  author = {Simon Danisch and Julius Krumbiegel},
+  title = {Makie.jl: Flexible high-performance data visualization for Julia},
+  journal = {Journal of Open Source Software}
+}
+=#
+
 include("../../kernel/mesh/mesh.jl")
 
 function plot_curve(x, y,  title::String, fout_name::String)
