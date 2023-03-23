@@ -14,7 +14,6 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("../AbstractProblems.jl")
 
-include("./rhs.jl")
 include("./initialize.jl")
 
 include("../../io/mod_inputs.jl")
@@ -22,13 +21,15 @@ include("../../io/write_output.jl")
 include("../../io/print_matrix.jl")
 
 include("../../kernel/abstractTypes.jl")
-include("../../kernel/globalStructs.jl")
 include("../../kernel/bases/basis_structs.jl")
+include("../../kernel/boundaryconditions/BCs.jl")
+include("../../kernel/globalStructs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
+include("../../kernel/operators/rhs.jl")
 include("../../kernel/solvers/Axb.jl")
-include("../../kernel/boundaryconditions/BCs.jl")
+
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
                 inputs::Dict,      #input parameters from src/user_input.jl
@@ -122,7 +123,7 @@ function driver(DT::ContGal,       #Space discretization type
     # NOTICE these will be replaced with tbe general way of building B.C.
     # Yassine is working on it.
     ϵ = eps(Float32)
-    #=
+    
     if (occursin(lowercase(inputs[:gmsh_filename]), "circle"))
         rmax = (maximum(mesh.x) - minimum(mesh.x))/2
         for ip=1:mesh.npoin
@@ -154,10 +155,9 @@ function driver(DT::ContGal,       #Space discretization type
                 L[ip,ip] = 1.0
             end        
         end
-    en=#
+    end
     #END Dirichlet B.C..
-
-    apply_boundary_conditions!(SD, rhs_el, qp.qn, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
+    #apply_boundary_conditions!(SD, rhs_el, qp.qn, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)
 
     #B.C.
     #apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, BCT, neqns)

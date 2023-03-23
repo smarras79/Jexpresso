@@ -27,13 +27,13 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
 
         #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh", 
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/circle1.msh",
 
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        :outformat     => "png", #choice: "png", "ascii" (default is ascii)
+        :outformat     => "ascii", #choice: "png", "ascii" (default is ascii)
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
@@ -41,23 +41,6 @@ function user_inputs()
         :xmax          =>   1.0,
         :nelx          =>   25,
         #---------------------------------------------------------------------------
-        # Boundary conditions:
-        #---------------------------------------------------------------------------
-        :xmin_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :ymin_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :zmin_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :xmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :ymax_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :zmax_bc       => "periodic", #Use either "dirichlet" or "periodic"
-        :per1          => [1.0 0.0],
-        :per2          => [0.0 1.0],
-        :bc_exact_xmin => [0.0 0.0 0.0],
-        :bc_exact_xmax => [0.0 0.0 0.0],
-        :bc_exact_ymin => [0.0 0.0 0.0],
-        :bc_exact_ymax => [0.0 0.0 0.0],
-        :bc_exact_zmin => [0.0 0.0 0.0],
-        :bc_exact_zmax => [0.0 0.0 0.0],
-        
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
