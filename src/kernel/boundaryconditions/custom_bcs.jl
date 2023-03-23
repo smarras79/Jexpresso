@@ -1,4 +1,4 @@
-include("../AbstractTypes.jl")
+include("../abstractTypes.jl")
 
 #---------------------------------------------------------------------------
 # Fetch problem name to access the user_bc functions
