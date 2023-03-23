@@ -27,10 +27,7 @@ include("../../kernel/globalStructs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
-<<<<<<< HEAD
-=======
 include("../../kernel/operators/rhs.jl")
->>>>>>> yt/ODESolver_NewBC
 include("../../kernel/solvers/Axb.jl")
 
 #--------------------------------------------------------
