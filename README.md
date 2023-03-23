@@ -38,7 +38,7 @@ Currently available problem names:
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
 ## Plotting
-For plotting we rely on `PlotlyJS`. If you want to use a different package,
+For plotting we rely on [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
 modify ./src/io/plotting/jplots.jl accordinly.
 
 ## Contacts
