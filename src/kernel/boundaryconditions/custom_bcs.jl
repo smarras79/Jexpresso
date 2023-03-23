@@ -37,7 +37,7 @@ function neumann(q,gradq,x,y,t,mesh,metrics,tag,::LinearClaw_1)
     rhs[2] = 0.0
     rhs[3] = 0.0
 
-    rhs = user_bc_dirichlet(q,gradq,x,y,t,mesh,metrics,tag)
+    r#hs = user_bc_dirichlet(q,gradq,x,y,t,mesh,metrics,tag)
     return rhs
 end
 
@@ -50,7 +50,9 @@ end
 
 function dirichlet!(q,gradq,x,y,t,mesh,metrics,tag)
 
-    q = user_bc_dirichlet(q,gradq,x,y,t,mesh,metrics,tag)
+    #q = user_bc_dirichlet(q,gradq,x,y,t,mesh,metrics,tag)
+    q = zeros(1,1)
+    q[1] = 0.0
     
     return q
 end
