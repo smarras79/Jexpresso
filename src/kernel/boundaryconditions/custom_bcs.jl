@@ -1,5 +1,22 @@
 include("../AbstractTypes.jl")
 
+#---------------------------------------------------------------------------
+# Fetch problem name to access the user_bc functions
+#---------------------------------------------------------------------------
+problem_name = ARGS[1]
+user_bc_dir = string("../../problems/", problem_name, "/user_bc.jl")
+include(user_bc_dir)
+#---------------------------------------------------------------------------
+
+
+function build_user_bc(q,gradq,x,y,t,mesh,metrics,tag)
+    
+    user_bc!(q,gradq,x,y,t,mesh,metrics,tag)
+    
+    return q
+end
+
+
 function dirichlet!(q,gradq,x,y,t,mesh,metrics,tag,::LinearClaw_1)
     c  = 1.0
     x0 = y0 = -0.8
@@ -14,20 +31,26 @@ function dirichlet!(q,gradq,x,y,t,mesh,metrics,tag,::LinearClaw_1)
 end
 
 function neumann(q,gradq,x,y,t,mesh,metrics,tag,::LinearClaw_1)
+
     rhs = zeros(3,1)
     rhs[1] = 0.0
     rhs[2] = 0.0
     rhs[3] = 0.0
-    return rhs
-end
 
-function dirichlet!(q,gradq,x,y,t,mesh,metrics,tag,::AdvDiff_Circ)
-    q[1] = 0.0
-    return q
+    rhs = user_bc_dirichlet(q,gradq,x,y,t,mesh,metrics,tag)
+    return rhs
 end
 
 function neumann(q,gradq,x,y,t,mesh,metrics,tag,::AdvDiff_Circ)
     rhs = zeros(1,1)
     rhs[1] = 0.0
     return rhs
+end
+
+
+function dirichlet!(q,gradq,x,y,t,mesh,metrics,tag)
+
+    q = user_bc_dirichlet(q,gradq,x,y,t,mesh,metrics,tag)
+    
+    return q
 end
