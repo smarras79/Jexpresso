@@ -2,7 +2,7 @@ using Plots #; plotlyjs()
 using LaTeXStrings
 using ColorSchemes
 using CairoMakie
-using GLMakie
+using Makie
 
 include("../../kernel/mesh/mesh.jl")
 
