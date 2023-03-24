@@ -66,7 +66,7 @@ end
 #
 # Curves (1D) or Contours (2D) with PlotlyJS
 #
-function plot_results(SD::NSD_1D, x1, _, z1, title::String, fout_name::String)
+function plot_results(SD::NSD_1D, x1, y1, z1, title::String, fout_name::String)
     
     default(titlefont=(14, "Arial, sans-serif"),
             legendfontsize = 18,
@@ -76,9 +76,9 @@ function plot_results(SD::NSD_1D, x1, _, z1, title::String, fout_name::String)
             framestyle = :zerolines, yminorgrid = true)
     
     data = Plots.scatter(x1, z1, title=title,
-                   markersize = 5, markercolor="Blue",
-                   xlabel = "x", ylabel = "q(x)",
-                   legend = :none)
+                         markersize = 5, markercolor="Blue",
+                         xlabel = "x", ylabel = "q(x)",
+                         legend = :none)
     
     Plots.savefig(data, fout_name)
     
@@ -97,6 +97,5 @@ function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, fout_name
         fig
     #end
 end
-
 function plot_triangulation(SD::NSD_1D, x, y, q::Array, title::String, fout_name::String) nothing end
 function plot_triangulation(SD::NSD_3D, x, y, q::Array, title::String, fout_name::String) nothing end

@@ -2,6 +2,7 @@ using LinearSolve
 using SnoopCompile
 using WriteVTK
 import SciMLBase
+using Makie
 
 include("./plotting/jeplots.jl")
 
@@ -12,21 +13,32 @@ struct ASCII <: AbstractOutFormat end
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # ∂q/∂t = RHS -> q(x,t)
 #----------------------------------------------------------------------------------------------------------------------------------------------
-# PNG 
-function write_output(sol::ODESolution, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
-    @info size(sol.u)
+# PNG
+function write_output(sol::ODESolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG) nothing end
+function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
-    for iout = 1: inputs[:ndiagnostics_outputs]
-        title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-        plot_triangulation(SD, mesh.x, mesh.y, sol.u[iout], title, string(OUTPUT_DIR, "/it.", iout, ".png"))
-    end    
+    for iout = 1:inputs[:ndiagnostics_outputs]
+        for ivar = 1:size(sol.u[iout,:], 2)
+            fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
+            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            plot_triangulation(SD, mesh.x, mesh.y, sol.u[iout,ivar], title, fout_name)
+        end
+    end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
-    
 end
+function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)    
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+    for iout = 1:inputs[:ndiagnostics_outputs]
+	fname = @sprintf "it-%d.png" iout
+        title = string("sol.u at time ", sol.t[iout])
+        plot_results(SD, mesh.x, mesh.x, sol.u[iout][:], title, string(OUTPUT_DIR, "/", fname))
+    end
+    println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") )
+end
+
 
 # ASCII
 function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII)
-
     
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     for iout = 1: inputs[:ndiagnostics_outputs]
@@ -52,8 +64,7 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
             end
         end #f
     end    
-    println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") )
-    
+    println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") ) 
 end
 
 
@@ -63,7 +74,7 @@ end
 #----------------------------------------------------------------------------------------------------------------------------------------------
 #VTK:
 function write_vtk(sol::Array, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict)
-
+    nothing
     #println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
     #cells = [MeshCell(VTKCellTypes.VTK_VERTEX, (i, )) for i = 1:mesh.npoin]
     #vtk_grid(string(OUTPUT_DIR, "qsolution"), mesh.x, mesh.y, mesh.z, cells) do vtk
@@ -74,7 +85,7 @@ end
 
 
 # PNG
-function write_output(sol::SciMLBase.LinearSolution, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
     
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
