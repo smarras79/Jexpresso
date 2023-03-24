@@ -31,7 +31,7 @@ function rhs!(du, u, params, time)
     Le      = params.Le
 
     RHS = build_rhs(SD, QT, PT, u, neqns, basis.ψ, basis.dψ, ω, mesh, metrics, M, De, Le, time, inputs, T)    
-    du = copy(RHS)
+    du .= RHS
     
     return du #This is already DSSed
 end
