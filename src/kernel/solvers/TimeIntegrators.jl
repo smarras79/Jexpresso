@@ -33,7 +33,7 @@ function time_loop!(SD,
     u      = zeros(T, mesh.npoin*neqns);
     for i=1:neqns
         idx = (i-1)*mesh.npoin
-        u[idx+1:i*mesh.npoin]= qp.qn[:,i]
+        u[idx+1:i*mesh.npoin] = qp.qn[:,i]
     end
     tspan  = (inputs[:tinit], inputs[:tend])    
     params = (; T, SD, QT, PT, neqns, basis, ω, mesh, metrics, inputs, M, De, Le)
