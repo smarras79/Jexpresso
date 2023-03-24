@@ -13,6 +13,7 @@ function user_inputs()
         :lexact_integration  => false,
         :nop                 => 8,      # Polynomila order
         :luser_bc            => true,
+        :outformat           => "png",
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------

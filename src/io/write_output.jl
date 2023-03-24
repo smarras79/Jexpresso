@@ -14,7 +14,7 @@ struct ASCII <: AbstractOutFormat end
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # PNG 
 function write_output(sol::ODESolution, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
-
+    @info size(sol.u)
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     for iout = 1: inputs[:ndiagnostics_outputs]
         title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]

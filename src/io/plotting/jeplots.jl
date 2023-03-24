@@ -30,7 +30,7 @@ function plot_curve(x, y,  title::String, fout_name::String)
             guide = "x",
             framestyle = :zerolines, yminorgrid = true)
     
-    data = scatter(x, y, title=title,
+    data = Plots.scatter(x, y, title=title,
                    markersize = 5, markercolor="Blue",
                    xlabel = "x", ylabel = "q(x)",
                    legend = :none)
@@ -59,7 +59,7 @@ function plot_1d_grid(mesh::St_mesh)
     
     plt = plot() #Clear plot
     for i=1:npoin
-        display(scatter!(x, zeros(npoin), markersizes=4))
+        display(Plots.scatter!(x, zeros(npoin), markersizes=4))
     end 
 end
 
@@ -75,7 +75,7 @@ function plot_results(SD::NSD_1D, x1, _, z1, title::String, fout_name::String)
             guide = "x",
             framestyle = :zerolines, yminorgrid = true)
     
-    data = scatter(x1, z1, title=title,
+    data = Plots.scatter(x1, z1, title=title,
                    markersize = 5, markercolor="Blue",
                    xlabel = "x", ylabel = "q(x)",
                    legend = :none)
@@ -89,10 +89,14 @@ end
     This function uses the amazing package Mackie to plot arbitrarily gridded
     unstructured data to filled contour plot
 """
-function plot_triangulation(SD::NSD_2D, x, y, q, title::String, fout_name::String)
+function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, fout_name::String)
     
-    fig = Makie.tricontourf(x, y, q, colormap = :heat)
-    save(fout_name, fig, resolution = (600, 600))
-    fig
-    
+    #fddor ivar=1:size(q,2)
+        fig = Makie.tricontourf(x, y, q[:,1], colormap = :heat)
+        save(string(fout_name), fig, resolution = (600, 600))
+        fig
+    #end
 end
+
+function plot_triangulation(SD::NSD_1D, x, y, q::Array, title::String, fout_name::String) nothing end
+function plot_triangulation(SD::NSD_3D, x, y, q::Array, title::String, fout_name::String) nothing end

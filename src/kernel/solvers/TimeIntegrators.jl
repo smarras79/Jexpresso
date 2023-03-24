@@ -28,8 +28,8 @@ function time_loop!(SD,
     # ODE: solvers come from DifferentialEquations.j;
     #
     #Initialize
-    u      = zeros(T, mesh.npoin);
-    u     .= qp.qn[:,1];
+    u      = zeros(T, mesh.npoin,neqns);
+    u     .= qp.qn[:,:];
     tspan  = (inputs[:tinit], inputs[:tend])    
     params = (; T, SD, QT, PT, neqns, basis, ω, mesh, metrics, inputs, M, De, Le)
     prob   = ODEProblem(rhs!,
