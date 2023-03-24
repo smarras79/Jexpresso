@@ -21,7 +21,6 @@ function time_loop!(SD,
                     Nt, Δt,
                     neqns, 
                     inputs::Dict,
-                    BCT,
                     OUTPUT_DIR::String,
                     T)
     
@@ -32,7 +31,7 @@ function time_loop!(SD,
     u      = zeros(T, mesh.npoin);
     u     .= qp.qn[:,1];
     tspan  = (inputs[:tinit], inputs[:tend])    
-    params = (; T, SD, QT, PT, BCT, neqns, basis, ω, mesh, metrics, inputs, M, De, Le)
+    params = (; T, SD, QT, PT, neqns, basis, ω, mesh, metrics, inputs, M, De, Le)
     prob   = ODEProblem(rhs!,
                         u,
                         tspan,

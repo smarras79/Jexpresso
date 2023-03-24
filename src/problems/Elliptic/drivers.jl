@@ -120,8 +120,7 @@ function driver(DT::ContGal,       #Space discretization type
     RHS = build_rhs_source(SD, QT, qp.qn, mesh, M, TFloat)
 
     #BC
-    BCT = bc_space_function()
-    apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, BCT, neqns; L=L)
+    apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, neqns; L=L)
     
     println(" # Solve Lq=RHS ................................")    
     solution = solveAx(L, RHS, inputs[:ode_solver])

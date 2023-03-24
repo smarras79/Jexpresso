@@ -14,6 +14,7 @@ function user_inputs()
         :lexact_integration  => false,
         #:output_dir          => "/Users/simone/runs/",
         :outformat           => "png",
+        :luser_bc            => false,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------

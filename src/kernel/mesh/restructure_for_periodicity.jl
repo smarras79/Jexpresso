@@ -3,7 +3,7 @@ function periodicity_restructure!(mesh,inputs)
     #per1 = inputs[:per1dd]
     #per2 = inputs[:per2]
     #determine boundary vectors
-    
+  if (mesh.nsd == 2)  
     if ("periodic1" in mesh.bdy_edge_type)
         finder = false
         iedge_bdy = 1
@@ -215,4 +215,20 @@ function periodicity_restructure!(mesh,inputs)
                 end
             end
         end
+    else
+        ip_dest = 1
+        ip_kill = mesh.npoin_linear
+        for e=1:mesh.nelem
+            for i=1:mesh.ngl
+                if (mesh.conn[i,e] == ip_kill)
+                    mesh.conn[i,e] = ip_dest
+                elseif (mesh.conn[i,e] > ip_kill)
+                    mesh.conn[i,e] -= 1
+                end
+            end
+        end
+        for ip=ip_kill:mesh.npoin-1
+            mesh.x[ip] = mesh.x[ip+1]
+        end
+    end
 end
