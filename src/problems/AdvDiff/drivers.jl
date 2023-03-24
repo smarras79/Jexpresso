@@ -15,14 +15,10 @@ const TFloat = Float64
 include("../AbstractProblems.jl")
 
 include("./initialize.jl")
-
 include("../../kernel/operators/rhs.jl")
-
-
 include("../../io/mod_inputs.jl")
 include("../../io/plotting/jeplots.jl")
 include("../../io/print_matrix.jl")
-
 include("../../kernel/abstractTypes.jl")
 include("../../kernel/globalStructs.jl")
 include("../../kernel/bases/basis_structs.jl")

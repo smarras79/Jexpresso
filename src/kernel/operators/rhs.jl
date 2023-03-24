@@ -135,12 +135,14 @@ end
 
 function build_rhs(SD::NSD_2D, QT::Exact, PT::AdvDiff, qp::Array, neqns, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T) nothing end
 
-function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
-    F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-    G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)    
+#function build_rhs(SD::NSD_2D, QT,        PT::LinearCLaw, neqns, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics, T)
 
-    rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
+    G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
+
+    rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
     #B.C.
     apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, time, neqns)
     Fuser, Guser = user_flux(T, SD, qp, mesh)
@@ -172,8 +174,8 @@ function build_rhs(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, mesh::
         for i=1:mesh.ngl
             for j=1:mesh.ngl
 
-                dFdξ = dFdξ = zeros(T, neqs)
-                dGdξ = dGdη = zeros(T, neqs)
+                dFdξ = dFdξ = zeros(T, neqns)
+                dGdξ = dGdη = zeros(T, neqns)
                 for k = 1:mesh.ngl
                     dFdξ[1:neqs] = dFdξ[1:neqs] .+ dψ[k,i]*F[k,j,iel,1:neqs]
                     dFdη[1:neqs] = dFdη[1:neqs] .+ dψ[k,j]*F[i,k,iel,1:neqs]
@@ -285,14 +287,14 @@ function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, 
     
 end
 
-function build_rhs_diff(SD::NSD_2D, QT, AP::LinearCLaw, neqs, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, neqns, qp, ψ, dψ, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
 
     N = mesh.ngl - 1
 
-    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
 
-    rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
-    rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
+    rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqns)
+    rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqns)
 
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
