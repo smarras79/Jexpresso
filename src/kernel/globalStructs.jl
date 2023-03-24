@@ -20,6 +20,7 @@ Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
     H    = Array{TFloat}(undef, 0, 0, 0, 0) #10 Hⁿ
 end
 
+
 """
     allocate_q(nelem, npoin, ngl, neqs)
 

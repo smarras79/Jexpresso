@@ -21,6 +21,7 @@ include("../../io/write_output.jl")
 include("../../io/print_matrix.jl")
 
 include("../../kernel/abstractTypes.jl")
+include("../../kernel/semStructs.jl")
 include("../../kernel/bases/basis_structs.jl")
 include("../../kernel/boundaryconditions/BCs.jl")
 include("../../kernel/globalStructs.jl")
@@ -36,11 +37,17 @@ function driver(DT::ContGal,       #Space discretization type
                 OUTPUT_DIR::String,
                 TFloat) 
 
+    
+#    params = (; inputs, TFloat)
+#    M, L = sem_setup(params)
+    
+#    @info mesh.nelem
+    
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:problem]
     neqns = inputs[:neqns]
-    
+
     #--------------------------------------------------------
     # Create/read mesh
     # return mesh::St_mesh
@@ -109,7 +116,7 @@ function driver(DT::ContGal,       #Space discretization type
 
     #Build M = DSS(∫ψᵢψⱼdΩₑ)
     Me = build_mass_matrix(SD, QT, basis.ψ,   ω, mesh, metrics, Nξ, Qξ, TFloat)
-    M  = DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
+    M  = DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)    
     
     #--------------------------------------------------------
     # Initialize q
