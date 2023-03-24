@@ -9,7 +9,7 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
     
     qinit = Array{TFloat}(undef, mesh.npoin, 1)
     neqs  = 1
-    q     = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs)
+    q     = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs,TFloat)
     
     σ = Float64(64.0)
     for iel_g = 1:mesh.nelem

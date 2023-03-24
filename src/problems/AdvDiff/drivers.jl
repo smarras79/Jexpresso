@@ -131,7 +131,7 @@ function driver(DT::ContGal,       #Space discretization type
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
     
     # NOTICE add a function to find the mesh mininum resolution
-    solution = time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, AdvDiff_Circ(), OUTPUT_DIR, TFloat)
+    solution = time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, OUTPUT_DIR, TFloat)
 
     #Out-to-file:
     write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])

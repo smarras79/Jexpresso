@@ -4,7 +4,7 @@ include("../../kernel/globalStructs.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../io/plotting/jeplots.jl")
 
-function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_2D, PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
     
     """
@@ -16,7 +16,7 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     npoin = mesh.npoin
     neqs  = 3
 
-    q = allocate_q(nelem, npoin, ngl, neqs)
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs,TFloat)
     
     #Cone properties:
     c  = 1.0
@@ -42,13 +42,13 @@ function initialize(PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 #v = q.qn[ip,3] = 0.0
                 
                 # [ip] -> [i,j,iel]
-                q.F[i,j,iel_g,1] = c^2*u
+                #=q.F[i,j,iel_g,1] = c^2*u
                 q.F[i,j,iel_g,2] = p
                 q.F[i,j,iel_g,3] = 0
 
                 q.G[i,j,iel_g,1] = c^2*v
                 q.G[i,j,iel_g,2] = 0
-                q.G[i,j,iel_g,3] = p
+                q.G[i,j,iel_g,3] = p=#
                 
             end
         end

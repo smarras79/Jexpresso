@@ -25,8 +25,8 @@ function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh)
         y = mesh.y[ip]
         #x = y = 0.8
         
-        F[ip] =  y*q[ip,1]
-        G[ip] = -x*q[ip,1]
+        F[ip] =  0.8*q[ip,1]
+        G[ip] = 0.8*q[ip,1]
     end
     return F, G
 end
