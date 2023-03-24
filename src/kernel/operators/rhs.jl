@@ -30,7 +30,7 @@ function rhs!(du, u, params, time)
     De      = params.De
     Le      = params.Le
 
-    RHS = build_rhs(SD, QT, PT, u, neqns, basis.ψ, basis.dψ, ω, mesh, metrics, M, De, Le, time, inputs, T)    
+    RHS = build_rhs(SD, QT, PT, u, neqns, basis, ω, mesh, metrics, M, De, Le, time, inputs, T)    
     
     for i=1:neqns
        idx = (i-1)*mesh.npoin
