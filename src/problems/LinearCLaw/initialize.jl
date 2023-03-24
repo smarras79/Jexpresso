@@ -53,18 +53,7 @@ function initialize(SD::NSD_2D, PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUT
             end
         end
     end
-     
-    #------------------------------------------
-    # Plot initial condition:
-    # Notice that I scatter the points to
-    # avoid sorting the x and q which would be
-    # becessary for a smooth curve plot.
-    #------------------------------------------
-    varnames = ["p", "u", "v"]
-    for ivar=1:length(varnames)
-        title = string(varnames[ivar], ": initial condition")
-        jcontour(mesh.x, mesh.y, q.qn[:,ivar], title, string(OUTPUT_DIR, "/", varnames[ivar], "-INIT.png"))
-    end
+    
     @info " Initialize fields for system of Linear Conservation Laws ........................ DONE"
     
     return q
