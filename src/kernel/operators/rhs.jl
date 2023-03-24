@@ -31,7 +31,11 @@ function rhs!(du, u, params, time)
     Le      = params.Le
 
     RHS = build_rhs(SD, QT, PT, u, neqns, basis.ψ, basis.dψ, ω, mesh, metrics, M, De, Le, time, inputs, T)    
-    du .= RHS
+    
+    for i=1:neqns
+       idx = (i-1)*mesh.npoin
+       du[idx+1:i*mesh.npoin] = RHS[:,i]
+    end  
     
     return du #This is already DSSed
 end
@@ -89,8 +93,8 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, ψ, d
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
                 
-                F[i,j,iel] = 0.8*qp[ip]#Fuser[ip]
-                G[i,j,iel] = 0.8*qp[ip]#Guser[ip]
+                F[i,j,iel] = Fuser[ip]
+                G[i,j,iel] = Guser[ip]
             end
         end
     end
