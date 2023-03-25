@@ -144,13 +144,13 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ba
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
 
     rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
-    #B.C.
-    apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, time, neqns)
     qq = zeros(mesh.npoin,neqns)
     for i=1:neqns
         idx = (i-1)*mesh.npoin
         qq[:,i] = qp[idx+1:i*mesh.npoin]
     end
+    #B.C.
+    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, time, neqns)
     Fuser, Guser = user_flux(T, SD, qq, mesh)
     dFdx = dGdy = zeros(neqns)
     dFdξ = dFdη = zeros(neqns)
