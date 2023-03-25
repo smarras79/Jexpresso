@@ -63,6 +63,7 @@ function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metri
    
 end
 
+
 function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
 
     #error("QUI LinearCLaw/user_bc.jl")
@@ -71,8 +72,8 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
     x0 = y0 = -0.8
     kx = ky = sqrt(2.0)/2
     ω  = 0.2
-    d  = 0.5*ω/sqrt(log(2.0)); d2 = d*d    
-   
+    d  = 0.5*ω/sqrt(log(2.0)); d2 = d*d
+    @inline f(x,y,t) = exp(- ((kx*(x - x0) + ky*(y - y0)-c*t)^2)/d2)
     
     #idx = (ieq-1)*mesh.npoin
     #q[idx+1:ieq*mesh.npoin]
@@ -100,7 +101,7 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                     y = mesh.y[ip]
                     #if (inputs[:luser_bc])
 
-                    e = exp(- ((kx*(x - x0) + ky*(y - y0)-c*t)^2)/d2)
+                    e = f(x,y,t) #exp(- ((kx*(x - x0) + ky*(y - y0)-c*t)^2)/d2)
                     q_bdyvalue = [e, kx*e/c, ky*e/c]                    
                     q[idx] = q_bdyvalue[ieq]
                     
