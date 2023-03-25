@@ -10,7 +10,6 @@ include(user_bc_dir)
 
 function neumann(q,gradq,x,y,t,mesh,metrics,tag)
     
-    
     rhs = user_bc_neumann(q,gradq,x,y,t,tag)
     return rhs
 end

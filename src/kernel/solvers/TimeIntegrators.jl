@@ -30,7 +30,7 @@ function time_loop!(SD,
     # Initialize
     println(" # Solving ODE ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
-    u      = zeros(T, mesh.npoin*neqns);
+    u = zeros(T, mesh.npoin*neqns);
     for i=1:neqns
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] = qp.qn[:,i]
