@@ -297,7 +297,13 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqns, basis, ω, ν
 
     rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqns)
     rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqns)
-    qq = zeros(mesh.npoin,neqns)     
+    qq = zeros(mesh.npoin,neqns)
+
+    #
+    # qp[1:npoin]         <-- qq[1:npoin, "p"]
+    # qp[npoin+1:2npoin]  <-- qq[1:npoin, "u"]
+    # qp[2npoin+1:3npoin] <-- qq[1:npoin, "v"]
+    #
     for i=1:neqns
         idx = (i-1)*mesh.npoin
         qq[:,i] = qp[idx+1:i*mesh.npoin]

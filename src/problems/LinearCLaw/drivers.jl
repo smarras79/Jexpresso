@@ -130,6 +130,6 @@ function driver(DT::ContGal,       #Space discretization type
     solution = time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, OUTPUT_DIR, TFloat)
 
     #Out-to-file:
-    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
+    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=3)
     
 end

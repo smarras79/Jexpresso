@@ -3,15 +3,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 2.0, #2π,
+        :tend                => 0.05, #2π,
         :Δt                  => 1.0e-3,#8.75e-4,
-        :diagnostics_interval=> 100,
+        :ndiagnostics_outputs=> 2,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 8,      # Polynomila order
+        :nop                 => 4,      # Polynomila order
         :luser_bc            => true,
         :outformat           => "png",
         #---------------------------------------------------------------------------
@@ -29,21 +29,6 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_coarse.msh",
         #---------------------------------------------------------------------------
-        # Boundary conditions:
-        #---------------------------------------------------------------------------
-        :penalty       => 10, #Penalty constant for SIPG. Default is zero if not given.
-        :xmin_bc       => "dirichlet", #Use either dirichlet or periodic
-        :ymin_bc       => "dirichlet", #Use either dirichlet or periodic
-        :zmin_bc       => "periodic", #Use either dirichlet or periodic
-        :xmax_bc       => "dirichlet", #Use either dirichlet or periodic
-        :ymax_bc       => "dirichlet", #Use either dirichlet or periodic
-        :zmax_bc       => "periodic", #Use either dirichlet or periodic
-        :bc_exact_xmin => [0.0 0.0 0.0],
-        :bc_exact_xmax => [0.0 0.0 0.0],
-        :bc_exact_ymin => [0.0 0.0 0.0],
-        :bc_exact_ymax => [0.0 0.0 0.0],
-        :bc_exact_zmin => [0.0 0.0 0.0],
-        :bc_exact_zmax => [0.0 0.0 0.0],
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
