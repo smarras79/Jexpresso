@@ -31,18 +31,17 @@ function rhs!(du, u, params, time)
     Le      = params.Le
 
     RHS = build_rhs(SD, QT, PT, u, neqns, basis, ω, mesh, metrics, M, De, Le, time, inputs, T)    
-    
     for i=1:neqns
        idx = (i-1)*mesh.npoin
-       du[idx+1:i*mesh.npoin] = RHS[:,i]
+       du[idx+1:i*mesh.npoin] .= RHS[:,i]
     end  
-    
+     
     return du #This is already DSSed
 end
 
 
 
-function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
+function build_rhs!(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
 
     Fuser = user_flux(T, SD, qp, mesh)
     
@@ -78,7 +77,7 @@ end
 function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T) nothing end
 
 
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
+function build_rhs!(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
     
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     G      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -115,8 +114,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis
                     end
                     dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                     dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
-                    
-                    rhs_el[i, j, iel] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx + dGdy)
+                    rhs_el[i, j, iel] -= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx + dGdy)
                 end
             end
         end
@@ -147,7 +145,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ba
     qq = zeros(mesh.npoin,neqns)
     for i=1:neqns
         idx = (i-1)*mesh.npoin
-        qq[:,i] = qp[idx+1:i*mesh.npoin]
+        qq[:,i] .= qp[idx+1:i*mesh.npoin]
     end
     #B.C.
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, time, neqns)
@@ -155,14 +153,29 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ba
     dFdx = dGdy = zeros(neqns)
     dFdξ = dFdη = zeros(neqns)
     dGdξ = dGdη = zeros(neqns)
+    for i=1:neqns
+        idx = (i-1)*mesh.npoin
+        qp[idx+1:i*mesh.npoin] .= qq[:,i]
+    end
     
-    c = 1.0
     for iel=1:mesh.nelem
 
         for i=1:mesh.ngl
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
-
+                x=mesh.x[ip]
+                y=mesh.y[ip]
+                c  = 1.0
+                x0 = y0 = -0.8
+                kx = ky = sqrt(2.0)/2.0
+                w  = 0.2
+                d  = 0.5*w/sqrt(log(2.0)); d2 = d*d
+                e = exp(- ((kx*(x - x0) + ky*(y - y0)-c*time)^2)/d2)
+                u =kx*e/c
+                v =ky*e/c
+                if (ip in mesh.poin_in_bdy_edge)
+                    #@info c^2*u,Fuser[ip,1],c^2*v,Guser[ip,1],e,Fuser[ip,2],Guser[ip,3],qp[ip],qp[mesh.npoin+ip],qp[2*mesh.npoin+ip]
+                end
                 F[i,j,iel,1] = Fuser[ip,1]
                 F[i,j,iel,2] = Fuser[ip,2]
                 F[i,j,iel,3] = Fuser[ip,3]
@@ -170,12 +183,19 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ba
                 G[i,j,iel,1] = Guser[ip,1]
                 G[i,j,iel,2] = Guser[ip,2]
                 G[i,j,iel,3] = Guser[ip,3]
+
+                #F[i,j,iel,1] = c^2*u#Fuser[ip,1]
+                #F[i,j,iel,2] = e#Fuser[ip,2]
+                #F[i,j,iel,3] = 0.0#Fuser[ip,3]
+
+                #G[i,j,iel,1] = c^2*v#Guser[ip,1]
+                #G[i,j,iel,2] = 0.0#Guser[ip,2]
+                #G[i,j,iel,3] = e#Guser[ip,3]
             end
         end
 
         for i=1:mesh.ngl
             for j=1:mesh.ngl
-
                 dFdξ = dFdξ = zeros(T, neqns)
                 dGdξ = dGdη = zeros(T, neqns)
                 for k = 1:mesh.ngl
@@ -185,20 +205,26 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ba
                     dGdξ[1:neqns] = dGdξ[1:neqns] .+ basis.dψ[k,i]*G[k,j,iel,1:neqns]
                     dGdη[1:neqns] = dGdη[1:neqns] .+ basis.dψ[k,j]*G[i,k,iel,1:neqns]
                 end
-                dFdx = dFdξ[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη[1:neqns]*metrics.dηdx[i,j,iel]
-                dGdy = dGdξ[1:neqns]*metrics.dξdy[i,j,iel] .+ dGdη[1:neqns]*metrics.dηdy[i,j,iel]
-                
-                rhs_el[i,j,iel,1:neqns] = -ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqns] + dGdy[1:neqns])
+                dFdx .= dFdξ[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη[1:neqns]*metrics.dηdx[i,j,iel]
+                dGdy .= dGdξ[1:neqns]*metrics.dξdy[i,j,iel] .+ dGdη[1:neqns]*metrics.dηdy[i,j,iel]
+                rhs_el[i,j,iel,1:neqns] .-= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqns] .+ dGdy[1:neqns])
             end
         end
     end
     #show(stdout, "text/plain", el_matrices.D)
     rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-
+    
     #DSS(rhs_el)
     RHS = DSS_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqns, mesh.nop, T)
     divive_by_mass_matrix!(RHS, M, QT)
-
+    #=for iedge = 1:size(mesh.bdy_edge_comp,1)
+        for k=1:mesh.ngl
+            ip = mesh.poin_in_bdy_edge[iedge,k]
+            for i=1:neqns
+                RHS[ip,i] = qq[ip,i] - qp[ip+mesh.npoin*(i-1)]
+            end
+        end
+    end=# 
     return RHS
 end
 
