@@ -8,7 +8,6 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
     q[1] = e
     q[2] = kx*e/c
     q[3] = ky*e/c 
-    
     return q
 end
 
