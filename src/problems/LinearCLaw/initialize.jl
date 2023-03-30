@@ -33,22 +33,8 @@ function initialize(SD::NSD_2D, PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUT
                 x  = mesh.x[ip]
                 y  = mesh.y[ip]
                 p = q.qn[ip,1] = exp(- ((kx*(x - x0) + ky*(y - y0))^2)/d2) #p
-                u = q.qn[ip,2] = kx*p/c                                      #u
-                v = q.qn[ip,3] = ky*p/c                                      #v 
-                
-                
-                #p = q.qn[ip,1] = exp(-(log(2))*((x*x + y*y)/0.06^2))
-                #u = q.qn[ip,2] = 0.0
-                #v = q.qn[ip,3] = 0.0
-                
-                # [ip] -> [i,j,iel]
-                #=q.F[i,j,iel_g,1] = c^2*u
-                q.F[i,j,iel_g,2] = p
-                q.F[i,j,iel_g,3] = 0
-
-                q.G[i,j,iel_g,1] = c^2*v
-                q.G[i,j,iel_g,2] = 0
-                q.G[i,j,iel_g,3] = p=#
+                u = q.qn[ip,2] = kx*p/c                                    #u
+                v = q.qn[ip,3] = ky*p/c                                    #v 
                 
             end
         end
