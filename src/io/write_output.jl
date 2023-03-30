@@ -14,19 +14,18 @@ struct ASCII <: AbstractOutFormat end
 # ∂q/∂t = RHS -> q(x,t)
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # PNG
-function write_output(sol::ODESolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG) nothing end
-function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
+function write_output(sol::ODESolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1) nothing end
+function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+   
     for iout = 1:inputs[:ndiagnostics_outputs]
-        for ivar = 1:size(sol.u[iout,:], 2)
-            fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-            plot_triangulation(SD, mesh.x, mesh.y, sol.u[iout,ivar], title, fout_name)
-        end
+        title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+        plot_triangulation(SD, mesh.x, mesh.y, sol.u[iout][:], title,  OUTPUT_DIR; iout=iout, nvar=nvar)
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
-function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)    
+
+function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)    
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     for iout = 1:inputs[:ndiagnostics_outputs]
 	fname = @sprintf "it-%d.png" iout
@@ -38,7 +37,7 @@ end
 
 
 # ASCII
-function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII)
+function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)
     
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     for iout = 1: inputs[:ndiagnostics_outputs]
@@ -52,7 +51,7 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
     end
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") )
 end
-function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII)
+function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)
     
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     for iout = 1: inputs[:ndiagnostics_outputs]
@@ -85,7 +84,7 @@ end
 
 
 # PNG
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
@@ -95,11 +94,9 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
 end
 
 # ASCII
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII) nothing end
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII) nothing end
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII)
-
-    
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)   
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
     fname = @sprintf "Axb.dat"
