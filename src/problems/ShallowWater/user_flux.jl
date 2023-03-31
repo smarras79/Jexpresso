@@ -29,3 +29,20 @@ function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh)
     end
     return F, G, F1, G1
 end
+
+function user_flux(T, SD::NSD_1D, q::Array, mesh::St_mesh)
+    F = zeros(T, mesh.npoin, 2)
+    F1 = zeros(T, mesh.npoin, 2)
+    for ip=1:mesh.npoin
+        x = mesh.x[ip]
+        Hb = bathymetry(x)
+        H = q[ip,1]
+        Hu = q[ip,2]
+        u = Hu/H
+        F[ip,1]  = Hu
+        F1[ip,1] = 0.0
+        F[ip,2]  = Hb
+        F1[ip,2] = (9.81/2) * (H^2 - Hb^2) + Hu * u
+    end
+    return F, F1
+end
