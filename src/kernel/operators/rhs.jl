@@ -148,10 +148,6 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ba
         idx = (i-1)*mesh.npoin
         qq[:,i] .= qp[idx+1:i*mesh.npoin]
     end
-    #B.C.
-    #if (rem(time,Δt) == 0)
-    #    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqns)
-    #end
     Fuser, Guser = user_flux(T, SD, qq, mesh)
     dFdx = zeros(neqns)
     dFdξ = zeros(neqns)
@@ -159,29 +155,12 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ba
     dGdy = zeros(neqns)
     dFdη = zeros(neqns)
     dGdη = zeros(neqns)
-    #for i=1:neqns
-     #   idx = (i-1)*mesh.npoin
-      #  qp[idx+1:i*mesh.npoin] .= qq[:,i]
-    #end
     
     for iel=1:mesh.nelem
 
         for i=1:mesh.ngl
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
-                x=mesh.x[ip]
-                y=mesh.y[ip]
-                c  = 1.0
-                x0 = y0 = -0.8
-                kx = ky = sqrt(2.0)/2.0
-                w  = 0.2
-                d  = 0.5*w/sqrt(log(2.0)); d2 = d*d
-                e = exp(- ((kx*(x - x0) + ky*(y - y0)-c*time)^2)/d2)
-                u =kx*e/c
-                v =ky*e/c
-                #if (ip in mesh.poin_in_bdy_edge && rem(time,Δt) == 0)
-                 #   @info mesh.x[ip], mesh.y[ip],c^2*u,Fuser[ip,1],c^2*v,Guser[ip,1],e,Fuser[ip,2],Guser[ip,3],qp[ip],qp[mesh.npoin+ip],qp[2*mesh.npoin+ip]
-                #end
                 F[i,j,iel,1] = Fuser[ip,1]
                 F[i,j,iel,2] = Fuser[ip,2]
                 F[i,j,iel,3] = Fuser[ip,3]
@@ -190,13 +169,6 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ba
                 G[i,j,iel,2] = Guser[ip,2]
                 G[i,j,iel,3] = Guser[ip,3]
 
-                #F[i,j,iel,1] = c^2*u#Fuser[ip,1]
-                #F[i,j,iel,2] = e#Fuser[ip,2]
-                #F[i,j,iel,3] = 0.0#Fuser[ip,3]
-
-                #G[i,j,iel,1] = c^2*v#Guser[ip,1]
-                #G[i,j,iel,2] = 0.0#Guser[ip,2]
-                #G[i,j,iel,3] = e#Guser[ip,3]
             end
         end
 
@@ -212,34 +184,111 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ba
                     
                     dGdξ[1:neqns] .= dGdξ[1:neqns] .+ basis.dψ[k,i]*G[k,j,iel,1:neqns]
                     dGdη[1:neqns] .= dGdη[1:neqns] .+ basis.dψ[k,j]*G[i,k,iel,1:neqns]
-                    #@info "component", dFdξ[1:neqns],dGdη[1:neqns],basis.dψ[k,i]*F[k,j,iel,1:neqns],basis.dψ[k,j]*G[i,k,iel,1:neqns]    
                 end
-                #@info dFdξ,dGdη
                 dFdx .= dFdξ[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη[1:neqns]*metrics.dηdx[i,j,iel]
                 dGdy .= dGdξ[1:neqns]*metrics.dξdy[i,j,iel] .+ dGdη[1:neqns]*metrics.dηdy[i,j,iel]
                 rhs_el[i,j,iel,1:neqns] .-= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqns] .+ dGdy[1:neqns])
             end
         end
     end
-    #show(stdout, "text/plain", el_matrices.D)
     rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqns)
     for i=1:neqns
         idx = (i-1)*mesh.npoin
         qp[idx+1:i*mesh.npoin] .= qq[:,i]
     end
-    #DSS(rhs_el)
-    #@info maximum(qq[:,1]),minimum(qq[:,1]),maximum(qq[:,2]),minimum(qq[:,2]),maximum(qq[:,3]),minimum(qq[:,3])
     RHS = DSS_rhs(SD, rhs_el .+ rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqns, mesh.nop, T)
     divive_by_mass_matrix!(RHS, M, QT,neqns)
-    #=for iedge = 1:size(mesh.bdy_edge_comp,1)
-        for k=1:mesh.ngl
-            ip = mesh.poin_in_bdy_edge[iedge,k]
-            for i=1:neqns
-                RHS[ip,i] = qq[ip,i] - qp[ip+mesh.npoin*(i-1)]
+    return RHS
+end
+
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
+
+    F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
+    G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
+    F1    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
+    G1    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
+    rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
+    qq = zeros(mesh.npoin,neqns)
+    for i=1:neqns
+        idx = (i-1)*mesh.npoin
+        qq[:,i] .= qp[idx+1:i*mesh.npoin]
+    end
+    Fuser, Guser, Fuser1, Guser1 = user_flux(T, SD, qq, mesh)
+    dFdx = zeros(neqns)
+    dFdξ = zeros(neqns)
+    dGdξ = zeros(neqns)
+    dGdy = zeros(neqns)
+    dFdη = zeros(neqns)
+    dGdη = zeros(neqns)
+
+    for iel=1:mesh.nelem
+
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                ip = mesh.connijk[i,j,iel]
+                F[i,j,iel,1] = Fuser[ip,1]
+                F[i,j,iel,2] = Fuser[ip,2]
+                F[i,j,iel,3] = Fuser[ip,3]
+                
+                F1[i,j,iel,1] = Fuser1[ip,1] 
+                F1[i,j,iel,2] = Fuser1[ip,2] 
+                F1[i,j,iel,3] = Fuser1[ip,3]  
+               
+                G[i,j,iel,1] = Guser[ip,1]
+                G[i,j,iel,2] = Guser[ip,2]
+                G[i,j,iel,3] = Guser[ip,3]
+
+                G1[i,j,iel,1] = Guser1[ip,1] 
+                G1[i,j,iel,2] = Guser1[ip,2] 
+                G1[i,j,iel,3] = Guser1[ip,3] 
             end
         end
-    end=# 
+
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                dFdξ = zeros(T, neqns)
+                dFdη = zeros(T, neqns)
+                dGdξ = zeros(T, neqns)
+                dGdη = zeros(T, neqns)
+                dFdξ1 = zeros(T, neqns)
+                dFdη1 = zeros(T, neqns)
+                dGdξ1 = zeros(T, neqns)
+                dGdη1 = zeros(T, neqns)
+                for k = 1:mesh.ngl
+                    dFdξ[1:neqns] .= dFdξ[1:neqns] .+ basis.dψ[k,i]*F[k,j,iel,1:neqns]
+                    dFdη[1:neqns] .= dFdη[1:neqns] .+ basis.dψ[k,j]*F[i,k,iel,1:neqns]
+                     
+                    dFdξ1[1:neqns] .= dFdξ1[1:neqns] .+ basis.dψ[k,i]*F1[k,j,iel,1:neqns]
+                    dFdη1[1:neqns] .= dFdη1[1:neqns] .+ basis.dψ[k,j]*F1[i,k,iel,1:neqns]    
+
+                    dGdξ[1:neqns] .= dGdξ[1:neqns] .+ basis.dψ[k,i]*G[k,j,iel,1:neqns]
+                    dGdη[1:neqns] .= dGdη[1:neqns] .+ basis.dψ[k,j]*G[i,k,iel,1:neqns]
+
+                    dGdξ1[1:neqns] .= dGdξ1[1:neqns] .+ basis.dψ[k,i]*G1[k,j,iel,1:neqns]
+                    dGdη1[1:neqns] .= dGdη1[1:neqns] .+ basis.dψ[k,j]*G1[i,k,iel,1:neqns]
+                end
+                ip = mesh.connijk[i,j,iel]
+                x = mesh.x[ip]
+                y = mesh.y[ip]
+                Hb = bathymetry(x,y)
+                Hs = qq[ip,1] - Hb
+                gHsx = [1.0 Hs*9.81 1.0]
+                gHsy = [1.0 1.0 9.81] 
+                dFdx .= gHsx .* (dFdξ[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη[1:neqns]*metrics.dηdx[i,j,iel]) + dFdξ1[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη1[1:neqns]*metrics.dηdx[i,j,iel]
+                dGdy .= gHsy .* (dGdξ[1:neqns]*metrics.dξdy[i,j,iel] .+ dGdη[1:neqns]*metrics.dηdy[i,j,iel]) + dGdξ1[1:neqns]*metrics.dξdy[i,j,iel] .+ dGdη1[1:neqns]*metrics.dηdy[i,j,iel]
+                rhs_el[i,j,iel,1:neqns] .-= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqns] .+ dGdy[1:neqns])
+            end
+        end
+    end
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqns)
+    for i=1:neqns
+        idx = (i-1)*mesh.npoin
+        qp[idx+1:i*mesh.npoin] .= qq[:,i]
+    end
+    RHS = DSS_rhs(SD, rhs_el .+ rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqns, mesh.nop, T)
+    divive_by_mass_matrix!(RHS, M, QT,neqns)
     return RHS
 end
 
@@ -388,6 +437,83 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqns, basis, ω, ν
      end
 
     return (rhsdiffξ_el*νx + rhsdiffη_el*νy)
+
+end
+
+function build_rhs_diff(SD::NSD_2D, QT, PT::ShallowWater, qp, neqns, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+    
+    N = mesh.ngl - 1
+
+    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
+
+    rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqns)
+    rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqns)
+    qq = zeros(mesh.npoin,neqns)
+
+    #
+    # qp[1:npoin]         <-- qq[1:npoin, "p"]
+    # qp[npoin+1:2npoin]  <-- qq[1:npoin, "u"]
+    # qp[2npoin+1:3npoin] <-- qq[1:npoin, "v"]
+    #
+    for i=1:neqns
+        idx = (i-1)*mesh.npoin
+        qq[:,i] = qp[idx+1:i*mesh.npoin]
+    end
+    #
+    # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
+    #
+    for iel=1:mesh.nelem
+
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            m = mesh.connijk[i,j,iel]
+            qnel[i,j,iel,1] = qq[m,1]
+            qnel[i,j,iel,2] = qq[m,2]/qq[m,1]
+            qnel[i,j,iel,3] = qq[m,3]/qq[m,1]
+        end
+
+        for k = 1:mesh.ngl, l = 1:mesh.ngl
+            ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
+
+            for ieq = 1:neqns
+                dqdξ = 0.0
+                dqdη = 0.0
+                for i = 1:mesh.ngl
+                    dqdξ = dqdξ + basis.dψ[i,k]*qnel[i,l,iel,ieq]
+                    dqdη = dqdη + basis.dψ[i,l]*qnel[k,i,iel,ieq]
+                end
+                dqdx = νx * (dqdξ*metrics.dξdx[k,l,iel] + dqdη*metrics.dηdx[k,l,iel])
+                dqdy = νy * (dqdξ*metrics.dξdy[k,l,iel] + dqdη*metrics.dηdy[k,l,iel])
+                if (ieq > 1)
+                    ip1 = mesh.connijk(i,l,iel)
+                    ip2 = mesh.connijk(k,i,iel)
+                    x = mesh.x[ip1]
+                    y = mesh.x[ip1]
+                    Hb = bathymetry(x,y)
+                    Hs = qq[ip1,1] - Hb
+                    dqdx = dqdx * Hs
+                    x = mesh.x[ip2]
+                    y = mesh.x[ip2]
+                    Hb = bathymetry(x,y)
+                    Hs = qq[ip2,1] - Hb 
+                    dqdy = dqdy * Hs
+                end                
+
+                ∇ξ∇q_kl =  (metrics.dξdx[k,l,iel]*dqdx + metrics.dξdy[k,l,iel]*dqdy)
+                ∇η∇q_kl =  (metrics.dηdx[k,l,iel]*dqdx + metrics.dηdy[k,l,iel]*dqdy)
+
+                for i = 1:mesh.ngl
+
+                    hll,     hkk     = basis.ψ[l,l],  basis.ψ[k,k]
+                    dhdξ_ik, dhdη_il = basis.dψ[i,k], basis.dψ[i,l]
+     
+                    rhsdiffξ_el[i,l,iel, ieq] -= ωJkl*dhdξ_ik*hll*∇ξ∇q_kl
+                    rhsdiffη_el[k,i,iel, ieq] -= ωJkl*hkk*dhdη_il*∇η∇q_kl
+                end
+            end
+        end
+     end
+
+    return (rhsdiffξ_el + rhsdiffη_el)
 
 end
 
