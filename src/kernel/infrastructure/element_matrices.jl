@@ -411,7 +411,7 @@ function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstract
     return M
 end
 
-function DSS_laplace(SD::NSD_1D, Le::AbstractArray, mesh::St_mesh, T)
+function DSS_laplace(SD::NSD_1D, Lel::AbstractArray, mesh::St_mesh, T)
 
     L = zeros(mesh.npoin, mesh.npoin)    
     for iel=1:mesh.nelem
@@ -419,7 +419,7 @@ function DSS_laplace(SD::NSD_1D, Le::AbstractArray, mesh::St_mesh, T)
             I = mesh.connijk[i,iel]
             for j=1:mesh.ngl
                 J = mesh.connijk[j,iel]
-                L[I,J] = L[I,J] + Le[i,j,iel]                
+                L[I,J] = L[I,J] + Lel[i,j,iel]                
             end
         end
     end
@@ -428,7 +428,7 @@ function DSS_laplace(SD::NSD_1D, Le::AbstractArray, mesh::St_mesh, T)
 end
 
 
-function DSS_laplace(SD::NSD_2D, Le::AbstractArray, mesh::St_mesh, T)
+function DSS_laplace(SD::NSD_2D, Lel::AbstractArray, mesh::St_mesh, T)
     
     L  = zeros(mesh.npoin, mesh.npoin)
     for iel=1:mesh.nelem
@@ -441,7 +441,7 @@ function DSS_laplace(SD::NSD_2D, Le::AbstractArray, mesh::St_mesh, T)
                         I = m + (n - 1)*mesh.ngl
                         IP = mesh.connijk[m,n,iel]
                         
-                        L[IP,JP] = L[IP,JP] + Le[I,J,iel] #if exact
+                        L[IP,JP] = L[IP,JP] + Lel[I,J,iel] #if exact
                     end
                 end
             end
@@ -451,7 +451,7 @@ function DSS_laplace(SD::NSD_2D, Le::AbstractArray, mesh::St_mesh, T)
     return L
 end
 
-function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS(SD::NSD_1D, QT::Inexact, Ael::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
     A = zeros(npoin)
     Ainv = zeros(npoin)
@@ -459,7 +459,7 @@ function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
     for iel=1:nelem
         for i=1:N+1
             I = conn[i,iel]
-            A[I] = A[I] + Ae[i,iel]
+            A[I] = A[I] + Ael[i,iel]
         end
     end
     Ainv = 1.0./A
@@ -468,13 +468,13 @@ function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
 end
 
 
-function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_rhs(SD::NSD_1D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
     V = zeros(npoin)
     for iel=1:nelem
         for i=1:N+1
             I = conn[i,iel]
-            V[I] = V[I] + Ve[i,iel]
+            V[I] = V[I] + Vel[i,iel]
         end
     end
     Ainv = 1.0./A

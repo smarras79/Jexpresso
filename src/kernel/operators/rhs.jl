@@ -38,8 +38,6 @@ function rhs!(du, u, params, time)
     return du #This is already DSSed
 end
 
-
-
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
 
     Fuser = user_flux(T, SD, qp, mesh)
@@ -67,7 +65,7 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis
     # M⁻¹*rhs where M is diagonal
     RHS .= RHS./M
 
-    apply_periodicity!(SD, qp, inputs, mesh)
+    apply_periodicity!(SD, qp, mesh, inputs)
     
     return RHS
     
@@ -75,9 +73,8 @@ end
 
 function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T) nothing end
 
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff,  qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
 
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff,    qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
-    
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     G      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     rhs_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem)

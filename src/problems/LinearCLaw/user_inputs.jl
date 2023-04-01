@@ -3,8 +3,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 0.01, #2π,
-        :Δt                  => 0.5e-3,#8.75e-4,
+        :tend                => 0.1, #2π,
+        :Δt                  => 0.1e-3,#8.75e-4,
         :ndiagnostics_outputs=> 4,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -24,8 +24,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_coarse.msh",
         #---------------------------------------------------------------------------
