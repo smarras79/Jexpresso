@@ -411,14 +411,14 @@ function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstract
     return M
 end
 
-function DSS_laplace(SD::NSD_1D, Lel::AbstractArray, mesh::St_mesh, T)
+function DSS_laplace(SD::NSD_1D, Le::AbstractArray, mesh::St_mesh, T)
 
     L = zeros(mesh.npoin, mesh.npoin)    
     for iel=1:mesh.nelem
         for i=1:mesh.ngl
             I = mesh.connijk[i,iel]
             for j=1:mesh.ngl
-                J = mesh.connijl[j,iel]
+                J = mesh.connijk[j,iel]
                 L[I,J] = L[I,J] + Le[i,j,iel]                
             end
         end
@@ -428,7 +428,7 @@ function DSS_laplace(SD::NSD_1D, Lel::AbstractArray, mesh::St_mesh, T)
 end
 
 
-function DSS_laplace(SD::NSD_2D, Lel::AbstractArray, mesh::St_mesh, T)
+function DSS_laplace(SD::NSD_2D, Le::AbstractArray, mesh::St_mesh, T)
     
     L  = zeros(mesh.npoin, mesh.npoin)
     for iel=1:mesh.nelem
@@ -441,7 +441,7 @@ function DSS_laplace(SD::NSD_2D, Lel::AbstractArray, mesh::St_mesh, T)
                         I = m + (n - 1)*mesh.ngl
                         IP = mesh.connijk[m,n,iel]
                         
-                        L[IP,JP] = L[IP,JP] + Lel[I,J,iel] #if exact
+                        L[IP,JP] = L[IP,JP] + Le[I,J,iel] #if exact
                     end
                 end
             end

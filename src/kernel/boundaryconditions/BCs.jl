@@ -16,7 +16,7 @@ include("../infrastructure/Kopriva_functions.jl")
 include("../infrastructure/2D_3D_structures.jl")
 include("custom_bcs.jl")
 
-function apply_periodicity!(SD::NSD_1D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars)
+function apply_periodicity!(SD::NSD_1D, qp, inputs, mesh)
     
     if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="periodic" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="periodic")
         #
@@ -64,13 +64,14 @@ end
 
 #=
 function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
-
     
     for iedge = 1:size(mesh.bdy_edge_comp,1)
         iel = mesh.bdy_edge_in_elem[iedge]
         comp = mesh.bdy_edge_comp[iedge]
-        for k=1:mesh.ngl
-            if (mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] !="periodic2")
+        
+        if (mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] !="periodic2")
+            for k=1:mesh.ngl
+                
                 tag = mesh.bdy_edge_type[iedge]
                 ip = mesh.poin_in_bdy_edge[iedge,k]
                 m=1
@@ -85,14 +86,11 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                 end
                 x = mesh.x[ip]
                 y = mesh.y[ip]
-                if (inputs[:luser_bc])
-                     q[ip,:] = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag)
-                    flux = (ω[k]*metrics.Jef[k,iedge]).*neumann(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag)
-                else
-                    q[ip,:] .= 0.0
-                    flux = zeros(size(q,2),1)
-                end
+
+                q[ip,:]         = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag)
+                flux            = (ω[k]*metrics.Jef[k,iedge]).*neumann(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag)
                 rhs[l,m,iel,:] .= rhs[l,m,iel,:] .+ flux[:]
+
                 if (size(L,1)>1)
                     for ii=1:mesh.npoin
                         L[ip,ii] = 0.0

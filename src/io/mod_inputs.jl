@@ -218,7 +218,14 @@ end
         mod_inputs_check(inputs, :nelz,  Int8(2), "-")
         mod_inputs_check(inputs, :zmin, Float64(-1.0), "-")
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
-        
+
+        if(!haskey(inputs, :xmin_bc))
+            inputs[:xmin_bc] = "periodic"
+        end        
+        if(!haskey(inputs, :xmax_bc))
+            inputs[:xmax_bc] = "periodic"
+        end
+                    
     else
         mod_inputs_check(inputs, :gmsh_filename, "e")
         
@@ -240,6 +247,9 @@ end
         #@warn s
         
     end #lread_gmsh
+
+
+    
     #
     # Some physical constants and parameters:
     #    
