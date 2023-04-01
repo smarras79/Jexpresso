@@ -310,8 +310,8 @@ if (lowercase(problem_name) == "burgers")
     inputs[:neqns] = neqns
     println( " # Number of equations ", neqns)
     
-elseif (lowercase(problem_name) == "sw")
-    inputs[:problem] = sw()
+elseif (lowercase(problem_name) == "shallowwater")
+    inputs[:problem] = ShallowWater()
     
     if (inputs[:nsd] == 1)
         neqns = 2

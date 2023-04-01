@@ -216,7 +216,7 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
     dFdx = zeros(neqns)
     dFdξ = zeros(neqns)
     dFdη = zeros(neqns)
-
+    gHsx = zeros(neqns)
     for iel=1:mesh.nelem
 
         for i=1:mesh.ngl
@@ -255,7 +255,8 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
                 y = mesh.y[ip]
                 Hb = bathymetry(x,y)
                 Hs = qq[ip,1] - Hb
-                gHsx = [1.0 Hs*9.81]
+                gHsx[1] = 1.0
+                gHsx[2] = Hs*9.81
                 dFdx .= gHsx .* (dFdξ[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη[1:neqns]*metrics.dηdx[i,j,iel]) + dFdξ1[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη1[1:neqns]*metrics.dηdx[i,j,iel]
                 rhs_el[i,j,iel,1:neqns] .-= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqns] .+ dGdy[1:neqns])
             end
@@ -273,7 +274,6 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
 end
 
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
-
     F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
     F1    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
@@ -282,8 +282,9 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
     qq = zeros(mesh.npoin,neqns)
     for i=1:neqns
         idx = (i-1)*mesh.npoin
-        qq[:,i] .= qp[idx+1:i*mesh.npoin]
+        qq[:,i] .= max.(qp[idx+1:i*mesh.npoin],0.001)
     end
+    @info maximum(qq[:,1])
     Fuser, Guser, Fuser1, Guser1 = user_flux(T, SD, qq, mesh)
     dFdx = zeros(neqns)
     dFdξ = zeros(neqns)
@@ -291,7 +292,8 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
     dGdy = zeros(neqns)
     dFdη = zeros(neqns)
     dGdη = zeros(neqns)
-
+    gHsx = zeros(neqns)
+    gHsy = zeros(neqns)
     for iel=1:mesh.nelem
 
         for i=1:mesh.ngl
@@ -343,8 +345,12 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
                 y = mesh.y[ip]
                 Hb = bathymetry(x,y)
                 Hs = qq[ip,1] - Hb
-                gHsx = [1.0 Hs*9.81 1.0]
-                gHsy = [1.0 1.0 9.81] 
+                gHsx[1] = 1.0
+                gHsx[2] = Hs * 9.81
+                gHsx[3] = 1.0
+                gHsy[1] = 1.0
+                gHsy[2] = 1.0
+                gHsy[3] = Hs * 9.81
                 dFdx .= gHsx .* (dFdξ[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη[1:neqns]*metrics.dηdx[i,j,iel]) + dFdξ1[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη1[1:neqns]*metrics.dηdx[i,j,iel]
                 dGdy .= gHsy .* (dGdξ[1:neqns]*metrics.dξdy[i,j,iel] .+ dGdη[1:neqns]*metrics.dηdy[i,j,iel]) + dGdξ1[1:neqns]*metrics.dξdy[i,j,iel] .+ dGdη1[1:neqns]*metrics.dηdy[i,j,iel]
                 rhs_el[i,j,iel,1:neqns] .-= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqns] .+ dGdy[1:neqns])
@@ -617,7 +623,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::ShallowWater, qp, neqns, basis, ω, 
                 dqdx = νx * (dqdξ*metrics.dξdx[k,l,iel] + dqdη*metrics.dηdx[k,l,iel])
                 dqdy = νy * (dqdξ*metrics.dξdy[k,l,iel] + dqdη*metrics.dηdy[k,l,iel])
                 if (ieq > 1)
-                    ip = mesh.connijk(k,l,iel)
+                    ip = mesh.connijk[k,l,iel]
                     x = mesh.x[ip]
                     y = mesh.y[ip]
                     Hb = bathymetry(x,y)
