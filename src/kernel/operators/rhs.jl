@@ -38,11 +38,6 @@ function rhs!(du, u, params, time)
     return du #This is already DSSed
 end
 
-<<<<<<< HEAD
-=======
-
-
->>>>>>> yt/ODESolver_NewBC-tmp
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
 
     Fuser = user_flux(T, SD, qp, mesh)
