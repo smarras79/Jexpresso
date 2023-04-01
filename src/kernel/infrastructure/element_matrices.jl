@@ -418,8 +418,8 @@ function DSS_laplace(SD::NSD_1D, Lel::AbstractArray, mesh::St_mesh, T)
         for i=1:mesh.ngl
             I = mesh.connijk[i,iel]
             for j=1:mesh.ngl
-                J = mesh.connijl[j,iel]
-                L[I,J] = L[I,J] + Le[i,j,iel]                
+                J = mesh.connijk[j,iel]
+                L[I,J] = L[I,J] + Lel[i,j,iel]                
             end
         end
     end
