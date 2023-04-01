@@ -25,6 +25,7 @@ include("../../kernel/bases/basis_structs.jl")
 include("../../kernel/infrastructure/element_matrices.jl")
 include("../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../kernel/infrastructure/2D_3D_structures.jl")
+include("../../kernel/infrastructure/SEMsetup.jl")
 include("../../kernel/mesh/metric_terms.jl")
 include("../../kernel/mesh/mesh.jl")
 include("../../kernel/solvers/TimeIntegrators.jl")  
@@ -116,16 +117,16 @@ function driver(DT::ContGal,       #Space discretization type
     M  =                     DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
     =#
     
-    (M, L, basis, metrics, mesh) = SEMsetup(ContGal(),  #Space discretization type
-                                            inputs,     #input parameters from src/user_input.jl
-                                            OUTPUT_DIR,
-                                            TFloat)
+    (M, Me, De, Le, L, basis, ω, metrics, mesh, SD, QT) = SEMsetup(ContGal(),  #Space discretization type
+                                                                   inputs,     #input parameters from src/user_input.jl
+                                                                   OUTPUT_DIR,
+                                                                   TFloat)
     
     
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
+    qp = initialize(SD, inputs[:problem], mesh, inputs, OUTPUT_DIR, TFloat)
     write_vtk(qp.qn[:,1], SD, mesh, OUTPUT_DIR,inputs)
     
     Δt = inputs[:Δt]
@@ -134,9 +135,7 @@ function driver(DT::ContGal,       #Space discretization type
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
     
     # NOTICE add a function to find the mesh mininum resolution
-    solution = time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, OUTPUT_DIR, TFloat)
-
-    
+    solution = time_loop!(SD, QT, inputs[:problem], mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, inputs[:neqns], inputs, OUTPUT_DIR, TFloat)
     
     #Out-to-file:
     write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])

@@ -40,7 +40,7 @@ end
 
 
 
-function build_rhs!(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
 
     Fuser = user_flux(T, SD, qp, mesh)
     
@@ -67,16 +67,16 @@ function build_rhs!(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basi
     # M⁻¹*rhs where M is diagonal
     RHS .= RHS./M
 
-    #apply_periodicity!(SD, ~, qp, mesh, inputs,  QT, ~, ~, ~, ω, time, ~, ~)
+    apply_periodicity!(SD, qp, inputs, mesh)
     
     return RHS
     
 end
 
-function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T) nothing end
+function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T) nothing end
 
 
-function build_rhs!(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff,    qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
     
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     G      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -123,19 +123,17 @@ function build_rhs!(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basi
     #show(stdout, "text/plain", el_matrices.D)
 
     #Build rhs_el(diffusion)
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    #rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
     
     
     #DSS(rhs_el)
-    RHS = DSS_rhs(SD, rhs_el + rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin,neqns, mesh.nop, T)
+    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin,neqns, mesh.nop, T)
     divive_by_mass_matrix!(RHS, M, QT,neqns)
-
     
     return RHS
-    
 end
 
-function build_rhs(SD::NSD_2D, QT::Exact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T) nothing end
+function build_rhs(SD::NSD_2D, QT::Exact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T) nothing end
 
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)    
     

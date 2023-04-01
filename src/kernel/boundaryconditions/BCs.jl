@@ -16,7 +16,7 @@ include("../infrastructure/Kopriva_functions.jl")
 include("../infrastructure/2D_3D_structures.jl")
 include("custom_bcs.jl")
 
-function apply_periodicity!(SD::NSD_1D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars)
+function apply_periodicity!(SD::NSD_1D, qp, inputs, mesh)
     
     if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="periodic" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="periodic")
         #
@@ -130,11 +130,7 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
 end
 =#
 
-function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs; inputs[:luser_bc]=false)
-    nothing
-end
-
-function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs; inputs[:luser_bc]=true)
+function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
     
     for iedge = 1:size(mesh.bdy_edge_comp,1)
         iel = mesh.bdy_edge_in_elem[iedge]
