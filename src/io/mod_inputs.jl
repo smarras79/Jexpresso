@@ -196,6 +196,11 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
         inputs[:ode_solver] = SSPRK53()
     end
 
+
+if(!haskey(inputs, :luser_bc))
+    inputs[:luser_bc] = false
+end
+
 if(!haskey(inputs, :output_dir))
     inputs[:output_dir] = ""
 end
