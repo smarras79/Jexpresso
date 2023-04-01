@@ -59,3 +59,4 @@ struct LinearClaw_1 <: AbstractBC end
 struct LinearClaw_KopRefxmax <: AbstractBC end
 struct DirichletExample <: AbstractBC end
 struct bc_space_function <: AbstractBC end
+struct AxbBC <: AbstractBC end

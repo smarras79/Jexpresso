@@ -223,11 +223,11 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqns, ba
     end
     #show(stdout, "text/plain", el_matrices.D)
     rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqns)
-    for i=1:neqns
-        idx = (i-1)*mesh.npoin
-        qp[idx+1:i*mesh.npoin] .= qq[:,i]
-    end
+ #   apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqns)
+ #   for i=1:neqns
+ #       idx = (i-1)*mesh.npoin
+ #       qp[idx+1:i*mesh.npoin] .= qq[:,i]
+ #   end
     #DSS(rhs_el)
     #@info maximum(qq[:,1]),minimum(qq[:,1]),maximum(qq[:,2]),minimum(qq[:,2]),maximum(qq[:,3]),minimum(qq[:,3])
     RHS = DSS_rhs(SD, rhs_el .+ rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqns, mesh.nop, T)

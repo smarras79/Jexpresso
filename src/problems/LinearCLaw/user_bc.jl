@@ -1,5 +1,6 @@
 """
-    qibdy is an Array{Floats} of size `nvars`
+    q is an Array{Floats} of size `nvars`.
+    It contains the nodal value of q on the boundary for every variable.
 
     src/problem/PROBLEM_NAME/user_bc.jl contains a set of user-defined boundary conditions functions
     that can be modified as needed.
@@ -15,13 +16,13 @@
 
     ```math
     if (tag === "inflow")
-        qibdy[1] = 3.0
+        q[1] = 3.0
     elseif (tag === "fix_temperature")
-        qibdy[2] = 300.0
+        q[2] = 300.0
     end
-    return qibdy
+    return q
     ```
-    where  `qibdy[i=1:nvar]` is the value unknown `i`
+    where  `q[i=1:nvar]` is the value unknown `i`
     
 """
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
