@@ -43,18 +43,18 @@ function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metri
     #calc_grad = false
     #   for key in keys(inputs)
     #     if (inputs[key] == "dirichlet" || inputs[key] == "neumann" || inputs[key] == "dirichlet/neumann")
-    calc_grad = true
+    #calc_grad = true
     #    end
     #  end
     nface = size(mesh.bdy_edge_comp,1)
     dqdx_st = zeros(nvars,2)
-    q_st = zeros(nvars,1)
-    gradq = zeros(2,mesh.npoin,nvars)
-    flux_q = zeros(mesh.ngl,nface,2,nvars)
-    exact = zeros(mesh.ngl,nface,nvars)
-    penalty =0.0#50000
-    nx = metrics.nx
-    ny = metrics.ny
+    #q_st = zeros(nvars,1)
+    #gradq = zeros(2,mesh.npoin,nvars)
+    #flux_q = zeros(mesh.ngl,nface,2,nvars)
+    #exact = zeros(mesh.ngl,nface,nvars)
+    #penalty =0.0#50000
+    #nx = metrics.nx
+    #ny = metrics.ny
     #TODO remake build custom_bcs for new boundary data
     #if (calc_grad)
     #    gradq = build_gradient(SD, QT::Inexact, qp, ψ, dψ, ω, mesh, metrics,gradq,nvars)
