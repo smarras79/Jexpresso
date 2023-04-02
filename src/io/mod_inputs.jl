@@ -235,6 +235,11 @@ end
         #@warn s
         
     end #lread_gmsh
+
+if(!haskey(inputs, :luser_bc))
+    inputs[:luser_bc] = true
+end
+
     #
     # Some physical constants and parameters:
     #    
