@@ -74,12 +74,15 @@ end
     This function uses the amazing package Mackie to plot arbitrarily gridded
     unstructured data to filled contour plot
 """
-function plot_triangulation(SD::NSD_1D, x, y, q, title::String, fout_name::String) nothing end
-function plot_triangulation(SD::NSD_2D, x, y, q, title::String, fout_name::String)
-    
-    fig = Makie.tricontourf(x, y, q, colormap = :heat)
-    save(fout_name, fig, resolution = (600, 600))
-    fig
-    
+function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+
+    npoin = size(q, 1)
+    for ivar=1:nvar        
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, "-ivar", ivar, ".png")
+        fig = Makie.tricontourf(x, y, q[:], colormap = :heat)
+        save(string(fout_name), fig, resolution = (600, 600))
+        fig
+    end
 end
-function plot_triangulation(SD::NSD_3D, x, y, q, title::String, fout_name::String) nothing end
+function plot_triangulation(SD::NSD_1D, x, y, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1) nothing end
+function plot_triangulation(SD::NSD_3D, x, y, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1) nothing end
