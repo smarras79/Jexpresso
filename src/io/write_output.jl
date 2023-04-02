@@ -12,8 +12,9 @@ struct ASCII <: AbstractOutFormat end
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # ∂q/∂t = RHS -> q(x,t)
 #----------------------------------------------------------------------------------------------------------------------------------------------
+#
 # PNG
-function write_output(sol::ODESolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1) nothing end
+#
 function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
    
@@ -23,7 +24,6 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
-
 function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)    
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     for iout = 1:inputs[:ndiagnostics_outputs]
@@ -33,9 +33,11 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
     end
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") )
 end
+function write_output(sol::ODESolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1) nothing end
 
-
+#
 # ASCII
+#
 function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)
     
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
@@ -68,33 +70,25 @@ end
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # Aq = b -> q(x)
 #----------------------------------------------------------------------------------------------------------------------------------------------
-#VTK:
-function write_vtk(sol::Array, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict)
-
-    #println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
-    #cells = [MeshCell(VTKCellTypes.VTK_VERTEX, (i, )) for i = 1:mesh.npoin]
-    #vtk_grid(string(OUTPUT_DIR, "qsolution"), mesh.x, mesh.y, mesh.z, cells) do vtk
-    #   vtk["q", VTKPointData()] = sol[:,1]
-    #end
-    #println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  DONE") )
-end
-
-
+#
 # PNG
-function write_output(sol::SciMLBase.LinearSolution, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG)
+#
+function write_output(sol::SciMLBase.LinearSolution, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
+    println(string(" # Writing solution of  ∇⋅∇(q) = f to PNG file:", OUTPUT_DIR, "*.png ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
-    plot_triangulation(SD, mesh.x, mesh.y, sol.u, title, string(OUTPUT_DIR, "Axb.png"))    
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
+    
+    plot_triangulation(SD, mesh.x, mesh.y, sol.u, title,  OUTPUT_DIR;)
+    println(string(" # Writing solution of  ∇⋅∇(q) = f to PNG file:", OUTPUT_DIR, "*.png ... END ") )
     
 end
 
+#
 # ASCII
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII) nothing end
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII) nothing end
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII)
-
+#
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)
     
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
@@ -105,4 +99,17 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
         end #f
     end
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE") )
+end
+
+#
+# VTK:
+#
+function write_vtk(sol::Array, SD, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict)
+
+    #println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
+    #cells = [MeshCell(VTKCellTypes.VTK_VERTEX, (i, )) for i = 1:mesh.npoin]
+    #vtk_grid(string(OUTPUT_DIR, "qsolution"), mesh.x, mesh.y, mesh.z, cells) do vtk
+    #   vtk["q", VTKPointData()] = sol[:,1]
+    #end
+    #println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  DONE") )
 end
