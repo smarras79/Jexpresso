@@ -2,9 +2,9 @@ function user_flux(T, SD::NSD_1D, q::Array, mesh::St_mesh)
     #
     # F(q(x)) = 0.8*q
     #
-    F = zeros(T, mesh.npoin)
+    F = typeof(q[:,1]) #zeros(T, mesh.npoin)
     
-    F .= 1.0*q[:,1]
+    F = 1.0*q[:,1]
     
     return F
     
@@ -15,7 +15,8 @@ function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh)
      #F(q(x)) = 0.8*q
      #G(q(x)) = 0.8*q
     #
-    F = G = zeros(T, mesh.npoin)
+    F = zeros(T, mesh.npoin)
+    G = zeros(T, mesh.npoin)
     
    # F .= 0.8*q[:,1]
     #G .= 0.8*q[:,1]
