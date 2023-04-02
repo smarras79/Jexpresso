@@ -75,7 +75,7 @@ Recombine Surface {1};
 // in a single group (with prescribed tag 5); and a physical surface with name
 // "My surface" (with an automatic tag) containing the geometrical surface 1:
 
-Physical Point("boundary",  1) = {1, 2, 3, 4, 5, 6, 7, 8};
+Physical Point("zero_all",  1) = {1, 2, 3, 4, 5, 6, 7, 8};
 Physical Curve("zero_all",  2) = {1, 2, 3, 4, 5, 6, 7, 8};
 Physical Surface("domain") = {1};
 

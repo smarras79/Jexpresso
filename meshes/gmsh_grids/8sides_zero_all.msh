@@ -3,7 +3,7 @@ $MeshFormat
 $EndMeshFormat
 $PhysicalNames
 3
-0 1 "boundary"
+0 1 "zero_all"
 1 2 "zero_all"
 2 3 "domain"
 $EndPhysicalNames
