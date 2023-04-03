@@ -3,33 +3,36 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 1.5, #2π,
+        :tend                => 1000.0, #2π,
         :Δt                  => 1.0e-3,#8.75e-4,
-        :ndiagnostics_outputs=> 600,
+        :ndiagnostics_outputs=> 500,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 8,      # Polynomila order
+        :nop                 => 3,      # Polynomila order
         :luser_bc            => true,
-        #:outformat           => "png",
-        :nsd                 => 2, 
+        :outformat           => "png",
+        :nsd                 => 1, 
+        :xmin                => 0.0,
+        :xmax                => 25.0,
+        :nelx                => 18,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :νx                   => 0.001, #kinematic viscosity constant
-        :νy                   => 0.001, #kinematic viscosity constant
+        :νx                   => 0.00, #kinematic viscosity constant
+        :νy                   => 0.00, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh          => true, #If false, a 1D problem will be enforced
+        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_coarse.msh",
-        :gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

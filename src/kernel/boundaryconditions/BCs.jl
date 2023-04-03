@@ -34,8 +34,20 @@ function apply_periodicity!(SD::NSD_1D, rhs, qp, mesh, inputs, QT, metrics, ψ, 
     end
 end
 
-function apply_boundary_conditions!(SD::NSD_1D, rhs, qp, mesh,inputs, QT, metrics, ψ, dψ, ω, t, nvars)
-    nothing
+function apply_boundary_conditions!(SD::NSD_1D, rhs, qp, mesh,inputs, QT, metrics, ψ, dψ, ω, t, nvars;L=zeros(1,1))
+    #If Neumann conditions are needed compute gradient
+    calc_grad = false
+    #   for key in keys(inputs)
+    #     if (inputs[key] == "dirichlet" || inputs[key] == "neumann" || inputs[key] == "dirichlet/neumann")
+    calc_grad = true
+    #    end
+    #  end
+    gradq = zeros(mesh.npoin,nvars)
+    #TODO remake build custom_bcs for new boundary data
+    #if (calc_grad)
+    #    gradq = build_gradient(SD, QT::Inexact, qp, ψ, dψ, ω, mesh, metrics,gradq,nvars)
+        build_custom_bcs!(t,mesh,qp,gradq,rhs,SD,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
+    #end
 end
 
 function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars;L=zeros(1,1))
@@ -129,6 +141,35 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
     end
 end
 =#
+
+function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_1D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
+
+    for ip in [1, mesh.npoin_linear]
+        x = mesh.x[ip]
+        if (ip == 1)
+            k=1
+            iel = 1
+        else
+            k=mesh.ngl
+            iel = mesh.nelem
+        end
+        if (inputs[:luser_bc])
+             q[ip,:] = dirichlet!(q[ip,:],gradq[ip,:],x,t,mesh,metrics)
+             flux = (ω[k]*neumann(q[ip,:],gradq[ip,:],x,t,mesh,metrics))
+        else
+             q[ip,:] .= 0.0
+             flux = zeros(size(q,2),1)
+        end
+        
+        rhs[k,iel,:] .= rhs[k,iel,:] .+ flux[:]
+        if (size(L,1)>1)
+            for ii=1:mesh.npoin
+                L[ip,ii] = 0.0
+            end
+            L[ip,ip] =1.0
+        end
+    end
+end
 
 function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
 

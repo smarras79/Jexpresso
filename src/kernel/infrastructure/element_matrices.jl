@@ -468,18 +468,17 @@ function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
 end
 
 
-function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoin, neqns, N, T)
 
-    V = zeros(npoin)
+    V = zeros(npoin,neqns)
     for iel=1:nelem
         for i=1:N+1
             I = conn[i,iel]
-            V[I] = V[I] + Ve[i,iel]
+            V[I,:] = V[I,:] + Ve[i,iel,:]
         end
     end
-    Ainv = 1.0./A
     
-    return A, Ainv
+    return V
 end
 
 function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqns, N, T)   

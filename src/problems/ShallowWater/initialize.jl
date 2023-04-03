@@ -8,7 +8,7 @@ function initialize(SD::NSD_2D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
     """
     
     """
-    @info " Initialize fields for system of Linear Conservation Laws ........................ "
+    @info " Initialize fields for 2D Shallow water equations ........................ "
     
     ngl   = mesh.ngl
     nsd   = mesh.nsd
@@ -38,5 +38,110 @@ function initialize(SD::NSD_2D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
     
     @info "Initialize fields for system of Shallow Water equations ........................ DONE"
     
+    return q
+end
+
+function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+    """
+
+    """
+    @info " Initialize fields for 1D Shallow water equations ........................ "
+
+    ngl   = mesh.ngl
+    nsd   = mesh.nsd
+    nelem = mesh.nelem
+    npoin = mesh.npoin
+    neqs  = 3
+
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs,TFloat)
+
+    #Cone properties:
+
+    case = 3
+    if (case == 1)
+        @info "Constant height with a immersed bump SWASHES first steady state case"
+    
+    	for iel_g = 1:mesh.nelem
+            for i=1:ngl
+                for j=1:ngl
+
+                    ip = mesh.conn[i,iel_g]
+                    x  = mesh.x[ip]
+                    Hb = bathymetry(x)
+                    q.qn[ip,1] = 0.5                                    #H
+                    q.qn[ip,2] = 0.0                                   #Hu
+                end
+            end
+        end
+    elseif (case == 2)
+        @info "Constant height with a dryish bump SWASHES second steady state case"
+    
+        for iel_g = 1:mesh.nelem
+            for i=1:ngl
+                for j=1:ngl
+
+                    ip = mesh.conn[i,iel_g]
+                    x  = mesh.x[ip]
+                    Hb = bathymetry(x)
+                    q.qn[ip,1] = max(0.1,Hb)                                    #H
+                    q.qn[ip,2] = 0.0                                   #Hu
+                end
+            end
+        end
+    elseif (case == 3)
+        @info "SWASHES subcritical steady state case"
+    
+        for iel_g = 1:mesh.nelem
+            for i=1:ngl
+                for j=1:ngl
+
+                    ip = mesh.conn[i,iel_g]
+                    x  = mesh.x[ip]
+                    Hb = bathymetry(x)
+                    q.qn[ip,1] = 2.0
+                    #if (x > mesh.xmin)                                    #H
+                        q.qn[ip,2] = 0.0
+                    #else
+                     #   q.qn[ip,2] = 4.42
+                    #end                                   #Hu
+                end
+            end
+        end
+    elseif (case == 4)
+        @info "SWASHES transcritical no shock steady state case"
+
+        for iel_g = 1:mesh.nelem
+            for i=1:ngl
+                for j=1:ngl
+
+                    ip = mesh.conn[i,iel_g]
+                    x  = mesh.x[ip]
+                    Hb = bathymetry(x)
+                    q.qn[ip,1] = 0.66
+                    q.qn[ip,2] = 0.0
+                end
+            end
+        end
+    elseif (case == 5)
+        @info "SWASHES transcritical with shock steady state case"
+
+        for iel_g = 1:mesh.nelem
+            for i=1:ngl
+                for j=1:ngl
+
+                    ip = mesh.conn[i,iel_g]
+                    x  = mesh.x[ip]
+                    Hb = bathymetry(x)
+                    q.qn[ip,1] = 0.33
+                    q.qn[ip,2] = 0.0
+                end
+            end
+        end
+    end
+    
+    
+
+    @info "Initialize fields for system of Shallow Water equations ........................ DONE"
+
     return q
 end

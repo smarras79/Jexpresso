@@ -204,62 +204,48 @@ end
 
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
 
-    F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
-    F1    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
-    rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqns)
+    F    = zeros(mesh.ngl,mesh.nelem, neqns)
+    F1    = zeros(mesh.ngl,mesh.nelem, neqns)
+    rhs_el = zeros(mesh.ngl,mesh.nelem, neqns)
     qq = zeros(mesh.npoin,neqns)
     for i=1:neqns
         idx = (i-1)*mesh.npoin
         qq[:,i] .= qp[idx+1:i*mesh.npoin]
     end
-    Fuser, Guser, Fuser1, Guser1 = user_flux(T, SD, qq, mesh)
+    qq[:,1] = max.(qq[:,1],0.001)
+    Fuser, Fuser1 = user_flux(T, SD, qq, mesh)
     dFdx = zeros(neqns)
     dFdξ = zeros(neqns)
-    dFdη = zeros(neqns)
     gHsx = zeros(neqns)
     for iel=1:mesh.nelem
 
         for i=1:mesh.ngl
-            for j=1:mesh.ngl
-                ip = mesh.connijk[i,j,iel]
-                F[i,j,iel,1] = Fuser[ip,1]
-                F[i,j,iel,2] = Fuser[ip,2]
+                ip = mesh.conn[i,iel]
+                F[i,iel,1] = Fuser[ip,1]
+                F[i,iel,2] = Fuser[ip,2]
 
-                F1[i,j,iel,1] = Fuser1[ip,1]
-                F1[i,j,iel,2] = Fuser1[ip,2]
-
-            end
+                F1[i,iel,1] = Fuser1[ip,1]
+                F1[i,iel,2] = Fuser1[ip,2]
+                #@info Fuser[ip,1] + Fuser1[ip,1], Fuser[ip,2] + Fuser1[ip,2]
         end
 
         for i=1:mesh.ngl
-            for j=1:mesh.ngl
                 dFdξ = zeros(T, neqns)
-                dFdη = zeros(T, neqns)
                 dFdξ1 = zeros(T, neqns)
-                dFdη1 = zeros(T, neqns)
                 for k = 1:mesh.ngl
-                    dFdξ[1:neqns] .= dFdξ[1:neqns] .+ basis.dψ[k,i]*F[k,j,iel,1:neqns]
-                    dFdη[1:neqns] .= dFdη[1:neqns] .+ basis.dψ[k,j]*F[i,k,iel,1:neqns]
+                    dFdξ[1:neqns] .= dFdξ[1:neqns] .+ basis.dψ[k,i]*F[k,iel,1:neqns]
 
-                    dFdξ1[1:neqns] .= dFdξ1[1:neqns] .+ basis.dψ[k,i]*F1[k,j,iel,1:neqns]
-                    dFdη1[1:neqns] .= dFdη1[1:neqns] .+ basis.dψ[k,j]*F1[i,k,iel,1:neqns]
-
-                    dGdξ[1:neqns] .= dGdξ[1:neqns] .+ basis.dψ[k,i]*G[k,j,iel,1:neqns]
-                    dGdη[1:neqns] .= dGdη[1:neqns] .+ basis.dψ[k,j]*G[i,k,iel,1:neqns]
-
-                    dGdξ1[1:neqns] .= dGdξ1[1:neqns] .+ basis.dψ[k,i]*G1[k,j,iel,1:neqns]
-                    dGdη1[1:neqns] .= dGdη1[1:neqns] .+ basis.dψ[k,j]*G1[i,k,iel,1:neqns]
+                    dFdξ1[1:neqns] .= dFdξ1[1:neqns] .+ basis.dψ[k,i]*F1[k,iel,1:neqns]
+                    #@info i,dFdξ[1:neqns], dFdξ1[1:neqns]
                 end
-                ip = mesh.connijk[i,j,iel]
+                ip = mesh.conn[i,iel]
                 x = mesh.x[ip]
-                y = mesh.y[ip]
-                Hb = bathymetry(x,y)
-                Hs = qq[ip,1] - Hb
+                Hb = bathymetry(x)
+                Hs = max(qq[ip,1] - Hb,0.001)
                 gHsx[1] = 1.0
                 gHsx[2] = Hs*9.81
-                dFdx .= gHsx .* (dFdξ[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη[1:neqns]*metrics.dηdx[i,j,iel]) + dFdξ1[1:neqns]*metrics.dξdx[i,j,iel] .+ dFdη1[1:neqns]*metrics.dηdx[i,j,iel]
-                rhs_el[i,j,iel,1:neqns] .-= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqns] .+ dGdy[1:neqns])
-            end
+                dFdx .= gHsx .* (dFdξ[1:neqns]) .+ dFdξ1[1:neqns]
+                rhs_el[i,iel,1:neqns] .-= ω[i]*mesh.Δx[iel]/2*dFdx[1:neqns]
         end
     end
     rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
@@ -282,9 +268,8 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
     qq = zeros(mesh.npoin,neqns)
     for i=1:neqns
         idx = (i-1)*mesh.npoin
-        qq[:,i] .= max.(qp[idx+1:i*mesh.npoin],0.001)
+        qq[:,i] .= qp[idx+1:i*mesh.npoin]
     end
-    @info maximum(qq[:,1])
     Fuser, Guser, Fuser1, Guser1 = user_flux(T, SD, qq, mesh)
     dFdx = zeros(neqns)
     dFdξ = zeros(neqns)
@@ -344,7 +329,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
                 x = mesh.x[ip]
                 y = mesh.y[ip]
                 Hb = bathymetry(x,y)
-                Hs = qq[ip,1] - Hb
+                Hs = max(qq[ip,1] - Hb,0.001)
                 gHsx[1] = 1.0
                 gHsx[2] = Hs * 9.81
                 gHsx[3] = 1.0
@@ -553,23 +538,23 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqns, basis, ω, 
                 for i = 1:mesh.ngl
                     dqdξ = dqdξ + basis.dψ[i,k]*qnel[k,iel,ieq]
                 end
-                dqdx = νx * (dqdξ*metrics.dξdx[k,l,iel] + dqdη*metrics.dηdx[k,l,iel])
+                dqdx = νx * (dqdξ)
                 if (ieq > 1)
-                    ip = mesh.connijk(k,iel)
+                    ip = mesh.conn[k,iel]
                     x = mesh.x[ip]
                     Hb = bathymetry(x)
                     Hs = qq[ip,1] - Hb
                     dqdx = dqdx * Hs
                 end
 
-                ∇ξ∇q_kl =  metrics.dξdx[k,l,iel]*dqdx
+                ∇ξ∇q_kl =  dqdx
 
                 for i = 1:mesh.ngl
 
                     hkk     = basis.ψ[k,k]
                     dhdξ_ik = basis.dψ[i,k]
 
-                    rhsdiffξ_el[i,iel,ieq] -= ωJkl*dhdξ_ik*hll*∇ξ∇q_kl
+                    rhsdiffξ_el[i,iel,ieq] -= ωJkl*dhdξ_ik*hkk*∇ξ∇q_kl
                 end
             end
         end
