@@ -3,15 +3,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 2.0, #2π,
-        :Δt                  => 0.25e-3,#8.75e-4,
+        :tend                => 0.5, #2π,
+        :Δt                  => 0.5e-3,#8.75e-4,
         :ndiagnostics_outputs=> 4,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 5,      # Polynomila order
+        :nop                 => 4,      # Polynomila order
         :luser_bc            => true,
         :outformat           => "png",
         #---------------------------------------------------------------------------
