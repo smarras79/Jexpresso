@@ -24,9 +24,9 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/2d-grid-zeroall.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid-zeroall.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/circle1.msh",       
+        :gmsh_filename       => "./meshes/gmsh_grids/circle1.msh",       
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #---------------------------------------------------------------------------
