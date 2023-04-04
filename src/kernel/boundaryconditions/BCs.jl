@@ -31,6 +31,12 @@ function apply_periodicity!(SD::NSD_1D, rhs, qp, mesh, inputs, QT, metrics, ψ, 
         #
         qp[1] = 0.0
         qp[mesh.npoin_linear] = 0.0
+    else
+        #
+        # 1D Default: periodic
+        #
+        qp[mesh.npoin_linear,:] .= 0.5*(qp[mesh.npoin_linear,:] .+ qp[1,:])
+        qp[1,:] .= qp[mesh.npoin_linear,:]        
     end
 end
 
