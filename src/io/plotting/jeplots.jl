@@ -93,7 +93,7 @@ function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, OUTPUT_DI
 
     npoin = size(q, 1)
     for ivar=1:nvar        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, "-ivar", ivar, ".png")
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
         fig = Makie.tricontourf(x, y, q[:], colormap = :heat)
         save(string(fout_name), fig, resolution = (600, 600))
         fig

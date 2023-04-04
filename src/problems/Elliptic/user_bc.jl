@@ -28,6 +28,9 @@ function user_bc_dirichlet!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractF
     
     if (tag === "zero_all")
         qibdy[1] = 0.0    #u
+    else
+        #Default if no tag found
+        qibdy[1] = 0.0    #u
     end
     
     return qibdy

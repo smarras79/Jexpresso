@@ -21,7 +21,6 @@ include("../../io/write_output.jl")
 include("../../io/print_matrix.jl")
 
 include("../../kernel/abstractTypes.jl")
-include("../../kernel/semStructs.jl")
 include("../../kernel/bases/basis_structs.jl")
 include("../../kernel/boundaryconditions/BCs.jl")
 include("../../kernel/globalStructs.jl")
