@@ -34,6 +34,8 @@ Currently available problem names:
 
 * AdvDiff
 * Elliptic
+* LinearCLaw
+* ShallowWater
 
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
