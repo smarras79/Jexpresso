@@ -1,11 +1,9 @@
-include("../../io/plotting/jeplots.jl")
-
-function initialize(SD::NSD_1D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_1D, ET::Helmholtz, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     nothing
 end
 
 
-function initialize(SD::NSD_2D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_2D, ET::Helmholtz, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
     println(" # Initialize fields for ∇²(q) = f........................")
         
@@ -26,14 +24,16 @@ function initialize(SD::NSD_2D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPU
 
                     ip = mesh.connijk[i,j,iel_g];
                     x, y = mesh.x[ip], mesh.y[ip];
-                    
-                    q.qn[ip,1] = sinpi(c*(x - xc))*sinpi(c*(y - yc))
+                    r = sqrt(x*x + y*y)
+                    q.qn[ip,1] = sinpi(c*r)
 
                 end
             end
         end
     end
     println(" # Initialize fields for ∇²(q) = f........................ DONE")
+
+   # write_output(q.qn[:,1], SD, mesh, OUTPUT_DIR, "qinit.png", inputs[:outformat])
     
     return q
 end
