@@ -1,9 +1,3 @@
-include("../AbstractProblems.jl")
-
-include("../../kernel/globalStructs.jl")
-include("../../kernel/mesh/mesh.jl")
-include("../../io/plotting/jeplots.jl")
-
 function initialize(SD::NSD_2D, PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
     

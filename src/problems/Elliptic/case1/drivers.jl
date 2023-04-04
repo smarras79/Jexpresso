@@ -12,35 +12,38 @@ const TFloat = Float64
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
-include("../AbstractProblems.jl")
+include("../../AbstractProblems.jl")
 
 include("./initialize.jl")
-include("../../kernel/operators/rhs.jl")
-include("../../io/mod_inputs.jl")
-include("../../io/plotting/jeplots.jl")
-include("../../io/print_matrix.jl")
-include("../../kernel/abstractTypes.jl")
-include("../../kernel/globalStructs.jl")
-include("../../kernel/bases/basis_structs.jl")
-include("../../kernel/infrastructure/element_matrices.jl")
-include("../../kernel/infrastructure/Kopriva_functions.jl")
-include("../../kernel/infrastructure/2D_3D_structures.jl")
-include("../../kernel/mesh/metric_terms.jl")
-include("../../kernel/mesh/mesh.jl")
-include("../../kernel/solvers/TimeIntegrators.jl")  
-include("../../kernel/mesh/restructure_for_periodicity.jl")
-include("../../kernel/boundaryconditions/BCs.jl")
+include("../../../io/mod_inputs.jl")
+include("../../../io/write_output.jl")
+include("../../../io/print_matrix.jl")
+include("../../../kernel/abstractTypes.jl")
+include("../../../kernel/bases/basis_structs.jl")
+include("../../../kernel/boundaryconditions/BCs.jl")
+include("../../../kernel/globalStructs.jl")
+include("../../../kernel/infrastructure/element_matrices.jl")
+include("../../../kernel/infrastructure/Kopriva_functions.jl")
+include("../../../kernel/infrastructure/2D_3D_structures.jl")
+include("../../../kernel/operators/rhs.jl")
+include("../../../kernel/solvers/Axb.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
                 inputs::Dict,      #input parameters from src/user_input.jl
                 OUTPUT_DIR::String,
                 TFloat) 
 
+    
+#    params = (; inputs, TFloat)
+#    M, L = sem_setup(params)
+    
+#    @info mesh.nelem
+    
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:problem]
     neqns = inputs[:neqns]
-    
+
     #--------------------------------------------------------
     # Create/read mesh
     # return mesh::St_mesh
@@ -102,34 +105,31 @@ function driver(DT::ContGal,       #Space discretization type
     # Build metric terms
     #--------------------------------------------------------
     metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
-        
-    periodicity_restructure!(mesh,inputs)    
-    #--------------------------------------------------------
-    # Build element mass matrix
-    #
-    # Return:
-    # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
-    #--------------------------------------------------------    
-    Le =         build_laplace_matrix(SD,     basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    De = build_differentiation_matrix(SD,     basis.ψ, basis.dψ, ω, mesh,          Nξ, Qξ, TFloat)
-    Me =            build_mass_matrix(SD, QT, basis.ψ,           ω, mesh, metrics, Nξ, Qξ, TFloat)
-    M  =                     DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-   
+    
+    #Build L = DSS(∫∇ψᵢ∇ψⱼdΩₑ)
+    Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    L  = DSS_laplace(SD, Le, mesh, TFloat)
+
+    #Build M = DSS(∫ψᵢψⱼdΩₑ)
+    Me = build_mass_matrix(SD, QT, basis.ψ,   ω, mesh, metrics, Nξ, Qξ, TFloat)
+    M  = DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)    
+    
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
-    write_vtk(qp.qn[:,1], SD, mesh, OUTPUT_DIR,inputs)
+    qp = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqns, TFloat)
+
+    #Build ∫S(q)dΩ
+    RHS = build_rhs_source(SD, QT, qp.qn, mesh, M, TFloat)
+
+    #BC
+    apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, neqns; L=L)
     
-    Δt = inputs[:Δt]
-    CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
-    println(" # CFL = ", CFL)    
-    Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
-    
-    # NOTICE add a function to find the mesh mininum resolution
-    solution = time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, OUTPUT_DIR, TFloat)
+    println(" # Solve Lq=RHS ................................")    
+    solution = solveAx(L, RHS, inputs[:ode_solver])
+    println(" # Solve Lq=RHS ................................ DONE")
 
     #Out-to-file:
-    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=3)
+    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat])
     
 end
