@@ -20,15 +20,18 @@ function parse_commandline()
         help = "an option without argument, i.e. a flag"
         action = :store_true
         "arg1"
-        help = "a positional argument"
+        help = "problem_name"
         required = true
+        "arg2"
+        help = "case name within problems/problem_name"
+        required = false
     end
 
     return parse_args(s)
 end
 
 
-function mod_inputs_user_inputs!(problem_name, problem_dir::String)
+function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::String)
 
     error_flag::Int8 = 0
     
@@ -36,7 +39,7 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
     # was definied within this same function via the include(input_dir) above.
     # 
-    input_dir = string(problem_dir, "/", problem_name, "/user_inputs.jl")
+    input_dir = string(problem_dir, "/", problem_name, "/", problem_case_name, "/user_inputs.jl")
     include(input_dir)
     inputs = @Base.invokelatest(user_inputs())
     
