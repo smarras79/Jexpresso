@@ -131,5 +131,5 @@ function driver(DT::ContGal,       #Space discretization type
 
     #Out-to-file:
     write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=3)
-    
+    solution_norms(solution, mesh, OUTPUT_DIR, inputs, ASCII();)
 end

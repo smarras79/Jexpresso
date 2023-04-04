@@ -2,14 +2,17 @@ include("../abstractTypes.jl")
 include("../mesh/mesh.jl")
 include("../mesh/metric_terms.jl")
 include("../../problems/AbstractProblems.jl")
-#include("../../io/print_matrix.jl")
 
 #---------------------------------------------------------------------------
 # Fetch problem name to access the user_rhs functions
 #---------------------------------------------------------------------------
-problem_name = ARGS[1]
-user_flux_dir = string("../../problems/", problem_name, "/user_flux.jl")
-user_source_dir = string("../../problems/", problem_name, "/user_source.jl")
+if (length(ARGS) === 1) #problem_
+    user_flux_dir   = string("../../problems/", ARGS[1], "/user_flux.jl")
+    user_source_dir = string("../../problems/", ARGS[1], "/user_source.jl")
+elseif (length(ARGS) === 2)  #problem_name/problem_case_name
+    user_flux_dir   = string("../../problems/", ARGS[1], "/", ARGS[2], "/user_flux.jl")
+    user_source_dir = string("../../problems/", ARGS[1], "/", ARGS[2], "/user_source.jl")
+end
 include(user_flux_dir)
 include(user_source_dir)
 #---------------------------------------------------------------------------
