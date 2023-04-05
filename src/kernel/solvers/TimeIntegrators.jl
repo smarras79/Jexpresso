@@ -35,7 +35,7 @@ function time_loop!(SD,
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] .= qp.qn[:,i]
     end
-    @info neqns
+    #@info neqns
     tspan  = (inputs[:tinit], inputs[:tend])    
     params = (; T, SD, QT, PT, neqns, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
     prob   = ODEProblem(rhs!,

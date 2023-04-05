@@ -1,3 +1,5 @@
+include("../../../kernel/AbstractTypes.jl")
+
 function initialize(SD::NSD_2D, PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
     

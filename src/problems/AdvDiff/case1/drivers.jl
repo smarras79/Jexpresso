@@ -14,7 +14,6 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("../../AbstractProblems.jl")
 
-include("./initialize.jl")
 include("../../../kernel/operators/rhs.jl")
 include("../../../io/mod_inputs.jl")
 include("../../../io/plotting/jeplots.jl")
@@ -30,6 +29,7 @@ include("../../../kernel/mesh/mesh.jl")
 include("../../../kernel/solvers/TimeIntegrators.jl")  
 include("../../../kernel/mesh/restructure_for_periodicity.jl")
 include("../../../kernel/boundaryconditions/BCs.jl")
+include("./initialize.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
                 inputs::Dict,      #input parameters from src/user_input.jl

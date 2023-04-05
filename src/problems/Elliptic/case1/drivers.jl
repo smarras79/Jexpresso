@@ -13,8 +13,6 @@ const TFloat = Float64
 # jexpresso modules
 #--------------------------------------------------------
 include("../../AbstractProblems.jl")
-
-include("./initialize.jl")
 include("../../../io/mod_inputs.jl")
 include("../../../io/write_output.jl")
 include("../../../io/print_matrix.jl")
@@ -27,6 +25,7 @@ include("../../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../../kernel/infrastructure/2D_3D_structures.jl")
 include("../../../kernel/operators/rhs.jl")
 include("../../../kernel/solvers/Axb.jl")
+include("./initialize.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
                 inputs::Dict,      #input parameters from src/user_input.jl
