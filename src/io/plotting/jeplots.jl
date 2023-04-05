@@ -76,7 +76,7 @@ function plot_results(SD::NSD_1D, x1, y1, z1, title::String, OUTPUT_DIR::String;
             framestyle = :zerolines, yminorgrid = true)
 
     npoin = size(x1,1)
-    for ivar=1:nvars
+    for ivar=1:nvar
         idx = (ivar - 1)*npoin
         data = Plots.scatter(x1, z1[idx+1:ivar*npoin], title=title,
                              markersize = 5, markercolor="Blue",
@@ -108,3 +108,17 @@ function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, OUTPUT_DI
 end
 function plot_triangulation(SD::NSD_1D, x, y, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
 function plot_triangulation(SD::NSD_3D, x, y, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
+
+
+function write_ascii(SD::NSD_1D, x, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+    
+    npoin = size(x,1)
+    for ivar=1:nvar
+        idx = (ivar - 1)*npoin
+        
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".dat")
+        open(fout_name, "w") do f
+            @printf(f, " %f %f \n", x[:,1], q[idx+1:ivar*npoin])
+        end
+    end
+end
