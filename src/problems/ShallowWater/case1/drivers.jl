@@ -14,9 +14,9 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("../../AbstractProblems.jl")
 
-include("./initialize.jl")
 include("../../../kernel/operators/rhs.jl")
 include("../../../io/mod_inputs.jl")
+include("../../../io/diagnostics.jl")
 include("../../../io/plotting/jeplots.jl")
 include("../../../io/print_matrix.jl")
 include("../../../kernel/abstractTypes.jl")
@@ -30,6 +30,7 @@ include("../../../kernel/mesh/mesh.jl")
 include("../../../kernel/solvers/TimeIntegrators.jl")  
 include("../../../kernel/mesh/restructure_for_periodicity.jl")
 include("../../../kernel/boundaryconditions/BCs.jl")
+include("./initialize.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
                 inputs::Dict,      #input parameters from src/user_input.jl
@@ -131,5 +132,6 @@ function driver(DT::ContGal,       #Space discretization type
 
     #Out-to-file:
     write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=3)
-    solution_norms(solution, mesh, OUTPUT_DIR, inputs, ASCII();)
+    solution_norms(solution, OUTPUT_DIR, inputs;)
+    
 end

@@ -90,11 +90,14 @@ end
     unstructured data to filled contour plot
 """
 function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
-
-    npoin = size(q, 1)
-    for ivar=1:nvar        
+    
+    npoin = size(x, 1)#/nvar
+    for ivar=1:nvar
+        idx = (ivar - 1)*npoin
+        
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-        fig = Makie.tricontourf(x, y, q[:], colormap = :heat)
+        fig, ax, sol = Makie.tricontourf(x, y, q[idx+1:ivar*npoin], colormap = :viridis)
+        Colorbar(fig[1,2], colormap = :viridis)        
         save(string(fout_name), fig, resolution = (600, 600))
         fig
     end

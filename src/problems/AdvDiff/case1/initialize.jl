@@ -1,3 +1,5 @@
+include("../../../kernel/AbstractTypes.jl")
+
 function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
     println(" # Initialize fields for AdvDiff ........................")
