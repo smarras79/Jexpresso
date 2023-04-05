@@ -29,7 +29,8 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
     for iout = 1:inputs[:ndiagnostics_outputs]
 	fname = @sprintf "it-%d.png" iout
         title = string("sol.u at time ", sol.t[iout])
-        plot_results(SD, mesh.x, mesh.x, sol.u[iout][:], title, string(OUTPUT_DIR, "/", fname))
+        #plot_results(SD, mesh.x, mesh.x, sol.u[iout][:], title, string(OUTPUT_DIR, "/", fname))
+        plot_results(SD, mesh.x, mesh.y, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar)
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.dat ...  DONE ") )
 end
