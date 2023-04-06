@@ -64,7 +64,7 @@ include(driver_dir)
 #--------------------------------------------------------
 mod_inputs_print_welcome()
 inputs        = Dict{}()
-inputs, nvars = mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir)
+inputs        = mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir)
 
 #--------------------------------------------------------
 #Create output directory if it doesn't exist:

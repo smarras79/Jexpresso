@@ -7,10 +7,8 @@ import SciMLBase
 using WriteVTK
 
 include("../abstractTypes.jl")
-include("../../io/write_output.jl")
 
-function time_loop!(SD,
-                    QT,
+function time_loop!(QT,
                     PT,
                     mesh::St_mesh,
                     metrics::St_metrics,
@@ -19,7 +17,6 @@ function time_loop!(SD,
                     M,
                     De, Le,
                     Nt, Δt,
-                    neqs, 
                     inputs::Dict,
                     OUTPUT_DIR::String,
                     T)
@@ -30,14 +27,14 @@ function time_loop!(SD,
     # Initialize
     println(" # Solving ODE ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
-    u = zeros(T, mesh.npoin*neqs);
-    for i=1:neqs
+    u = zeros(T, mesh.npoin*qp.neqs);
+    for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] .= qp.qn[:,i]
     end
-    #@info neqs
-    tspan  = (inputs[:tinit], inputs[:tend])    
-    params = (; T, SD, QT, PT, neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
+    #@info qp.neqs
+    tspan  = (inputs[:tinit], inputs[:tend])
+    params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
     prob   = ODEProblem(rhs!,
                         u,
                         tspan,

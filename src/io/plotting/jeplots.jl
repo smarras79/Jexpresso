@@ -19,7 +19,7 @@ using Makie
 }
 =#
 
-include("../../kernel/mesh/mesh.jl")
+#include("../../kernel/mesh/mesh.jl")
 
 function plot_curve(x, y,  title::String, fout_name::String)
     

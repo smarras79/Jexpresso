@@ -509,3 +509,13 @@ function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexac
    end
 end
 
+function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat)
+
+    Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
+    De = build_differentiation_matrix(SD, basis.ψ, basis.dψ, ω, mesh,  N, Q, TFloat)
+    Me = build_mass_matrix(SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
+    M  = DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat)
+    
+    return (;Le, De, Me, M)
+end
+

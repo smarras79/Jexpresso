@@ -14,8 +14,6 @@ const TFloat = Float64
 #--------------------------------------------------------
 include("../../AbstractProblems.jl")
 include("../../../io/mod_inputs.jl")
-include("../../../io/write_output.jl")
-include("../../../io/print_matrix.jl")
 include("../../../kernel/abstractTypes.jl")
 include("../../../kernel/bases/basis_structs.jl")
 include("../../../kernel/boundaryconditions/BCs.jl")
@@ -25,6 +23,8 @@ include("../../../kernel/infrastructure/Kopriva_functions.jl")
 include("../../../kernel/infrastructure/2D_3D_structures.jl")
 include("../../../kernel/operators/rhs.jl")
 include("../../../kernel/solvers/Axb.jl")
+include("../../../io/write_output.jl")
+include("../../../io/print_matrix.jl")
 include("./initialize.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
@@ -41,8 +41,7 @@ function driver(DT::ContGal,       #Space discretization type
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:problem]
-    #neqs = inputs[:neqs]
-
+    
     #--------------------------------------------------------
     # Create/read mesh
     # return mesh::St_mesh
@@ -82,15 +81,7 @@ function driver(DT::ContGal,       #Space discretization type
         ξq  = ξ        
         ω   = ξω.ω
     end
-    if (mesh.nsd == 1)
-        SD = NSD_1D()
-    elseif (mesh.nsd == 2)
-        SD = NSD_2D()
-    elseif (mesh.nsd == 3)
-        SD = NSD_3D()
-    else
-        error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
-    end
+    SD = mesh.SD
     #--------------------------------------------------------
     # Build Lagrange polynomials:
     #
