@@ -40,7 +40,7 @@ function driver(DT::ContGal,       #Space discretization type
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:problem]
-    neqns = inputs[:neqns]
+    #neqs = inputs[:neqs]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -128,10 +128,10 @@ function driver(DT::ContGal,       #Space discretization type
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
     
     # NOTICE add a function to find the mesh mininum resolution
-    solution = time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, neqns, inputs, OUTPUT_DIR, TFloat)
+    solution = time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, qp.neqs, inputs, OUTPUT_DIR, TFloat)
 
     #Out-to-file:
-    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=neqns)
+    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs)
     #solution_norms(solution, OUTPUT_DIR, inputs;)
     
 end

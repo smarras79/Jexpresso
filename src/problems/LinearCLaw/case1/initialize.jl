@@ -10,9 +10,7 @@ function initialize(SD::NSD_2D, PT::LinearCLaw, mesh::St_mesh, inputs::Dict, OUT
     nsd   = mesh.nsd
     nelem = mesh.nelem
     npoin = mesh.npoin
-    neqs  = 3
-
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs,TFloat)
+    q     = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=3)
     
     #Cone properties:
     c  = 1.0

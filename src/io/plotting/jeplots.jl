@@ -95,7 +95,7 @@ end
 """
 function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
     
-    npoin = size(x, 1)#/nvar
+    npoin = size(x, 1)
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         

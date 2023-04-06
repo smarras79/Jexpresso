@@ -10,10 +10,8 @@ function initialize(SD::NSD_2D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
     nsd   = mesh.nsd
     nelem = mesh.nelem
     npoin = mesh.npoin
-    neqs  = 3
-
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs,TFloat)
-    
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=3)
+        
     #Cone properties:
        
     @info "Constant height and no flow shallow water" 
@@ -47,9 +45,7 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
     nsd   = mesh.nsd
     nelem = mesh.nelem
     npoin = mesh.npoin
-    neqs  = 3
-
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs,TFloat)
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=3)
 
     #Cone properties:
 

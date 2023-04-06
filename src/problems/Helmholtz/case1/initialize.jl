@@ -9,8 +9,7 @@ function initialize(SD::NSD_2D, ET::Helmholtz, mesh::St_mesh, inputs::Dict, OUTP
         
     ngl  = mesh.nop + 1
     nsd  = mesh.nsd
-    neqs = 1    
-    q    = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs)
+    q    = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=1)
     
     test_case = "giraldo.12.14"
     if (test_case == "giraldo.12.14")
@@ -32,8 +31,6 @@ function initialize(SD::NSD_2D, ET::Helmholtz, mesh::St_mesh, inputs::Dict, OUTP
         end
     end
     println(" # Initialize fields for ∇²(q) = f........................ DONE")
-
-   # write_output(q.qn[:,1], SD, mesh, OUTPUT_DIR, "qinit.png", inputs[:outformat])
     
     return q
 end
