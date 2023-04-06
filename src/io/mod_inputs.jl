@@ -382,8 +382,7 @@ else
     inputs[:δvisc] = 0.0
 end
 
-
-return inputs, neqs
+return inputs
 end
 
 function mod_inputs_check(inputs::Dict, key, error_or_warning::String)

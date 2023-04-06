@@ -548,3 +548,61 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
 
     return (L, dLdx)
 end
+
+function function_space_wrapper(inputs::Dict, )
+
+    Nξ = inputs[:nop]
+    lexact_integration = inputs[:lexact_integration]    
+    PT    = inputs[:problem]
+    
+    #--------------------------------------------------------
+    # Create/read mesh
+    # return mesh::St_mesh
+    # and Build interpolation nodes
+    #             the user decides among LGL, GL, etc. 
+    # Return:
+    # ξ = ND.ξ.ξ
+    # ω = ND.ξ.ω
+    #--------------------------------------------------------
+    mesh = mod_mesh_mesh_driver(inputs)
+    
+    #--------------------------------------------------------
+    # Build interpolation and quadrature points/weights
+    #--------------------------------------------------------
+    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)    
+    ξ,ω = ξω.ξ, ξω.ω
+    if lexact_integration
+        #
+        # Exact quadrature:
+        # Quadrature order (Q = N+1) ≠ polynomial order (N)
+        #
+        QT  = Exact() #Quadrature Type
+        QT_String = "Exact"
+        Qξ  = Nξ + 1
+        
+        ξωQ   = basis_structs_ξ_ω!(inputs[:quadrature_nodes], mesh.nop)
+        ξq, ω = ξωQ.ξ, ξωQ.ω
+    else  
+        #
+        # Inexact quadrature:
+        # Quadrature and interpolation orders coincide (Q = N)
+        #
+        QT  = Inexact() #Quadrature Type
+        QT_String = "Inexact"
+        Qξ  = Nξ
+        ξωq = ξω
+        ξq  = ξ
+        ω   = ξω.ω
+    end
+    if (mesh.nsd == 1)
+        SD = NSD_1D()
+    elseif (mesh.nsd == 2)
+        SD = NSD_2D()
+    elseif (mesh.nsd == 3)
+        SD = NSD_3D()
+    else
+        error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
+    end
+    
+    return (; basis, ω, metrics, mesh, SD, QT)
+end

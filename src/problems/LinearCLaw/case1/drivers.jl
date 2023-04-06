@@ -15,8 +15,6 @@ const TFloat = Float64
 include("../../AbstractProblems.jl")
 
 include("../../../io/mod_inputs.jl")
-include("../../../io/plotting/jeplots.jl")
-include("../../../io/print_matrix.jl")
 include("../../../kernel/operators/rhs.jl")
 include("../../../kernel/abstractTypes.jl")
 include("../../../kernel/globalStructs.jl")
@@ -29,7 +27,9 @@ include("../../../kernel/mesh/mesh.jl")
 include("../../../kernel/solvers/TimeIntegrators.jl")  
 include("../../../kernel/mesh/restructure_for_periodicity.jl")
 include("../../../kernel/boundaryconditions/BCs.jl")
-
+include("../../../io/plotting/jeplots.jl")
+include("../../../io/write_output.jl")
+include("../../../io/print_matrix.jl")
 include("./initialize.jl")
 #--------------------------------------------------------
 function driver(DT::ContGal,       #Space discretization type
@@ -77,18 +77,10 @@ function driver(DT::ContGal,       #Space discretization type
         QT_String = "Inexact"
         Qξ  = Nξ
         ξωq = ξω
-        ξq  = ξ        
+        ξq  = ξ
         ω   = ξω.ω
     end
-    if (mesh.nsd == 1)
-        SD = NSD_1D()
-    elseif (mesh.nsd == 2)
-        SD = NSD_2D()
-    elseif (mesh.nsd == 3)
-        SD = NSD_3D()
-    else
-        error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
-    end
+    SD = mesh.SD
     #--------------------------------------------------------
     # Build Lagrange polynomials:
     #
@@ -101,24 +93,19 @@ function driver(DT::ContGal,       #Space discretization type
     #--------------------------------------------------------
     # Build metric terms
     #--------------------------------------------------------
-    metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
+    metrics = build_metric_terms(mesh.SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
         
-    periodicity_restructure!(mesh,inputs)    
+    periodicity_restructure!(mesh,inputs)
+    
     #--------------------------------------------------------
-    # Build element mass matrix
-    #
-    # Return:
-    # M[1:N+1, 1:N+1, 1:N+1, 1:N+1, 1:nelem]
-    #--------------------------------------------------------    
-    Le =         build_laplace_matrix(SD,     basis.ψ, basis.dψ, ω, mesh, metrics, Nξ, Qξ, TFloat)
-    De = build_differentiation_matrix(SD,     basis.ψ, basis.dψ, ω, mesh,          Nξ, Qξ, TFloat)
-    Me =            build_mass_matrix(SD, QT, basis.ψ,           ω, mesh, metrics, Nξ, Qξ, TFloat)
-    M  =                     DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, Nξ, TFloat)
-   
+    # Build matrices
+    #--------------------------------------------------------
+    matrix = matrix_wrapper(mesh.SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat)
+    
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = initialize(SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
+    qp = initialize(mesh.SD, PT, mesh, inputs, OUTPUT_DIR, TFloat)
     
     Δt = inputs[:Δt]
     CFL = Δt/(abs(maximum(mesh.x) - minimum(mesh.x)/10/mesh.nop))
@@ -126,9 +113,9 @@ function driver(DT::ContGal,       #Space discretization type
     Nt = floor(Int64, (inputs[:tend] - inputs[:tinit])/Δt)
     
     # NOTICE add a function to find the mesh mininum resolution
-    solution = time_loop!(SD, QT, PT, mesh, metrics, basis, ω, qp, M, De, Le, Nt, Δt, qp.neqs, inputs, OUTPUT_DIR, TFloat)
+    solution = time_loop!(QT, PT, mesh, metrics, basis, ω, qp, matrix.M, matrix.De, matrix.Le, Nt, Δt, inputs, OUTPUT_DIR, TFloat)
 
     #Out-to-file:
-    write_output(solution, SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=3)
+    write_output(solution, mesh.SD, mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs)
     
 end
