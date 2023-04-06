@@ -302,6 +302,7 @@ end
 # Define neqs based on the problem being solved
 #------------------------------------------------------------------------
 neqs::Int8 = 1
+
 if (lowercase(problem_name) == "burgers")
     inputs[:problem] = Burgers()
     
@@ -310,9 +311,8 @@ if (lowercase(problem_name) == "burgers")
     elseif (inputs[:nsd] == 2)
         neqs = 2
     end
-    #inputs[:neqs] = neqs
-    #println( " # Number of equations ", neqs)
-    
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
 elseif (lowercase(problem_name) == "shallowwater")
     inputs[:problem] = ShallowWater()
     
@@ -323,38 +323,34 @@ elseif (lowercase(problem_name) == "shallowwater")
     elseif(inputs[:nsd] == 3)
         error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
     end
-    #inputs[:neqs] = neqs
-    #println( " # Number of equations ", neqs)
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
     
 elseif (lowercase(problem_name) == "linearclaw" ||
         lowercase(problem_name) == "linclaw" ||
         lowercase(problem_name) == "lclaw")
     inputs[:problem] = LinearCLaw()
-    
-    #inputs[:neqs] = neqs = 3
-    #println( " # neqs     ", neqs)
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
     
 elseif (lowercase(problem_name) == "advdiff" ||
         lowercase(problem_name) == "advdif" ||
         lowercase(problem_name) == "ad" ||
         lowercase(problem_name) == "adv2d")
     inputs[:problem] = AdvDiff()
-    
-    #inputs[:neqs] = neqs = 1
-    #println( " # neqs     ", neqs)
-    
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
+        
 elseif (lowercase(problem_name) == "elliptic" ||
         lowercase(problem_name) == "diffusion")
     inputs[:problem] = Elliptic()
-    
-    #inputs[:neqs] = neqs = 1
-    #println( " # neqs     ", neqs)
+    inputs[:ldss_laplace] = true
+    inputs[:ldss_differentiation] = false
     
 elseif (lowercase(problem_name) == "helmholtz")
     inputs[:problem] = Helmholtz()
-    
-    #inputs[:neqs] = neqs = 1
-    #println( " # neqs     ", neqs)
+    inputs[:ldss_laplace] = true
+    inputs[:ldss_differentiation] = false
     
 else
     
@@ -372,6 +368,12 @@ else
     @error s
 end
 
+if(!haskey(inputs, :ldss_differentiation))
+    inputs[:ldss_differentiation] = false
+end
+if(!haskey(inputs, :ldss_laplace))
+    inputs[:ldss_laplace] = false
+end
 #------------------------------------------------------------------------
 # The following quantities stored in the inputs[] dictionary are only
 # auxiliary and are NEVER to be defined by the user
