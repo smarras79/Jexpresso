@@ -259,24 +259,24 @@ end
     if(haskey(inputs, :nelx))
         inputs[:npx] = inputs[:nelx] + 1
     else
-        inputs[:npx] = Int8(2)
+        inputs[:npx] = UInt8(2)
     end
     if(haskey(inputs, :nely))
         inputs[:npy] = inputs[:nely] + 1
     else
-        inputs[:npy] = Int8(2)
+        inputs[:npy] = UInt8(2)
     end
     if(haskey(inputs, :nelz))
         inputs[:npz] = inputs[:nelz] + 1
     else
-        inputs[:npz] = Int8(2)
+        inputs[:npz] = UInt8(2)
     end
     
     if (inputs[:nsd] == 1)
-        inputs[:npy] = Int8(1)
-        inputs[:npz] = Int8(1)
+        inputs[:npy] = UInt8(1)
+        inputs[:npz] = UInt8(1)
     elseif(inputs[:nsd] == 2)
-        inputs[:npz] = Int8(1)
+        inputs[:npz] = UInt8(1)
     end
 
     #Penalty constant for SIPG
@@ -293,46 +293,46 @@ end
     #elseif (lowercase(problem_name) == "ANY_NAME_YOU_WANT")
     #inputs[:problem] = ANY_NAME_YOU_WANT()
     #
-    #neqns = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
-    #prinetln( " # neqns     ", neqns)
+    #neqs = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
+    #prinetln( " # neqs     ", neqs)
     #end
     #------------------------------------------------------------------------
     
     #------------------------------------------------------------------------
-# Define neqns based on the problem being solved
+# Define neqs based on the problem being solved
 #------------------------------------------------------------------------
-neqns::Int8 = 1
+neqs::Int8 = 1
 if (lowercase(problem_name) == "burgers")
     inputs[:problem] = Burgers()
     
     if(inputs[:nsd] == 1)
-        neqns = 1
+        neqs = 1
     elseif (inputs[:nsd] == 2)
-        neqns = 2
+        neqs = 2
     end
-    inputs[:neqns] = neqns
-    println( " # Number of equations ", neqns)
+    inputs[:neqs] = neqs
+    println( " # Number of equations ", neqs)
     
 elseif (lowercase(problem_name) == "shallowwater")
     inputs[:problem] = ShallowWater()
     
     if (inputs[:nsd] == 1)
-        neqns = 2
+        neqs = 2
     elseif(inputs[:nsd] == 2)
-        neqns = 3
+        neqs = 3
     elseif(inputs[:nsd] == 3)
         error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
     end
-    inputs[:neqns] = neqns
-    println( " # Number of equations ", neqns)
+    inputs[:neqs] = neqs
+    println( " # Number of equations ", neqs)
     
 elseif (lowercase(problem_name) == "linearclaw" ||
         lowercase(problem_name) == "linclaw" ||
         lowercase(problem_name) == "lclaw")
     inputs[:problem] = LinearCLaw()
     
-    inputs[:neqns] = neqns = 3
-    println( " # neqns     ", neqns)
+    inputs[:neqs] = neqs = 3
+    println( " # neqs     ", neqs)
     
 elseif (lowercase(problem_name) == "advdiff" ||
         lowercase(problem_name) == "advdif" ||
@@ -340,25 +340,25 @@ elseif (lowercase(problem_name) == "advdiff" ||
         lowercase(problem_name) == "adv2d")
     inputs[:problem] = AdvDiff()
     
-    inputs[:neqns] = neqns = 1
-    println( " # neqns     ", neqns)
+    inputs[:neqs] = neqs = 1
+    println( " # neqs     ", neqs)
     
 elseif (lowercase(problem_name) == "elliptic" ||
         lowercase(problem_name) == "diffusion")
     inputs[:problem] = Elliptic()
     
-    inputs[:neqns] = neqns = 1
-    println( " # neqns     ", neqns)
+    inputs[:neqs] = neqs = 1
+    println( " # neqs     ", neqs)
     
 elseif (lowercase(problem_name) == "helmholtz")
     inputs[:problem] = Helmholtz()
     
-    inputs[:neqns] = neqns = 1
-    println( " # neqns     ", neqns)
+    inputs[:neqs] = neqs = 1
+    println( " # neqs     ", neqs)
     
 else
     
-    inputs[:neqns] = 1 #default
+    inputs[:neqs] = 1 #default
     
     s = """
             jexpresso  user_inputs.jl: problem ", inputs[:problem, " is not coded!
@@ -383,7 +383,7 @@ else
 end
 
 
-return inputs, neqns
+return inputs, neqs
 end
 
 function mod_inputs_check(inputs::Dict, key, error_or_warning::String)

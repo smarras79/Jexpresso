@@ -41,7 +41,7 @@ function driver(DT::ContGal,       #Space discretization type
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:problem]
-    neqns = inputs[:neqns]
+    #neqs = inputs[:neqs]
 
     #--------------------------------------------------------
     # Create/read mesh
@@ -116,13 +116,13 @@ function driver(DT::ContGal,       #Space discretization type
     #--------------------------------------------------------
     # Initialize q
     #--------------------------------------------------------
-    qp = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqns, TFloat)
+    qp = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=1)
 
     #Build ∫S(q)dΩ
     RHS = build_rhs_source(SD, QT, qp.qn, mesh, M, TFloat)
 
     #BC
-    apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, neqns; L=L)
+    apply_boundary_conditions!(SD, zeros(mesh.ngl,mesh.ngl,mesh.nelem), qp.qn, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0.0, qp.neqs; L=L)
     
     println(" # Solve Lq=RHS ................................")    
     solution = solveAx(L, RHS, inputs[:ode_solver])

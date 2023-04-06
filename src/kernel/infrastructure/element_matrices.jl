@@ -468,9 +468,9 @@ function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
 end
 
 
-function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoin, neqns, N, T)
+function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)
 
-    V = zeros(npoin,neqns)
+    V = zeros(npoin,neqs)
     for iel=1:nelem
         for i=1:N+1
             I = conn[i,iel]
@@ -481,9 +481,9 @@ function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoi
     return V
 end
 
-function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqns, N, T)   
+function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
     
-    V  = zeros(T, npoin,neqns)
+    V  = zeros(T, npoin,neqs)
     for iel = 1:nelem
         for j = 1:N+1
             for i = 1:N+1
@@ -503,8 +503,8 @@ function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
     RHS = M\RHS #M is not iagonal
 end
 
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact,neqns) 
-   for i=1:neqns 
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact,neqs) 
+   for i=1:neqs 
        RHS[:,i] .= RHS[:,i]./M[:] #M is diagonal (stored as a vector)
    end
 end

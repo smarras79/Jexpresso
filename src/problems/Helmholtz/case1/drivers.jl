@@ -39,7 +39,6 @@ function driver(DT::ContGal,       #Space discretization type
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:problem]
-    neqns = inputs[:neqns]
     
     #--------------------------------------------------------
     # Create/read mesh

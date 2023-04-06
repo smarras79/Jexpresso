@@ -19,7 +19,7 @@ function time_loop!(SD,
                     M,
                     De, Le,
                     Nt, Δt,
-                    neqns, 
+                    neqs, 
                     inputs::Dict,
                     OUTPUT_DIR::String,
                     T)
@@ -30,14 +30,14 @@ function time_loop!(SD,
     # Initialize
     println(" # Solving ODE ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
-    u = zeros(T, mesh.npoin*neqns);
-    for i=1:neqns
+    u = zeros(T, mesh.npoin*neqs);
+    for i=1:neqs
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] .= qp.qn[:,i]
     end
-    #@info neqns
+    #@info neqs
     tspan  = (inputs[:tinit], inputs[:tend])    
-    params = (; T, SD, QT, PT, neqns, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
+    params = (; T, SD, QT, PT, neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
     prob   = ODEProblem(rhs!,
                         u,
                         tspan,
