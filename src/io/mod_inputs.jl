@@ -310,8 +310,8 @@ if (lowercase(problem_name) == "burgers")
     elseif (inputs[:nsd] == 2)
         neqs = 2
     end
-    inputs[:neqs] = neqs
-    println( " # Number of equations ", neqs)
+    #inputs[:neqs] = neqs
+    #println( " # Number of equations ", neqs)
     
 elseif (lowercase(problem_name) == "shallowwater")
     inputs[:problem] = ShallowWater()
@@ -323,16 +323,16 @@ elseif (lowercase(problem_name) == "shallowwater")
     elseif(inputs[:nsd] == 3)
         error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
     end
-    inputs[:neqs] = neqs
-    println( " # Number of equations ", neqs)
+    #inputs[:neqs] = neqs
+    #println( " # Number of equations ", neqs)
     
 elseif (lowercase(problem_name) == "linearclaw" ||
         lowercase(problem_name) == "linclaw" ||
         lowercase(problem_name) == "lclaw")
     inputs[:problem] = LinearCLaw()
     
-    inputs[:neqs] = neqs = 3
-    println( " # neqs     ", neqs)
+    #inputs[:neqs] = neqs = 3
+    #println( " # neqs     ", neqs)
     
 elseif (lowercase(problem_name) == "advdiff" ||
         lowercase(problem_name) == "advdif" ||
@@ -340,25 +340,25 @@ elseif (lowercase(problem_name) == "advdiff" ||
         lowercase(problem_name) == "adv2d")
     inputs[:problem] = AdvDiff()
     
-    inputs[:neqs] = neqs = 1
-    println( " # neqs     ", neqs)
+    #inputs[:neqs] = neqs = 1
+    #println( " # neqs     ", neqs)
     
 elseif (lowercase(problem_name) == "elliptic" ||
         lowercase(problem_name) == "diffusion")
     inputs[:problem] = Elliptic()
     
-    inputs[:neqs] = neqs = 1
-    println( " # neqs     ", neqs)
+    #inputs[:neqs] = neqs = 1
+    #println( " # neqs     ", neqs)
     
 elseif (lowercase(problem_name) == "helmholtz")
     inputs[:problem] = Helmholtz()
     
-    inputs[:neqs] = neqs = 1
-    println( " # neqs     ", neqs)
+    #inputs[:neqs] = neqs = 1
+    #println( " # neqs     ", neqs)
     
 else
     
-    inputs[:neqs] = 1 #default
+    #inputs[:neqs] = 1 #default
     
     s = """
             jexpresso  user_inputs.jl: problem ", inputs[:problem, " is not coded!
