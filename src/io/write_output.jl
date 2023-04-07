@@ -16,7 +16,9 @@ struct ASCII <: AbstractOutFormat end
 # PNG
 function write_output(sol::ODESolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1) nothing end
 function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))   
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+    @info size(sol.u[1][:])
+    error("asas")
     for iout = 1:inputs[:ndiagnostics_outputs]
         title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
         plot_triangulation(SD, mesh.x, mesh.y, sol.u[iout][:], title,  OUTPUT_DIR; iout=iout, nvar=nvar)
