@@ -1,9 +1,3 @@
-using Dates
-using Revise
-
-const TInt   = Int64
-const TFloat = Float64
-
 #--------------------------------------------------------
 # The problem name is a command line argument:
 #
@@ -47,7 +41,7 @@ if isempty(ARGS)
     error(s)
 end
 
-include("../src/io/mod_inputs.jl")
+include("./io/mod_inputs.jl")
 parsed_args  = parse_commandline()
 problem_name = string(parsed_args["arg1"])
 if (parsed_args["arg2"] === nothing)

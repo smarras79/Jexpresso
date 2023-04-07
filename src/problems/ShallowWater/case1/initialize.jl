@@ -1,5 +1,3 @@
-include("../../../kernel/AbstractTypes.jl")
-
 function initialize(SD::NSD_2D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
     
@@ -22,9 +20,9 @@ function initialize(SD::NSD_2D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
                 ip = mesh.connijk[i,j,iel_g]
                 x  = mesh.x[ip]
                 y  = mesh.y[ip]
-                q.qn[ip,1] = 0.75 + exp(-4*(abs(x)^2 + abs(y)^2))/4                                    #H
-                q.qn[ip,2] = 0.001 * q.qn[ip,1]                                    #Hu
-                q.qn[ip,3] = 0.001 * q.qn[ip,1]                                   #Hv 
+                q.qn[ip,1] = 0.75 + exp(-4*(abs(x)^2 + abs(y)^2))/4   #H
+                q.qn[ip,2] = 0.001 * q.qn[ip,1]  #Hu
+                q.qn[ip,3] = 0.001 * q.qn[ip,1]  #Hv 
                 
             end
         end
@@ -49,7 +47,7 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
 
     #Cone properties:
 
-    case = 3
+    case = 1
     if (case == 1)
         @info "Constant height with a immersed bump SWASHES first steady state case"
     

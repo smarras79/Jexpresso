@@ -1,6 +1,7 @@
 include("../abstractTypes.jl")
 include("../mesh/mesh.jl")
 include("../mesh/metric_terms.jl")
+include("../boundaryconditions/BCs.jl")
 include("../../problems/AbstractProblems.jl")
 
 #---------------------------------------------------------------------------

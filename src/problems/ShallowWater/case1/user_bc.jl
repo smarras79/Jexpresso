@@ -31,11 +31,11 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
     return q
 end
 
-#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
     q[1] = .5
     q[2] = 0.0
     return q
-end=#
+end
 
 #=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
     q[1] = 0.1
@@ -43,14 +43,14 @@ end=#
     return q
 end=#
 
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
     if (x > 1.0)
         q[1] = 2.0
     else
         q[2] = 4.42
     end
     return q
-end
+end=#
 
 #=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
     if (x > 1.0)
