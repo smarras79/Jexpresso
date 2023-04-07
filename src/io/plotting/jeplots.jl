@@ -93,7 +93,7 @@ function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, OUTPUT_DI
     This function uses the amazing package Mackie to plot arbitrarily gridded
     unstructured data to filled contour plot
 """    
-    npoin = size(x, 1)
+    npoin = size(q, 1)/nvar
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         
