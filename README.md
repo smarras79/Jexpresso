@@ -19,15 +19,16 @@ followed by the following:
 Push problem name to ARGS
 You need to do this only when you run a new problem
 ```bash
-julia> push!(empty!(ARGS), PROBLEM_NAME::String);
-julia> include(./src/run.jl)
+julia> push!(empty!(ARGS), PROBLEM_NAME::String, PROBLEM_CASE_NAME::String);
+julia> include(./src/Jexpresso.jl)
 ```
 
 PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name
+PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name/problem_case_name
 Ex. If you run the Advection Diffusion problem in $JEXPRESSO/src/problems/AdvDiff
 ```bash
-julia> push!(empty!(ARGS), "AdvDiff");
-julia> include(./src/run.jl)
+julia> push!(empty!(ARGS), "AdvDiff", "case1");
+julia> include(./src/Jexpresso.jl)
 ```
 
 Currently available problem names:
