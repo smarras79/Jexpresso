@@ -23,9 +23,13 @@ julia> push!(empty!(ARGS), PROBLEM_NAME::String, PROBLEM_CASE_NAME::String);
 julia> include(./src/Jexpresso.jl)
 ```
 
-PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name
-PROBLEM_CASE_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name/problem_case_name
-Ex. If you run the Advection Diffusion problem in $JEXPRESSO/src/problems/AdvDiff
+* PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name
+* PROBLEM_CASE_NAME is the name of the subdirectory containing the specific setup that you want to run: 
+
+The path would look like 
+```$JEXPRESSO/src/problems/PROBLEM_NAME/PROBLEM_CASE_NAME```
+
+For example, if you wanted to run `AdvDiff` with the setup defined inside the case directory `case1`, then you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "AdvDiff", "case1");
 julia> include(./src/Jexpresso.jl)
@@ -46,4 +50,3 @@ modify ./src/io/plotting/jplots.jl accordinly.
 
 ## Contacts
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-
