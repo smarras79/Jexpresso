@@ -1,32 +1,5 @@
-#--------------------------------------------------------
-# external packages
-#--------------------------------------------------------
-using Crayons.Box
-using PrettyTables
-using Revise
-
-#Constants
-const TInt   = Int64
-const TFloat = Float64
-
-#--------------------------------------------------------
-# jexpresso modules
-#--------------------------------------------------------
-include("../../AbstractProblems.jl")
-include("../../../io/mod_inputs.jl")
-include("../../../kernel/abstractTypes.jl")
-include("../../../kernel/bases/basis_structs.jl")
-include("../../../kernel/boundaryconditions/BCs.jl")
-include("../../../kernel/globalStructs.jl")
-include("../../../kernel/infrastructure/element_matrices.jl")
-include("../../../kernel/infrastructure/Kopriva_functions.jl")
-include("../../../kernel/infrastructure/2D_3D_structures.jl")
-include("../../../kernel/operators/rhs.jl")
-include("../../../kernel/solvers/Axb.jl")
-include("../../../io/write_output.jl")
-include("../../../io/print_matrix.jl")
 include("./initialize.jl")
-#--------------------------------------------------------
+
 function driver(DT::ContGal,       #Space discretization type
                 inputs::Dict,      #input parameters from src/user_input.jl
                 OUTPUT_DIR::String,

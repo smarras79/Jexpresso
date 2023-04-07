@@ -19,8 +19,6 @@ using Makie
 }
 =#
 
-#include("../../kernel/mesh/mesh.jl")
-
 function plot_curve(x, y,  title::String, fout_name::String)
     
     default(titlefont=(14, "Arial, sans-serif"),
@@ -89,12 +87,12 @@ function plot_results(SD::NSD_1D, x1, y1, z1, title::String, OUTPUT_DIR::String;
 end
 
 
+function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+
 """
     This function uses the amazing package Mackie to plot arbitrarily gridded
     unstructured data to filled contour plot
-"""
-function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
-    
+"""    
     npoin = size(x, 1)
     for ivar=1:nvar
         idx = (ivar - 1)*npoin

@@ -2106,7 +2106,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
         mesh = St_mesh{TInt,TFloat}(nsd=Int64(inputs[:nsd]),
                                     nop=Int64(inputs[:nop]),
                                     SD=NSD_1D())
-        @info "QUI" dump(mesh.SD)
+        
         # Read gmsh grid using the GridapGmsh reader
         mod_mesh_read_gmsh!(mesh, inputs)
       
