@@ -3,7 +3,7 @@ include("../mesh/mesh.jl")
 include("../mesh/metric_terms.jl")
 include("../../problems/AbstractProblems.jl")
 #include("../../io/print_matrix.jl")
-
+include("../ArtificialViscosity/DynSGS.jl")
 #---------------------------------------------------------------------------
 # Fetch problem name to access the user_rhs functions
 #---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ end
 function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T) nothing end
 
 
-function build_rhs!(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, T)
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqns, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
     
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     G      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -207,7 +207,8 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
     F    = zeros(mesh.ngl,mesh.nelem, neqns)
     F1    = zeros(mesh.ngl,mesh.nelem, neqns)
     rhs_el = zeros(mesh.ngl,mesh.nelem, neqns)
-    qq = zeros(mesh.npoin,neqns)
+    qq = zeros(T,mesh.npoin,neqns)
+    RHS = zeros(T,mesh.npoin,neqns)
     for i=1:neqns
         idx = (i-1)*mesh.npoin
         qq[:,i] .= qp[idx+1:i*mesh.npoin]
@@ -228,7 +229,6 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
                 F1[i,iel,2] = Fuser1[ip,2]
                 #@info Fuser[ip,1] + Fuser1[ip,1], Fuser[ip,2] + Fuser1[ip,2]
         end
-
         for i=1:mesh.ngl
                 dFdξ = zeros(T, neqns)
                 dFdξ1 = zeros(T, neqns)
@@ -248,14 +248,27 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqns, 
                 rhs_el[i,iel,1:neqns] .-= ω[i]*mesh.Δx[iel]/2*dFdx[1:neqns]
         end
     end
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    #rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    @info maximum(rhs_diff_el[:,:,1]), maximum(rhs_diff_el[:,:,2]), minimum(rhs_diff_el[:,:,1]), minimum(rhs_diff_el[:,:,2])
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqns)
+    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqns, mesh.nop, T)
+
     for i=1:neqns
         idx = (i-1)*mesh.npoin
         qp[idx+1:i*mesh.npoin] .= qq[:,i]
     end
-    RHS = DSS_rhs(SD, rhs_el .+ rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqns, mesh.nop, T)
+    if (rem(time, Δt) == 0 && time > 0.0)
+        global  q1 .= q2
+        global  q2 .= qq
+    end
+
+    mu = compute_viscosity(SD, PT, qq, q1, RHS, Δt, mesh, metrics) 
+    @info maximum(mu),minimum(mu)
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqns, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, mu, T)
+    #RHS = DSS_rhs(SD, rhs_el .+ rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqns, mesh.nop, T)
+    RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqns, mesh.nop, T)
     divive_by_mass_matrix!(RHS, M, QT,neqns)
+    @info time, maximum(qq[:,2])
     return RHS
 end
 
@@ -501,7 +514,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqns, basis, ω, ν
 
 end
 
-function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqns, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqns, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, mu, T)
 
     N = mesh.ngl - 1
 
@@ -529,26 +542,33 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqns, basis, ω, 
             qnel[i,iel,1] = qq[m,1]
             qnel[i,iel,2] = qq[m,2]/qq[m,1]
         end
-
+        dξdx = 2.0/mesh.Δx[iel]
         for k = 1:mesh.ngl
             ωJkl = ω[k]*Jac
 
             for ieq = 1:neqns
                 dqdξ = 0.0
                 for i = 1:mesh.ngl
-                    dqdξ = dqdξ + basis.dψ[i,k]*qnel[k,iel,ieq]
+                    dqdξ = dqdξ + basis.dψ[i,k]*qnel[i,iel,ieq]
+                    #@info "contribution", basis.dψ[i,k]*qnel[k,iel,ieq]
                 end
-                dqdx = νx * (dqdξ)
+                #@info "dqdxi", dqdξ
+                #if (ieq > 1)
+                    dqdx = mu[iel] * (dqdξ) * dξdx
+                #else
+                 #   dqdx = 0.0
+                #end 
+                #@info "dqdx", dqdx, "vx", νx
+                
                 if (ieq > 1)
                     ip = mesh.conn[k,iel]
                     x = mesh.x[ip]
                     Hb = bathymetry(x)
-                    Hs = qq[ip,1] - Hb
+                    Hs = max(qq[ip,1] - Hb,0.001)
                     dqdx = dqdx * Hs
                 end
 
-                ∇ξ∇q_kl =  dqdx
-
+                ∇ξ∇q_kl =  dqdx*dξdx 
                 for i = 1:mesh.ngl
 
                     hkk     = basis.ψ[k,k]
@@ -559,7 +579,7 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqns, basis, ω, 
             end
         end
      end
-
+    
     return (rhsdiffξ_el)
 
 end

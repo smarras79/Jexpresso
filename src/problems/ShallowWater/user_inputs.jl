@@ -3,26 +3,26 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 1000.0, #2π,
-        :Δt                  => 1.0e-3,#8.75e-4,
-        :ndiagnostics_outputs=> 500,
+        :tend                => 10.0, #2π,
+        :Δt                  => 2.5e-3,#8.75e-4,
+        :ndiagnostics_outputs=> 10,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 3,      # Polynomila order
+        :nop                 => 4,      # Polynomila order
         :luser_bc            => true,
         :outformat           => "png",
         :nsd                 => 1, 
         :xmin                => 0.0,
         :xmax                => 25.0,
-        :nelx                => 18,
+        :nelx                => 20,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :νx                   => 0.00, #kinematic viscosity constant
-        :νy                   => 0.00, #kinematic viscosity constant
+        :νx                   => 0.0015, #kinematic viscosity constant
+        :νy                   => 0.0015, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

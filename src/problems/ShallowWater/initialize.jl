@@ -57,7 +57,7 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
 
     #Cone properties:
 
-    case = 3
+    case = 1
     if (case == 1)
         @info "Constant height with a immersed bump SWASHES first steady state case"
     
