@@ -44,7 +44,7 @@ function user_flux(T, SD::NSD_1D, q::Array, mesh::St_mesh)
         F[ip,1]  = Hu
         F1[ip,1] = 0.0
         F[ip,2]  = Hb
-        F1[ip,2] = (9.81/2) * (Hs)^2 + Hu * u
+        F1[ip,2] = (9.81/2) * (H^2 - Hb^2) + Hu * u
     end
     return F, F1
 end

@@ -31,13 +31,16 @@ function time_loop!(SD,
     println(" # Solving ODE ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
     u = zeros(T, mesh.npoin*neqns);
+    global q1 = zeros(T, mesh.npoin, neqns);
+    global q2 = zeros(T, mesh.npoin, neqns);
     for i=1:neqns
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] .= qp.qn[:,i]
+        global q1[:,i] .= qp.qn[:,i]
+        global q2[:,i] .= qp.qn[:,i]
     end
-    @info neqns
     tspan  = (inputs[:tinit], inputs[:tend])    
-    params = (; T, SD, QT, PT, neqns, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
+    params = (;T, SD, QT, PT, neqns, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
     prob   = ODEProblem(rhs!,
                         u,
                         tspan,

@@ -1,3 +1,4 @@
+#Rain
 function user_source(T, q::Array, npoin::Int64, x::Array)
 
     S = zeros(T, npoin)
@@ -5,9 +6,7 @@ function user_source(T, q::Array, npoin::Int64, x::Array)
     #
     # S(q(x)) = βsin(γx)
     #
-    β, γ = 10000, π;
-
-    S = β*sin.(γ*x)
+    S = 0.0001
     
     return  S
     
