@@ -24,7 +24,7 @@ julia> include(./src/Jexpresso.jl)
 ```
 
 PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name
-PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name/problem_case_name
+PROBLEM_CASE_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name/problem_case_name
 Ex. If you run the Advection Diffusion problem in $JEXPRESSO/src/problems/AdvDiff
 ```bash
 julia> push!(empty!(ARGS), "AdvDiff", "case1");
