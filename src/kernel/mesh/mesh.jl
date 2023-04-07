@@ -139,6 +139,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     xmin_facetoelem = Array{Int64}(undef, 0)
     ymin_facetoelem = Array{Int64}(undef, 0)
     zmin_facetoelem = Array{Int64}(undef, 0)
+
+    SD::AbstractSpaceDimensions
 end
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
@@ -158,7 +160,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     ELEM_flg = 3
     
     if mesh.nsd == 3
-        SD = NSD_3D()
+        mesh.SD = NSD_3D()
 
         mesh.NNODES_EL  = 8
         mesh.NEDGES_EL  = 12
@@ -167,7 +169,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         mesh.FACE_NODES = 4
     elseif mesh.nsd == 2
 
-        SD = NSD_2D()
+        mesh.SD = NSD_2D()
         ELEM_flg = FACE_flg
         
         mesh.NNODES_EL  = 4
@@ -176,7 +178,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         mesh.EDGE_NODES = 2
         mesh.FACE_NODES = 4
     elseif mesh.nsd == 1
-        SD = NSD_1D()
+        mesh.SD = NSD_1D()
 
         mesh.NNODES_EL  = 2
         mesh.NEDGES_EL  = 1
@@ -413,21 +415,21 @@ println(" # POPULATE GRID with SPECTRAL NODES ............................ ")
 #
 # Edges
 #
-populate_conn_edge_el!(mesh, SD)
-@time add_high_order_nodes_edges!(mesh, lgl, SD)
+populate_conn_edge_el!(mesh, mesh.SD)
+@time add_high_order_nodes_edges!(mesh, lgl, mesh.SD)
 
 #
 # Faces
 #
-populate_conn_face_el!(mesh, SD)
-@time add_high_order_nodes_faces!(mesh, lgl, SD)
+populate_conn_face_el!(mesh, mesh.SD)
+@time add_high_order_nodes_faces!(mesh, lgl, mesh.SD)
 
 #
 # Volume
 #
 # NOTICE: in 2D we consider only edges. faces are the elements.
 #         
-@time add_high_order_nodes_volumes!(mesh, lgl, SD)
+@time add_high_order_nodes_volumes!(mesh, lgl, mesh.SD)
 
 for ip = mesh.npoin_linear+1:mesh.npoin
     mesh.x[ip] = mesh.x_ho[ip]
@@ -2102,11 +2104,12 @@ function mod_mesh_mesh_driver(inputs::Dict)
         
         # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
         mesh = St_mesh{TInt,TFloat}(nsd=Int64(inputs[:nsd]),
-                                    nop=Int64(inputs[:nop]))
+                                    nop=Int64(inputs[:nop]),
+                                    SD=NSD_1D())
         
         # Read gmsh grid using the GridapGmsh reader
         mod_mesh_read_gmsh!(mesh, inputs)
-        
+      
         println(" # Read gmsh grid and populate with high-order points ........................ DONE")
         
     else
@@ -2120,7 +2123,8 @@ function mod_mesh_mesh_driver(inputs::Dict)
                 mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
                                             npx  = Int64(inputs[:npx]),
                                             xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
-                                            nop=Int64(inputs[:nop]))
+                                            nop=Int64(inputs[:nop]),
+                                            SD=NSD_1D())
                 
             elseif (inputs[:nsd]==2)
                 println(" # ... build 2D grid ")
@@ -2130,7 +2134,8 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                             npz  = Int64(inputs[:npz]), 
                                             xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
                                             zmin = Float64(inputs[:zmin]), zmax = Float64(inputs[:zmax]),
-                                            nop=Int64(inputs[:nop]))
+                                            nop=Int64(inputs[:nop]),
+                                            SD=NSD_2D())
                 
             elseif (inputs[:nsd]==3)
                 println(" # ... build 3D grid ")
@@ -2143,7 +2148,8 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                             xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
                                             ymin = Float64(inputs[:ymin]), ymax = Float64(inputs[:ymax]),
                                             zmin = Float64(inputs[:zmin]), zmax = Float64(inputs[:zmax]),
-                                            nop=Int64(inputs[:nop]))
+                                            nop=Int64(inputs[:nop]),
+                                            SD=NSD_3D())
             else
                 @error( " INPUT ERROR: nsd must be an integer in [1, 2, 3] ")
             end
@@ -2158,7 +2164,8 @@ function mod_mesh_mesh_driver(inputs::Dict)
             mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
                                         npx  = Int64(inputs[:npx]),
                                         xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
-                                        nop=Int64(inputs[:nop]))
+                                        nop=Int64(inputs[:nop]),
+                                        SD=NSD_1D())
         end
         
         mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes])
@@ -2169,8 +2176,17 @@ function mod_mesh_mesh_driver(inputs::Dict)
         
         println(" # Build navite grid ........................ DONE")
     end
-
-    #dump(mesh)
+    
+    if (mesh.nsd == 1)
+        mesh.SD = NSD_1D()
+    elseif (mesh.nsd == 2)
+        mesh.SD = NSD_2D()
+    elseif (mesh.nsd == 3)
+        mesh.SD = NSD_3D()
+    else
+        error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
+    end
+    
     return mesh
     
 end

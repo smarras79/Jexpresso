@@ -1,38 +1,40 @@
 function user_inputs()
     inputs = Dict(
         #---------------------------------------------------------------------------
+        #
         # User define your inputs below: the order doesn't matter
+        # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                => 200.0, #1000.0,
-        :Δt                  => 1.0e-3,#8.75e-4,
-        :ndiagnostics_outputs=> 500,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
+        :ode_solver          => "BICGSTABLE",
+        :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
+        :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
-        :nop                 => 3,      # Polynomila order
-        :luser_bc            => true,
+        #:output_dir          => "/Users/simone/runs/",
         :outformat           => "png",
-        :nsd                 => 1, 
-        :xmin                => 0.0,
-        :xmax                => 25.0,
-        :nelx                => 18,
+        :luser_bc            => false,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :νx                   => 0.00, #kinematic viscosity constant
-        :νy                   => 0.00, #kinematic viscosity constant
+        #:νx                   => 0.01, #kinematic viscosity constant
+        #:νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
+        :lread_gmsh          => true, #If false, a 1D problem will be enforced
+        :gmsh_filename       => "./meshes/gmsh_grids/2d-grid-zeroall.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/circle1.msh",       
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_coarse.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
+        #---------------------------------------------------------------------------
+        # 1D (lread_gmsh => faluse): the grid is built by jexpresso
+        #---------------------------------------------------------------------------
+        :xmin          =>   0.0,
+        :xmax          =>   1.0,
+        :nelx          =>   25,
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
