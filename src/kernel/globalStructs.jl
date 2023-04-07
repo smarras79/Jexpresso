@@ -18,6 +18,21 @@ Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
     F    = Array{TFloat}(undef, 0, 0, 0, 0) #8  Fⁿ
     G    = Array{TFloat}(undef, 0, 0, 0, 0) #9  Gⁿ
     H    = Array{TFloat}(undef, 0, 0, 0, 0) #10 Hⁿ
+    neqs = UInt8(1)
+    qvars= Array{String}(undef, neqs)
+end
+
+Base.@kwdef mutable struct St_PostProcessVars{TFloat <: AbstractFloat}
+
+    μ    = Array{TFloat}(undef, 0, 0)
+    
+end
+
+function allocate_post_process_vars(SD::NSD_1D, nelem, npoin, ngl, TFloat; neqs)
+
+    qpost = St_SolutionVars{TFloat}(μ = zeros(npoin, neqs))    
+
+    return qpost
 end
 
 
@@ -26,7 +41,7 @@ end
 
 TBW
 """
-function allocate_q(nelem, npoin, ngl, neqs, TFloat)
+function allocate_q(nelem, npoin, ngl, TFloat;)
     
     q = St_SolutionVars{TFloat}(zeros(1, 1),               # qn+1
                                 zeros(1, 1),               # qn
@@ -42,17 +57,19 @@ function allocate_q(nelem, npoin, ngl, neqs, TFloat)
     return q
 end
 
-function define_q(SD::NSD_1D, nelem, npoin, ngl, neqs, TFloat)
+function define_q(SD::NSD_1D, nelem, npoin, ngl, TFloat; neqs=1)
 
-    q = St_SolutionVars{TFloat}(qn = zeros(npoin, neqs),    # qn
+    q = St_SolutionVars{TFloat}(neqs=neqs,
+                                qn = zeros(npoin, neqs), # qn
                                 F  = zeros(ngl, nelem))  # Fⁿ
     
     return q
 end
 
-function define_q(SD::NSD_2D, nelem, npoin, ngl, neqs, TFloat)
+function define_q(SD::NSD_2D, nelem, npoin, ngl, TFloat; neqs=1)
     
-    q = St_SolutionVars{TFloat}(qn = zeros(npoin, neqs), # qⁿ
+    q = St_SolutionVars{TFloat}(neqs=neqs,
+                                qn = zeros(npoin, neqs), # qⁿ
                                 F  = zeros(ngl, nelem),  # Fⁿ
                                 G  = zeros(ngl, nelem))  # Gⁿ
     
@@ -60,9 +77,10 @@ function define_q(SD::NSD_2D, nelem, npoin, ngl, neqs, TFloat)
 end
 
 
-function define_q(SD::NSD_3D, nelem, npoin, ngl, neqs, TFloat)
+function define_q(SD::NSD_3D, nelem, npoin, ngl, TFloat; neqs=1)
     
-    q = St_SolutionVars{TFloat}(qn = zeros(npoin, neqs), # qⁿ
+    q = St_SolutionVars{TFloat}(neqs=neqs,
+                                qn = zeros(npoin, neqs), # qⁿ
                                 F  = zeros(ngl, nelem, neqs),  # Fⁿ
                                 G  = zeros(ngl, nelem, neqs),  # Gⁿ
                                 H  = zeros(ngl, nelem, neqs))  # Hⁿ

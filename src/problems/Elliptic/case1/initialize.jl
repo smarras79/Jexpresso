@@ -1,4 +1,4 @@
-include("../../io/plotting/jeplots.jl")
+include("../../../kernel/AbstractTypes.jl")
 
 function initialize(SD::NSD_1D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     nothing
@@ -11,8 +11,7 @@ function initialize(SD::NSD_2D, ET::Elliptic, mesh::St_mesh, inputs::Dict, OUTPU
         
     ngl  = mesh.nop + 1
     nsd  = mesh.nsd
-    neqs = 1    
-    q    = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, neqs)
+    q    = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=1)
     
     test_case = "giraldo.12.14"
     if (test_case == "giraldo.12.14")
