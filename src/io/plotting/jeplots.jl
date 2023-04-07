@@ -94,6 +94,8 @@ function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, OUTPUT_DI
     unstructured data to filled contour plot
 """    
     npoin = size(q, 1)/nvar
+    @info "QUI" npoin nvar
+    error("assa")
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         
