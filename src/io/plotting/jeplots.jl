@@ -19,7 +19,7 @@ using Makie
 }
 =#
 
-function plot_curve(x, y,  title::String, fout_name::String)
+function plot_curve(x, q::Array, title::String, fout_name::String)
     
     default(titlefont=(14, "Arial, sans-serif"),
             legendfontsize = 18,
@@ -28,7 +28,7 @@ function plot_curve(x, y,  title::String, fout_name::String)
             guide = "x",
             framestyle = :zerolines, yminorgrid = true)
     
-    data = Plots.scatter(x, y, title=title,
+    data = Plots.scatter(x, q, title=title,
                    markersize = 5, markercolor="Blue",
                    xlabel = "x", ylabel = "q(x)",
                    legend = :none)
@@ -52,19 +52,16 @@ end
 
 function plot_1d_grid(mesh::St_mesh)
     
-    x = mesh.x
-    npoin = length(x)
-    
     plt = plot() #Clear plot
-    for i=1:npoin
-        display(Plots.scatter!(x, zeros(npoin), markersizes=4))
+    for i=1:mesh.npoin
+        display(Plots.scatter!(mesh.x[1:mesh.npoin], zeros(mesh.npoin), markersizes=4))
     end 
 end
 
 #
 # Curves (1D) or Contours (2D) with PlotlyJS
 #
-function plot_results(SD::NSD_1D, x1, y1, z1, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
     
     default(titlefont=(14, "Arial, sans-serif"),
             legendfontsize = 18,
@@ -73,10 +70,10 @@ function plot_results(SD::NSD_1D, x1, y1, z1, title::String, OUTPUT_DIR::String;
             guide = "x",
             framestyle = :zerolines, yminorgrid = true)
 
-    npoin = size(x1,1)
+    npoin = mesh.npoin
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
-        data = Plots.scatter(x1, z1[idx+1:ivar*npoin], title=title,
+        data = Plots.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin], title=title,
                              markersize = 5, markercolor="Blue",
                              xlabel = "x", ylabel = "q(x)",
                              legend = :none)
@@ -87,38 +84,36 @@ function plot_results(SD::NSD_1D, x1, y1, z1, title::String, OUTPUT_DIR::String;
 end
 
 
-function plot_triangulation(SD::NSD_2D, x, y, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
 
 """
     This function uses the amazing package Mackie to plot arbitrarily gridded
     unstructured data to filled contour plot
 """    
-    npoin = size(q, 1)/nvar
-    @info "QUI" npoin nvar
-    error("assa")
+    npoin = mesh.npoin
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-        fig, ax, sol = Makie.tricontourf(x, y, q[idx+1:ivar*npoin], colormap = :viridis)
+        fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin], colormap = :viridis)
         Colorbar(fig[1,2], colormap = :viridis)        
         save(string(fout_name), fig, resolution = (600, 600))
         fig
     end
 end
-function plot_triangulation(SD::NSD_1D, x, y, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
-function plot_triangulation(SD::NSD_3D, x, y, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
+function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
+function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
 
 
-function write_ascii(SD::NSD_1D, x, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+function write_ascii(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
     
-    npoin = size(x,1)
+    npoin = mesh.npoin
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".dat")
         open(fout_name, "w") do f
-            @printf(f, " %f %f \n", x[:,1], q[idx+1:ivar*npoin])
+            @printf(f, " %f %f \n", mesh.x[1:npoin,1], q[idx+1:ivar*npoin])
         end
     end
 end
