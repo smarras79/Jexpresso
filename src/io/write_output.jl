@@ -37,7 +37,7 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
         title = string("sol.u at time ", sol.t[iout])
         plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar)
     end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.dat ...  DONE ") )
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
 # ASCII

@@ -1,9 +1,3 @@
-include("../abstractTypes.jl")
-include("../mesh/mesh.jl")
-include("../mesh/metric_terms.jl")
-include("../boundaryconditions/BCs.jl")
-include("../../problems/AbstractProblems.jl")
-
 #---------------------------------------------------------------------------
 # Fetch problem name to access the user_rhs functions
 #---------------------------------------------------------------------------
@@ -17,6 +11,7 @@ end
 include(user_flux_dir)
 include(user_source_dir)
 #---------------------------------------------------------------------------
+
 function rhs!(du, u, params, time)
 
     #SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, De, u)

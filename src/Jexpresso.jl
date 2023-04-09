@@ -8,11 +8,15 @@ const TFloat = Float64
 
 #using DocStringExtensions
 
+include("./problems/AbstractProblems.jl")
+
 include("./kernel/abstractTypes.jl")
 
 include("./kernel/globalStructs.jl")
 
 include("./kernel/infrastructure/sem_setup.jl")
+
+include("./kernel/boundaryconditions/BCs.jl")
 
 include("./kernel/operators/rhs.jl")
 
