@@ -129,8 +129,6 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
     nyi = 100
 
     npoin = floor(Int64, size(q, 1)/nvar)
-    @info npoin size(q,1) nvar
-    
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         

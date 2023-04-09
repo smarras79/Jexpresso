@@ -14,11 +14,11 @@ struct ASCII <: AbstractOutFormat end
 # ∂q/∂t = RHS -> q(x,t)
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # PNG
-function write_output(sol::ODESolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1) nothing end
-function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
+function write_output(sol::ODESolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1, lplot_surf3d=false) nothing end
+function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1, lplot_surf3d=false)
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
 
-    lplot_surf3d=true
+    #lplot_surf3d=true
     if lplot_surf3d
         for iout = 1:inputs[:ndiagnostics_outputs]
             title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
@@ -33,7 +33,7 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
 
-function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
+function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1, lplot_surf3d=false)
     
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     for iout = 1:inputs[:ndiagnostics_outputs]
@@ -44,7 +44,7 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
 end
 
 # ASCII
-function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)
+function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1, lplot_surf3d=false)
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     for iout = 1:inputs[:ndiagnostics_outputs]
         title = string("sol.u at time ", sol.t[iout])
@@ -62,7 +62,7 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
     end
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") )
 end
-function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)
+function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1, lplot_surf3d=false)
     
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     for iout = 1: inputs[:ndiagnostics_outputs]
@@ -84,11 +84,11 @@ end
 # Aq = b -> q(x)
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # PNG
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1, lplot_surf3d=false)
 
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
-    lplot_surf3d=true
+    #lplot_surf3d=true
     if lplot_surf3d
         plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1)
     else
@@ -98,9 +98,9 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
 end
 
 # ASCII
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1) nothing end
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1) nothing end
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)   
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1, lplot_surf3d=false) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1, lplot_surf3d=false) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1, lplot_surf3d=false)   
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
     fname = @sprintf "Axb.dat"
