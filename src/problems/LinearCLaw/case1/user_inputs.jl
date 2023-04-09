@@ -17,8 +17,8 @@ function user_inputs()
         # Output parameters:
         #---------------------------------------------------------------------------
         :outformat           => "png",
-        #:lplot_surf3d        => true,
-        :smoothing_factor    => 100.0, #factor for spline2d interpolation
+        :lplot_surf3d        => true,
+        :smoothing_factor    => 20.0, #factor for spline2d interpolation
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
