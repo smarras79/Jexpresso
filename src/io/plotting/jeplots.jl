@@ -4,7 +4,7 @@ using LaTeXStrings
 using ColorSchemes
 using CairoMakie
 using Makie
-using ImageMagick
+Makie.theme(:fonts)
 
 #= CITE Mackie:
 @article{DanischKrumbiegel2021,
@@ -21,70 +21,39 @@ using ImageMagick
 }
 =#
 
-function plot_curve(x, q::Array, title::String, fout_name::String)
-    
-    default(titlefont=(14, "Arial, sans-serif"),
-            legendfontsize = 18,
-            guidefont = (18, :darkgreen),
-            tickfont = (12, :orange),
-            guide = "x",
-            framestyle = :zerolines, yminorgrid = true)
-    
-    data = Plots.scatter(x, q, title=title,
-                   markersize = 5, markercolor="Blue",
-                   xlabel = "x", ylabel = "q(x)",
-                   legend = :none)
-    
-    Plots.savefig(data, fout_name)
-    
-end
 
+#
+# Curves (1D) or Contours (2D) with PlotlyJS
+#
+function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
 
-function plot_surf()
-
-    x = range(-3, 3, length=30)
-    fig = surface(
-        x, x, (x, y)->exp(-x^2 - y^2), c=:viridis, legend=:none,
-        nx=50, ny=50, display_option=Plots.GR.OPTION_SHADED_MESH,  # <-- series[:extra_kwargs]
-    )
-
-    display(fig)
-    
+    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
+    qmin = minimum(q);      qmax = maximum(q);
+    epsi = 1.1
+        
+    npoin = floor(Int64, size(q, 1)/nvar)
+    for ivar=1:nvar
+        
+        idx = (ivar - 1)*npoin
+        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin],
+                                          markersize = 10, markercolor="Blue",
+                                          xlabel = "x", ylabel = "q(x)",
+                                          fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),
+                                          axis = (; aspect = 1, limits = (xmin, xmax, qmin, qmax*epsi)))
+        
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
+        save(string(fout_name), fig; resolution = (600, 400))
+        fig
+    end
 end
 
 function plot_1d_grid(mesh::St_mesh)
     
     plt = plot() #Clear plot
     for i=1:mesh.npoin
-        display(Plots.scatter!(mesh.x[1:mesh.npoin], zeros(mesh.npoin), markersizes=4))
+        display(CairoMakie.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin), markersizes=4, markercolor="Blue"))
     end 
 end
-
-#
-# Curves (1D) or Contours (2D) with PlotlyJS
-#
-function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
-    
-    default(titlefont=(14, "Arial, sans-serif"),
-            legendfontsize = 18,
-            guidefont = (18, :darkgreen),
-            tickfont = (12, :orange),
-            guide = "x",
-            framestyle = :zerolines, yminorgrid = true)
-    
-    npoin = floor(Int64, size(q, 1)/nvar)
-    for ivar=1:nvar
-        idx = (ivar - 1)*npoin
-        data = Plots.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin], title=title,
-                             markersize = 5, markercolor="Blue",
-                             xlabel = "x", ylabel = "q(x)",
-                             legend = :none)
-        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-        Plots.savefig(data, fout_name)
-    end
-end
-
 
 function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
 
@@ -106,27 +75,13 @@ end
 function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
 function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
 
-
-function write_ascii(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
-    
-    npoin = floor(Int64, size(q, 1)/nvar)
-    for ivar=1:nvar
-        idx = (ivar - 1)*npoin
-        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".dat")
-        open(fout_name, "w") do f
-            @printf(f, " %f %f \n", mesh.x[1:npoin,1], q[idx+1:ivar*npoin])
-        end
-    end
-end
-
-function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-1)
 
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     ymin = minimum(mesh.y); ymax = maximum(mesh.y); 
 
-    nxi = 100
-    nyi = 100
+    nxi = 500
+    nyi = 500
 
     npoin = floor(Int64, size(q, 1)/nvar)
     for ivar=1:nvar
@@ -135,7 +90,7 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
         
         #Spline2d
-        spl = Spline2D(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin]; s=length(mesh.x))
+        spl = Spline2D(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin]; kx=4, ky=4, s=smoothing_factor)
         xg = LinRange(xmin, xmax, nxi); yg = LinRange(ymin, ymax, nyi);
         zspl = evalgrid(spl, xg, yg);
         #End spline2d
@@ -153,4 +108,46 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         fig
     end
     
+end
+
+#
+# ASCII
+#
+function write_ascii(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+    
+    npoin = floor(Int64, size(q, 1)/nvar)
+    for ivar=1:nvar
+        idx = (ivar - 1)*npoin
+        
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".dat")
+        open(fout_name, "w") do f
+            @printf(f, " %f %f \n", mesh.x[1:npoin,1], q[idx+1:ivar*npoin])
+        end
+    end
+end
+
+function write_ascii(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+    
+    npoin = floor(Int64, size(q, 1)/nvar)
+    for ivar=1:nvar
+        idx = (ivar - 1)*npoin
+        
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".dat")
+        open(fout_name, "w") do f
+            @printf(f, " %f %f \n", mesh.x[1:npoin,1], mesh.y[1:npoin,1], q[idx+1:ivar*npoin])
+        end
+    end
+end
+
+function write_ascii(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+    
+    npoin = floor(Int64, size(q, 1)/nvar)
+    for ivar=1:nvar
+        idx = (ivar - 1)*npoin
+        
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".dat")
+        open(fout_name, "w") do f
+            @printf(f, " %f %f \n", mesh.x[1:npoin,1], mesh.y[1:npoin,1], mesh.z[1:npoin,1], q[idx+1:ivar*npoin])
+        end
+    end
 end

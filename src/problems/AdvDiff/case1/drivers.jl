@@ -13,7 +13,7 @@ function driver(DT::ContGal,       #Space discretization type
     
     solution = time_loop!(sem.QT, sem.PT, sem.mesh, sem.metrics, sem.basis, sem.ω, qp, sem.matrix.M, sem.matrix.De, sem.matrix.Le, Nt, Δt, inputs, OUTPUT_DIR, TFloat)
     
-    write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs, lplot_surf3d=false)
+    write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs)
     #solution_norms(solution, OUTPUT_DIR, inputs;)
     
 end

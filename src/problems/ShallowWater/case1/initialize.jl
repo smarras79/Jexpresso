@@ -37,7 +37,7 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
     """
 
     """
-    @info " Initialize fields for 1D Shallow water equations ........................ "
+    @info "Initialize fields for system of 1D Shallow Water equations ........................ "
 
     ngl   = mesh.ngl
     nsd   = mesh.nsd
@@ -129,9 +129,7 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
         end
     end
     
-    
-
-    @info "Initialize fields for system of Shallow Water equations ........................ DONE"
+    @info "Initialize fields for system of 1D Shallow Water equations ........................ DONE"
 
     return q
 end

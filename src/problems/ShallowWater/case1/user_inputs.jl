@@ -3,9 +3,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 1.0, #2π,
+        :tend                => 5.0, #2π,
         :Δt                  => 1.0e-3,#8.75e-4,
-        :ndiagnostics_outputs=> 2,
+        :ndiagnostics_outputs=> 20,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -14,7 +14,6 @@ function user_inputs()
         :nop                 => 3,      # Polynomila order
         :luser_bc            => true,
         :outformat           => "png",
-        :nsd                 => 1, 
         :xmin                => 0.0,
         :xmax                => 25.0,
         :nelx                => 18,
