@@ -41,8 +41,8 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
     nsd  = mesh.nsd   
     q    = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=1)
     
-    #test_case = "kopriva.5.3.5"
-    test_case = "giraldo.15.8"
+    test_case = "kopriva.5.3.5"
+    #test_case = "giraldo.15.8"
     if (test_case == "kopriva.5.3.5")
         #Cone properties:
         ν = inputs[:νx] 
@@ -50,7 +50,7 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
             ν = 0.01
         end
         σ = 1.0/ν
-        (xc, yc) = (0.5, 0.5)
+        (xc, yc) = (-0.5, -0.5)
         
         for iel_g = 1:mesh.nelem
             for i=1:ngl
