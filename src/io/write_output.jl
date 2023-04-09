@@ -17,10 +17,18 @@ struct ASCII <: AbstractOutFormat end
 function write_output(sol::ODESolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1) nothing end
 function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
-    
-    for iout = 1:inputs[:ndiagnostics_outputs]
-        title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-        plot_triangulation(SD, mesh, sol.u[iout][1:mesh.npoin], title,  OUTPUT_DIR; iout=iout, nvar=nvar)
+
+    lplot_surf3d=true
+    if lplot_surf3d
+        for iout = 1:inputs[:ndiagnostics_outputs]
+            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            plot_surf3d(SD, mesh, sol.u[iout][1:mesh.npoin], title, OUTPUT_DIR; iout=iout, nvar=nvar)
+        end
+    else
+        for iout = 1:inputs[:ndiagnostics_outputs]
+            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            plot_triangulation(SD, mesh, sol.u[iout][1:mesh.npoin], title,  OUTPUT_DIR; iout=iout, nvar=nvar)
+        end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
@@ -77,12 +85,16 @@ end
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # PNG
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
-    
+
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
-    plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR)    
+    lplot_surf3d=true
+    if lplot_surf3d
+        plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1)
+    else
+        plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR;)
+    end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
-    
 end
 
 # ASCII

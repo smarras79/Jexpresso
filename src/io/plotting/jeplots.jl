@@ -1,8 +1,10 @@
 using Plots
+using Dierckx
 using LaTeXStrings
 using ColorSchemes
 using CairoMakie
 using Makie
+using ImageMagick
 
 #= CITE Mackie:
 @article{DanischKrumbiegel2021,
@@ -116,4 +118,29 @@ function write_ascii(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_
             @printf(f, " %f %f \n", mesh.x[1:npoin,1], q[idx+1:ivar*npoin])
         end
     end
+end
+
+function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+
+    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
+    ymin = minimum(mesh.y); ymax = maximum(mesh.y); 
+
+    nxi = 100
+    nyi = 100
+    
+    npoin = mesh.npoin
+    for ivar=1:nvar
+        idx = (ivar - 1)*npoin
+        
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
+        spl = Spline2D(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin]; kx=3, ky=3, s=1e-4)
+        xg = LinRange(xmin, xmax, nxi); yg = LinRange(ymin, ymax, nyi);
+        zspl = evalgrid(spl, xg, yg);
+        
+        fig = Plots.surface(xg, yg, zspl'; legend=:false, xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
+        
+        save(string(fout_name), fig)
+        #display(fig)
+    end
+    
 end
