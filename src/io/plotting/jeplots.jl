@@ -38,7 +38,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
                                           markersize = 10, markercolor="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),
-                                          axis = (; aspect = 1, limits = (xmin, xmax, qmin, qmax*epsi)))
+                                          axis = (; aspect = 1, limits = (xmin, xmax, -0.5, 1.0)))
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
         save(string(fout_name), fig; resolution = (600, 400))
