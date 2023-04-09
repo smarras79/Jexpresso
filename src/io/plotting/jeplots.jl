@@ -71,8 +71,8 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
             tickfont = (12, :orange),
             guide = "x",
             framestyle = :zerolines, yminorgrid = true)
-
-    npoin = mesh.npoin
+    
+    npoin = floor(Int64, size(q, 1)/nvar)
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         data = Plots.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin], title=title,
@@ -91,8 +91,8 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
 """
     This function uses the amazing package Mackie to plot arbitrarily gridded
     unstructured data to filled contour plot
-"""    
-    npoin = mesh.npoin
+"""
+    npoin = floor(Int64, size(q, 1)/nvar)
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         
@@ -109,7 +109,7 @@ function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, 
 
 function write_ascii(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
     
-    npoin = mesh.npoin
+    npoin = floor(Int64, size(q, 1)/nvar)
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         
@@ -127,20 +127,32 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
 
     nxi = 100
     nyi = 100
+
+    npoin = floor(Int64, size(q, 1)/nvar)
+    @info npoin size(q,1) nvar
     
-    npoin = mesh.npoin
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-        spl = Spline2D(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin]; kx=3, ky=3, s=1e-4)
+        
+        #Spline2d
+        spl = Spline2D(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin]; s=length(mesh.x))
         xg = LinRange(xmin, xmax, nxi); yg = LinRange(ymin, ymax, nyi);
         zspl = evalgrid(spl, xg, yg);
+        #End spline2d
+
+        #figure:
+        fig = Figure(resolution=(1200, 400))
+        axs = [Axis3(fig[1, i]; aspect=(1, 1, 1)) for i = 1:1]
         
-        fig = Plots.surface(xg, yg, zspl'; legend=:false, xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
+        hm = Makie.surface!(axs[1], xg, yg, zspl) # legend=:false, xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
+
+        #Colorbar(fig[1, 1], hm, height=Relative(0.5))
         
         save(string(fout_name), fig)
         #display(fig)
+        fig
     end
     
 end
