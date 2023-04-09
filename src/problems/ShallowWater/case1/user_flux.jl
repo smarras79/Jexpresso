@@ -9,10 +9,10 @@ function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh)
         x = mesh.x[ip]
         y = mesh.y[ip]
         Hb = bathymetry(x,y)
-        Hs = max(0.001, H - Hb)
         H = q[ip,1]
         Hu = q[ip,2]
         Hv = q[ip,3]
+        Hs = max(0.001, H - Hb)
         u = Hu/H
         v = Hv/H
         F[ip,1]  = Hu
