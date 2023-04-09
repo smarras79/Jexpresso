@@ -11,7 +11,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 5,      # Polynomila order
+        :nop                 => 4,      # Polynomila order
         :luser_bc            => true,
         :outformat           => "png",
         #---------------------------------------------------------------------------
