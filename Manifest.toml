@@ -2,7 +2,7 @@
 
 julia_version = "1.8.5"
 manifest_format = "2.0"
-project_hash = "a3b69eb7a8f075feff15c30e357941cd140a6099"
+project_hash = "39c39b63636fbad0e7c35dbe9329f274a6ec239d"
 
 [[deps.AbstractFFTs]]
 deps = ["ChainRulesCore", "LinearAlgebra"]
@@ -851,6 +851,18 @@ git-tree-sha1 = "342f789fd041a55166764c351da1710db97ce0e0"
 uuid = "82e4d734-157c-48bb-816b-45c225c6df19"
 version = "0.6.6"
 
+[[deps.ImageMagick]]
+deps = ["FileIO", "ImageCore", "ImageMagick_jll", "InteractiveUtils"]
+git-tree-sha1 = "ca8d917903e7a1126b6583a097c5cb7a0bedeac1"
+uuid = "6218d12a-5da1-5696-b52f-db25d2ecc6d1"
+version = "1.2.2"
+
+[[deps.ImageMagick_jll]]
+deps = ["JpegTurbo_jll", "Libdl", "Libtiff_jll", "Pkg", "Zlib_jll", "libpng_jll"]
+git-tree-sha1 = "1c0a2295cca535fabaf2029062912591e9b61987"
+uuid = "c73af94c-d91f-53ed-93a7-00f77d67a9d7"
+version = "6.9.10-12+3"
+
 [[deps.ImageMetadata]]
 deps = ["AxisArrays", "ImageAxes", "ImageBase", "ImageCore"]
 git-tree-sha1 = "36cbaebed194b292590cba2593da27b34763804a"
@@ -1353,9 +1365,9 @@ version = "1.3.0"
 
 [[deps.MicrosoftMPI_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "a16aa086d335ed7e0170c5265247db29172af2f9"
+git-tree-sha1 = "a8027af3d1743b3bfae34e54872359fdebb31422"
 uuid = "9237b28f-5490-5468-be7b-bb81f5f5e6cf"
-version = "10.1.3+2"
+version = "10.1.3+4"
 
 [[deps.MiniQhull]]
 deps = ["QhullMiniWrapper_jll"]
