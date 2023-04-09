@@ -305,24 +305,10 @@ neqs::Int8 = 1
 
 if (lowercase(problem_name) == "burgers")
     inputs[:problem] = Burgers()
-    
-    if(inputs[:nsd] == 1)
-        neqs = 1
-    elseif (inputs[:nsd] == 2)
-        neqs = 2
-    end
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
 elseif (lowercase(problem_name) == "shallowwater")
-    inputs[:problem] = ShallowWater()
-    
-    if (inputs[:nsd] == 1)
-        neqs = 2
-    elseif(inputs[:nsd] == 2)
-        neqs = 3
-    elseif(inputs[:nsd] == 3)
-        error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
-    end
+    inputs[:problem] = ShallowWater()    
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
     
@@ -350,8 +336,7 @@ elseif (lowercase(problem_name) == "elliptic" ||
 elseif (lowercase(problem_name) == "helmholtz")
     inputs[:problem] = Helmholtz()
     inputs[:ldss_laplace] = true
-    inputs[:ldss_differentiation] = false
-    
+    inputs[:ldss_differentiation] = false    
 else
     
     #inputs[:neqs] = 1 #default
