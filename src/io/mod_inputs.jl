@@ -53,7 +53,9 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
 
-    
+    #
+    # Plotting parameters:
+    #
     if(!haskey(inputs, :outformat))
         inputs[:outformat] = ASCII()
     else
@@ -65,6 +67,20 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
             inputs[:outformat] = VTK()
         end
     end
+
+    # Write png to surface using Spline2D interpolation of unstructured data:
+    if(!haskey(inputs, :lplot_surf3d))
+        inputs[:lplot_surf3d] = false
+    end
+    if(!haskey(inputs, :smoothing_factor))
+        #This is the spline2d smoothing factor. Too small and it may break the spline2d, but it should be as small as possible for precision
+        inputs[:smoothing_factor] = 1.0e-1
+    end
+    
+    #
+    # END Plotting parameters:
+    #
+    
     
     #Time:
     if(!haskey(inputs, :ndiagnostics_outputs))
