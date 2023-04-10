@@ -1,3 +1,4 @@
+name = "Jexpresso"
 uuid = "5833cb5e-c414-47e6-9a84-00374d19fa25"
 authors = ["Simone <smarras@njit.edu>"]
 version = "0.1.0"
@@ -16,6 +17,7 @@ DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 DiffEqOperators = "9fdde737-9c7f-55bf-ade8-46b3f136cc48"
 DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
+DocumenterTools = "35a29f4d-8980-5a13-9543-d66fff28ecb8"
 ElasticArrays = "fdbdab4c-e67f-52f5-8c3f-e7b388dad3d4"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
