@@ -328,6 +328,11 @@ elseif (lowercase(problem_name) == "shallowwater")
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
     
+elseif (lowercase(problem_name) == "euler")
+    inputs[:problem] = Euler()
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
+    
 elseif (lowercase(problem_name) == "linearclaw" ||
         lowercase(problem_name) == "linclaw" ||
         lowercase(problem_name) == "lclaw")
