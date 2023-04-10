@@ -1,5 +1,3 @@
-include("../../../kernel/AbstractTypes.jl")
-
 function initialize(SD::NSD_2D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
     
@@ -22,9 +20,9 @@ function initialize(SD::NSD_2D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
                 ip = mesh.connijk[i,j,iel_g]
                 x  = mesh.x[ip]
                 y  = mesh.y[ip]
-                q.qn[ip,1] = 0.75 + exp(-4*(abs(x)^2 + abs(y)^2))/4                                    #H
-                q.qn[ip,2] = 0.001 * q.qn[ip,1]                                    #Hu
-                q.qn[ip,3] = 0.001 * q.qn[ip,1]                                   #Hv 
+                q.qn[ip,1] = 0.75 + exp(-4*(abs(x)^2 + abs(y)^2))/4   #H
+                q.qn[ip,2] = 0.001 * q.qn[ip,1]  #Hu
+                q.qn[ip,3] = 0.001 * q.qn[ip,1]  #Hv 
                 
             end
         end
@@ -39,7 +37,7 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
     """
 
     """
-    @info " Initialize fields for 1D Shallow water equations ........................ "
+    @info "Initialize fields for system of 1D Shallow Water equations ........................ "
 
     ngl   = mesh.ngl
     nsd   = mesh.nsd
@@ -131,9 +129,7 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
         end
     end
     
-    
-
-    @info "Initialize fields for system of Shallow Water equations ........................ DONE"
+    @info "Initialize fields for system of 1D Shallow Water equations ........................ DONE"
 
     return q
 end

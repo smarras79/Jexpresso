@@ -2,7 +2,6 @@ using LinearSolve
 using SnoopCompile
 using WriteVTK
 import SciMLBase
-using Makie
 
 include("./plotting/jeplots.jl")
 
@@ -16,22 +15,29 @@ struct ASCII <: AbstractOutFormat end
 # PNG
 function write_output(sol::ODESolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1) nothing end
 function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))   
-    for iout = 1:inputs[:ndiagnostics_outputs]
-        title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-        plot_triangulation(SD, mesh.x, mesh.y, sol.u[iout][:], title,  OUTPUT_DIR; iout=iout, nvar=nvar)
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+    
+    if inputs[:lplot_surf3d]
+        for iout = 1:inputs[:ndiagnostics_outputs]
+            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            plot_surf3d(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
+        end
+    else
+        for iout = 1:inputs[:ndiagnostics_outputs]
+            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR; iout=iout, nvar=nvar)
+        end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
-
 function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     for iout = 1:inputs[:ndiagnostics_outputs]
         title = string("sol.u at time ", sol.t[iout])
-        plot_results(SD, mesh.x, mesh.y, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar)
+        plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar)
     end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.dat ...  DONE ") )
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
 # ASCII
@@ -76,12 +82,16 @@ end
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # PNG
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
-    
+
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
-    plot_triangulation(SD, mesh.x, mesh.y, sol.u, title, OUTPUT_DIR)    
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
     
+    if inputs[:lplot_surf3d]
+        plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1, smoothing_factor=inputs[:smoothing_factor])
+    else
+        plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR;)
+    end
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
 end
 
 # ASCII

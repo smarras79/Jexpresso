@@ -32,7 +32,7 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
 end
 
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    q[1] = 0.5
+    q[1] = .5
     q[2] = 0.0
     return q
 end

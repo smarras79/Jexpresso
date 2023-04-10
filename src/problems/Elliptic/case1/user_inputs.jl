@@ -5,16 +5,19 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :ode_solver          => "BICGSTABLE",
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
-        #:output_dir          => "/Users/simone/runs/",
-        :outformat           => "png",
         :luser_bc            => false,
+        #---------------------------------------------------------------------------
+        # Output parameters:
+        #---------------------------------------------------------------------------
+        :outformat           => "png",
+        :lplot_surf3d        => true, #default is false. when true, set a value for :smoothing_factor. as small as possible but not too small!
+        :smoothing_factor    => 1.0e-4, #factor for spline2d interpolation. 
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
