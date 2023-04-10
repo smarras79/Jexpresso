@@ -7,10 +7,8 @@ import SciMLBase
 using WriteVTK
 
 include("../abstractTypes.jl")
-include("../../io/write_output.jl")
 
-function time_loop!(SD,
-                    QT,
+function time_loop!(QT,
                     PT,
                     mesh::St_mesh,
                     metrics::St_metrics,
@@ -19,7 +17,6 @@ function time_loop!(SD,
                     M,
                     De, Le,
                     Nt, Δt,
-                    neqns, 
                     inputs::Dict,
                     OUTPUT_DIR::String,
                     T)
@@ -39,8 +36,9 @@ function time_loop!(SD,
         global q1[:,i] .= qp.qn[:,i]
         global q2[:,i] .= qp.qn[:,i]
     end
-    tspan  = (inputs[:tinit], inputs[:tend])    
-    params = (;T, SD, QT, PT, neqns, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
+    #@info qp.neqs
+    tspan  = (inputs[:tinit], inputs[:tend])
+    params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
     prob   = ODEProblem(rhs!,
                         u,
                         tspan,
