@@ -53,7 +53,9 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
 
-    
+    #
+    # Plotting parameters:
+    #
     if(!haskey(inputs, :outformat))
         inputs[:outformat] = ASCII()
     else
@@ -65,6 +67,20 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
             inputs[:outformat] = VTK()
         end
     end
+
+    # Write png to surface using Spline2D interpolation of unstructured data:
+    if(!haskey(inputs, :lplot_surf3d))
+        inputs[:lplot_surf3d] = false
+    end
+    if(!haskey(inputs, :smoothing_factor))
+        #This is the spline2d smoothing factor. Too small and it may break the spline2d, but it should be as small as possible for precision
+        inputs[:smoothing_factor] = 1.0e-1
+    end
+    
+    #
+    # END Plotting parameters:
+    #
+    
     
     #Time:
     if(!haskey(inputs, :ndiagnostics_outputs))
@@ -305,24 +321,10 @@ neqs::Int8 = 1
 
 if (lowercase(problem_name) == "burgers")
     inputs[:problem] = Burgers()
-    
-    if(inputs[:nsd] == 1)
-        neqs = 1
-    elseif (inputs[:nsd] == 2)
-        neqs = 2
-    end
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
 elseif (lowercase(problem_name) == "shallowwater")
-    inputs[:problem] = ShallowWater()
-    
-    if (inputs[:nsd] == 1)
-        neqs = 2
-    elseif(inputs[:nsd] == 2)
-        neqs = 3
-    elseif(inputs[:nsd] == 3)
-        error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
-    end
+    inputs[:problem] = ShallowWater()    
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
     
@@ -350,8 +352,7 @@ elseif (lowercase(problem_name) == "elliptic" ||
 elseif (lowercase(problem_name) == "helmholtz")
     inputs[:problem] = Helmholtz()
     inputs[:ldss_laplace] = true
-    inputs[:ldss_differentiation] = false
-    
+    inputs[:ldss_differentiation] = false    
 else
     
     #inputs[:neqs] = 1 #default

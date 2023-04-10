@@ -1,5 +1,3 @@
-include("../../../kernel/AbstractTypes.jl")
-
 function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
 
     println(" # Initialize fields for AdvDiff ........................")
@@ -18,17 +16,7 @@ function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
             q.qn[ip, 1] = exp(-200.0*(x - 0.25)^2)
             
         end
-    end
-    
-    #------------------------------------------
-    # Plot initial condition:
-    # Notice that I scatter the points to
-    # avoid sorting the x and q which would be
-    # becessary for a smooth curve plot.
-    #------------------------------------------
-    title = string( "Tracer: initial condition")
-    plot_curve(mesh.x, q.qn[:,1], title, string(OUTPUT_DIR, "/INIT.png"))
-    
+    end    
     println(" # Initialize fields for AdvDiff ........................ DONE")
     
     return q
@@ -43,8 +31,8 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
     nsd  = mesh.nsd   
     q    = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=1)
     
-    #test_case = "kopriva.5.3.5"
-    test_case = "giraldo.15.8"
+    test_case = "kopriva.5.3.5"
+    #test_case = "giraldo.15.8"
     if (test_case == "kopriva.5.3.5")
         #Cone properties:
         ν = inputs[:νx] 
@@ -52,7 +40,7 @@ function initialize(SD::NSD_2D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT
             ν = 0.01
         end
         σ = 1.0/ν
-        (xc, yc) = (0.5, 0.5)
+        (xc, yc) = (-0.5, -0.5)
         
         for iel_g = 1:mesh.nelem
             for i=1:ngl

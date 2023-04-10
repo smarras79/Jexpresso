@@ -494,6 +494,7 @@ function ChebyshevPolynomial!(Chebyshev::St_Chebyshev,nop::TInt,x::TFloat,Ks::TI
     end
 end
 
+function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
 """
     LagrangeInterpolatingPolynomials_classic(ξ, ξq, N, Q, TFloat)
     ξ::set of N interpolation points (e.g. LGL points)
@@ -504,8 +505,6 @@ end
     from https://github.com/fxgiraldo/Element-based-Galerkin-Methods/blob/master/Projects/Project_01_1D_Interpolation/For_Instructors/julia/lagrange_basis.jl
 
 """
-function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
-
     N = size(ξ,1) - 1
     Q = size(ξq,1) - 1
     

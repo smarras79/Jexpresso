@@ -3,15 +3,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-<<<<<<< HEAD:src/problems/ShallowWater/user_inputs.jl
         :tend                => 10.0, #2π,
         :Δt                  => 2.5e-3,#8.75e-4,
         :ndiagnostics_outputs=> 10,
-=======
-        :tend                => 1.0, #2π,
-        :Δt                  => 1.0e-3,#8.75e-4,
-        :ndiagnostics_outputs=> 20,
->>>>>>> ab661ec32f93d33c2a5e25f4718b28e3682130af:src/problems/ShallowWater/case1/user_inputs.jl
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -20,7 +14,6 @@ function user_inputs()
         :nop                 => 4,      # Polynomila order
         :luser_bc            => true,
         :outformat           => "png",
-        :nsd                 => 1, 
         :xmin                => 0.0,
         :xmax                => 25.0,
         :nelx                => 20,
