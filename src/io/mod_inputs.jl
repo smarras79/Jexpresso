@@ -20,15 +20,18 @@ function parse_commandline()
         help = "an option without argument, i.e. a flag"
         action = :store_true
         "arg1"
-        help = "a positional argument"
+        help = "problem_name"
         required = true
+        "arg2"
+        help = "case name within problems/problem_name"
+        required = false
     end
 
     return parse_args(s)
 end
 
 
-function mod_inputs_user_inputs!(problem_name, problem_dir::String)
+function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::String)
 
     error_flag::Int8 = 0
     
@@ -36,7 +39,7 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
     # was definied within this same function via the include(input_dir) above.
     # 
-    input_dir = string(problem_dir, "/", problem_name, "/user_inputs.jl")
+    input_dir = string(problem_dir, "/", problem_name, "/", problem_case_name, "/user_inputs.jl")
     include(input_dir)
     inputs = @Base.invokelatest(user_inputs())
     
@@ -256,24 +259,24 @@ end
     if(haskey(inputs, :nelx))
         inputs[:npx] = inputs[:nelx] + 1
     else
-        inputs[:npx] = Int8(2)
+        inputs[:npx] = UInt8(2)
     end
     if(haskey(inputs, :nely))
         inputs[:npy] = inputs[:nely] + 1
     else
-        inputs[:npy] = Int8(2)
+        inputs[:npy] = UInt8(2)
     end
     if(haskey(inputs, :nelz))
         inputs[:npz] = inputs[:nelz] + 1
     else
-        inputs[:npz] = Int8(2)
+        inputs[:npz] = UInt8(2)
     end
     
     if (inputs[:nsd] == 1)
-        inputs[:npy] = Int8(1)
-        inputs[:npz] = Int8(1)
+        inputs[:npy] = UInt8(1)
+        inputs[:npz] = UInt8(1)
     elseif(inputs[:nsd] == 2)
-        inputs[:npz] = Int8(1)
+        inputs[:npz] = UInt8(1)
     end
 
     #Penalty constant for SIPG
@@ -290,72 +293,68 @@ end
     #elseif (lowercase(problem_name) == "ANY_NAME_YOU_WANT")
     #inputs[:problem] = ANY_NAME_YOU_WANT()
     #
-    #neqns = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
-    #prinetln( " # neqns     ", neqns)
+    #neqs = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
+    #prinetln( " # neqs     ", neqs)
     #end
     #------------------------------------------------------------------------
     
     #------------------------------------------------------------------------
-# Define neqns based on the problem being solved
+# Define neqs based on the problem being solved
 #------------------------------------------------------------------------
-neqns::Int8 = 1
+neqs::Int8 = 1
+
 if (lowercase(problem_name) == "burgers")
     inputs[:problem] = Burgers()
     
     if(inputs[:nsd] == 1)
-        neqns = 1
+        neqs = 1
     elseif (inputs[:nsd] == 2)
-        neqns = 2
+        neqs = 2
     end
-    inputs[:neqns] = neqns
-    println( " # Number of equations ", neqns)
-    
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
 elseif (lowercase(problem_name) == "shallowwater")
     inputs[:problem] = ShallowWater()
     
     if (inputs[:nsd] == 1)
-        neqns = 2
+        neqs = 2
     elseif(inputs[:nsd] == 2)
-        neqns = 3
+        neqs = 3
     elseif(inputs[:nsd] == 3)
         error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
     end
-    inputs[:neqns] = neqns
-    println( " # Number of equations ", neqns)
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
     
 elseif (lowercase(problem_name) == "linearclaw" ||
         lowercase(problem_name) == "linclaw" ||
         lowercase(problem_name) == "lclaw")
     inputs[:problem] = LinearCLaw()
-    
-    inputs[:neqns] = neqns = 3
-    println( " # neqns     ", neqns)
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
     
 elseif (lowercase(problem_name) == "advdiff" ||
         lowercase(problem_name) == "advdif" ||
         lowercase(problem_name) == "ad" ||
         lowercase(problem_name) == "adv2d")
     inputs[:problem] = AdvDiff()
-    
-    inputs[:neqns] = neqns = 1
-    println( " # neqns     ", neqns)
-    
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
+        
 elseif (lowercase(problem_name) == "elliptic" ||
         lowercase(problem_name) == "diffusion")
     inputs[:problem] = Elliptic()
-    
-    inputs[:neqns] = neqns = 1
-    println( " # neqns     ", neqns)
+    inputs[:ldss_laplace] = true
+    inputs[:ldss_differentiation] = false
     
 elseif (lowercase(problem_name) == "helmholtz")
     inputs[:problem] = Helmholtz()
-    
-    inputs[:neqns] = neqns = 1
-    println( " # neqns     ", neqns)
+    inputs[:ldss_laplace] = true
+    inputs[:ldss_differentiation] = false
     
 else
     
-    inputs[:neqns] = 1 #default
+    #inputs[:neqs] = 1 #default
     
     s = """
             jexpresso  user_inputs.jl: problem ", inputs[:problem, " is not coded!
@@ -369,6 +368,12 @@ else
     @error s
 end
 
+if(!haskey(inputs, :ldss_differentiation))
+    inputs[:ldss_differentiation] = false
+end
+if(!haskey(inputs, :ldss_laplace))
+    inputs[:ldss_laplace] = false
+end
 #------------------------------------------------------------------------
 # The following quantities stored in the inputs[] dictionary are only
 # auxiliary and are NEVER to be defined by the user
@@ -379,8 +384,7 @@ else
     inputs[:δvisc] = 0.0
 end
 
-
-return inputs, neqns
+return inputs
 end
 
 function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
