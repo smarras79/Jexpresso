@@ -98,7 +98,7 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         axs = [Axis3(fig[1, i]; aspect=(1, 1, 1)) for i = 1:1]
         
         hm = Makie.surface!(axs[1], xg, yg, zspl)
-        limits!(axs, xmin, xmax, ymin, ymax, zmin, zmax) # x1, x2, y1, y2
+        #limits!(axs, xmin, xmax, ymin, ymax, zmin, zmax)
         #Colorbar(fig[1, 1], hm, height=Relative(0.5))
         
         save(string(fout_name), fig)
