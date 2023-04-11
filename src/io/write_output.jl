@@ -137,3 +137,61 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     end
     
 end
+
+
+function create_cells(cells, ncells, mesh::St_mesh)
+
+  use mod_basis, only: nglx, ngly, nglz, CELL_CHILDREN
+  use mod_grid, only:  npoin, nelem, intma
+
+  implicit none
+
+  integer                      :: ncells
+  integer, dimension(CELL_CHILDREN,ncells) :: cells
+  integer :: ic, i,j,k,e, ii, jj, kk
+
+  ic=0
+
+  do e=1,nelem
+     !construct cells in each element
+     do k=1,max(nglz-1,1)
+        do j=1,max(ngly-1,1)
+           do i=1,max(nglx-1,1)
+              ii=min(i+1,nglx)
+              jj=min(j+1,ngly)
+              kk=min(k+1,nglz)
+              ic=ic+1
+
+              if(nglx == 1) then
+                 cells(1,ic)= intma( i, j, k,e) -1
+                 cells(2,ic)= intma( i,jj, k,e) -1
+                 cells(3,ic)= intma( i,jj,kk,e) -1
+                 cells(4,ic)= intma( i, j,kk,e) -1
+              else if(ngly == 1) then
+                 cells(1,ic)= intma( i, j, k,e) -1
+                 cells(2,ic)= intma(ii, j, k,e) -1
+                 cells(3,ic)= intma(ii, j,kk,e) -1
+                 cells(4,ic)= intma( i, j,kk,e) -1
+              else if(nglz == 1) then
+                 cells(1,ic)= intma( i, j, k,e) -1
+                 cells(2,ic)= intma(ii, j, k,e) -1
+                 cells(3,ic)= intma(ii,jj, k,e) -1
+                 cells(4,ic)= intma( i,jj, k,e) -1
+              else
+                 cells(1,ic)= intma( i, j, k,e) -1
+                 cells(2,ic)= intma(ii, j, k,e) -1
+                 cells(3,ic)= intma(ii,jj, k,e) -1
+                 cells(4,ic)= intma( i,jj, k,e) -1
+                 cells(5,ic)= intma( i, j,kk,e) -1
+                 cells(6,ic)= intma(ii, j,kk,e) -1
+                 cells(7,ic)= intma(ii,jj,kk,e) -1
+                 cells(8,ic)= intma( i,jj,kk,e) -1
+              endif
+
+           end do !i
+        end do !j
+     end do
+  end do !ie
+
+
+end subroutine create_cells

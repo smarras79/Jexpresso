@@ -61,14 +61,17 @@ function sem_setup(inputs::Dict)
     #--------------------------------------------------------
     # Build metric terms
     #--------------------------------------------------------
-    metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
-    
-    periodicity_restructure!(mesh,inputs)
+    @info " metrics"
+    @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
+
+    @info " periodicity_restructure!"
+    @time periodicity_restructure!(mesh,inputs)
     
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
-    matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+    @info " build matrices"
+    @time matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
     
     return (; QT, PT, mesh, metrics, basis, ω, matrix)
 end
