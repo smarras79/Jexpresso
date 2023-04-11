@@ -8,25 +8,27 @@ const TFloat = Float64
 
 #using DocStringExtensions
 
-include("./problems/AbstractProblems.jl")
+include(joinpath("problems", "AbstractProblems.jl"))
 
-include("./kernel/abstractTypes.jl")
+include(joinpath("kernel", "abstractTypes.jl"))
 
-include("./kernel/globalStructs.jl")
+include(joinpath("kernel", "globalStructs.jl"))
 
-include("./kernel/infrastructure/sem_setup.jl")
+include(joinpath("kernel", "globalConstants.jl"))
 
-include("./kernel/boundaryconditions/BCs.jl")
+include(joinpath("kernel", "infrastructure", "sem_setup.jl"))
 
-include("./kernel/operators/rhs.jl")
+include(joinpath("kernel", "boundaryconditions", "BCs.jl"))
 
-include("./kernel/solvers/TimeIntegrators.jl")
+include(joinpath("kernel", "operators", "rhs.jl"))
 
-include("./kernel/solvers/Axb.jl")
+include(joinpath("kernel", "solvers", "TimeIntegrators.jl"))
 
-include("./io/mod_inputs.jl")
+include(joinpath("kernel", "solvers", "Axb.jl"))
 
-include("./io/write_output.jl")
+include(joinpath("io", "mod_inputs.jl"))
+
+include(joinpath("io", "write_output.jl"))
 
 include("./run.jl")
 
