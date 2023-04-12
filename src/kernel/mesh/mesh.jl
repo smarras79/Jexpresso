@@ -338,15 +338,15 @@ elseif (mesh.nsd == 2)
     #
     # Rewrite coordinates in RCM order:
     #
-    #open("./COORDS_LO.dat", "w") do f
+    open("./COORDS_LO.dat", "w") do f
         for ip = 1:mesh.npoin_linear
             
             mesh.x[ip] = model.grid.node_coordinates[ip][1]
             mesh.y[ip] = model.grid.node_coordinates[ip][2]
             
-            #@printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
+            @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
         end
-    #end #f
+    end #f
 
 elseif (mesh.nsd == 3)
     mesh.connijk = Array{Int64}(undef, mesh.ngl, mesh.ngl, mesh.ngl, mesh.nelem)
@@ -394,14 +394,14 @@ elseif (mesh.nsd == 3)
     #
     # Rewrite coordinates in RCM order:
     #
-    #open("./COORDS_LO.dat", "w") do f
+    open("./COORDS_LO.dat", "w") do f
         for ip = 1:mesh.npoin_linear
             mesh.x[ip] = model.grid.node_coordinates[ip][1]
             mesh.y[ip] = model.grid.node_coordinates[ip][2]
             mesh.z[ip] = model.grid.node_coordinates[ip][3]
-            #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+            @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
         end
-    #end #f
+    end #f
 end
 
 
@@ -801,7 +801,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
     end
     
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    #open("./COORDS_HO_edges.dat", "w") do f
+    open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
         #
@@ -827,11 +827,11 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
                 mesh.poin_in_edge[iedge_g, l] = ip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-                #@printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
+                @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                 ip = ip + 1
             end
         end
-    #end #do f
+    end #do f
     #show(stdout, "text/plain", poin_in_edge)
     #@info "-----2D edges"
     
@@ -957,7 +957,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
     end
     
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    #open("./COORDS_HO_edges.dat", "w") do f
+    open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
         #
@@ -984,11 +984,11 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
                 mesh.poin_in_edge[iedge_g, l] = ip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-                #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip = ip + 1
             end
         end
-    #end #do f
+    end #do f
     #show(stdout, "text/plain", mesh.poin_in_edge)
     #@info "-----3D edges"
     
@@ -1326,7 +1326,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
         resize!(mesh.y_ho, (mesh.npoin))
     end
 
-    #open("./COORDS_HO_faces.dat", "w") do f
+    open("./COORDS_HO_faces.dat", "w") do f
         #
         # First pass:
         #
@@ -1370,13 +1370,13 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
                     mesh.connijk[m, ngl-l+1, iel] = ip
                     #OLD ORDERING
                     #mesh.connijk[m, l, iel] = ip
-                    #@printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
+                    @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                     
 	            ip = ip + 1
                 end
             end
         end
-    #end #do f
+    end #do f
 
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
@@ -1512,7 +1512,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
         resize!(mesh.z_ho, (mesh.npoin))
     end
         
-    #open("./COORDS_HO_faces.dat", "w") do f
+    open("./COORDS_HO_faces.dat", "w") do f
         #
         # First pass:
         #
@@ -1558,13 +1558,13 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
 
                     mesh.poin_in_face[iface_g, l, m] = ip
                     
-                    #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                    @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                     
 	            ip = ip + 1
                 end
             end
         end
-    #end #do f
+    end #do f
 
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
@@ -1892,7 +1892,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
         resize!(mesh.z_ho, (mesh.npoin))
     end
     
-    #open("./COORDS_HO_vol.dat", "w") do f
+    open("./COORDS_HO_vol.dat", "w") do f
         ip  = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + 1
         for iel = 1:mesh.nelem
 
@@ -1958,7 +1958,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
                         #mesh.conn[8 + el_edges_internal_nodes + el_faces_internal_nodes + iconn, iel] = ip
                         conn_vol_poin[l,m,n,iel] = ip
                         mesh.connijk[l,m,n,iel] = ip
-                        #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
 
                         ip = ip + 1
                         iconn = iconn + 1
@@ -1966,7 +1966,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
                 end
             end 
         end
-    #end # do f 
+    end # do f 
 for iel =1:mesh.nelem
     iconn =1
     for n=2:ngl-1
