@@ -110,18 +110,19 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
 end
 
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::VTK; nvar=1)
-
+    
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
     for iout = 1:inputs[:ndiagnostics_outputs]
         title = @sprintf " ∇²q = f"
         write_vtk(SD, mesh, sol.u, title, OUTPUT_DIR, inputs;)
+        #vtkss()
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
 end
 
 
 #VTK:
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1)
+function write_vtkold(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1)
     #nothing
 
     npoin = floor(Int64, size(q, 1)/nvar)
@@ -137,36 +138,93 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     end
     
 end
+
+function vtkss()
+    
+    nsd = 3
+    npoin = 6
+    points = Array{Float64}(undef, nsd, npoin);
+    points[1, 1] = -2.0
+    points[1, 2] =  0.0
+    points[1, 3] =  1.0
+    points[1, 4] = -1.0
+    points[1, 5] =  0.0
+    points[1, 6] =  1.0
+
+    points[2, 1] = -1.0
+    points[2, 2] = -1.0
+    points[2, 3] = -1.0
+    points[2, 4] =  1.0
+    points[2, 5] =  1.0
+    points[2, 6] =  1.0
+
+    points[3, 1] = 0.0
+    points[3, 2] = 0.0
+    points[3, 3] = 0.0
+    points[3, 4] = 0.0
+    points[3, 5] = 0.0
+    points[3, 6] = 0.0
+
+    nel = 2
+    conn = Array{Int64}(undef, nel, 4);
+    conn[1,1] = 1; conn[1,2] = 2; conn[1,3] = 5; conn[1,4] = 4;
+    conn[2,1] = 2; conn[2,2] = 3; conn[2,3] = 6; conn[2,4] = 5;
+
+    values = rand()
+    
+    for iel = 1:nel
+        cells[iel] = MeshCell(VTKCellTypes.VTK_QUAD, conn[iel,:])
+    end
+    #dump(cells)
+    @info typeof(cells)
+    
+    v = Vector{Int}(undef,npoin)
+    rand!(v,1:100)
+    vtk_grid("filenamesss", points[1,:], points[2,:], points[3,:], cells) do vtk
+        # add datasets...
+        vtk["velo", VTKPointData()] = v
+    end
+end
+
+
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1)
+    #nothing
+
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+    cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    
+    isel = 1
+    for iel = 1:mesh.nelem
+        
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                ip1 = mesh.connijk[i,j,iel]
+                ip2 = mesh.connijk[i+1,j,iel]
+                ip3 = mesh.connijk[i+1,j+1,iel]
+                ip4 = mesh.connijk[i,j+1,iel]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+
+    end
+    #dump(cells)
+    
+    vtk_grid("filename111", mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], 0.0*mesh.y[1:mesh.npoin], cells) do vtk
+        #vtk_grid("filename111", points, cells) do vtk
+        # add datasets...
+        vtk["velo", VTKPointData()] = q
+    end
+    
+end
+
 #=
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1)
-    #nothing
-
-    npoin = floor(Int64, size(q, 1)/nvar)
-    for ivar=1:nvar
-        idx = (ivar - 1)*npoin
-        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".vtu")
-
-        ####
-        points .= (mesh.x) rand(3, 5)  # 5 points in three dimensions
-        cells = [MeshCell(VTKCellTypes.VTK_TRIANGLE, [1, 4, 2]),
-                 MeshCell(VTKCellTypes.VTK_QUAD,     [2, 4, 3, 5])]
-
-        vtk_grid("filename", points, cells) do vtk
-            # add datasets...
-        end
-        ###
-        
-        cells = [MeshCell(VTKCellTypes.VTK_VERTEX, (i, )) for i = 1:mesh.npoin]
-        vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y*0.0, cells) do vtk
-            vtk[string("q", ivar), VTKPointData()] = q[idx+1:ivar*npoin]
-        end
-    end
-    
-end
-
-
-
 function outvtk(mesh::St_mesh, q, q_ref, fname; nvar)
     
     #Open VTK file
