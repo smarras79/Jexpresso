@@ -140,33 +140,35 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     
     isel = 1
     for iel = 1:mesh.nelem
-        
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngl-1
-                ip1 = mesh.connijk[i,j,iel]
-                ip2 = mesh.connijk[i+1,j,iel]
-                ip3 = mesh.connijk[i+1,j+1,iel]
-                ip4 = mesh.connijk[i,j+1,iel]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-                
-                isel = isel + 1
+        if iel in mesh.bdy_edge_in_elem[:]
+            nothing
+        else
+            for i = 1:mesh.ngl-1
+                for j = 1:mesh.ngl-1
+                    ip1 = mesh.connijk[i,j,iel]
+                    ip2 = mesh.connijk[i+1,j,iel]
+                    ip3 = mesh.connijk[i+1,j+1,iel]
+                    ip4 = mesh.connijk[i,j+1,iel]
+                    subelem[isel, 1] = ip1
+                    subelem[isel, 2] = ip2
+                    subelem[isel, 3] = ip3
+                    subelem[isel, 4] = ip4
+                    
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                    
+                    isel = isel + 1
+                end
             end
         end
-
     end
     
     npoin = mesh.npoin
-    for ivar=1:nvar
+    for ivar=1:1 #nvar
         idx = (ivar - 1)*npoin
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".vtu")
-
-        vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y*0.0, cells) do vtk
+        
+        vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells) do vtk
             vtk[string("q", ivar), VTKPointData()] = q[idx+1:ivar*npoin]
         end
     end
