@@ -58,6 +58,9 @@ end=#
             q[1] = 0.66
         end
     else
+        if (q[2]/sqrt(9.81*q[1]) > 1)
+            q[1] = 0.66
+        end
         q[2] = 1.53
     end
     return q

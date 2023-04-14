@@ -3,9 +3,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 1.0, #2π,
-        :Δt                  => 1.0e-3,#8.75e-4,
-        :ndiagnostics_outputs=> 50,
+        :tend                => 0.1, #2π,
+        :Δt                  => 2.5e-3,#8.75e-4,
+        :ndiagnostics_outputs=> 30,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -16,14 +16,14 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "png",
-        :lplot_surf3d        => true,   #false by default
-        :smoothing_factor    => 1.0, #factor for spline2d interpolation. 
+        :outformat           => "vtk",
+        #:lplot_surf3d        => true,   #false by default
+        #:smoothing_factor    => 1.0, #factor for spline2d interpolation. 
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :νx                   => 0.00, #kinematic viscosity constant
-        :νy                   => 0.00, #kinematic viscosity constant
+        :νx                   => 0.0015, #kinematic viscosity constant
+        :νy                   => 0.0015, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
