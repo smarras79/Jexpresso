@@ -5,8 +5,7 @@ function driver(DT::ContGal,       #Space discretization type
                 OUTPUT_DIR::String,
                 TFloat) 
 
-    constitutiveLaw()
-    #=sem = sem_setup(inputs)
+    sem = sem_setup(inputs)
     
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
@@ -16,5 +15,5 @@ function driver(DT::ContGal,       #Space discretization type
     
     write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs)
     #solution_norms(solution, OUTPUT_DIR, inputs;)
-    =#
+    
 end

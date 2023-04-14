@@ -31,7 +31,8 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
 function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
-    
+    @info size(sol.t)
+    error("asas")
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     for iout = 1:inputs[:ndiagnostics_outputs]
         title = string("sol.u at time ", sol.t[iout])

@@ -27,7 +27,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh          => true, #If false, a 1D problem will be enforced
+        :nelx                 => 20,
+        :xmin                 => 0.0,
+        :xmax                 => 1.0,
+        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
