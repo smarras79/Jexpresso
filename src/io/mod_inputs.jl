@@ -198,6 +198,14 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
             inputs[:ode_solver] = IterativeSolversJL_BICGSTAB()
         elseif(uppercase(inputs[:ode_solver]) == "GMRES"|| uppercase(inputs[:ode_solver]) == "IterativeSolversJL_GMRES")
             inputs[:ode_solver] = IterativeSolversJL_GMRES()
+        elseif(uppercase(inputs[:ode_solver]) == "ADAMSBASHFORTH3"  ||
+               uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH3" ||
+               uppercase(inputs[:ode_solver]) == "AB3")
+            inputs[:ode_solver] = AB3()
+        elseif(uppercase(inputs[:ode_solver]) == "ADAMSBASHFORTH4"  ||
+               uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH4" ||
+               uppercase(inputs[:ode_solver]) == "AB4")
+            inputs[:ode_solver] = AB4()
         else
             s = """
                     WARNING in user_inputs.jl --> :ode_solver

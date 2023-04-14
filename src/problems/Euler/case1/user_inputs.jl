@@ -4,21 +4,21 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :tend                => 1.0, #2π,
-        :Δt                  => 1.0e-3,#8.75e-4,
-        :ndiagnostics_outputs=> 10,
+        :Δt                  => 1.0e-5,#8.75e-4,
+        :ode_solver          => "AB4",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 3,      # Polynomial order
+        :nop                 => 6,      # Polynomial order
         :luser_bc            => true,
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "png",
-        :lplot_surf3d        => true,   #false by default
-        :smoothing_factor    => 1.0, #factor for spline2d interpolation. 
+        #:lplot_surf3d        => true,   #false by default
+        #:smoothing_factor    => 1.0, #factor for spline2d interpolation. 
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -27,8 +27,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :nelx                 => 20,
-        :xmin                 => 0.0,
+        :nelx                 => 30,
+        :xmin                 => -1.0,
         :xmax                 => 1.0,
         #:lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",

@@ -49,8 +49,9 @@ function time_loop!(QT,
                               dt = Δt,
                               save_everystep=false,
                               saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]),
-                              progress = true,
+                              progress=true,
                               progress_message = (dt, u, p, t) -> t)
+    
     println(" # Solving ODE  ................................ DONE")
     
     return solution

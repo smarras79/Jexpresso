@@ -23,7 +23,7 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
             plot_surf3d(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
         end
     else
-        for iout = 1:inputs[:ndiagnostics_outputs]
+        for iout = 1:size(sol.t[:],1)
             title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
             plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR; iout=iout, nvar=nvar)
         end
@@ -31,10 +31,9 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
 function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
-    @info size(sol.t)
-    error("asas")
+    
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
-    for iout = 1:inputs[:ndiagnostics_outputs]
+    for iout = 1:size(sol.t[:], 1)
         title = string("sol.u at time ", sol.t[iout])
         plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar)
     end
@@ -43,8 +42,9 @@ end
 
 # ASCII
 function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)
+
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
-    for iout = 1:inputs[:ndiagnostics_outputs]
+    for iout = 1:size(sol.t[:],1)
         title = string("sol.u at time ", sol.t[iout])
 
         for ivar=1:nvar
@@ -63,7 +63,7 @@ end
 function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)
     
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
-    for iout = 1: inputs[:ndiagnostics_outputs]
+    for iout = 1:size(sol.t[:],1)
         #Write out data at final timestep
 	fname = @sprintf "it-%d.dat" iout
     	open(string(OUTPUT_DIR, "/", fname), "w") do f
@@ -79,7 +79,7 @@ end
 function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::VTK; nvar=1)
     
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
-    for iout = 1:inputs[:ndiagnostics_outputs]
+    for iout = 1:size(sol.t[:],1)
         title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
         write_vtk(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
     end

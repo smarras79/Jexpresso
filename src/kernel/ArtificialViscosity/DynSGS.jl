@@ -118,4 +118,60 @@ end
      return mu_sgs           
 
 end=#
-    
+
+function compute_viscosity(::NSD_1D, PT::AdvDiff, q, q1, rhs, Δt, mesh,metrics)
+
+    #compute domain averages
+    ρ_avg  = 0.0
+    #ρu_avg = 0.0
+    #ρE_avg = 0.0
+    for e=1:mesh.nelem
+        for i=1:mesh.ngl
+            ip = mesh.conn[i,e]
+            ρ_avg  += q[ip,1]
+            #ρu_avg += q[ip,2]
+            #ρu_avg += q[ip,3]
+        end
+    end
+    ρ_avg = ρ_avg / (mesh.nelem*mesh.ngl)
+    #ρu_avg = ρu_avg / (mesh.nelem*mesh.ngl)
+    #ρE_avg = ρE_avg / (mesh.nelem*mesh.ngl)
+
+    #Get denominator infinity norms
+    ρdiff  = zeros(mesh.ngl,mesh.nelem)
+    #ρudiff = zeros(mesh.ngl,mesh.nelem)
+    for e=1:mesh.nelem
+        for i=1:mesh.ngl
+            ip = mesh.conn[i,e]
+            ρdiff[i,e]  = abs(q[ip,1] - ρ_avg)
+            #ρudiff[i,e] = abs(q[ip,2] - ρu_avg)
+            #ρEdiff[i,e] = abs(q[ip,3] - ρu_avg)
+        end
+     end
+     denom1 = maximum(ρdiff)  + 1.0e-16
+     #denom2 = maximum(ρudiff) + 1.0e-16
+     @info denom1 #, denom2
+     #Get Numerator inifinity norms, mu_max infinity norm
+     mu_SGS = zeros(mesh.nelem,1)
+
+     for e =1:mesh.nelem
+         Δ = mesh.Δx[e]/mesh.ngl
+         Rρ = zeros(mesh.ngl)
+         #Rρu = zeros(mesh.ngl)
+         for i=1:mesh.ngl
+             ip = mesh.conn[i,e]
+             x = mesh.x[ip]
+             Rρ[i] = abs((q[ip,1] - q1[ip,1])/Δt - rhs[ip,1])
+             Rρu[i] = (q[ip,2] - q1[ip,2])/Δt - rhs[ip,2]
+         end
+         numer1 = maximum(Rρ)
+         #numer2 = maximum(Rρ)
+         @info numer1, numer2
+         mu_res = Δ^2*numer1/denom1
+         #mu_max = 0.5*Δ*maximum(ughs)
+         mu_SGS[e] = max(0.0, mu_res)
+     end 
+
+     return mu_SGS
+
+end

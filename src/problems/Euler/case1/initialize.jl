@@ -10,38 +10,39 @@ function initialize(SD::NSD_1D, PT::Euler, mesh::St_mesh, inputs::Dict, OUTPUT_D
 
     case = "sod"
     if (case === "sod")
-        @info "Constant height with a immersed bump SWASHES first steady state case"
+        @info " Sod tube"
 
         ρL, PL, uL = 1.0,   1.0, 0.0
         ρR, PR, uR = 0.125, 0.1, 0.0
         
     	for iel_g = 1:mesh.nelem
             for i=1:mesh.ngl
-                for j=1:mesh.ngl
+                
+                ip = mesh.conn[i,iel_g]
+                x  = mesh.x[ip]
 
-                    ip = mesh.conn[i,iel_g]
-                    x  = mesh.x[ip]
-
-                    if (x < 0.5)
-                        ρ = ρL
-                        P = PL
-                        u = uL
-                    else
-                        ρ = ρR
-                        P = PR
-                        u = uR
-                    end
-                    γ = 1.4
-                    q.qn[ip,1] = ρ                     #ρ
-                    q.qn[ip,2] = ρ*u                   #ρu
-                    q.qn[ip,3] = P/(γ - 1.0) + ρ*u*u/2 #ρE
-                    
+                if (x < 0.0)
+                    ρ = ρL
+                    P = PL
+                    u = uL
+                else
+                    ρ = ρR
+                    P = PR
+                    u = uR
                 end
+                γ = 1.4
+                q.qn[ip,1] = ρ                     #ρ
+                q.qn[ip,2] = ρ*u                   #ρu
+                q.qn[ip,3] = P/(γ - 1.0) + ρ*u*u/2 #ρE
+                
             end
         end
+    else
+        error(" ERROR: Euler: initialize.jl: no initial conditions assigned"
     end
     
-    @info "Initialize fields for system of Shallow Water equations ........................ DONE"
+
+    @info "Initialize fields for system of 1D Euler equations ........................ DONE"
 
     return q
 end
