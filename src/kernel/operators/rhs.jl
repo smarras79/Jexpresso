@@ -364,6 +364,58 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
     return RHS
 end
 
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::Euler, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
+
+    F      = zeros(mesh.ngl,mesh.nelem, neqs)
+    rhs_el = zeros(mesh.ngl,mesh.nelem, neqs)
+    qq     = zeros(mesh.npoin,neqs)
+    for i=1:neqs
+        idx = (i-1)*mesh.npoin
+        qq[:,i] .= qp[idx+1:i*mesh.npoin]
+    end
+    Fuser, Fuser1 = user_flux(T, SD, qq, mesh)
+    
+    dFdξ = zeros(neqs)
+    for iel=1:mesh.nelem
+
+        for i=1:mesh.ngl
+            ip = mesh.conn[i,iel]
+            F[i,iel,1:neqs] = Fuser[ip,1:neqs]            
+        end
+        for i=1:mesh.ngl
+            dFdξ = zeros(T, neqs)
+            for k = 1:mesh.ngl
+                dFdξ[1:neqs] .= dFdξ[1:neqs] .+ basis.dψ[k,i]*F[k,iel,1:neqs]
+            end
+                        
+            rhs_el[i,iel,1:neqs] .-= ω[i]*mesh.Δx[iel]/2*dFdξ[1:neqs]
+        end
+    end
+    #rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+#    @info maximum(rhs_diff_el[:,:,1]), maximum(rhs_diff_el[:,:,2]), minimum(rhs_diff_el[:,:,1]), minimum(rhs_diff_el[:,:,2])
+    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
+    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+
+    for i=1:neqs
+        idx = (i-1)*mesh.npoin
+        qp[idx+1:i*mesh.npoin] .= qq[:,i]
+    end
+    if (rem(time, Δt) == 0 && time > 0.0)
+        global  q1 .= q2
+        global  q2 .= qq
+    end
+
+   # mu = compute_viscosity(SD, PT, qq, q1, RHS, Δt, mesh, metrics) 
+   # @info maximum(mu),minimum(mu)
+   # rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, mu, T)
+   # #RHS = DSS_rhs(SD, rhs_el .+ rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+   # RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    divive_by_mass_matrix!(RHS, M, QT,neqs)
+   # @info time, maximum(qq[:,2])
+    return RHS
+end
+
+
 function build_rhs_diff(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
 
     N           = mesh.ngl - 1

@@ -1,3 +1,51 @@
+function initialize(SD::NSD_1D, PT::Euler, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+    """
+
+    """
+    @info " Initialize fields for 1D Euler equations ........................ "
+    
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=3)
+
+    #Cone properties:
+
+    case = "sod"
+    if (case === "sod")
+        @info "Constant height with a immersed bump SWASHES first steady state case"
+
+        ρL, PL, uL = 1.0,   1.0, 0.0
+        ρR, PR, uR = 0.125, 0.1, 0.0
+        
+    	for iel_g = 1:mesh.nelem
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+
+                    ip = mesh.conn[i,iel_g]
+                    x  = mesh.x[ip]
+
+                    if (x < 0.5)
+                        ρ = ρL
+                        P = PL
+                        u = uL
+                    else
+                        ρ = ρR
+                        P = PR
+                        u = uR
+                    end
+                        
+                    q.qn[ip,1] = ρ                     #ρ
+                    q.qn[ip,2] = ρ*u                   #ρu
+                    q.qn[ip,3] = P/(γ - 1.0) + ρ*u*u/2 #ρE
+                    
+                end
+            end
+        end
+    end
+    
+    @info "Initialize fields for system of Shallow Water equations ........................ DONE"
+
+    return q
+end
+
 function initialize(SD::NSD_2D, PT::Euler, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
     
@@ -30,108 +78,5 @@ function initialize(SD::NSD_2D, PT::Euler, mesh::St_mesh, inputs::Dict, OUTPUT_D
     
     @info "Initialize fields for system of Shallow Water equations ........................ DONE"
     
-    return q
-end
-
-function initialize(SD::NSD_1D, PT::Euler, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
-    """
-
-    """
-    @info " Initialize fields for 1D Shallow water equations ........................ "
-
-    ngl   = mesh.ngl
-    nsd   = mesh.nsd
-    nelem = mesh.nelem
-    npoin = mesh.npoin
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=3)
-
-    #Cone properties:
-
-    case = 1
-    if (case == 1)
-        @info "Constant height with a immersed bump SWASHES first steady state case"
-    
-    	for iel_g = 1:mesh.nelem
-            for i=1:ngl
-                for j=1:ngl
-
-                    ip = mesh.conn[i,iel_g]
-                    x  = mesh.x[ip]
-                    Hb = bathymetry(x)
-                    q.qn[ip,1] = 0.5                                    #H
-                    q.qn[ip,2] = 0.0                                   #Hu
-                end
-            end
-        end
-    elseif (case == 2)
-        @info "Constant height with a dryish bump SWASHES second steady state case"
-    
-        for iel_g = 1:mesh.nelem
-            for i=1:ngl
-                for j=1:ngl
-
-                    ip = mesh.conn[i,iel_g]
-                    x  = mesh.x[ip]
-                    Hb = bathymetry(x)
-                    q.qn[ip,1] = max(0.1,Hb)                                    #H
-                    q.qn[ip,2] = 0.0                                   #Hu
-                end
-            end
-        end
-    elseif (case == 3)
-        @info "SWASHES subcritical steady state case"
-    
-        for iel_g = 1:mesh.nelem
-            for i=1:ngl
-                for j=1:ngl
-
-                    ip = mesh.conn[i,iel_g]
-                    x  = mesh.x[ip]
-                    Hb = bathymetry(x)
-                    q.qn[ip,1] = 2.0
-                    #if (x > mesh.xmin)                                    #H
-                        q.qn[ip,2] = 0.0
-                    #else
-                     #   q.qn[ip,2] = 4.42
-                    #end                                   #Hu
-                end
-            end
-        end
-    elseif (case == 4)
-        @info "SWASHES transcritical no shock steady state case"
-
-        for iel_g = 1:mesh.nelem
-            for i=1:ngl
-                for j=1:ngl
-
-                    ip = mesh.conn[i,iel_g]
-                    x  = mesh.x[ip]
-                    Hb = bathymetry(x)
-                    q.qn[ip,1] = 0.66
-                    q.qn[ip,2] = 0.0
-                end
-            end
-        end
-    elseif (case == 5)
-        @info "SWASHES transcritical with shock steady state case"
-
-        for iel_g = 1:mesh.nelem
-            for i=1:ngl
-                for j=1:ngl
-
-                    ip = mesh.conn[i,iel_g]
-                    x  = mesh.x[ip]
-                    Hb = bathymetry(x)
-                    q.qn[ip,1] = 0.33
-                    q.qn[ip,2] = 0.0
-                end
-            end
-        end
-    end
-    
-    
-
-    @info "Initialize fields for system of Shallow Water equations ........................ DONE"
-
     return q
 end

@@ -1,8 +1,5 @@
-function constitutiveLaw(ρ::Float64, Temp::Float64)
-
-    PhysConst = PhysicalConst{Float64}()
-
+function constitutiveLaw!(ρ::Float64, Temp::Float64, Press::Float64, PhysConst::PhysicalConst)
+    
     Press = ρ*PhysConst.Rair*Temp
-
-    @info Press
+    
 end
