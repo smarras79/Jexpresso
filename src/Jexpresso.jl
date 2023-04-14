@@ -14,7 +14,9 @@ include(joinpath("kernel", "abstractTypes.jl"))
 
 include(joinpath("kernel", "globalStructs.jl"))
 
-include(joinpath("kernel", "globalConstants.jl"))
+include(joinpath("kernel", "physics", "globalConstantsPhysics.jl"))
+
+include(joinpath("kernel", "physics", "constitutiveLaw.jl"))
 
 include(joinpath("kernel", "infrastructure", "sem_setup.jl"))
 

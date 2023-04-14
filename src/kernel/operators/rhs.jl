@@ -373,7 +373,7 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::Euler, qp::Array, neqs, basis, Ï
         idx = (i-1)*mesh.npoin
         qq[:,i] .= qp[idx+1:i*mesh.npoin]
     end
-    Fuser, Fuser1 = user_flux(T, SD, qq, mesh)
+    Fuser = user_flux(T, SD, qq, mesh; neqs=neqs)
     
     dFdÎ¾ = zeros(neqs)
     for iel=1:mesh.nelem
