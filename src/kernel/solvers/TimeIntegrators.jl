@@ -16,7 +16,7 @@ function time_loop!(QT,
                     qp::St_SolutionVars,
                     M,
                     De, Le,
-                    Nt, Δt,
+                    Δt,
                     inputs::Dict,
                     OUTPUT_DIR::String,
                     T)
@@ -48,7 +48,7 @@ function time_loop!(QT,
                               inputs[:ode_solver],
                               dt = Δt,
                               save_everystep=false,
-                              saveat = range(T(0.), Nt*T(Δt), length=inputs[:ndiagnostics_outputs]),
+                              saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]),
                               progress = true,
                               progress_message = (dt, u, p, t) -> t)
     println(" # Solving ODE  ................................ DONE")
