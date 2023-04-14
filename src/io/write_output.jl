@@ -140,9 +140,9 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     
     isel = 1
     for iel = 1:mesh.nelem
-        if iel in mesh.bdy_edge_in_elem[:]
-            nothing
-        else
+        #if iel in mesh.bdy_edge_in_elem[:]
+        #    nothing
+        #else
             for i = 1:mesh.ngl-1
                 for j = 1:mesh.ngl-1
                     ip1 = mesh.connijk[i,j,iel]
@@ -159,7 +159,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                     isel = isel + 1
                 end
             end
-        end
+        #end
     end
     
     npoin = mesh.npoin
