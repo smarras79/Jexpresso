@@ -25,15 +25,16 @@
     
 """
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-    q[1] = 0.5
-    q[2] = 0.0
+    q[1] = 1.0
+    q[2] = 2.5
     q[3] = 0.0 
     return q
 end
 
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    q[1] = .5
-    q[2] = 0.0
+    q[1] = 1.0
+    q[2] = 2.5
+    q[3] = 0.0
     return q
 end
 
