@@ -17,27 +17,15 @@ include("../infrastructure/2D_3D_structures.jl")
 include("custom_bcs.jl")
 
 function apply_periodicity!(SD::NSD_1D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars)
+
+    @warn " apply_periodicity in 1D is now only working for nvars=1!"
     
-    if (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="periodic" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="periodic")
-        #
-        # 1D periodic
-        #
-        qp[mesh.npoin_linear,:] .= 0.5*(qp[mesh.npoin_linear,:] .+ qp[1,:])
-        qp[1,:] .= qp[mesh.npoin_linear,:]
-        
-    elseif (haskey(inputs, :xmin_bc) && inputs[:xmin_bc]=="dirichlet" || haskey(inputs, :xmax_bc) && inputs[:xmax_bc]=="dirichlet")
-        #
-        # Dirichlet q(1,t) = q(mesh.npoin_linear,t) = 0.0
-        #
-        qp[1] = 0.0
-        qp[mesh.npoin_linear] = 0.0
-    else
-        #
-        # 1D Default: periodic
-        #
-        qp[mesh.npoin_linear,:] .= 0.5*(qp[mesh.npoin_linear,:] .+ qp[1,:])
-        qp[1,:] .= qp[mesh.npoin_linear,:]        
-    end
+    #
+    # 1D periodic
+    #
+    qp[mesh.npoin_linear] = 0.5*(qp[mesh.npoin_linear] .+ qp[1])
+    qp[1] = qp[mesh.npoin_linear]
+
 end
 
 function apply_boundary_conditions!(SD::NSD_1D, rhs, qp, mesh,inputs, QT, metrics, ψ, dψ, ω, t, nvars;L=zeros(1,1))

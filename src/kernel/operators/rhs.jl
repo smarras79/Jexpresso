@@ -39,7 +39,7 @@ end
 
 
 
-function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
+function build_rhs_matrix_formulation(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
 
     Fuser = user_flux(T, SD, qp, mesh)
     
@@ -70,6 +70,49 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
     
     return RHS
     
+end
+
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
+
+    F      = zeros(mesh.ngl, mesh.nelem, neqs)
+    dFdξ   = zeros(neqs)
+    rhs_el = zeros(mesh.ngl, mesh.nelem, neqs)
+    qq     = zeros(mesh.npoin, neqs)
+    for i=1:neqs
+        idx = (i-1)*mesh.npoin
+        qq[:,i] .= qp[idx+1:i*mesh.npoin]
+    end    
+    Fuser = user_flux(T, SD, qq, mesh; neqs=neqs)
+
+    for iel=1:mesh.nelem
+        
+        Jac     = mesh.Δx[iel]/2
+        metrics = 2.0/mesh.Δx[iel]
+        
+        for i=1:mesh.ngl
+            ip = mesh.conn[i,iel]
+            F[i,iel,1:neqs] .= Fuser[ip,1:neqs]
+        end
+
+        for i=1:mesh.ngl
+            dFdξ[1:neqs] .= 0.0
+            for k = 1:mesh.ngl
+                dFdξ[1:neqs] .= dFdξ[1:neqs] .+ basis.dψ[k,i]*F[k, iel, 1:neqs]*metrics
+            end
+            rhs_el[i, iel, 1:neqs] .+= ω[i]*Jac*dFdξ[1:neqs]
+        end
+    end
+    
+    RHS = DSS_rhs(SD, rhs_el, mesh.conn, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    divive_by_mass_matrix!(RHS, M, QT, neqs)
+    
+    for i=1:neqs
+        idx = (i-1)*mesh.npoin
+        qp[idx+1:i*mesh.npoin] .= qq[:,i]
+    end
+    apply_periodicity!(SD, RHS, qp, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0, neqs)
+    
+    return RHS
 end
 
 function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T) nothing end

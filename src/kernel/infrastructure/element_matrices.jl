@@ -503,7 +503,7 @@ function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
     RHS = M\RHS #M is not iagonal
 end
 
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact,neqs) 
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs) 
    for i=1:neqs 
        RHS[:,i] .= RHS[:,i]./M[:] #M is diagonal (stored as a vector)
    end
