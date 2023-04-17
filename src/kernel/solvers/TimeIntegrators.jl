@@ -30,15 +30,26 @@ function time_loop!(QT,
     u = zeros(T, mesh.npoin*qp.neqs);
     global q1 = zeros(T, mesh.npoin, qp.neqs);
     global q2 = zeros(T, mesh.npoin, qp.neqs);
+    global q3 = zeros(T, mesh.npoin, qp.neqs);
+    global zb = zeros(T, mesh.npoin);
+    
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] .= qp.qn[:,i]
         global q1[:,i] .= qp.qn[:,i]
         global q2[:,i] .= qp.qn[:,i]
+        global q3[:,i] .= qp.qn[:,i]
+    end
+    if (typeof(PT) == ShallowWater)
+        @info "this works"
+        for i=1:mesh.npoin
+            global zb[i] = bathymetry(mesh.x[i])
+        end
     end
     #@info qp.neqs
+    deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])
-    params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
+    params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt, deps)
     prob   = ODEProblem(rhs!,
                         u,
                         tspan,

@@ -180,7 +180,7 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
             inputs[:ode_solver] = SSPRK22()
         elseif(uppercase(inputs[:ode_solver]) == "SSPRK33")
             inputs[:ode_solver] = SSPRK33()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK53")
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK53" || uppercase(inputs[:ode_solver]) == "RK53")
             inputs[:ode_solver] = SSPRK53()
         elseif(uppercase(inputs[:ode_solver]) == "SSPRK54")
             inputs[:ode_solver] =SSPRK54()

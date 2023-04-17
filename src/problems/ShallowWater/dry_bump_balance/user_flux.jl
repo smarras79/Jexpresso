@@ -40,7 +40,6 @@ function user_flux(T, SD::NSD_1D, q::Array, mesh::St_mesh)
         H = q[ip,1]
         Hu = q[ip,2]
         u = Hu/H
-        Hs = max(0.001, H - Hb)
         F[ip,1]  = Hu
         F1[ip,1] = 0.0
         F[ip,2]  = Hb

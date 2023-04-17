@@ -175,8 +175,8 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
             if (mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] !="periodic2")
                 tag = mesh.bdy_edge_type[iedge]
                 ip = mesh.poin_in_bdy_edge[iedge,k]
-                m=1
-                l=1
+                mm=1
+                ll=1
                 for ii=1:mesh.ngl
                     for jj=1:mesh.ngl
                         if (mesh.connijk[ii,jj,iel] == ip)
@@ -185,16 +185,17 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                         end
                     end
                 end
+                flux = zeros(size(q,2),1)
                 x = mesh.x[ip]
                 y = mesh.y[ip]
                 if (inputs[:luser_bc])
                      q[ip,:] = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag)
-                    flux = (ω[k]*metrics.Jef[k,iedge]).*neumann(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag)
+                    flux .= (ω[k]*metrics.Jef[k,iedge]).*neumann(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag)
                 else
                     q[ip,:] .= 0.0
                     flux = zeros(size(q,2),1)
                 end
-                rhs[l,m,iel,:] .= rhs[l,m,iel,:] .+ flux[:]
+                rhs[ll,mm,iel,:] .= rhs[ll,mm,iel,:] .+ flux[:]
                 if (size(L,1)>1)
                     for ii=1:mesh.npoin
                         L[ip,ii] = 0.0

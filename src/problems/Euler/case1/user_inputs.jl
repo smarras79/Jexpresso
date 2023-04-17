@@ -3,9 +3,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                => 1.0, #2π,
-        :Δt                  => 1.0e-5,#8.75e-4,
-        :ode_solver          => "AB4",
+        :tend                => 2.0, #2π,
+        :Δt                  => 1.0e-4,#8.75e-4,
+        :ode_solver          => "SSPRK53",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -27,8 +27,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :nelx                 => 30,
-        :xmin                 => -1.0,
+        :nelx                 => 40,
+        :xmin                 => 0.0,
         :xmax                 => 1.0,
         #:lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",

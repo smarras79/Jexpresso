@@ -8,12 +8,12 @@ function initialize(SD::NSD_1D, PT::Euler, mesh::St_mesh, inputs::Dict, OUTPUT_D
 
     #Cone properties:
 
-    case = "sod"
+    case = "slowshock"
     if (case === "sod")
         @info " Sod tube"
 
-        ρL, PL, uL = 1.0,   1.0, 0.0
-        ρR, PR, uR = 0.125, 0.1, 0.0
+        ρL, uL, PL = 1.0,   0.75, 1.0
+        ρR, uR, PR = 0.125, 0.0, 0.1
         
     	for iel_g = 1:mesh.nelem
             for i=1:mesh.ngl
@@ -37,8 +37,36 @@ function initialize(SD::NSD_1D, PT::Euler, mesh::St_mesh, inputs::Dict, OUTPUT_D
                 
             end
         end
+    elseif (case === "slowshock") #prob 7 of https://ammar-hakim.org/sj/je/je2/je2-euler-shock.html
+        @info " Slow moving shock "
+
+        ρL, uL, PL = 1.4, 0.1, 1.0
+        ρR, uR, PR = 1.0, 0.1, 1.0
+        
+    	for iel_g = 1:mesh.nelem
+            for i=1:mesh.ngl
+                
+                ip = mesh.conn[i,iel_g]
+                x  = mesh.x[ip]
+
+                if (x <= 0.5)
+                    ρ = ρL
+                    P = PL
+                    u = uL
+                else
+                    ρ = ρR
+                    P = PR
+                    u = uR
+                end
+                γ = 1.4
+                q.qn[ip,1] = ρ                     #ρ
+                q.qn[ip,2] = ρ*u                   #ρu
+                q.qn[ip,3] = P/(γ - 1.0) + ρ*u*u/2 #ρE
+                
+            end
+        end
     else
-        error(" ERROR: Euler: initialize.jl: no initial conditions assigned"
+        error(" ERROR: Euler: initialize.jl: no initial conditions assigned")
     end
     
 

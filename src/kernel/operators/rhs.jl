@@ -10,6 +10,7 @@ elseif (length(ARGS) === 2)  #problem_name/problem_case_name
 end
 include(user_flux_dir)
 include(user_source_dir)
+include("../ArtificialViscosity/DynSGS.jl")
 #---------------------------------------------------------------------------
 
 function rhs!(du, u, params, time)
@@ -29,7 +30,8 @@ function rhs!(du, u, params, time)
     De      = params.De
     Le      = params.Le
     Δt      = params.Δt
-    RHS = build_rhs(SD, QT, PT, u, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, T)    
+    deps    = params.deps
+    RHS = build_rhs(SD, QT, PT, u, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T)    
     for i=1:neqs
        idx = (i-1)*mesh.npoin
        du[idx+1:i*mesh.npoin] .= RHS[:,i]
@@ -39,8 +41,9 @@ end
 
 
 
-function build_rhs_matrix_formulation(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
 
+function build_rhs_matrix_formulation(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+    
     Fuser = user_flux(T, SD, qp, mesh)
     
     #
@@ -115,10 +118,9 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
     return RHS
 end
 
-function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T) nothing end
+function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T) nothing end
 
-
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
     
     F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     G      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -177,9 +179,9 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
     
 end
 
-function build_rhs(SD::NSD_2D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T) nothing end
+function build_rhs(SD::NSD_2D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T) nothing end
 
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)    
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)    
     
     F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
@@ -244,7 +246,47 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, bas
     return RHS
 end
 
-function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::SoilTopo, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+    F      = zeros(mesh.ngl,mesh.nelem)
+    F1     = zeros(mesh.ngl,mesh.nelem)
+    rhs_el = zeros(mesh.ngl,mesh.nelem)
+    dFdx = 0.0
+    dFdξ = 0.0
+    dFdξ1 = 0.0
+    S =  user_source_friction(SD, T, deps, mesh.npoin)
+    for iel=1:mesh.nelem
+        dξdx = 2.0/mesh.Δx[iel]
+        for i=1:mesh.ngl
+                ip = mesh.conn[i,iel]
+                F[i,iel] = deps[ip,1]
+                F1[i,iel] = zb[ip]
+        end
+        for i=1:mesh.ngl
+                dFdξ = 0.0
+                dFdξ1 = 0.0
+                for k = 1:mesh.ngl
+                    dFdξ = dFdξ + basis.dψ[k,i]*F[k,iel]*dξdx
+                    dFdξ1 = dFdξ1 + basis.dψ[k,i] * F1[k,iel]*dξdx
+                end
+                ip = mesh.conn[i,iel]
+                x = mesh.x[ip]
+                #if (deps[ip,1] > 0.05)
+                    factor = (deps[ip,2]^2/(9.81*deps[ip,1]^3+1e-16)-1)
+                #else
+                 #   factor = 0.0
+                #end
+                dFdx = dFdξ1 - factor * dFdξ + S[ip]
+                rhs_el[i,iel] += ω[i]*mesh.Δx[iel]/2*dFdx
+        end
+    end
+    #rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
+    #@info maximum(rhs_diff_el[:,:,1]), maximum(rhs_diff_el[:,:,2]), minimum(rhs_diff_el[:,:,1]), minimum(rhs_diff_el[:,:,2])
+    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    divive_by_mass_matrix!(RHS, M, QT,neqs)
+    return RHS
+end
+
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
 
     F      = zeros(mesh.ngl,mesh.nelem, neqs)
     F1     = zeros(mesh.ngl,mesh.nelem, neqs)
@@ -255,12 +297,68 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
         qq[:,i] .= qp[idx+1:i*mesh.npoin]
     end
     qq[:,1] = max.(qq[:,1],0.001)
+    qq[:,2] = max.(qq[:,2],0.0)
+    #S =  user_source_friction(SD, T, qq, mesh.npoin)
+    #@info rem(time, Δt)
+    #=if (inputs[:var_topo] && rem(time, Δt) < 5e-4) #&& time > 0.0)
+        @info "topo"
+        u = zeros(mesh.npoin)
+        u .= zb
+        deps1   = qq
+        tspan  = (time, time+Δt)
+        params = (; T, SD=mesh.SD, QT, PT=SoilTopo(), neqs=1, basis, ω, mesh, metrics, inputs, M, De, Le, Δt, deps = deps1)
+        prob   = ODEProblem(rhs!,
+                        u,
+                        tspan,
+                        params);
+
+        solution = solve(prob,
+                              inputs[:ode_solver],
+                              dt = Δt/10,
+                              save_everystep=false,
+                              saveat = range(T(time), time+T(Δt), length=2),
+                              progress = true,
+                              progress_message = (dt, u, p, t) -> t)
+        global zb .= max.(solution[end],0.0)
+        #=
+        # Trying this with linear solve
+        # Construct RHS and global diff matrix
+        RHS_topo = zeros(mesh.npoin)
+        fe  = zeros(mesh.ngl)
+        D = zeros(mesh.npoin,mesh.npoin)
+        for iel=1:mesh.nelem
+            for i=1:mesh.ngl
+                I = mesh.conn[i,iel]
+                fe[i] = qq[I,1]*(qq[I,2]^2/(9.81*qq[I,1]^3+1e-16)-1)
+            end
+            for i=1:mesh.ngl
+                I = mesh.conn[i,iel]
+                for j=1:mesh.ngl
+                    J = mesh.conn[j,iel]
+                    RHS_topo[I] = RHS_topo[I] + De[i,j,iel]*fe[j]
+                    D[I,J] = D[I,J] + De[i,j,iel]
+                end
+            end
+            RHS_topo .= RHS_topo .- S.*M
+        end   
+        #=for ip in [1, mesh.npoin_linear]
+            for i = 1:mesh.npoin
+                D[ip,i] = 0.0
+            end
+            D[ip,ip] = 1.0
+        end=#
+        #@info "presolve print", maximum(RHS_topo), minimum(RHS_topo), maximum(S), minimum(S)
+        solution =  solveAx(D, RHS_topo, IterativeSolversJL_GMRES())
+        
+        global zb .= max.(solution.u, 0.0)=#
+    end=#
+    #qq[:,2] = max.(qq[:,2],0.0)
     Fuser, Fuser1 = user_flux(T, SD, qq, mesh)
     dFdx = zeros(neqs)
     dFdξ = zeros(neqs)
     gHsx = zeros(neqs)
     for iel=1:mesh.nelem
-
+        dξdx = 2.0/mesh.Δx[iel]
         for i=1:mesh.ngl
                 ip = mesh.conn[i,iel]
                 F[i,iel,1] = Fuser[ip,1]
@@ -274,23 +372,22 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
                 dFdξ = zeros(T, neqs)
                 dFdξ1 = zeros(T, neqs)
                 for k = 1:mesh.ngl
-                    dFdξ[1:neqs] .= dFdξ[1:neqs] .+ basis.dψ[k,i]*F[k,iel,1:neqs]
+                    dFdξ[1:neqs] .= dFdξ[1:neqs] .+ basis.dψ[k,i]*F[k,iel,1:neqs]*dξdx
 
-                    dFdξ1[1:neqs] .= dFdξ1[1:neqs] .+ basis.dψ[k,i]*F1[k,iel,1:neqs]
+                    dFdξ1[1:neqs] .= dFdξ1[1:neqs] .+ basis.dψ[k,i]*F1[k,iel,1:neqs]*dξdx
                     #@info i,dFdξ[1:neqs], dFdξ1[1:neqs]
                 end
                 ip = mesh.conn[i,iel]
                 x = mesh.x[ip]
-                Hb = bathymetry(x)
+                Hb = zb[ip]
                 Hs = max(qq[ip,1] - Hb,0.001)
                 gHsx[1] = 1.0
-                gHsx[2] = Hs*9.81
-                dFdx .= gHsx .* (dFdξ[1:neqs]) .+ dFdξ1[1:neqs]
+                gHsx[2] = qq[ip,1]*9.81#Hs*9.81
+                dFdx[1] = gHsx[1] * (dFdξ[1]) + dFdξ1[1] 
+                dFdx[2] = gHsx[2] * (dFdξ[2]) + dFdξ1[2] #+ S[ip]*qq[ip,1]*9.81
                 rhs_el[i,iel,1:neqs] .-= ω[i]*mesh.Δx[iel]/2*dFdx[1:neqs]
         end
-    end
-    #rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-    @info maximum(rhs_diff_el[:,:,1]), maximum(rhs_diff_el[:,:,2]), minimum(rhs_diff_el[:,:,1]), minimum(rhs_diff_el[:,:,2])
+    end   
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
     RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
 
@@ -298,22 +395,21 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
         idx = (i-1)*mesh.npoin
         qp[idx+1:i*mesh.npoin] .= qq[:,i]
     end
-    if (rem(time, Δt) == 0 && time > 0.0)
-        global  q1 .= q2
-        global  q2 .= qq
+    if (rem(time, Δt) < 5e-4 && time > 0.0)
+        global  q2 .= q1
+        global  q1 .= q3
+        global  q3 .= qq
     end
 
-    mu = compute_viscosity(SD, PT, qq, q1, RHS, Δt, mesh, metrics) 
-    @info maximum(mu),minimum(mu)
+    mu = compute_viscosity(SD, PT, q3, q1, q2, RHS, Δt, mesh, metrics) 
     rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, mu, T)
-    #RHS = DSS_rhs(SD, rhs_el .+ rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     divive_by_mass_matrix!(RHS, M, QT,neqs)
-    @info time, maximum(qq[:,2])
+    #@info time, maximum(qq[:,2]),maximum(qq[:,1]), minimum(qq[:,2]),minimum(qq[:,1])
     return RHS
 end
 
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
     F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     F1    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
@@ -407,7 +503,8 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
     return RHS
 end
 
-function build_rhs(SD::NSD_1D, QT::Inexact, PT::Euler, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, T)
+
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::Euler, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
 
     F      = zeros(mesh.ngl,mesh.nelem, neqs)
     rhs_el = zeros(mesh.ngl,mesh.nelem, neqs)
@@ -420,22 +517,21 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::Euler, qp::Array, neqs, basis, �
     
     dFdξ = zeros(neqs)
     for iel=1:mesh.nelem
-
+        dξdx = 2.0/mesh.Δx[iel]
         for i=1:mesh.ngl
             ip = mesh.conn[i,iel]
-            F[i,iel,1:neqs] = Fuser[ip,1:neqs]            
+            F[i,iel,1:neqs] .= Fuser[ip,1:neqs]            
         end
         for i=1:mesh.ngl
             dFdξ = zeros(T, neqs)
             for k = 1:mesh.ngl
-                dFdξ[1:neqs] .= dFdξ[1:neqs] .+ basis.dψ[k,i]*F[k,iel,1:neqs]
+                dFdξ[1:neqs] .= dFdξ[1:neqs] .+ basis.dψ[k,i]*F[k,iel,1:neqs]*dξdx 
             end
-                        
+            
             rhs_el[i,iel,1:neqs] .-= ω[i]*mesh.Δx[iel]/2*dFdξ[1:neqs]
         end
     end
-    #rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, T)
-#    @info maximum(rhs_diff_el[:,:,1]), maximum(rhs_diff_el[:,:,2]), minimum(rhs_diff_el[:,:,1]), minimum(rhs_diff_el[:,:,2])
+    
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
     RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
 
@@ -447,14 +543,12 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::Euler, qp::Array, neqs, basis, �
         global  q1 .= q2
         global  q2 .= qq
     end
-
-   # mu = compute_viscosity(SD, PT, qq, q1, RHS, Δt, mesh, metrics) 
-   # @info maximum(mu),minimum(mu)
-   # rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, mu, T)
-   # #RHS = DSS_rhs(SD, rhs_el .+ rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
-   # RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    
+    #μ = compute_viscosity(SD, PT, q3, q1, q2, RHS, Δt, mesh, metrics) 
+    #rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, μ, T)
+    #RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     divive_by_mass_matrix!(RHS, M, QT,neqs)
-   # @info time, maximum(qq[:,2])
+    
     return RHS
 end
 
@@ -607,7 +701,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqs, basis, ω, νx
 
 end
 
-function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, mu, T)
 
     N = mesh.ngl - 1
 
@@ -649,7 +743,7 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqs, basis, ω, �
                 #if (ieq > 1)
                     dqdx = mu[iel] * (dqdξ) * dξdx
                 #else
-                 #   dqdx = 0.0
+                #    dqdx = 0.0
                 #end 
                 #@info "dqdx", dqdx, "vx", νx
                 
@@ -658,7 +752,7 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqs, basis, ω, �
                     x = mesh.x[ip]
                     Hb = bathymetry(x)
                     Hs = max(qq[ip,1] - Hb,0.001)
-                    dqdx = dqdx * Hs
+                    dqdx = dqdx * qq[ip,1]#* Hs
                 end
 
                 ∇ξ∇q_kl =  dqdx*dξdx 
@@ -748,6 +842,92 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::ShallowWater, qp, neqs, basis, ω, �
     return (rhsdiffξ_el + rhsdiffη_el)
 
 end
+
+function build_rhs_diff(SD::NSD_1D, QT, PT::Euler, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, μ, T)
+
+    N = mesh.ngl - 1
+
+    #qnel = zeros(mesh.ngl, mesh.nelem, neqs)
+    ρel = zeros(mesh.ngl, mesh.nelem)
+    uel = zeros(mesh.ngl, mesh.nelem)
+    Tel = zeros(mesh.ngl, mesh.nelem)
+
+    rhsdiffξ_el = zeros(mesh.ngl, mesh.nelem, neqs)
+    qq = zeros(mesh.npoin,neqs)
+
+    γ = 1.4
+    Pr = 0.1/(γ - 1.0)
+    
+    #
+    # qp[1:npoin]         <-- qq[1:npoin, "ρ"]
+    # qp[npoin+1:2npoin]  <-- qq[1:npoin, "ρu"]
+    # qp[2npoin+1:3npoin] <-- qq[1:npoin, "ρE"]
+    #
+    for i=1:neqs
+        idx = (i-1)*mesh.npoin
+        qq[:,i] = qp[idx+1:i*mesh.npoin]
+    end
+    #
+    # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
+    #
+    for iel=1:mesh.nelem
+        Jac = mesh.Δx[iel]/2.0
+        for i=1:mesh.ngl
+            m = mesh.conn[i,iel]
+            #qnel[i,iel,1] = qq[m,1] #ρ
+            #qnel[i,iel,2] = qq[m,2]/qnel[i,iel,1] #u = ρu/ρ
+            #qnel[i,iel,3] = qq[m,3]/qnel[i,iel,1] #E = ρE/ρ
+            
+            ρel[i,iel] = qq[m,1]
+            uel[i,iel] = qq[m,2]/ρel[i]
+            Tel[i,iel] = qq[m,3]/ρel[i] - 0.5*uel[i]^2
+        end
+
+        μ[iel] = 1.0
+        ν = 1.0
+        #ν = Pr*μ[iel]/maximum(ρel[:,iel])
+        
+        dξdx = 2.0/mesh.Δx[iel]
+        for k = 1:mesh.ngl
+            ωJkl = ω[k]*Jac
+
+            #for ieq = 1:neqs
+            #dqdξ = 0.0
+            dρdξ = 0.0
+            dudξ = 0.0
+            dTdξ = 0.0
+            for i = 1:mesh.ngl
+                #dqdξ = dqdξ + basis.dψ[i,k]*qnel[i,iel,ieq]
+                dρdξ = dρdξ + basis.dψ[i,k]*ρel[i,iel]
+                dudξ = dudξ + basis.dψ[i,k]*uel[i,iel]
+                dTdξ = dTdξ + basis.dψ[i,k]*Tel[i,iel]
+            end
+            
+            dρdx =  ν      * dρdξ*dξdx
+            dudx =  μ[iel] * dudξ*dξdx
+            dTdx = (μ[iel] * dudξ*dξdx * uel[k,iel] + Pr*μ[iel] * dTdξ*dξdx)
+            
+            #∇ξ∇q_kl =  dqdx*dξdx
+            ∇ξ∇ρ_kl =  dρdx*dξdx
+            ∇ξ∇u_kl =  dudx*dξdx
+            ∇ξ∇T_kl =  dTdx*dξdx
+            for i = 1:mesh.ngl
+
+                hkk     = basis.ψ[k,k]
+                dhdξ_ik = basis.dψ[i,k]
+
+                rhsdiffξ_el[i,iel,1] -= ωJkl*dhdξ_ik*hkk*∇ξ∇ρ_kl
+                rhsdiffξ_el[i,iel,2] -= ωJkl*dhdξ_ik*hkk*∇ξ∇u_kl
+                rhsdiffξ_el[i,iel,3] -= ωJkl*dhdξ_ik*hkk*∇ξ∇T_kl
+            end
+            # end
+        end
+    end
+    
+    return (rhsdiffξ_el)
+
+end
+
 
 function build_rhs_source(SD::NSD_2D,
                           QT::Inexact,
