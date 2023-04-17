@@ -29,16 +29,20 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
-        
     npoin = floor(Int64, size(q, 1)/nvar)
+    Hb = zeros(npoin,nvar)
+    for i=1:npoin
+       x= mesh.x[i]
+       Hb[i,1] = zb[i]
+    end
     for ivar=1:nvar
         
         idx = (ivar - 1)*npoin
-        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin],
+        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin].+Hb[:,ivar],
                                           markersize = 10, markercolor="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),
-                                          axis = (; aspect = 1, limits = (xmin, xmax, -0.5, 1.0)))
+                                          )#axis = (; aspect = 1, limits = (xmin, xmax, 0.05, 2.0)))
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
         save(string(fout_name), fig; resolution = (600, 400))
@@ -98,7 +102,6 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         axs = [Axis3(fig[1, i]; aspect=(1, 1, 1)) for i = 1:1]
         
         hm = Makie.surface!(axs[1], xg, yg, zspl) # legend=:false, xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
-
         #Colorbar(fig[1, 1], hm, height=Relative(0.5))
         
         save(string(fout_name), fig)

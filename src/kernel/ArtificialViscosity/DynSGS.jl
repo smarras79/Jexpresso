@@ -1,4 +1,4 @@
-function compute_viscosity(::NSD_1D, PT::ShallowWater, q, q1, rhs, Δt, mesh,metrics)
+function compute_viscosity(::NSD_1D, PT::ShallowWater, q, q1, q2, rhs, Δt, mesh,metrics)
 
     #compute domain averages
     H_avg = 0.0
@@ -21,12 +21,12 @@ function compute_viscosity(::NSD_1D, PT::ShallowWater, q, q1, rhs, Δt, mesh,met
         for i=1:mesh.ngl
             ip = mesh.conn[i,e]
             Hdiff[i,e] = abs(q[ip,1] - H_avg)
-            Hudiff[i,e] = abs(q[ip,1] - Hu_avg)
+            Hudiff[i,e] = abs(q[ip,2] - Hu_avg)
         end
      end
      denom1 = maximum(Hdiff)+1e-16
      denom2 = maximum(Hudiff)+1e-16
-     @info denom1, denom2
+     #@info denom1, denom2
      #Get Numerator inifinity norms, mu_max infinity norm
      mu_SGS = zeros(mesh.nelem,1)
 
@@ -38,13 +38,15 @@ function compute_viscosity(::NSD_1D, PT::ShallowWater, q, q1, rhs, Δt, mesh,met
          for i=1:mesh.ngl
              ip = mesh.conn[i,e]
              x = mesh.x[ip]
-             RH[i] = abs((q[ip,1] - q1[ip,1])/Δt - rhs[ip,1])
-             RHu[i] = (q[ip,2] - q1[ip,2])/Δt - rhs[ip,2]
-             ughs[i] = abs(q[ip,2]/q[ip,1])+sqrt(9.81*(q[ip,1]-bathymetry(x)))
+             #@info "mass", (3*q[ip,1]-4*q1[ip,1]+q2[ip,1])/(2*Δt),q[ip,1],q1[ip,1],q2[ip,1]
+             #@info "velocity", (3*q[ip,2]-4*q1[ip,2]+q2[ip,2])/(2*Δt),q[ip,2],q1[ip,2],q2[ip,2]      
+             RH[i] = abs((q[ip,1] - q1[ip,1])/Δt + rhs[ip,1]) #abs((3*q[ip,1]-4*q1[ip,1]+q2[ip,1])/(2*Δt)+rhs[ip,1])#rhs[ip,1] #abs((q[ip,1] - q1[ip,1])/Δt + rhs[ip,1])
+             RHu[i] = abs((q[ip,2] - q1[ip,2])/Δt + rhs[ip,2])#abs((3*q[ip,2]-4*q1[ip,2]+q2[ip,2])/(2*Δt)+rhs[ip,2])#rhs[ip,2] #(q[ip,2] - q1[ip,2])/Δt + rhs[ip,2]
+             ughs[i] = abs(q[ip,2]/q[ip,1])+sqrt(9.81*(max(q[ip,1],0.001)))
          end
          numer1 = maximum(RH)
-         numer2 = maximum(RH)
-         @info numer1, numer2
+         numer2 = maximum(RHu)
+         #@info numer1, numer2
          mu_res = Δ^2 * max(numer1/denom1, numer2/denom2)
          mu_max = 0.5*Δ*maximum(ughs)
          mu_SGS[e] = max(0.0,min(mu_max,mu_res))
@@ -109,7 +111,7 @@ end
              end
          end
          numer1 = maximum(RH)
-         numer2 = maximum(RH)
+         numer2 = maximum(RHu)
          mu_res = Δ^2 * max(numer1/denom1, numer2/denom2)
          mu_max = 0.5*Δ*maximum(ughs)
          mu_sgs[e] = max(0.0,min(mu_max,mu_res))
