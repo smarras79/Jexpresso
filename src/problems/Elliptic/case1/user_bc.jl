@@ -24,25 +24,18 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+    c =2.0
     
-    if (tag === "zero_all")
-        qibdy[1] = 0.0    #u
-    else
-        #Default if no tag found
-        qibdy[1] = 0.0    #u
-    end
-    
-    return qibdy
+    q[1] = sinpi(c*x)*sinpi(c*y)
+     
+    return q
 end
 
-function user_bc_neumann(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-    
-    if (tag === "heat_flux")
-         return 400.0
-    else
-         return 0.0
-    end
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+   
+    flux = zeros(size(q,2),1)
+    return flux 
     
 end
 
