@@ -25,28 +25,30 @@
     
 """
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-    c =2.0
-    
-    q[1] = sinpi(c*x)*sinpi(c*y)
-     
+    q[1] = 0.5
+    q[2] = 0.0
+    q[3] = 0.0 
+    return q
+end
+
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+    if (x > 1.0)
+        if (q[2] > 0.1)
+            q[1] = ((4/9.81)^(1/3)) * (1 + 0.5*exp(-16*(x/1000 - 0.5)^2))
+        end
+    else
+        q[1] = ((4/9.81)^(1/3)) * (1 + 0.5*exp(-16*(x/1000 - 0.5)^2))
+        q[2] = 2.0
+    end
     return q
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-   
     flux = zeros(size(q,2),1)
-    return flux 
-    
+    return flux
 end
 
-
-function user_bc_robin!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-    
-    if (tag === "heat_flux")
-        gradq[1] = 400.0
-    elseif (tag === "fix_temperature")
-        qibdy[1] = 0.0
-    end
-
-    return gradq, qibdy
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+    flux = zeros(size(q,2),1)
+    return flux
 end

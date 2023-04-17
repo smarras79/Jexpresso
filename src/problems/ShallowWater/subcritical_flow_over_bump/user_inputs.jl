@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :tend                => 1000.0, #2π,
-        :Δt                  => 0.1e-1,#8.75e-4,
+        :Δt                  => 0.01e-1,#8.75e-4,
         :ndiagnostics_outputs=> 200,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

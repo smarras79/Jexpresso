@@ -53,8 +53,11 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
 
                     ip = mesh.conn[i,iel_g]
                     x  = mesh.x[ip]
-                    Hb = bathymetry(x)
-                    H = 0.5 - Hb
+                    if (x <= 0)
+                        H = 3.0
+                    else
+                        H = 1.0
+                    end
                     q.qn[ip,1] = H
                     q.qn[ip,2] = 0.0
                 end

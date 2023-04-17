@@ -45,7 +45,7 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
     npoin = mesh.npoin
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=3)
 
-        @info "SWASHES submerged bump no flow steady state"
+        @info "SWASHES transcritical with shock steady state case"
 
         for iel_g = 1:mesh.nelem
             for i=1:ngl
@@ -54,7 +54,7 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
                     ip = mesh.conn[i,iel_g]
                     x  = mesh.x[ip]
                     Hb = bathymetry(x)
-                    H = 0.5 - Hb
+                    H = 0.33 - Hb
                     q.qn[ip,1] = H
                     q.qn[ip,2] = 0.0
                 end

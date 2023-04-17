@@ -9,13 +9,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver          => "BICGSTABLE",
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 4,     # Polynomial order
+        :nop                 => 12,     # Polynomial order
         :lexact_integration  => false,
         :luser_bc            => false,
         #---------------------------------------------------------------------------
         # Output parameters:
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "png",
+        #:lplot_surf3d        => true, #default is false. when true, set a value for :smoothing_factor. as small as possible but not too small!
+        :smoothing_factor    => 1.0e-4, #factor for spline2d interpolation. 
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------

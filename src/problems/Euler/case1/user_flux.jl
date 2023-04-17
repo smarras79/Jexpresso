@@ -17,7 +17,7 @@ function user_flux(T, SD::NSD_1D, q::Array, mesh::St_mesh; neqs=3)
         
         F[ip,1] = ρu
         F[ip,2] = ρu*u + Press
-        F[ip,3] = ρE*u + u*Press
+        F[ip,3] = ρE*u + Press*u
     end
     return F
 end

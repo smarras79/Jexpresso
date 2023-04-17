@@ -36,7 +36,7 @@ function user_flux(T, SD::NSD_1D, q::Array, mesh::St_mesh)
     F1 = zeros(T, mesh.npoin, 2)
     for ip=1:mesh.npoin
         x = mesh.x[ip]
-        Hb = bathymetry(x)
+        Hb = zb[ip]#bathymetry(x)
         H = q[ip,1]
         Hu = q[ip,2]
         u = Hu/H

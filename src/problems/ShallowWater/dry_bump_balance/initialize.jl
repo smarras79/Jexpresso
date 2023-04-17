@@ -45,8 +45,10 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
     npoin = mesh.npoin
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=3)
 
-        @info "SWASHES submerged bump no flow steady state"
+    #Cone properties:
 
+        @info "Constant height with a dryish bump SWASHES second steady state case"
+    
         for iel_g = 1:mesh.nelem
             for i=1:ngl
                 for j=1:ngl
@@ -54,14 +56,11 @@ function initialize(SD::NSD_1D, PT::ShallowWater, mesh::St_mesh, inputs::Dict, O
                     ip = mesh.conn[i,iel_g]
                     x  = mesh.x[ip]
                     Hb = bathymetry(x)
-                    H = 0.5 - Hb
-                    q.qn[ip,1] = H
-                    q.qn[ip,2] = 0.0
+                    H = 0.1 - Hb
+                    q.qn[ip,1] = max(H,0.001)                                    #H
+                    q.qn[ip,2] = 0.0                                   #Hu
                 end
             end
         end
-    
-    @info "Initialize fields for system of 1D Shallow Water equations ........................ DONE"
-
     return q
 end
