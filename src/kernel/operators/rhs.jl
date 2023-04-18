@@ -254,7 +254,7 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
         qq[:,i] .= qp[idx+1:i*mesh.npoin]
     end
     qq[:,1] = max.(qq[:,1],0.001)
-    qq[:,2] = max.(qq[:,2],0.0)
+    #qq[:,2] = max.(qq[:,2],0.0)
     #S =  user_source_friction(SD, T, qq, mesh.npoin)
     #@info rem(time, Δt)
     #=if (inputs[:var_topo] && rem(time, Δt) < 5e-4) #&& time > 0.0)
