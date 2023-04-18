@@ -1,22 +1,32 @@
-"""
-Jexpresso is a toy software for the numerical solution of 1D, 2D, and 3D PDEs 
-using spectral methods and spectral element methods on CPUs and GPUs. 
-DISCLAIMER: this is WIP and we have barely started implementing this code.
-The module is structured in the following sub-modules:
-
-- [`Jexpresso.arrays`](@ref)
-- [`Jexpresso.auxiliary`](@ref)
-- [`Jexpresso.io`](@ref)
-- [`Jexpresso.kernel`](@ref)
-- [`Jexpresso.macros`](@ref)
-- [`Jexpresso.problems`](@ref)
-
-The exported names are:
-$(EXPORTS)
-"""
 module Jexpresso
 
-using DocStringExtensions
+using Dates
+using Revise
+
+const TInt   = Int64
+const TFloat = Float64
+
+#using DocStringExtensions
+
+include("./problems/AbstractProblems.jl")
+
+include("./kernel/abstractTypes.jl")
+
+include("./kernel/globalStructs.jl")
+
+include("./kernel/infrastructure/sem_setup.jl")
+
+include("./kernel/boundaryconditions/BCs.jl")
+
+include("./kernel/operators/rhs.jl")
+
+include("./kernel/solvers/TimeIntegrators.jl")
+
+include("./kernel/solvers/Axb.jl")
+
+include("./io/mod_inputs.jl")
+
+include("./io/write_output.jl")
 
 include("./run.jl")
 

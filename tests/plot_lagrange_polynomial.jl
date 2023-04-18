@@ -2,7 +2,7 @@ using Plots; gr()
 using LaTeXStrings
 using ColorSchemes
 
-include("../src/basis/basis_structs.jl")
+include("../src/bases/basis_structs.jl")
 
 """
     Test driver to show how to build and plot a

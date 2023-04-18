@@ -1,7 +1,7 @@
 TInt=Int64
 TFloat=Float64
 include("../src/Infrastructure/Kopriva_functions.jl")
-include("../src/basis/basis_structs.jl")
+include("../src/bases/basis_structs.jl")
 a=zeros(Float64,3)
 b=zeros(Float64,3)
 g=zeros(Float64,3)

@@ -1,5 +1,5 @@
 include("../src/kernel/infrastructure/Kopriva_functions.jl")
-include("../src/kernel/basis/basis_structs.jl")
+include("../src/kernel/bases/basis_structs.jl")
 include("../src/io/plotting/jeplots.jl")
 
 a=zeros(Float64,3)
