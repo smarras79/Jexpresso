@@ -11,24 +11,27 @@ function parse_commandline()
 
     @add_arg_table s begin
         "--opt1"
-            help = "an option with an argument"
+        help = "an option with an argument"
         "--opt2", "-o"
-            help = "another option with an argument"
-            arg_type = Int
-            default = 0
+        help = "another option with an argument"
+        arg_type = Int
+        default = 0
         "--flag1"
-            help = "an option without argument, i.e. a flag"
-            action = :store_true
+        help = "an option without argument, i.e. a flag"
+        action = :store_true
         "arg1"
-            help = "a positional argument"
-            required = true
+        help = "problem_name"
+        required = true
+        "arg2"
+        help = "case name within problems/problem_name"
+        required = false
     end
 
     return parse_args(s)
 end
 
 
-function mod_inputs_user_inputs!(problem_name, problem_dir::String)
+function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::String)
 
     error_flag::Int8 = 0
     
@@ -36,7 +39,7 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
     # was definied within this same function via the include(input_dir) above.
     # 
-    input_dir = string(problem_dir, "/", problem_name, "/user_inputs.jl")
+    input_dir = string(problem_dir, "/", problem_name, "/", problem_case_name, "/user_inputs.jl")
     include(input_dir)
     inputs = @Base.invokelatest(user_inputs())
     
@@ -48,28 +51,174 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
-    #mod_inputs_check(inputs, :problem, "e")
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
+
+    #
+    # Plotting parameters:
+    #
+    if(!haskey(inputs, :outformat))
+        inputs[:outformat] = ASCII()
+    else
+        if lowercase(inputs[:outformat]) == "png"
+            inputs[:outformat] = PNG()
+        elseif lowercase(inputs[:outformat]) == "ascii"
+            inputs[:outformat] = ASCII()
+        elseif lowercase(inputs[:outformat]) == "vtk"
+            inputs[:outformat] = VTK()
+        end
+    end
+
+    # Write png to surface using Spline2D interpolation of unstructured data:
+    if(!haskey(inputs, :lplot_surf3d))
+        inputs[:lplot_surf3d] = false
+    end
+    if(!haskey(inputs, :smoothing_factor))
+        #This is the spline2d smoothing factor. Too small and it may break the spline2d, but it should be as small as possible for precision
+        inputs[:smoothing_factor] = 1.0e-1
+    end
+    
+    #
+    # END Plotting parameters:
+    #
+    
     
     #Time:
-    if(!haskey(inputs, :diagnostics_interval))
-        inputs[:diagnostics_interval] = Int8(1)
+    if(!haskey(inputs, :ndiagnostics_outputs))
+        inputs[:ndiagnostics_outputs] = 2
     end
-    mod_inputs_check(inputs, :tend, "e") #Final time
     mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
+    end
+     if(!haskey(inputs, :tend))
+        inputs[:tend] = 0.0  #end time is 0.0 by default
     end
     
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
     end
 
-    mod_inputs_check(inputs, :interpolation_nodes, String("lgl"), "w")
-    if(haskey(inputs, :interpolation_nodes) && inputs[:interpolation_nodes] == "llg" || inputs[:interpolation_nodes] == "gll")
-        inputs[:interpolation_nodes] = "lgl"
+    if(haskey(inputs, :interpolation_nodes))
+        
+        if(lowercase(inputs[:interpolation_nodes]) == "llg" ||
+           lowercase(inputs[:interpolation_nodes]) == "gll" ||
+           lowercase(inputs[:interpolation_nodes]) == "lgl")
+            inputs[:interpolation_nodes] = LGL()
+
+        elseif(lowercase(inputs[:interpolation_nodes]) == "lg" ||
+               lowercase(inputs[:interpolation_nodes]) == "gl")
+            inputs[:interpolation_nodes] = LG()
+            
+        elseif(lowercase(inputs[:interpolation_nodes]) == "cg" ||
+               lowercase(inputs[:interpolation_nodes]) == "gc")
+            inputs[:interpolation_nodes] = CG()
+            
+        elseif(lowercase(inputs[:interpolation_nodes]) == "cgl" ||
+               lowercase(inputs[:interpolation_nodes]) == "gcl")
+            inputs[:interpolation_nodes] = CGL()
+        else
+            s = """
+                ERROR in user_inputs.jl --> :interpolation_nodes
+                
+                    Chose among:
+                     - "lgl"
+                     - "lg"
+                     - "cg"
+                     - "cgl"
+              """
+    
+            error(s)
+        end
+    else
+        #default are LGL
+        inputs[:interpolation_nodes] = LGL()
+    end
+
+    if(haskey(inputs, :quadrature_nodes))
+        
+        if(lowercase(inputs[:quadrature_nodes]) == "llg" ||
+           lowercase(inputs[:quadrature_nodes]) == "gll" ||
+           lowercase(inputs[:quadrature_nodes]) == "lgl")
+            inputs[:quadrature_nodes] = LGL()
+
+        elseif(lowercase(inputs[:quadrature_nodes]) == "lg" ||
+               lowercase(inputs[:quadrature_nodes]) == "gl")
+            inputs[:quadrature_nodes] = LG()
+            
+        elseif(lowercase(inputs[:quadrature_nodes]) == "cg" ||
+               lowercase(inputs[:quadrature_nodes]) == "gc")
+            inputs[:quadrature_nodes] = CG()
+            
+        elseif(lowercase(inputs[:quadrature_nodes]) == "cgl" ||
+               lowercase(inputs[:quadrature_nodes]) == "gcl")
+            inputs[:quadrature_nodes] = CGL()
+        else
+            s = """
+                ERROR in user_inputs.jl --> :quadrature_nodes
+                
+                    Chose among:
+                     - "lgl"
+                     - "lg"
+                     - "cg"
+                     - "cgl"
+              """
+            
+            error(s)            
+        end
+    else
+        #default are LGL
+        inputs[:quadrature_nodes] = LGL()
     end
     
+    #
+    # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
+    #
+    if(haskey(inputs, :ode_solver))
+        if(uppercase(inputs[:ode_solver]) == "RK4")
+            inputs[:ode_solver] = RK4()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK22")
+            inputs[:ode_solver] = SSPRK22()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK33")
+            inputs[:ode_solver] = SSPRK33()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK53")
+            inputs[:ode_solver] = SSPRK53()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK54")
+            inputs[:ode_solver] =SSPRK54()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK63")
+            inputs[:ode_solver] = SSPRK63()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK73")
+            inputs[:ode_solver] = SSPRK73()
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK104")
+            inputs[:ode_solver] = SSPRK104()
+        elseif(uppercase(inputs[:ode_solver]) == "CARPENTERKENNEDY2N54")
+            inputs[:ode_solver] = CarpenterKennedy2N54()
+        elseif(uppercase(inputs[:ode_solver]) == "BICGSTAB" ||
+               uppercase(inputs[:ode_solver]) == "BICGSTABLE" ||
+               uppercase(inputs[:ode_solver]) == "IterativeSolversJL_BICGSTAB") 
+            inputs[:ode_solver] = IterativeSolversJL_BICGSTAB()
+        elseif(uppercase(inputs[:ode_solver]) == "GMRES"|| uppercase(inputs[:ode_solver]) == "IterativeSolversJL_GMRES")
+            inputs[:ode_solver] = IterativeSolversJL_GMRES()
+        else
+            s = """
+                    WARNING in user_inputs.jl --> :ode_solver
+                    
+                        See usable solvers at
+                        https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
+
+                    SSPRK53 will be used by default.
+                        """            
+            inputs[:ode_solver] = SSPRK53()
+
+            @warn s
+        end
+    else
+        inputs[:ode_solver] = SSPRK53()
+    end
+
+if(!haskey(inputs, :output_dir))
+    inputs[:output_dir] = ""
+end
+
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         
@@ -98,15 +247,13 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
         mod_inputs_check(inputs, :zmin, Float64(-1.0), "-")
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
 
-        s= """ 
-           jexpresso: Some undefined (but unnecessary) user inputs 
-           MAY have been given some default values.
-           User needs not to worry about them.
-           """
-        @warn s
+        s= string("jexpresso: Some undefined (but unnecessary) user inputs 
+                              MAY have been given some default values.
+                              User needs not to worry about them.")
         
-    end #lread_gmsh =#
-
+        #@warn s
+        
+    end #lread_gmsh
     #
     # Some physical constants and parameters:
     #    
@@ -128,125 +275,125 @@ function mod_inputs_user_inputs!(problem_name, problem_dir::String)
     if(haskey(inputs, :nelx))
         inputs[:npx] = inputs[:nelx] + 1
     else
-        inputs[:npx] = Int8(2)
+        inputs[:npx] = UInt8(2)
     end
     if(haskey(inputs, :nely))
         inputs[:npy] = inputs[:nely] + 1
     else
-        inputs[:npy] = Int8(2)
+        inputs[:npy] = UInt8(2)
     end
     if(haskey(inputs, :nelz))
         inputs[:npz] = inputs[:nelz] + 1
     else
-        inputs[:npz] = Int8(2)
+        inputs[:npz] = UInt8(2)
     end
     
     if (inputs[:nsd] == 1)
-        inputs[:npy] = Int8(1)
-        inputs[:npz] = Int8(1)
+        inputs[:npy] = UInt8(1)
+        inputs[:npz] = UInt8(1)
     elseif(inputs[:nsd] == 2)
-        inputs[:npz] = Int8(1)
+        inputs[:npz] = UInt8(1)
     end
 
-        
-    """
-    To add a new set of governing equations, add a new problem director
-    to src/problems and call it `ANY_NAME_YOU_WANT` 
-    and add the following lines 
-
-     elseif (lowercase(problem_name) == "ANY_NAME_YOU_WANT")
-        inputs[:problem] = ANY_NAME_YOU_WANT()
-            
-        nvars = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
-        prinetln( " # nvars     ", nvars)
-     end
-
-    """
+    #Penalty constant for SIPG
+    if(!haskey(inputs, :penalty))
+        inputs[:penalty] = Float16(0.0) #default kinematic viscosity
+    end
+    
     
     #------------------------------------------------------------------------
-    # Define nvars based on the problem being solved
+    #To add a new set of governing equations, add a new problem director
+    #to src/problems and call it `ANY_NAME_YOU_WANT` 
+    #and add the following lines 
+    #
+    #elseif (lowercase(problem_name) == "ANY_NAME_YOU_WANT")
+    #inputs[:problem] = ANY_NAME_YOU_WANT()
+    #
+    #neqs = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
+    #prinetln( " # neqs     ", neqs)
+    #end
     #------------------------------------------------------------------------
-    nvars::Int8 = 1
-    #if (lowercase(inputs[:problem]) == "burgers")
-    if (lowercase(problem_name) == "burgers")
-        inputs[:problem] = burgers()
-        
-        if(inputs[:nsd] == 1)
-            nvars = 1
-        elseif (inputs[:nsd] == 2)
-            nvars = 2
-        end
-        inputs[:nvars] = nvars
-        println( " # nvars     ", nvars)
-        
-    elseif (lowercase(problem_name) == "sw")
-        inputs[:problem] = sw()
-        
-        if (inputs[:nsd] == 1)
-            nvars = 2
-        elseif(inputs[:nsd] == 2)
-            nvars = 3
-        elseif(inputs[:nsd] == 3)
-            error(" :problem error: SHALLOW WATER equations can only be solved on 1D and 2D grids!")
-        end
-        inputs[:nvars] = nvars
-        println( " # nvars     ", nvars)
-        
-    elseif (lowercase(problem_name) == "ns")
-        inputs[:problem] = ns()
-        
-        if (inputs[:nsd] == 1)
-            nvars = 3
-        elseif(inputs[:nsd] == 2)
-            nvars = 4
-        elseif(inputs[:nsd] == 3)
-            nvars == 5
-        end
-        inputs[:nvars] = nvars
-        println( " # nvars     ", nvars)
-        
-    elseif (lowercase(problem_name) == "linearclaw" ||
-            lowercase(problem_name) == "linclaw" ||
-            lowercase(problem_name) == "lclaw")
-        inputs[:problem] = LinearCLaw()
-        
-        inputs[:nvars] = nvars = 3
-        println( " # nvars     ", nvars)
-        
-    elseif (lowercase(problem_name) == "advdiff" ||
+    
+    #------------------------------------------------------------------------
+# Define neqs based on the problem being solved
+#------------------------------------------------------------------------
+neqs::Int8 = 1
+
+if (lowercase(problem_name) == "burgers")
+    inputs[:problem] = Burgers()
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
+elseif (lowercase(problem_name) == "shallowwater")
+    inputs[:problem] = ShallowWater()    
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
+    
+elseif (lowercase(problem_name) == "linearclaw" ||
+        lowercase(problem_name) == "linclaw" ||
+        lowercase(problem_name) == "lclaw")
+    inputs[:problem] = LinearCLaw()
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
+    
+elseif (lowercase(problem_name) == "advdiff" ||
         lowercase(problem_name) == "advdif" ||
         lowercase(problem_name) == "ad" ||
         lowercase(problem_name) == "adv2d")
-        inputs[:problem] = AdvDiff()
+    inputs[:problem] = AdvDiff()
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
         
-        inputs[:nvars] = nvars = 1
-        println( " # nvars     ", nvars)
-    else
-        
-        inputs[:nvars] = 1 #default
-        
-        s = """
-                jexpresso  user_inputs.jl: problem ", inputs[:problem, " is not coded!
-                Chose among:
-                    - "AdvDiff"/"AD"/"Adv"
-                    - "LinearCLaw"/"LinClaw"
-                    - "NS"
-                    - "SW"
-            """
-        
-        @error s
-    end
+elseif (lowercase(problem_name) == "elliptic" ||
+        lowercase(problem_name) == "diffusion")
+    inputs[:problem] = Elliptic()
+    inputs[:ldss_laplace] = true
+    inputs[:ldss_differentiation] = false
     
+elseif (lowercase(problem_name) == "helmholtz")
+    inputs[:problem] = Helmholtz()
+    inputs[:ldss_laplace] = true
+    inputs[:ldss_differentiation] = false    
+else
     
-    return inputs, nvars
+    #inputs[:neqs] = 1 #default
+    
+    s = """
+            jexpresso  user_inputs.jl: problem ", inputs[:problem, " is not coded!
+            Chose among:
+                     - "AdvDiff"/"AD"/"Adv"
+                     - "LinearCLaw"/"LinClaw"
+                     - "Burgers"
+                     - "SW"
+          """
+    
+    @error s
+end
+
+if(!haskey(inputs, :ldss_differentiation))
+    inputs[:ldss_differentiation] = false
+end
+if(!haskey(inputs, :ldss_laplace))
+    inputs[:ldss_laplace] = false
+end
+#------------------------------------------------------------------------
+# The following quantities stored in the inputs[] dictionary are only
+# auxiliary and are NEVER to be defined by the user
+#------------------------------------------------------------------------
+if ((inputs[:νx] != 0.0) || (inputs[:νy] != 0.0) || (inputs[:νz] != 0.0))
+    inputs[:δvisc] = 1.0
+else
+    inputs[:δvisc] = 0.0
+end
+
+return inputs
 end
 
 function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
     
     if (!haskey(inputs, key))
         s = """
-            jexpresso: $key is missing in .../IO/user_inputs.jl
-            """
+                jexpresso: $key is missing in .../IO/user_inputs.jl
+                """
         if (error_or_warning=="e")
             error(s)
         elseif (error_or_warning=="w")
@@ -254,7 +401,7 @@ function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
         end
         error_flag = 1
     end
-       
+    
 end
 
 
@@ -262,13 +409,13 @@ function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
 
     if (!haskey(inputs, key))
         s = """
-            jexpresso: $key is missing in .../IO/user_inputs.jl
-            The default value $key=$value will be used.
-            """
+                jexpresso: $key is missing in .../IO/user_inputs.jl
+                The default value $key=$value will be used.
+                """
         if (error_or_warning=="e")
             error(s)
         elseif (error_or_warning=="w")
-            @warn s     
+            @warn s
         end
         
         #assign a dummy default value
