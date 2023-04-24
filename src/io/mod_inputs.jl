@@ -83,8 +83,9 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
     
     
     #Time:
-    if(!haskey(inputs, :ndiagnostics_outputs))
+    if(!haskey(inputs, :ndiagnostics_outputs) && !haskey(inputs, :ndiagnostics_output))
         inputs[:ndiagnostics_outputs] = 2
+        inputs[:ndiagnostics_output]  = 2
     end
     mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
@@ -336,8 +337,8 @@ elseif (lowercase(problem_name) == "shallowwater")
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
     
-elseif (lowercase(problem_name) == "euler")
-    inputs[:problem] = Euler()
+elseif (lowercase(problem_name) == "compeuler")
+    inputs[:problem] = CompEuler()
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
     

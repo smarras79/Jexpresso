@@ -30,12 +30,12 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
-function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
+function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1, PT=nothing)
     
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     for iout = 1:size(sol.t[:], 1)
         title = string("sol.u at time ", sol.t[iout])
-        plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar)
+        plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar, PT=PT)
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end

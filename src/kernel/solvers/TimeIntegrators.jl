@@ -57,7 +57,7 @@ function time_loop!(QT,
     
     @time    solution = solve(prob,
                               inputs[:ode_solver],
-                              dt = Δt,
+                              dt = inputs[:Δt],
                               save_everystep=false,
                               saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]),
                               progress=true,
