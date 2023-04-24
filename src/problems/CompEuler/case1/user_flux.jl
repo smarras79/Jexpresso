@@ -10,7 +10,7 @@ function user_flux(T, SD::NSD_1D, q::Array, mesh::St_mesh; neqs=3)
         E  = q[ip,3]
         u  = ρu/ρ
         
-        Temp = (E - 0.5*u*u)/PhysConst.cv
+        #Temp = (E - 0.5*u*u)/PhysConst.cv
         #Press = perfectGasLaw(PhysConst; ρ=ρ, Temp=Temp)
 
         R = 287.0
