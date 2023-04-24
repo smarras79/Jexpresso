@@ -7,4 +7,4 @@ struct Elliptic <: AbstractProblem end
 struct ShallowWater <: AbstractProblem end
 struct SoilTopo <: AbstractProblem end
 struct Helmholtz <: AbstractProblem end
-struct Euler <: AbstractProblem end
+struct CompEuler <: AbstractProblem end

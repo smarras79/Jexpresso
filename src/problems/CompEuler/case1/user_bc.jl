@@ -34,31 +34,25 @@ end
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
 
     PhysConst = PhysicalConst{Float64}()
-    
-    if (x < 0.1)
+    γ = 1.4
 
-        #Sod:
-        #ρ = 1.0
-        #u = 0.75
-        #p = 1.0
-
-        #Slow shock
-        ρ = 1.4
-        u = 0.1
-        p = 1.0
-        
-        T = p/(ρ*PhysConst.Rair)
-        E = PhysConst.cv*T + 0.5*u^2
-        q[1] = ρ
-        q[2] = ρ*u
-        q[3] = ρ*E
-        
-        #q[1] = 1.0
-        #q[2] = 2.5
-        #q[3] = 0.0
+    ρL, uL, pL = 1.000, 0.0, 1.0
+    ρR, uR, pR = 0.125, 0.0, 0.1
+    xshock_initial = 0.5
+    if (x < xshock_initial)
+        ρ = ρL
+        u = uL
+        p = pL
     else
-        nothing
+        ρ = ρR
+        u = uR
+        p = pR
     end
+    E = p/(γ - 1.0) + 0.5*ρ*u*u
+    q[1] = ρ
+    q[2] = ρ*u
+    q[3] = E
+    
     return q
 end
 

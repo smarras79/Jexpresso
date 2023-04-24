@@ -286,7 +286,8 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::SoilTopo, qp::Array, neqs, basis
     return RHS
 end
 
-function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω,
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
 
     F      = zeros(mesh.ngl,mesh.nelem, neqs)
     F1     = zeros(mesh.ngl,mesh.nelem, neqs)
@@ -369,23 +370,23 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
                 #@info Fuser[ip,1] + Fuser1[ip,1], Fuser[ip,2] + Fuser1[ip,2]
         end
         for i=1:mesh.ngl
-                dFdξ = zeros(T, neqs)
-                dFdξ1 = zeros(T, neqs)
-                for k = 1:mesh.ngl
-                    dFdξ[1:neqs] .= dFdξ[1:neqs] .+ basis.dψ[k,i]*F[k,iel,1:neqs]*dξdx
+            dFdξ = zeros(T, neqs)
+            dFdξ1 = zeros(T, neqs)
+            for k = 1:mesh.ngl
+                dFdξ[1:neqs] .= dFdξ[1:neqs] .+ basis.dψ[k,i]*F[k,iel,1:neqs]*dξdx
 
-                    dFdξ1[1:neqs] .= dFdξ1[1:neqs] .+ basis.dψ[k,i]*F1[k,iel,1:neqs]*dξdx
-                    #@info i,dFdξ[1:neqs], dFdξ1[1:neqs]
-                end
-                ip = mesh.conn[i,iel]
-                x = mesh.x[ip]
-                Hb = zb[ip]
-                Hs = max(qq[ip,1] - Hb,0.001)
-                gHsx[1] = 1.0
-                gHsx[2] = qq[ip,1]*9.81#Hs*9.81
-                dFdx[1] = gHsx[1] * (dFdξ[1]) + dFdξ1[1] 
-                dFdx[2] = gHsx[2] * (dFdξ[2]) + dFdξ1[2] #+ S[ip]*qq[ip,1]*9.81
-                rhs_el[i,iel,1:neqs] .-= ω[i]*mesh.Δx[iel]/2*dFdx[1:neqs]
+                dFdξ1[1:neqs] .= dFdξ1[1:neqs] .+ basis.dψ[k,i]*F1[k,iel,1:neqs]*dξdx
+                #@info i,dFdξ[1:neqs], dFdξ1[1:neqs]
+            end
+            ip = mesh.conn[i,iel]
+            x = mesh.x[ip]
+            Hb = zb[ip]
+            Hs = max(qq[ip,1] - Hb,0.001)
+            gHsx[1] = 1.0
+            gHsx[2] = qq[ip,1]*9.81#Hs*9.81
+            dFdx[1] = gHsx[1] * (dFdξ[1]) + dFdξ1[1] 
+            dFdx[2] = gHsx[2] * (dFdξ[2]) + dFdξ1[2] #+ S[ip]*qq[ip,1]*9.81
+            rhs_el[i,iel,1:neqs] .-= ω[i]*mesh.Δx[iel]/2*dFdx[1:neqs]
         end
     end   
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
@@ -504,7 +505,8 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
 end
 
 
-function build_rhs(SD::NSD_1D, QT::Inexact, PT::Euler, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
 
     F      = zeros(mesh.ngl,mesh.nelem, neqs)
     rhs_el = zeros(mesh.ngl,mesh.nelem, neqs)
@@ -520,7 +522,9 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::Euler, qp::Array, neqs, basis, �
         dξdx = 2.0/mesh.Δx[iel]
         for i=1:mesh.ngl
             ip = mesh.conn[i,iel]
-            F[i,iel,1:neqs] .= Fuser[ip,1:neqs]            
+            F[i,iel,1] = Fuser[ip,1]
+            F[i,iel,2] = Fuser[ip,2]
+            F[i,iel,3] = Fuser[ip,3]
         end
         for i=1:mesh.ngl
             dFdξ = zeros(T, neqs)
@@ -544,9 +548,9 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::Euler, qp::Array, neqs, basis, �
         global  q2 .= qq
     end
     
-    #μ = compute_viscosity(SD, PT, q3, q1, q2, RHS, Δt, mesh, metrics) 
-    #rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, μ, T)
-    #RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    μ = compute_viscosity(SD, PT, qq, q1, q2, RHS, Δt, mesh, metrics) 
+    rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis, ω, inputs[:νx], inputs[:νy], mesh, metrics, μ, T)
+    RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     divive_by_mass_matrix!(RHS, M, QT,neqs)
     
     return RHS
@@ -843,7 +847,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::ShallowWater, qp, neqs, basis, ω, �
 
 end
 
-function build_rhs_diff(SD::NSD_1D, QT, PT::Euler, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, μ, T)
+function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, μ, T)
 
     N = mesh.ngl - 1
 
@@ -851,12 +855,13 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::Euler, qp, neqs, basis, ω, νx, νy
     ρel = zeros(mesh.ngl, mesh.nelem)
     uel = zeros(mesh.ngl, mesh.nelem)
     Tel = zeros(mesh.ngl, mesh.nelem)
+    Eel = zeros(mesh.ngl, mesh.nelem)
 
     rhsdiffξ_el = zeros(mesh.ngl, mesh.nelem, neqs)
     qq = zeros(mesh.npoin,neqs)
 
     γ = 1.4
-    Pr = 0.1/(γ - 1.0)
+    Pr = 0.1
     
     #
     # qp[1:npoin]         <-- qq[1:npoin, "ρ"]
@@ -881,11 +886,11 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::Euler, qp, neqs, basis, ω, νx, νy
             ρel[i,iel] = qq[m,1]
             uel[i,iel] = qq[m,2]/ρel[i]
             Tel[i,iel] = qq[m,3]/ρel[i] - 0.5*uel[i]^2
+            Eel[i,iel] = qq[m,3]/ρel[i]
         end
-
-        μ[iel] = 1.0
-        ν = 1.0
-        #ν = Pr*μ[iel]/maximum(ρel[:,iel])
+        
+        ν = Pr*μ[iel]/maximum(ρel[:,iel])
+        κ = Pr*μ[iel]/(γ - 1.0)
         
         dξdx = 2.0/mesh.Δx[iel]
         for k = 1:mesh.ngl
@@ -896,16 +901,18 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::Euler, qp, neqs, basis, ω, νx, νy
             dρdξ = 0.0
             dudξ = 0.0
             dTdξ = 0.0
+            dEdξ = 0.0
             for i = 1:mesh.ngl
                 #dqdξ = dqdξ + basis.dψ[i,k]*qnel[i,iel,ieq]
                 dρdξ = dρdξ + basis.dψ[i,k]*ρel[i,iel]
                 dudξ = dudξ + basis.dψ[i,k]*uel[i,iel]
                 dTdξ = dTdξ + basis.dψ[i,k]*Tel[i,iel]
+                dEdξ = dEdξ + basis.dψ[i,k]*Eel[i,iel]
             end
             
-            dρdx =  ν      * dρdξ*dξdx
+            dρdx =  ν * dρdξ*dξdx
             dudx =  μ[iel] * dudξ*dξdx
-            dTdx = (μ[iel] * dudξ*dξdx * uel[k,iel] + Pr*μ[iel] * dTdξ*dξdx)
+            dTdx = (μ[iel] * dudξ*dξdx * uel[k,iel] + κ * dTdξ*dξdx)
             
             #∇ξ∇q_kl =  dqdx*dξdx
             ∇ξ∇ρ_kl =  dρdx*dξdx
