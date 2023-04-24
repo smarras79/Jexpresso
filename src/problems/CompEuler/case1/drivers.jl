@@ -1,12 +1,12 @@
 include("./initialize.jl")
-
+using BenchmarkHistograms, ProfileView
 function driver(DT::ContGal,       #Space discretization type
                 inputs::Dict,      #input parameters from src/user_input.jl
                 OUTPUT_DIR::String,
                 TFloat) 
 
-    sem = sem_setup(inputs)
-    
+   @profview sem = sem_setup(inputs)
+    #=
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     CFL = 0.2
@@ -23,5 +23,5 @@ function driver(DT::ContGal,       #Space discretization type
     
     write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs, PT=sem.PT)
     #solution_norms(solution, OUTPUT_DIR, inputs;)
-    
+    =#
 end

@@ -4,7 +4,6 @@ using OrdinaryDiffEq
 using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
 using SnoopCompile
 import SciMLBase
-using WriteVTK
 
 include("../abstractTypes.jl")
 
@@ -41,12 +40,11 @@ function time_loop!(QT,
         global q3[:,i] .= qp.qn[:,i]
     end
     if (typeof(PT) == ShallowWater)
-        @info "this works"
+        #@info "this works"
         for i=1:mesh.npoin
             global zb[i] = bathymetry(mesh.x[i])
         end
     end
-    #@info qp.neqs
     deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])
     params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt, deps)
