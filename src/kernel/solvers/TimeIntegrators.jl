@@ -33,7 +33,6 @@ function time_loop!(QT,
         global q3[:,i] .= qp.qn[:,i]
     end
     if (typeof(PT) == ShallowWater)
-        #@info "this works"
         for i=1:mesh.npoin
             global zb[i] = bathymetry(mesh.x[i])
         end
