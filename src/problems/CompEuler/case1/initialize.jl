@@ -34,7 +34,7 @@ function initialize(SD::NSD_1D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 γ = 1.4
                 q.qn[ip,1] = ρ                       #ρ
                 q.qn[ip,2] = ρ*u                     #ρu
-                q.qn[ip,3] = p/(γ - 1.0) + 0.5*ρ*u*u #E
+                q.qn[ip,3] = p/(γ - 1.0) + 0.5*ρ*u*u #ρE
                 
             end
         end

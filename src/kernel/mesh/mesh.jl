@@ -8,12 +8,7 @@ using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.Geometry: GridMock
 using GridapGmsh
-using LinearAlgebra
-using UnicodePlots
 using Printf
-using Revise
-using ElasticArrays
-using StaticArrays
 
 export St_mesh
 export mod_mesh_mesh_driver
