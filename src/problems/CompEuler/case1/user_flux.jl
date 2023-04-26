@@ -7,14 +7,12 @@ function user_flux(T, SD::NSD_1D, q::Array, mesh::St_mesh; neqs=3)
         x = mesh.x[ip]
         ρ  = q[ip,1]
         ρu = q[ip,2]
-        E  = q[ip,3]
+        ρE = q[ip,3]
+        E  = ρE/ρ
         u  = ρu/ρ
         
-        #Temp = (E - 0.5*u*u)/PhysConst.cv
-        #Press = perfectGasLaw(PhysConst; ρ=ρ, Temp=Temp)
-
-        R = 287.0
-        Press = 0.4*(E - 0.5*u*u) #ρ*R*Temp
+        Temp = (E - 0.5*u*u)/PhysConst.cv
+        Press = perfectGasLaw(PhysConst; ρ=ρ, Temp=Temp)
         
         #@info " FLUX USER: " Temp Press ρ
         F[ip,1] = ρu
