@@ -36,4 +36,3 @@ function dirichlet!(q,gradq,x,t, mesh, metrics)
 
     return q
 end
-
