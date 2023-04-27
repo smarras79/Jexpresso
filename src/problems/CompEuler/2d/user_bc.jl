@@ -29,26 +29,40 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
     PhysConst = PhysicalConst{Float64}()
     γ = PhysConst.γ
     
-    ρL, uL, vL, pL = 1.000, 0.0, 0.0, 1.0
-    ρR, uR, vR, pR = 0.125, 0.0, 0.0, 0.1
-    
-    xshock_initial = 0.5
-    if (x < xshock_initial)
-        ρ = ρL
-        u = uL
-        v = vL
-        p = pL
+    case = "Sod"
+    if case === "Sod"
+        
+        ρL, uL, vL, pL = 1.000, 0.0, 0.0, 1.0
+        ρR, uR, vR, pR = 0.125, 0.0, 0.0, 0.1
+        
+        xshock_initial = 0.5
+        if (x < xshock_initial)
+            ρ = ρL
+            u = uL
+            v = vL
+            p = pL
+        else
+            ρ = ρR
+            u = uR
+            v = vR
+            p = pR
+        end
+    elseif case === "sound"
+        ρ = 1.0
+        u = 0.0
+        v = 0.0
+        p = 1.0
     else
-        ρ = ρR
-        u = uR
-        v = vR
-        p = pR
+        ρ = 1.0
+        u = 0.0
+        v = 0.0
+        p = 1.0
     end
-    E = p/(γ - 1.0) + 0.5*ρ*(u*u + v*v)
+    ρE = p/(γ - 1.0) + 0.5*ρ*(u*u + v*v)
     q[1] = ρ
     q[2] = ρ*u
     q[3] = ρ*v
-    q[4] = E
+    q[4] = ρE
     
     return q
 end

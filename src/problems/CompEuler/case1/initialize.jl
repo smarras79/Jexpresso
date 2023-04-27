@@ -8,7 +8,7 @@ function initialize(SD::NSD_1D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=3)
     
-    case = "sod"
+    case = "sound"
     if (case === "sod")
         @info " Sod tube"
 
@@ -37,6 +37,52 @@ function initialize(SD::NSD_1D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 
             end
         end
+    elseif (case === "smooth")
+        
+        @info " Smooth Sod tube"
+
+        xshock_initial = 0.5
+        u = 0.0
+    	for iel_g = 1:mesh.nelem
+            for i=1:mesh.ngl
+                
+                ip = mesh.connijk[i,iel_g]
+                x  = mesh.x[ip]
+                
+                p = 0.5*tanh(x) + 0.6
+                ρ = 0.5*tanh(x) + 0.6125      #ρ
+                q.qn[ip,1] = ρ
+                q.qn[ip,2] = ρ*u                     #ρu
+                q.qn[ip,3] = p/(PhysConst.γ - 1.0) + 0.5*ρ*u*u #ρE
+                
+            end
+        end
+
+    elseif (case === "sound")
+        
+        @info " Sound kopriva 7.4.3"
+
+        xs = 1.5
+        u = 0.0
+        ωsq = 0.125^2
+    	for iel_g = 1:mesh.nelem
+            for i=1:mesh.ngl
+                
+                ip = mesh.connijk[i,iel_g]
+                x  = mesh.x[ip]
+                
+                ρ = 1.0
+                p = exp(-log(2) * ((x - xs)^2)/ωsq) + 1.0
+                u = 0.0
+                
+                q.qn[ip,1] = ρ
+                q.qn[ip,2] = ρ*u                     #ρu
+                q.qn[ip,3] = p/(PhysConst.γ - 1.0) + 0.5*ρ*u*u #ρE
+                
+            end
+        end
+        
+        
     else
         error(" ERROR: CompEuler: initialize.jl: no initial conditions assigned")
     end
@@ -57,7 +103,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=4)
 
-    case = "sod"
+    case = "smooth"
     if (case === "sod")
         @info " Sod tube"
         
@@ -90,6 +136,28 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                     q.qn[ip,4] = p/(PhysConst.γ - 1.0) + 0.5*ρ*(u*u + v*v) #ρE
                     
                 end
+            end
+        end
+    elseif (case === "smooth")
+        
+        @info " Smooth Sod tube"
+
+        xshock_initial = 0.5
+        u = 0.0
+        v = 0.0
+    	for iel_g = 1:mesh.nelem
+            for j=1:mesh.ngl, i=1:mesh.ngl
+                
+                ip = mesh.connijk[i,j,iel_g]
+                x  = mesh.x[ip]
+                
+                ρ = 0.5*tanh(x) + 0.6125
+                p = 0.5*tanh(x) + 0.600
+                q.qn[ip,1] = ρ   #ρ
+                q.qn[ip,2] = ρ*u                     #ρu
+                q.qn[ip,3] = ρ*v                     #ρv
+                q.qn[ip,4] = p/(PhysConst.γ - 1.0) + 0.5*ρ*(u*u + v*v) #ρE
+                
             end
         end
     else
