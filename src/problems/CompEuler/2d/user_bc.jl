@@ -29,7 +29,7 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
     PhysConst = PhysicalConst{Float64}()
     γ = PhysConst.γ
     
-    case = "Sod"
+    case = "sound"
     if case === "Sod"
         
         ρL, uL, vL, pL = 1.000, 0.0, 0.0, 1.0

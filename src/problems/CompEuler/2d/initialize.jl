@@ -8,7 +8,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=4)
 
-    case = "smooth"
+    case = "sound"
     if (case === "sod")
         @info " Sod tube"
         
@@ -63,7 +63,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 
             end
         end
-    elseif (case === "smooth")
+    elseif (case === "sound")
         
         @info " Sound Kopriva 7.4.3"
         xs = 1.5

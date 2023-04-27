@@ -21,7 +21,7 @@ function driver(DT::ContGal,       #Space discretization type
                           OUTPUT_DIR,
                           TFloat)
     
-    write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs, PT=sem.PT)
+    write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs)
     #solution_norms(solution, OUTPUT_DIR, inputs;)
     
 end
