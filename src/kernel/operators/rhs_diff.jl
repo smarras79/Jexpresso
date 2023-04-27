@@ -418,7 +418,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, νx,
 
     rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
-    
+    return  (rhsdiffξ_el + rhsdiffη_el)
     qq = zeros(mesh.npoin, neqs)
 
     γ = 1.4

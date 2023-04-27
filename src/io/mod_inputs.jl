@@ -275,6 +275,10 @@ end
     if(!haskey(inputs, :νz))
         inputs[:νz] = Float16(0.0) #default kinematic viscosity
     end
+
+    if(!haskey(inputs, :lvisc))
+        inputs[:lvisc] = true
+    end
     
     #
     # Correct quantities based on a hierarchy of input variables
