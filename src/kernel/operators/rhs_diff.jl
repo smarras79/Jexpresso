@@ -488,9 +488,12 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, νx,
             dudx =  μ[iel]*(dudξ*metrics.dξdx[k,l,iel] + dudη*metrics.dηdx[k,l,iel])
             dvdx =  μ[iel]*(dvdξ*metrics.dξdx[k,l,iel] + dvdη*metrics.dηdy[k,l,iel])
             dTdx =       κ*(dTdξ*metrics.dξdx[k,l,iel] + dTdη*metrics.dηdx[k,l,iel]) #+μ∇u⋅u
-            #dTdx = (μ[iel] * dTdξ*dξdx * uel[k,l,iel] + κ * dTdξ*dξdx)
+          
+            dρdy =       ν*(dρdξ*metrics.dξdy[k,l,iel] + dρdη*metrics.dηdy[k,l,iel])
+            dudy =  μ[iel]*(dudξ*metrics.dξdy[k,l,iel] + dudη*metrics.dηdy[k,l,iel])
+            dvdy =  μ[iel]*(dvdξ*metrics.dξdy[k,l,iel] + dvdη*metrics.dηdy[k,l,iel])
+            dTdy =       κ*(dTdξ*metrics.dξdy[k,l,iel] + dTdη*metrics.dηdy[k,l,iel]) #+μ∇u⋅u
             
-            #∇ξ∇q_kl =  dqdx*dξdx
             ∇ξ∇ρ_kl = metrics.dξdx[k,l,iel]*dρdx + metrics.dξdy[k,l,iel]*dρdy
             ∇η∇ρ_kl = metrics.dηdx[k,l,iel]*dρdx + metrics.dηdy[k,l,iel]*dρdy
             
