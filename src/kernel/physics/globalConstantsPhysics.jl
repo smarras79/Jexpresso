@@ -7,6 +7,7 @@ using Parameters
     cp::T   = 1005.0 #J/kg.K
     cv::T   =  718.0 #J/kg.K
     γair::T = cp/cv
+    γ::T    = cp/cv
     Pref::T = 100000.0 #Pa
 
     #Gravity

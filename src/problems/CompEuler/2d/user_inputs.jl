@@ -31,13 +31,13 @@ function user_inputs()
         :nelx                 =>  50,
         :xmin                 =>  0.0,
         :xmax                 =>  1.0,
-        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
+        :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_coarse.msh",
-        :gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
