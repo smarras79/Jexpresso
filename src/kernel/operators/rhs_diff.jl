@@ -444,10 +444,10 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, νx,
             m = mesh.connijk[i,j,iel]
             
             ρel[i,j,iel] = qq[m,1]
-            uel[i,j,iel] = qq[m,2]/ρel[i,j]
-            vel[i,j,iel] = qq[m,3]/ρel[i,j]
-            Tel[i,j,iel] = qq[m,4]/ρel[i,j] - 0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
-            Eel[i,j,iel] = qq[m,4]/ρel[i,j]
+            uel[i,j,iel] = qq[m,2]/ρel[i,j,iel]
+            vel[i,j,iel] = qq[m,3]/ρel[i,j,iel]
+            Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] - 0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
+            Eel[i,j,iel] = qq[m,4]/ρel[i,j,iel]
         end    
         #ν = Pr*μ[iel]/maximum(ρel[:,:,iel])
         #κ = Pr*μ[iel]/(γ - 1.0)
