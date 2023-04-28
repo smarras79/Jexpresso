@@ -1,17 +1,19 @@
-nelemx = 32;
-nelemy = 16;
+nelemx = 44;
+nelemy = 20;
 nelemz = 1;
 
-xmin = -5;
-xmax =	5;
-ymin =  0;
-ymax =  5;
+xmin = -2.0;
+xmax =	5.0;
+ymin =  0.0;
+ymax =  3.0;
+zmin =  0.0;
+zmax =  0.0;
 gridsize = (xmax-xmin) / nelemx;
 
-Point(1) = {xmin, ymin, gridsize};
-Point(2) = {xmax, ymin, gridsize};
-Point(3) = {xmax, ymax, gridsize};
-Point(4) = {xmin, ymax, gridsize};
+Point(1) = {xmin, ymin, zmin, gridsize};
+Point(2) = {xmax, ymin, zmin, gridsize};
+Point(3) = {xmax, ymax, zmin, gridsize};
+Point(4) = {xmin, ymax, zmin, gridsize};
 
 Line(1) = {1, 2};
 Line(2) = {2, 3};
