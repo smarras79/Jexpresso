@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :tend                 => 2.0, #2π,
-        :Δt                   => 1.0e-4,#8.75e-4,
+        :Δt                   => 1.0e-2,#8.75e-4,
         :ode_solver           => "SSPRK53",
         :ndiagnostics_outputs => 100,
         #---------------------------------------------------------------------------
@@ -12,7 +12,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :lexact_integration  => false,
-        :nop                 => 5,      # Polynomial order
+        :nop                 => 8,      # Polynomial order
         :luser_bc            => true,
         #---------------------------------------------------------------------------
         # Plotting parameters
@@ -30,11 +30,9 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_44x20.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x16.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_22x11.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x16.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_UNSTR_coarse.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
