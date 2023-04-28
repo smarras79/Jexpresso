@@ -1,6 +1,7 @@
 module Jexpresso
 
 using Revise
+using Base.Threads
 using Dates
 using DelimitedFiles
 using DataStructures

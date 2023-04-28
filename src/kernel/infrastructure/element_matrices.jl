@@ -152,7 +152,7 @@ function build_mass_matrix(SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
     
     Me = zeros((N+1)^2, (N+1)^2, mesh.nelem)
     
-    for iel=1:mesh.nelem
+    @threads for iel in 1:mesh.nelem
         
         for l = 1:QN
             for k = 1:QN
