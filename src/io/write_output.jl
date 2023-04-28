@@ -88,8 +88,6 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
 end
 
 
-
-
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # Aq = b -> q(x)
 #----------------------------------------------------------------------------------------------------------------------------------------------
@@ -164,7 +162,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     end
     
     npoin = mesh.npoin
-    for ivar=1:1 #nvar
+    for ivar=1:nvar
         idx = (ivar - 1)*npoin
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".vtu")
