@@ -8,8 +8,10 @@ using Parameters
     cv::T   =  718.0 #J/kg.K
     γair::T = cp/cv
     γ::T    = cp/cv
-    Pref::T = 100000.0 #Pa
-
+    pref::T = 100000.0 #Pa
+    Rovercv = Rair/cv
+    C0::T   = (Rair^γ)/pref^Rovercv
+        
     #Gravity
     g::T = 9.80616 #m/s²
 
