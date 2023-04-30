@@ -12,7 +12,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     if (case === "rtb")
 
         xc = (maximum(mesh.x) + minimum(mesh.x))/2
-        yc = (maximum(mesh.y) + minimum(mesh.y))/2
+        yc = 2000.0 #m
         r0   = 2000.0 #m
         
         θref = 300.0 #K
@@ -29,8 +29,9 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                     Δθ = θc*(1.0 - r/r0)
                 end
                 θ = θref + Δθ
-                p = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θref))^(PhysConst.cpoverR) #Pa
-                ρ = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
+                p    = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θref))^(PhysConst.cpoverR) #Pa
+                ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p) #kg/m³
+                ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=p) #kg/m³
 
                 u = 0.0
                 v = 0.0
@@ -41,9 +42,10 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 q.qn[ip,4] = ρ*θ
 
                 #Store initial background state for plotting and analysis of pertuebations
-                ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=p) #kg/m³
                 q.qe[ip,1] = ρref
-                q.qe[ip,4] = θref
+                q.qe[ip,2] = u
+                q.qe[ip,3] = v
+                q.qe[ip,4] = ρref*θref
             end
         end
         
