@@ -30,12 +30,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
     npoin = floor(Int64, size(q, 1)/nvar)
-    Hb = zeros(npoin,nvar)
-    for i=1:npoin
-        x= mesh.x[i]
-        Hb[i,1] = zb[i]
-    end
-
+   
     qout = copy(q)
     qe   = range(0,0,npoin)
     if PT === CompEuler()
@@ -53,6 +48,12 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
         qout[idx+1:3*npoin] .= (q[2*npoin+1:3*npoin] .- 0.5*q[npoin+1:2*npoin].*q[npoin+1:2*npoin]./q[1:npoin])./q[1:npoin] #internal energy: p/((γ-1)ρ)
         
     elseif PT === ShallowWater()
+        Hb = zeros(npoin,nvar)
+        for i=1:npoin
+            x= mesh.x[i]
+            Hb[i,1] = zb[i]
+        end
+
         for ivar=1:nvar
             idx = (ivar - 1)*npoin
             qout[idx+1:ivar*npoin] .= q[idx+1:ivar*npoin] .+ Hb[:,ivar]

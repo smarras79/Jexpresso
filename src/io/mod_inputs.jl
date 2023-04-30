@@ -224,9 +224,12 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
         inputs[:ode_solver] = SSPRK53()
     end
 
-if(!haskey(inputs, :output_dir))
-    inputs[:output_dir] = ""
-end
+   if(!haskey(inputs, :output_dir))
+       inputs[:output_dir] = ""
+   end
+   if(!haskey(inputs, :loutput_pert))
+       inputs[:loutput_pert] = false
+   end
 
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
