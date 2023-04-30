@@ -25,17 +25,20 @@
     
 """
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-
-    if (x >= 4990.0 || x <= -4990.0)
+    
+    q[2] = 0.0
+    q[3] = 0.0
+    
+    #=if ( x <= -4000.0 || x >= 4000.0)
         q[2] = 0.0
     end
-    if (y >= 4990.0 || y <= 1.0)
+    if (y <= 125.0 || y >= 9990.0)
         q[3] = 0.0
     end
-    if ((x >= 4990.0 ||  x <= -4990.0) && (y >= 4990.0 || y <= 1.0))
+    if ((x >= 4000.0 || x <= -4000.0) && (y >= 9990.0 || y <= 125.0))
         q[2] = 0.0
         q[3] = 0.0
-    end
+    end=#
 
     return q
     
