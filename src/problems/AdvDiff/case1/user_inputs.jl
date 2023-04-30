@@ -6,13 +6,14 @@ function user_inputs()
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
         :tend                 => 1.5,
-        :Δt                   => 1e-3,
-        :ndiagnostics_outputs => 10, #these are steps, not seconds
+        :Δt                   => 1.0e-3,
+        :ndiagnostics_outputs => 15, #these are steps, not seconds
         #:output_dir          => "/Users/simone/runs/",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :ode_solver          => "SSPRK53",
+        #:ode_solver          => "SSPRK53",
+        :ode_solver          => "AB4",
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,

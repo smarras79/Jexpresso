@@ -1,11 +1,3 @@
-using LinearAlgebra
-using DiffEqBase
-using OrdinaryDiffEq
-using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
-using SnoopCompile
-import SciMLBase
-using WriteVTK
-
 include("../abstractTypes.jl")
 
 function time_loop!(QT,
@@ -16,7 +8,7 @@ function time_loop!(QT,
                     qp::St_SolutionVars,
                     M,
                     De, Le,
-                    Nt, Δt,
+                    Δt,
                     inputs::Dict,
                     OUTPUT_DIR::String,
                     T)
@@ -28,13 +20,26 @@ function time_loop!(QT,
     println(" # Solving ODE ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
     u = zeros(T, mesh.npoin*qp.neqs);
+    global q1 = zeros(T, mesh.npoin, qp.neqs);
+    global q2 = zeros(T, mesh.npoin, qp.neqs);
+    global q3 = zeros(T, mesh.npoin, qp.neqs);
+    global zb = zeros(T, mesh.npoin);
+    
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] .= qp.qn[:,i]
+        global q1[:,i] .= qp.qn[:,i]
+        global q2[:,i] .= qp.qn[:,i]
+        global q3[:,i] .= qp.qn[:,i]
     end
-    #@info qp.neqs
+    if (typeof(PT) == ShallowWater)
+        for i=1:mesh.npoin
+            global zb[i] = bathymetry(mesh.x[i])
+        end
+    end
+    deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])
-    params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt)
+    params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt, deps)
     prob   = ODEProblem(rhs!,
                         u,
                         tspan,
@@ -42,11 +47,12 @@ function time_loop!(QT,
     
     @time    solution = solve(prob,
                               inputs[:ode_solver],
-                              dt = Δt,
+                              dt = inputs[:Δt],
                               save_everystep=false,
-                              saveat = range(T(0.), Nt*T(Δt), length=inputs[:ndiagnostics_outputs]),
-                              progress = true,
+                              saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]),
+                              progress=true,
                               progress_message = (dt, u, p, t) -> t)
+    
     println(" # Solving ODE  ................................ DONE")
     
     return solution

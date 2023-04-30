@@ -41,6 +41,7 @@ Currently available problem names:
 * Elliptic
 * LinearCLaw
 * ShallowWater
+* CompEuler (option with total energy and theta formulation)
 
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
