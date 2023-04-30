@@ -8,12 +8,7 @@ using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.Geometry: GridMock
 using GridapGmsh
-using LinearAlgebra
-using UnicodePlots
 using Printf
-using Revise
-using ElasticArrays
-using StaticArrays
 
 export St_mesh
 export mod_mesh_mesh_driver
@@ -347,7 +342,7 @@ elseif (mesh.nsd == 2)
             @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
         end
     end #f
-    
+
 elseif (mesh.nsd == 3)
     mesh.connijk = Array{Int64}(undef, mesh.ngl, mesh.ngl, mesh.ngl, mesh.nelem)
     for iel = 1:mesh.nelem
@@ -517,19 +512,12 @@ GC.gc()
 # END Free memory of obsolete arrays
 #
 
-open("./COORDS_GLOBAL.dat", "w") do f
-    for ip = 1:mesh.npoin
-        #    for iel = 1:mesh.nelem
-        #        for i = 1:mesh.ngl
-        #            for j = 1:mesh.ngl
-        #                ip = mesh.connijk[i,j,iel]
+#open("./COORDS_GLOBAL.dat", "w") do f
+    #for ip = 1:mesh.npoin
         #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-        #            end
-        #        end
-        #    end
-    end
-end
+        #@printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+    #end
+#end #f
 
 #show(stdout, "text/plain", mesh.conn')
 println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")

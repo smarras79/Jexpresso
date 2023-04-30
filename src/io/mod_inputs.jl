@@ -83,8 +83,9 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
     
     
     #Time:
-    if(!haskey(inputs, :ndiagnostics_outputs))
+    if(!haskey(inputs, :ndiagnostics_outputs) && !haskey(inputs, :ndiagnostics_output))
         inputs[:ndiagnostics_outputs] = 2
+        inputs[:ndiagnostics_output]  = 2
     end
     mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
@@ -180,7 +181,7 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
             inputs[:ode_solver] = SSPRK22()
         elseif(uppercase(inputs[:ode_solver]) == "SSPRK33")
             inputs[:ode_solver] = SSPRK33()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK53")
+        elseif(uppercase(inputs[:ode_solver]) == "SSPRK53" || uppercase(inputs[:ode_solver]) == "RK53")
             inputs[:ode_solver] = SSPRK53()
         elseif(uppercase(inputs[:ode_solver]) == "SSPRK54")
             inputs[:ode_solver] =SSPRK54()
@@ -198,6 +199,14 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
             inputs[:ode_solver] = IterativeSolversJL_BICGSTAB()
         elseif(uppercase(inputs[:ode_solver]) == "GMRES"|| uppercase(inputs[:ode_solver]) == "IterativeSolversJL_GMRES")
             inputs[:ode_solver] = IterativeSolversJL_GMRES()
+        elseif(uppercase(inputs[:ode_solver]) == "ADAMSBASHFORTH3"  ||
+               uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH3" ||
+               uppercase(inputs[:ode_solver]) == "AB3")
+            inputs[:ode_solver] = AB3()
+        elseif(uppercase(inputs[:ode_solver]) == "ADAMSBASHFORTH4"  ||
+               uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH4" ||
+               uppercase(inputs[:ode_solver]) == "AB4")
+            inputs[:ode_solver] = AB4()
         else
             s = """
                     WARNING in user_inputs.jl --> :ode_solver
@@ -215,9 +224,12 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
         inputs[:ode_solver] = SSPRK53()
     end
 
-if(!haskey(inputs, :output_dir))
-    inputs[:output_dir] = ""
-end
+   if(!haskey(inputs, :output_dir))
+       inputs[:output_dir] = ""
+   end
+   if(!haskey(inputs, :loutput_pert))
+       inputs[:loutput_pert] = false
+   end
 
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
@@ -265,6 +277,10 @@ end
     end
     if(!haskey(inputs, :νz))
         inputs[:νz] = Float16(0.0) #default kinematic viscosity
+    end
+
+    if(!haskey(inputs, :lvisc))
+        inputs[:lvisc] = false
     end
     
     #
@@ -325,6 +341,11 @@ if (lowercase(problem_name) == "burgers")
     inputs[:ldss_differentiation] = false
 elseif (lowercase(problem_name) == "shallowwater")
     inputs[:problem] = ShallowWater()    
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
+    
+elseif (lowercase(problem_name) == "compeuler")
+    inputs[:problem] = CompEuler()
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
     
