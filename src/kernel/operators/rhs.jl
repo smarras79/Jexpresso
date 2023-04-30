@@ -572,8 +572,9 @@ end
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
 
-    F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-    G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)    
+    F      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    G      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    S      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     qq = zeros(mesh.npoin,neqs)
     for i=1:neqs
@@ -581,6 +582,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
         qq[:,i] .= qp[idx+1:i*mesh.npoin]
     end
     Fuser, Guser = user_flux(T, SD, qq, mesh; neqs=neqs)
+    Suser        = user_source(T, qq, mesh.npoin; neqs=neqs)
     
     dFdx = zeros(neqs)
     dGdy = zeros(neqs)
@@ -593,15 +595,9 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
         for i=1:mesh.ngl
             for j=1:mesh.ngl
                 ip = mesh.connijk[i,j,iel]
-                F[i,j,iel,1] = Fuser[ip,1]
-                F[i,j,iel,2] = Fuser[ip,2]
-                F[i,j,iel,3] = Fuser[ip,3]
-                F[i,j,iel,4] = Fuser[ip,4]
-                
-                G[i,j,iel,1] = Guser[ip,1]
-                G[i,j,iel,2] = Guser[ip,2]
-                G[i,j,iel,3] = Guser[ip,3]
-                G[i,j,iel,4] = Guser[ip,4]
+                F[i,j,iel,1:neqs] = Fuser[ip,1:neqs]
+                G[i,j,iel,1:neqs] = Guser[ip,1:neqs]
+                S[i,j,iel,1:neqs] = Suser[ip,1:neqs]
             end
         end
 
@@ -621,7 +617,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
                 
                 dFdx .= dFdξ[1:neqs]*metrics.dξdx[i,j,iel] .+ dFdη[1:neqs]*metrics.dηdx[i,j,iel]
                 dGdy .= dGdξ[1:neqs]*metrics.dξdy[i,j,iel] .+ dGdη[1:neqs]*metrics.dηdy[i,j,iel]
-                rhs_el[i,j,iel,1:neqs] .-= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqs] .+ dGdy[1:neqs])
+                rhs_el[i,j,iel,1:neqs] .-= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqs] .+ dGdy[1:neqs]) .-=ω[i]*ω[j]*metrics.Je[i,j,iel]*S[i,j,iel,1:neqs] #gravity
             end
         end
     end

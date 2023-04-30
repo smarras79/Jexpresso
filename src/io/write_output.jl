@@ -201,13 +201,24 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
         end
     end
     
-    for ivar=1:nvar
+    #=for ivar=1:nvar
         idx = (ivar - 1)*npoin
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".vtu")
-        
+    
         vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells) do vtk
             vtk[string("q", ivar), VTKPointData()] = qout[idx+1:ivar*npoin]
         end
-    end
+    end=#
+     
+    idx = (ivar - 1)*npoin
+    
+    fout_name = string(OUTPUT_DIR, "/rtb_it", iout, ".vtu")
+    
+    vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells)
+    vtkfile["rho",   VTKPointData()] =  qout[1:npoin]
+    vtkfile["u",     VTKPointData()] =  qout[npoin+1:2*npoin]
+    vtkfile["v",     VTKPointData()] =  qout[2*npoin+1:3*npoin]
+    vtkfile["theta", VTKPointData()] =  qout[3*npoin+1:4*npoin]
+    
 end
