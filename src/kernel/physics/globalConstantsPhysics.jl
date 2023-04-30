@@ -10,6 +10,7 @@ using Parameters
     γ::T    = cp/cv
     pref::T = 100000.0 #Pa
     Rovercv = Rair/cv
+    cpoverR = cp/Rair
     C0::T   = (Rair^γ)/pref^Rovercv
         
     #Gravity

@@ -277,7 +277,7 @@ end
     end
 
     if(!haskey(inputs, :lvisc))
-        inputs[:lvisc] = true
+        inputs[:lvisc] = false
     end
     
     #

@@ -16,18 +16,18 @@ end
 
 function perfectGasLaw_ρθtoP(PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
     
-    return PhysCost.C0*(ρ*θ)^PhysCost.γ #Press
+    return PhysConst.C0*(ρ*θ)^PhysConst.γ #Press
 
 end
 
 function perfectGasLaw_ρPtoθ(PhysConst::PhysicalConst; ρ=1.25, Press=100000.0)
     
-    return (1.0/ρ)*(Press/PhysCost.C0)^(1.0/PhysCost.γ) #θ
+    return (1.0/ρ)*(Press/PhysConst.C0)^(1.0/PhysConst.γ) #θ
     
 end
 
 function perfectGasLaw_θPtoρ(PhysConst::PhysicalConst; θ=300.0, Press=100000.0)
     
-    return (1.0/θ)*(Press/PhysCost.C0)^(1.0/PhysCost.γ) #ρ
+    return (1.0/θ)*(Press/PhysConst.C0)^(1.0/PhysConst.γ) #ρ
     
 end
