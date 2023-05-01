@@ -10,6 +10,7 @@ elseif (length(ARGS) === 2)  #problem_name/problem_case_name
 end
 include(user_flux_dir)
 include(user_source_dir)
+include("rhs_laguerre.jl")
 #---------------------------------------------------------------------------
 
 function rhs!(du, u, params, time)
@@ -29,10 +30,11 @@ function rhs!(du, u, params, time)
     De      = params.De
     Le      = params.Le
     Δt      = params.Δt
-    RHS = build_rhs(SD, QT, PT, u, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, T)    
+    RHS = build_rhs(SD, QT, PT, u, neqs, basis[1], ω[1], mesh, metrics[1], M, De, Le, time, inputs, Δt, T)    
+    RHS_lag = build_rhs(SD, QT, PT, u, neqs, basis[1], basis[2], ω[1], ω[2], mesh, metrics[1], metrics[2], M, De, Le, time, inputs, Δt, T)
     for i=1:neqs
        idx = (i-1)*mesh.npoin
-       du[idx+1:i*mesh.npoin] .= RHS[:,i]
+       du[idx+1:i*mesh.npoin] .= RHS[:,i] .+ RHS_lag[:,i]
     end  
     return du #This is already DSSed
 end

@@ -181,6 +181,40 @@ function build_mass_matrix(SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
     return Me
 end
 
+function build_mass_matrix_Laguerre(SD::NSD_2D, QT, ψ, ω, ψ1, ω1, mesh, metrics, T)
+
+
+    Me = zeros(mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
+
+    for iel=1:mesh.nelem_semi_inf
+
+        for l = 1:mesh.ngr
+            for k = 1:mesh.ngl
+
+                ωkl  = ω[k]*ω1[l]
+                Jkle = metrics.Je[k, l, iel]
+
+                for j = 1:mesh.ngr
+                    for i = 1:mesh.ngl
+                        I = i + (j - 1)*(mesh.ngr)
+                        ψJK = ψ[i,k]*ψ1[j,l]
+                        for n = 1:mesh.ngr
+                            for m = 1:mesh.ngl
+                                J = m + (n - 1)*(mesh.ngr)
+                                ψIK = ψ[m,k]*ψ1[n,l]
+                                Me[I,J,iel] += ωkl*Jkle*ψIK*ψJK #Sparse
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", Me)
+
+    return Me
+end
+
 #
 # Element Laplace matrix
 #
@@ -374,6 +408,52 @@ function DSS_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArr
     return M
 end
 
+function DSS_mass_Laguerre(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, Mel_lag::AbstractArray, mesh)
+
+    M  = zeros(npoin)
+    for iel=1:nelem
+
+        #show(stdout, "text/plain", 36.0*Mel[:,:,iel])
+
+        for j = 1:N+1
+            for i = 1:N+1
+                J = i + (j - 1)*(N + 1)
+                JP = mesh.connijk[i,j,iel]
+                for n = 1:N+1
+                    for m = 1:N+1
+                        I = m + (n - 1)*(N + 1)
+                        IP = mesh.connijk[m,n,iel]
+                        M[IP] = M[IP] + Mel[I,J,iel] #if inexact
+                    end
+                end
+            end
+        end
+        #println("\n")
+        #show(stdout, "text/plain", M[:,:, iel])
+    end
+    for iel=1:mesh.nelem_semi_inf
+
+        #show(stdout, "text/plain", 36.0*Mel[:,:,iel])
+
+        for j = 1:mesh.ngr
+            for i = 1:mesh.ngl
+                J = i + (j - 1)*(mesh.ngr)
+                JP = mesh.connijk_lag[i,j,iel]
+                for n = 1:mesh.ngr
+                    for m = 1:mesh.ngl
+                        I = m + (n - 1)*(mesh.ngr)
+                        IP = mesh.connijk_lag[m,n,iel]
+                        M[IP] = M[IP] + Mel_lag[I,J,iel] #if inexact
+                    end
+                end
+            end
+        end
+        #println("\n")
+        #show(stdout, "text/plain", M[:,:, iel])
+    end 
+    return M
+end
+
 function DSS_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
     
@@ -497,7 +577,21 @@ function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npo
     return V
 end
 
+function DSS_rhs_laguerre(SD::NSD_2D, Vel::AbstractArray, mesh, neqs, T)
 
+    V  = zeros(T, mesh.npoin,neqs)
+    for iel = 1:mesh.nelem_semi_inf
+        for j = 1:mesh.ngl
+            for i = 1:mesh.ngr
+                I = mesh.connijk_lag[i,j,iel]
+
+                V[I,:] .= V[I,:] .+ Vel[i,j,iel,:]
+            end
+        end
+    end
+    #show(stdout, "text/plain", V)
+    return V
+end
 
 function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
     RHS = M\RHS #M is not iagonal
@@ -527,3 +621,22 @@ function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFl
     return (; Me, De, Le, M, D, L)
 end
 
+function matrix_wrapper_laguerre(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)
+
+    Le = build_laplace_matrix(SD, basis[1].ψ, basis[1].dψ, ω[1], mesh, metrics[1], N, Q, TFloat)
+    De = build_differentiation_matrix(SD, basis[1].ψ, basis[1].dψ, ω[1], mesh,  N, Q, TFloat)
+    Me = build_mass_matrix(SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
+    M_lag = build_mass_matrix_Laguerre(SD::NSD_2D, QT, basis[1].ψ, ω[1], basis[2].ψ, ω[2], mesh, metrics[2], T)
+     
+    M  = DSS_mass_laguerre(SD, QT, Me, M_lag, mesh)
+    L  = zeros(1,1)
+    if ldss_laplace
+        L  = DSS_laplace(SD, Le, mesh, TFloat)
+    end
+    D  = zeros(1,1)
+    if ldss_differentiation
+        D  = DSS_laplace(SD, De, mesh, TFloat)
+    end
+
+    return (; Me, De, Le, M, D, L)
+end

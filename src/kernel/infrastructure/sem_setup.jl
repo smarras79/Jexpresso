@@ -56,19 +56,36 @@ function sem_setup(inputs::Dict)
     # ψ     = basis.ψ[N+1, Q+1]
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
-    basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
+    if ("Laguerre" in mesh.bdy_edge_type)
+        basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
+        ξω2 = basis_structs_ξ_ω!(LGR(), 25)
+        ξ2,ω2 = ξω2.ξ, ξω2.ω
+        basis2 = build_Interpolation_basis!(LaguerreBasis(), ξ2, ξq2, TFloat)
+        basis = (basis1, basis2)
+        ω1 = ω
+        ω = (ω1,ω2)
+        metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, TFloat)
+        metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, ξ, TFloat)
+        metrics = (metrics1, metrics2)
     
+        matrix = matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+    else
+      
+        basis = (build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat), 0.0)
+        ω1 = ω
+        ω = (ω1, 0.0) 
     #--------------------------------------------------------
     # Build metric terms
     #--------------------------------------------------------
-    metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
+        metrics = (build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat),0.0)
     
-    periodicity_restructure!(mesh,inputs)
-    
+        periodicity_restructure!(mesh,inputs)
+        
+        matrix = matrix_wrapper(SD, QT, basis[1], ω[1], mesh, metrics[1], Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+    end
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
-    matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
     
     return (; QT, PT, mesh, metrics, basis, ω, matrix)
 end
