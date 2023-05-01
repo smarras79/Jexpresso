@@ -317,6 +317,17 @@ end
 #
 # CompEuler
 #
+function build_rhs_diff_work_array()
+    #https://discourse.julialang.org/t/avoiding-allocations-of-small-but-non-trivial-arrays-work-array-alternative/90084/26
+    #qnel = zeros(mesh.ngl, mesh.nelem, neqs)
+    ρel = zeros(mesh.ngl, mesh.nelem)
+    uel = zeros(mesh.ngl, mesh.nelem)
+    Tel = zeros(mesh.ngl, mesh.nelem)
+    Eel = zeros(mesh.ngl, mesh.nelem)
+
+    
+end
+
 function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, μ, T;)
 
     N = mesh.ngl - 1
@@ -409,9 +420,10 @@ function flux2primitives(q)
     
 end
 
-function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T;)
+function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
     
     #qnel = zeros(mesh.ngl, mesh.nelem, neqs)
+    
     ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     vel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)

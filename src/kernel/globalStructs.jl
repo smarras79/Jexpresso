@@ -24,11 +24,11 @@ end
 
 Base.@kwdef mutable struct St_PostProcessVars{TFloat <: AbstractFloat}
 
-    μ    = Array{TFloat}(undef, 0, 0)
+    μ = Array{TFloat}(undef, 0, 0)
     
 end
 
-function allocate_post_process_vars(SD::NSD_1D, nelem, npoin, ngl, TFloat; neqs)
+function allocate_post_process_vars(nelem, npoin, ngl, TFloat; neqs)
 
     qpost = St_SolutionVars{TFloat}(μ = zeros(npoin, neqs))    
 
