@@ -64,8 +64,10 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     npz::Union{TInt, Missing} = 1
     
     nelem::Union{TInt, Missing} = 1
+    nelem_semi_inf::Union{TInt, Missing = 1# Semi infinite elements for Laguerre BC
     nelem_int::Union{TInt, Missing} = 1    # internal elements
     npoin::Union{TInt, Missing} = 1        # This is updated after populating with high-order nodes
+    npoin_original::Union{TInt, Missing} =1# Storage for original npoin if modified for Laguerre semi_inf
     npoin_linear::Union{TInt, Missing} = 1 # This is always the original number of the first-order grid
     nelem_bdy::Union{TInt, Missing} = 1    # bdy elements
     
@@ -80,6 +82,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
     ngl::Union{TInt, Missing} = nop + 1
+    ngr::Union{TInt, Missing} = nop_gr
     npoin_el::Union{TInt, Missing} = 1     # Total number of points in the reference element
     
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
@@ -94,6 +97,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
+    connijk_lag       = Array{Int64}(undef, 0)
     connijk           = Array{Int64}(undef, 0)
     conn              = Array{Int64}(undef, 0)
     conn_unique_edges = Array{Int64}(undef,  1, 2)
@@ -112,6 +116,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     poin_in_bdy_face = Array{Int64}(undef, 1, 1)
     edge_type        = Array{String}(undef, 1)
     bdy_edge_type    = Array{String}(undef, 1)
+    bdy_normals      = Array{Int64}(undef, 1)
+    bdy_tangents     = Array{Int64}(under, 1)
     
 
     #@YASSINE REMOVE WHAT NO LONGER NEEDED 
@@ -451,6 +457,7 @@ if mesh.nsd == 2
     #
     # Get labels contained in the current GMSH grid:
     #
+    n_semi_inf = 0
     labels = get_face_labeling(model)
     for ilabel in labels.tag_to_name
         edges_to_tag  = get_face_tag_index(labels,ilabel,EDGE_flg)
@@ -460,6 +467,9 @@ if mesh.nsd == 2
         #
         for idx in idx_edges_inflow
             mesh.edge_type[idx] = ilabel
+            if (ilabel == "Laguerre")
+                n_semi_inf += 1
+            end
         end
     end
     iedge_bdy = 1
@@ -489,6 +499,80 @@ if mesh.nsd == 2
                 mesh.bdy_edge_comp[iedge_bdy] = 4
             end
         end
+    end
+    # build mesh data structs for Laguerre semi-infinite elements
+    if ("Laguerre" in mesh.bdy_edge_type)
+        mesh.connijk_lag = zeros(mesh.ngl,mesh.ngr,n_semi_inf)
+        mesh.bdy_normals = zeros(n_semi_inf, 2)
+        mesh.bdy_tangents = zeros(n_semi_inf, 2)
+        e_iter = 1
+        iter = mesh.npoin + 1
+        for iedge = 1:size(mesh.bdy_edge_type,1)
+            if (mesh.bdy_edge_type == "Laguerre") 
+                e = mesh.bdy_edge_in_elem[iedge]
+                #find tangent and normal vectors to the boundary
+                ip = mesh.poin_in_bdy_edge[iedge,1]
+                ip1 = mesh.poin_in_bdy_edge[iedge,2]
+                #tangent vector 
+                x = mesh.x[ip]
+                x1 = mesh.x[ip1]
+                y = mesh.y[ip]
+                y1 = mesh.y[ip1]
+                tan = [x-x1, y-y1]
+                # deduce normal vector components
+                x2 = 1.0
+                y2 = -x2*tan[1]/tan[2]
+                nor = [x2,y2]
+                # generate unit versions of tangent and normal vectors
+                modu = sqrt(tan[1]^2+tan[2]^2)
+                tan = tan * (1/modu)
+                modu = sqrt(nor[1]^2+nor[2]^2)
+                nor = nor * (1/modu)
+                #make sure normal is outward facing
+                l = 1
+                m = 1
+                l1 = 1
+                m1 = 1
+                for ii=1:mesh.ngl
+                    for jj=1:mesh.ngl
+                        if (mesh.connijk[ii,jj,iel] == ip)
+                            l=ii
+                            m=jj
+                        end
+                        if (mesh.connijk[ii,jj,iel] == ip1)
+                            l1 = ii
+                            m1 = jj
+                        end
+                    end
+                end
+                if (l == l1)
+                    ip2 = mesh.connijk[3,m,iel]
+                else
+                    ip2 = mesh.connijk[l,3,iel]
+                end
+                v = [mesh.x[ip2]-x, mesh.y[ip2]-y]
+                if (dot(v,nor) > 0.0)
+                    nor .= -nor
+                end
+                mesh.bdy_normals[e_iter,:] .= nor
+                mesh.bdy_tangents[e_iter,:] .= tan
+                for i=1:mesh.ngl
+                    ip = mesh.poin_in_bdy_edge[iedge,i]
+                    mesh.connijk_lag[i,1,e_iter] = ip
+                    for j=2:mesh.ngr
+                        mesh.connijk_lag[i,j,e_iter] = iter
+                        mesh.x[iter] = mesh.x[ip] + nor[1]*gr.ξ*factor 
+                        mesh.y[iter] = mesh.y[ip] + nor[2]*gr.ξ*factor
+                        iter += 1
+                    end
+                end
+                e_iter += 1
+            end
+        end
+        mesh.npoin_original = mesh.npoin
+        mesh.npoin = mesh.npoin + iter -1
+         
+        mesh.nelem_semi_inf = n_semi_inf 
     end
     #=for iedge_bdy = 1:mesh.nedges_bdy
         @printf(" bdy edge %d of type %s ∈ elem %d with nodes\n", iedge_bdy, mesh.bdy_edge_type[iedge_bdy], mesh.bdy_edge_in_elem[iedge_bdy])

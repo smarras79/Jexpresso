@@ -175,7 +175,6 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_1D,nvars,metrics,ω,dirichle
             L[ip,ip] =1.0
         end
     end
->>>>>>> a40728c55f0fc974ea7f0ce6798e3ac8883f1eba
 end
 
 function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
@@ -193,8 +192,8 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                 for ii=1:mesh.ngl
                     for jj=1:mesh.ngl
                         if (mesh.connijk[ii,jj,iel] == ip)
-                            mm=jj
-                            ll=ii
+                            m=jj
+                            l=ii
                         end
                     end
                 end
