@@ -3,10 +3,10 @@ include("../abstractTypes.jl")
 #---------------------------------------------------------------------------
 # Fetch problem name to access the user_bc functions
 #---------------------------------------------------------------------------
-if (length(ARGS) === 1) #problem_name
-    user_bc_dir = string("../../problems/", ARGS[1], "/user_bc.jl")
-elseif (length(ARGS) === 2) #problem_name/problem_case_name
-    user_bc_dir = string("../../problems/", ARGS[1], "/", ARGS[2], "/user_bc.jl")
+if (length(ARGS) === 1) #equations
+    user_bc_dir = string("../../equations/", ARGS[1], "/user_bc.jl")
+elseif (length(ARGS) === 2) #equations/equations_case_name
+    user_bc_dir = string("../../equations/", ARGS[1], "/", ARGS[2], "/user_bc.jl")
 end
 include(user_bc_dir)
 #---------------------------------------------------------------------------

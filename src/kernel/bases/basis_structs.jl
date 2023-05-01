@@ -552,7 +552,7 @@ function function_space_wrapper(inputs::Dict, )
 
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
-    PT    = inputs[:problem]
+    PT    = inputs[:equations]
     
     #--------------------------------------------------------
     # Create/read mesh
