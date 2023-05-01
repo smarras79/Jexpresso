@@ -16,7 +16,7 @@ include("../ArtificialViscosity/DynSGS.jl")
 #
 # AdvDiff
 #
-function build_rhs_diff(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T; inputs::Dict)
 
     N           = mesh.ngl - 1
     qnel        = zeros(mesh.ngl, mesh.nelem)
@@ -55,7 +55,7 @@ function build_rhs_diff(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, 
     return rhsdiffξ_el*νx
 end
 
-function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T; inputs::Dict)
 
     N = mesh.ngl - 1
     
@@ -107,7 +107,7 @@ end
 #
 # LinearCLaw
 #
-function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T; inputs::Dict)
     
     N = mesh.ngl - 1
 
@@ -172,7 +172,7 @@ end
 #
 # ShallowWater
 #
-function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, mu, T)
+function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, mu, T; inputs::Dict; inputs::Dict)
 
     N = mesh.ngl - 1
 
@@ -242,7 +242,7 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqs, basis, ω, �
 
 end
 
-function build_rhs_diff(SD::NSD_2D, QT, PT::ShallowWater, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T)
+function build_rhs_diff(SD::NSD_2D, QT, PT::ShallowWater, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, T; inputs::Dict)
     
     N = mesh.ngl - 1
 
@@ -317,7 +317,7 @@ end
 #
 # CompEuler
 #
-function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, μ, T)
+function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, μ, T; inputs::Dict)
 
     N = mesh.ngl - 1
 
@@ -405,7 +405,7 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, νx,
 
 end
 
-function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, μ, T)
+function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, νx, νy, mesh::St_mesh, metrics::St_metrics, μ, T; inputs::Dict)
 
     N = mesh.ngl - 1
 
@@ -418,9 +418,9 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, νx,
 
     rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
-    return  (rhsdiffξ_el + rhsdiffη_el)
+    
     qq = zeros(mesh.npoin, neqs)
-
+    
     γ = 1.4
     Pr = 0.1
     
