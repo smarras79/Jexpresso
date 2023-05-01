@@ -405,10 +405,12 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
 
 end
 
+function flux2primitives(q)
+    
+end
+
 function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T;)
-
-    N = mesh.ngl - 1
-
+    
     #qnel = zeros(mesh.ngl, mesh.nelem, neqs)
     ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -447,9 +449,8 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
             ρel[i,j,iel] = qq[m,1]
             uel[i,j,iel] = qq[m,2]/ρel[i,j,iel]
             vel[i,j,iel] = qq[m,3]/ρel[i,j,iel]
-
             
-            Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] - 0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
+            Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] #- 0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
             Eel[i,j,iel] = qq[m,4]/ρel[i,j,iel]
         end    
         #ν = Pr*μ[iel]/maximum(ρel[:,:,iel])
