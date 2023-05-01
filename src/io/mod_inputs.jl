@@ -20,10 +20,10 @@ function parse_commandline()
         help = "an option without argument, i.e. a flag"
         action = :store_true
         "arg1"
-        help = "problem_name"
+        help = "equations"
         required = true
         "arg2"
-        help = "case name within problems/problem_name"
+        help = "case name within equations/equations"
         required = false
     end
 
@@ -31,7 +31,7 @@ function parse_commandline()
 end
 
 
-function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::String)
+function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::String)
 
     error_flag::Int8 = 0
     
@@ -39,7 +39,7 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
     # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
     # was definied within this same function via the include(input_dir) above.
     # 
-    input_dir = string(problem_dir, "/", problem_name, "/", problem_case_name, "/user_inputs.jl")
+    input_dir = string(equations_dir, "/", equations, "/", equations_case_name, "/user_inputs.jl")
     include(input_dir)
     inputs = @Base.invokelatest(user_inputs())
     
@@ -318,60 +318,60 @@ function mod_inputs_user_inputs!(problem_name, problem_case_name, problem_dir::S
     
     
     #------------------------------------------------------------------------
-    #To add a new set of governing equations, add a new problem director
-    #to src/problems and call it `ANY_NAME_YOU_WANT` 
+    #To add a new set of governing equations, add a new equations directory
+    #to src/equations and call it `ANY_NAME_YOU_WANT` 
     #and add the following lines 
     #
-    #elseif (lowercase(problem_name) == "ANY_NAME_YOU_WANT")
-    #inputs[:problem] = ANY_NAME_YOU_WANT()
+    #elseif (lowercase(equations) == "ANY_NAME_YOU_WANT")
+    #inputs[:equations] = ANY_NAME_YOU_WANT()
     #
-    #neqs = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this problem.
+    #neqs = INTEGER VALUE OF THE NUMBER OF UNKNOWNS for this equations.
     #prinetln( " # neqs     ", neqs)
     #end
     #------------------------------------------------------------------------
     
     #------------------------------------------------------------------------
-# Define neqs based on the problem being solved
+# Define neqs based on the equations being solved
 #------------------------------------------------------------------------
 neqs::Int8 = 1
 
-if (lowercase(problem_name) == "burgers")
-    inputs[:problem] = Burgers()
+if (lowercase(equations) == "burgers")
+    inputs[:equations] = Burgers()
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
-elseif (lowercase(problem_name) == "shallowwater")
-    inputs[:problem] = ShallowWater()    
-    inputs[:ldss_laplace] = false
-    inputs[:ldss_differentiation] = false
-    
-elseif (lowercase(problem_name) == "compeuler")
-    inputs[:problem] = CompEuler()
+elseif (lowercase(equations) == "shallowwater")
+    inputs[:equations] = ShallowWater()    
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
     
-elseif (lowercase(problem_name) == "linearclaw" ||
-        lowercase(problem_name) == "linclaw" ||
-        lowercase(problem_name) == "lclaw")
-    inputs[:problem] = LinearCLaw()
+elseif (lowercase(equations) == "compeuler")
+    inputs[:equations] = CompEuler()
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
     
-elseif (lowercase(problem_name) == "advdiff" ||
-        lowercase(problem_name) == "advdif" ||
-        lowercase(problem_name) == "ad" ||
-        lowercase(problem_name) == "adv2d")
-    inputs[:problem] = AdvDiff()
+elseif (lowercase(equations) == "linearclaw" ||
+        lowercase(equations) == "linclaw" ||
+        lowercase(equations) == "lclaw")
+    inputs[:equations] = LinearCLaw()
+    inputs[:ldss_laplace] = false
+    inputs[:ldss_differentiation] = false
+    
+elseif (lowercase(equations) == "advdiff" ||
+        lowercase(equations) == "advdif" ||
+        lowercase(equations) == "ad" ||
+        lowercase(equations) == "adv2d")
+    inputs[:equations] = AdvDiff()
     inputs[:ldss_laplace] = false
     inputs[:ldss_differentiation] = false
         
-elseif (lowercase(problem_name) == "elliptic" ||
-        lowercase(problem_name) == "diffusion")
-    inputs[:problem] = Elliptic()
+elseif (lowercase(equations) == "elliptic" ||
+        lowercase(equations) == "diffusion")
+    inputs[:equations] = Elliptic()
     inputs[:ldss_laplace] = true
     inputs[:ldss_differentiation] = false
     
-elseif (lowercase(problem_name) == "helmholtz")
-    inputs[:problem] = Helmholtz()
+elseif (lowercase(equations) == "helmholtz")
+    inputs[:equations] = Helmholtz()
     inputs[:ldss_laplace] = true
     inputs[:ldss_differentiation] = false    
 else
@@ -379,7 +379,7 @@ else
     #inputs[:neqs] = 1 #default
     
     s = """
-            jexpresso  user_inputs.jl: problem ", inputs[:problem, " is not coded!
+            jexpresso  user_inputs.jl: equations ", the inputs[:equations] " that you chose is not coded!
             Chose among:
                      - "AdvDiff"/"AD"/"Adv"
                      - "LinearCLaw"/"LinClaw"
@@ -389,6 +389,10 @@ else
     
     @error s
 end
+
+    if(!haskey(inputs, :case))
+        inputs[:case] = ""
+    end
 
 if(!haskey(inputs, :ldss_differentiation))
     inputs[:ldss_differentiation] = false

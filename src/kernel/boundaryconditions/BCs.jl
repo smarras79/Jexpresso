@@ -18,7 +18,7 @@ include("custom_bcs.jl")
 
 function apply_periodicity!(SD::NSD_1D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars)
 
-    @warn " apply_periodicity in 1D is now only working for nvars=1!"
+    #NOTICE: " apply_periodicity!() in 1D is now only working for nvars=1!"
     
     #
     # 1D periodic
