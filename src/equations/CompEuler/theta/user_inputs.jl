@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 10.0, #2π,
+        :tend                 => 1.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => "SSPRK53",
         :ndiagnostics_outputs => 10,
@@ -16,7 +16,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => false, #false by default
+        :lvisc                => true, #false by default
         :νx                   => 10.0, #kinematic viscosity constant
         :νy                   => 10.0, #kinematic viscosity constant
         #---------------------------------------------------------------------------
