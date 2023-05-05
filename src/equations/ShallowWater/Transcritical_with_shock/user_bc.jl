@@ -24,18 +24,18 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-    q[1] = 0.5
-    q[2] = 0.0
-    q[3] = 0.0 
-    return q
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray)
+    qbdy[1] = 0.5
+    qbdy[2] = 0.0
+    qbdy[3] = 0.0 
+    return qbdy
 end
 
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, qbdy::AbstractArray)
     if (x > 1.0)
-        q[1] = 0.33
+        qbdy[1] = 0.33
     else
-        q[2] = 0.18
+        qbdy[2] = 0.18
     end
     return q
 end

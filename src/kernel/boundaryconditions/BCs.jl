@@ -147,8 +147,10 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_1D,nvars,metrics,ω,dirichle
             k=mesh.ngl
             iel = mesh.nelem
         end
+        qbdy = zeros(size(q,2),1)
+        qbdy[:] .= 4325789.0
         if (inputs[:luser_bc])
-            q[ip,:] = dirichlet!(q[ip,:],gradq[ip,:],x,t,mesh,metrics)
+            qbdy = dirichlet!(q[ip,:],gradq[ip,:],x,t,mesh,metrics,qbdy)
             flux = (ω[k]*neumann(q[ip,:],gradq[ip,:],x,t,mesh,metrics))
         else
             q[ip,:] .= 0.0
@@ -156,6 +158,13 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_1D,nvars,metrics,ω,dirichle
         end
         
         rhs[k,iel,:] .= rhs[k,iel,:] .+ flux[:]
+        for var =1:size(q,2)
+            if !(AlmostEqual(qbdy[var],4325789.0))
+                #@info var,x,y,qbdy[var]
+                rhs[k,iel,var] = 0.0
+                q[ip,var] = qbdy[var]
+            end
+        end
         if (size(L,1)>1)
             for ii=1:mesh.npoin
                 L[ip,ii] = 0.0
@@ -168,7 +177,7 @@ end
 function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
 
     
-    for iedge = 1:size(mesh.bdy_edge_comp,1)
+    for iedge = 1:size(mesh.bdy_edge_in_elem,1)
         iel = mesh.bdy_edge_in_elem[iedge]
         comp = mesh.bdy_edge_comp[iedge]
         for k=1:mesh.ngl
@@ -188,14 +197,26 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                 flux = zeros(size(q,2),1)
                 x = mesh.x[ip]
                 y = mesh.y[ip]
+                qbdy = zeros(size(q,2),1)
+                qbdy[:] .= 4325789.0 
+                #flags = zeros(size(q,2),1)
                 if (inputs[:luser_bc])
-                    q[ip,:] = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag)
+                    #q[ip,:], flags = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag,qbdy)
+                    qbdy = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag,qbdy)
                     flux .= (ω[k]*metrics.Jef[k,iedge]).*neumann(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag)
                 else
                     q[ip,:] .= 0.0
                     flux = zeros(size(q,2),1)
                 end
                 rhs[ll,mm,iel,:] .= rhs[ll,mm,iel,:] .+ flux[:]
+                
+                for var =1:size(q,2)
+                    if !(AlmostEqual(qbdy[var],4325789.0))
+                        #@info var,x,y,qbdy[var]
+                        rhs[ll,mm,iel,var] = 0.0
+                        q[ip,var] = qbdy[var]
+                    end
+                end
                 if (size(L,1)>1)
                     for ii=1:mesh.npoin
                         L[ip,ii] = 0.0

@@ -12,7 +12,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     if (case === "rtb")
 
         xc = (maximum(mesh.x) + minimum(mesh.x))/2
-        yc = 2000.0 #m
+        yc = 2500.0 #m
         r0   = 2000.0 #m
         
         θref = 300.0 #K
@@ -29,9 +29,10 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                     Δθ = θc*(1.0 - r/r0)
                 end
                 θ = θref + Δθ
-                p    = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θref))^(PhysConst.cpoverR) #Pa
+                p    = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
+                pref = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θref))^(PhysConst.cpoverR)
                 ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p) #kg/m³
-                ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=p) #kg/m³
+                ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=pref) #kg/m³
 
                 u = 0.0
                 v = 0.0

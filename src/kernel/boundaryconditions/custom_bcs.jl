@@ -23,16 +23,16 @@ function neumann(q,gradq,x,t, mesh, metrics)
     return rhs
 end
 
-function dirichlet!(q,gradq,x,y,t, mesh, metrics,tag)
+function dirichlet!(q,gradq,x,y,t, mesh, metrics,tag,qbdy)
 
-    q = user_bc_dirichlet!(q,gradq,x,y,t,tag)
+    qbdy = user_bc_dirichlet!(q,gradq,x,y,t,tag,qbdy)
     
-    return q
+    return qbdy
 end
 
-function dirichlet!(q,gradq,x,t, mesh, metrics)
+function dirichlet!(q,gradq,x,t, mesh, metrics,qbdy)
 
-    q = user_bc_dirichlet!(q,gradq,x,t)
+    qbdy = user_bc_dirichlet!(q,gradq,x,t)
 
-    return q
+    return qbdy
 end
