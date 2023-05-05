@@ -255,7 +255,7 @@ function compute_viscosity(::NSD_1D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, m
 end
 
 function compute_viscosity(::NSD_2D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, metrics)
-
+    PhysConst = PhysicalConst{Float64}()
     #compute domain averages
     ρ_avg  = 0.0
     ρu_avg = 0.0
@@ -263,31 +263,35 @@ function compute_viscosity(::NSD_2D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, m
     ρE_avg = 0.0
     for e=1:mesh.nelem
         for i=1:mesh.ngl
-            ip = mesh.conn[i,e]
-            ρ_avg  += q[ip,1]
-            ρu_avg += q[ip,2]
-            ρv_avg += q[ip,3]
-            ρE_avg += q[ip,4]
+            for j=1:mesh.ngl
+                ip = mesh.connijk[i,j,e]
+                ρ_avg  += q[ip,1]
+                ρu_avg += q[ip,2]
+                ρv_avg += q[ip,3]
+                ρE_avg += q[ip,4]
+            end
         end
     end
-    ρ_avg  = ρ_avg  / (mesh.nelem*mesh.ngl)
-    ρu_avg = ρu_avg / (mesh.nelem*mesh.ngl)
-    ρv_avg = ρv_avg / (mesh.nelem*mesh.ngl)
-    ρE_avg = ρE_avg / (mesh.nelem*mesh.ngl)
+    ρ_avg  = ρ_avg  / (mesh.nelem*mesh.ngl*mesh.ngl)
+    ρu_avg = ρu_avg / (mesh.nelem*mesh.ngl*mesh.ngl)
+    ρv_avg = ρv_avg / (mesh.nelem*mesh.ngl*mesh.ngl)
+    ρE_avg = ρE_avg / (mesh.nelem*mesh.ngl*mesh.ngl)
 
     #Get denominator infinity norms
-    ρdiff  = zeros(mesh.ngl,mesh.nelem)
-    ρudiff = zeros(mesh.ngl,mesh.nelem)
-    ρvdiff = zeros(mesh.ngl,mesh.nelem)
-    ρEdiff = zeros(mesh.ngl,mesh.nelem)
+    ρdiff  = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
+    ρudiff = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
+    ρvdiff = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
+    ρEdiff = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
     for e=1:mesh.nelem
         for i=1:mesh.ngl
-            ip = mesh.conn[i,e]
+            for j=1:mesh.ngl
+                ip = mesh.connijk[i,j,e]
             
-            ρdiff[i,e]  = abs(q[ip,1] - ρ_avg)
-            ρudiff[i,e] = abs(q[ip,2] - ρu_avg)
-            ρvdiff[i,e] = abs(q[ip,3] - ρv_avg)
-            ρEdiff[i,e] = abs(q[ip,4] - ρE_avg)
+                ρdiff[i,j,e]  = abs(q[ip,1] - ρ_avg)
+                ρudiff[i,j,e] = abs(q[ip,2] - ρu_avg)
+                ρvdiff[i,j,e] = abs(q[ip,3] - ρv_avg)
+                ρEdiff[i,j,e] = abs(q[ip,4] - ρE_avg)
+            end
         end
     end
     denom1 = maximum(ρdiff)  + 1.0e-16
@@ -301,11 +305,12 @@ function compute_viscosity(::NSD_2D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, m
     
     for ie =1:mesh.nelem
         Δ   = (maximum(mesh.x) - minimum(mesh.x))/(25*mesh.nop) #temporary. make general ASAP
-        ρ   = zeros(mesh.ngl,mesh.ngl)
+        ρ_bar   = 0.0#zeros(mesh.ngl,mesh.ngl)
         u   = zeros(mesh.ngl,mesh.ngl)
         v   = zeros(mesh.ngl,mesh.ngl)
         T   = zeros(mesh.ngl,mesh.ngl)
         e   = zeros(mesh.ngl,mesh.ngl)
+        p_bar = 0.0
         
         Rρ  = zeros(mesh.ngl,mesh.ngl)
         Rρu = zeros(mesh.ngl,mesh.ngl)
@@ -324,13 +329,16 @@ function compute_viscosity(::NSD_2D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, m
                 Rρv[i,j] = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) + rhs[ip,3])
                 RρE[i,j] = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) + rhs[ip,4])
                 
-                ρ[i,j] = q[ip,1]
-                u[i,j] = q[ip,2]/ρ[i,j]
-                v[i,j] = q[ip,3]/ρ[i,j]
-                e[i,j] = q[ip,4]/ρ[i,j]
-                T[i,j] = e[i] - 0.5*(u[i,j]^2 + v[i,j]^2)
+                ρ_bar += q[ip,1]
+                u[i,j] = q[ip,2]/q[ip,1]
+                v[i,j] = q[ip,3]/q[ip,1]
+                e[i,j] = q[ip,4]/q[ip,1]
+                #T[i,j] = e[i] - 0.5*(u[i,j]^2 + v[i,j]^2)
+                p_bar += perfectGasLaw_ρθtoP(PhysConst, ρ= q[ip,1], θ=e[i,j]) 
             end
         end
+        ρ_bar = ρ_bar/mesh.ngl^2
+        p_bar = p_bar/mesh.ngl^2 
         γ = 1.4
         C1 = 1.0
         C2 = 0.5
@@ -338,9 +346,8 @@ function compute_viscosity(::NSD_2D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, m
         numer2 = maximum(Rρu)
         numer3 = maximum(Rρv)
         numer4 = maximum(RρE)
-        #@info numer1, numer2
         μ_res = C1*Δ^2*denom1*max(numer1/denom1, numer2/denom2, numer3/denom3, numer4/denom4)
-        μ_max = C2*Δ*maximum(ρ)*maximum(sqrt.(u.*u .+ v.*v) .+ sqrt.(γ*T))
+        μ_max = C2*Δ*maximum(sqrt.(u.*u .+ v.*v) .+ sqrt(γ*p_bar/ρ_bar))
         μ_SGS[ie] = max(0.0, min(μ_max, μ_res))
     end
 

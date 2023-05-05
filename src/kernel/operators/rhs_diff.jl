@@ -451,6 +451,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
     #
+    #@info maximum(μ)
     for iel=1:mesh.nelem
 
         μ[iel] = 10.0
@@ -467,8 +468,8 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
         end    
         #ν = Pr*μ[iel]/maximum(ρel[:,:,iel])
         #κ = Pr*μ[iel]/(γ - 1.0)
-        ν = 10.0
-        κ = 10.0
+        ν = μ[iel]#10.0
+        κ = μ[iel]#10.0
         
         for k = 1:mesh.ngl, l = 1:mesh.ngl
             ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]

@@ -24,25 +24,25 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-    q[1] = 0.5
-    q[2] = 0.0
-    q[3] = 0.0 
-    return q
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray)
+    qbdy[1] = 0.5
+    qbdy[2] = 0.0
+    qbdy[3] = 0.0 
+    return qbdy
 end
 
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, qbdy::AbstractArray)
     if (x > 1.0)
         if (q[2]/sqrt(9.81*q[1])< 1)
-            q[1] = 0.66
+            qbdy[1] = 0.66
         end
     else
         #if (q[2]/sqrt(9.81*q[1]) > 1)
-         #   q[1] = 0.66
+         #   qbdy[1] = 0.66
         #end
-        q[2] = 1.53
+        qbdy[2] = 1.53
     end
-    return q
+    return qbdy
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)

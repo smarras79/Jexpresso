@@ -622,23 +622,37 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
         end
     end
     
-    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
+    #apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
     RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    divive_by_mass_matrix!(RHS, M, QT,neqs)
+    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
+    #=for i=1:neqs
+        idx = (i-1)*mesh.npoin
+        qp[idx+1:i*mesh.npoin] .= qq[:,i]
+    end=#
+    #=if (rem(time, Δt) == 0 && time > 0.0)
+        global  q1 .= q2
+        global  q2 .= qq
+    end=#
+    
+    if (rem(time, Δt) < 5e-4 && time > 0.0)
+        global  q2 .= q1
+        global  q1 .= q3
+        global  q3 .= qq
+    end
 
+    if (inputs[:lvisc] == true)
+        μ = compute_viscosity(SD, PT, qq, q1, q2, RHS, Δt, mesh, metrics) 
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis, ω, inputs, mesh, metrics, μ, T;)
+        rhs_el .= rhs_el .+ rhs_diff_el
+        #RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    end
+    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
     for i=1:neqs
         idx = (i-1)*mesh.npoin
         qp[idx+1:i*mesh.npoin] .= qq[:,i]
     end
-    if (rem(time, Δt) == 0 && time > 0.0)
-        global  q1 .= q2
-        global  q2 .= qq
-    end
-    
-    if (inputs[:lvisc] == true)
-        μ = compute_viscosity(SD, PT, qq, q1, q2, RHS, Δt, mesh, metrics) 
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis, ω, inputs, mesh, metrics, μ, T;)
-        RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
-    end
+    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     
     divive_by_mass_matrix!(RHS, M, QT,neqs)
     

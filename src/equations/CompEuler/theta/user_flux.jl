@@ -16,7 +16,6 @@ function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh; neqs=4)
         v  = ρv/ρ
         
         Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-        
         #@info " FLUX USER: " Temp Press ρ
         F[ip,1] = ρu
         F[ip,2] = ρu*u + Press

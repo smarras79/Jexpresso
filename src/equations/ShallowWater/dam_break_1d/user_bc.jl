@@ -31,13 +31,13 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
     return q
 end
 
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, qbdy::AbstractArray)
     if (x > 1.0)
-        q[1] = 1.0
+        qbdy[1] = 1.0
     else
-        q[2] = 0.0
+        qbdy[2] = 0.0
     end
-    return q
+    return qbdy
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
