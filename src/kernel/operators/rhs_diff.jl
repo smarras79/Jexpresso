@@ -318,7 +318,7 @@ end
 # CompEuler
 #
 function build_rhs_diff_work_array()
-    #https://discourse.julialang.org/t/avoiding-allocations-of-small-but-non-trivial-arrays-work-array-alternative/90084/26
+    
     #qnel = zeros(mesh.ngl, mesh.nelem, neqs)
     ρel = zeros(mesh.ngl, mesh.nelem)
     uel = zeros(mesh.ngl, mesh.nelem)
@@ -360,10 +360,7 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
         Jac = mesh.Δx[iel]/2.0
         for i=1:mesh.ngl
             m = mesh.conn[i,iel]
-            #qnel[i,iel,1] = qq[m,1] #ρ
-            #qnel[i,iel,2] = qq[m,2]/qnel[i,iel,1] #u = ρu/ρ
-            #qnel[i,iel,3] = qq[m,3]/qnel[i,iel,1] #E = ρE/ρ
-            
+             
             ρel[i,iel] = qq[m,1]
             uel[i,iel] = qq[m,2]/ρel[i]
             Tel[i,iel] = qq[m,3]/ρel[i] - 0.5*uel[i]^2
@@ -395,7 +392,6 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
             dudx =  μ[iel] * dudξ*dξdx
             dTdx = (μ[iel] * dudξ*dξdx * uel[k,iel] + κ * dTdξ*dξdx)
             
-            #∇ξ∇q_kl =  dqdx*dξdx
             ∇ξ∇ρ_kl =  dρdx*dξdx
             ∇ξ∇u_kl =  dudx*dξdx
             ∇ξ∇T_kl =  dTdx*dξdx
