@@ -5,7 +5,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                 => 1.5,
+        :tend                 => 2.0,
         :Δt                   => 1e-3,
         :ndiagnostics_outputs => 10, #these are steps, not seconds
         #:output_dir          => "/Users/simone/runs/",
