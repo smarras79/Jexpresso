@@ -24,7 +24,7 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray)
 
     PhysConst = PhysicalConst{Float64}()
     γ = PhysConst.γ
@@ -59,12 +59,12 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
         p = 1.0
     end
     ρE = p/(γ - 1.0) + 0.5*ρ*(u*u + v*v)
-    q[1] = ρ
-    q[2] = ρ*u
-    q[3] = ρ*v
-    q[4] = ρE
+    qbdy[1] = ρ
+    qbdy[2] = ρ*u
+    qbdy[3] = ρ*v
+    qbdy[4] = ρE
     
-    return q
+    return qbdy
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)

@@ -418,8 +418,6 @@ end
 
 function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
     
-    #qnel = zeros(mesh.ngl, mesh.nelem, neqs)
-    
     ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     vel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -431,9 +429,6 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
     
     qq = zeros(mesh.npoin, neqs)
     
-    γ = 1.4
-    Pr = 0.1
-    case = inputs[:case]
     
     #
     # qp[1:npoin]         <-- qq[1:npoin, "ρ"]
@@ -447,6 +442,15 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
     #
+    if (inputs[:case] === "rtb")
+        δenergy = 0.0
+    else
+        δenergy = 1.0
+    end
+
+    
+    γ = 1.4
+    Pr = 0.1
     for iel=1:mesh.nelem
 
         μ[iel] = 10.0
@@ -458,14 +462,16 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
             uel[i,j,iel] = qq[m,2]/ρel[i,j,iel]
             vel[i,j,iel] = qq[m,3]/ρel[i,j,iel]
             
-            Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] #- 0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
+            Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] - δenergy*0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
             Eel[i,j,iel] = qq[m,4]/ρel[i,j,iel]
         end    
         #ν = Pr*μ[iel]/maximum(ρel[:,:,iel])
         #κ = Pr*μ[iel]/(γ - 1.0)
-        ν = 10.0
-        κ = 10.0
-        
+        #ν = μ[iel]#10.0
+        #κ = μ[iel]#10.0
+
+        ν = inputs[:νx]
+        κ = ν
         for k = 1:mesh.ngl, l = 1:mesh.ngl
             ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
             

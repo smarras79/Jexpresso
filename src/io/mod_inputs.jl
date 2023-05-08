@@ -279,9 +279,18 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         inputs[:νz] = Float16(0.0) #default kinematic viscosity
     end
 
+    #
+    # Viscous models:
+    #
     if(!haskey(inputs, :lvisc))
         inputs[:lvisc] = false
     end
+    if(!haskey(inputs, :visc_model))
+        inputs[:visc_model] = "av" #Default is artificial viscosity with constant coefficient
+    else
+        inputs[:visc_model] = lowercase(inputs[:visc_model])
+    end
+    
     
     #
     # Correct quantities based on a hierarchy of input variables

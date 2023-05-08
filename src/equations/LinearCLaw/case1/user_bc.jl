@@ -24,7 +24,7 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray)
     c  = 1.0
     x0 = y0 = -0.8
     kx = ky = sqrt(2.0)/2.0
@@ -32,13 +32,13 @@
     d  = 0.5*ω/sqrt(log(2.0)); d2 = d*d
     e = exp(- ((kx*(x - x0) + ky*(y - y0)-c*t)^2)/d2) 
     #@info x,y,t,e
-    q[1] = e
-    q[2] = kx*e/c
-    q[3] = ky*e/c 
-    return q
-end=#
+    qbdy[1] = e
+    qbdy[2] = kx*e/c
+    qbdy[3] = ky*e/c 
+    return qbdy
+end
 
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
     c  = 1.0
     x0 = y0 = -0.8
     kx = ky = sqrt(2.0)/2.0
@@ -56,7 +56,7 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
     q[3] = max(ky*e/c,ky*e_ref/c)
     
     return q
-end
+end=#
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
     flux = zeros(size(q,2),1)
