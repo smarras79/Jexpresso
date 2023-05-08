@@ -24,23 +24,26 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-    
-    q[2] = 0.0
-    q[3] = 0.0
-    
-    #=if ( x <= -4000.0 || x >= 4000.0)
-        q[2] = 0.0
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray)
+    #flags = zeros(size(q,1),1)   
+    #qbdy[2] = 0.0
+    #qbdy[3] = 0.0
+    if ( x <= -4990.0 || x >= 4990.0)
+        qbdy[2] = 0.0
+        #flags[2] = 1
     end
-    if (y <= 125.0 || y >= 9990.0)
-        q[3] = 0.0
+    if (y <= 10.0 || y >= 9990.0)
+        qbdy[3] = 0.0
+        #flags[3] = 1
     end
-    if ((x >= 4000.0 || x <= -4000.0) && (y >= 9990.0 || y <= 125.0))
-        q[2] = 0.0
-        q[3] = 0.0
-    end=#
+    if ((x >= 4990.0 || x <= -4990.0) && (y >= 9990.0 || y <= 10.0))
+        qbdy[2] = 0.0
+        qbdy[3] = 0.0
+        #flags[2] = 1
+        #flags[3] = 1
+    end
 
-    return q
+    return qbdy #, flags
     
 end
 

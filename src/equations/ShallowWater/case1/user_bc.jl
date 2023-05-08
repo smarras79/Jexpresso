@@ -31,10 +31,10 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
     return q
 end
 
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    q[1] = .5
-    q[2] = 0.0
-    return q
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, qbdy::AbstractArray)
+    qbdy[1] = .5
+    qbdy[2] = 0.0
+    return qbdy
 end
 
 #=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
