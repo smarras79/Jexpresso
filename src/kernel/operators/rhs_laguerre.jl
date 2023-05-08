@@ -48,7 +48,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis1
 
 
     #DSS(rhs_el)
-    RHS = DSS_rhs_laguerre(SD, rhs_el + rhs_diff_el, mesh.connijk, neqs, T)
+    RHS = DSS_rhs_laguerre(SD, rhs_el + rhs_diff_el, mesh, neqs, T)
     divive_by_mass_matrix!(RHS, M, QT,neqs)
 
     

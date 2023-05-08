@@ -84,7 +84,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
     rhs_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     
     #B.C.
-    apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, time, neqs)   
+    #apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, time, neqs)   
     Fuser, Guser = user_flux(T, SD, qp, mesh)
     
     for iel=1:mesh.nelem
