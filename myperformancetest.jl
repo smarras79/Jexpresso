@@ -1,3 +1,4 @@
+using BenchmarkTools
 function barw_array( xnodes )
     n = length(xnodes)
     barw = Array{Float64}(undef,n)
@@ -19,6 +20,9 @@ function run_barw_array()
         u = barw_array( xnodes )
     end
 end
+@info "NAIVE "
+@btime run_barw_array()
+####
 
 function barw_workvector( barw, xnodes )
     n = length(xnodes)
@@ -42,8 +46,7 @@ function run_barw_workvector()
     end
 
 end
-
-@btime run_barw_array()
+@info "work vector without static arrays"
 @btime run_barw_workvector()
 #############################
 
@@ -76,6 +79,7 @@ function run_barw_sarray_constructor()
 
 end
 
+@info "work vector WITH static arrays"
 @btime run_barw_sarray_constructor()
 
 
@@ -101,5 +105,5 @@ function run_barw_array()
         u = barw_array( xnodes, n)
     end
 end
-
+@info "work vector WITH static arrays"
 @btime run_barw_array()
