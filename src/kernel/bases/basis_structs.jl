@@ -23,7 +23,7 @@ abstract type AbstractInterpolationBasis end
 abstract type AbstractSpaceDimensions end
 
 struct LagrangeBasis <: AbstractInterpolationBasis end
-
+struct LaguerreBasis <: AbstractInterpolationBasis end
 mutable struct St_Legendre{TFloat}
     
     """
@@ -125,6 +125,16 @@ function basis_structs_ξ_ω!(ξωtype::LGL, nop::TInt)
     return lgl
 end
 
+function basis_structs_ξ_ω!(ξωtype::LGR, nop::TInt)
+
+    lgr = St_gr{TFloat}(zeros(TFloat, nop+1),
+                         zeros(TFloat, nop+1))
+
+    build_Integration_points!(lgr, nop)
+
+    return lgr
+end
+
 function basis_structs_ξ_ω!(ξωtype::CG, nop::TInt)
     
     cg = St_cg{TFloat}(zeros(TFloat, nop+1),
@@ -167,6 +177,11 @@ function build_Integration_points!(lgl::St_lgl,nop::TInt)
   build_lgl!(Legendre,lgl,nop)
 end
 
+function build_Integration_points!(lgr::St_gr,nop::TInt)
+    Laguerre = St_Laguerre(Polynomial(2.0),Polynomial(2.0))
+    build_gr!(Laguerre,lgr,nop,false)
+end
+
 function build_Interpolation_basis!(TP::LagrangeBasis, ξ, ξq, T::Type{Float64})
 
     Nξ = size(ξ,1)  - 1
@@ -189,9 +204,9 @@ function build_Interpolation_basis!(TP::ScaledLaguerreBasis, ξ, ξq, T::Type{Fl
     N  = (Nξ + 1)
     Q  = (Qξ + 1)
     @info N, Q
-    basis = St_Laguerre{T}(zeros(N,Q), zeros(N,Q))
-    (basis.ψ, basis.dψ) = LagrangeLaguerreBasis(ξ)
-
+    basis = St_Lagrange{T}(zeros(N,Q), zeros(N,Q))
+    (basis.ψ, basis.dψ) = LagrangeLaguerreBasis(ξ, ξq, T)
+    @info "built laguerre basis"
     return basis
 end
 
@@ -643,13 +658,13 @@ function LaguerreAndDerivative!(nop,SL::St_Laguerre)
   end
   
   SL.Laguerre = Polynomial(Laguerre)
-  SL.dLaguerre = derivative(SL.Laguerre) 
+  SL.dLaguerre = Polynomials.derivative(SL.Laguerre) 
 end
 
 function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, nop::TInt,scale)
     Pp1 = nop+1
     LaguerreAndDerivative!(nop+1,Laguerre)
-    xgr =  roots(Laguerre.dLaguerre)  
+    xgr =  Polynomials.roots(Laguerre.dLaguerre)  
     gr.ξ[1] = 0.0
     for i=0:nop-1
       gr.ξ[i+2] = xgr[i+1]
@@ -670,8 +685,8 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     @info gr.ω
 end
 
-function LagrangeLaguerreBasis(xgr)
-    nbasis = size(xgr,1)
+function LagrangeLaguerreBasis(ξ, ξq, TFloat)
+    nbasis = size(ξq,1)
     N = nbasis -1
     Np1 = N+1
     
@@ -680,9 +695,9 @@ function LagrangeLaguerreBasis(xgr)
     dpsi[1,1]=-(N +1)./2.0
 
     for i = 1:nbasis
-        xi = xgr[i]
+        xi = ξq[i]
         for j = 1:nbasis
-            xj = xgr[j]
+            xj = ξ[j]
             if(i != j)
                 psi[j,i] = 1
                 dpsi[j,i] = scaled_laguerre(xi,Np1)/(scaled_laguerre(xj,Np1)*(xi -xj));

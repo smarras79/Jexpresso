@@ -196,11 +196,11 @@ function build_mass_matrix_Laguerre(SD::NSD_2D, QT, ψ, ω, ψ1, ω1, mesh, metr
 
                 for j = 1:mesh.ngr
                     for i = 1:mesh.ngl
-                        I = i + (j - 1)*(mesh.ngr)
+                        I = i + (j - 1)*(mesh.ngl)
                         ψJK = ψ[i,k]*ψ1[j,l]
                         for n = 1:mesh.ngr
                             for m = 1:mesh.ngl
-                                J = m + (n - 1)*(mesh.ngr)
+                                J = m + (n - 1)*(mesh.ngl)
                                 ψIK = ψ[m,k]*ψ1[n,l]
                                 Me[I,J,iel] += ωkl*Jkle*ψIK*ψJK #Sparse
                             end
@@ -410,18 +410,18 @@ end
 
 function DSS_mass_Laguerre(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, Mel_lag::AbstractArray, mesh)
 
-    M  = zeros(npoin)
-    for iel=1:nelem
+    M  = zeros(mesh.npoin)
+    for iel=1:mesh.nelem
 
         #show(stdout, "text/plain", 36.0*Mel[:,:,iel])
 
-        for j = 1:N+1
-            for i = 1:N+1
-                J = i + (j - 1)*(N + 1)
+        for j = 1:mesh.ngl
+            for i = 1:mesh.ngl
+                J = i + (j - 1)*(mesh.ngl)
                 JP = mesh.connijk[i,j,iel]
-                for n = 1:N+1
-                    for m = 1:N+1
-                        I = m + (n - 1)*(N + 1)
+                for n = 1:mesh.ngl
+                    for m = 1:mesh.ngl
+                        I = m + (n - 1)*(mesh.ngl)
                         IP = mesh.connijk[m,n,iel]
                         M[IP] = M[IP] + Mel[I,J,iel] #if inexact
                     end
@@ -437,11 +437,11 @@ function DSS_mass_Laguerre(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, Mel_lag:
 
         for j = 1:mesh.ngr
             for i = 1:mesh.ngl
-                J = i + (j - 1)*(mesh.ngr)
+                J = i + (j - 1)*(mesh.ngl)
                 JP = mesh.connijk_lag[i,j,iel]
                 for n = 1:mesh.ngr
                     for m = 1:mesh.ngl
-                        I = m + (n - 1)*(mesh.ngr)
+                        I = m + (n - 1)*(mesh.ngl)
                         IP = mesh.connijk_lag[m,n,iel]
                         M[IP] = M[IP] + Mel_lag[I,J,iel] #if inexact
                     end
@@ -621,14 +621,14 @@ function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFl
     return (; Me, De, Le, M, D, L)
 end
 
-function matrix_wrapper_laguerre(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)
+function matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)
 
     Le = build_laplace_matrix(SD, basis[1].ψ, basis[1].dψ, ω[1], mesh, metrics[1], N, Q, TFloat)
     De = build_differentiation_matrix(SD, basis[1].ψ, basis[1].dψ, ω[1], mesh,  N, Q, TFloat)
-    Me = build_mass_matrix(SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
-    M_lag = build_mass_matrix_Laguerre(SD::NSD_2D, QT, basis[1].ψ, ω[1], basis[2].ψ, ω[2], mesh, metrics[2], T)
+    Me = build_mass_matrix(SD, QT, basis[1].ψ, ω[1], mesh, metrics[1], N, Q, TFloat)
+    M_lag = build_mass_matrix_Laguerre(SD::NSD_2D, QT, basis[1].ψ, ω[1], basis[2].ψ, ω[2], mesh, metrics[2], TFloat)
      
-    M  = DSS_mass_laguerre(SD, QT, Me, M_lag, mesh)
+    M  = DSS_mass_Laguerre(SD, QT, Me, M_lag, mesh)
     L  = zeros(1,1)
     if ldss_laplace
         L  = DSS_laplace(SD, Le, mesh, TFloat)

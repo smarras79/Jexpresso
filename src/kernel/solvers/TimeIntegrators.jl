@@ -11,7 +11,7 @@ include("../abstractTypes.jl")
 function time_loop!(QT,
                     PT,
                     mesh::St_mesh,
-                    metrics::St_metrics,
+                    metrics,
                     basis, ω,
                     qp::St_SolutionVars,
                     M,
