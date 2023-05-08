@@ -130,7 +130,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     return metrics
 end
 
-function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Laguerre,N, Q, NGR, QGR, ξ, T;dir="x")
+function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange,N, Q, NGR, QGR, ξ, T)
     
     metrics = St_metrics{T}(dxdξ = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
                             dxdη = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
@@ -175,10 +175,11 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     metrics.dξdy[k, l, iel] = -metrics.dxdη[k, l, iel]/metrics.Je[k, l, iel]
                     metrics.dηdx[k, l, iel] = -metrics.dydξ[k, l, iel]/metrics.Je[k, l, iel]
                     metrics.dηdy[k, l, iel] =  metrics.dxdξ[k, l, iel]/metrics.Je[k, l, iel]
-
+       
+                end
             end
-        end
         #show(stdout, "text/plain", metrics.Je[:,:,iel])
+        end
     end
 
     return metrics

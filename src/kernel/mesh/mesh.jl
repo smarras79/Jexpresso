@@ -64,7 +64,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     npz::Union{TInt, Missing} = 1
     
     nelem::Union{TInt, Missing} = 1
-    nelem_semi_inf::Union{TInt, Missing = 1# Semi infinite elements for Laguerre BC
+    nelem_semi_inf::Union{TInt, Missing} = 1# Semi infinite elements for Laguerre BC
     nelem_int::Union{TInt, Missing} = 1    # internal elements
     npoin::Union{TInt, Missing} = 1        # This is updated after populating with high-order nodes
     npoin_original::Union{TInt, Missing} =1# Storage for original npoin if modified for Laguerre semi_inf
@@ -82,7 +82,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
     ngl::Union{TInt, Missing} = nop + 1
-    ngr::Union{TInt, Missing} = nop_gr
+    ngr::Union{TInt, Missing} = 15#nop_gr
     npoin_el::Union{TInt, Missing} = 1     # Total number of points in the reference element
     
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
@@ -117,7 +117,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     edge_type        = Array{String}(undef, 1)
     bdy_edge_type    = Array{String}(undef, 1)
     bdy_normals      = Array{Int64}(undef, 1)
-    bdy_tangents     = Array{Int64}(under, 1)
+    bdy_tangents     = Array{Int64}(undef, 1)
     
 
     #@YASSINE REMOVE WHAT NO LONGER NEEDED 
@@ -467,9 +467,6 @@ if mesh.nsd == 2
         #
         for idx in idx_edges_inflow
             mesh.edge_type[idx] = ilabel
-            if (ilabel == "Laguerre")
-                n_semi_inf += 1
-            end
         end
     end
     iedge_bdy = 1
@@ -477,8 +474,11 @@ if mesh.nsd == 2
         if isboundary_edge[iedge] == true
             for igl = 1:mesh.ngl
                 mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
-                mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
+                mesh.bdy_edge_type[iedge_bdy] = "Laguerre" #mesh.edge_type[iedge]
                 #@info iedge, mesh.edge_type[iedge]
+            end
+            if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
+                n_semi_inf += 1
             end
             iedge_bdy += 1
         end
@@ -502,14 +502,20 @@ if mesh.nsd == 2
     end
     # build mesh data structs for Laguerre semi-infinite elements
     if ("Laguerre" in mesh.bdy_edge_type)
-        mesh.connijk_lag = zeros(mesh.ngl,mesh.ngr,n_semi_inf)
+        gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1) 
+        factor = 1.0
+        mesh.connijk_lag = Array{Int64}(undef, mesh.ngl, mesh.ngr, n_semi_inf)
         mesh.bdy_normals = zeros(n_semi_inf, 2)
         mesh.bdy_tangents = zeros(n_semi_inf, 2)
         e_iter = 1
         iter = mesh.npoin + 1
+        x_new = zeros(mesh.npoin + n_semi_inf*mesh.ngl*(mesh.ngr-1))
+        y_new = zeros(mesh.npoin + n_semi_inf*mesh.ngl*(mesh.ngr-1))
+        x_new[1:mesh.npoin] .= mesh.x[:]
+        y_new[1:mesh.npoin] .= mesh.y[:]
         for iedge = 1:size(mesh.bdy_edge_type,1)
-            if (mesh.bdy_edge_type == "Laguerre") 
-                e = mesh.bdy_edge_in_elem[iedge]
+            if (mesh.bdy_edge_type[iedge] == "Laguerre") 
+                iel = mesh.bdy_edge_in_elem[iedge]
                 #find tangent and normal vectors to the boundary
                 ip = mesh.poin_in_bdy_edge[iedge,1]
                 ip1 = mesh.poin_in_bdy_edge[iedge,2]
@@ -561,17 +567,20 @@ if mesh.nsd == 2
                     mesh.connijk_lag[i,1,e_iter] = ip
                     for j=2:mesh.ngr
                         mesh.connijk_lag[i,j,e_iter] = iter
-                        mesh.x[iter] = mesh.x[ip] + nor[1]*gr.ξ*factor 
-                        mesh.y[iter] = mesh.y[ip] + nor[2]*gr.ξ*factor
+                        x_new[iter] = mesh.x[ip] + nor[1]*gr.ξ[j]*factor 
+                        y_new[iter] = mesh.y[ip] + nor[2]*gr.ξ[j]*factor
                         iter += 1
                     end
                 end
                 e_iter += 1
             end
         end
+        @info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
         mesh.npoin_original = mesh.npoin
-        mesh.npoin = mesh.npoin + iter -1
-         
+        mesh.npoin = iter -1
+        mesh.x = x_new
+        mesh.y = y_new
+        mesh.z = zeros(mesh.npoin)
         mesh.nelem_semi_inf = n_semi_inf 
     end
     #=for iedge_bdy = 1:mesh.nedges_bdy
