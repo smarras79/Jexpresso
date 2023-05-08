@@ -168,11 +168,23 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
     #show(stdout, "text/plain", el_matrices.D)
     RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin,neqs, mesh.nop, T)
     
-    #Build rhs_el(diffusion)    
+    #Build rhs_el(diffusion)
     if (inputs[:lvisc] == true)
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs, mesh, metrics, T;)
-        RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin,neqs, mesh.nop, T)
+        μ = zeros(mesh.nelem,1)
+        if (inputs[:visc_model] === "dsgs")
+            compute_viscosity!(mu, SD, PT, q3, q1, q2, RHS, Δt, mesh, metrics)
+        else
+            μ[:] = inputs[:νx]
+        end
+        if (rem(time, Δt) < 5e-4 && time > 0.0)
+            global  q2 .= q1
+            global  q1 .= q3
+            global  q3 .= qq
+        end
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs, mesh, metrics, μ, T;)
+        RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     end
+    
     divive_by_mass_matrix!(RHS, M, QT,neqs)
     
     return RHS
@@ -238,14 +250,32 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, bas
             end
         end
     end
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs, mesh, metrics, T;)
+
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
     for i=1:neqs
         idx = (i-1)*mesh.npoin
         qp[idx+1:i*mesh.npoin] .= qq[:,i]
     end
     RHS = DSS_rhs(SD, rhs_el .+ rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    
+    if (inputs[:lvisc] == true)
+        μ = zeros(mesh.nelem,1)
+        if (inputs[:visc_model] === "dsgs")
+            compute_viscosity!(mu, SD, PT, q3, q1, q2, RHS, Δt, mesh, metrics)
+        else
+            μ[:] = inputs[:νx]
+        end
+        if (rem(time, Δt) < 5e-4 && time > 0.0)
+            global  q2 .= q1
+            global  q1 .= q3
+            global  q3 .= qq
+        end
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs, mesh, metrics, μ, T;)
+        RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    end
+    
     divive_by_mass_matrix!(RHS, M, QT,neqs)
+    
     return RHS
 end
 
