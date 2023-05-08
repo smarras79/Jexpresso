@@ -581,8 +581,8 @@ function DSS_rhs_laguerre(SD::NSD_2D, Vel::AbstractArray, mesh, neqs, T)
 
     V  = zeros(T, mesh.npoin,neqs)
     for iel = 1:mesh.nelem_semi_inf
-        for j = 1:mesh.ngl
-            for i = 1:mesh.ngr
+        for j = 1:mesh.ngr
+            for i = 1:mesh.ngl
                 I = mesh.connijk_lag[i,j,iel]
 
                 V[I,:] .= V[I,:] .+ Vel[i,j,iel,:]
