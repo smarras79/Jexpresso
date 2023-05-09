@@ -1,5 +1,6 @@
 using DelimitedFiles
 using DataStructures
+using Gridap
 using Gridap.Arrays
 using Gridap.Arrays: Table
 using Gridap.Geometry

@@ -16,7 +16,7 @@ include("../ArtificialViscosity/DynSGS.jl")
 #
 # AdvDiff
 #
-function build_rhs_diff(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, T;)
+function build_rhs_diff(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, μ, T;)
 
     N           = mesh.ngl - 1
     qnel        = zeros(mesh.ngl, mesh.nelem)
@@ -55,7 +55,7 @@ function build_rhs_diff(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, 
     return rhsdiffξ_el*inputs[:νx]
 end
 
-function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, T;)
+function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, μ, T;)
 
     N = mesh.ngl - 1
     
@@ -107,7 +107,7 @@ end
 #
 # LinearCLaw
 #
-function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqs, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, T;)
+function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqs, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, μ, T;)
     
     N = mesh.ngl - 1
 
@@ -172,7 +172,7 @@ end
 #
 # ShallowWater
 #
-function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqs, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, mu, T;)
+function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqs, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, μ, T;)
 
     N = mesh.ngl - 1
 
@@ -212,7 +212,7 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::ShallowWater, qp, neqs, basis, ω, i
                 end
                 #@info "dqdxi", dqdξ
                 #if (ieq > 1)
-                    dqdx = mu[iel] * (dqdξ) * dξdx
+                dqdx = μ[iel] * (dqdξ) * dξdx
                 #else
                 #    dqdx = 0.0
                 #end 
