@@ -452,8 +452,6 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
     γ = 1.4
     Pr = 0.1
     for iel=1:mesh.nelem
-
-        μ[iel] = 10.0
         
         for j=1:mesh.ngl, i=1:mesh.ngl
             m = mesh.connijk[i,j,iel]
@@ -469,10 +467,11 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
         #κ = Pr*μ[iel]/(γ - 1.0)
         #ν = μ[iel]#10.0
         #κ = μ[iel]#10.0
-
-        ν = inputs[:νx]
-        κ = ν
-        for k = 1:mesh.ngl, l = 1:mesh.ngl
+        
+        ν = 0.0
+        μ[iel] = inputs[:νx]
+        κ = μ[iel]
+        for l = 1:mesh.ngl, k = 1:mesh.ngl
             ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
             
             #for ieq = 1:neqs
@@ -489,17 +488,17 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
             dTdη = 0.0
             dEdη = 0.0
             for i = 1:mesh.ngl
-                dρdξ = dρdξ + basis.dψ[i,k]*ρel[i,l,iel]
-                dudξ = dudξ + basis.dψ[i,k]*uel[i,l,iel]
-                dvdξ = dvdξ + basis.dψ[i,k]*vel[i,l,iel]
-                dTdξ = dTdξ + basis.dψ[i,k]*Tel[i,l,iel]
-                dEdξ = dEdξ + basis.dψ[i,k]*Eel[i,l,iel]
+                dρdξ += basis.dψ[i,k]*ρel[i,l,iel]
+                dudξ += basis.dψ[i,k]*uel[i,l,iel]
+                dvdξ += basis.dψ[i,k]*vel[i,l,iel]
+                dTdξ += basis.dψ[i,k]*Tel[i,l,iel]
+                dEdξ += basis.dψ[i,k]*Eel[i,l,iel]
 
-                dρdη = dρdη + basis.dψ[i,l]*ρel[k,i,iel]
-                dudη = dudη + basis.dψ[i,l]*uel[k,i,iel]
-                dvdη = dvdη + basis.dψ[i,l]*vel[k,i,iel]
-                dTdη = dTdη + basis.dψ[i,l]*Tel[k,i,iel]
-                dEdη = dEdη + basis.dψ[i,l]*Eel[k,i,iel]
+                dρdη += basis.dψ[i,l]*ρel[k,i,iel]
+                dudη += basis.dψ[i,l]*uel[k,i,iel]
+                dvdη += basis.dψ[i,l]*vel[k,i,iel]
+                dTdη += basis.dψ[i,l]*Tel[k,i,iel]
+                dEdη += basis.dψ[i,l]*Eel[k,i,iel]
             end
             
             dρdx =       ν*(dρdξ*metrics.dξdx[k,l,iel] + dρdη*metrics.dηdx[k,l,iel])
