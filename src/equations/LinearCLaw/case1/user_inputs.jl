@@ -5,6 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                => 0.1, #2π,
         :Δt                  => 0.25e-3,#8.75e-4,
+        :ode_solver           => "Tsit5",
         :ndiagnostics_outputs=> 2,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -17,8 +18,6 @@ function user_inputs()
         # Output parameters:
         #---------------------------------------------------------------------------
         :outformat           => "png",
-        :lplot_surf3d        => true,
-        :smoothing_factor    => 20.0, #factor for spline2d interpolation
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------

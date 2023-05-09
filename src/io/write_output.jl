@@ -26,7 +26,7 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     
     if inputs[:lplot_surf3d]
-        for iout = 1:inputs[:ndiagnostics_outputs]
+        for iout = 1:size(sol.t[:], 1)
             title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
             plot_surf3d(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
         end

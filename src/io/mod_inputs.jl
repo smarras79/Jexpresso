@@ -175,7 +175,9 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
     #
     if(haskey(inputs, :ode_solver))
-        if(uppercase(inputs[:ode_solver]) == "RK4")
+        if(uppercase(inputs[:ode_solver]) == "TSIT5")
+            inputs[:ode_solver] = Tsit5() # Tsitouras 5/4 Runge-Kutta method. (free 4th order interpolant).
+        elseif(uppercase(inputs[:ode_solver]) == "RK4")
             inputs[:ode_solver] = RK4()
         elseif(uppercase(inputs[:ode_solver]) == "SSPRK22")
             inputs[:ode_solver] = SSPRK22()
@@ -216,12 +218,12 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
 
                     SSPRK53 will be used by default.
                         """            
-            inputs[:ode_solver] = SSPRK53()
+            inputs[:ode_solver] = Tsit5()
 
             @warn s
         end
     else
-        inputs[:ode_solver] = SSPRK53()
+        inputs[:ode_solver] = Tsit5()
     end
 
    if(!haskey(inputs, :output_dir))
