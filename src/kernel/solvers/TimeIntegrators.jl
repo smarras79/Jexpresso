@@ -51,7 +51,7 @@ function time_loop!(QT,
                       params);
     
     @time solution = solve(prob, inputs[:ode_solver],
-                           save_everystep = false);
+                           save_everystep = false)
                            #saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
 
 #=   @ @time    solution = solve(prob,
