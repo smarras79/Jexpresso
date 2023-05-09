@@ -123,47 +123,51 @@ function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis, �
 
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
     
-    F      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    G      = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    rhs_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
+    F      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
+    G      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
+    rhs_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
+
+    qq     =  zeros(T, mesh.npoin, neqs)
+    for i=1:neqs
+        idx = (i-1)*mesh.npoin
+        qq[:,i] .= qp[idx+1:i*mesh.npoin]
+    end    
     
     #B.C.
     apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, time, neqs)   
-    Fuser, Guser = user_flux(T, SD, qp, mesh)
+    #Fuser, Guser = user_flux(T, SD, qp, mesh)
     
     for iel=1:mesh.nelem
-        for i=1:mesh.ngl
-            for j=1:mesh.ngl
-                ip = mesh.connijk[i,j,iel]
-                
-                F[i,j,iel] = Fuser[ip]
-                G[i,j,iel] = Guser[ip]
-            end
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            ip = mesh.connijk[i,j,iel]
+            
+            F[i,j,iel], G[i,j,iel] = user_flux(T, SD, qq[ip,:], 0.0, 0.0; neqs=neqs) #Fuser[ip]
+            #G[i,j,iel] = Guser[ip]
         end
     end
     
-   # for ieq = 1:neqs
-        for iel=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    
-                    dFdξ = 0.0
-                    dFdη = 0.0
-                    dGdξ = 0.0
-                    dGdη = 0.0
-                    for k = 1:mesh.ngl
-                        dFdξ = dFdξ + basis.dψ[k, i]*F[k,j,iel]
-                        dFdη = dFdη + basis.dψ[k, j]*F[i,k,iel]
+    # for ieq = 1:neqs
+    for iel=1:mesh.nelem
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                
+                dFdξ = 0.0
+                dFdη = 0.0
+                dGdξ = 0.0
+                dGdη = 0.0
+                for k = 1:mesh.ngl
+                    dFdξ = dFdξ + basis.dψ[k, i]*F[k,j,iel]
+                    dFdη = dFdη + basis.dψ[k, j]*F[i,k,iel]
 
-                        dGdξ = dGdξ + basis.dψ[k, i]*G[k,j,iel]
-                        dGdη = dGdη + basis.dψ[k, j]*G[i,k,iel]
-                    end
-                    dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
-                    dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
-                    rhs_el[i, j, iel] -= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx + dGdy)
+                    dGdξ = dGdξ + basis.dψ[k, i]*G[k,j,iel]
+                    dGdη = dGdη + basis.dψ[k, j]*G[i,k,iel]
                 end
+                dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
+                dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
+                rhs_el[i, j, iel] -= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx + dGdy)
             end
         end
+    end
     #end
     #show(stdout, "text/plain", el_matrices.D)
     RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin,neqs, mesh.nop, T)

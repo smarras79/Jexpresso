@@ -20,7 +20,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #true is defualt
+        :lvisc                => false, #true is defualt
         :νx                   => 0.01, #kinematic viscosity constant
         :νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------
