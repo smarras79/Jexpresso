@@ -40,7 +40,7 @@ end
     allocate_q(nelem, npoin, ngl, neqs)
 
 TBW
-"""
+    """
 function allocate_q(nelem, npoin, ngl, TFloat;)
     
     q = St_SolutionVars{TFloat}(zeros(1, 1),               # qn+1
@@ -60,9 +60,10 @@ end
 function define_q(SD::NSD_1D, nelem, npoin, ngl, TFloat; neqs=1)
 
     q = St_SolutionVars{TFloat}(neqs=neqs,
-                                qn = zeros(npoin, neqs), # qn
-                                qe = zeros(npoin, neqs), # qexact 
-                                F  = zeros(ngl, nelem))  # Fⁿ
+                                qn   = zeros(npoin, neqs), # qn
+                                qnm1 = zeros(npoin, neqs), # qⁿ
+                                qnm2 = zeros(npoin, neqs), # qⁿ
+                                qe   = zeros(npoin, neqs))
     
     return q
 end
@@ -70,11 +71,10 @@ end
 function define_q(SD::NSD_2D, nelem, npoin, ngl, TFloat; neqs=1)
     
     q = St_SolutionVars{TFloat}(neqs=neqs,
-                                qn = zeros(npoin, neqs), # qⁿ
-                                qe = zeros(npoin, neqs), # qexact 
-                                F  = zeros(ngl, nelem),  # Fⁿ
-                                G  = zeros(ngl, nelem))  # Gⁿ
-    
+                                qn   = zeros(npoin, neqs), # qⁿ
+                                qnm1 = zeros(npoin, neqs), # qⁿ
+                                qnm2 = zeros(npoin, neqs), # qⁿ
+                                qe   = zeros(npoin, neqs)) # qexact     
     return q
 end
 
@@ -82,11 +82,10 @@ end
 function define_q(SD::NSD_3D, nelem, npoin, ngl, TFloat; neqs=1)
     
     q = St_SolutionVars{TFloat}(neqs=neqs,
-                                qn = zeros(npoin, neqs), # qⁿ
-                                qe = zeros(npoin, neqs), # qexact 
-                                F  = zeros(ngl, nelem, neqs),  # Fⁿ
-                                G  = zeros(ngl, nelem, neqs),  # Gⁿ
-                                H  = zeros(ngl, nelem, neqs))  # Hⁿ
+                                qn   = zeros(npoin, neqs), # qⁿ
+                                qnm1 = zeros(npoin, neqs), # qⁿ
+                                qnm2 = zeros(npoin, neqs), # qⁿ
+                                qe   = zeros(npoin, neqs)) # qexact 
     
     return q
 end
