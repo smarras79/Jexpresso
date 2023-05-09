@@ -22,7 +22,8 @@ function rhs!(du, u, params, time)
                     params.mesh, params.metrics,
                     params.M, params.De, params.Le,
                     time,
-                    params.inputs, params.Δt, params.deps, params.T)
+                    params.inputs, params.Δt, params.deps, params.T;
+                    qnm1=params.qnm1, qnm2=params.qnm2)
     for i=1:params.neqs
        idx = (i-1)*params.mesh.npoin
        du[idx+1:i*params.mesh.npoin] = @view RHS[:,i]
@@ -116,23 +117,17 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
     F      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
     G      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
     rhs_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
-
-    qq     =  zeros(T, mesh.npoin, neqs)
-    for i=1:neqs
-        idx = (i-1)*mesh.npoin
-        qq[:,i] .= qp[idx+1:i*mesh.npoin]
-    end    
     
     #B.C.
     apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, time, neqs)   
-    #Fuser, Guser = user_flux(T, SD, qp, mesh)
+    Fuser, Guser = user_flux(T, SD, qp, mesh)
     
     for iel=1:mesh.nelem
         for j=1:mesh.ngl, i=1:mesh.ngl
             ip = mesh.connijk[i,j,iel]
             
-            F[i,j,iel], G[i,j,iel] = user_flux(T, SD, qq[ip,:], 0.0, 0.0; neqs=neqs) #Fuser[ip]
-            #G[i,j,iel] = Guser[ip]
+            F[i,j,iel] = Fuser[ip]
+            G[i,j,iel] = Guser[ip]
         end
     end
     
@@ -577,8 +572,10 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
     return RHS
 end
 
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
-                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+
+### OLD
+function oldbuild_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
 
     F      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
@@ -589,8 +586,8 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
         idx = (i-1)*mesh.npoin
         qq[:,i] .= qp[idx+1:i*mesh.npoin]
     end
-    Fuser, Guser = user_flux(T, SD, qq, mesh; neqs=neqs)
-    Suser        = user_source(T, qq, mesh.npoin; neqs=neqs)
+    Fuser, Guser = olduser_flux(T, SD, qq, mesh; neqs=neqs)
+    Suser        = olduser_source(T, qq, mesh.npoin; neqs=neqs)
     
     dFdx = zeros(neqs)
     dGdy = zeros(neqs)
@@ -661,8 +658,9 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
     return RHS
 end
 
-function build_rhs_or(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
-                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+### OPTIMAL
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
 
     F      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
@@ -673,78 +671,62 @@ function build_rhs_or(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, b
         idx = (i-1)*mesh.npoin
         qq[:,i] .= qp[idx+1:i*mesh.npoin]
     end
-    Fuser, Guser = user_flux(T, SD, qq, mesh; neqs=neqs)
-    Suser        = user_source(T, qq, mesh.npoin; neqs=neqs)
     
-    dFdx = zeros(neqs)
-    dGdy = zeros(neqs)
-    dFdξ = zeros(neqs)
-    dGdξ = zeros(neqs)
-    dFdη = zeros(neqs)
-    dGdη = zeros(neqs)
     for iel=1:mesh.nelem
 
-        for i=1:mesh.ngl
-            for j=1:mesh.ngl
-                ip = mesh.connijk[i,j,iel]
-                F[i,j,iel,1:neqs] = Fuser[ip,1:neqs]
-                G[i,j,iel,1:neqs] = Guser[ip,1:neqs]
-                S[i,j,iel,1:neqs] = Suser[ip,1:neqs]
-            end
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            ip = mesh.connijk[i,j,iel]
+            
+            F[i,j,iel,1:neqs], G[i,j,iel,1:neqs] = user_flux(T, SD, qq[ip,1:neqs], mesh; neqs=neqs)
+            S[i,j,iel,1:neqs] = user_source(T, qq[ip,1:neqs], mesh.npoin; neqs=neqs)
         end
 
-        for i=1:mesh.ngl
-            for j=1:mesh.ngl
-                dFdξ = zeros(T, neqs)
-                dFdη = zeros(T, neqs)
-                dGdξ = zeros(T, neqs)
-                dGdη = zeros(T, neqs)
+        for ieq = 1:neqs
+            for j=1:mesh.ngl, i=1:mesh.ngl
+                dFdξ = 0.0
+                dFdη = 0.0
+                dGdξ = 0.0
+                dGdη = 0.0
                 for k = 1:mesh.ngl
-                    dFdξ[1:neqs] .= dFdξ[1:neqs] .+ basis.dψ[k,i]*F[k,j,iel,1:neqs]
-                    dFdη[1:neqs] .= dFdη[1:neqs] .+ basis.dψ[k,j]*F[i,k,iel,1:neqs]
+                    dFdξ += basis.dψ[k,i]*F[k,j,iel,ieq]
+                    dFdη += basis.dψ[k,j]*F[i,k,iel,ieq]
                     
-                    dGdξ[1:neqs] .= dGdξ[1:neqs] .+ basis.dψ[k,i]*G[k,j,iel,1:neqs]
-                    dGdη[1:neqs] .= dGdη[1:neqs] .+ basis.dψ[k,j]*G[i,k,iel,1:neqs]
+                    dGdξ += basis.dψ[k,i]*G[k,j,iel,ieq]
+                    dGdη += basis.dψ[k,j]*G[i,k,iel,ieq]
                 end
-                
-                dFdx .= dFdξ[1:neqs]*metrics.dξdx[i,j,iel] .+ dFdη[1:neqs]*metrics.dηdx[i,j,iel]
-                dGdy .= dGdξ[1:neqs]*metrics.dξdy[i,j,iel] .+ dGdη[1:neqs]*metrics.dηdy[i,j,iel]
-                rhs_el[i,j,iel,1:neqs] .-= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx[1:neqs] .+ dGdy[1:neqs]) .-=ω[i]*ω[j]*metrics.Je[i,j,iel]*S[i,j,iel,1:neqs] #gravity
-            end
-        end
-    end
-    
-    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
-    divive_by_mass_matrix!(RHS, M, QT,neqs)
-    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
-    
-    
-    if (inputs[:lvisc] == true)
-        
-        μ = zeros(T, mesh.nelem, 1)
-        if (inputs[:lvisc_model] === "dsgs")
 
-            if (rem(time, Δt) < 5e-4 && time > 0.0)
-                global  q2 .= q1
-                global  q1 .= q3
-                global  q3 .= qq
+                dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
+                dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
+                rhs_el[i,j,iel,ieq] -= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx + dGdy) -+ ω[i]*ω[j]*metrics.Je[i,j,iel]*S[i,j,iel,ieq] #gravity
             end
-            compute_viscosity!(μ, SD, PT, qq, q1, q2, RHS, Δt, mesh, metrics)
-        else
-            μ[:] .= inputs[:νx]
         end
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis, ω, inputs, mesh, metrics, μ, T;)
-        rhs_el .= rhs_el .+ rhs_diff_el
     end
     
-    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics,
-                               basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
-    
+    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
+    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+
     for i=1:neqs
         idx = (i-1)*mesh.npoin
         qp[idx+1:i*mesh.npoin] .= qq[:,i]
     end
-    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    
+    if (inputs[:lvisc] == true)
+        μ = zeros(mesh.nelem,1)
+
+        if (lowercase(inputs[:visc_model]) === "dsgs")
+            
+            if (rem(time, Δt) == 0 && time > 0.0)
+                qnm1 .= qnm2
+                qnm2 .= qq
+            end
+            
+            compute_viscosity!(μ, SD, PT, qq, qnm1, qnm2, RHS, Δt, mesh, metrics)
+        else
+            μ[:] .= inputs[:νx]
+        end
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis, ω, inputs, mesh, metrics, μ, T;)
+        RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    end
     
     divive_by_mass_matrix!(RHS, M, QT,neqs)
     
