@@ -24,7 +24,7 @@ function time_loop!(QT,
     #global q1 = zeros(T, mesh.npoin, qp.neqs);
     #global q2 = zeros(T, mesh.npoin, qp.neqs);
     #global q3 = zeros(T, mesh.npoin, qp.neqs);
-    global zb = zeros(T, mesh.npoin);
+    #global zb = zeros(T, mesh.npoin);
     
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
@@ -51,8 +51,8 @@ function time_loop!(QT,
                       params);
     
     @time solution = solve(prob, inputs[:ode_solver],
-                           save_everystep = false,
-                           saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
+                           save_everystep = false);
+                           #saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
 
 #=   @ @time    solution = solve(prob,
                               inputs[:ode_solver], dt = inputs[:Δt],
