@@ -14,28 +14,18 @@ include("../ArtificialViscosity/DynSGS.jl")
 #---------------------------------------------------------------------------
 
 function rhs!(du, u, params, time)
-
-    #SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, De, u)
-    T       = params.T
-    SD      = params.SD
-    QT      = params.QT
-    PT      = params.PT
-    neqs    = params.neqs
-    basis   = params.basis
-    mesh    = params.mesh
-    metrics = params.metrics
-    inputs  = params.inputs
-    ω       = params.ω
-    M       = params.M
-    De      = params.De
-    Le      = params.Le
-    Δt      = params.Δt
-    deps    = params.deps
     
-    RHS = build_rhs(SD, QT, PT, u, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T)
-    for i=1:neqs
-       idx = (i-1)*mesh.npoin
-       du[idx+1:i*mesh.npoin] .= RHS[:,i]
+    RHS = build_rhs(params.SD, params.QT, params.PT,
+                    u,
+                    params.neqs,
+                    params.basis, params.ω,
+                    params.mesh, params.metrics,
+                    params.M, params.De, params.Le,
+                    time,
+                    params.inputs, params.Δt, params.deps, params.T)
+    for i=1:params.neqs
+       idx = (i-1)*params.mesh.npoin
+       du[idx+1:i*params.mesh.npoin] = @view RHS[:,i]
     end  
     return du #This is already DSSed
 end

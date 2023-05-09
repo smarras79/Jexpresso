@@ -5,7 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                 => 1020.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
-        :ode_solver           => "SSPRK53",
+        :ode_solver           => "Tsit5",
         :ndiagnostics_outputs => 20,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

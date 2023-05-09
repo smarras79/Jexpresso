@@ -5,14 +5,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                 => 2.0,
+        :tend                 => 1.5,
         :Δt                   => 1e-3,
-        :ndiagnostics_outputs => 10, #these are steps, not seconds
+        :ndiagnostics_outputs => 4, #these are steps, not seconds
         #:output_dir          => "/Users/simone/runs/",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :ode_solver          => "SSPRK53",
+        :ode_solver          => "Tsit5", #"SSPRK53",
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
