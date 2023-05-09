@@ -8,7 +8,8 @@ using UnicodePlots
 using Printf
 using Revise
 using ElasticArrays
-using StaticArrays: SVector, StaticArrays, MVector, MArray, SMatrix, @SMatrix
+using StaticArrays
+using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
 using DiffEqBase
 using OrdinaryDiffEq
 using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler

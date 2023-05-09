@@ -106,7 +106,7 @@ function compute_viscosity(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q2
                           
 end
 
-function compute_viscosity((μ::Vector{Float64}, ::NSD_1D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, metrics)
+function compute_viscosity(μ::Vector{Float64}, ::NSD_1D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, metrics)
 
     #compute domain averages
     ρ_avg  = 0.0
@@ -187,7 +187,7 @@ function compute_viscosity((μ::Vector{Float64}, ::NSD_1D, PT::CompEuler, q, q1,
 
 end
 
-function compute_viscosity((μ::Vector{Float64}, ::NSD_2D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, metrics)
+function compute_viscosity(μ::Vector{Float64}, ::NSD_2D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, metrics)
     PhysConst = PhysicalConst{Float64}()
     #compute domain averages
     ρ_avg  = 0.0
