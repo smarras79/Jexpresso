@@ -226,12 +226,12 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         inputs[:ode_solver] = Tsit5()
     end
 
-   if(!haskey(inputs, :output_dir))
-       inputs[:output_dir] = ""
-   end
-   if(!haskey(inputs, :loutput_pert))
-       inputs[:loutput_pert] = false
-   end
+    if(!haskey(inputs, :output_dir))
+        inputs[:output_dir] = ""
+    end
+    if(!haskey(inputs, :loutput_pert))
+        inputs[:loutput_pert] = false
+    end
 
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
@@ -292,8 +292,17 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     else
         inputs[:visc_model] = lowercase(inputs[:visc_model])
     end
-    
-    
+
+    #
+    # BC
+    #
+    if(!haskey(inputs, :luser_bc))
+        inputs[:luser_bc] = false
+    end
+    if(!haskey(inputs, :lneumann))
+        inputs[:lneumann] = false
+    end
+
     #
     # Correct quantities based on a hierarchy of input variables
     #
