@@ -669,7 +669,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
     qq = zeros(mesh.npoin,neqs)
     for i=1:neqs
         idx = (i-1)*mesh.npoin
-        qq[:,i] .= qp[idx+1:i*mesh.npoin]
+        qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
     end
     
     for iel=1:mesh.nelem
@@ -678,11 +678,13 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
             ip = mesh.connijk[i,j,iel]
             
             F[i,j,iel,1:neqs], G[i,j,iel,1:neqs] = user_flux(T, SD, qq[ip,1:neqs], mesh; neqs=neqs)
-            S[i,j,iel,1:neqs] = user_source(T, qq[ip,1:neqs], mesh.npoin; neqs=neqs)
+            S[i,j,iel,1:neqs] = user_source(T, qq[ip,1:neqs], mesh.npoin; neqs=neqs)            
         end
-
+        
         for ieq = 1:neqs
             for j=1:mesh.ngl, i=1:mesh.ngl
+                ωJac = ω[i]*ω[j]*metrics.Je[i,j,iel]
+                
                 dFdξ = 0.0
                 dFdη = 0.0
                 dGdξ = 0.0
@@ -697,13 +699,14 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
 
                 dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                 dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
-                rhs_el[i,j,iel,ieq] -= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx + dGdy) -+ ω[i]*ω[j]*metrics.Je[i,j,iel]*S[i,j,iel,ieq] #gravity
+                rhs_el[i,j,iel,ieq] -= ωJac*((dFdx + dGdy) - S[i,j,iel,ieq]) #gravity
+                
             end
         end
     end
     
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
-    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    @time RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
 
     for i=1:neqs
         idx = (i-1)*mesh.npoin
