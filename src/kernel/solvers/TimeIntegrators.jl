@@ -44,16 +44,16 @@ function time_loop!(QT,
                       tspan,
                       params);
     
-    @time solution = solve(prob, inputs[:ode_solver],
+    #=@time solution = solve(prob, inputs[:ode_solver],
                            save_everystep = false)
                            #saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
-
-#=   @ @time    solution = solve(prob,
+    =#
+    @time    solution = solve(prob,
                               inputs[:ode_solver], dt = inputs[:Δt],
                               save_everystep=false,
-    #saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]),
-                              #saveat = inputs[:tend])
-    =#
+    saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]),
+                              )
+    
     println(" # Solving ODE  ................................ DONE")
     
     return solution

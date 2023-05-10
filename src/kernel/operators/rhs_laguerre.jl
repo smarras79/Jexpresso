@@ -1,4 +1,4 @@
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis1, basis2, ω1, ω2, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, T)
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis1, basis2, ω1, ω2, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
 
     F      = zeros(mesh.ngl, mesh.ngr, mesh.nelem)
     G      = zeros(mesh.ngl, mesh.ngr, mesh.nelem)

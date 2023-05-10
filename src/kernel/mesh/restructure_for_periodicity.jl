@@ -43,7 +43,7 @@ function periodicity_restructure!(mesh,inputs)
         yy .= mesh.y
         poin_bdy .=mesh.poin_in_bdy_edge
         interval = [2,3,4]
-        for iedge_bdy =1:size(mesh.bdy_edge_comp,1)
+        for iedge_bdy =1:size(mesh.bdy_edge_type,1)
             if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" || mesh.bdy_edge_type[iedge_bdy] == "periodic2")
                 iel = mesh.bdy_edge_in_elem[iedge_bdy]
                 for k=1:mesh.ngl
@@ -97,7 +97,7 @@ function periodicity_restructure!(mesh,inputs)
             end
         end 
         # New periodicity interface
-        for iedge_bdy =1:size(mesh.bdy_edge_comp,1)
+        for iedge_bdy =1:size(mesh.bdy_edge_type,1)
             if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" || mesh.bdy_edge_type[iedge_bdy] == "periodic2")
                 comp = mesh.bdy_edge_comp[iedge_bdy]
                 iel = mesh.bdy_edge_in_elem[iedge_bdy]
@@ -132,7 +132,7 @@ function periodicity_restructure!(mesh,inputs)
                         error("periodicity requested but boundaries cannot match any vectors")
                     end
                     # find corresponding periodic edge point
-                    for iedge_per = iedge_bdy+1:size(mesh.bdy_edge_comp,1)
+                    for iedge_per = iedge_bdy+1:size(mesh.bdy_edge_type,1)
                         if (mesh.bdy_edge_type[iedge_per] == mesh.bdy_edge_type[iedge_bdy])
                             comp_per = mesh.bdy_edge_comp[iedge_per]
                             iel_per = mesh.bdy_edge_in_elem[iedge_per]
