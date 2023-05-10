@@ -11,45 +11,64 @@ end
 include(user_flux_dir)
 include(user_source_dir)
 include("rhs_laguerre.jl")
+include("rhs_diff.jl")
 #---------------------------------------------------------------------------
 
 function rhs!(du, u, params, time)
 
     #SD::NSD_1D, QT::Inexact, PT::Wave1D, mesh::St_mesh, metrics::St_metrics, M, De, u)
-    T       = params.T
-    SD      = params.SD
-    QT      = params.QT
-    PT      = params.PT
-    neqs    = params.neqs
-    basis   = params.basis
-    mesh    = params.mesh
-    metrics = params.metrics
-    inputs  = params.inputs
-    ω       = params.ω
-    M       = params.M
-    De      = params.De
-    Le      = params.Le
-    Δt      = params.Δt
-    if (SD isa NSD_2D) 
-        if ("Laguerre" in mesh.bdy_edge_type)
-            RHS = build_rhs(SD, QT, PT, u, neqs, basis[1], ω[1], mesh, metrics[1], M, De, Le, time, inputs, Δt, T)    
-            RHS_lag = build_rhs(SD, QT, PT, u, neqs, basis[1], basis[2], ω[1], ω[2], mesh, metrics[1], metrics[2], M, De, Le, time, inputs, Δt, T)
-            for i=1:neqs
-                idx = (i-1)*mesh.npoin
-                du[idx+1:i*mesh.npoin] .= RHS[:,i] .+ RHS_lag[:,i]
+    if (params.SD isa NSD_2D) 
+        if ("Laguerre" in params.mesh.bdy_edge_type)
+            RHS = build_rhs(params.SD, params.QT, params.PT,
+                            u,
+                            params.neqs,
+                            params.basis[1], params.ω[1],
+                            params.mesh, params.metrics[1],
+                            params.M, params.De, params.Le,
+                            time,
+                            params.inputs, params.Δt, params.deps, params.T;
+                            qnm1=params.qnm1, qnm2=params.qnm2)
+            RHS_lag = build_rhs_laguerre(params.SD, params.QT, params.PT,
+                                     u,
+                                     params.neqs,
+                                     params.basis[1], params.basis[2], params.ω[1], params.ω[2], 
+                                     params.mesh, params.metrics[1], params.metrics[2],
+                                     params.M, params.De, params.Le,
+                                     time,
+                                     params.inputs, params.Δt, params.deps, params.T;
+                                     qnm1=params.qnm1, qnm2=params.qnm2)
+            for i=1:params.neqs
+                idx = (i-1)*params.mesh.npoin
+                du[idx+1:i*params.mesh.npoin] .= RHS[:,i] .+ RHS_lag[:,i]
             end
         else
-            RHS = build_rhs(SD, QT, PT, u, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, T) 
-            for i=1:neqs
-                idx = (i-1)*mesh.npoin
-                du[idx+1:i*mesh.npoin] .= RHS[:,i]
+            RHS = build_rhs(params.SD, params.QT, params.PT,
+                            u,
+                            params.neqs,
+                            params.basis, params.ω,
+                            params.mesh, params.metrics,
+                            params.M, params.De, params.Le,
+                            time,
+                            params.inputs, params.Δt, params.deps, params.T;
+                            qnm1=params.qnm1, qnm2=params.qnm2)
+            for i=1:params.neqs
+                idx = (i-1)*params.mesh.npoin
+                du[idx+1:i*params.mesh.npoin] .= @view RHS[:,i]
             end
         end  
     else
-        RHS = build_rhs(SD, QT, PT, u, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, T)
-        for i=1:neqs
-            idx = (i-1)*mesh.npoin
-            du[idx+1:i*mesh.npoin] .= RHS[:,i]
+        RHS = build_rhs(params.SD, params.QT, params.PT,
+                        u,
+                        params.neqs,
+                        params.basis, params.ω,
+                        params.mesh, params.metrics,
+                        params.M, params.De, params.Le,
+                        time,
+                        params.inputs, params.Δt, params.deps, params.T;
+                        qnm1=params.qnm1, qnm2=params.qnm2)
+        for i=1:params.neqs
+            idx = (i-1)*params.mesh.npoin
+            du[idx+1:i*params.mesh.npoin] .= @view RHS[:,i]
         end
     end
     return du #This is already DSSed
@@ -91,7 +110,7 @@ function build_rhs_matrix_formulation(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::
     
 end
 
-function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
 
     F      = zeros(mesh.ngl, mesh.nelem, neqs)
     dFdξ   = zeros(neqs)
@@ -136,7 +155,7 @@ end
 
 function build_rhs(SD::NSD_1D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T) nothing end
 
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
     
     F      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
     G      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
@@ -209,7 +228,7 @@ function build_rhs(SD::NSD_2D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis, �
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 # LinearCLaw
 #--------------------------------------------------------------------------------------------------------------------------------------------------
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)    
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))    
     
     F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
@@ -297,7 +316,7 @@ end
 # ShallowWater
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω,
-                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
 
     F      = zeros(mesh.ngl,mesh.nelem, neqs)
     F1     = zeros(mesh.ngl,mesh.nelem, neqs)
@@ -375,7 +394,7 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
     return RHS
 end
 
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
     F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     F1    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
@@ -490,7 +509,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
 end
 
 
-function build_rhs(SD::NSD_1D, QT::Inexact, PT::SoilTopo, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::SoilTopo, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
     F      = zeros(mesh.ngl,mesh.nelem)
     F1     = zeros(mesh.ngl,mesh.nelem)
     rhs_el = zeros(mesh.ngl,mesh.nelem)
@@ -534,7 +553,7 @@ end
 # CompEuler:
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
-                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T)
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
 
     F      = zeros(T, mesh.ngl,mesh.nelem, neqs)
     rhs_el = zeros(T, mesh.ngl,mesh.nelem, neqs)

@@ -5,7 +5,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                 => 1.5,
+        :tend                 => 3.0,
         :Δt                   => 1.0e-3,
         :ndiagnostics_outputs => 15, #these are steps, not seconds
         #:output_dir          => "/Users/simone/runs/",
@@ -17,6 +17,7 @@ function user_inputs()
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         :luser_bc            => true,
+        :lvisc               => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
