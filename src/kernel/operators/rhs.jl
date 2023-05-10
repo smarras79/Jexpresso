@@ -155,28 +155,6 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
         end
     end
     
-<<<<<<< HEAD
-   # for ieq = 1:neqs
-        for iel=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    
-                    dFdξ = 0.0
-                    dFdη = 0.0
-                    dGdξ = 0.0
-                    dGdη = 0.0
-                    for k = 1:mesh.ngl
-                        dFdξ = dFdξ + basis.dψ[k, i]*F[k,j,iel]
-                        dFdη = dFdη + basis.dψ[k, j]*F[i,k,iel]
-
-                        dGdξ = dGdξ + basis.dψ[k, i]*G[k,j,iel]
-                        dGdη = dGdη + basis.dψ[k, j]*G[i,k,iel]
-                    end
-                    dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
-                    dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
-                    #@info dFdx, dGdy, dFdξ, dFdη, dGdξ, dGdη
-                    rhs_el[i, j, iel] -= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx + dGdy)
-=======
     # for ieq = 1:neqs
     for iel=1:mesh.nelem
         for i=1:mesh.ngl
@@ -192,7 +170,6 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
 
                     dGdξ = dGdξ + basis.dψ[k, i]*G[k,j,iel]
                     dGdη = dGdη + basis.dψ[k, j]*G[i,k,iel]
->>>>>>> 9ff203f74d1453f9047be03105a8abc17d3c5e1a
                 end
                 dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                 dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
@@ -583,16 +560,6 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
             for k = 1:mesh.ngl
                 dFdξ[1:neqs] .= dFdξ[1:neqs] .+ basis.dψ[k,i]*F[k,iel,1:neqs]*dξdx 
             end
-<<<<<<< HEAD
-            dqdx = dqdξ*metrics.dξdx[k,l,iel] + dqdη*metrics.dηdx[k,l,iel]
-            dqdy = dqdξ*metrics.dξdy[k,l,iel] + dqdη*metrics.dηdy[k,l,iel]
-           
-            dqdx *= νx
-            dqdy *= νy             
- 
-            ∇ξ∇q_kl = metrics.dξdx[k,l,iel]*dqdx + metrics.dξdy[k,l,iel]*dqdy
-            ∇η∇q_kl = metrics.dηdx[k,l,iel]*dqdx + metrics.dηdy[k,l,iel]*dqdy
-=======
             
             rhs_el[i,iel,1:neqs] .-= ω[i]*mesh.Δx[iel]/2*dFdξ[1:neqs]
         end
@@ -609,7 +576,6 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
         μ = zeros(mesh.nelem,1)
         
         if (inputs[:visc_model] === "dsgs")
->>>>>>> 9ff203f74d1453f9047be03105a8abc17d3c5e1a
             
             if (rem(time, Δt) == 0 && time > 0.0)
                 #global  q1 .= q2
