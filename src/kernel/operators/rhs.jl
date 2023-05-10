@@ -30,12 +30,29 @@ function rhs!(du, u, params, time)
     De      = params.De
     Le      = params.Le
     Δt      = params.Δt
-    RHS = build_rhs(SD, QT, PT, u, neqs, basis[1], ω[1], mesh, metrics[1], M, De, Le, time, inputs, Δt, T)    
-    RHS_lag = build_rhs(SD, QT, PT, u, neqs, basis[1], basis[2], ω[1], ω[2], mesh, metrics[1], metrics[2], M, De, Le, time, inputs, Δt, T)
-    for i=1:neqs
-       idx = (i-1)*mesh.npoin
-       du[idx+1:i*mesh.npoin] .= RHS[:,i] .+ RHS_lag[:,i]
-    end  
+    if (SD isa NSD_2D) 
+        if ("Laguerre" in mesh.bdy_edge_type)
+            RHS = build_rhs(SD, QT, PT, u, neqs, basis[1], ω[1], mesh, metrics[1], M, De, Le, time, inputs, Δt, T)    
+            RHS_lag = build_rhs(SD, QT, PT, u, neqs, basis[1], basis[2], ω[1], ω[2], mesh, metrics[1], metrics[2], M, De, Le, time, inputs, Δt, T)
+            for i=1:neqs
+                idx = (i-1)*mesh.npoin
+                du[idx+1:i*mesh.npoin] .= RHS[:,i] .+ RHS_lag[:,i]
+            end
+        else
+            RHS = build_rhs(SD, QT, PT, u, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, T) 
+            for i=1:neqs
+                idx = (i-1)*mesh.npoin
+                du[idx+1:i*mesh.npoin] .= RHS[:,i]
+            end
+        end  
+    else
+        RHS = build_rhs(SD, QT, PT, u, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, T)
+        for i=1:neqs
+            idx = (i-1)*mesh.npoin
+            du[idx+1:i*mesh.npoin] .= RHS[:,i]
+        end
+    end
+
     return du #This is already DSSed
 end
 
@@ -116,6 +133,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
                     end
                     dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                     dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
+                    #@info dFdx, dGdy, dFdξ, dFdη, dGdξ, dGdη
                     rhs_el[i, j, iel] -= ω[i]*ω[j]*metrics.Je[i,j,iel]*(dFdx + dGdy)
                 end
             end
@@ -423,7 +441,10 @@ function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, 
             end
             dqdx = dqdξ*metrics.dξdx[k,l,iel] + dqdη*metrics.dηdx[k,l,iel]
             dqdy = dqdξ*metrics.dξdy[k,l,iel] + dqdη*metrics.dηdy[k,l,iel]
-            
+           
+            dqdx *= νx
+            dqdy *= νy             
+ 
             ∇ξ∇q_kl = metrics.dξdx[k,l,iel]*dqdx + metrics.dξdy[k,l,iel]*dqdy
             ∇η∇q_kl = metrics.dηdx[k,l,iel]*dqdx + metrics.dηdy[k,l,iel]*dqdy
             

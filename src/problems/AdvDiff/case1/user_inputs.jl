@@ -5,7 +5,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                 => 1.5,
+        :tend                 => 3.0,
         :Δt                   => 1e-3,
         :ndiagnostics_outputs => 10, #these are steps, not seconds
         #:output_dir          => "/Users/simone/runs/",
@@ -25,7 +25,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
+        :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh", 
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",

@@ -179,7 +179,7 @@ end
 
 function build_Integration_points!(lgr::St_gr,nop::TInt)
     Laguerre = St_Laguerre(Polynomial(2.0),Polynomial(2.0))
-    build_gr!(Laguerre,lgr,nop,false)
+    build_gr!(Laguerre,lgr,nop,true)
 end
 
 function build_Interpolation_basis!(TP::LagrangeBasis, ξ, ξq, T::Type{Float64})

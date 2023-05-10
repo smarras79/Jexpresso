@@ -29,9 +29,12 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis1
                     dGdη = 0.0
                     for k = 1:mesh.ngl
                         dFdξ = dFdξ + basis1.dψ[k, i]*F[k,j,iel]
-                        dFdη = dFdη + basis2.dψ[k, j]*F[i,k,iel]
 
                         dGdξ = dGdξ + basis1.dψ[k, i]*G[k,j,iel]
+                    end
+                    for k = 1:mesh.ngr
+                        dFdη = dFdη + basis2.dψ[k, j]*F[i,k,iel]
+
                         dGdη = dGdη + basis2.dψ[k, j]*G[i,k,iel]
                     end
                     dFdx = dFdξ*metrics2.dξdx[i,j,iel] + dFdη*metrics2.dηdx[i,j,iel]
@@ -82,19 +85,27 @@ function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, 
             dqdη = 0.0
             for i = 1:mesh.ngl
                 dqdξ = dqdξ + basis1.dψ[i,k]*qnel[i,l,iel]
+            end
+            for i = 1:mesh.ngr
                 dqdη = dqdη + basis2.dψ[i,l]*qnel[k,i,iel]
             end
             dqdx = dqdξ*metrics2.dξdx[k,l,iel] + dqdη*metrics2.dηdx[k,l,iel]
             dqdy = dqdξ*metrics2.dξdy[k,l,iel] + dqdη*metrics2.dηdy[k,l,iel]
-
+            dqdx *= νx
+            dqdy *= νy
             ∇ξ∇q_kl = metrics2.dξdx[k,l,iel]*dqdx + metrics2.dξdy[k,l,iel]*dqdy
             ∇η∇q_kl = metrics2.dηdx[k,l,iel]*dqdx + metrics2.dηdy[k,l,iel]*dqdy
 
             for i = 1:mesh.ngl
                 hll,     hkk     =  basis2.ψ[l,l],  basis1.ψ[k,k]
-                dhdξ_ik, dhdη_il = basis1.dψ[i,k], basis2.dψ[i,l]
+                dhdξ_ik = basis1.dψ[i,k]
 
                 rhsdiffξ_el[i,l,iel] -= ωJkl*dhdξ_ik*hll*∇ξ∇q_kl
+            end
+            for i = 1:mesh.ngr
+                hll,     hkk     =  basis2.ψ[l,l],  basis1.ψ[k,k]
+                dhdη_il = basis2.dψ[i,l]
+
                 rhsdiffη_el[k,i,iel] -= ωJkl*hkk*dhdη_il*∇η∇q_kl
             end
         end
