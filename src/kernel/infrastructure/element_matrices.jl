@@ -1,9 +1,3 @@
-using Test
-using Gridap
-using Gridap.Arrays
-using Gridap.Arrays: Table
-using SparseArrays
-
 include("../abstractTypes.jl")
 include("../mesh/mesh.jl")
 include("../mesh/metric_terms.jl")
@@ -154,18 +148,18 @@ function build_mass_matrix(SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
     
     for iel=1:mesh.nelem
         
-        for l = 1:QN
-            for k = 1:QN
+        for l = 1:Q+1
+            for k = 1:Q+1
                 
                 ωkl  = ω[k]*ω[l]
                 Jkle = metrics.Je[k, l, iel]
                 
-                for j = 1:MN
-                    for i = 1:MN
+                for j = 1:N+1
+                    for i = 1:N+1
                         I = i + (j - 1)*(N + 1)
                         ψJK = ψ[i,k]*ψ[j,l]
-                        for n = 1:MN
-                            for m = 1:MN
+                        for n = 1:N+1
+                            for m = 1:N+1
                                 J = m + (n - 1)*(N + 1)
                                 ψIK = ψ[m,k]*ψ[n,l]
                                 Me[I,J,iel] += ωkl*Jkle*ψIK*ψJK #Sparse
@@ -248,50 +242,38 @@ end
 #
 function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
-    MN = N + 1
-    QN = Q + 1
-    
-    L = zeros((N+1)^2, (N+1)^2, mesh.nelem)
-    for iel=1:mesh.nelem
-        for l = 1:QN, k = 1:QN
-            if (metrics.Je[k, l, iel] < 0)
-                @info " NEGATIVE JACOBIAN:" metrics.Je[k, l, iel] iel                
-            end
-            
-            ωJkl = ω[k]*ω[l]
-            #ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
-            for j = 1:MN, i = 1:MN     
-                J = i + (j - 1)*(N + 1)
-                #J = mesh.connijk[i,j,iel]
+    Le = zeros((N+1)^2, (N+1)^2, mesh.nelem)
+    for iel = 1:mesh.nelem
+        for l = 1:Q+1
+            for k = 1:Q+1
                 
-                hjl = ψ[j,l]
-                hik = ψ[i,k]
-
-                dhik_dξ = dψ[i,k]
-                dhjl_dη = dψ[j,l]
-                
-                dψJK_dx = dhik_dξ*hjl*metrics.dξdx[k,l,iel] + hik*dhjl_dη*metrics.dηdx[k,l,iel]
-                dψJK_dy = dhik_dξ*hjl*metrics.dξdy[k,l,iel] + hik*dhjl_dη*metrics.dηdy[k,l,iel]
-                
-                for n = 1:N+1, m = 1:N+1
-                    I = m + (n - 1)*(N + 1)
-                    #I = mesh.connijk[m,n,iel]
-                   
-                    hnl, hmk        =  ψ[n,l],  ψ[m,k]
-                    dhmk_dξ,dhnl_dη = dψ[m,k], dψ[n,l]
-                    
-                    dψIK_dx = dhmk_dξ*hnl*metrics.dξdx[k,l,iel] + hmk*dhnl_dη*metrics.dηdx[k,l,iel]
-                    dψIK_dy = dhmk_dξ*hnl*metrics.dξdy[k,l,iel] + hmk*dhnl_dη*metrics.dηdy[k,l,iel]
-                    
-                    L[I,J, iel] -= ωJkl*(dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy)
+                for j = 1:N+1
+                    for i = 1:N+1
+                        J = i + (j - 1)*(N + 1)
+                        
+                        dψJK_dx = dψ[i,k]*ψ[j,l]*metrics.dξdx[k,l,iel] + ψ[i,k]*dψ[j,l]*metrics.dηdx[k,l,iel]
+                        dψJK_dy = dψ[i,k]*ψ[j,l]*metrics.dξdy[k,l,iel] + ψ[i,k]*dψ[j,l]*metrics.dηdy[k,l,iel]
+                        
+                        for n = 1:N+1
+                            for m = 1:N+1
+                                I = m + (n - 1)*(N + 1)
+                                
+                                dψIK_dx = dψ[m,k]*ψ[n,l]*metrics.dξdx[k,l,iel] + ψ[m,k]*dψ[n,l]*metrics.dηdx[k,l,iel]
+                                dψIK_dy = dψ[m,k]*ψ[n,l]*metrics.dξdy[k,l,iel] + ψ[m,k]*dψ[n,l]*metrics.dηdy[k,l,iel]
+                                
+                                Le[I,J, iel] += ω[k]*ω[l]*(dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy)
+                            end
+                        end
+                    end
                 end
             end
         end
     end
+    
     #@info size(L)
     #show(stdout, "text/plain", L)
     
-    return L
+    return -Le
 end
 
 
@@ -597,14 +579,14 @@ function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
     RHS = M\RHS #M is not iagonal
 end
 
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact,neqs) 
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs) 
    for i=1:neqs 
        RHS[:,i] .= RHS[:,i]./M[:] #M is diagonal (stored as a vector)
    end
 end
 
 function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)
-    
+
     Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
     De = build_differentiation_matrix(SD, basis.ψ, basis.dψ, ω, mesh,  N, Q, TFloat)
     Me = build_mass_matrix(SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)

@@ -1,32 +1,57 @@
 module Jexpresso
 
-using Dates
 using Revise
+using Dates
+using DelimitedFiles
+using DataStructures
+using UnicodePlots
+using Printf
+using Revise
+using ElasticArrays
+using StaticArrays
+using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
+using DiffEqBase
+using OrdinaryDiffEq
+using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
+using SnoopCompile
+using SciMLBase: CallbackSet, DiscreteCallback,
+                 ODEProblem, ODESolution, ODEFunction,
+                 SplitODEProblem
+import SciMLBase: get_du, get_tmp_cache, u_modified!,
+                  AbstractODEIntegrator, init, step!, check_error,
+                  get_proposed_dt, set_proposed_dt!,
+                  terminate!, remake
 
 const TInt   = Int64
 const TFloat = Float64
 
 #using DocStringExtensions
 
-include("./problems/AbstractProblems.jl")
+include(joinpath("equations", "AbstractEquations.jl"))
 
-include("./kernel/abstractTypes.jl")
+include(joinpath("kernel", "abstractTypes.jl"))
 
-include("./kernel/globalStructs.jl")
+include(joinpath("kernel", "globalStructs.jl"))
 
-include("./kernel/infrastructure/sem_setup.jl")
+include(joinpath("kernel", "physics", "globalConstantsPhysics.jl"))
 
-include("./kernel/boundaryconditions/BCs.jl")
+include(joinpath("kernel", "physics", "constitutiveLaw.jl"))
 
-include("./kernel/operators/rhs.jl")
+include(joinpath("kernel", "infrastructure", "sem_setup.jl"))
 
-include("./kernel/solvers/TimeIntegrators.jl")
+include(joinpath("kernel", "boundaryconditions", "BCs.jl"))
 
-include("./kernel/solvers/Axb.jl")
+include(joinpath("kernel", "operators", "rhs.jl"))
 
-include("./io/mod_inputs.jl")
+include(joinpath("kernel", "operators", "rhs_diff.jl"))
 
-include("./io/write_output.jl")
+include(joinpath("kernel", "solvers", "TimeIntegrators.jl"))
+
+include(joinpath("kernel", "solvers", "Axb.jl"))
+
+include(joinpath("io", "mod_inputs.jl"))
+
+include(joinpath("io", "write_output.jl"))
 
 include("./run.jl")
 
