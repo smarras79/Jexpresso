@@ -82,7 +82,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
     ngl::Union{TInt, Missing} = nop + 1
-    ngr::Union{TInt, Missing} = 15#nop_gr
+    ngr::Union{TInt, Missing} = 17#nop_gr
     npoin_el::Union{TInt, Missing} = 1     # Total number of points in the reference element
     
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
@@ -474,7 +474,7 @@ if mesh.nsd == 2
         if isboundary_edge[iedge] == true
             for igl = 1:mesh.ngl
                 mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
-                mesh.bdy_edge_type[iedge_bdy] = "Laguerre" #mesh.edge_type[iedge]
+                mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
                 #@info iedge, mesh.edge_type[iedge]
             end
             if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
@@ -503,7 +503,7 @@ if mesh.nsd == 2
     # build mesh data structs for Laguerre semi-infinite elements
     if ("Laguerre" in mesh.bdy_edge_type)
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1) 
-        factor = 1.0
+        factor = 10.0
         mesh.connijk_lag = Array{Int64}(undef, mesh.ngl, mesh.ngr, n_semi_inf)
         mesh.bdy_normals = zeros(n_semi_inf, 2)
         mesh.bdy_tangents = zeros(n_semi_inf, 2)
@@ -526,8 +526,13 @@ if mesh.nsd == 2
                 y1 = mesh.y[ip1]
                 tan = [x-x1, y-y1]
                 # deduce normal vector components
-                x2 = 1.0
-                y2 = -x2*tan[1]/tan[2]
+                if (tan[2] > 1e-7)
+                    x2 = 1.0
+                    y2 = -x2*tan[1]/tan[2]
+                else
+                    y2 = 1.0
+                    x2 = -y2*tan[2]/tan[1]
+                end
                 nor = [x2,y2]
                 # generate unit versions of tangent and normal vectors
                 modu = sqrt(tan[1]^2+tan[2]^2)
@@ -570,12 +575,13 @@ if mesh.nsd == 2
                         x_new[iter] = mesh.x[ip] + nor[1]*gr.ξ[j]*factor 
                         y_new[iter] = mesh.y[ip] + nor[2]*gr.ξ[j]*factor
                         iter += 1
+                        #@info nor[1],nor[2],x_new[iter],y_new[iter]
                     end
                 end
                 e_iter += 1
             end
         end
-        @info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
+        #@info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
         mesh.npoin_original = mesh.npoin
         mesh.npoin = iter -1
         mesh.x = x_new
@@ -609,9 +615,13 @@ GC.gc()
 #
 # END Free memory of obsolete arrays
 #
-
+if ("Laguerre" in mesh.bdy_edge_type)
+    npoints = mesh.npoin_original
+else
+    npoints = mesh.npoin
+end
 open("./COORDS_GLOBAL.dat", "w") do f
-    for ip = 1:mesh.npoin
+    for ip = 1:npoints
         #    for iel = 1:mesh.nelem
         #        for i = 1:mesh.ngl
         #            for j = 1:mesh.ngl
