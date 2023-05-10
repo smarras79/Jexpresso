@@ -24,56 +24,18 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+function user_bc_dirichlet!(q::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
     q[1] = 0.5
     q[2] = 0.0
     q[3] = 0.0 
     return q
 end
 
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, qbdy::AbstractArray)
+function user_bc_dirichlet!(q::AbstractArray, x::AbstractFloat, t::AbstractFloat, qbdy::AbstractArray)
     qbdy[1] = .5
     qbdy[2] = 0.0
     return qbdy
 end
-
-#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    q[1] = 0.1
-    q[2] = 0.0
-    return q
-end=#
-
-#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    if (x > 1.0)
-        q[1] = 2.0
-    else
-        q[2] = 4.42
-    end
-    return q
-end=#
-
-#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    if (x > 1.0)
-        if (q[2]/sqrt(9.81*q[1])< 1)
-            q[1] = 0.66
-        end
-    else
-        if (q[2]/sqrt(9.81*q[1]) > 1)
-            q[1] = 0.66
-        end
-        q[2] = 1.53
-    end
-    return q
-end=#
-
-#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    if (x > 1.0)
-        q[1] = 0.33
-    else
-        q[2] = 0.18
-    end
-    return q
-end=#
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
     flux = zeros(size(q,2),1)
