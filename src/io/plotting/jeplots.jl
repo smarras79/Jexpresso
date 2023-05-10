@@ -24,21 +24,50 @@ Makie.theme(:fonts)
 #
 # Curves (1D) or Contours (2D) with PlotlyJS
 #
-function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, PT=nothing)
 
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
-        
     npoin = floor(Int64, size(q, 1)/nvar)
-    for ivar=1:nvar
-        
+   
+    qout = copy(q)
+    qe   = range(0,0,npoin)
+    if PT === CompEuler()
+        #ρ
+        qout[1:npoin] .= q[1:npoin]
+
+        #u = ρu/ρ
+        ivar = 2
         idx = (ivar - 1)*npoin
-        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin],
+        qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./q[1:npoin]
+        
+        ivar = 3
+        idx = (ivar - 1)*npoin
+        γ = 1.4
+        qout[idx+1:3*npoin] .= (q[2*npoin+1:3*npoin] .- 0.5*q[npoin+1:2*npoin].*q[npoin+1:2*npoin]./q[1:npoin])./q[1:npoin] #internal energy: p/((γ-1)ρ)
+        
+    elseif PT === ShallowWater()
+        Hb = zeros(npoin,nvar)
+        for i=1:npoin
+            x= mesh.x[i]
+            Hb[i,1] = zb[i]
+        end
+
+        for ivar=1:nvar
+            idx = (ivar - 1)*npoin
+            qout[idx+1:ivar*npoin] .= q[idx+1:ivar*npoin] .+ Hb[:,ivar]
+        end
+    end
+    
+    for ivar=1:nvar
+
+        idx = (ivar - 1)*npoin
+        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], qout[idx+1:ivar*npoin],
                                           markersize = 10, markercolor="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),
-                                          axis = (; aspect = 1, limits = (xmin, xmax, -0.5, 1.0)))
+                                          )#axis = (; aspect = 1, limits = (xmin, xmax, 0.05, 2.0)))
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
         save(string(fout_name), fig; resolution = (600, 400))
@@ -71,7 +100,7 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
         fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin], colormap = :viridis)
         Colorbar(fig[1,2], colormap = :viridis)        
-        save(string(fout_name), fig, resolution = (600, 600))
+        save(string(fout_name), fig) #, resolution = (600, 600))
         fig
     end
 end
@@ -102,7 +131,6 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         axs = [Axis3(fig[1, i]; aspect=(1, 1, 1)) for i = 1:1]
         
         hm = Makie.surface!(axs[1], xg, yg, zspl) # legend=:false, xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
-
         #Colorbar(fig[1, 1], hm, height=Relative(0.5))
         
         save(string(fout_name), fig)
