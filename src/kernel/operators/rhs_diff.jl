@@ -416,8 +416,9 @@ function flux2primitives(q)
     
 end
 
-
-function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
+###
+#original non-optimized
+function orbuild_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
     
     ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -425,8 +426,8 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
     Tel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     Eel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
 
-    rhsdiffξ_el = zeros(neqs, mesh.ngl, mesh.ngl, mesh.nelem)
-    rhsdiffη_el = zeros(neqs, mesh.ngl, mesh.ngl, mesh.nelem)
+    rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
+    rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     
     qq = zeros(mesh.npoin, neqs)
     
@@ -528,17 +529,17 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
                 hll,     hkk     =  basis.ψ[l,l],  basis.ψ[k,k]
                 dhdξ_ik, dhdη_il = basis.dψ[i,k], basis.dψ[i,l]
                 
-                rhsdiffξ_el[1,i,l,iel] -= ωJkl*dhdξ_ik*hll*∇ξ∇ρ_kl
-                rhsdiffη_el[1,k,i,iel] -= ωJkl*hkk*dhdη_il*∇η∇ρ_kl
+                rhsdiffξ_el[i,l,iel,1] -= ωJkl*dhdξ_ik*hll*∇ξ∇ρ_kl
+                rhsdiffη_el[k,i,iel,1] -= ωJkl*hkk*dhdη_il*∇η∇ρ_kl
                 
-                rhsdiffξ_el[2,i,l,iel] -= ωJkl*dhdξ_ik*hll*∇ξ∇u_kl
-                rhsdiffη_el[2,k,i,iel] -= ωJkl*hkk*dhdη_il*∇η∇u_kl
+                rhsdiffξ_el[i,l,iel,2] -= ωJkl*dhdξ_ik*hll*∇ξ∇u_kl
+                rhsdiffη_el[k,i,iel,2] -= ωJkl*hkk*dhdη_il*∇η∇u_kl
                 
-                rhsdiffξ_el[3,i,l,iel] -= ωJkl*dhdξ_ik*hll*∇ξ∇v_kl
-                rhsdiffη_el[3,k,i,iel] -= ωJkl*hkk*dhdη_il*∇η∇v_kl
+                rhsdiffξ_el[i,l,iel,3] -= ωJkl*dhdξ_ik*hll*∇ξ∇v_kl
+                rhsdiffη_el[k,i,iel,3] -= ωJkl*hkk*dhdη_il*∇η∇v_kl
                 
-                rhsdiffξ_el[4,i,l,iel] -= ωJkl*dhdξ_ik*hll*∇ξ∇T_kl
-                rhsdiffη_el[4,k,i,iel] -= ωJkl*hkk*dhdη_il*∇η∇T_kl
+                rhsdiffξ_el[i,l,iel,4] -= ωJkl*dhdξ_ik*hll*∇ξ∇T_kl
+                rhsdiffη_el[k,i,iel,4] -= ωJkl*hkk*dhdη_il*∇η∇T_kl
                 
             end
             # end

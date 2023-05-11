@@ -465,21 +465,18 @@ end
 
 function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
     
-    V  = zeros(T, neqs, npoin)
+    V  = zeros(T, npoin,neqs)
     for iel = 1:nelem
         for j = 1:N+1
             for i = 1:N+1
                 I = conn[i,j,iel]
                 
-                for ieq = 1:neqs
-                    V[ieq,I] = V[ieq,I] + Vel[ieq,i,j,iel]
-                end
+                V[I,:] .= V[I,:] .+ Vel[i,j,iel,:]
             end
         end
     end
-
-#show(stdout, "text/plain", V)
-return V'
+    #show(stdout, "text/plain", V)
+    return V
 end
 
 
