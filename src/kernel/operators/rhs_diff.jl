@@ -416,6 +416,7 @@ function flux2primitives(q)
     
 end
 
+
 function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
     
     ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)

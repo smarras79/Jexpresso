@@ -589,12 +589,12 @@ function oldbuild_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, b
     Fuser, Guser = olduser_flux(T, SD, qq, mesh; neqs=neqs)
     Suser        = olduser_source(T, qq, mesh.npoin; neqs=neqs)
     
-    dFdx = @MVector zeros(neqs)
-    dGdy = @MVector zeros(neqs)
-    dFdξ = @MVector zeros(neqs)
-    dGdξ = @MVector zeros(neqs)
-    dFdη = @MVector zeros(neqs)
-    dGdη = @MVector zeros(neqs)
+    dFdx = zeros(neqs)
+    dGdy = zeros(neqs)
+    dFdξ = zeros(neqs)
+    dGdξ = zeros(neqs)
+    dFdη = zeros(neqs)
+    dGdη = zeros(neqs)
     for iel=1:mesh.nelem
 
         for i=1:mesh.ngl
