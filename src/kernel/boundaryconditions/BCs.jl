@@ -100,10 +100,10 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_1D,nvars,metrics,ω,dirichle
             q[ip,:] .= 0.0
         end
         
-        rhs[k,iel,:] .= rhs[k,iel,:] .+ flux[:]
+        rhs[:,k,iel] .= rhs[:,k,iel] .+ flux[:]
         for var =1:size(q,2)
             if !(AlmostEqual(qbdy[var],4325789.0))
-                rhs[k,iel,var] = 0.0
+                rhs[var,k,iel] = 0.0
                 q[ip,var] = qbdy[var]
             end
         end
@@ -152,12 +152,13 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                 else
                     q[ip,:] .= 0.0
                 end
-                rhs[ll,mm,iel,:] .= rhs[ll,mm,iel,:] .+ flux[:]
                 
+                rhs[:,ll,mm,iel] .= rhs[:,ll,mm,iel] .+ flux[:]
+                                
                 for var =1:size(q,2)
                     if !(AlmostEqual(qbdy[var],4325789.0))
                         #@info var,x,y,qbdy[var]
-                        rhs[ll,mm,iel,var] = 0.0
+                        rhs[var,ll,mm,iel] = 0.0
                         q[ip,var] = qbdy[var]
                     end
                 end
