@@ -416,9 +416,8 @@ function flux2primitives(q)
     
 end
 
-###
-#original non-optimized
-function orbuild_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
+
+function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
     
     ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
