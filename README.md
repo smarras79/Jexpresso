@@ -32,7 +32,7 @@ The path would look like
 For example, if you wanted to run `AdvDiff` with the setup defined inside the case directory `case1`, then you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "AdvDiff", "case1");
-julia> include(./src/Jexpresso.jl)
+julia> include("./src/Jexpresso.jl")
 ```
 
 Currently available problem names:
