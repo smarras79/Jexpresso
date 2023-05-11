@@ -658,7 +658,9 @@ function oldbuild_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, b
     return RHS
 end
 
-### OPTIMAL
+#
+# Optimized rhs
+#
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
 
@@ -696,7 +698,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
                     dGdξ += basis.dψ[k,i]*G[k,j,iel,ieq]
                     dGdη += basis.dψ[k,j]*G[i,k,iel,ieq]
                 end
-
+                
                 dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                 dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
                 rhs_el[i,j,iel,ieq] -= ωJac*((dFdx + dGdy) - S[i,j,iel,ieq]) #gravity
@@ -706,7 +708,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
     end
     
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
-    @time RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
 
     for i=1:neqs
         idx = (i-1)*mesh.npoin
@@ -714,7 +716,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
     end
     
     if (inputs[:lvisc] == true)
-        μ = zeros(mesh.nelem,1)
+        μ = zeros(T, mesh.nelem,1)
 
         if (lowercase(inputs[:visc_model]) === "dsgs")
             
