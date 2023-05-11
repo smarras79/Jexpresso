@@ -20,7 +20,7 @@ Push problem name to ARGS
 You need to do this only when you run a new problem
 ```bash
 julia> push!(empty!(ARGS), PROBLEM_NAME::String, PROBLEM_CASE_NAME::String);
-julia> include(./src/Jexpresso.jl)
+julia> include("./src/Jexpresso.jl")
 ```
 
 * PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name
