@@ -193,7 +193,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, bas
     qq = zeros(mesh.npoin,neqs)
     for i=1:neqs
         idx = (i-1)*mesh.npoin
-        qq[:,i] .= qp[idx+1:i*mesh.npoin]
+        qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
     end
     Fuser, Guser = user_flux(T, SD, qq, mesh)
     dFdx = zeros(neqs)
@@ -677,7 +677,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
             ip = mesh.connijk[i,j,iel]
             
             F[i,j,iel,1:neqs], G[i,j,iel,1:neqs] = user_flux(T, SD, qq[ip,1:neqs], mesh; neqs=neqs)
-            S[i,j,iel,1:neqs] = user_source(T, qq[ip,1:neqs], mesh.npoin; neqs=neqs)            
+            S[i,j,iel,1:neqs] = user_source(T, qq[ip,1:neqs], mesh.npoin; neqs=neqs)
         end
         
         for ieq = 1:neqs
@@ -713,7 +713,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
     end
     
     if (inputs[:lvisc] == true)
-        μ = zeros(mesh.nelem,1)
+        μ = zeros(mesh.nelem,1) #move
 
         if (lowercase(inputs[:visc_model]) === "dsgs")
             

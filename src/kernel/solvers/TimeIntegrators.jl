@@ -20,7 +20,7 @@ function time_loop!(QT,
     # Initialize
     println(" # Solving ODE ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
-
+    
     u = zeros(T, mesh.npoin*qp.neqs);
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
@@ -47,13 +47,7 @@ function time_loop!(QT,
     @time solution = solve(prob, inputs[:ode_solver], dt = inputs[:Δt],
                            save_everystep = false,
                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
-
-#=   @ @time    solution = solve(prob,
-                              inputs[:ode_solver], dt = inputs[:Δt],
-                              save_everystep=false,
-    #saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]),
-                              #saveat = inputs[:tend])
-    =#
+    
     println(" # Solving ODE  ................................ DONE")
     
     return solution
