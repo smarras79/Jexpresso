@@ -2,8 +2,8 @@ function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh; neqs=4)
 
     PhysConst = PhysicalConst{Float64}()
     
-    F = zeros(neqs)
-    G = zeros(neqs)
+    F = @MVector zeros(T, neqs)
+    G = @MVector zeros(T, neqs)
             
     ρ  = q[1]
     ρu = q[2]
