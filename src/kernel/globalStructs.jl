@@ -14,10 +14,11 @@ Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
     qnm2 = Array{TFloat}(undef, 0, 0)       #4 qⁿ⁻²
     qnm3 = Array{TFloat}(undef, 0, 0)       #5 qⁿ⁻³
     qe   = Array{TFloat}(undef, 0, 0)       #6 qexact    
-    qnel = Array{TFloat}(undef, 0, 0, 0, 0) #7 qelⁿ[ngl,ngl,ngl,nelem]
-    F    = Array{TFloat}(undef, 0, 0, 0, 0) #8  Fⁿ
-    G    = Array{TFloat}(undef, 0, 0, 0, 0) #9  Gⁿ
-    H    = Array{TFloat}(undef, 0, 0, 0, 0) #10 Hⁿ
+    zb   = Array{TFloat}(undef, 0, 0)       #7 zb #shallow water moving bathymetry
+    qnel = Array{TFloat}(undef, 0, 0, 0, 0) #8 qelⁿ[ngl,ngl,ngl,nelem]
+    F    = Array{TFloat}(undef, 0, 0, 0, 0) #9  Fⁿ
+    G    = Array{TFloat}(undef, 0, 0, 0, 0) #10  Gⁿ
+    H    = Array{TFloat}(undef, 0, 0, 0, 0) #11 Hⁿ
     neqs = UInt8(1)
     qvars= Array{String}(undef, neqs)
 end
@@ -49,10 +50,7 @@ function allocate_q(nelem, npoin, ngl, TFloat;)
                                 zeros(1, 1),               # qn-2
                                 zeros(1, 1),               # qn-3
                                 zeros(1, 1),               # qe
-                                zeros(1, 1, 1, 1),  # qelⁿ[ngl,ngl,ngl,nelem]
-                                zeros(1, 1, 1, 1),  # Fⁿ
-                                zeros(1, 1, 1, 1),  # Gⁿ
-                                zeros(1, 1, 1, 1))  # Hⁿ
+                                zeros(1, 1, 1, 1))  # qelⁿ[ngl,ngl,ngl,nelem])
     
     return q
 end
