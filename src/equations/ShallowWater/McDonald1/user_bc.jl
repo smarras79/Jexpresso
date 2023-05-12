@@ -24,23 +24,23 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-    q[1] = 0.5
-    q[2] = 0.0
-    q[3] = 0.0 
-    return q
+function user_bc_dirichlet!(q::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+    qbdy[1] = 0.5
+    qbdy[2] = 0.0
+    qbdy[3] = 0.0 
+    return qbdy
 end
 
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+function user_bc_dirichlet!(q::AbstractArray, x::AbstractFloat, t::AbstractFloat)
     if (x > 1.0)
-        if (q[2] > 0.1)
-            q[1] = ((4/9.81)^(1/3)) * (1 + 0.5*exp(-16*(x/1000 - 0.5)^2))
+        if (qbdy[2] > 0.1)
+            qbdy[1] = ((4/9.81)^(1/3)) * (1 + 0.5*exp(-16*(x/1000 - 0.5)^2))
         end
     else
-        q[1] = ((4/9.81)^(1/3)) * (1 + 0.5*exp(-16*(x/1000 - 0.5)^2))
-        q[2] = 2.0
+        qbdy[1] = ((4/9.81)^(1/3)) * (1 + 0.5*exp(-16*(x/1000 - 0.5)^2))
+        qbdy[2] = 2.0
     end
-    return q
+    return qbdy
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)

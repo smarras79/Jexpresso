@@ -87,7 +87,7 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         inputs[:ndiagnostics_outputs] = 2
         inputs[:ndiagnostics_output]  = 2
     end
-    mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on
+    mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
     end
@@ -226,12 +226,12 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         inputs[:ode_solver] = Tsit5()
     end
 
-   if(!haskey(inputs, :output_dir))
-       inputs[:output_dir] = ""
-   end
-   if(!haskey(inputs, :loutput_pert))
-       inputs[:loutput_pert] = false
-   end
+    if(!haskey(inputs, :output_dir))
+        inputs[:output_dir] = ""
+    end
+    if(!haskey(inputs, :loutput_pert))
+        inputs[:loutput_pert] = false
+    end
 
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
@@ -292,8 +292,17 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     else
         inputs[:visc_model] = lowercase(inputs[:visc_model])
     end
-    
-    
+
+    #
+    # BC
+    #
+    if(!haskey(inputs, :luser_bc))
+        inputs[:luser_bc] = false
+    end
+    if(!haskey(inputs, :lneumann))
+        inputs[:lneumann] = false
+    end
+
     #
     # Correct quantities based on a hierarchy of input variables
     #
