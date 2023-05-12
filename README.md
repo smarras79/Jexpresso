@@ -16,26 +16,26 @@ version 1.7.2 or higher (tested up to 1.8.5)
 ```
 followed by the following:
 
-Push equations name to ARGS
-You need to do this only when you run a new equations
+Push problem name to ARGS
+You need to do this only when you run a new problem
 ```bash
-julia> push!(empty!(ARGS), EQUATIONS::String, EQUATIONS_CASE_NAME::String);
-julia> include(./src/Jexpresso.jl)
+julia> push!(empty!(ARGS), PROBLEM_NAME::String, PROBLEM_CASE_NAME::String);
+julia> include("./src/Jexpresso.jl")
 ```
 
-* EQUATIONS is the name of your equations directory as $JEXPRESSO/src/equations/equations
-* EQUATIONS_CASE_NAME is the name of the subdirectory containing the specific setup that you want to run: 
+* PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name
+* PROBLEM_CASE_NAME is the name of the subdirectory containing the specific setup that you want to run: 
 
 The path would look like 
-```$JEXPRESSO/src/equations/EQUATIONS/EQUATIONS_CASE_NAME```
+```$JEXPRESSO/src/problems/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
 For example, if you wanted to run `AdvDiff` with the setup defined inside the case directory `case1`, then you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "AdvDiff", "case1");
-julia> include(./src/Jexpresso.jl)
+julia> include("./src/Jexpresso.jl")
 ```
 
-Currently available equations names:
+Currently available problem names:
 
 * AdvDiff
 * Elliptic
