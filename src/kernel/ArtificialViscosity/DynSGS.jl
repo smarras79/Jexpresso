@@ -98,7 +98,7 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q
         end
         numer1 = maximum(Rρ)
         #numer2 = maximum(Rρ)
-        @info numer1, numer2
+        #@info numer1, numer2
         mu_res = Δ^2*numer1/denom1
         #mu_max = 0.5*Δ*maximum(ughs)
         μ[ie] = max(0.0, mu_res)

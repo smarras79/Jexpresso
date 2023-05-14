@@ -22,30 +22,22 @@ function time_loop!(QT,
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
     
     u = zeros(T, mesh.npoin*qp.neqs);
-    global q1 = zeros(T, mesh.npoin, qp.neqs);
-    global q2 = zeros(T, mesh.npoin, qp.neqs);
-    global q3 = zeros(T, mesh.npoin, qp.neqs);
-    global zb = zeros(T, mesh.npoin);
     
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] = @view qp.qn[:,i]   
-        qp.qnm1 = @view qp.qn[:,i]
-        qp.qnm2 = @view qp.qn[:,i]
-        global q1[:,i] .= qp.qn[:,i]
-        global q2[:,i] .= qp.qn[:,i]
-        global q3[:,i] .= qp.qn[:,i]
-        
+        qp.qnm1[:,i] .= qp.qn[:,i]
+        qp.qnm2[:,i] .= qp.qn[:,i]
     end
     #if (typeof(PT) == ShallowWater)
     #    for i=1:mesh.npoin
-    #        global zb[i] = bathymetry(mesh.x[i])
+    #        qp.zb[i] = bathymetry(mesh.x[i])
     #    end
     #end
     deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])
     
-    params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt, deps, qp.qnm1, qp.qnm2)
+    params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt, deps, qnm1=qp.qnm1, qnm2=qp.qnm2, μ=qp.μ)
     
     prob = ODEProblem(rhs!,
                       u,

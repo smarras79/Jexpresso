@@ -330,7 +330,7 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
     #qnel = zeros(mesh.ngl, mesh.nelem, neqs)
     ρel = zeros(T, mesh.ngl, mesh.nelem)
     uel = zeros(T, mesh.ngl, mesh.nelem)
-    Tel = zeros(T, mesh.ngl, mesh.nelem)
+    #Tel = zeros(T, mesh.ngl, mesh.nelem)
     
     rhsdiffξ_el = zeros(T, mesh.ngl, mesh.nelem, neqs)
    
@@ -368,16 +368,16 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
 
                 m = mesh.conn[i,iel]
                 uel[i,iel] = qq[m,2]/qq[m,1]
-                Tel[i,iel] = qq[m,3]/qq[m,1] - 0.5*uel[i,iel]^2
+                Tel        = qq[m,3]/qq[m,1] - 0.5*uel[i,iel]^2
                 
                 dρdξ = dρdξ + basis.dψ[i,k]*ρel[i,iel]
                 dudξ = dudξ + basis.dψ[i,k]*uel[i,iel]
-                dTdξ = dTdξ + basis.dψ[i,k]*Tel[i,iel]
+                dTdξ = dTdξ + basis.dψ[i,k]*Tel
             end
              
             dρdx =  ν * dρdξ*dξdx
             dudx =  μ[iel] * dudξ*dξdx
-            dTdx = (μ[iel] * dudξ*dξdx * uel[k,iel] + κ * dTdξ*dξdx)
+            dTdx =  μ[iel] * dudξ*dξdx * uel[k,iel] + κ * dTdξ*dξdx
             
             ∇ξ∇ρ_kl = dρdx*dξdx
             ∇ξ∇u_kl = dudx*dξdx
@@ -402,16 +402,16 @@ end
 
 function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
     
-    ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    vel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    Tel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    Eel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
+    ρel = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
+    uel = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
+    vel = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
+    Tel = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
+    #Eel = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem)
 
-    rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
-    rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
+    rhsdiffξ_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, neqs)
+    rhsdiffη_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     
-    qq = zeros(mesh.npoin, neqs)
+    qq = zeros(T, mesh.npoin, neqs)
     
     
     #
@@ -421,7 +421,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
     #
     for i=1:neqs
         idx = (i-1)*mesh.npoin
-        qq[:,i] = qp[idx+1:i*mesh.npoin]
+        qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
     end
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
