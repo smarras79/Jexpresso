@@ -3,9 +3,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 1.0e-5, #2π,
+        :tend                 => 2.0, #2π,
         :Δt                   => 5.0e-4,#8.75e-4,
-        :ode_solver           => "Tsit5",
+        :ode_solver           => "SSPRK53",
         :ndiagnostics_outputs => 2,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

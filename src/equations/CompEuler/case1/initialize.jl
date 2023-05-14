@@ -8,7 +8,7 @@ function initialize(SD::NSD_1D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=3)
     
-    case = "sound"
+    case = "sod"
     if (case === "sod")
         @info " Sod tube"
 

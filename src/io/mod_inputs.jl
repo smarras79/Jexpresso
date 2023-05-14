@@ -218,7 +218,7 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
 
                     SSPRK53 will be used by default.
                         """            
-            inputs[:ode_solver] = Tsit5()
+            inputs[:ode_solver] = SSPRK53()
 
             @warn s
         end

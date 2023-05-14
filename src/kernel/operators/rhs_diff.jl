@@ -326,29 +326,22 @@ function build_rhs_diff_work_array()
 end
 
 function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, μ, T;)
-
-    N = mesh.ngl - 1
-
-    #qnel = zeros(mesh.ngl, mesh.nelem, neqs)
-    ρel = zeros(mesh.ngl, mesh.nelem)
-    uel = zeros(mesh.ngl, mesh.nelem)
-    Tel = zeros(mesh.ngl, mesh.nelem)
-    Eel = zeros(mesh.ngl, mesh.nelem)
-
-    rhsdiffξ_el = zeros(mesh.ngl, mesh.nelem, neqs)
-    qq = zeros(mesh.npoin,neqs)
-
-    γ = 1.4
-    Pr = 0.1
     
-    #
-    # qp[1:npoin]         <-- qq[1:npoin, "ρ"]
-    # qp[npoin+1:2npoin]  <-- qq[1:npoin, "ρu"]
-    # qp[2npoin+1:3npoin] <-- qq[1:npoin, "ρE"]
-    #
+    #qnel = zeros(mesh.ngl, mesh.nelem, neqs)
+    ρel = zeros(T, mesh.ngl, mesh.nelem)
+    uel = zeros(T, mesh.ngl, mesh.nelem)
+    Tel = zeros(T, mesh.ngl, mesh.nelem)
+    
+    rhsdiffξ_el = zeros(T, mesh.ngl, mesh.nelem, neqs)
+   
+    PhysConst = PhysicalConst{Float64}()
+    γ  = PhysConst.γ
+    Pr = PhysConst.Prnum
+    
+    qq = zeros(T, mesh.npoin,neqs)
     for i=1:neqs
         idx = (i-1)*mesh.npoin
-        qq[:,i] = qp[idx+1:i*mesh.npoin]
+        qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
     end
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
@@ -359,8 +352,6 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
             m = mesh.conn[i,iel]
              
             ρel[i,iel] = qq[m,1]
-            uel[i,iel] = qq[m,2]/ρel[i]
-            Tel[i,iel] = qq[m,3]/ρel[i] - 0.5*uel[i]^2
         end
         
         ν = Pr*μ[iel]/maximum(ρel[:,iel])
@@ -370,38 +361,37 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
         for k = 1:mesh.ngl
             ωJkl = ω[k]*Jac
 
-            #for ieq = 1:neqs
-            #dqdξ = 0.0
             dρdξ = 0.0
             dudξ = 0.0
             dTdξ = 0.0
             for i = 1:mesh.ngl
-                #dqdξ = dqdξ + basis.dψ[i,k]*qnel[i,iel,ieq]
+
+                m = mesh.conn[i,iel]
+                uel[i,iel] = qq[m,2]/qq[m,1]
+                Tel[i,iel] = qq[m,3]/qq[m,1] - 0.5*uel[i,iel]^2
+                
                 dρdξ = dρdξ + basis.dψ[i,k]*ρel[i,iel]
                 dudξ = dudξ + basis.dψ[i,k]*uel[i,iel]
                 dTdξ = dTdξ + basis.dψ[i,k]*Tel[i,iel]
             end
-            
+             
             dρdx =  ν * dρdξ*dξdx
             dudx =  μ[iel] * dudξ*dξdx
             dTdx = (μ[iel] * dudξ*dξdx * uel[k,iel] + κ * dTdξ*dξdx)
             
-            ∇ξ∇ρ_kl =  dρdx*dξdx
-            ∇ξ∇u_kl =  dudx*dξdx
-            ∇ξ∇T_kl =  dTdx*dξdx
+            ∇ξ∇ρ_kl = dρdx*dξdx
+            ∇ξ∇u_kl = dudx*dξdx
+            ∇ξ∇T_kl = dTdx*dξdx
             for i = 1:mesh.ngl
                 
-                dhdξ_ik = basis.dψ[i,k]
-
-                rhsdiffξ_el[i,iel,1] -= ωJkl*dhdξ_ik*∇ξ∇ρ_kl
-                rhsdiffξ_el[i,iel,2] -= ωJkl*dhdξ_ik*∇ξ∇u_kl
-                rhsdiffξ_el[i,iel,3] -= ωJkl*dhdξ_ik*∇ξ∇T_kl
+                rhsdiffξ_el[i,iel,1] -= ωJkl*basis.dψ[i,k]*∇ξ∇ρ_kl
+                rhsdiffξ_el[i,iel,2] -= ωJkl*basis.dψ[i,k]*∇ξ∇u_kl
+                rhsdiffξ_el[i,iel,3] -= ωJkl*basis.dψ[i,k]*∇ξ∇T_kl
             end
-            # end
         end
     end
     
-    return (rhsdiffξ_el)
+    return rhsdiffξ_el
 
 end
 
