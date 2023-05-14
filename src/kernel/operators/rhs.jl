@@ -165,7 +165,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
                 qnm1 .= qnm2
                 qnm2 .= qq
             end
-            compute_viscosity!(μ, SD, PT, q3, q1, q2, RHS, Δt, mesh, metrics, T)
+            compute_viscosity!(μ, SD, PT, qq, q1, q2, RHS, Δt, mesh, metrics, T)
         else
             μ[:] .= inputs[:νx]
         end
@@ -184,7 +184,8 @@ function build_rhs(SD::NSD_2D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis, �
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 # LinearCLaw
 #--------------------------------------------------------------------------------------------------------------------------------------------------
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1), μ=zeros(1))
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
+                   qnm1=zeros(1,1), qnm2=zeros(1,1), μ=zeros(1))
     
     F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
@@ -247,16 +248,17 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, bas
     RHS = DSS_rhs(SD, rhs_el .+ rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     
     if (inputs[:lvisc] == true)
-        μ = zeros(mesh.nelem,1)
         if (inputs[:visc_model] === "dsgs")
-            compute_viscosity!(mu, SD, PT, q3, q1, q2, RHS, Δt, mesh, metrics)
+            compute_viscosity!(μ, SD, PT, qq, q1, q2, RHS, Δt, mesh, metrics)
         else
             μ[:] .= inputs[:νx]
         end
         if (rem(time, Δt) < 5e-4 && time > 0.0)
-            global  q2 .= q1
-            global  q1 .= q3
-            global  q3 .= qq
+            qnm1 .= qnm2
+            qnm2 .= qq
+            #global  q2 .= q1
+            #global  q1 .= q3
+            #global  q3 .= qq
         end
         rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs, mesh, metrics, μ, T;)
         RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
@@ -273,7 +275,7 @@ end
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω,
                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
-                   qnm1=zeros(1,1), qnm2=zeros(1,1)...)
+                   qnm1=zeros(1,1), qnm2=zeros(1,1), μ=zeros(1))
 
     F      = zeros(mesh.ngl,mesh.nelem, neqs)
     F1     = zeros(mesh.ngl,mesh.nelem, neqs)
@@ -331,18 +333,19 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
     end
     
     if (inputs[:lvisc] == true)
-        mu = zeros(mesh.nelem,1)
         if (inputs[:visc_model] === "dsgs")
-            compute_viscosity!(mu, SD, PT, q3, q1, q2, RHS, Δt, mesh, metrics, T)
+            compute_viscosity!(μ, SD, PT, qq, q1, q2, RHS, Δt, mesh, metrics, T)
         else
-            mu[:] = inputs[:νx]
+            μ[:] = inputs[:νx]
         end
         if (rem(time, Δt) < 5e-4 && time > 0.0)
-            global  q2 .= q1
-            global  q1 .= q3
-            global  q3 .= qq
+            qnm1 .= qnm2
+            qnm2 .= qq
+            #global  q2 .= q1
+            #global  q1 .= q3
+            #global  q3 .= qq
         end
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs, mesh, metrics, mu, T;)
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis, ω, inputs, mesh, metrics, μ, T;)
         RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     end
     
@@ -353,7 +356,7 @@ end
 
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω,
                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
-                   qnm1=zeros(1,1), qnm2=zeros(1,1)...)
+                   qnm1=zeros(1,1), qnm2=zeros(1,1), μ=zeros(1))
     
     F    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G    = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
@@ -439,13 +442,13 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, b
     end
 
     if (inputs[:lvisc] == true)
-        μ = zeros(mesh.nelem,1)
-        
         if (lowercase(inputs[:visc_model]) === "dsgs")
             
             if (rem(time, Δt) == 0 && time > 0.0)
-                global  q1 .= q2
-                global  q2 .= qq
+                qnm1 .= qnm2
+                qnm2 .= qq
+                #global  q1 .= q2
+                #global  q2 .= qq
             end
             
             compute_viscosity!(μ, SD, PT, qq, q1, q2, RHS, Δt, mesh, metrics, T)

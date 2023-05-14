@@ -13,17 +13,17 @@ Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
     qnm1 = Array{TFloat}(undef, 0, 0)       # qⁿ⁻¹
     qnm2 = Array{TFloat}(undef, 0, 0)       # qⁿ⁻²
     qnm3 = Array{TFloat}(undef, 0, 0)       # qⁿ⁻³
-    μ    = Array{TFloat}(undef, 0, 0)       # μ (dynamic viscosity)
     qe   = Array{TFloat}(undef, 0, 0)       # qexact    
     zb   = Array{TFloat}(undef, 0, 0)       # zb #shallow water moving bathymetry
     qnel = Array{TFloat}(undef, 0, 0, 0, 0) # qelⁿ[ngl,ngl,ngl,nelem]
+    μ    = Array{TFloat}(undef, 0)          # μ (dynamic viscosity)
     neqs = UInt8(1)
     qvars= Array{String}(undef, neqs)
 end
 
 Base.@kwdef mutable struct St_PostProcessVars{TFloat <: AbstractFloat}
 
-    μ = Array{TFloat}(undef, 0, 0)
+    qpost = Array{TFloat}(undef, 0, 0)
     
 end
 
@@ -41,7 +41,7 @@ function define_q(SD, nelem, npoin, ngl, TFloat; neqs=1)
                                 qnm1 = zeros(npoin, neqs), # qⁿ
                                 qnm2 = zeros(npoin, neqs), # qⁿ
                                 qe   = zeros(npoin, neqs), # qexact
-                                μ    = zeros(nelem, neqs)) # μ
+                                μ    = zeros(nelem)) # μ
     
     return q
 end

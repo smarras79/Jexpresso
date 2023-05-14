@@ -25,8 +25,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, # default is true
         :visc_model           => "dsgs",
-        :νx                   => 0.0, #kinematic viscosity constant
-        :νy                   => 0.0, #kinematic viscosity constant
+        :νx                   => 0.1, #kinematic viscosity constant
+        :νy                   => 0.1, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
