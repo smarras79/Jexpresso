@@ -406,7 +406,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
     uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     vel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     Tel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    Eel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
+    #Eel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
 
     rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
@@ -445,7 +445,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
             vel[i,j,iel] = qq[m,3]/ρel[i,j,iel]
             
             Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] - δenergy*0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
-            Eel[i,j,iel] = qq[m,4]/ρel[i,j,iel]
+            #Eel[i,j,iel] = qq[m,4]/ρel[i,j,iel]
         end    
         #ν = Pr*μ[iel]/maximum(ρel[:,:,iel])
         #κ = Pr*μ[iel]/(γ - 1.0)
@@ -476,13 +476,13 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
                 dudξ += basis.dψ[i,k]*uel[i,l,iel]
                 dvdξ += basis.dψ[i,k]*vel[i,l,iel]
                 dTdξ += basis.dψ[i,k]*Tel[i,l,iel]
-                dEdξ += basis.dψ[i,k]*Eel[i,l,iel]
+                #dEdξ += basis.dψ[i,k]*Eel[i,l,iel]
 
                 dρdη += basis.dψ[i,l]*ρel[k,i,iel]
                 dudη += basis.dψ[i,l]*uel[k,i,iel]
                 dvdη += basis.dψ[i,l]*vel[k,i,iel]
                 dTdη += basis.dψ[i,l]*Tel[k,i,iel]
-                dEdη += basis.dψ[i,l]*Eel[k,i,iel]
+                #dEdη += basis.dψ[i,l]*Eel[k,i,iel]
             end
             
             dρdx =       ν*(dρdξ*metrics.dξdx[k,l,iel] + dρdη*metrics.dηdx[k,l,iel])

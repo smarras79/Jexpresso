@@ -23,7 +23,7 @@ function rhs!(du, u, params, time)
                     params.M, params.De, params.Le,
                     time,
                     params.inputs, params.Δt, params.deps, params.T;
-                    qnm1=params.qnm1, qnm2=params.qnm2)
+                    qnm1=params.qnm1, qnm2=params.qnm2, μ=params.μ)
     for i=1:params.neqs
        idx = (i-1)*params.mesh.npoin
        du[idx+1:i*params.mesh.npoin] = @view RHS[:,i]
@@ -510,7 +510,7 @@ end
 # CompEuler:
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
-                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
 
     F      = zeros(T, mesh.ngl,mesh.nelem, neqs)
     rhs_el = zeros(T, mesh.ngl,mesh.nelem, neqs)
@@ -547,13 +547,11 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
         qp[idx+1:i*mesh.npoin] .= qq[:,i]
     end
     if (inputs[:lvisc] == true)
-        μ = zeros(mesh.nelem,1)
+        #μ = zeros(mesh.nelem,1)
         
         if (inputs[:visc_model] === "dsgs")
             
             if (rem(time, Δt) == 0 && time > 0.0)
-                #global  q1 .= q2
-                #global  q2 .= qq
                 qnm1 .= qnm2
                 qnm2 .= qq
             end
@@ -574,7 +572,7 @@ end
 # Optimized (more coud possibly be done)
 #
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
-                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
 
     F      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
@@ -628,7 +626,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
     end
     
     if (inputs[:lvisc] == true)
-        μ = zeros(mesh.nelem,1)
+        #μ = zeros(mesh.nelem,1)
 
         if (lowercase(inputs[:visc_model]) === "dsgs")
             
@@ -641,7 +639,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basi
         else
             μ[:] .= inputs[:νx]
         end
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis, ω, inputs, mesh, metrics, μ, T;)
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis, ω, inputs, mesh, metrics, qp.μ, T;)
         RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     end
     
