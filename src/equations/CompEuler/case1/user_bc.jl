@@ -24,21 +24,20 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, inputs::Dict)
     qbdy[1] = 1.0
     qbdy[2] = 2.5
     qbdy[3] = 0.0 
     return qbdy
 end
 
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
 
     PhysConst = PhysicalConst{Float64}()
     γ = 1.4
 
-    #case = "Sod"
-    case = "sound"
-    if (case === "Sod")
+    case = inputs[:case]
+    if (case == "sod")
         ρL, uL, pL = 1.000, 0.0, 1.0
         ρR, uR, pR = 0.125, 0.0, 0.1
         xshock_initial = 0.5
@@ -51,7 +50,11 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
             u = uR
             p = pR
         end
-    elseif (case === "sound")
+    elseif (case == "sound")
+        ρ = 1.0
+        u = 0.0
+        p = 1.0
+    else
         ρ = 1.0
         u = 0.0
         p = 1.0
@@ -64,47 +67,12 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
     return q
 end
 
-#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    q[1] = 0.1
-    q[2] = 0.0
-    return q
-end=#
-
-#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    if (x > 1.0)
-        q[1] = 2.0
-    else
-        q[2] = 4.42
-    end
-    return q
-end=#
-
-#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    if (x > 1.0)
-        if (q[2]/sqrt(9.81*q[1])< 1)
-            q[1] = 0.66
-        end
-    else
-        q[2] = 1.53
-    end
-    return q
-end=#
-
-#=function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
-    if (x > 1.0)
-        q[1] = 0.33
-    else
-        q[2] = 0.18
-    end
-    return q
-end=#
-
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
 end

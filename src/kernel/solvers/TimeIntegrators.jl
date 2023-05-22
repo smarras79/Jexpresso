@@ -24,9 +24,9 @@ function time_loop!(QT,
     u = zeros(T, mesh.npoin*qp.neqs);
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
-        u[idx+1:i*mesh.npoin] = @view qp.qn[:,i]   
-        qp.qnm1 = @view qp.qn[:,i]
-        qp.qnm2 = @view qp.qn[:,i]
+        u[idx+1:i*mesh.npoin] = @view qp.qn[:,i]
+        qp.qnm1 .= qp.qn[:,i]
+        qp.qnm2 .= qp.qn[:,i]
         
     end
     #if (typeof(PT) == ShallowWater)
@@ -45,15 +45,9 @@ function time_loop!(QT,
                       params);
     
     @time solution = solve(prob, inputs[:ode_solver],
-                           save_everystep = false)
-                           #saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
-
-#=   @ @time    solution = solve(prob,
-                              inputs[:ode_solver], dt = inputs[:Δt],
-                              save_everystep=false,
-    #saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]),
-                              #saveat = inputs[:tend])
-    =#
+                           save_everystep = false,
+                           saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
+    
     println(" # Solving ODE  ................................ DONE")
     
     return solution

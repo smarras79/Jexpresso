@@ -106,10 +106,10 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q
                           
 end
 
-function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, metrics)
-    
+function compute_viscosity!(μ_SGS, ::NSD_1D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, metrics, T)
+
     #compute domain averages
-                           ρ_avg  = 0.0
+    ρ_avg  = 0.0
     ρu_avg = 0.0
     ρE_avg = 0.0
     for e=1:mesh.nelem
@@ -125,9 +125,10 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::CompEuler, q, q1,
     ρE_avg = ρE_avg / (mesh.nelem*mesh.ngl)
 
     #Get denominator infinity norms
-    ρdiff  = zeros(mesh.ngl,mesh.nelem)
-    ρudiff = zeros(mesh.ngl,mesh.nelem)
-    ρEdiff = zeros(mesh.ngl,mesh.nelem)
+    ρdiff  = zeros(T, mesh.ngl,mesh.nelem)
+    ρdiff  = zeros(T, mesh.ngl,mesh.nelem)
+    ρudiff = zeros(T, mesh.ngl,mesh.nelem)
+    ρEdiff = zeros(T, mesh.ngl,mesh.nelem)
     for e=1:mesh.nelem
         for i=1:mesh.ngl
             ip = mesh.conn[i,e]
@@ -140,36 +141,27 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::CompEuler, q, q1,
     denom1 = maximum(ρdiff)  + 1.0e-16
     denom2 = maximum(ρudiff) + 1.0e-16
     denom3 = maximum(ρEdiff) + 1.0e-16
-    #@info denom1 denom2 denom3
+        
+    ρ   = @MVector zeros(Float64, mesh.ngl)
+    u   = @MVector zeros(Float64, mesh.ngl)
+    T   = @MVector zeros(Float64, mesh.ngl)
     
-    #Get Numerator inifinity norms, μ_max infinity norm
-    μ_SGS = zeros(mesh.nelem,1)
-
+    Rρ  = @MVector zeros(Float64, mesh.ngl)
+    Rρu = @MVector zeros(Float64, mesh.ngl)
+    RρE = @MVector zeros(Float64, mesh.ngl)
     for ie =1:mesh.nelem
         Δ = mesh.Δx[ie]/mesh.ngl
-        ρ   = zeros(mesh.ngl)
-        u   = zeros(mesh.ngl)
-        T   = zeros(mesh.ngl)
-        e   = zeros(mesh.ngl)
-        
-        Rρ  = zeros(mesh.ngl)
-        Rρu = zeros(mesh.ngl)
-        RρE = zeros(mesh.ngl)
         for i=1:mesh.ngl
             ip = mesh.conn[i,ie]
             
-            #Rρ[i] = abs((q[ip,1] - q1[ip,1])/Δt + rhs[ip,1]) #abs((3*q[ip,1]-4*q1[ip,1]+q2[ip,1])/(2*Δt)+rhs[ip,1])#rhs[ip,1] #abs((q[ip,1] - q1[ip,1])/Δt + rhs[ip,1])
-            #Rρu[i] = abs((q[ip,2] - q1[ip,2])/Δt + rhs[ip,2])#abs((3*q[ip,2]-4*q1[ip,2]+q2[ip,2])/(2*Δt)+rhs[ip,2])#rhs[ip,2] #(q[ip,2] - q1[ip,2])/Δt + rhs[ip,2]
-            #RρE[i] = abs((q[ip,3] - q1[ip,3])/Δt + rhs[ip,3])#abs((3*q[ip,3]-4*q1[ip,3]+q2[ip,3])/(2*Δt)+rhs[ip,2])#rhs[ip,3] #(q[ip,2] - q1[ip,2])/Δt + rhs[ip,2]
-
              Rρ[i] = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) + rhs[ip,1])
             Rρu[i] = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) + rhs[ip,2])
             RρE[i] = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) + rhs[ip,3])
             
             ρ[i] = q[ip,1]
             u[i] = q[ip,2]/ρ[i]
-            e[i] = q[ip,3]/ρ[i]
-            T[i] = e[i] - 0.5*u[i]^2
+            e    = q[ip,3]/ρ[i]
+            T[i] = e - 0.5*u[i]^2
         end
         γ = 1.4
         C1 = 1.0
@@ -182,9 +174,7 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::CompEuler, q, q1,
         μ_max = C2*Δ*maximum(ρ)*maximum(abs.(u) .+ sqrt.(γ*T))
         μ_SGS[ie] = max(0.0, min(μ_max, μ_res))
     end
-
-    return μ_SGS
-
+    
 end
 
 function compute_viscosity!(μ::Vector{Float64}, ::NSD_2D, PT::CompEuler, q, q1, q2, rhs, Δt, mesh, metrics)
