@@ -406,13 +406,11 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
     uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     vel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     Tel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    #Eel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
 
     rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     
     qq = zeros(mesh.npoin, neqs)
-    
     
     #
     # qp[1:npoin]         <-- qq[1:npoin, "ρ"]
@@ -445,7 +443,6 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
             vel[i,j,iel] = qq[m,3]/ρel[i,j,iel]
             
             Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] - δenergy*0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
-            #Eel[i,j,iel] = qq[m,4]/ρel[i,j,iel]
         end    
         #ν = Pr*μ[iel]/maximum(ρel[:,:,iel])
         #κ = Pr*μ[iel]/(γ - 1.0)
@@ -464,25 +461,21 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
             dudξ = 0.0
             dvdξ = 0.0
             dTdξ = 0.0
-            dEdξ = 0.0
 
             dρdη = 0.0
             dudη = 0.0
             dvdη = 0.0
             dTdη = 0.0
-            dEdη = 0.0
             for i = 1:mesh.ngl
                 dρdξ += basis.dψ[i,k]*ρel[i,l,iel]
                 dudξ += basis.dψ[i,k]*uel[i,l,iel]
                 dvdξ += basis.dψ[i,k]*vel[i,l,iel]
                 dTdξ += basis.dψ[i,k]*Tel[i,l,iel]
-                #dEdξ += basis.dψ[i,k]*Eel[i,l,iel]
 
                 dρdη += basis.dψ[i,l]*ρel[k,i,iel]
                 dudη += basis.dψ[i,l]*uel[k,i,iel]
                 dvdη += basis.dψ[i,l]*vel[k,i,iel]
                 dTdη += basis.dψ[i,l]*Tel[k,i,iel]
-                #dEdη += basis.dψ[i,l]*Eel[k,i,iel]
             end
             
             dρdx =       ν*(dρdξ*metrics.dξdx[k,l,iel] + dρdη*metrics.dηdx[k,l,iel])
@@ -508,20 +501,19 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
             
             for i = 1:mesh.ngl
                 
-                hll,     hkk     =  basis.ψ[l,l],  basis.ψ[k,k]
                 dhdξ_ik, dhdη_il = basis.dψ[i,k], basis.dψ[i,l]
                 
-                rhsdiffξ_el[i,l,iel,1] -= ωJkl*dhdξ_ik*hll*∇ξ∇ρ_kl
-                rhsdiffη_el[k,i,iel,1] -= ωJkl*hkk*dhdη_il*∇η∇ρ_kl
+                rhsdiffξ_el[i,l,iel,1] -= ωJkl*dhdξ_ik*∇ξ∇ρ_kl
+                rhsdiffη_el[k,i,iel,1] -= ωJkl*dhdη_il*∇η∇ρ_kl
                 
-                rhsdiffξ_el[i,l,iel,2] -= ωJkl*dhdξ_ik*hll*∇ξ∇u_kl
-                rhsdiffη_el[k,i,iel,2] -= ωJkl*hkk*dhdη_il*∇η∇u_kl
+                rhsdiffξ_el[i,l,iel,2] -= ωJkl*dhdξ_ik*∇ξ∇u_kl
+                rhsdiffη_el[k,i,iel,2] -= ωJkl*dhdη_il*∇η∇u_kl
                 
-                rhsdiffξ_el[i,l,iel,3] -= ωJkl*dhdξ_ik*hll*∇ξ∇v_kl
-                rhsdiffη_el[k,i,iel,3] -= ωJkl*hkk*dhdη_il*∇η∇v_kl
+                rhsdiffξ_el[i,l,iel,3] -= ωJkl*dhdξ_ik*∇ξ∇v_kl
+                rhsdiffη_el[k,i,iel,3] -= ωJkl*dhdη_il*∇η∇v_kl
                 
-                rhsdiffξ_el[i,l,iel,4] -= ωJkl*dhdξ_ik*hll*∇ξ∇T_kl
-                rhsdiffη_el[k,i,iel,4] -= ωJkl*hkk*dhdη_il*∇η∇T_kl
+                rhsdiffξ_el[i,l,iel,4] -= ωJkl*dhdξ_ik*∇ξ∇T_kl
+                rhsdiffη_el[k,i,iel,4] -= ωJkl*dhdη_il*∇η∇T_kl
                 
             end
             # end
