@@ -8,8 +8,7 @@ function initialize(SD::NSD_1D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=3)
     
-    case = "sound"
-    if (case === "sod")
+    if (inputs[:case] === "sod")
         @info " Sod tube"
 
         ρL, uL, pL = 1.000, 0.0, 1.0
@@ -37,7 +36,7 @@ function initialize(SD::NSD_1D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 
             end
         end
-    elseif (case === "smooth")
+    elseif (inputs[:case] === "smooth")
         
         @info " Smooth Sod tube"
 
@@ -58,7 +57,7 @@ function initialize(SD::NSD_1D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
             end
         end
 
-    elseif (case === "sound")
+    elseif (inputs[:case] === "sound")
         
         @info " Sound kopriva 7.4.3"
 
@@ -84,7 +83,7 @@ function initialize(SD::NSD_1D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         
         
     else
-        error(" ERROR: CompEuler: initialize.jl: no initial conditions assigned")
+        error(" ERROR: CompEuler: initialize.jl:\n assign value to inputs[:case]")
     end
     
 
@@ -102,9 +101,8 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     PhysConst = PhysicalConst{Float64}()
     
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=4)
-
-    case = "smooth"
-    if (case === "sod")
+    
+    if (inputs[:case] === "sod")
         @info " Sod tube"
         
         ρL, uL, vL, pL = 1.000, 0.0, 0.0, 1.0
@@ -138,7 +136,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 end
             end
         end
-    elseif (case === "smooth")
+    elseif (inputs[:case] === "smooth")
         
         @info " Smooth Sod tube"
 
@@ -161,7 +159,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
             end
         end
     else
-        error(" ERROR: CompEuler: initialize.jl: no initial conditions assigned")
+        error(" ERROR: CompEuler: initialize.jl:\n assign value to inputs[:case]")
     end
     
 

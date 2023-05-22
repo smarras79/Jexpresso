@@ -403,6 +403,8 @@ end
 
     if(!haskey(inputs, :case))
         inputs[:case] = ""
+    else
+        inputs[:case] = lowercase(inputs[:case])
     end
 
 if(!haskey(inputs, :ldss_differentiation))

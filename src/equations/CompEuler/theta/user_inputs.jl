@@ -7,6 +7,7 @@ function user_inputs()
         #:Δt                   => 0.1,#8.75e-4,
         :ode_solver           => "Tsit5",
         :ndiagnostics_outputs => 2,
+        :case                 => "rtb",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
