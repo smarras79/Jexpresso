@@ -17,9 +17,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :case                 => "rtb",
-        :lvisc                => true, #false by default
-        :visc_model           => "none", #"none", "dsgs"
+        :lvisc                => false, #false by default
+        #:visc_model           => "dsgs", #"none", "dsgs"
         :νx                   => 25.0, #kinematic viscosity constant
         :νy                   => 25.0, #kinematic viscosity constant
         #---------------------------------------------------------------------------

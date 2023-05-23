@@ -24,55 +24,35 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray)
-
-    PhysConst = PhysicalConst{Float64}()
-    γ = PhysConst.γ
-    
-    case = "sound"
-    if case === "Sod"
-        
-        ρL, uL, vL, pL = 1.000, 0.0, 0.0, 1.0
-        ρR, uR, vR, pR = 0.125, 0.0, 0.0, 0.1
-        
-        xshock_initial = 0.5
-        if (x < xshock_initial)
-            ρ = ρL
-            u = uL
-            v = vL
-            p = pL
-        else
-            ρ = ρR
-            u = uR
-            v = vR
-            p = pR
-        end
-    elseif case === "sound"
-        ρ = 1.0
-        u = 0.0
-        v = 0.0
-        p = 1.0
-    else
-        ρ = 1.0
-        u = 0.0
-        v = 0.0
-        p = 1.0
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, inputs::Dict)
+    #flags = zeros(size(q,1),1)   
+    #qbdy[2] = 0.0
+    #qbdy[3] = 0.0
+    if ( x <= -4990.0 || x >= 4990.0)
+        qbdy[2] = 0.0
+        #flags[2] = 1
     end
-    ρE = p/(γ - 1.0) + 0.5*ρ*(u*u + v*v)
-    qbdy[1] = ρ
-    qbdy[2] = ρ*u
-    qbdy[3] = ρ*v
-    qbdy[4] = ρE
+    if (y <= 10.0 || y >= 9990.0)
+        qbdy[3] = 0.0
+        #flags[3] = 1
+    end
+    if ((x >= 4990.0 || x <= -4990.0) && (y >= 9990.0 || y <= 10.0))
+        qbdy[2] = 0.0
+        qbdy[3] = 0.0
+        #flags[2] = 1
+        #flags[3] = 1
+    end
+
+    return qbdy #, flags
     
-    return qbdy
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
 end
