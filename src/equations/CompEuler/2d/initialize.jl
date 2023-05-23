@@ -1,100 +1,62 @@
+using Base
+
 function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
 
     """
-    @info " Initialize fields for 1D CompEuler equations ........................ "
+    @info " Initialize fields for 2D CompEuler with θ equation ........................ "
     
     PhysConst = PhysicalConst{Float64}()
     
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=4)
+    
+    if (inputs[:case] === "rtb")
 
-    case = "sound"
-    if (case === "sod")
-        @info " Sod tube"
+        xc = (maximum(mesh.x) + minimum(mesh.x))/2
+        yc = 2500.0 #m
+        r0   = 2000.0 #m
         
-        ρL, uL, vL, pL = 1.000, 0.0, 0.0, 1.0
-        ρR, uR, vR, pR = 0.125, 0.0, 0.0, 0.1
-        xshock_initial = 0.5
-        
-    	for iel_g = 1:mesh.nelem
-            for j=1:mesh.ngl               
-                for i=1:mesh.ngl
-                    
-                    ip = mesh.connijk[i,j,iel_g]
-                    x  = mesh.x[ip]
-                    
-                    if (x < xshock_initial)
-                        ρ = ρL
-                        u = uL
-                        v = vL
-                        p = pL
-                    else
-                        ρ = ρR
-                        u = uR                        
-                        v = vR
-                        p = pR
-                    end
-                    
-                    q.qn[ip,1] = ρ                               #ρ
-                    q.qn[ip,2] = ρ*u                             #ρu
-                    q.qn[ip,3] = ρ*v                             #ρv
-                    q.qn[ip,4] = p/(PhysConst.γ - 1.0) + 0.5*ρ*(u*u + v*v) #ρE
-                    
+        θref = 300.0 #K
+        θc   =   2.0 #K
+        for iel_g = 1:mesh.nelem
+            for j=1:mesh.ngl, i=1:mesh.ngl
+                
+                ip = mesh.connijk[i,j,iel_g]
+                x, y = mesh.x[ip], mesh.y[ip]
+                r = sqrt( (x - xc)^2 + (y - yc)^2 )
+                
+                Δθ = 0.0 #K
+                if r < r0
+                    Δθ = θc*(1.0 - r/r0)
                 end
-            end
-        end
-    elseif (case === "smooth")
-        
-        @info " Smooth Sod tube"
+                θ = θref + Δθ
+                p    = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
+                pref = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θref))^(PhysConst.cpoverR)
+                ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p) #kg/m³
+                ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=pref) #kg/m³
 
-        xshock_initial = 0.5
-        u = 0.0
-    	for iel_g = 1:mesh.nelem
-            for j=1:mesh.ngl, i=1:mesh.ngl
-                
-                ip = mesh.connijk[i,j,iel_g]
-                x  = mesh.x[ip]
-
-                p = 0.5*tanh(x) + 0.600
-                q.qn[ip,1] = 0.5*tanh(x) + 0.6125   #ρ
-                q.qn[ip,2] = ρ*u                     #ρu
-                q.qn[ip,3] = ρ*v                     #ρv
-                q.qn[ip,4] = p/(PhysConst.γ - 1.0) + 0.5*ρ*(u*u + v*v) #ρE
-                
-            end
-        end
-    elseif (case === "sound")
-        
-        @info " Sound Kopriva 7.4.3"
-        xs = 1.5
-        u = 0.0
-        ωsq = 0.125^2
-    	for iel_g = 1:mesh.nelem
-            for j=1:mesh.ngl, i=1:mesh.ngl
-                
-                ip = mesh.connijk[i,j,iel_g]
-                x  = mesh.x[ip]
-                y  = mesh.y[ip]
-                
-                ρ = 1.0
-                p = exp(-log(2) * ((x - xs)^2 + y^2)/ωsq) + 1.0
                 u = 0.0
                 v = 0.0
                 
                 q.qn[ip,1] = ρ
-                q.qn[ip,2] = ρ*u                     #ρu
-                q.qn[ip,3] = ρ*v                     #ρu
-                q.qn[ip,4] = p/(PhysConst.γ - 1.0) + 0.5*ρ*(u*u + v*v) #ρE
-                
+                q.qn[ip,2] = ρ*u
+                q.qn[ip,3] = ρ*v
+                q.qn[ip,4] = ρ*θ
+
+                #Store initial background state for plotting and analysis of pertuebations
+                q.qe[ip,1] = ρref
+                q.qe[ip,2] = u
+                q.qe[ip,3] = v
+                q.qe[ip,4] = ρref*θref
             end
         end
         
     else
-        error(" ERROR: CompEuler: initialize.jl: no initial conditions assigned")
+        error(" ERROR: CompEuler: initialize.jl:\n assign value to inputs[:case]")
     end
     
 
-    @info "Initialize fields for system of 1D CompEuler equations ........................ DONE"
+    @info "Initialize fields for system of 2D CompEuler with θ equation ........................ DONE"
 
     return q
 end
