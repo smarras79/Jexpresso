@@ -2,7 +2,7 @@
 
 julia_version = "1.8.5"
 manifest_format = "2.0"
-project_hash = "76908ede6105dc9aff2c7eac5c746666fa7536a4"
+project_hash = "164fd8e3ecc18d1bd2ba954e5b67b6451647c457"
 
 [[deps.AbstractFFTs]]
 deps = ["ChainRulesCore", "LinearAlgebra"]
@@ -1587,6 +1587,18 @@ deps = ["Adapt", "ArrayInterface", "DataStructures", "DiffEqBase", "DocStringExt
 git-tree-sha1 = "47fc5cf4174a7d45fa541669abc5405d9ef6b8df"
 uuid = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
 version = "6.51.1"
+
+[[deps.P4est]]
+deps = ["CEnum", "MPI", "MPIPreferences", "P4est_jll", "Preferences", "Reexport", "UUIDs"]
+git-tree-sha1 = "4024b3ff0b1b6887cecae0745b83d1c08874e011"
+uuid = "7d669430-f675-4ae7-b43e-fab78ec5a902"
+version = "0.4.7"
+
+[[deps.P4est_jll]]
+deps = ["Artifacts", "JLLWrappers", "LazyArtifacts", "Libdl", "MPICH_jll", "MPIPreferences", "MPItrampoline_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "Pkg", "TOML", "Zlib_jll"]
+git-tree-sha1 = "70c2d9a33b8810198314a5722ee3e9520110b28d"
+uuid = "6b5a15aa-cf52-5330-8376-5e5d90283449"
+version = "2.8.1+2"
 
 [[deps.PCRE2_jll]]
 deps = ["Artifacts", "Libdl"]

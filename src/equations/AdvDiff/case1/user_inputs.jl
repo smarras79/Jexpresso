@@ -20,6 +20,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
+        :lvisc                => false,
         :νx                   => 0.01, #kinematic viscosity constant
         :νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------
@@ -29,7 +30,7 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh", 
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
-        :gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
