@@ -20,7 +20,6 @@ include(user_flux_dir)
 include(user_source_dir)
 include("../ArtificialViscosity/DynSGS.jl")
 #---------------------------------------------------------------------------
-
 #
 # AdvDiff
 #
