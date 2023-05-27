@@ -10,16 +10,3 @@ function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh; neqs=1)
     
     return F, G
 end
-
-function user_flux_npoin(T, SD::NSD_2D, q::Array, mesh::St_mesh)
-    #
-    #F(q(x)) = 0.8*q
-    #G(q(x)) = 0.8*q
-    #
-    F = G = zeros(T, mesh.npoin)
-    
-    F[:] .= 0.8*q[:]
-    G[:] .= 0.8*q[:]
-    
-    return F, G
-end

@@ -1,18 +1,30 @@
 #---------------------------------------------------------------------------
 # Fetch equations name to access the user_rhs functions
 #---------------------------------------------------------------------------
+@info @__DIR__
+
 if (length(ARGS) === 1) #equations
-    user_flux_dir   = string("../../equations/", ARGS[1], "/user_flux.jl")
-    user_source_dir = string("../../equations/", ARGS[1], "/user_source.jl")
+    user_flux_dir   = string(@__DIR__, "../../equations/", ARGS[1], "/user_flux.jl")
+    if isfile(string(@__DIR__, "../../equations/", ARGS[1], "/user_source.jl"))
+        user_source_dir = string(@__DIR__, "../../equations/", ARGS[1], "/user_source.jl")
+    else
+        user_source_dir = "../../fallbacks/source.jl"
+    end
 elseif (length(ARGS) === 2)  #equations/equations_case_name
+    @info string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl")
+    @info isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl"))
+    
     user_flux_dir   = string("../../equations/", ARGS[1], "/", ARGS[2], "/user_flux.jl")
-    user_source_dir = string("../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl")
+    if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl"))
+        user_source_dir = string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl")
+    else
+        @info " user_source.jl not defined. The fallback ../../fallbacks/source.jl will be used."
+        user_source_dir =  "../../fallbacks/source.jl"
+    end
 end
 include(user_flux_dir)
 include(user_source_dir)
-include("../ArtificialViscosity/DynSGS.jl")
 #---------------------------------------------------------------------------
-
 function rhs!(du, u, params, time)
     
     RHS = build_rhs(params.SD, params.QT, params.PT,
@@ -346,8 +358,14 @@ end
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 # CompEuler:
 #--------------------------------------------------------------------------------------------------------------------------------------------------
-#function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
-#                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+
+    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
+    
+    return RHS
+end
+
 function _build_rhs(SD::NSD_1D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
 
@@ -413,9 +431,20 @@ end
 #
 # Optimized (more coud possibly be done)
 #
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
+                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+    
+    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
+        
+    return RHS
+    
+end
+
 function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
 
+    lsource = true
+    
     F      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     S      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
@@ -432,7 +461,9 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
             ip = mesh.connijk[i,j,iel]
             
             F[i,j,iel,1:neqs], G[i,j,iel,1:neqs] = user_flux(T, SD, qq[ip,1:neqs], mesh; neqs=neqs)
-            S[i,j,iel,1:neqs] = user_source(T, qq[ip,1:neqs], mesh.npoin; neqs=neqs)
+            if (lsource == true)
+                S[i,j,iel,1:neqs] = user_source(T, qq[ip,1:neqs], mesh.npoin; neqs=neqs)
+            end
         end
         
         for ieq = 1:neqs
