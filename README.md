@@ -35,19 +35,22 @@ julia> push!(empty!(ARGS), "AdvDiff", "case1");
 julia> include("./src/Jexpresso.jl")
 ```
 
-Currently available equations names:
+For ready to run tests, there are the currently available equations names:
 
 * AdvDiff
 * Elliptic
-* LinearCLaw
-* ShallowWater
 * CompEuler (option with total energy and theta formulation)
+
+The code is designed to create any system of conservsation laws. See CompEuler/case1 to see an example of each file.
+Details will be given in the documentation (still WIP). Write us if you need help.
 
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
 ## Plotting
 For plotting we rely on [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
 modify ./src/io/plotting/jplots.jl accordinly.
+
+For non-periodic 2D tests, the output can also be written to VTK files by setting the value "vtk" for the usier_input key :outformat
 
 ## Contacts
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)

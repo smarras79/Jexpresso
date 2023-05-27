@@ -24,15 +24,9 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, inputs::Dict)
-    qbdy[1] = 1.0
-    qbdy[2] = 2.5
-    qbdy[3] = 0.0 
-    return qbdy
-end
-
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
-
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat,
+                            tag::String, qbdy::AbstractArray, inputs::Dict)
+    
     PhysConst = PhysicalConst{Float64}()
     γ = 1.4
 
@@ -60,16 +54,11 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
         p = 1.0
     end
     E = p/(γ - 1.0) + 0.5*ρ*u*u
-    q[1] = ρ
-    q[2] = ρ*u
-    q[3] = E
+    qbdy[1] = ρ
+    qbdy[2] = ρ*u
+    qbdy[3] = E
     
-    return q
-end
-
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
-    flux = zeros(size(q,2),1)
-    return flux
+    return qbdy
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
