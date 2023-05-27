@@ -112,8 +112,10 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, bas
 end
 
 
+
 #--------------------------------------------------------------------------------------------------------------------------------------------------
-# ShallowWater
+# ShallowWater:
+# IMPORTANT NOTICE: ALL OF THE SHALLOW WATER rhs need to be adapted to use _build_rhs() instead.  @yassine
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::ShallowWater, qp::Array, neqs, basis, ω,
                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
