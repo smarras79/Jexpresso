@@ -1,19 +1,14 @@
 #---------------------------------------------------------------------------
 # Fetch equations name to access the user_rhs functions
 #---------------------------------------------------------------------------
-@info @__DIR__
-
 if (length(ARGS) === 1) #equations
-    user_flux_dir   = string(@__DIR__, "../../equations/", ARGS[1], "/user_flux.jl")
-    if isfile(string(@__DIR__, "../../equations/", ARGS[1], "/user_source.jl"))
+    user_flux_dir   = string(@__DIR__, "/../../equations/", ARGS[1], "/user_flux.jl")
+    if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/user_source.jl"))
         user_source_dir = string(@__DIR__, "../../equations/", ARGS[1], "/user_source.jl")
     else
         user_source_dir = "../../fallbacks/source.jl"
     end
 elseif (length(ARGS) === 2)  #equations/equations_case_name
-    @info string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl")
-    @info isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl"))
-    
     user_flux_dir   = string("../../equations/", ARGS[1], "/", ARGS[2], "/user_flux.jl")
     if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl"))
         user_source_dir = string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl")
@@ -420,9 +415,9 @@ function _build_rhs(SD::NSD_1D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
     divive_by_mass_matrix!(RHS, M, QT,neqs)
     
     if (PT == AdvDiff())
-        apply_periodicity!(SD, RHS, qp, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0, neqs)
+        apply_periodicity!(SD, RHS, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0, neqs)
     else
-        apply_boundary_conditions!(SD, rhs_el, qp, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
+        apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
     end
     
     return RHS

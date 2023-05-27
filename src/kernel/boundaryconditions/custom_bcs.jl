@@ -11,28 +11,28 @@ end
 include(user_bc_dir)
 #---------------------------------------------------------------------------
 
-function neumann(q,gradq,x,y,t, mesh, metrics,tag, inputs::Dict)
+function neumann(q, gradq, x, y, t, mesh, metrics, tag, inputs::Dict)
     
-    rhs = user_bc_neumann(q,gradq,x,y,t,tag, inputs::Dict)
+    rhs = user_bc_neumann(q, gradq, x, y, t, tag, inputs::Dict)
     return rhs
 end
 
-function neumann(q,gradq,x,t, mesh, metrics, inputs::Dict)
+function neumann(q, gradq, x, t, mesh, metrics, inputs::Dict)
 
-    rhs = user_bc_neumann(q,gradq,x,t, inputs)
+    rhs = user_bc_neumann(q, gradq, x, t, inputs)
     return rhs
 end
 
-function dirichlet!(q,gradq,x,y,t, mesh, metrics,tag,qbdy, inputs::Dict)
+function dirichlet!(q, gradq, x, y, t, mesh, metrics, tag, qbdy, inputs::Dict)
 
-    qbdy = user_bc_dirichlet!(q,gradq,x,y,t,tag,qbdy, inputs::Dict)
+    qbdy = user_bc_dirichlet!(q, gradq, x, y, t, tag, qbdy, inputs::Dict)
     
     return qbdy
 end
 
-function dirichlet!(q,gradq,x,t, mesh, metrics,qbdy, inputs::Dict)
-
-    qbdy = user_bc_dirichlet!(q,gradq,x,t, inputs::Dict)
+function dirichlet!(q, gradq, x, t, mesh, metrics, tag, qbdy, inputs::Dict)
+    
+    qbdy = user_bc_dirichlet!(q, gradq, x, t, tag, qbdy, inputs::Dict)
 
     return qbdy
 end

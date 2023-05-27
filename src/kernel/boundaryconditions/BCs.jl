@@ -148,9 +148,10 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_1D,nvars,metrics,ω,dirichle
             iel = mesh.nelem
         end
         qbdy = zeros(size(q,2),1)
+        
         qbdy[:] .= 4325789.0
         if (inputs[:luser_bc])
-            qbdy = dirichlet!(q[ip,:],gradq[ip,:],x,t,mesh,metrics,qbdy,inputs)
+            qbdy = dirichlet!(q[ip,:], gradq[ip,:], x, t, mesh, metrics, "notag", qbdy, inputs)
             flux = (ω[k]*neumann(q[ip,:],gradq[ip,:],x,t,mesh,metrics,inputs))
         else
             q[ip,:] .= 0.0
