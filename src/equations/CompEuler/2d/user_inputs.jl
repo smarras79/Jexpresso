@@ -7,6 +7,7 @@ function user_inputs()
         #:Δt                   => 0.1,#8.75e-4,
         :ode_solver           => "Tsit5",
         :ndiagnostics_outputs => 2,
+        :case                 => "rtb",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -16,9 +17,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :case                 => "none",
-        :lvisc                => true, #false by default
-        :visc_model           => "none", #"none", "dsgs"
+        :lvisc                => false, #false by default
+        #:visc_model           => "dsgs", #"none", "dsgs"
         :νx                   => 25.0, #kinematic viscosity constant
         :νy                   => 25.0, #kinematic viscosity constant
         #---------------------------------------------------------------------------
