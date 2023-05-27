@@ -70,62 +70,7 @@ end
 
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
     
-    #  RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
-    
-    F      = zeros(mesh.ngl, mesh.nelem, neqs)
-    rhs_el = zeros(mesh.ngl, mesh.nelem, neqs)
-    qq     = zeros(mesh.npoin, neqs)
-    for i=1:neqs
-        idx = (i-1)*mesh.npoin
-        qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
-    end    
-    
-    for iel=1:mesh.nelem
-        
-        Jac  = mesh.Δx[iel]/2
-        dξdx = 2.0/mesh.Δx[iel]
-        
-        for i=1:mesh.ngl
-            ip = mesh.conn[i,iel]
-            F[i,iel,1:neqs] .= user_flux(T, SD, qq[ip,1:neqs], mesh; neqs=neqs)
-        end
-
-        for ieq = 1:neqs
-            for i=1:mesh.ngl
-                dFdξ = 0.0
-                for k = 1:mesh.ngl
-                    dFdξ += basis.dψ[k,i]*F[k,iel,ieq]*dξdx
-                end
-                rhs_el[i,iel,ieq] += ω[i]*Jac*dFdξ
-            end
-        end
-    end
-    
-    RHS = DSS_rhs(SD, rhs_el, mesh.conn, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
-    
-    for i=1:neqs
-        idx = (i-1)*mesh.npoin
-        qp[idx+1:i*mesh.npoin] .= qq[:,i]
-    end
-    if (inputs[:lvisc] == true)
-        
-        if (inputs[:visc_model] === "dsgs")
-            
-            if (rem(time, Δt) == 0 && time > 0.0)
-                qnm1 .= qnm2
-                qnm2 .= qq
-            end
-            
-            compute_viscosity!(μ, SD, PT, qq, qnm1, qnm2, RHS, Δt, mesh, metrics, T)
-        else
-            μ[:] .= inputs[:νx]
-        end
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis, ω, inputs, mesh, metrics, μ, T;)
-        RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
-    end
-
-    
-    apply_periodicity!(SD, RHS, qp, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0, neqs)
+    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
     
     return RHS
 end
