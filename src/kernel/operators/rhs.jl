@@ -114,6 +114,11 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
         idx = (i-1)*mesh.npoin
         qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
     end
+<<<<<<< HEAD
+=======
+
+    lsource = true
+>>>>>>> sm/eulerOptimized
     
     for iel=1:mesh.nelem
 
@@ -180,6 +185,29 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
     return RHS
 end
 
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+# CompEuler:
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+
+    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
+    
+    return RHS
+end
+
+#
+# Optimized (more coud possibly be done)
+#
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+    
+    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
+    
+    return RHS
+    
+end
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 # AdvDiff
@@ -496,31 +524,6 @@ function build_rhs(SD::NSD_1D, QT::Inexact, PT::SoilTopo, qp::Array, neqs, basis
 end
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------
-# CompEuler:
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
-                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
-
-    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
-    
-    return RHS
-end
-
-#
-# Optimized (more coud possibly be done)
-#
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
-                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
-    
-    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
-    
-    return RHS
-    
-end
-
-
-
-#--------------------------------------------------------------------------------------------------------------------------------------------------
 # Source terms:
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 function build_rhs_source(SD::NSD_2D,
@@ -546,4 +549,3 @@ function build_rhs_source(SD::NSD_2D,
     
     return M*S   
 end
-

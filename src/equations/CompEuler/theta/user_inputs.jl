@@ -3,11 +3,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 50.0, #2π,
+        :tend                 => 1020.0, #2π,
         #:Δt                   => 0.1,#8.75e-4,
         :ode_solver           => "Tsit5",
-        :ndiagnostics_outputs => 2,
+        :ndiagnostics_outputs => 20,
         :case                 => "rtb",
+        :lsource              => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -17,7 +18,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => false, #false by default
+        :lvisc                => true, #false by default
         #:visc_model           => "dsgs", #"none", "dsgs"
         :νx                   => 25.0, #kinematic viscosity constant
         :νy                   => 25.0, #kinematic viscosity constant
