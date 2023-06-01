@@ -24,8 +24,7 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat,
-                            tag::String, qbdy::AbstractArray, inputs::Dict)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, inputs::Dict)
     
     PhysConst = PhysicalConst{Float64}()
     γ = 1.4
