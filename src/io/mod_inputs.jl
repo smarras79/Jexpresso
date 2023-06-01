@@ -408,6 +408,9 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     else
         inputs[:case] = lowercase(inputs[:case])
     end
+    if(!haskey(inputs, :lsource))
+        inputs[:lsource] = false
+    end
 
     if(!haskey(inputs, :ldss_differentiation))
         inputs[:ldss_differentiation] = false
