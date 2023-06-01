@@ -102,18 +102,17 @@ end
 
 function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
                     mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
-
-    lsource = true
     
     F      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     G      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-    S      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    #S      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
     qq = zeros(mesh.npoin,neqs)
     for i=1:neqs
         idx = (i-1)*mesh.npoin
         qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
     end
+    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
     
     for iel=1:mesh.nelem
 
@@ -121,9 +120,9 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
             ip = mesh.connijk[i,j,iel]
             
             F[i,j,iel,1:neqs], G[i,j,iel,1:neqs] = user_flux(T, SD, qq[ip,1:neqs], mesh; neqs=neqs)
-            if (lsource == true)
-                S[i,j,iel,1:neqs] = user_source(T, qq[ip,1:neqs], mesh.npoin; neqs=neqs)
-            end
+            #if (lsource == true)
+            #    S[i,j,iel,1:neqs] = user_source(T, qq[ip,1:neqs], mesh.npoin; neqs=neqs)
+            #end
         end
         
         for ieq = 1:neqs
@@ -144,7 +143,7 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
 
                 dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                 dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
-                rhs_el[i,j,iel,ieq] -= ωJac*((dFdx + dGdy) - S[i,j,iel,ieq]) #gravity
+                rhs_el[i,j,iel,ieq] -= ωJac*((dFdx + dGdy) )#- S[i,j,iel,ieq]) #gravity
                 
             end
         end
@@ -546,4 +545,3 @@ function build_rhs_source(SD::NSD_2D,
     
     return M*S   
 end
-

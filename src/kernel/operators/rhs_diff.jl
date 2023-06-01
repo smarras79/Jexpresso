@@ -78,7 +78,7 @@ function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, 
 
         for j=1:mesh.ngl, i=1:mesh.ngl
             m = mesh.connijk[i,j,iel]            
-            qnel[i,j,iel,1] = qp[m,1]
+            qnel[i,j,iel] = qp[m,1]
         end
         
         for k = 1:mesh.ngl, l = 1:mesh.ngl
