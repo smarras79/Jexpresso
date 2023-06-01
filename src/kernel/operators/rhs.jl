@@ -49,6 +49,12 @@ function _build_rhs(SD::NSD_1D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
         qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
     end
     
+    if (PT == AdvDiff())
+        apply_periodicity!(SD, RHS, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0, neqs)
+    else
+        apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
+    end
+    
     for iel=1:mesh.nelem
         dξdx = 2.0/mesh.Δx[iel]
         for i=1:mesh.ngl
@@ -90,12 +96,6 @@ function _build_rhs(SD::NSD_1D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
         RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     end
     divive_by_mass_matrix!(RHS, M, QT,neqs)
-    
-    if (PT == AdvDiff())
-        apply_periodicity!(SD, RHS, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, 0, neqs)
-    else
-        apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
-    end
     
     return RHS
 end
