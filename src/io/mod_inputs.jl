@@ -30,6 +30,8 @@ function parse_commandline()
     return parse_args(s)
 end
 
+macro datatype(str); :($(Symbol(str))); end
+
 
 function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::String)
 
@@ -91,7 +93,7 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
     end
-     if(!haskey(inputs, :tend))
+    if(!haskey(inputs, :tend))
         inputs[:tend] = 0.0  #end time is 0.0 by default
     end
     
@@ -102,32 +104,32 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     if(haskey(inputs, :interpolation_nodes))
         
         if(lowercase(inputs[:interpolation_nodes]) == "llg" ||
-           lowercase(inputs[:interpolation_nodes]) == "gll" ||
-           lowercase(inputs[:interpolation_nodes]) == "lgl")
+            lowercase(inputs[:interpolation_nodes]) == "gll" ||
+            lowercase(inputs[:interpolation_nodes]) == "lgl")
             inputs[:interpolation_nodes] = LGL()
 
         elseif(lowercase(inputs[:interpolation_nodes]) == "lg" ||
-               lowercase(inputs[:interpolation_nodes]) == "gl")
+            lowercase(inputs[:interpolation_nodes]) == "gl")
             inputs[:interpolation_nodes] = LG()
             
         elseif(lowercase(inputs[:interpolation_nodes]) == "cg" ||
-               lowercase(inputs[:interpolation_nodes]) == "gc")
+            lowercase(inputs[:interpolation_nodes]) == "gc")
             inputs[:interpolation_nodes] = CG()
             
         elseif(lowercase(inputs[:interpolation_nodes]) == "cgl" ||
-               lowercase(inputs[:interpolation_nodes]) == "gcl")
+            lowercase(inputs[:interpolation_nodes]) == "gcl")
             inputs[:interpolation_nodes] = CGL()
         else
             s = """
-                ERROR in user_inputs.jl --> :interpolation_nodes
-                
-                    Chose among:
-                     - "lgl"
-                     - "lg"
-                     - "cg"
-                     - "cgl"
-              """
-    
+                    ERROR in user_inputs.jl --> :interpolation_nodes
+                    
+                        Chose among:
+                         - "lgl"
+                         - "lg"
+                         - "cg"
+                         - "cgl"
+                  """
+            
             error(s)
         end
     else
@@ -138,31 +140,31 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     if(haskey(inputs, :quadrature_nodes))
         
         if(lowercase(inputs[:quadrature_nodes]) == "llg" ||
-           lowercase(inputs[:quadrature_nodes]) == "gll" ||
-           lowercase(inputs[:quadrature_nodes]) == "lgl")
+            lowercase(inputs[:quadrature_nodes]) == "gll" ||
+            lowercase(inputs[:quadrature_nodes]) == "lgl")
             inputs[:quadrature_nodes] = LGL()
 
         elseif(lowercase(inputs[:quadrature_nodes]) == "lg" ||
-               lowercase(inputs[:quadrature_nodes]) == "gl")
+            lowercase(inputs[:quadrature_nodes]) == "gl")
             inputs[:quadrature_nodes] = LG()
             
         elseif(lowercase(inputs[:quadrature_nodes]) == "cg" ||
-               lowercase(inputs[:quadrature_nodes]) == "gc")
+            lowercase(inputs[:quadrature_nodes]) == "gc")
             inputs[:quadrature_nodes] = CG()
             
         elseif(lowercase(inputs[:quadrature_nodes]) == "cgl" ||
-               lowercase(inputs[:quadrature_nodes]) == "gcl")
+            lowercase(inputs[:quadrature_nodes]) == "gcl")
             inputs[:quadrature_nodes] = CGL()
         else
             s = """
-                ERROR in user_inputs.jl --> :quadrature_nodes
-                
-                    Chose among:
-                     - "lgl"
-                     - "lg"
-                     - "cg"
-                     - "cgl"
-              """
+                    ERROR in user_inputs.jl --> :quadrature_nodes
+                    
+                        Chose among:
+                         - "lgl"
+                         - "lg"
+                         - "cg"
+                         - "cgl"
+                  """
             
             error(s)            
         end
@@ -186,7 +188,7 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         elseif(uppercase(inputs[:ode_solver]) == "SSPRK53" || uppercase(inputs[:ode_solver]) == "RK53")
             inputs[:ode_solver] = SSPRK53()
         elseif(uppercase(inputs[:ode_solver]) == "SSPRK54")
-            inputs[:ode_solver] =SSPRK54()
+            inputs[:ode_solver] = SSPRK54()
         elseif(uppercase(inputs[:ode_solver]) == "SSPRK63")
             inputs[:ode_solver] = SSPRK63()
         elseif(uppercase(inputs[:ode_solver]) == "SSPRK73")
@@ -196,42 +198,42 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         elseif(uppercase(inputs[:ode_solver]) == "CARPENTERKENNEDY2N54")
             inputs[:ode_solver] = CarpenterKennedy2N54()
         elseif(uppercase(inputs[:ode_solver]) == "BICGSTAB" ||
-               uppercase(inputs[:ode_solver]) == "BICGSTABLE" ||
-               uppercase(inputs[:ode_solver]) == "IterativeSolversJL_BICGSTAB") 
+            uppercase(inputs[:ode_solver]) == "BICGSTABLE" ||
+            uppercase(inputs[:ode_solver]) == "IterativeSolversJL_BICGSTAB") 
             inputs[:ode_solver] = IterativeSolversJL_BICGSTAB()
         elseif(uppercase(inputs[:ode_solver]) == "GMRES"|| uppercase(inputs[:ode_solver]) == "IterativeSolversJL_GMRES")
             inputs[:ode_solver] = IterativeSolversJL_GMRES()
         elseif(uppercase(inputs[:ode_solver]) == "ADAMSBASHFORTH3"  ||
-               uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH3" ||
-               uppercase(inputs[:ode_solver]) == "AB3")
+            uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH3" ||
+            uppercase(inputs[:ode_solver]) == "AB3")
             inputs[:ode_solver] = AB3()
         elseif(uppercase(inputs[:ode_solver]) == "ADAMSBASHFORTH4"  ||
-               uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH4" ||
-               uppercase(inputs[:ode_solver]) == "AB4")
+            uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH4" ||
+            uppercase(inputs[:ode_solver]) == "AB4")
             inputs[:ode_solver] = AB4()
         else
             s = """
-                    WARNING in user_inputs.jl --> :ode_solver
-                    
-                        See usable solvers at
-                        https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
+                        WARNING in user_inputs.jl --> :ode_solver
+                        
+                            See usable solvers at
+                            https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
 
-                    SSPRK53 will be used by default.
-                        """            
-            inputs[:ode_solver] = Tsit5()
+                        SSPRK53 will be used by default.
+                            """            
+            inputs[:ode_solver] = SSPRK54()
 
             @warn s
         end
     else
-        inputs[:ode_solver] = Tsit5()
+        inputs[:ode_solver] = SSPRK54()
     end
-
-   if(!haskey(inputs, :output_dir))
-       inputs[:output_dir] = ""
-   end
-   if(!haskey(inputs, :loutput_pert))
-       inputs[:loutput_pert] = false
-   end
+    
+    if(!haskey(inputs, :output_dir))
+        inputs[:output_dir] = ""
+    end
+    if(!haskey(inputs, :loutput_pert))
+        inputs[:loutput_pert] = false
+    end
 
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
@@ -262,8 +264,8 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
 
         s= string("jexpresso: Some undefined (but unnecessary) user inputs 
-                              MAY have been given some default values.
-                              User needs not to worry about them.")
+                                  MAY have been given some default values.
+                                  User needs not to worry about them.")
         
         #@warn s
         
@@ -342,64 +344,64 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     #------------------------------------------------------------------------
     
     #------------------------------------------------------------------------
-# Define neqs based on the equations being solved
-#------------------------------------------------------------------------
-neqs::Int8 = 1
+    # Define neqs based on the equations being solved
+    #------------------------------------------------------------------------
+    neqs::Int8 = 1
 
-if (lowercase(equations) == "burgers")
-    inputs[:equations] = Burgers()
-    inputs[:ldss_laplace] = false
-    inputs[:ldss_differentiation] = false
-elseif (lowercase(equations) == "shallowwater")
-    inputs[:equations] = ShallowWater()    
-    inputs[:ldss_laplace] = false
-    inputs[:ldss_differentiation] = false
-    
-elseif (lowercase(equations) == "compeuler")
-    inputs[:equations] = CompEuler()
-    inputs[:ldss_laplace] = false
-    inputs[:ldss_differentiation] = false
-    
-elseif (lowercase(equations) == "linearclaw" ||
+    if (lowercase(equations) == "burgers")
+        inputs[:equations] = Burgers()
+        inputs[:ldss_laplace] = false
+        inputs[:ldss_differentiation] = false
+    elseif (lowercase(equations) == "shallowwater")
+        inputs[:equations] = ShallowWater()    
+        inputs[:ldss_laplace] = false
+        inputs[:ldss_differentiation] = false
+        
+    elseif (lowercase(equations) == "compeuler")
+        inputs[:equations] = CompEuler()
+        inputs[:ldss_laplace] = false
+        inputs[:ldss_differentiation] = false
+        
+    elseif (lowercase(equations) == "linearclaw" ||
         lowercase(equations) == "linclaw" ||
         lowercase(equations) == "lclaw")
-    inputs[:equations] = LinearCLaw()
-    inputs[:ldss_laplace] = false
-    inputs[:ldss_differentiation] = false
-    
-elseif (lowercase(equations) == "advdiff" ||
+        inputs[:equations] = LinearCLaw()
+        inputs[:ldss_laplace] = false
+        inputs[:ldss_differentiation] = false
+        
+    elseif (lowercase(equations) == "advdiff" ||
         lowercase(equations) == "advdif" ||
         lowercase(equations) == "ad" ||
         lowercase(equations) == "adv2d")
-    inputs[:equations] = AdvDiff()
-    inputs[:ldss_laplace] = false
-    inputs[:ldss_differentiation] = false
+        inputs[:equations] = AdvDiff()
+        inputs[:ldss_laplace] = false
+        inputs[:ldss_differentiation] = false
         
-elseif (lowercase(equations) == "elliptic" ||
+    elseif (lowercase(equations) == "elliptic" ||
         lowercase(equations) == "diffusion")
-    inputs[:equations] = Elliptic()
-    inputs[:ldss_laplace] = true
-    inputs[:ldss_differentiation] = false
-    
-elseif (lowercase(equations) == "helmholtz")
-    inputs[:equations] = Helmholtz()
-    inputs[:ldss_laplace] = true
-    inputs[:ldss_differentiation] = false    
-else
-    
-    #inputs[:neqs] = 1 #default
-    
-    s = """
-            jexpresso  user_inputs.jl: equations ", the inputs[:equations] " that you chose is not coded!
-            Chose among:
-                     - "AdvDiff"/"AD"/"Adv"
-                     - "LinearCLaw"/"LinClaw"
-                     - "Burgers"
-                     - "SW"
-          """
-    
-    @error s
-end
+        inputs[:equations] = Elliptic()
+        inputs[:ldss_laplace] = true
+        inputs[:ldss_differentiation] = false
+        
+    elseif (lowercase(equations) == "helmholtz")
+        inputs[:equations] = Helmholtz()
+        inputs[:ldss_laplace] = true
+        inputs[:ldss_differentiation] = false    
+    else
+        
+        #inputs[:neqs] = 1 #default
+        
+        s = """
+                jexpresso  user_inputs.jl: equations ", the inputs[:equations] " that you chose is not coded!
+                Chose among:
+                         - "AdvDiff"/"AD"/"Adv"
+                         - "LinearCLaw"/"LinClaw"
+                         - "Burgers"
+                         - "SW"
+              """
+        
+        @error s
+    end
 
     if(!haskey(inputs, :case))
         inputs[:case] = ""
@@ -407,31 +409,31 @@ end
         inputs[:case] = lowercase(inputs[:case])
     end
 
-if(!haskey(inputs, :ldss_differentiation))
-    inputs[:ldss_differentiation] = false
-end
-if(!haskey(inputs, :ldss_laplace))
-    inputs[:ldss_laplace] = false
-end
-#------------------------------------------------------------------------
-# The following quantities stored in the inputs[] dictionary are only
-# auxiliary and are NEVER to be defined by the user
-#------------------------------------------------------------------------
-if ((inputs[:νx] != 0.0) || (inputs[:νy] != 0.0) || (inputs[:νz] != 0.0))
-    inputs[:δvisc] = 1.0
-else
-    inputs[:δvisc] = 0.0
-end
+    if(!haskey(inputs, :ldss_differentiation))
+        inputs[:ldss_differentiation] = false
+    end
+    if(!haskey(inputs, :ldss_laplace))
+        inputs[:ldss_laplace] = false
+    end
+    #------------------------------------------------------------------------
+    # The following quantities stored in the inputs[] dictionary are only
+    # auxiliary and are NEVER to be defined by the user
+    #------------------------------------------------------------------------
+    if ((inputs[:νx] != 0.0) || (inputs[:νy] != 0.0) || (inputs[:νz] != 0.0))
+        inputs[:δvisc] = 1.0
+    else
+        inputs[:δvisc] = 0.0
+    end
 
-return inputs
+    return inputs
 end
 
 function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
     
     if (!haskey(inputs, key))
         s = """
-                jexpresso: $key is missing in .../IO/user_inputs.jl
-                """
+                    jexpresso: $key is missing in .../IO/user_inputs.jl
+                    """
         if (error_or_warning=="e")
             error(s)
         elseif (error_or_warning=="w")
@@ -447,9 +449,9 @@ function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
 
     if (!haskey(inputs, key))
         s = """
-                jexpresso: $key is missing in .../IO/user_inputs.jl
-                The default value $key=$value will be used.
-                """
+                    jexpresso: $key is missing in .../IO/user_inputs.jl
+                    The default value $key=$value will be used.
+                    """
         if (error_or_warning=="e")
             error(s)
         elseif (error_or_warning=="w")
