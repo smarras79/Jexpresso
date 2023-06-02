@@ -1,9 +1,9 @@
-function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh; neqs=4)
+function user_flux!(F, G, T, SD::NSD_2D, q::Array, mesh::St_mesh; neqs=4)
 
     PhysConst = PhysicalConst{Float64}()
     
-    F = zeros(neqs)
-    G = zeros(neqs)
+    #F = zeros(neqs)
+    #G = zeros(neqs)
             
     ρ  = q[1]
     ρu = q[2]
@@ -23,6 +23,5 @@ function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh; neqs=4)
     G[2] = ρu*v
     G[3] = ρv*v + Press
     G[4] = ρθ*v
-        
-    return F, G
 end
+
