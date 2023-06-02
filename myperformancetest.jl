@@ -108,24 +108,35 @@ end
 #@info "work vector WITH static arrays"
 #@btime run_barw_array()
 
-function mytest()
-    n=length(a)
+function mytest(n)
+    a = zeros(Int64, n)
+    b = zeros(Int64, n)
     sum = 0.0
     for i=1:n
         a[i] = i
+        b[i] = i*2
     end
-    return a
+    return a, b
 end
 
-function mytest!(a::Array)
+function mytest!(a::Array,b::Array)
     n=length(a)
     for i=1:n
         a[i] = i
+        b[i] = i*2
     end
     
 end
 
-a = zeros(Int64, 100)
-@btime  mytest()
-@btime  mytest!(a)
+n = 100
+a = zeros(Int64, n)
+b = zeros(Int64, n)
+c = zeros(Int64, n)
+d = zeros(Int64, n)
+d,c = mytest(n)
+@info d
+@info c
+@btime  mytest!(a, b)
+@info a
+@info b
 
