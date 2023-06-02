@@ -20,8 +20,8 @@ function run_barw_array()
         u = barw_array( xnodes )
     end
 end
-@info "NAIVE "
-@btime run_barw_array()
+#@info "NAIVE "
+#@btime run_barw_array()
 ####
 
 function barw_workvector( barw, xnodes )
@@ -46,8 +46,8 @@ function run_barw_workvector()
     end
 
 end
-@info "work vector without static arrays"
-@btime run_barw_workvector()
+#@info "work vector without static arrays"
+#@btime run_barw_workvector()
 #############################
 
 using StaticArrays
@@ -79,8 +79,8 @@ function run_barw_sarray_constructor()
 
 end
 
-@info "work vector WITH static arrays"
-@btime run_barw_sarray_constructor()
+#@info "work vector WITH static arrays"
+#@btime run_barw_sarray_constructor()
 
 
 using Revise
@@ -105,5 +105,27 @@ function run_barw_array()
         u = barw_array( xnodes, n)
     end
 end
-@info "work vector WITH static arrays"
-@btime run_barw_array()
+#@info "work vector WITH static arrays"
+#@btime run_barw_array()
+
+function mytest()
+    n=length(a)
+    sum = 0.0
+    for i=1:n
+        a[i] = i
+    end
+    return a
+end
+
+function mytest!(a::Array)
+    n=length(a)
+    for i=1:n
+        a[i] = i
+    end
+    
+end
+
+a = zeros(Int64, 100)
+@btime  mytest()
+@btime  mytest!(a)
+
