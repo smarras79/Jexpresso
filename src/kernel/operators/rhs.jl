@@ -105,11 +105,11 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
 
     lsource = true
     
-    #F      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-    #G      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-    #S      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-    #rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-   #= qq = zeros(mesh.npoin,neqs)
+    F      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    G      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    S      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
+    qq = zeros(mesh.npoin,neqs)
     for i=1:neqs
         idx = (i-1)*mesh.npoin
         qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
@@ -177,8 +177,8 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
     end
     
     divive_by_mass_matrix!(RHS, M, QT,neqs)
-    =#
-    return zeros(T, mesh.npoin, neqs)
+    
+    return RHS
 end
 
 
