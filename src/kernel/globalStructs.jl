@@ -17,10 +17,10 @@ Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
     zb   = Array{TFloat}(undef, 0, 0)       # zb #shallow water moving bathymetry
     qnel = Array{TFloat}(undef, 0, 0, 0, 0) # qnelⁿ[ngl,ngl,ngl,nelem]
     μ    = Array{TFloat}(undef, 0)          # μ (dynamic viscosity)
-    F    = Array{TFloat}(undef, 0, 0, 0, 0) # Fⁿ[ngl,ngl,nelem, neqs]
-    G    = Array{TFloat}(undef, 0, 0, 0, 0) # Gⁿ[ngl,ngl,nelem, neqs]
-    H    = Array{TFloat}(undef, 0, 0, 0, 0) # Hⁿ[ngl,ngl,nelem, neqs]
-    S    = Array{TFloat}(undef, 0, 0, 0, 0) # Sⁿ[ngl,ngl,nelem, neqs]
+    #F    = Array{TFloat}(undef, 0, 0, 0, 0) # Fⁿ[ngl,ngl,nelem, neqs]
+    #G    = Array{TFloat}(undef, 0, 0, 0, 0) # Gⁿ[ngl,ngl,nelem, neqs]
+    #H    = Array{TFloat}(undef, 0, 0, 0, 0) # Hⁿ[ngl,ngl,nelem, neqs]
+    #S    = Array{TFloat}(undef, 0, 0, 0, 0) # Sⁿ[ngl,ngl,nelem, neqs]
     neqs = UInt8(1)
     qvars= Array{String}(undef, neqs)
 end
@@ -38,7 +38,7 @@ function allocate_post_process_vars(nelem, npoin, ngl, TFloat; neqs)
     return qpost
 end
 
-function define_q(SD::NSD_1D, nelem, npoin, ngl, TFloat; neqs=1)
+function newdefine_q(SD::NSD_1D, nelem, npoin, ngl, TFloat; neqs=1)
 
     q = St_SolutionVars{TFloat}(neqs=neqs,
                                 qn   = zeros(npoin, neqs), # qn
@@ -52,7 +52,7 @@ function define_q(SD::NSD_1D, nelem, npoin, ngl, TFloat; neqs=1)
     return q
 end
 
-function define_q(SD::NSD_2D, nelem, npoin, ngl, TFloat; neqs=1)
+function newdefine_q(SD::NSD_2D, nelem, npoin, ngl, TFloat; neqs=1)
 
     q = St_SolutionVars{TFloat}(neqs=neqs,
                                 qn   = zeros(npoin, neqs), # qn
@@ -61,6 +61,19 @@ function define_q(SD::NSD_2D, nelem, npoin, ngl, TFloat; neqs=1)
                                 F    = zeros(ngl, ngl, nelem, neqs), # qⁿ
                                 G    = zeros(ngl, ngl, nelem, neqs), # qⁿ
                                 S    = zeros(ngl, ngl, nelem, neqs), # qⁿ
+                                qe   = zeros(npoin, neqs), # qexact
+                                μ    = zeros(nelem)) # μ
+    
+    return q
+end
+
+
+function define_q(SD, nelem, npoin, ngl, TFloat; neqs=1)
+
+    q = St_SolutionVars{TFloat}(neqs=neqs,
+                                qn   = zeros(npoin, neqs), # qn
+                                qnm1 = zeros(npoin, neqs), # qⁿ
+                                qnm2 = zeros(npoin, neqs), # qⁿ
                                 qe   = zeros(npoin, neqs), # qexact
                                 μ    = zeros(nelem)) # μ
     
