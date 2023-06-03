@@ -119,24 +119,33 @@ function mytest(n)
     return a, b
 end
 
-function mytest!(a::Array,b::Array)
+function mytest!(a::SubArray{Float64},b::SubArray{Float64}, T; neqs=3)
     n=length(a)
-    for i=1:n
-        a[i] = i
-        b[i] = i*2
-    end
     
+    a[1] = 1.0
+    b[1] = 2.0
+
+    a[2] = 1.0
+    b[2] = 2.0
+
+    a[3] = 1.0
+    b[3] = 2.0
+        
 end
 
-n = 100
-a = zeros(Int64, n)
-b = zeros(Int64, n)
-c = zeros(Int64, n)
-d = zeros(Int64, n)
-d,c = mytest(n)
-@info d
-@info c
-@btime  mytest!(a, b)
-@info a
-@info b
+n = 4
+a = zeros(Float64, n, n)
+b = zeros(Float64, n, n)
+av = zeros(Float64, n)
+bv = zeros(Float64, n)
+ 
+for iel=1:10
+    
+    for j=1:2, i=1:2
+
+        av.=@view(a[1,:])
+        bv.=@view(b[1,:])
+        @btime mytest!(av, bv, Float64; neqs=3)
+    end
+end
 
