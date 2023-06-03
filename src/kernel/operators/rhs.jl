@@ -23,7 +23,7 @@ include(user_source_dir)
 function rhs!(du, u, params, time)
     
     RHS = build_rhs(params.SD, params.QT, params.PT,
-                    u,
+                    $u,
                     params.neqs,
                     params.basis, params.ω,
                     params.mesh, params.metrics,
@@ -122,7 +122,7 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
     end
     
     for iel=1:mesh.nelem
-
+        
         #=for j=1:mesh.ngl, i=1:mesh.ngl
             ip = mesh.connijk[i,j,iel]
             
@@ -136,6 +136,7 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
             #    user_source!(Sv, qq[ip,1:neqs], mesh.npoin; neqs=neqs)
             #end
         end=#
+
         
         for ieq = 1:neqs
             for j=1:mesh.ngl, i=1:mesh.ngl
@@ -167,7 +168,8 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
 
                 dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                 dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
-                rhs_el[i,j,iel,ieq] -= ωJac*((dFdx + dGdy) )# - S[i,j,ieq]) #gravity
+
+                rhs_el[i,j,iel,ieq] -= ωJac*((dFdx + dGdy) )#- S[i,j,ieq]) #gravity
                 
             end
         end
@@ -221,7 +223,7 @@ end
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
     
-    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
+    RHS = _build_rhs(SD, QT, PT, $qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
     
     return RHS
     

@@ -1,4 +1,6 @@
 using BenchmarkTools
+using StaticArrays
+
 function barw_array( xnodes )
     n = length(xnodes)
     barw = Array{Float64}(undef,n)
@@ -149,3 +151,63 @@ for iel=1:10
     end
 end
 
+
+Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
+
+    a = Array{TFloat}(undef, 0, 0, 0)
+    b = Array{TFloat}(undef, 0, 0, 0)
+    c = Array{TFloat}(undef, 0, 0, 0)
+    d = Array{TFloat}(undef, 0, 0, 0)
+    
+end
+
+function define_q(nvar, nx)
+    
+    q = St_SolutionVars{Float64}(a = zeros(nx,nx, nvar),
+                                 b = zeros(nx,nx, nvar),
+                                 c = zeros(nx,nx, nvar),
+                                 d = zeros(nx,nx, nvar))
+    return q
+end
+
+function user_flux!(d,a0,b0,c0, i, nvar)
+    #for n=1:nvar
+    #d[i,i,n] = (a0[i,i,n])#+b0[i-1,i-1,n]) # + 129.0*(c0[i,i,n]*b0[i+1,i+1,n]) + 300.0*(a0[i-1,i-1,n]*c0[i+1,i+1,n])
+    d[i,i,1] = 1.0#(a0[n])#+b0[i-1,i-1,n]) # + 129.0*(c0[i,i,n]*b0[i+1,i+1,n]) + 300.0*(a0[i-1,i-1,n]*c0[i+1,i+1,n])
+    d[i,i,2] = 1.0#(a0[n])#+b0[i-1,i-1,n]) # + 129.0*(c0[i,i,n]*b0[i+1,i+1,n]) + 300.0*(a0[i-1,i-1,n]*c0[i+1,i+1,n])
+    d[i,i,3] = 1.0#(a0[n])#+b0[i-1,i-1,n]) # + 129.0*(c0[i,i,n]*b0[i+1,i+1,n]) + 300.0*(a0[i-1,i-1,n]*c0[i+1,i+1,n])
+    d[i,i,nvar] = 1.0#(a0[n])#+b0[i-1,i-1,n]) # + 129.0*(c0[i,i,n]*b0[i+1,i+1,n]) + 300.0*(a0[i-1,i-1,n]*c0[i+1,i+1,n])
+    #d[i,i,n] *= 5
+    #end
+end
+
+function _build_rhs(a, b, c, d, e, nx, nvar)   
+    
+    for i=2:nx-1
+        user_flux!(d, a, b, c, i, nvar)
+        #@info "first"
+        #@info d[2,2,end]
+    end
+    
+    #=for ieq = 1:nvar
+        for j=1:nx, i=1:nx
+            dFdξ = 0.0
+            for k = 1:nx
+                dFdξ += d[k,j,ieq]
+            end
+        end
+    end=#
+    
+    #for i=2:nx-1
+    #@info "second"
+    #@info d[i,i,end]
+    #end
+    #@info "dFdξ" dFdξ
+end
+
+nx = 5
+nvar = 4
+#q=define_q(nvar, nx)
+a,b,c,d, e = [rand(nx, nx, nvar) for _=1:5]
+#@btime _build_rhs($q.a,$q.b,$q.c,$q.d,$nx,$nvar)
+@btime _build_rhs($a,$b,$c,$d,$e,$nx,$nvar)
