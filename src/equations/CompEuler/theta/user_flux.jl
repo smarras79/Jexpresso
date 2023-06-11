@@ -43,14 +43,14 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::S
     perfectGasLaw_ρθtoP!(Press, PhysConst, ρ=ρ, θ=θ)
     
     F[1] = ρu
-    F[2] = ρu*ρu/ρ + Press
-    F[3] = ρu*ρv/ρ
-    F[4] = ρu*ρθ/ρ
+    F[2] = ρu*u + Press
+    F[3] = ρv*u
+    F[4] = ρθ*u
 
     F[1] = ρv
-    F[2] = ρv*ρu/ρ
-    F[3] = ρv*ρv/ρ + Press
-    F[4] = ρv*ρθ/ρ
+    F[2] = ρu*v
+    F[3] = ρv*v + Press
+    F[4] = ρθ*v
     
 end
 

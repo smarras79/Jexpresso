@@ -120,16 +120,11 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
     for iel=1:mesh.nelem
         for j=1:mesh.ngl, i=1:mesh.ngl
             ip = mesh.connijk[i,j,iel]
-
-             F[i,j,1:neqs], G[i,j,1:neqs] = user_flux(SD, qq[ip,1:neqs], mesh; neqs=neqs)
+            
+            user_flux!(@view(F[i,j,:]), @view(G[i,j,:]), SD, @view(qq[mesh.connijk[i,j,iel],:]), mesh; neqs=neqs)
             if (lsource == true)
-                S[i,j,1:neqs] = user_source(qq[ip,1:neqs], mesh.npoin; neqs=neqs)
+                user_source!(@view(S[i,j,:]), @view(qq[mesh.connijk[i,j,iel],:]), mesh.npoin; neqs=neqs)
             end
-            #user_flux!(@view(F[i,j,:]), @view(G[i,j,:]), SD, @view(qq[mesh.connijk[i,j,iel],:]), mesh; neqs=neqs)
-            #
-            #if (lsource == true)
-            #    user_source!(@view(S[i,j,:]), @view(qq[mesh.connijk[i,j,iel],:]), mesh.npoin; neqs=neqs)
-            #end
         end
         
         for ieq = 1:neqs
