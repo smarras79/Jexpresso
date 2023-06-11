@@ -27,8 +27,8 @@ function user_flux(SD::NSD_2D, q::Array, mesh::St_mesh; neqs=4)
     return F, G
 end
 
-
 function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::SubArray{Float64}, mesh::St_mesh; neqs=4)
+    
     PhysConst = PhysicalConst{Float64}()
     
     ρ  = q[1]
@@ -41,16 +41,16 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::S
 
     Press = 0.0   
     perfectGasLaw_ρθtoP!(Press, PhysConst, ρ=ρ, θ=θ)
-    
+        
     F[1] = ρu
     F[2] = ρu*u + Press
     F[3] = ρv*u
     F[4] = ρθ*u
 
-    F[1] = ρv
-    F[2] = ρu*v
-    F[3] = ρv*v + Press
-    F[4] = ρθ*v
+    G[1] = ρv
+    G[2] = ρu*v
+    G[3] = ρv*v + Press
+    G[4] = ρθ*v
     
 end
 

@@ -12,7 +12,6 @@ using ElasticArrays
 using StaticArrays
 using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
 using DiffEqBase
-using LoopVectorization
 using OrdinaryDiffEq
 using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
 using SnoopCompile
