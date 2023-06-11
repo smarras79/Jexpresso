@@ -104,8 +104,6 @@ end
 function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
                     mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1)) #, F=zeros(Float64,1,1,1), G=zeros(Float64,1,1,1), S=zeros(Float64,1,1,1))
 
-    lsource = inputs[:lsource]
-
     F      = zeros(T, mesh.ngl, mesh.ngl, neqs)
     G      = zeros(T, mesh.ngl, mesh.ngl, neqs)
     S      = zeros(T, mesh.ngl, mesh.ngl, neqs)
@@ -121,17 +119,20 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
         for j=1:mesh.ngl, i=1:mesh.ngl
             ip = mesh.connijk[i,j,iel]
             
-            user_flux!(@view(F[i,j,:]), @view(G[i,j,:]), SD, @view(qq[mesh.connijk[i,j,iel],:]), mesh; neqs=neqs)
-            if (lsource == true)
-                user_source!(@view(S[i,j,:]), @view(qq[mesh.connijk[i,j,iel],:]), mesh.npoin; neqs=neqs)
-            end
+            user_flux!(@view(F[i,j,1:neqs]), @view(G[i,j,1:neqs]), SD, @view(qq[ip,1:neqs]), mesh; neqs=neqs)
+            #if (inputs[:lsource] == true)
+            #    user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs)
+            #end
         end
         
         for ieq = 1:neqs
             for j=1:mesh.ngl, i=1:mesh.ngl
                 ωJac = ω[i]*ω[j]*metrics.Je[i,j,iel]
 
-                dFdξ, dFdη, dGdξ, dGdη = 0.0, 0.0, 0.0, 0.0
+                dFdξ = 0.0
+                dFdη = 0.0
+                dGdξ = 0.0
+                dGdη = 0.0
                 for k = 1:mesh.ngl
                     dFdξ += basis.dψ[k,i]*F[k,j,ieq]
                     dFdη += basis.dψ[k,j]*F[i,k,ieq]
@@ -143,7 +144,7 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
                 dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                 dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
 
-                rhs_el[i,j,iel,ieq] -= ωJac*(dFdx + dGdy - S[i,j,ieq]) #gravity
+                rhs_el[i,j,iel,ieq] -= ωJac*(dFdx + dGdy)# - S[i,j,ieq]) #gravity
             end
         end        
     end
