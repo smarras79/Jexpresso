@@ -1,5 +1,6 @@
 using BenchmarkTools
 using StaticArrays
+using LoopVectorization
 
 function barw_array( xnodes )
     n = length(xnodes)
@@ -147,7 +148,7 @@ for iel=1:10
 
         av.=@view(a[1,:])
         bv.=@view(b[1,:])
-        @btime mytest!(av, bv, Float64; neqs=3)
+        #@btime mytest!(av, bv, Float64; neqs=3)
     end
 end
 
@@ -204,10 +205,40 @@ function _build_rhs(a, b, c, d, e, nx, nvar)
     #end
     #@info "dFdξ" dFdξ
 end
-
+#=
 nx = 5
 nvar = 4
 #q=define_q(nvar, nx)
 a,b,c,d, e = [rand(nx, nx, nvar) for _=1:5]
 #@btime _build_rhs($q.a,$q.b,$q.c,$q.d,$nx,$nvar)
 @btime _build_rhs($a,$b,$c,$d,$e,$nx,$nvar)
+=#
+
+
+f(a, b, cv)    = a./b   .+ cv
+fv(av, bv, cv) = av.*bv .+ cv
+function apply_f!(av, x1, x2, x3, p)
+    for i ∈ 1:1000
+        #a1 = f([x1, x2, x3], x1)
+        av = fv([x1, x2, x3], [x1, x1, x1], [0.0, p, 0.0])
+    end
+end
+
+function apply_f_SA!(av, x1, x2, x3, p)
+    for i ∈ 1:1000
+        #a1 = f(SA[x1, x2, x3], x1)
+        av = fv(SA[x1, x2, x3], SA[x1, x1, x1], SA[0.0, p, 0.0])
+    end
+    
+end
+
+#a=[1.0, 1.0, 1.0];
+#a=1.0
+#b=[1.0, 1.0, 1.0]
+
+#@info "non optimal"
+#av = @MVector zeros(3)
+#@btime  apply_f(av, 2.0, 2.0, 2.0, 5.0)
+#@info "optimal"
+#@btime apply_f_SA(av, 2.0, 2.0, 2.0, 5.0)
+

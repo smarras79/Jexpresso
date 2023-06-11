@@ -23,7 +23,7 @@ include(user_source_dir)
 function rhs!(du, u, params, time)
     
     RHS = build_rhs(params.SD, params.QT, params.PT,
-                    $u,
+                    u,
                     params.neqs,
                     params.basis, params.ω,
                     params.mesh, params.metrics,
@@ -109,12 +109,8 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
     F      = zeros(T, mesh.ngl, mesh.ngl, neqs)
     G      = zeros(T, mesh.ngl, mesh.ngl, neqs)
     S      = zeros(T, mesh.ngl, mesh.ngl, neqs)
-    Fv     = zeros(T, neqs)
-    Gv     = zeros(T, neqs)
-    Sv     = zeros(T, neqs)
-    qv     = zeros(T, neqs)
-    
     rhs_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, neqs)
+
     qq = zeros(T, mesh.npoin,neqs)
     for i=1:neqs
         idx = (i-1)*mesh.npoin
@@ -122,57 +118,39 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
     end
     
     for iel=1:mesh.nelem
-        
-        #=for j=1:mesh.ngl, i=1:mesh.ngl
+        for j=1:mesh.ngl, i=1:mesh.ngl
             ip = mesh.connijk[i,j,iel]
-            
-            Fv.=@view(F[i,j,:])
-            Gv.=@view(G[i,j,:])
-            user_flux!(Fv, Gv, SD, qq[ip,1:neqs], mesh; neqs=neqs)
-            F[i,j,:] .= Fv[:]
-            G[i,j,:] .= Gv[:]
-            #if (lsource == true)
-            #    Sv.=@view(S[i,j,:])
-            #    user_source!(Sv, qq[ip,1:neqs], mesh.npoin; neqs=neqs)
-            #end
-        end=#
 
+             F[i,j,1:neqs], G[i,j,1:neqs] = user_flux(SD, qq[ip,1:neqs], mesh; neqs=neqs)
+            if (lsource == true)
+                S[i,j,1:neqs] = user_source(qq[ip,1:neqs], mesh.npoin; neqs=neqs)
+            end
+            #user_flux!(@view(F[i,j,:]), @view(G[i,j,:]), SD, @view(qq[mesh.connijk[i,j,iel],:]), mesh; neqs=neqs)
+            #
+            #if (lsource == true)
+            #    user_source!(@view(S[i,j,:]), @view(qq[mesh.connijk[i,j,iel],:]), mesh.npoin; neqs=neqs)
+            #end
+        end
         
         for ieq = 1:neqs
             for j=1:mesh.ngl, i=1:mesh.ngl
                 ωJac = ω[i]*ω[j]*metrics.Je[i,j,iel]
-                
-                dFdξ = 0.0
-                dFdη = 0.0
-                dGdξ = 0.0
-                dGdη = 0.0
+
+                dFdξ, dFdη, dGdξ, dGdη = 0.0, 0.0, 0.0, 0.0
                 for k = 1:mesh.ngl
-
-                    #ip = mesh.connijk[k,j,iel]
+                    dFdξ += basis.dψ[k,i]*F[k,j,ieq]
+                    dFdη += basis.dψ[k,j]*F[i,k,ieq]
                     
-                    Fv.=@view(F[k,j,:])
-                    Gv.=@view(G[k,j,:])
-                    qv.=@view(q[ip,:])
-                    user_flux!(Fv, Gv, SD, qv[1:neqs], mesh; neqs=neqs)
-                    
-                    dFdξ += basis.dψ[k,i]*Fv[ieq]#*F[k,j,ieq]
-                    dGdξ += basis.dψ[k,i]*Gv[ieq]#*G[k,j,ieq]
-
-                    #ip = mesh.connijk[i,k,iel]
-                    Fv.=@view(F[i,k,:])
-                    Gv.=@view(G[i,k,:])
-                    user_flux!(Fv, Gv, SD, qq[mesh.connijk[i,k,iel],1:neqs], mesh; neqs=neqs)
-                    dFdη += basis.dψ[k,j]*Fv[ieq]#*F[i,k,ieq]
-                    dGdη += basis.dψ[k,j]*Gv[ieq]#*G[i,k,ieq]
+                    dGdξ += basis.dψ[k,i]*G[k,j,ieq]
+                    dGdη += basis.dψ[k,j]*G[i,k,ieq]
                 end
 
                 dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                 dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
 
-                rhs_el[i,j,iel,ieq] -= ωJac*((dFdx + dGdy) )#- S[i,j,ieq]) #gravity
-                
+                rhs_el[i,j,iel,ieq] -= ωJac*(dFdx + dGdy - S[i,j,ieq]) #gravity
             end
-        end
+        end        
     end
     
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
@@ -223,7 +201,7 @@ end
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
     
-    RHS = _build_rhs(SD, QT, PT, $qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
+    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
     
     return RHS
     
