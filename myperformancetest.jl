@@ -1,5 +1,6 @@
 using BenchmarkTools
 using StaticArrays
+using LinearAlgebra: dot
 
 function barw_array( xnodes )
     n = length(xnodes)
@@ -147,7 +148,7 @@ for iel=1:10
 
         av.=@view(a[1,:])
         bv.=@view(b[1,:])
-        @btime mytest!(av, bv, Float64; neqs=3)
+        #@btime mytest!(av, bv, Float64; neqs=3)
     end
 end
 
@@ -182,21 +183,26 @@ function user_flux!(d,a0,b0,c0, i, nvar)
 end
 
 function _build_rhs(a, b, c, d, e, nx, nvar)   
+
     
-    for i=2:nx-1
+    for iel=1:10, j=2:nx-1, i=2:nx-1
+        
         user_flux!(d, a, b, c, i, nvar)
         #@info "first"
         #@info d[2,2,end]
     end
-    
-    #=for ieq = 1:nvar
+   
+    for ieq = 1:nvar
         for j=1:nx, i=1:nx
             dFdξ = 0.0
-            for k = 1:nx
-                dFdξ += d[k,j,ieq]
-            end
+
+            #dot(d[:,j,end], d[:,j,ieq])
+            #@simd for k = 1:nx
+            #    dFdξ += d[k,j,end]*d[k,j,ieq]
+            #    #@info d[2,2,end]
+            #end
         end
-    end=#
+    end
     
     #for i=2:nx-1
     #@info "second"
@@ -208,6 +214,23 @@ end
 nx = 5
 nvar = 4
 #q=define_q(nvar, nx)
+@info "ciao"
 a,b,c,d, e = [rand(nx, nx, nvar) for _=1:5]
 #@btime _build_rhs($q.a,$q.b,$q.c,$q.d,$nx,$nvar)
 @btime _build_rhs($a,$b,$c,$d,$e,$nx,$nvar)
+
+
+#info dot vs mydot
+@info "dot product"
+aa=ones(10)
+@btime dot(aa[:], aa[:])
+
+function mydot!(mydot, aa)
+    @simd for k = 1:length(aa)
+        mydot += aa[k]*aa[k]
+    end
+    #return mydot
+end
+s=0.0
+@btime mydot!(s, aa)
+
