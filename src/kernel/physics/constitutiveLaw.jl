@@ -20,11 +20,10 @@ function perfectGasLaw_ρθtoP(PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
 
 end
 
-
-function perfectGasLaw_ρθtoP!(Press, PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
+function perfectGasLaw_ρθtoP!(Press::Array{Float64}, PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
     
-    Press = PhysConst.C0*(ρ*θ)^PhysConst.γ #Press
-
+    Press[1] = PhysConst.C0*(ρ*θ)^PhysConst.γ #Press
+    
 end
 
 function perfectGasLaw_ρPtoθ(PhysConst::PhysicalConst; ρ=1.25, Press=100000.0)
