@@ -403,6 +403,10 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         @error s
     end
 
+    if(!haskey(inputs, :lperiodic1d))
+        inputs[:lperiodic1d] = false
+    end
+    
     if(!haskey(inputs, :case))
         inputs[:case] = ""
     else

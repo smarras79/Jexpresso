@@ -8,7 +8,6 @@ function user_inputs()
         :tend                 => 1.5,
         :Δt                   => 1.0e-3,
         :ndiagnostics_outputs => 15, #these are steps, not seconds
-        #:output_dir          => "/Users/simone/runs/",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -17,6 +16,7 @@ function user_inputs()
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         :luser_bc            => true,
+        :lsource             => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -39,8 +39,9 @@ function user_inputs()
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
         :xmin          =>   0.0,
-        :xmax          =>   1.0,
-        :nelx          =>   25,        
+        :xmax          =>   2.0,
+        :nelx          =>   50,
+        #:lperiodic1d   => true,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
