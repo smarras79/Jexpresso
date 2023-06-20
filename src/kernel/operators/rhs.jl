@@ -61,7 +61,7 @@ function _build_rhs(SD::NSD_1D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
             ip = mesh.conn[i,iel]
             user_flux!(@view(F[i,iel,1:neqs]), T, SD, @view(qq[ip,1:neqs]), mesh; neqs=neqs)
             if (inputs[:lsource] == true)
-                user_source!(@view(S[i,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin;
+                user_source!(@view(S[i,iel,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin;
                              neqs=neqs, x=mesh.x[ip], xmin=mesh.xmin, xmax=mesh.xmax, ngl=mesh.ngl, nelx=mesh.nelem)
             end
         end       
