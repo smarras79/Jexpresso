@@ -28,7 +28,7 @@ function rhs!(du, u, params, time)
                             time,
                             params.inputs, params.Δt, params.deps, params.T;
                             qnm1=params.qnm1, qnm2=params.qnm2)
-            RHS_lag = build_rhs_laguerre(params.SD, params.QT, params.PT,
+            RHS_lag = build_rhs(params.SD, params.QT, params.PT,
                                      u,
                                      params.neqs,
                                      params.basis[1], params.basis[2], params.ω[1], params.ω[2], 
@@ -168,7 +168,7 @@ function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis,
         for j=1:mesh.ngl, i=1:mesh.ngl
             ip = mesh.connijk[i,j,iel]
             
-            F[i,j,iel,1:neqs], G[i,j,iel,1:neqs] = user_flux(T, SD, qp[ip,1:neqs], mesh; neqs=neqs)
+            F[i,j,iel,1:neqs], G[i,j,iel,1:neqs] = user_flux(T, SD, qp[ip,1:neqs], mesh; neqs=neqs,ip)
         end
 
         for ieq = 1:neqs
