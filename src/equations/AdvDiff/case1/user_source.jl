@@ -2,16 +2,18 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, npoin; neqs=1,
     
     #
     # clateral
-    nsponge_points = 12
+    nsponge_points = 30
     
     # distance from the boundary. xs in Restelli's thesis
     dsx = (xmax - xmin)/(nelx*(ngl - 1)) # equivalent grid spacing
     dbl = min(x - xmin, xmax - x)
-    
-    beta_coe =  1.0 - tanh(dbl/(nsponge_points * dsx))
+    if (dbl <= nsponge_points * dsx)    
+      beta_coe =  1.0 - tanh(dbl/(nsponge_points * dsx))
+    else
+      beta_coe = 0.0
+    end
     cside= beta_coe
     
     #@info "β x: " beta_coe x
-    S .= -(1.0 - cside).*q
-    
+    S .-= 24 .*(cside).*q
 end

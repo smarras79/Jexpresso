@@ -64,15 +64,14 @@ function _build_rhs(SD::NSD_1D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
                 user_source!(@view(S[i,iel,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin;
                              neqs=neqs, x=mesh.x[ip], xmin=mesh.xmin, xmax=mesh.xmax, ngl=mesh.ngl, nelx=mesh.nelem)
             end
-        end       
-        
+        end               
         for ieq = 1:neqs
             for i=1:mesh.ngl
                 dFdξ = 0.0
                 for k = 1:mesh.ngl
                     dFdξ += basis.dψ[k,i]*F[k,iel,ieq]*dξdx 
                 end
-                rhs_el[i,iel,ieq] -= ω[i]*mesh.Δx[iel]/2*dFdξ - ω[i]*mesh.Δx[iel]/2*dFdξ*S[i,ieq]
+                rhs_el[i,iel,ieq] -= ω[i]*mesh.Δx[iel]/2*dFdξ - ω[i]*mesh.Δx[iel]/2*S[i,iel,ieq]
             end
         end
     end
