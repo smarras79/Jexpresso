@@ -1,48 +1,11 @@
-function user_flux(T, SD::NSD_1D, q::Array, mesh::St_mesh)
-    #
-    # F(q(x)) = 0.8*q
-    #
-    F = zeros(T, mesh.npoin)
-    
-    F .= 1.0*q[:,1]
-    
-    return F
-    
-end
+function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh; neqs=1,ip)
 
-function user_flux(T, SD::NSD_2D, q::Array, mesh::St_mesh)
-    #
-     #F(q(x)) = 0.8*q
-     #G(q(x)) = 0.8*q
-    #
-    F = zeros(T, mesh.npoin) 
-    G = zeros(T, mesh.npoin)
+    F = @MVector zeros(T, neqs)
+    G = @MVector zeros(T, neqs)
     
-   # F .= 0.8*q[:,1]
-    #G .= 0.8*q[:,1]
-
-    for ip=1:mesh.npoin
-        x = mesh.x[ip]
-        y = mesh.y[ip]
-        #x = y = 0.8
-        
-        F[ip] = 0.0#0.8*q[ip,1]
-        G[ip] = 0.4*q[ip,1]
-    end
+    prof = exp(-8.0*(mesh.x[ip])^2)
+    F[1] = prof*0.5*q[1]
+    G[1] = 0.0#0.8*q[1]
+    
     return F, G
-end
-
-function user_flux(T, SD::NSD_3D, q::Array, mesh::St_mesh)
-
-    #
-    # F(q(x)) = 0.8*q
-    # G(q(x)) = 0.8*q
-    # H(q(x)) = 0.0
-    #
-    F = G = H = zeros(T, npoin)
-    
-    F .= 0.8*q[:,1]
-    G .= 0.8*q[:,1]
-    
-    return F, G, H
 end

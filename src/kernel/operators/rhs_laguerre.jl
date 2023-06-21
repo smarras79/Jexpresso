@@ -1,19 +1,17 @@
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis1, basis2, ω1, ω2, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis1, basis2, ω1, ω2, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
 
     F      = zeros(mesh.ngl, mesh.ngr, mesh.nelem)
     G      = zeros(mesh.ngl, mesh.ngr, mesh.nelem)
     rhs_el = zeros(mesh.ngl, mesh.ngr, mesh.nelem)
 
     #B.C.
-    Fuser, Guser = user_flux(T, SD, qp, mesh)
 
     for iel=1:mesh.nelem_semi_inf
         for i=1:mesh.ngl
             for j=1:mesh.ngr
                 ip = mesh.connijk_lag[i,j,iel]
 
-                F[i,j,iel] = Fuser[ip]
-                G[i,j,iel] = Guser[ip]
+                F[i,j,iel,1:neqs], G[i,j,iel,1:neqs] = user_flux(T, SD, qp[ip,1:neqs], mesh; neqs=neqs,ip)
             end
         end
     end

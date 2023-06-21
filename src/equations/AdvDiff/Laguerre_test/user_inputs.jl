@@ -17,6 +17,7 @@ function user_inputs()
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         :luser_bc            => true,
+        #:lvisc               => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
