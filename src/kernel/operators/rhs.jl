@@ -71,7 +71,7 @@ function _build_rhs(SD::NSD_1D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
                 for k = 1:mesh.ngl
                     dFdξ += basis.dψ[k,i]*F[k,ieq]*dξdx 
                 end
-                rhs_el[i,iel,ieq] -= ω[i]*mesh.Δx[iel]/2*dFdξ - ω[i]*mesh.Δx[iel]/2*S[i,iel,ieq]
+                rhs_el[i,iel,ieq] -= ω[i]*mesh.Δx[iel]/2*dFdξ - ω[i]*mesh.Δx[iel]/2*S[i,ieq]
             end
         end
     end
