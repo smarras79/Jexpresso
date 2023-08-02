@@ -663,14 +663,39 @@ end
 
 function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, nop::TInt,scale)
     Pp1 = nop+1
-    LaguerreAndDerivative!(nop+1,Laguerre)
-    xgr =  Polynomials.roots(Laguerre.dLaguerre)  
-    gr.ξ[1] = 0.0
-    for i=0:nop-1
-      gr.ξ[i+2] = xgr[i+1]
+    n = zeros(nop,1)
+    bn = zeros(nop)
+    an = zeros(nop+1)
+    filler = zeros(nop+1)
+    for i = 1:nop
+       n[i] = i
+       bn[i] = i
     end
-   
-
+    an .= 2.*n + 1
+    an[nop+1] = nop
+    J = zeros(nop+1,nop+1)
+    J .= diagm(an) .+ Bidiagonal(filler,bn,:U) .+ Bidiagonal(filler,bn,:L)
+    xi = eigen(J)
+    gr.ξ = xi
+ 
+    ngr = length(xgr)
+    thresh = 1e-10
+    
+    for k=1:ngr
+      x0 = gr.ξ[k]
+      diff1 = 1.0
+      while(diff1 > thresh)
+          LaguerreAndDerivative!(nop+1,Laguerre)
+          L1 = Laguerre.Laguerre
+          LaguerreAndDerivative!(nop,Laguerre)
+          L2 = Laguerre.Laguerre
+          x1 = x0 + (L1(x0) - L2(x0))/L2(x0)
+          diff1 = abs(x1 -x0)
+          x0 = x1
+      end
+      gr.ξ(k) = x1
+    end
+    gr.ξ(1) = 0 
 
     LaguerreAndDerivative!(nop,Laguerre)
     Lkx = zeros(nop+1,1)
@@ -712,8 +737,8 @@ end
 function scaled_laguerre(x,n)
     Laguerre = St_Laguerre(Polynomial(2.0),Polynomial(2.0))
     LaguerreAndDerivative!(n,Laguerre)
-    Lkx = Laguerre.Laguerre(x)
-#Lkx = real(laguerreL(n,x))
+    #Lkx = Laguerre.Laguerre(x)
+    Lkx = Real(Laguerre.Laguerre(x))
     y = exp(-x/2)*Lkx
     return y
 end 
