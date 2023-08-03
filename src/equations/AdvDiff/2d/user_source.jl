@@ -1,14 +1,9 @@
-function user_source(T, q::Array, npoin::Int64, x::Array)
-
-    S = zeros(T, npoin)
+function user_source!(S, T, q::Array, npoin::Int64; neqs=1, x=0.0)
     
     #
-    # S(q(x)) = βsin(γx)
+    # S(q(x)) = 0.0
     #
-    β, γ = 10000, π;
 
-    S = β*sin.(γ*x)
-    
-    return  S
+    S[1] = 0.0
     
 end

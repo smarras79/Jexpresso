@@ -8,6 +8,8 @@ using Parameters
     cv::T   =  718.0 #J/kg.K
     γair::T = cp/cv
     γ::T    = cp/cv
+    Pr::T   = 0.7
+    Prnum::T= 0.1
     pref::T = 100000.0 #Pa
     Rovercv = Rair/cv
     cpoverR = cp/Rair

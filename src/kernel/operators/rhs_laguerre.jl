@@ -1,114 +1,162 @@
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis1, basis2, ω1, ω2, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(1,1), qnm2=zeros(1,1))
-
-    F      = zeros(mesh.ngl, mesh.ngr, mesh.nelem)
-    G      = zeros(mesh.ngl, mesh.ngr, mesh.nelem)
-    rhs_el = zeros(mesh.ngl, mesh.ngr, mesh.nelem)
-
-    #B.C.
-
-    for iel=1:mesh.nelem_semi_inf
-        for i=1:mesh.ngl
-            for j=1:mesh.ngr
-                ip = mesh.connijk_lag[i,j,iel]
-
-                F[i,j,iel,1:neqs], G[i,j,iel,1:neqs] = user_flux(T, SD, qp[ip,1:neqs], mesh; neqs=neqs,ip)
-            end
-        end
-    end
-
-   # for ieq = 1:neqs
-        for iel=1:mesh.nelem_semi_inf
-            for i=1:mesh.ngl
-                for j=1:mesh.ngr
-
-                    dFdξ = 0.0
-                    dFdη = 0.0
-                    dGdξ = 0.0
-                    dGdη = 0.0
-                    for k = 1:mesh.ngl
-                        dFdξ = dFdξ + basis1.dψ[k, i]*F[k,j,iel]
-
-                        dGdξ = dGdξ + basis1.dψ[k, i]*G[k,j,iel]
-                    end
-                    for k = 1:mesh.ngr
-                        dFdη = dFdη + basis2.dψ[k, j]*F[i,k,iel]
-
-                        dGdη = dGdη + basis2.dψ[k, j]*G[i,k,iel]
-                    end
-                    dFdx = dFdξ*metrics2.dξdx[i,j,iel] + dFdη*metrics2.dηdx[i,j,iel]
-                    dGdy = dGdξ*metrics2.dξdy[i,j,iel] + dGdη*metrics2.dηdy[i,j,iel]
-                    rhs_el[i, j, iel] -= ω1[i]*ω2[j]*metrics2.Je[i,j,iel]*(dFdx + dGdy)
-                end
-            end
-        end
-    #end
-    #show(stdout, "text/plain", el_matrices.D)
-
-    #Build rhs_el(diffusion)
-    rhs_diff_el = build_rhs_diff(SD, QT, PT, qp,  neqs, basis1, basis2, ω1, ω2, inputs[:νx], inputs[:νy], mesh, metrics1, metrics2, T)
-
-
-    #DSS(rhs_el)
-    RHS = DSS_rhs_laguerre(SD, rhs_el + rhs_diff_el, mesh, neqs, T)
-    divive_by_mass_matrix!(RHS, M, QT,neqs)
-
+include("rhs_laguerre_diff.jl")
+function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis1, basis2, ω1, ω2
+                    mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
     
-    return RHS
+    F      = zeros(mesh.ngl,mesh.ngl, neqs)
+    G      = zeros(mesh.ngl,mesh.ngl, neqs)
+    S      = zeros(mesh.ngl,mesh.ngl, neqs)
+    rhs_el = zeros(mesh.ngl,mesh.ngl, mesh.nelem, neqs)
+    qq     = zeros(mesh.npoin,neqs)   
+    
+    #ωJe = zeros(mesh.ngl,mesh.ngl)
+    
+    for i=1:neqs
+        idx = (i-1)*mesh.npoin
+        qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
+    end
+    ωJe = zeros(mesh.ngl,mesh.ngl)
+    
+    
+    F      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem_semi_inf, neqs)
+    G      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem_semi_inf, neqs)
+    rhs_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem_semi_inf, neqs)
 
-end
-
-function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis1, basis2, ω1, ω2, νx, νy, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, T)
-
-    N = mesh.ngl - 1
-
-    qnel = zeros(mesh.ngl,mesh.ngr,mesh.nelem)
-
-    rhsdiffξ_el = zeros(mesh.ngl,mesh.ngr,mesh.nelem)
-    rhsdiffη_el = zeros(mesh.ngl,mesh.ngr,mesh.nelem)
-
-    #
-    # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
-    #
+   
     for iel=1:mesh.nelem_semi_inf
 
         for j=1:mesh.ngr, i=1:mesh.ngl
-            m = mesh.connijk_lag[i,j,iel]
-            qnel[i,j,iel,1] = qp[m,1]
+            ip = mesh.connijk_lag[i,j,iel]
+
+            user_flux!(@view(F[i,j,1:neqs]), @view(G[i,j,1:neqs]), SD, @view(qq[ip,1:neqs]), mesh; neqs=neqs)
+            if (inputs[:lsource] == true)
+                user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs)
+            end
         end
+        ωJe[:,:] .= @view(metrics.ωJe[:,:,iel])
+        
+        for ieq = 1:neqs
+           
+            for j=1:mesh.ngr, i=1:mesh.ngl
+                
+                dFdξ = 0.0
+                dFdη = 0.0
+                dGdξ = 0.0
+                dGdη = 0.0
+                for k = 1:mesh.ngl
+                    dFdξ += basis2.dψ[k,i]*F[k,j,ieq]
+                    dFdη += basis2.dψ[k,j]*F[i,k,ieq]
+                    
+                    dGdξ += basis1.dψ[k,i]*G[k,j,ieq]
+                    dGdη += basis1.dψ[k,j]*G[i,k,ieq]
+                end
 
-        for k = 1:mesh.ngl, l = 1:mesh.ngr
-            ωJkl = ω1[k]*ω2[l]*metrics2.Je[k, l, iel]
-
-            dqdξ = 0.0
-            dqdη = 0.0
-            for i = 1:mesh.ngl
-                dqdξ = dqdξ + basis1.dψ[i,k]*qnel[i,l,iel]
-            end
-            for i = 1:mesh.ngr
-                dqdη = dqdη + basis2.dψ[i,l]*qnel[k,i,iel]
-            end
-            dqdx = dqdξ*metrics2.dξdx[k,l,iel] + dqdη*metrics2.dηdx[k,l,iel]
-            dqdy = dqdξ*metrics2.dξdy[k,l,iel] + dqdη*metrics2.dηdy[k,l,iel]
-            dqdx *= νx
-            dqdy *= νy
-            ∇ξ∇q_kl = metrics2.dξdx[k,l,iel]*dqdx + metrics2.dξdy[k,l,iel]*dqdy
-            ∇η∇q_kl = metrics2.dηdx[k,l,iel]*dqdx + metrics2.dηdy[k,l,iel]*dqdy
-
-            for i = 1:mesh.ngl
-                hll,     hkk     =  basis2.ψ[l,l],  basis1.ψ[k,k]
-                dhdξ_ik = basis1.dψ[i,k]
-
-                rhsdiffξ_el[i,l,iel] -= ωJkl*dhdξ_ik*hll*∇ξ∇q_kl
-            end
-            for i = 1:mesh.ngr
-                hll,     hkk     =  basis2.ψ[l,l],  basis1.ψ[k,k]
-                dhdη_il = basis2.dψ[i,l]
-
-                rhsdiffη_el[k,i,iel] -= ωJkl*hkk*dhdη_il*∇η∇q_kl
+                dFdx = dFdξ*metrics2.dξdx[i,j,iel] + dFdη*metrics2.dηdx[i,j,iel]
+                dGdy = dGdξ*metrics2.dξdy[i,j,iel] + dGdη*metrics2.dηdy[i,j,iel]
+                rhs_el[i,j,iel,ieq] -= ωJe[i,j]*(dFdx + dGdy)  - ωJe[i,j]*S[i,j,ieq] #gravity
+                
             end
         end
     end
+    
+    
+    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
+    RHS = DSS_rhs_laguerre(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
 
-    return (rhsdiffξ_el*νx + rhsdiffη_el*νy)
+    for i=1:neqs
+        idx = (i-1)*mesh.npoin
+        qp[idx+1:i*mesh.npoin] .= qq[:,i]
+    end
+    
+    if (inputs[:lvisc] == true)
+        
+        if (lowercase(inputs[:visc_model]) === "dsgs")
+            
+            if (rem(time, Δt) == 0 && time > 0.0)
+                qnm1 .= qnm2
+                qnm2 .= qq
+            end
+            
+            compute_viscosity!(μ, SD, PT, qq, qnm1, qnm2, RHS, Δt, mesh, metrics, T)
+        else
+            μ[:] .= inputs[:νx]
+        end
+        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis1, basis2, ω1, ω2, inputs, mesh, metrics1, metrics2, μ, T;)
+        RHS .= RHS .+ DSS_rhs_laguerre(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    end
+    
+    divive_by_mass_matrix!(RHS, M, QT,neqs)
+    
+    return RHS
+end
 
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+# CompEuler:
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+#
+# Optimized (more coud possibly be done)
+#
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis1, basis2, ω1, ω2,
+                   mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+    
+    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis1, basis2, ω1, ω2, mesh, metrics1, metrics2, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
+    
+    return RHS
+    
+end
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+# AdvDiff
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis1, basis2, ω1, ω2, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
+                   qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+
+    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis1, basis2, ω1, ω2, mesh, metrics1, metrics2, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
+    
+    return RHS
+    
+end
+
+function build_rhs(SD::NSD_2D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis1, basis2, ω1, ω2, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
+                   qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+    nothing
+end
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+# LinearCLaw
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
+                   qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))    
+    
+    
+    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
+    
+    return RHS
+end
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+# Source terms:
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+function build_rhs_source(SD::NSD_2D,
+                          QT::Inexact,
+                          q::Array,
+                          mesh::St_mesh,
+                          M::AbstractArray, #M is sparse for exact integration
+                          T)
+
+    S = user_source(q, mesh, T)
+    
+    return M.*S    
+end
+
+function build_rhs_source(SD::NSD_2D,
+                          QT::Exact,
+                          q::Array,
+                          mesh::St_mesh,
+                          M::Matrix, #M is sparse for exact integration
+                          T)
+
+    S = user_source(q, mesh, T)
+    
+    return M*S   
 end

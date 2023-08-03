@@ -1,6 +1,7 @@
 module Jexpresso
 
 using Revise
+using BenchmarkTools
 using Dates
 using DelimitedFiles
 using DataStructures
@@ -21,6 +22,8 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
                   get_proposed_dt, set_proposed_dt!,
                   terminate!, remake
+
+
 
 const TInt   = Int64
 const TFloat = Float64
