@@ -20,6 +20,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
+        :case                 => "kopriva.5.3.5",
         :lvisc                => true, #true is defualt
         :νx                   => 0.01, #kinematic viscosity constant
         :νy                   => 0.01, #kinematic viscosity constant

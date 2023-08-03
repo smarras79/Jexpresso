@@ -78,9 +78,11 @@ function sem_setup(inputs::Dict)
     #--------------------------------------------------------
     # Build metric terms
     #--------------------------------------------------------
-            metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
+           @info " metrics"
+           @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
     
-            periodicity_restructure!(mesh,inputs)
+           @info " periodicity_restructure!"
+           @time periodicity_restructure!(mesh,inputs)
         
             matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         end

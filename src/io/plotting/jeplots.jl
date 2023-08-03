@@ -33,9 +33,12 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
    
     qout = copy(q)
     qe   = range(0,0,npoin)
+
+    #outvar = ["ρ", "u", "e"]
+    outvar = ["ρ", "u", "p"]
     if PT === CompEuler()
         #ρ
-        qout[1:npoin] .= q[1:npoin]
+        qout[1:npoin] .= @view q[1:npoin]
 
         #u = ρu/ρ
         ivar = 2
@@ -45,8 +48,14 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
         ivar = 3
         idx = (ivar - 1)*npoin
         γ = 1.4
-        qout[idx+1:3*npoin] .= (q[2*npoin+1:3*npoin] .- 0.5*q[npoin+1:2*npoin].*q[npoin+1:2*npoin]./q[1:npoin])./q[1:npoin] #internal energy: p/((γ-1)ρ)
-        
+
+        if (outvar[3] == "e")
+            #Internal energy
+            qout[idx+1:3*npoin] .= (q[2*npoin+1:3*npoin] .- 0.5*q[npoin+1:2*npoin].*q[npoin+1:2*npoin]./q[1:npoin])./q[1:npoin] #internal energy: p/((γ-1)ρ)
+        elseif (outvar[3] == "p")
+            #Pressure
+            qout[idx+1:3*npoin] .= (γ - 1.0)*(q[2*npoin+1:3*npoin] .- 0.5*q[npoin+1:2*npoin].*q[npoin+1:2*npoin]./q[1:npoin]) #Pressure
+        end
     elseif PT === ShallowWater()
         Hb = zeros(npoin,nvar)
         for i=1:npoin
@@ -63,11 +72,12 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
     for ivar=1:nvar
 
         idx = (ivar - 1)*npoin
-        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], qout[idx+1:ivar*npoin],
+        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], qout[idx+1:ivar*npoin];
                                           markersize = 10, markercolor="Blue",
                                           xlabel = "x", ylabel = "q(x)",
-                                          fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),
-                                          )#axis = (; aspect = 1, limits = (xmin, xmax, 0.05, 2.0)))
+                                          fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "xx")
+                                          )
+
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
         save(string(fout_name), fig; resolution = (600, 400))

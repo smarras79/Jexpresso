@@ -10,8 +10,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=4)
     
-    case = "rtb"
-    if (case === "rtb")
+    if (inputs[:case] === "rtb")
 
         xc = (maximum(mesh.x) + minimum(mesh.x))/2
         yc = 2500.0 #m
@@ -53,7 +52,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         end
         
     else
-        error(" ERROR: CompEuler: initialize.jl: no initial conditions assigned")
+        error(" ERROR: CompEuler: initialize.jl:\n assign value to inputs[:case]")
     end
     
 
