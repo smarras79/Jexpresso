@@ -670,17 +670,18 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     for i = 1:nop
        n[i] = i
        bn[i] = i
+       an[i] = 2 * n[i] + 1
     end
-    an .= 2.*n + 1
     an[nop+1] = nop
     J = zeros(nop+1,nop+1)
     J .= diagm(an) .+ Bidiagonal(filler,bn,:U) .+ Bidiagonal(filler,bn,:L)
     xi = eigen(J)
-    gr.ξ = xi
+    gr.ξ .= xi.values
  
-    ngr = length(xgr)
+    ngr = length(gr.ξ)
     thresh = 1e-10
-    
+    x0 = 0.0
+    x1 = 0.0
     for k=1:ngr
       x0 = gr.ξ[k]
       diff1 = 1.0
@@ -693,9 +694,9 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
           diff1 = abs(x1 -x0)
           x0 = x1
       end
-      gr.ξ(k) = x1
+      gr.ξ[k] = x1
     end
-    gr.ξ(1) = 0 
+    gr.ξ[1] = 0 
 
     LaguerreAndDerivative!(nop,Laguerre)
     Lkx = zeros(nop+1,1)

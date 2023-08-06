@@ -28,10 +28,10 @@ function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, 
 
     N = mesh.ngl - 1
     
-    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
+    qnel = zeros(mesh.ngl,mesh.ngr,mesh.nelem_semi_inf)
     
-    rhsdiffξ_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem_semi_inf)
-    rhsdiffη_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem_semi_inf)
+    rhsdiffξ_el = zeros(mesh.ngl,mesh.ngr,mesh.nelem_semi_inf)
+    rhsdiffη_el = zeros(mesh.ngl,mesh.ngr,mesh.nelem_semi_inf)
     
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
@@ -85,7 +85,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqs, basis1, basis2
     
     N = mesh.ngl - 1
 
-    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem_semi_inf, neqs)
+    qnel = zeros(mesh.ngl,mesh.ngr,mesh.nelem_semi_inf, neqs)
 
     rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem_semi_inf, neqs)
     rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem_semi_inf, neqs)
@@ -151,13 +151,13 @@ end
 
 function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis1, basis2, ω1, ω2,inputs, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, μ, T; qoutauxi=zeros(1,1))
     
-    ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem_semi_inf)
-    uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem_semi_inf)
-    vel = zeros(mesh.ngl, mesh.ngl, mesh.nelem_semi_inf)
-    Tel = zeros(mesh.ngl, mesh.ngl, mesh.nelem_semi_inf)
+    ρel = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf)
+    uel = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf)
+    vel = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf)
+    Tel = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf)
 
-    rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem_semi_inf, neqs)
-    rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem_semi_inf, neqs)
+    rhsdiffξ_el = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
+    rhsdiffη_el = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
     
     qq = zeros(mesh.npoin, neqs)
     
