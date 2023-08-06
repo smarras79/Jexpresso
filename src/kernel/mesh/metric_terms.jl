@@ -134,7 +134,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     return metrics
 end
 
-function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange,N, Q, NGR, QGR, ξ, T)
+function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange,N, Q, NGR, QGR, ξ, ω1, ω2, T)
     
     metrics = St_metrics{T}(dxdξ = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
                             dxdη = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
@@ -146,8 +146,8 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                             dξdy = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
                             dηdy = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
                             Jef  = zeros(mesh.ngl, size(mesh.bound_elem,1)+4),
-                            Je   = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf)) #   Je[1:Nq, 1:Nq, 1:nelem]
-    
+                            Je   = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf),
+                            ωJe  = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf)) #   Je[1:Nq, 1:Nq, 1:nelem])    
     ψ  = basis.ψ
     dψ = basis.dψ
     ψ1  = basisGR.ψ
@@ -174,7 +174,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             for l = 1:mesh.ngr
                 for k = 1:mesh.ngl
                     metrics.Je[k, l, iel] = metrics.dxdξ[k, l, iel]*metrics.dydη[k, l, iel] - metrics.dydξ[k, l, iel]*metrics.dxdη[k, l, iel]
-
+                    metrics.ωJe[k, l, iel] = ω1[k]*ω2[l]*metrics.Je[k, l, iel]
                     metrics.dξdx[k, l, iel] =  metrics.dydη[k, l, iel]/metrics.Je[k, l, iel]
                     metrics.dξdy[k, l, iel] = -metrics.dxdη[k, l, iel]/metrics.Je[k, l, iel]
                     metrics.dηdx[k, l, iel] = -metrics.dydξ[k, l, iel]/metrics.Je[k, l, iel]
