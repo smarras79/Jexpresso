@@ -663,21 +663,24 @@ end
 
 function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, nop::TInt,scale)
     Pp1 = nop+1
-    n = zeros(nop,1)
+    n = zeros(nop+1)
     bn = zeros(nop)
     an = zeros(nop+1)
     filler = zeros(nop+1)
+    for i = 0:nop
+       n[i+1] = i
+       an[i+1] = 2 * n[i+1] + 1
+    end
     for i = 1:nop
-       n[i] = i
        bn[i] = i
-       an[i] = 2 * n[i] + 1
     end
     an[nop+1] = nop
     J = zeros(nop+1,nop+1)
     J .= diagm(an) .+ Bidiagonal(filler,bn,:U) .+ Bidiagonal(filler,bn,:L)
     xi = eigen(J)
     gr.ξ .= xi.values
- 
+    @info "eigens", xi.values
+    @info "J", J
     ngr = length(gr.ξ)
     thresh = 1e-10
     x0 = 0.0
@@ -703,10 +706,10 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     for i=1:nop+1
       Lkx[i] = Laguerre.Laguerre(gr.ξ[i])
     end
-    gr.ω .= 1 ./((Pp1.*Lkx).^2)
-    if(scale)
+    gr.ω .= 1 ./((Pp1.*Lkx.^2))
+    #if(scale)
       gr.ω .= exp.(gr.ξ).*gr.ω 
-    end
+    #end
     @info gr.ξ
     @info gr.ω
 end
