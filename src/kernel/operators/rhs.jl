@@ -180,7 +180,7 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
 
             user_flux!(@view(F[i,j,1:neqs]), @view(G[i,j,1:neqs]), SD, @view(qq[ip,1:neqs]), mesh, ip; neqs=neqs)
             if (inputs[:lsource] == true)
-                user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs)
+                user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs, xmin=-1.0,xmax=1.0,ngl=mesh.ngl,x=mesh.x[ip],nelx=10)
             end
         end
         ωJe[:,:] .= @view(metrics.ωJe[:,:,iel])
