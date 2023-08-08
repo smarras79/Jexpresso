@@ -106,7 +106,7 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     end
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
- 
+        @info minimum(q),maximum(q)  
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
         fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin], colormap = :viridis)
         Colorbar(fig[1,2], colormap = :viridis)        
