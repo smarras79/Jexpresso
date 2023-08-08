@@ -9,7 +9,7 @@ zmax = 50.0;   // um
 nelx = -10;
 nelz = 10;
 
-dx = 1.0;
+dx = 1.2;
 dz = 1.0;
 
 stretchingx = 1.0;
@@ -33,7 +33,7 @@ Line(2) = {4, 3};
 Line(3) = {1, 4};
 
 pList[0] = 1; // First point label
-nPoints = 31; // Number of discretization points (top-right point of the inlet region)
+nPoints = 401; // Number of discretization points (top-right point of the inlet region)
 For i In {1 : nPoints}
     x = xmin + (xmax - xmin)*i/(nPoints + 1);
     pList[i] = newp;
