@@ -18,7 +18,8 @@ function sem_setup(inputs::Dict)
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    
+    mesh.x = mesh.x*5000
+    mesh.y .= (mesh.y .+ 1) .*5000    
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------

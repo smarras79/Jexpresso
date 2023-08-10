@@ -78,7 +78,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
     ngl::Union{TInt, Missing} = nop + 1
-    ngr::Union{TInt, Missing} = 17#nop_gr
+    ngr::Union{TInt, Missing} = 25#nop_gr
     npoin_el::Union{TInt, Missing} = 1     # Total number of points in the reference element
     
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
@@ -470,7 +470,7 @@ if mesh.nsd == 2
         if isboundary_edge[iedge] == true
             for igl = 1:mesh.ngl
                 mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
-                mesh.bdy_edge_type[iedge_bdy] = "Laguerre" #mesh.edge_type[iedge]
+                mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
                 #@info iedge, mesh.edge_type[iedge]
             end
             if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
@@ -499,7 +499,7 @@ if mesh.nsd == 2
     # build mesh data structs for Laguerre semi-infinite elements
     if ("Laguerre" in mesh.bdy_edge_type)
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1) 
-        factor = 1.0
+        factor = 0.04
         mesh.connijk_lag = Array{Int64}(undef, mesh.ngl, mesh.ngr, n_semi_inf)
         mesh.bdy_normals = zeros(n_semi_inf, 2)
         mesh.bdy_tangents = zeros(n_semi_inf, 2)
