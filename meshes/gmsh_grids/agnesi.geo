@@ -9,7 +9,7 @@ zmax =  30000.0;
 nelx = -10;
 nelz = 10;
 
-dx = 4000.0;
+dx = 4100.0;
 dz = 1920.0;
 
 stretchingx = 1.0;
