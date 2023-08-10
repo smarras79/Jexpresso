@@ -1,47 +1,39 @@
 function user_inputs()
     inputs = Dict(
         #---------------------------------------------------------------------------
-        #
         # User define your inputs below: the order doesn't matter
-        # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                 => 2.5,
-        :Δt                   => 1.0e-3,
-        :ndiagnostics_outputs => 150, #these are steps, not seconds
+        :tend                 => 100.0, #2π,
+        :Δt                   => 10.0,#8.75e-4,
+        :ode_solver           => "Tsit5",
+        :ndiagnostics_outputs => 10,
+        :case                 => "rtb",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :ode_solver          => "AB4", #"Tsit5",
-        :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 4,     # Polynomial order
-        :lexact_integration  => false,
+        :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
+        :nop                 => 4,      # Polynomial order
         :luser_bc            => true,
         :lsource             => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => false,
-        :νx                   => 0.01, #kinematic viscosity constant
-        :νy                   => 0.01, #kinematic viscosity constant
+        :lvisc                => false, #false by default
+        #:visc_model           => "dsgs", #"none", "dsgs"
+        :νx                   => 25.0, #kinematic viscosity constant
+        :νy                   => 25.0, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh          => false, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh", 
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
+        :lread_gmsh          => true, #If false, a 1D problem will be enforced
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_laguerre_top.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/agnesi240kmX30km_coarse.msh",
         #---------------------------------------------------------------------------
-        # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
+        # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat     => "png", #choice: "png", "ascii" (default is ascii)
+        :outformat           => "vtk",
+        :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
-        # 1D (lread_gmsh => faluse): the grid is built by jexpresso
-        #---------------------------------------------------------------------------
-        :xmin          =>   0.0,
-        :xmax          =>   2.0,
-        :nelx          =>   50,
-        #:lperiodic1d   => true,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
