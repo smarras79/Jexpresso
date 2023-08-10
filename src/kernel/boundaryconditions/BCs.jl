@@ -188,7 +188,7 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
         iel = mesh.bdy_edge_in_elem[iedge]
         comp = mesh.bdy_edge_comp[iedge]
         for k=1:mesh.ngl
-            if (mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] !="periodic2")
+            if (mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] !="periodic2") #&& mesh.bdy_edge_type[iedge] !="Laguerre")
                 tag = mesh.bdy_edge_type[iedge]
                 ip = mesh.poin_in_bdy_edge[iedge,k]
                 mm=1
@@ -196,8 +196,8 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                 for ii=1:mesh.ngl
                     for jj=1:mesh.ngl
                         if (mesh.connijk[ii,jj,iel] == ip)
-                            m=jj
-                            l=ii
+                            mm=jj
+                            ll=ii
                         end
                     end
                 end

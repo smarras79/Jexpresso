@@ -17,9 +17,9 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis1, basis2
     ωJe = zeros(mesh.ngl,mesh.ngr)
     
     
-    F      = zeros(T, mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
-    G      = zeros(T, mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
-    rhs_el = zeros(T, mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
+    #F      = zeros(T, mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
+    #G      = zeros(T, mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
+    #rhs_el = zeros(T, mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
 
    
     for iel=1:mesh.nelem_semi_inf
@@ -28,6 +28,9 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis1, basis2
             ip = mesh.connijk_lag[i,j,iel]
 
             user_flux!(@view(F[i,j,1:neqs]), @view(G[i,j,1:neqs]), SD, @view(qq[ip,1:neqs]), mesh, ip; neqs=neqs)
+            #if (inputs[:lsource] == true)
+            #    user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs, y=mesh.y[ip])
+            #end
             #if (inputs[:lsource] == true)
                 #user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs)
             #end

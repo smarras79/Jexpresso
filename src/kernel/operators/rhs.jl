@@ -106,7 +106,7 @@ function _build_rhs(SD::NSD_1D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
             user_flux!(@view(F[i,1:neqs]), T, SD, @view(qq[ip,1:neqs]), mesh; neqs=neqs)
             if (inputs[:lsource])
                 user_source!(@view(S[i,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin;
-                             neqs=neqs, x=mesh.x[ip], xmin=mesh.xmin, xmax=mesh.xmax, ngl=mesh.ngl, nelx=mesh.nelem)
+                             neqs=neqs, y=mesh.y[ip])
             end
         end               
         for ieq = 1:neqs
@@ -168,8 +168,8 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
     ωJe = zeros(mesh.ngl,mesh.ngl)
     
     
-    F      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, neqs)
-    G      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, neqs)
+    #F      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, neqs)
+    #G      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     rhs_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, neqs)
 
    
@@ -180,7 +180,7 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
 
             user_flux!(@view(F[i,j,1:neqs]), @view(G[i,j,1:neqs]), SD, @view(qq[ip,1:neqs]), mesh, ip; neqs=neqs)
             if (inputs[:lsource] == true)
-                user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs, xmin=-1.0,xmax=1.0,ngl=mesh.ngl,x=mesh.x[ip],nelx=10)
+                user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs, y=mesh.y[ip])
             end
         end
         ωJe[:,:] .= @view(metrics.ωJe[:,:,iel])

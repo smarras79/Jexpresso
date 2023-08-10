@@ -682,7 +682,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     @info "eigens", xi.values
     @info "J", J
     ngr = length(gr.ξ)
-    thresh = 1e-10
+    thresh = 1e-8
     x0 = 0.0
     x1 = 0.0
     for k=1:ngr
@@ -695,6 +695,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
           L2 = Laguerre.Laguerre
           x1 = x0 + (L1(x0) - L2(x0))/L2(x0)
           diff1 = abs(x1 -x0)
+          @info k,diff1
           x0 = x1
       end
       gr.ξ[k] = x1
