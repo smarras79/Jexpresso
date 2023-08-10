@@ -13,11 +13,13 @@ using Parameters
     pref::T = 100000.0 #Pa
     Rovercv = Rair/cv
     cpoverR = cp/Rair
+    cvoverR = cv/Rair
     C0::T   = (Rair^γ)/pref^Rovercv
         
     #Gravity
     g::T = 9.80616 #m/s²
-
+    g2::T= 9.80616*9.80616
+    
     #Elasticity
     E::T = 70.0e9                  #Pa
     ν::T = 0.33                    #Poisson's ratio: -dϵ_transverse/dϵ_axial
