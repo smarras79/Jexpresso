@@ -102,14 +102,12 @@ end
 
 function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
                     mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
-
-    lsource = true
     
-    F      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-    G      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-    S      = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-    rhs_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-    qq = zeros(mesh.npoin,neqs)
+    F      = zeros(mesh.ngl,mesh.ngl, neqs)
+    G      = zeros(mesh.ngl,mesh.ngl, neqs)
+    S      = zeros(mesh.ngl,mesh.ngl, neqs)
+    rhs_el = zeros(mesh.ngl,mesh.ngl, mesh.nelem, neqs)
+    qq     = zeros(mesh.npoin,neqs)
     for i=1:neqs
         idx = (i-1)*mesh.npoin
         qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
@@ -121,9 +119,9 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
         for j=1:mesh.ngl, i=1:mesh.ngl
             ip = mesh.connijk[i,j,iel]
             
-            F[i,j,iel,1:neqs], G[i,j,iel,1:neqs] = user_flux(T, SD, qq[ip,1:neqs], mesh; neqs=neqs)
+            user_flux!(@view(F[i,j,1:neqs]), @view(G[i,j,1:neqs]), SD, @view(qq[ip,1:neqs]), mesh; neqs=neqs)
             if (lsource == true)
-                S[i,j,iel,1:neqs] = user_source(T, qq[ip,1:neqs], mesh.npoin; neqs=neqs)
+                user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs)
             end
         end
         
@@ -136,16 +134,16 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
                 dGdξ = 0.0
                 dGdη = 0.0
                 for k = 1:mesh.ngl
-                    dFdξ += basis.dψ[k,i]*F[k,j,iel,ieq]
-                    dFdη += basis.dψ[k,j]*F[i,k,iel,ieq]
+                    dFdξ += basis.dψ[k,i]*F[k,j,ieq]
+                    dFdη += basis.dψ[k,j]*F[i,k,ieq]
                     
-                    dGdξ += basis.dψ[k,i]*G[k,j,iel,ieq]
-                    dGdη += basis.dψ[k,j]*G[i,k,iel,ieq]
+                    dGdξ += basis.dψ[k,i]*G[k,j,ieq]
+                    dGdη += basis.dψ[k,j]*G[i,k,ieq]
                 end
 
                 dFdx = dFdξ*metrics.dξdx[i,j,iel] + dFdη*metrics.dηdx[i,j,iel]
                 dGdy = dGdξ*metrics.dξdy[i,j,iel] + dGdη*metrics.dηdy[i,j,iel]
-                rhs_el[i,j,iel,ieq] -= ωJac*((dFdx + dGdy) - S[i,j,iel,ieq]) #gravity
+                rhs_el[i,j,iel,ieq] -= ωJac*((dFdx + dGdy)  - S[i,j,ieq]) #gravity
                 
             end
         end
