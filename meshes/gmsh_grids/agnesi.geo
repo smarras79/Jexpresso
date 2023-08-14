@@ -25,8 +25,8 @@ xc = (xmin + xmax)/2.0;
 ls = 0.0; //this is useless since we use transfinite with defined dx/dz or nelx/nelz
 Point(1) = {xmin, 0, 0, ls};
 Point(2) = {xmax, 0, 0, ls};
-Point(3) = {xmax, 0, zmax, ls};
-Point(4) = {xmin, 0, zmax, ls};
+Point(3) = {xmax, zmax, 0, ls};
+Point(4) = {xmin, zmax, 0, ls};
 
 Line(1) = {3, 2};
 Line(2) = {4, 3};
@@ -62,7 +62,7 @@ Recombine Surface {12};
 
 //BOUNDARY DATA:
 Physical Point("boundary",   1) = {1, 2, 3, 4};
-Physical Curve("Laguerre",   2) = {1, 3};
+Physical Curve("Laguerre",   2) = {1, 2, 3};
 Physical Curve("bottom",     3) = {4};
-Physical Curve("top",        4) = {2};
+//Physical Curve("top",        4) = {2};
 //Physical Surface("domain"   ) = {1};
