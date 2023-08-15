@@ -38,18 +38,6 @@ function allocate_post_process_vars(nelem, npoin, ngl, TFloat; neqs)
     return qpost
 end
 
-function define_q(SD, nelem, npoin, ngl, TFloat; neqs=1)
-
-    q = St_SolutionVars{TFloat}(neqs=neqs,
-                                qn   = zeros(npoin, neqs), # qn
-                                qnm1 = zeros(npoin, neqs), # qⁿ
-                                qnm2 = zeros(npoin, neqs), # qⁿ
-                                qe   = zeros(npoin, neqs), # qexact
-                                μ    = zeros(nelem)) # μ
-    
-    return q
-end
-
 function newdefine_q(SD::NSD_1D, nelem, npoin, ngl, TFloat; neqs=1)
 
     q = St_SolutionVars{TFloat}(neqs=neqs,
@@ -63,6 +51,19 @@ function newdefine_q(SD::NSD_1D, nelem, npoin, ngl, TFloat; neqs=1)
 end
 
 function newdefine_q(SD::NSD_2D, nelem, npoin, ngl, TFloat; neqs=1)
+
+    q = St_SolutionVars{TFloat}(neqs=neqs,
+                                qn   = zeros(npoin, neqs), # qn
+                                qnm1 = zeros(npoin, neqs), # qⁿ
+                                qnm2 = zeros(npoin, neqs), # qⁿ
+                                qe   = zeros(npoin, neqs), # qexact
+                                μ    = zeros(nelem)) # μ
+    
+    return q
+end
+
+
+function define_q(SD, nelem, npoin, ngl, TFloat; neqs=1)
 
     q = St_SolutionVars{TFloat}(neqs=neqs,
                                 qn   = zeros(npoin, neqs), # qn
