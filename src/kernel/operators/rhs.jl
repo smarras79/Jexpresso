@@ -158,16 +158,18 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
                     mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
                     qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
     
-    F      = zeros(mesh.ngl,mesh.ngl, neqs)
-    G      = zeros(mesh.ngl,mesh.ngl, neqs)
-    S      = zeros(mesh.ngl,mesh.ngl, neqs)
-    rhs_el = zeros(mesh.ngl,mesh.ngl, mesh.nelem, neqs)
+    F      = zeros(mesh.ngl, mesh.ngl, neqs)
+    G      = zeros(mesh.ngl, mesh.ngl, neqs)
+    S      = zeros(mesh.ngl, mesh.ngl, neqs)
+    rhs_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     qq     = zeros(mesh.npoin,neqs)
-
+    RHS    = zeros(Float64, mesh.npoin, neqs)
+    
     compute_flux_and_source!(F, G, S, rhs_el, qq, qp, SD, mesh, metrics, basis, ω; neqs, lsource=inputs[:lsource])
         
     apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt, neqs)
-    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    #RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    DSS_rhs!(SD, @view(RHS[:,:]), rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     
     for i=1:neqs
         idx = (i-1)*mesh.npoin
