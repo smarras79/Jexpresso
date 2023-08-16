@@ -177,6 +177,69 @@ end
 
 function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
 
+    nedges = size(mesh.bdy_edge_in_elem, 1)
+    q_size = size(q, 2)
+    L_size = size(L, 1)
+    flux   = zeros(q_size,1)
+    
+    for iedge = 1:size(mesh.bdy_edge_in_elem,1)
+        iel  = mesh.bdy_edge_in_elem[iedge]
+        comp = mesh.bdy_edge_comp[iedge]
+
+        if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2"
+            tag = mesh.bdy_edge_type[iedge]
+            for k=1:mesh.ngl
+                ip = mesh.poin_in_bdy_edge[iedge,k]
+                ωJacedge = ω[k]*metrics.Jef[k,iedge]
+                
+                mm=1
+                ll=1
+                for jj=1:mesh.ngl
+                    for ii=1:mesh.ngl
+                        if (mesh.connijk[ii,jj,iel] == ip)
+                            mm=jj
+                            ll=ii
+                        end
+                    end
+                end
+                #flux = zeros(q_size,1)
+                x    = mesh.x[ip]
+                y    = mesh.y[ip]
+                qbdy = zeros(q_size,1)                
+                qbdy[:] .= 4325789.0 
+                #flags = zeros(q_size,1)
+                if (inputs[:luser_bc])
+                    #q[ip,:], flags = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag,qbdy)
+                    ipp=1 #ip               
+                    qbdy = dirichlet!(@view(q[ip,:]),@view(gradq[:,ipp,:]),x,y,t,mesh,metrics,tag,qbdy,inputs)
+                    ##SM change this to set flux to zero and do not allocate gradq unless neumann is required explicitly by the user
+                    flux .= ωJacedge.*neumann(q[ip,:],gradq[:,ipp,:],x,y,t,mesh,metrics,tag,inputs)
+                else
+                    q[ip,:] .= 0.0
+                end
+                rhs[ll,mm,iel,:] .= rhs[ll,mm,iel,:] .+ flux[:]
+                
+                for var =1:q_size
+                    if !(AlmostEqual(qbdy[var],4325789.0))
+                        #@info var,x,y,qbdy[var]
+                        rhs[ll,mm,iel,var] = 0.0
+                        q[ip,var]          = qbdy[var]
+                    end
+                end
+                if (L_size > 1)
+                    for ii=1:mesh.npoin
+                        L[ip,ii] = 0.0
+                    end
+                    L[ip,ip] = 1.0
+                end
+            end
+        end
+    end
+end
+
+#=
+function build_custom_bcs_unoptimized!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
+
     
     for iedge = 1:size(mesh.bdy_edge_in_elem,1)
         iel = mesh.bdy_edge_in_elem[iedge]
@@ -230,5 +293,4 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
         end
     end
 end
-
-
+=#

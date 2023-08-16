@@ -485,10 +485,17 @@ function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
     RHS = M\RHS #M is not iagonal
 end
 
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs) 
-   for i=1:neqs 
-       RHS[:,i] .= RHS[:,i]./M[:] #M is diagonal (stored as a vector)
-   end
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs)
+
+    for i = 1:neqs
+        for j = 1:length(M)
+            RHS[j, i] /= M[j]
+        end
+    end
+    
+   # for i=1:neqs 
+   #    RHS[:,i] .= RHS[:,i]./M[:] #M is diagonal (stored as a vector)
+   #end
 end
 
 function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)

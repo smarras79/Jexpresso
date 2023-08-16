@@ -39,7 +39,8 @@ function rhs!(du, u, params, time)
 end
 
 function _build_rhs(SD::NSD_1D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
-                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
+                    qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
 
     F      = zeros(T, mesh.ngl,mesh.nelem, neqs)
     rhs_el = zeros(T, mesh.ngl,mesh.nelem, neqs)
@@ -100,28 +101,31 @@ function _build_rhs(SD::NSD_1D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
     return RHS
 end
 
-function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
-                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+
+##
+function compute_flux_and_source!(F, G, S, rhs_el, qq, qp, SD, mesh, metrics, basis, ω; neqs, lsource=false)
     
-    F      = zeros(mesh.ngl,mesh.ngl, neqs)
-    G      = zeros(mesh.ngl,mesh.ngl, neqs)
-    S      = zeros(mesh.ngl,mesh.ngl, neqs)
-    rhs_el = zeros(mesh.ngl,mesh.ngl, mesh.nelem, neqs)
-    qq     = zeros(mesh.npoin,neqs)
     for i=1:neqs
         idx = (i-1)*mesh.npoin
-        qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
+        qq[:,i] = view(qp, idx+1:i*mesh.npoin)
     end
-
+    
     lsource = inputs[:lsource]
     for iel=1:mesh.nelem
 
         for j=1:mesh.ngl, i=1:mesh.ngl
             ip = mesh.connijk[i,j,iel]
             
-            user_flux!(@view(F[i,j,1:neqs]), @view(G[i,j,1:neqs]), SD, @view(qq[ip,1:neqs]), mesh; neqs=neqs)
-            if (lsource == true)
-                user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs)
+            Fi  = @view(F[i,j,1:neqs])
+            Gi  = @view(G[i,j,1:neqs])
+            qqi = @view(qq[ip,1:neqs])
+            
+            user_flux!(Fi, Gi, SD, qqi, mesh; neqs=neqs)
+            #user_flux!(@view(F[i,j,1:neqs]), @view(G[i,j,1:neqs]), SD, @view(qq[ip,1:neqs]), mesh; neqs=neqs)
+            if lsource
+                Si = @view(S[i,j,1:neqs])
+                user_source!(Si, qqi, mesh.npoin; neqs=neqs)
+                #user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs)
             end
         end
         
@@ -148,13 +152,28 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
             end
         end
     end
-    
-    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt*(floor(time/Δt)), neqs)
-    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+end
 
+function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
+                    mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
+                    qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+    
+    F      = zeros(mesh.ngl,mesh.ngl, neqs)
+    G      = zeros(mesh.ngl,mesh.ngl, neqs)
+    S      = zeros(mesh.ngl,mesh.ngl, neqs)
+    rhs_el = zeros(mesh.ngl,mesh.ngl, mesh.nelem, neqs)
+    qq     = zeros(mesh.npoin,neqs)
+
+    compute_flux_and_source!(F, G, S, rhs_el, qq, qp, SD, mesh, metrics, basis, ω; neqs, lsource=inputs[:lsource])
+        
+    apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics, basis.ψ, basis.dψ, ω, Δt, neqs)
+    RHS = DSS_rhs(SD, rhs_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
+    
     for i=1:neqs
         idx = (i-1)*mesh.npoin
-        qp[idx+1:i*mesh.npoin] .= qq[:,i]
+        for j=1:mesh.npoin
+            qp[idx+j] = qq[j,i]
+        end
     end
     
     if (inputs[:lvisc] == true)
@@ -174,7 +193,7 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis, ω,
         RHS .= RHS .+ DSS_rhs(SD, rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
     end
     
-    divive_by_mass_matrix!(RHS, M, QT,neqs)
+   divive_by_mass_matrix!(RHS, M, QT,neqs)
     
     return RHS
 end
@@ -183,7 +202,8 @@ end
 # CompEuler:
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 function build_rhs(SD::NSD_1D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
-                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
+                   qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
 
     RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
     
@@ -194,7 +214,8 @@ end
 # Optimized (more coud possibly be done)
 #
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis, ω,
-                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+                   mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
+                   qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
     
     RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
     
@@ -206,7 +227,8 @@ end
 #--------------------------------------------------------------------------------------------------------------------------------------------------
 # AdvDiff
 #--------------------------------------------------------------------------------------------------------------------------------------------------
-function build_rhs_matrix_formulation(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
+function build_rhs_matrix_formulation(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω,
+                                      mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T; 
                                       qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
     
     Fuser = user_flux(T, SD, qp, mesh)
