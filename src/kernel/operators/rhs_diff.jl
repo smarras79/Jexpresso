@@ -403,10 +403,6 @@ function build_rhs_diff(SD::NSD_1D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
 
 end
 
-function flux2primitives(q)
-    
-end
-
 function build_rhs_diff!(rhs_diff::SubArray{Float64}, SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
     
     ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -442,17 +438,16 @@ function build_rhs_diff!(rhs_diff::SubArray{Float64}, SD::NSD_2D, QT, PT::CompEu
     Pr = 0.1
     for iel=1:mesh.nelem
         
-        @inbounds begin
-            for j=1:mesh.ngl, i=1:mesh.ngl
-                m = mesh.connijk[i,j,iel]
-                
-                ρel[i,j,iel] = qq[m,1]          
-                uel[i,j,iel] = qq[m,2]/ρel[i,j,iel]
-                vel[i,j,iel] = qq[m,3]/ρel[i,j,iel]
-                
-                Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] - δenergy*0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
-            end
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            m = mesh.connijk[i,j,iel]
+            
+            ρel[i,j,iel] = qq[m,1]          
+            uel[i,j,iel] = qq[m,2]/ρel[i,j,iel]
+            vel[i,j,iel] = qq[m,3]/ρel[i,j,iel]
+            
+            Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] - δenergy*0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
         end
+        
         #ν = Pr*μ[iel]/maximum(ρel[:,:,iel])
         #κ = Pr*μ[iel]/(γ - 1.0)
         #ν = μ[iel]#10.0
@@ -536,6 +531,5 @@ function build_rhs_diff!(rhs_diff::SubArray{Float64}, SD::NSD_2D, QT, PT::CompEu
     end
 
     rhs_diff .= @views (rhsdiffξ_el[:,:,:,:] + rhsdiffη_el[:,:,:,:])
-#return (rhsdiffξ_el + rhsdiffη_el)
-
+    
 end
