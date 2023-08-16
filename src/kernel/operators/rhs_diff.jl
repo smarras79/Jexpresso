@@ -407,7 +407,7 @@ function flux2primitives(q)
     
 end
 
-function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
+function build_rhs_diff!(rhs_diff::SubArray{Float64}, SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
     
     ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
     uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
@@ -442,15 +442,17 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
     Pr = 0.1
     for iel=1:mesh.nelem
         
-        for j=1:mesh.ngl, i=1:mesh.ngl
-            m = mesh.connijk[i,j,iel]
-            
-            ρel[i,j,iel] = qq[m,1]
-            uel[i,j,iel] = qq[m,2]/ρel[i,j,iel]
-            vel[i,j,iel] = qq[m,3]/ρel[i,j,iel]
-            
-            Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] - δenergy*0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
-        end    
+        @inbounds begin
+            for j=1:mesh.ngl, i=1:mesh.ngl
+                m = mesh.connijk[i,j,iel]
+                
+                ρel[i,j,iel] = qq[m,1]          
+                uel[i,j,iel] = qq[m,2]/ρel[i,j,iel]
+                vel[i,j,iel] = qq[m,3]/ρel[i,j,iel]
+                
+                Tel[i,j,iel] = qq[m,4]/ρel[i,j,iel] - δenergy*0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
+            end
+        end
         #ν = Pr*μ[iel]/maximum(ρel[:,:,iel])
         #κ = Pr*μ[iel]/(γ - 1.0)
         #ν = μ[iel]#10.0
@@ -459,74 +461,81 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inpu
         ν = 0.0
         μ[iel] = inputs[:νx]
         κ = μ[iel]
-        for l = 1:mesh.ngl, k = 1:mesh.ngl
-            ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
-            
-            #for ieq = 1:neqs
-            #dqdξ = 0.0
-            dρdξ = 0.0
-            dudξ = 0.0
-            dvdξ = 0.0
-            dTdξ = 0.0
+        for l = 1:mesh.ngl
+            for k = 1:mesh.ngl
+                ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
+                
+                dρdξ = 0.0
+                dudξ = 0.0
+                dvdξ = 0.0
+                dTdξ = 0.0
 
-            dρdη = 0.0
-            dudη = 0.0
-            dvdη = 0.0
-            dTdη = 0.0
-            for i = 1:mesh.ngl
-                dρdξ += basis.dψ[i,k]*ρel[i,l,iel]
-                dudξ += basis.dψ[i,k]*uel[i,l,iel]
-                dvdξ += basis.dψ[i,k]*vel[i,l,iel]
-                dTdξ += basis.dψ[i,k]*Tel[i,l,iel]
+                dρdη = 0.0
+                dudη = 0.0
+                dvdη = 0.0
+                dTdη = 0.0
+                for i = 1:mesh.ngl
+                    dρdξ += basis.dψ[i,k]*ρel[i,l,iel]
+                    dudξ += basis.dψ[i,k]*uel[i,l,iel]
+                    dvdξ += basis.dψ[i,k]*vel[i,l,iel]
+                    dTdξ += basis.dψ[i,k]*Tel[i,l,iel]
 
-                dρdη += basis.dψ[i,l]*ρel[k,i,iel]
-                dudη += basis.dψ[i,l]*uel[k,i,iel]
-                dvdη += basis.dψ[i,l]*vel[k,i,iel]
-                dTdη += basis.dψ[i,l]*Tel[k,i,iel]
+                    dρdη += basis.dψ[i,l]*ρel[k,i,iel]
+                    dudη += basis.dψ[i,l]*uel[k,i,iel]
+                    dvdη += basis.dψ[i,l]*vel[k,i,iel]
+                    dTdη += basis.dψ[i,l]*Tel[k,i,iel]
+                end
+                                
+                #
+                dξdx_kl = metrics.dξdx[k,l,iel]
+                dξdy_kl = metrics.dξdy[k,l,iel]
+                dηdx_kl = metrics.dηdx[k,l,iel]
+                dηdy_kl = metrics.dηdy[k,l,iel]
+                
+                #
+                dρdx =       ν*(dρdξ*dξdx_kl + dρdη*dηdx_kl)
+                dudx =  μ[iel]*(dudξ*dξdx_kl + dudη*dηdx_kl)
+                dvdx =  μ[iel]*(dvdξ*dξdx_kl + dvdη*dηdx_kl)
+                dTdx =       κ*(dTdξ*dξdx_kl + dTdη*dηdx_kl) #+μ∇u⋅u
+                
+                dρdy =       ν*(dρdξ*dξdy_kl + dρdη*dηdy_kl)
+                dudy =  μ[iel]*(dudξ*dξdy_kl + dudη*dηdy_kl)
+                dvdy =  μ[iel]*(dvdξ*dξdy_kl + dvdη*dηdy_kl)
+                dTdy =       κ*(dTdξ*dξdy_kl + dTdη*dηdy_kl) #+μ∇u⋅u
+                
+                ∇ξ∇ρ_kl = dξdx_kl*dρdx + dξdy_kl*dρdy
+                ∇η∇ρ_kl = dηdx_kl*dρdx + dηdy_kl*dρdy
+                
+                ∇ξ∇u_kl = dξdx_kl*dudx + dξdy_kl*dudy
+                ∇η∇u_kl = dηdx_kl*dudx + dηdy_kl*dudy            
+                ∇ξ∇v_kl = dξdx_kl*dvdx + dξdy_kl*dvdy
+                ∇η∇v_kl = dηdx_kl*dvdx + dηdy_kl*dvdy
+
+                ∇ξ∇T_kl = dξdx_kl*dTdx + dξdy_kl*dTdy
+                ∇η∇T_kl = dηdx_kl*dTdx + dηdy_kl*dTdy
+                
+                for i = 1:mesh.ngl
+                    
+                    dhdξ_ik, dhdη_il = basis.dψ[i,k], basis.dψ[i,l]
+                    
+                    rhsdiffξ_el[i,l,iel,1] -= ωJkl*dhdξ_ik*∇ξ∇ρ_kl
+                    rhsdiffη_el[k,i,iel,1] -= ωJkl*dhdη_il*∇η∇ρ_kl
+                    
+                    rhsdiffξ_el[i,l,iel,2] -= ωJkl*dhdξ_ik*∇ξ∇u_kl
+                    rhsdiffη_el[k,i,iel,2] -= ωJkl*dhdη_il*∇η∇u_kl
+                    
+                    rhsdiffξ_el[i,l,iel,3] -= ωJkl*dhdξ_ik*∇ξ∇v_kl
+                    rhsdiffη_el[k,i,iel,3] -= ωJkl*dhdη_il*∇η∇v_kl
+                    
+                    rhsdiffξ_el[i,l,iel,4] -= ωJkl*dhdξ_ik*∇ξ∇T_kl
+                    rhsdiffη_el[k,i,iel,4] -= ωJkl*dhdη_il*∇η∇T_kl
+                    
+                end
             end
-            
-            dρdx =       ν*(dρdξ*metrics.dξdx[k,l,iel] + dρdη*metrics.dηdx[k,l,iel])
-            dudx =  μ[iel]*(dudξ*metrics.dξdx[k,l,iel] + dudη*metrics.dηdx[k,l,iel])
-            dvdx =  μ[iel]*(dvdξ*metrics.dξdx[k,l,iel] + dvdη*metrics.dηdy[k,l,iel])
-            dTdx =       κ*(dTdξ*metrics.dξdx[k,l,iel] + dTdη*metrics.dηdx[k,l,iel]) #+μ∇u⋅u
-          
-            dρdy =       ν*(dρdξ*metrics.dξdy[k,l,iel] + dρdη*metrics.dηdy[k,l,iel])
-            dudy =  μ[iel]*(dudξ*metrics.dξdy[k,l,iel] + dudη*metrics.dηdy[k,l,iel])
-            dvdy =  μ[iel]*(dvdξ*metrics.dξdy[k,l,iel] + dvdη*metrics.dηdy[k,l,iel])
-            dTdy =       κ*(dTdξ*metrics.dξdy[k,l,iel] + dTdη*metrics.dηdy[k,l,iel]) #+μ∇u⋅u
-            
-            ∇ξ∇ρ_kl = metrics.dξdx[k,l,iel]*dρdx + metrics.dξdy[k,l,iel]*dρdy
-            ∇η∇ρ_kl = metrics.dηdx[k,l,iel]*dρdx + metrics.dηdy[k,l,iel]*dρdy
-            
-            ∇ξ∇u_kl = metrics.dξdx[k,l,iel]*dudx + metrics.dξdy[k,l,iel]*dudy
-            ∇η∇u_kl = metrics.dηdx[k,l,iel]*dudx + metrics.dηdy[k,l,iel]*dudy            
-            ∇ξ∇v_kl = metrics.dξdx[k,l,iel]*dvdx + metrics.dξdy[k,l,iel]*dvdy
-            ∇η∇v_kl = metrics.dηdx[k,l,iel]*dvdx + metrics.dηdy[k,l,iel]*dvdy
-
-            ∇ξ∇T_kl = metrics.dξdx[k,l,iel]*dTdx + metrics.dξdy[k,l,iel]*dTdy
-            ∇η∇T_kl = metrics.dηdx[k,l,iel]*dTdx + metrics.dηdy[k,l,iel]*dTdy
-            
-            for i = 1:mesh.ngl
-                
-                dhdξ_ik, dhdη_il = basis.dψ[i,k], basis.dψ[i,l]
-                
-                rhsdiffξ_el[i,l,iel,1] -= ωJkl*dhdξ_ik*∇ξ∇ρ_kl
-                rhsdiffη_el[k,i,iel,1] -= ωJkl*dhdη_il*∇η∇ρ_kl
-                
-                rhsdiffξ_el[i,l,iel,2] -= ωJkl*dhdξ_ik*∇ξ∇u_kl
-                rhsdiffη_el[k,i,iel,2] -= ωJkl*dhdη_il*∇η∇u_kl
-                
-                rhsdiffξ_el[i,l,iel,3] -= ωJkl*dhdξ_ik*∇ξ∇v_kl
-                rhsdiffη_el[k,i,iel,3] -= ωJkl*dhdη_il*∇η∇v_kl
-                
-                rhsdiffξ_el[i,l,iel,4] -= ωJkl*dhdξ_ik*∇ξ∇T_kl
-                rhsdiffη_el[k,i,iel,4] -= ωJkl*dhdη_il*∇η∇T_kl
-                
-            end
-            # end
         end
     end
-    
-    return (rhsdiffξ_el + rhsdiffη_el)
+
+    rhs_diff .= @views (rhsdiffξ_el[:,:,:,:] + rhsdiffη_el[:,:,:,:])
+#return (rhsdiffξ_el + rhsdiffη_el)
 
 end
