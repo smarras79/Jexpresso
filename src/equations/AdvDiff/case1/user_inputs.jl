@@ -7,7 +7,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                 => 2.5,
         :Δt                   => 1.0e-3,
-        :ndiagnostics_outputs => 150, #these are steps, not seconds
+        :ndiagnostics_outputs => 15, #these are steps, not seconds
+        :lsource              => false,
+        #:output_dir          => "/Users/simone/runs/",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -20,7 +22,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => false,
+        #:lvisc                => false,
         :νx                   => 0.01, #kinematic viscosity constant
         :νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------
