@@ -153,7 +153,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     model         = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
-    
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
     
     POIN_flg = 0
@@ -267,7 +266,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
     mesh.conn             = Array{Int64}(undef, mesh.npoin_el, mesh.nelem)
-    
     #
     # Connectivity matrices
     #
@@ -442,6 +440,11 @@ for ip = mesh.npoin_linear+1:mesh.npoin
     end
 end
 
+mesh.xmax = maximum(mesh.x)
+mesh.xmin = minimum(mesh.x)
+mesh.ymax = maximum(mesh.y)
+mesh.ymin = minimum(mesh.y)
+
 #----------------------------------------------------------------------
 # Extract boundary edges and faces nodes:
 #----------------------------------------------------------------------
@@ -479,7 +482,6 @@ if mesh.nsd == 2
             iedge_bdy += 1
         end
     end
-
     for iel = 1:mesh.nelem
         for iedge_bdy = 1:mesh.nedges_bdy
             if issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[:, :, iel])
@@ -499,7 +501,8 @@ if mesh.nsd == 2
     # build mesh data structs for Laguerre semi-infinite elements
     if ("Laguerre" in mesh.bdy_edge_type)
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1) 
-        factor = 0.04
+        factorx = 1000
+        factory = 0.01
         mesh.connijk_lag = Array{Int64}(undef, mesh.ngl, mesh.ngr, n_semi_inf)
         mesh.bdy_normals = zeros(n_semi_inf, 2)
         mesh.bdy_tangents = zeros(n_semi_inf, 2)
@@ -568,10 +571,10 @@ if mesh.nsd == 2
                     mesh.connijk_lag[i,1,e_iter] = ip
                     for j=2:mesh.ngr
                         mesh.connijk_lag[i,j,e_iter] = iter
-                        x_new[iter] = mesh.x[ip] + nor[1]*gr.ξ[j]*factor 
-                        y_new[iter] = mesh.y[ip] + nor[2]*gr.ξ[j]*factor
+                        x_new[iter] = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx 
+                        y_new[iter] = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
                         iter += 1
-                        #@info nor[1],nor[2],x_new[iter],y_new[iter]
+                        #@info nor[1],nor[2],x_new[iter],y_new[iter], mesh.x[ip],mesh.y[ip]
                     end
                 end
                 e_iter += 1

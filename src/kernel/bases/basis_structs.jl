@@ -695,7 +695,6 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
           L2 = Laguerre.Laguerre
           x1 = x0 + (L1(x0) - L2(x0))/L2(x0)
           diff1 = abs(x1 -x0)
-          @info k,diff1
           x0 = x1
       end
       gr.ξ[k] = x1
@@ -720,7 +719,7 @@ function LagrangeLaguerreBasis(ξ, ξq, TFloat)
     N = nbasis -1
     Np1 = N+1
     
-    psi = zeros(nbasis,nbasis)
+    psi = ones(nbasis,nbasis)
     dpsi = zeros(nbasis,nbasis)
     dpsi[1,1]=-(N +1)./2.0
 
@@ -729,7 +728,7 @@ function LagrangeLaguerreBasis(ξ, ξq, TFloat)
         for j = 1:nbasis
             xj = ξ[j]
             if(i != j)
-                psi[j,i] = 1
+                psi[j,i] = 0.0
                 dpsi[j,i] = scaled_laguerre(xi,Np1)/(scaled_laguerre(xj,Np1)*(xi -xj));
             end
         end

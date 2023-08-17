@@ -177,7 +177,6 @@ end
 
 function build_mass_matrix_Laguerre(SD::NSD_2D, QT, ψ, ω, ψ1, ω1, mesh, metrics, T)
 
-
     Me = zeros(mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
 
     for iel=1:mesh.nelem_semi_inf
@@ -405,7 +404,9 @@ function DSS_mass_Laguerre(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, Mel_lag:
                     for m = 1:mesh.ngl
                         I = m + (n - 1)*(mesh.ngl)
                         IP = mesh.connijk[m,n,iel]
+                        #@info I,J,iel,Mel[I,J,iel]
                         M[IP] = M[IP] + Mel[I,J,iel] #if inexact
+                        #@info IP, M[IP]
                     end
                 end
             end
@@ -413,6 +414,7 @@ function DSS_mass_Laguerre(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, Mel_lag:
         #println("\n")
         #show(stdout, "text/plain", M[:,:, iel])
     end
+
     for iel=1:mesh.nelem_semi_inf
 
         #show(stdout, "text/plain", 36.0*Mel[:,:,iel])
@@ -430,9 +432,10 @@ function DSS_mass_Laguerre(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, Mel_lag:
                 end
             end
         end
+        
         #println("\n")
         #show(stdout, "text/plain", M[:,:, iel])
-    end 
+    end
     return M
 end
 
@@ -581,8 +584,13 @@ end
 
 function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs) 
    for i=1:neqs 
-       RHS[:,i] .= RHS[:,i]./M[:] #M is diagonal (stored as a vector)
+       for j = 1:size(RHS,1)
+       #@info RHS[j,i], M[j] 
+       RHS[j,i] = RHS[j,i]/M[j] #M is diagonal (stored as a vector)
+       #@info RHS[j,i]
+       end
    end
+   #@info maximum(M),minimum(M)
 end
 
 function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)

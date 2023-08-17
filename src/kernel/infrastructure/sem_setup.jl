@@ -1,6 +1,7 @@
 include("../bases/basis_structs.jl")
 include("../infrastructure/element_matrices.jl")
 include("../mesh/restructure_for_periodicity.jl")
+include("../mesh/warping.jl")
 
 function sem_setup(inputs::Dict)
     
@@ -18,8 +19,10 @@ function sem_setup(inputs::Dict)
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    mesh.x = mesh.x*5000
-    mesh.y .= (mesh.y .+ 1) .*5000    
+    mesh.x = mesh.x*10
+    mesh.y .= mesh.y*3#(mesh.y .+ 1) .*15000
+    mesh.ymax = maximum(mesh.y)
+    warp_mesh!(mesh,inputs)    
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
