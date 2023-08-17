@@ -1,20 +1,34 @@
 #---------------------------------------------------------------------------
 # Fetch equations name to access the user_rhs functions
 #---------------------------------------------------------------------------
+user_source_dir = "../../fallbacks/source.jl"
+user_flux_dir   = "../../fallbacks/flux.jl"
 if (length(ARGS) === 1) #equations
-    user_flux_dir   = string(@__DIR__, "/../../equations/", ARGS[1], "/user_flux.jl")
     if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/user_source.jl"))
         user_source_dir = string(@__DIR__, "../../equations/", ARGS[1], "/user_source.jl")
     else
         user_source_dir = "../../fallbacks/source.jl"
     end
-elseif (length(ARGS) === 2)  #equations/equations_case_name
-    user_flux_dir   = string("../../equations/", ARGS[1], "/", ARGS[2], "/user_flux.jl")
+
+    if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/user_flux.jl"))
+        user_flux_dir = string(@__DIR__, "../../equations/", ARGS[1], "/user_flux.jl")
+    else
+        user_flux_dir = "../../fallbacks/flux.jl"
+    end
+    
+elseif (length(ARGS) === 2)  #equations/equations_case_name   
     if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl"))
         user_source_dir = string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl")
     else
         @info " user_source.jl not defined. The fallback ../../fallbacks/source.jl will be used."
-        user_source_dir =  "../../fallbacks/source.jl"
+        user_source_dir = "../../fallbacks/source.jl"
+    end
+
+    if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_flux.jl"))
+        user_flux_dir = string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_flux.jl")
+    else
+        @info " user_flux.jl not defined. The fallback ../../fallbacks/flux.jl will be used."
+        user_flux_dir = "../../fallbacks/flux.jl"
     end
 end
 include(user_flux_dir)

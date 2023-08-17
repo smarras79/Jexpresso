@@ -1,11 +1,3 @@
-#
-# Space dimensions
-#
-abstract type AbstractSpaceDimensions end
-struct NSD_1D <: AbstractSpaceDimensions end
-struct NSD_2D <: AbstractSpaceDimensions end
-struct NSD_3D <: AbstractSpaceDimensions end
-
 Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
 
     qnp1 = Array{TFloat}(undef, 0, 0)       # qⁿ⁺¹

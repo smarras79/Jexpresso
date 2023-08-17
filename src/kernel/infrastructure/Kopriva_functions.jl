@@ -1,7 +1,3 @@
-include("../bases/basis_structs.jl")
-include("../../io/plotting/jeplots.jl")
-
-
 function DiscreteFourierCoefficients(f)
     """ DiscreteFourrierCoefficients(f)
             f:: array of length N
