@@ -1,6 +1,5 @@
-using DelimitedFiles
-using DataStructures
 using Gridap
+using GridapGmsh
 using Gridap.Arrays
 using Gridap.Arrays: Table
 using Gridap.Geometry
@@ -8,8 +7,7 @@ using Gridap.Fields
 using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.Geometry: GridMock
-using GridapGmsh
-using Printf
+
 
 export St_mesh
 export mod_mesh_mesh_driver
@@ -20,7 +18,6 @@ const VERTEX_NODES = UInt64(1)
 const EDGE_NODES   = UInt64(2)
 const FACE_NODES   = UInt64(4)
 
-include("../bases/basis_structs.jl")
 #include("../../auxiliary/nodeRenumbering/src/create_adjacency_graph.jl")
 #include("../../auxiliary/nodeRenumbering/src/node_degrees.jl")
 #include("../../auxiliary/nodeRenumbering/src/RCM.jl")

@@ -2,7 +2,6 @@
 # This file contains all the structs definitions
 # S. Marras, Feb 2022
 #
-include("../abstractTypes.jl")
 
 export St_Lagrange
 export St_Legendre
