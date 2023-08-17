@@ -546,6 +546,21 @@ function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoi
     return V
 end
 
+
+function DSS_rhs!(SD::NSD_1D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
+    
+    for iel = 1:nelem
+        for i = 1:N+1
+            I = conn[i,iel]
+            
+            V[I,:] += Vel[i,iel,:]
+        end
+    end
+    #show(stdout, "text/plain", V)
+end
+
+
+
 function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
     
     V  = zeros(T, npoin,neqs)
@@ -570,27 +585,37 @@ function DSS_rhs_laguerre(SD::NSD_2D, Vel::AbstractArray, mesh, neqs, T)
             for i = 1:mesh.ngl
                 I = mesh.connijk_lag[i,j,iel]
 
+function DSS_rhs!(SD::NSD_2D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
+    
+    for iel = 1:nelem
+        for j = 1:N+1
+            for i = 1:N+1
+                I = conn[i,j,iel]
+                
                 V[I,:] .= V[I,:] .+ Vel[i,j,iel,:]
             end
         end
     end
     #show(stdout, "text/plain", V)
-    return V
 end
+
+
 
 function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
     RHS = M\RHS #M is not iagonal
 end
 
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs) 
-   for i=1:neqs 
-       for j = 1:size(RHS,1)
-       #@info RHS[j,i], M[j] 
-       RHS[j,i] = RHS[j,i]/M[j] #M is diagonal (stored as a vector)
-       #@info RHS[j,i]
-       end
-   end
-   #@info maximum(M),minimum(M)
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs)
+
+    for i = 1:neqs
+        for j = 1:length(M)
+            RHS[j, i] /= M[j]
+        end
+    end
+    
+   # for i=1:neqs 
+   #    RHS[:,i] .= RHS[:,i]./M[:] #M is diagonal (stored as a vector)
+   #end
 end
 
 function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)

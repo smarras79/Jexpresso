@@ -1,6 +1,9 @@
 using BenchmarkTools
 using StaticArrays
+<<<<<<< HEAD
 using LoopVectorization
+=======
+>>>>>>> 64430ce5c650911b66b7ed8723529e7a6c591c7f
 using LinearAlgebra: dot
 
 function barw_array( xnodes )
@@ -211,7 +214,11 @@ function _build_rhs(a, b, c, d, e, nx, nvar)
     #end
     #@info "dFdξ" dFdξ
 end
+<<<<<<< HEAD
 #=
+=======
+
+>>>>>>> 64430ce5c650911b66b7ed8723529e7a6c591c7f
 nx = 5
 nvar = 4
 #q=define_q(nvar, nx)
@@ -219,6 +226,7 @@ nvar = 4
 a,b,c,d, e = [rand(nx, nx, nvar) for _=1:5]
 #@btime _build_rhs($q.a,$q.b,$q.c,$q.d,$nx,$nvar)
 @btime _build_rhs($a,$b,$c,$d,$e,$nx,$nvar)
+<<<<<<< HEAD
 =#
 
 
@@ -248,6 +256,9 @@ end
 #@btime  apply_f(av, 2.0, 2.0, 2.0, 5.0)
 #@info "optimal"
 #@btime apply_f_SA(av, 2.0, 2.0, 2.0, 5.0)
+=======
+
+>>>>>>> 64430ce5c650911b66b7ed8723529e7a6c591c7f
 
 #info dot vs mydot
 @info "dot product"
