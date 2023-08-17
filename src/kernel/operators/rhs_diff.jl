@@ -62,77 +62,26 @@ function build_rhs_diff(SD::NSD_1D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, 
     return rhsdiffξ_el*inputs[:νx]
 end
 
-function build_rhs_diff(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, nvars, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, μ, T;)
-
+function build_rhs_diff!(rhs_diff::SubArray{Float64}, SD::NSD_2D, QT, PT::AdvDiff, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
+    
     N = mesh.ngl - 1
     
     qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
+    qq   = zeros(mesh.npoin, neqs)
     
     rhsdiffξ_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
     rhsdiffη_el = zeros(mesh.ngl,mesh.ngl,mesh.nelem)
-    
-    #
-    # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
-    #
-    for iel=1:mesh.nelem
-
-        for j=1:mesh.ngl, i=1:mesh.ngl
-            m = mesh.connijk[i,j,iel]            
-            qnel[i,j,iel] = qp[m,1]
-        end
-        
-        for k = 1:mesh.ngl, l = 1:mesh.ngl
-            ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
-            
-            dqdξ = 0.0
-            dqdη = 0.0
-            for i = 1:mesh.ngl
-                dqdξ = dqdξ + basis.dψ[i,k]*qnel[i,l,iel]
-                dqdη = dqdη + basis.dψ[i,l]*qnel[k,i,iel]
-            end
-            
-            dqdx = dqdξ*metrics.dξdx[k,l,iel] + dqdη*metrics.dηdx[k,l,iel]
-            dqdy = dqdξ*metrics.dξdy[k,l,iel] + dqdη*metrics.dηdy[k,l,iel]
-            
-            ∇ξ∇q_kl = metrics.dξdx[k,l,iel]*dqdx + metrics.dξdy[k,l,iel]*dqdy
-            ∇η∇q_kl = metrics.dηdx[k,l,iel]*dqdx + metrics.dηdy[k,l,iel]*dqdy
-            
-            for i = 1:mesh.ngl
-                hll,     hkk     =  basis.ψ[l,l],  basis.ψ[k,k]
-                dhdξ_ik, dhdη_il = basis.dψ[i,k], basis.dψ[i,l]
-                
-                rhsdiffξ_el[i,l,iel] -= ωJkl*dhdξ_ik*hll*∇ξ∇q_kl
-                rhsdiffη_el[k,i,iel] -= ωJkl*hkk*dhdη_il*∇η∇q_kl
-            end
-        end
-    end
-
-    return (rhsdiffξ_el*inputs[:νx] + rhsdiffη_el*inputs[:νy])
-    
-end
-
-#
-# LinearCLaw
-#
-function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqs, basis, ω, inputs,  mesh::St_mesh, metrics::St_metrics, μ, T;)
-    
-    N = mesh.ngl - 1
-
-    qnel = zeros(mesh.ngl,mesh.ngl,mesh.nelem, neqs)
-
-    rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
-    rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
-    qq = zeros(mesh.npoin,neqs)
 
     #
-    # qp[1:npoin]         <-- qq[1:npoin, "p"]
-    # qp[npoin+1:2npoin]  <-- qq[1:npoin, "u"]
-    # qp[2npoin+1:3npoin] <-- qq[1:npoin, "v"]
+    # qp[1:npoin]         <-- qq[1:npoin, "q1"]
+    # qp[npoin+1:2npoin]  <-- qq[1:npoin, "q2"]
+    # qp[2npoin+1:Nnpoin] <-- qq[1:npoin, "qN"]
     #
     for i=1:neqs
         idx = (i-1)*mesh.npoin
         qq[:,i] = qp[idx+1:i*mesh.npoin]
     end
+    
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
     #
@@ -140,41 +89,46 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::LinearCLaw, qp, neqs, basis, ω, inp
 
         for j=1:mesh.ngl, i=1:mesh.ngl
             m = mesh.connijk[i,j,iel]
-            qnel[i,j,iel,1:neqs] = qq[m,1:neqs]
+            
+            qnel[i,j,iel] = qq[m,1]
         end
-
-        for k = 1:mesh.ngl, l = 1:mesh.ngl
-            ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
-
-            for ieq = 1:neqs
+        
+        for l = 1:mesh.ngl
+            for k = 1:mesh.ngl
+                ωJkl = ω[k]*ω[l]*metrics.Je[k, l, iel]
+                
                 dqdξ = 0.0
                 dqdη = 0.0
                 for i = 1:mesh.ngl
-                    dqdξ = dqdξ + basis.dψ[i,k]*qnel[i,l,iel,ieq]
-                    dqdη = dqdη + basis.dψ[i,l]*qnel[k,i,iel,ieq]
+                    dqdξ = dqdξ + basis.dψ[i,k]*qnel[i,l,iel]
+                    dqdη = dqdη + basis.dψ[i,l]*qnel[k,i,iel]
                 end
-                dqdx = dqdξ*metrics.dξdx[k,l,iel] + dqdη*metrics.dηdx[k,l,iel]
-                dqdy = dqdξ*metrics.dξdy[k,l,iel] + dqdη*metrics.dηdy[k,l,iel]
 
-                ∇ξ∇q_kl = metrics.dξdx[k,l,iel]*dqdx + metrics.dξdy[k,l,iel]*dqdy
-                ∇η∇q_kl = metrics.dηdx[k,l,iel]*dqdx + metrics.dηdy[k,l,iel]*dqdy
+                dξdx_kl = metrics.dξdx[k,l,iel]
+                dξdy_kl = metrics.dξdy[k,l,iel]
+                dηdx_kl = metrics.dηdx[k,l,iel]
+                dηdy_kl = metrics.dηdy[k,l,iel]
 
+                
+                dqdx = dqdξ*dξdx_kl + dqdη*dηdx_kl
+                dqdy = dqdξ*dξdy_kl + dqdη*dηdy_kl
+                
+                ∇ξ∇q_kl = dξdx_kl*dqdx + dξdy_kl*dqdy
+                ∇η∇q_kl = dηdx_kl*dqdx + dηdy_kl*dqdy
+                
                 for i = 1:mesh.ngl
-
-                    hll,     hkk     = basis.ψ[l,l],  basis.ψ[k,k]
+                    #hll,     hkk     =  basis.ψ[l,l],  basis.ψ[k,k]
                     dhdξ_ik, dhdη_il = basis.dψ[i,k], basis.dψ[i,l]
-
-                    rhsdiffξ_el[i,l,iel, ieq] -= ωJkl*dhdξ_ik*hll*∇ξ∇q_kl
-                    rhsdiffη_el[k,i,iel, ieq] -= ωJkl*hkk*dhdη_il*∇η∇q_kl
+                    
+                    rhsdiffξ_el[i,l,iel] -= ωJkl*dhdξ_ik*∇ξ∇q_kl
+                    rhsdiffη_el[k,i,iel] -= ωJkl*dhdη_il*∇η∇q_kl
                 end
             end
         end
-     end
+    end
 
-    return (rhsdiffξ_el*inputs[:νx] + rhsdiffη_el*inputs[:νy])
-
+    rhs_diff .= @views (inputs[:νx]*rhsdiffξ_el[:,:,:,:] + inputs[:νy]*rhsdiffη_el[:,:,:,:])
 end
-
 
 #
 # ShallowWater
