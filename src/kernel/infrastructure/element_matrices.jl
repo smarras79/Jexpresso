@@ -463,6 +463,21 @@ function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoi
     return V
 end
 
+
+function DSS_rhs!(SD::NSD_1D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
+    
+    for iel = 1:nelem
+        for i = 1:N+1
+            I = conn[i,iel]
+            
+            V[I,:] += Vel[i,iel,:]
+        end
+    end
+    #show(stdout, "text/plain", V)
+end
+
+
+
 function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
     
     V  = zeros(T, npoin,neqs)
@@ -482,7 +497,6 @@ end
 
 function DSS_rhs!(SD::NSD_2D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
     
-    #V  = zeros(T, npoin,neqs)
     for iel = 1:nelem
         for j = 1:N+1
             for i = 1:N+1
@@ -493,7 +507,6 @@ function DSS_rhs!(SD::NSD_2D, V::SubArray{Float64}, Vel::AbstractArray, conn::Ab
         end
     end
     #show(stdout, "text/plain", V)
-    #return V
 end
 
 
