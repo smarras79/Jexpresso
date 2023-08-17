@@ -23,9 +23,9 @@ function neumann(q, gradq, x, t, mesh, metrics, inputs::Dict)
     return rhs
 end
 
-function dirichlet!(q, gradq, x, y, t, mesh, metrics, tag, qbdy, inputs::Dict)
+function dirichlet!(q, gradq, x, y, t, mesh, nx, ny, tag, qbdy, inputs::Dict)
 
-    qbdy = user_bc_dirichlet!(q, gradq, x, y, t, tag, qbdy, inputs::Dict)
+    qbdy = user_bc_dirichlet!(q, gradq, x, y, t, tag, qbdy, inputs::Dict, nx, ny)
     
     return qbdy
 end

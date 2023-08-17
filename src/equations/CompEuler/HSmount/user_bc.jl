@@ -24,25 +24,16 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, inputs::Dict)
-    #flags = zeros(size(q,1),1)   
-    #qbdy[2] = 0.0
-    #qbdy[3] = 0.0
-    if ( x <= -4950.0 || x >= 4950.0)
-        qbdy[2] = 0.0
-        #flags[2] = 1
-    end
-    if (y <= 50.0 || y >= 9950.0)
-        qbdy[3] = 0.0
-        #flags[3] = 1
-    end
-    if ((x >= 4950.0 || x <= -4950.0) && (y <= 50|| y >= 9950.0))
-        qbdy[2] = 0.0
-        qbdy[3] = 0.0
-        #flags[2] = 1
-        #flags[3] = 1
-    end
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, inputs::Dict, nx, ny)
+#    if (tag == "free_slip")
+      qnl = nx*q[2] + ny*q[3]
+      qbdy[2] = q[2] - qnl*nx
+      qbdy[3] = q[3] - qnl*ny
 
+ #   else
+  #    qbdy[2] = 0.0
+   # end
+    #@info x,y, qbdy[2],qbdy[3] 
     return qbdy #, flags
     
 end

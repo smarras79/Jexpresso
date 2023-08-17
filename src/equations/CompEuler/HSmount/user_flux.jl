@@ -12,7 +12,9 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::S
     Pressure = zeros(Float64, 1)
     #@info mesh.x[ip], mesh.y[ip], ρ,u,v,θ
     perfectGasLaw_ρθtoP!(Pressure, PhysConst;  ρ=ρ, θ=θ)
-        
+     
+       
+
     F[1] = ρu
     F[2] = ρu*u .+ Pressure[1]
     F[3] = ρv*u
@@ -23,4 +25,6 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::S
     G[3] = ρv*v .+ Pressure[1]
     G[4] = ρθ*v
     
+    #@info F,G, mesh.x[ip], mesh.y[ip],ρ,ρu,u 
+
 end

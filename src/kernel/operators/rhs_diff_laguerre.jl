@@ -202,7 +202,7 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis1, basis2,
         μ[iel] = inputs[:νx]
         κ = μ[iel]
         for l = 1:mesh.ngr, k = 1:mesh.ngl
-            ωJkl = ω[k]*ω[l]*metrics2.Je[k, l, iel]
+            ωJkl = ω1[k]*ω2[l]*metrics2.Je[k, l, iel]
             
             #for ieq = 1:neqs
             #dqdξ = 0.0
@@ -263,20 +263,6 @@ function build_rhs_diff(SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis1, basis2,
                 
             end
 
-            for i = 1:mesh.ngr
-
-                dhdξ_ik, dhdη_il = basis1.dψ[i,k], basis2.dψ[i,l]
-
-                rhsdiffη_el[k,i,iel,1] -= ωJkl*dhdη_il*∇η∇ρ_kl
-
-                rhsdiffη_el[k,i,iel,2] -= ωJkl*dhdη_il*∇η∇u_kl
-
-                rhsdiffη_el[k,i,iel,3] -= ωJkl*dhdη_il*∇η∇v_kl
-
-                rhsdiffη_el[k,i,iel,4] -= ωJkl*dhdη_il*∇η∇T_kl
-
-            end
-            # end
         end
     end
     

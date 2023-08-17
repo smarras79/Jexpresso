@@ -9,7 +9,6 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis1, basis2
     qq     = zeros(mesh.npoin,neqs)   
     
     #ωJe = zeros(mesh.ngl,mesh.ngl)
-    
     for i=1:neqs
         idx = (i-1)*mesh.npoin
         qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
@@ -29,7 +28,7 @@ function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis1, basis2
 
             user_flux!(@view(F[i,j,1:neqs]), @view(G[i,j,1:neqs]), SD, @view(qq[ip,1:neqs]), mesh, ip; neqs=neqs)
             #if (inputs[:lsource] == true)
-            #    user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs, y=mesh.y[ip])
+             #   user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs, y=mesh.y[ip],ymax=mesh.ymax)
             #end
             #if (inputs[:lsource] == true)
                 #user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs)
