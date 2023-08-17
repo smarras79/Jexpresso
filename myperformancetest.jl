@@ -1,4 +1,7 @@
 using BenchmarkTools
+using StaticArrays
+using LinearAlgebra: dot
+
 function barw_array( xnodes )
     n = length(xnodes)
     barw = Array{Float64}(undef,n)
@@ -20,8 +23,8 @@ function run_barw_array()
         u = barw_array( xnodes )
     end
 end
-@info "NAIVE "
-@btime run_barw_array()
+#@info "NAIVE "
+#@btime run_barw_array()
 ####
 
 function barw_workvector( barw, xnodes )
@@ -46,8 +49,8 @@ function run_barw_workvector()
     end
 
 end
-@info "work vector without static arrays"
-@btime run_barw_workvector()
+#@info "work vector without static arrays"
+#@btime run_barw_workvector()
 #############################
 
 using StaticArrays
@@ -79,8 +82,8 @@ function run_barw_sarray_constructor()
 
 end
 
-@info "work vector WITH static arrays"
-@btime run_barw_sarray_constructor()
+#@info "work vector WITH static arrays"
+#@btime run_barw_sarray_constructor()
 
 
 using Revise
@@ -105,5 +108,129 @@ function run_barw_array()
         u = barw_array( xnodes, n)
     end
 end
-@info "work vector WITH static arrays"
-@btime run_barw_array()
+#@info "work vector WITH static arrays"
+#@btime run_barw_array()
+
+function mytest(n)
+    a = zeros(Int64, n)
+    b = zeros(Int64, n)
+    sum = 0.0
+    for i=1:n
+        a[i] = i
+        b[i] = i*2
+    end
+    return a, b
+end
+
+function mytest!(a::SubArray{Float64},b::SubArray{Float64}, T; neqs=3)
+    n=length(a)
+    
+    a[1] = 1.0
+    b[1] = 2.0
+
+    a[2] = 1.0
+    b[2] = 2.0
+
+    a[3] = 1.0
+    b[3] = 2.0
+        
+end
+
+n = 4
+a = zeros(Float64, n, n)
+b = zeros(Float64, n, n)
+av = zeros(Float64, n)
+bv = zeros(Float64, n)
+ 
+for iel=1:10
+    
+    for j=1:2, i=1:2
+
+        av.=@view(a[1,:])
+        bv.=@view(b[1,:])
+        #@btime mytest!(av, bv, Float64; neqs=3)
+    end
+end
+
+
+Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
+
+    a = Array{TFloat}(undef, 0, 0, 0)
+    b = Array{TFloat}(undef, 0, 0, 0)
+    c = Array{TFloat}(undef, 0, 0, 0)
+    d = Array{TFloat}(undef, 0, 0, 0)
+    
+end
+
+function define_q(nvar, nx)
+    
+    q = St_SolutionVars{Float64}(a = zeros(nx,nx, nvar),
+                                 b = zeros(nx,nx, nvar),
+                                 c = zeros(nx,nx, nvar),
+                                 d = zeros(nx,nx, nvar))
+    return q
+end
+
+function user_flux!(d,a0,b0,c0, i, nvar)
+    #for n=1:nvar
+    #d[i,i,n] = (a0[i,i,n])#+b0[i-1,i-1,n]) # + 129.0*(c0[i,i,n]*b0[i+1,i+1,n]) + 300.0*(a0[i-1,i-1,n]*c0[i+1,i+1,n])
+    d[i,i,1] = 1.0#(a0[n])#+b0[i-1,i-1,n]) # + 129.0*(c0[i,i,n]*b0[i+1,i+1,n]) + 300.0*(a0[i-1,i-1,n]*c0[i+1,i+1,n])
+    d[i,i,2] = 1.0#(a0[n])#+b0[i-1,i-1,n]) # + 129.0*(c0[i,i,n]*b0[i+1,i+1,n]) + 300.0*(a0[i-1,i-1,n]*c0[i+1,i+1,n])
+    d[i,i,3] = 1.0#(a0[n])#+b0[i-1,i-1,n]) # + 129.0*(c0[i,i,n]*b0[i+1,i+1,n]) + 300.0*(a0[i-1,i-1,n]*c0[i+1,i+1,n])
+    d[i,i,nvar] = 1.0#(a0[n])#+b0[i-1,i-1,n]) # + 129.0*(c0[i,i,n]*b0[i+1,i+1,n]) + 300.0*(a0[i-1,i-1,n]*c0[i+1,i+1,n])
+    #d[i,i,n] *= 5
+    #end
+end
+
+function _build_rhs(a, b, c, d, e, nx, nvar)   
+
+    
+    for iel=1:10, j=2:nx-1, i=2:nx-1
+        
+        user_flux!(d, a, b, c, i, nvar)
+        #@info "first"
+        #@info d[2,2,end]
+    end
+   
+    for ieq = 1:nvar
+        for j=1:nx, i=1:nx
+            dFdξ = 0.0
+
+            #dot(d[:,j,end], d[:,j,ieq])
+            #@simd for k = 1:nx
+            #    dFdξ += d[k,j,end]*d[k,j,ieq]
+            #    #@info d[2,2,end]
+            #end
+        end
+    end
+    
+    #for i=2:nx-1
+    #@info "second"
+    #@info d[i,i,end]
+    #end
+    #@info "dFdξ" dFdξ
+end
+
+nx = 5
+nvar = 4
+#q=define_q(nvar, nx)
+@info "ciao"
+a,b,c,d, e = [rand(nx, nx, nvar) for _=1:5]
+#@btime _build_rhs($q.a,$q.b,$q.c,$q.d,$nx,$nvar)
+@btime _build_rhs($a,$b,$c,$d,$e,$nx,$nvar)
+
+
+#info dot vs mydot
+@info "dot product"
+aa=ones(10)
+@btime dot(aa[:], aa[:])
+
+function mydot!(mydot, aa)
+    @simd for k = 1:length(aa)
+        mydot += aa[k]*aa[k]
+    end
+    #return mydot
+end
+s=0.0
+@btime mydot!(s, aa)
+
