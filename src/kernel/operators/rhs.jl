@@ -170,7 +170,7 @@ function inviscid_rhs_el!(F, G, S, rhs_el, qq, qp, SD::NSD_2D, mesh, metrics, ba
             Fi  = @view(F[i,j,1:neqs])
             Gi  = @view(G[i,j,1:neqs])
             qqi = @view(qq[ip,1:neqs])
-            user_flux!(Fi, Gi, SD, qqi, mesh; neqs=neqs)
+            user_flux!(Fi, Gi, SD, qqi, mesh, ip; neqs=neqs)
             
             if lsource
                 Si = @view(S[i,j,1:neqs])
@@ -345,7 +345,6 @@ end
 function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
                    qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
 
->>>>>>> 64430ce5c650911b66b7ed8723529e7a6c591c7f
     RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
     
     return RHS

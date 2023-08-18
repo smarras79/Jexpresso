@@ -217,7 +217,7 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                 if (inputs[:luser_bc])
                     #q[ip,:], flags = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag,qbdy)
                     ipp=1 #ip               
-                    qbdy = dirichlet!(@view(q[ip,:]),@view(gradq[:,ipp,:]),x,y,t,mesh,metrics,tag,qbdy,inputs)
+                    qbdy = dirichlet!(@view(q[ip,:]),@view(gradq[:,ipp,:]),x,y,t,mesh,metrics.nx[k,iedge],metrics.ny[k,iedge],tag,qbdy,inputs)
                     ##SM change this to set flux to zero and do not allocate gradq unless neumann is required explicitly by the user
                     flux .= ωJacedge.*neumann(q[ip,:],gradq[:,ipp,:],x,y,t,mesh,metrics,tag,inputs)
                 else
