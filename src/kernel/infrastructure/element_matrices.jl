@@ -584,6 +584,14 @@ function DSS_rhs_laguerre(SD::NSD_2D, Vel::AbstractArray, mesh, neqs, T)
         for j = 1:mesh.ngr
             for i = 1:mesh.ngl
                 I = mesh.connijk_lag[i,j,iel]
+                
+                 V[I,:] .= V[I,:] .+ Vel[i,j,iel,:]
+            end
+        end
+    end
+    #show(stdout, "text/plain", V)
+    return V
+end
 
 function DSS_rhs!(SD::NSD_2D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
     
