@@ -1,6 +1,6 @@
 name = "Jexpresso"
 uuid = "60551be2-40ab-4403-a4bd-ad35d0cc3d31"
-authors = ["Simone <smarras@njit.edu>"]
+authors = ["Simone Marras <smarras@njit.edu>"]
 version = "0.1.0"
 
 [deps]
