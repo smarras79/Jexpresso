@@ -1,7 +1,6 @@
 using ArgParse
 using Crayons.Box
 using PrettyTables
-using Revise
 
 export mod_inputs_user_inputs
 export mod_inputs_print_welcome

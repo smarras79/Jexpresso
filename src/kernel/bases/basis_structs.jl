@@ -2,7 +2,6 @@
 # This file contains all the structs definitions
 # S. Marras, Feb 2022
 #
-include("../abstractTypes.jl")
 
 export St_Lagrange
 export St_Legendre
@@ -11,7 +10,6 @@ export St_lg
 export St_cg
 export build_lgl!
 export LegendreGaussLobattoNodesAndWeights
-
 
 abstract type AbstractIntegrationPointAndWeights end
 abstract type AbstractInterpolationBasis end

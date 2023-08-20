@@ -1,7 +1,4 @@
-using LinearSolve
-using SnoopCompile
 using WriteVTK
-import SciMLBase
 
 include("./plotting/jeplots.jl")
 

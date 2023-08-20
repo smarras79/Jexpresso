@@ -7,7 +7,6 @@ using DelimitedFiles
 using DataStructures
 using UnicodePlots
 using Printf
-using Revise
 using ElasticArrays
 using StaticArrays
 using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
@@ -25,10 +24,10 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
 
 
 
+using DocStringExtensions
+
 const TInt   = Int64
 const TFloat = Float64
-
-#using DocStringExtensions
 
 include(joinpath("equations", "AbstractEquations.jl"))
 
@@ -40,12 +39,16 @@ include(joinpath("kernel", "physics", "globalConstantsPhysics.jl"))
 
 include(joinpath("kernel", "physics", "constitutiveLaw.jl"))
 
+include(joinpath("kernel", "mesh", "mesh.jl"))
+
+include(joinpath("kernel", "mesh", "metric_terms.jl"))
+
 include(joinpath("kernel", "infrastructure", "sem_setup.jl"))
 
 include(joinpath("kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath("kernel", "operators", "rhs.jl"))
-
+#=
 include(joinpath("kernel", "operators", "rhs_diff.jl"))
 
 include(joinpath("kernel", "solvers", "TimeIntegrators.jl"))
@@ -55,7 +58,7 @@ include(joinpath("kernel", "solvers", "Axb.jl"))
 include(joinpath("io", "mod_inputs.jl"))
 
 include(joinpath("io", "write_output.jl"))
-
-include("./run.jl")
+=#
+#include("./run.jl")
 
 end
