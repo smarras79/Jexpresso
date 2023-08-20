@@ -1,5 +1,3 @@
-using DelimitedFiles
-using DataStructures
 using Gridap
 using Gridap.Arrays
 using Gridap.Arrays: Table
@@ -9,7 +7,6 @@ using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.Geometry: GridMock
 using GridapGmsh
-using Printf
 
 export St_mesh
 export mod_mesh_mesh_driver

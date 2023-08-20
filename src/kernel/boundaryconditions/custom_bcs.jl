@@ -1,8 +1,7 @@
-include("../abstractTypes.jl")
-
 #---------------------------------------------------------------------------
 # Fetch problem name to access the user_bc functions
 #---------------------------------------------------------------------------
+user_bc_dir = "../../equations/CompEuler/theta/user_bc.jl"
 if (length(ARGS) === 1) #equations
     user_bc_dir = string("../../equations/", ARGS[1], "/user_bc.jl")
 elseif (length(ARGS) === 2) #equations/equations_case_name
