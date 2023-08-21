@@ -1,8 +1,19 @@
+#Constants
+const TInt   = Int64
+const TFloat = Float64
+
 #--------------------------------------------------------
 # jexpresso modules
 #--------------------------------------------------------
+#include("../../io/mod_inputs.jl")
+#include("../mesh/metric_terms.jl")
+#include("../mesh/mesh.jl")
 include("../operators/operators.jl")
+#include("../abstractTypes.jl")
+#include("../bases/basis_structs.jl")
+#include("../infrastructure/element_matrices.jl")
 include("../infrastructure/Kopriva_functions.jl")
+#include("../infrastructure/2D_3D_structures.jl")
 include("custom_bcs.jl")
 
 function apply_periodicity!(SD::NSD_1D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars)
