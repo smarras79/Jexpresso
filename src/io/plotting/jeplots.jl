@@ -2,8 +2,9 @@ using Plots
 using Dierckx
 using LaTeXStrings
 using ColorSchemes
+using CairoMakie
 using Makie
-#Makie.theme(:fonts)
+Makie.theme(:fonts)
 
 #= CITE Mackie:
 @article{DanischKrumbiegel2021,

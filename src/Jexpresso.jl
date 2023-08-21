@@ -48,7 +48,7 @@ include(joinpath("kernel", "infrastructure", "sem_setup.jl"))
 include(joinpath("kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath("kernel", "operators", "rhs.jl"))
-#=
+
 include(joinpath("kernel", "operators", "rhs_diff.jl"))
 
 include(joinpath("kernel", "solvers", "TimeIntegrators.jl"))
@@ -58,7 +58,7 @@ include(joinpath("kernel", "solvers", "Axb.jl"))
 include(joinpath("io", "mod_inputs.jl"))
 
 include(joinpath("io", "write_output.jl"))
-=#
-#include("./run.jl")
+
+include("./run.jl")
 
 end

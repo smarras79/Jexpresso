@@ -490,7 +490,24 @@ function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npo
 end
 
 
-function DSS_rhs!(SD::NSD_2D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
+function DSS_rhs!(SD::NSD_2D, du::AbstractArray, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
+
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for j = 1:N+1
+                for i = 1:N+1
+                    #I = conn[i,j,iel]
+                    I1d = (ieq - 1)*npoin + conn[i,j,iel]
+                    
+                    du[I1d]  += Vel[i,j,iel,ieq]
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", V)
+end
+
+function DSS_rhs_or!(SD::NSD_2D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
     
     for iel = 1:nelem
         for j = 1:N+1
@@ -510,10 +527,11 @@ function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
     RHS = M\RHS #M is not iagonal
 end
 
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs)
+function divive_by_mass_matrix2d!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs)
 
+    lengthM = length(M)
     for i = 1:neqs
-        for j = 1:length(M)
+        for j = 1:lengthM
             RHS[j, i] /= M[j]
         end
     end
@@ -521,6 +539,41 @@ function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexac
    # for i=1:neqs 
    #    RHS[:,i] .= RHS[:,i]./M[:] #M is diagonal (stored as a vector)
    #end
+end
+
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs)
+
+    @info length(M)
+    lengthM = length(M)
+    @info lengthM
+
+error("SAASSA")
+    
+    for i = 1:neqs
+        idx = (i-1)*mesh.npoin
+
+        I1d = (ieq - 1)*npoin + I
+        
+        for j = 1:lengthM
+            RHS[j, i] /= M[j]
+        end
+    end
+
+   #= for ieq = 1:neqs
+        for iel = 1:nelem
+            for j = 1:N+1
+                for i = 1:N+1
+
+                    for j = 1:length(M)
+
+                        I1d = (ieq - 1)*npoin + conn[i,j,iel]
+                    
+                        RHS[I1d] /= M[j]
+                end
+            end
+        end
+    end=#
+    #show(stdout, "text/plain", V)
 end
 
 function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)
