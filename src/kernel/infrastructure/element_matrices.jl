@@ -478,6 +478,24 @@ end
 
 
 
+function newDSS_rhs!(SD::NSD_2D, du::AbstractArray, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
+
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for j = 1:N+1
+                for i = 1:N+1
+                    #I = conn[i,j,iel]
+                    I1d = (ieq - 1)*npoin + conn[i,j,iel]
+                    
+                    du[I1d] += Vel[i,j,iel,ieq]
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", V)
+end
+
+
 function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
     
     V  = zeros(T, npoin,neqs)
