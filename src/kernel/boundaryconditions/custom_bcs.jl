@@ -24,14 +24,14 @@ end
 
 function dirichlet!(q, gradq, x, y, t, mesh, metrics, tag, qbdy, inputs::Dict)
 
-    qbdy = user_bc_dirichlet!(q, gradq, x, y, t, tag, qbdy, inputs::Dict)
+    user_bc_dirichlet!(q, gradq, x, y, t, tag, qbdy, inputs::Dict)
     
     return qbdy
 end
 
 function dirichlet!(q, gradq, x, t, mesh, metrics, tag, qbdy, inputs::Dict)
     
-    qbdy = user_bc_dirichlet!(q, gradq, x, t, tag, qbdy, inputs::Dict)
+    user_bc_dirichlet!(q, gradq, x, t, tag, qbdy, inputs::Dict)
 
     return qbdy
 end

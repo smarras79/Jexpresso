@@ -25,6 +25,7 @@
     
 """
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, inputs::Dict)
+    
     #flags = zeros(size(q,1),1)   
     #qbdy[2] = 0.0
     #qbdy[3] = 0.0
