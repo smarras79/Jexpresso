@@ -114,32 +114,36 @@ end
 
 function resetRHSToZero_inviscid!(params)
     fill!(params.rhs_el, zero(params.T))
-    fill!(params.RHS, zero(params.T))
+    fill!(params.RHS,    zero(params.T))
 end
 
 function resetRHSToZero_viscous!(params)
-    fill!(params.rhs_diff_el, zero(params.T))
-    fill!(params.RHS_visc, zero(params.T))
+    fill!(params.rhs_diff_el,  zero(params.T))
+    fill!(params.rhs_diffξ_el, zero(params.T))
+    fill!(params.rhs_diffη_el, zero(params.T))
+    fill!(params.RHS_visc,     zero(params.T))
 end
 
 
 function _build_rhs(u, params, time)
 
     T       = Float64
+    SD      = params.SD
     neqs    = params.neqs
     ngl     = params.mesh.ngl
     nelem   = params.mesh.nelem
     npoin   = params.mesh.npoin
 
     # rhs_el, RHS -> 0.0
-    resetRHSToZero_invisicd!(params) 
+    resetRHSToZero_inviscid!(params) 
     
     #
     # Inviscid part:
     #
     inviscid_rhs_el!(params.F, params.G, params.S,
                      params.rhs_el, params.uaux, u,
-                     params.SD, params.mesh, params.metrics, params.basis, params.ω;
+                     params.SD, params.mesh, params.metrics,
+                     params.basis, params.ω;
                      neqs, lsource=params.inputs[:lsource])
     
     apply_boundary_conditions!(u, params, time)
@@ -156,31 +160,36 @@ function _build_rhs(u, params, time)
     #
     # Viscous part:
     #
-   #= if (inputs[:lvisc] == true)
+    #=if (inputs[:lvisc] == true)
+
+        resetRHSToZero_viscous!(params)
         
-        if (lowercase(inputs[:visc_model]) === "dsgs")
+        #=if (lowercase(params.inputs[:visc_model]) === "dsgs")
             
             if (rem(time, Δt) == 0 && time > 0.0)
                 qnm1 .= qnm2
                 qnm2 .= uaux
             end
             
-    compute_viscosity!(params.u.μ, params.SD, params.PT, params.uaux,
+            compute_viscosity!(params.qp.μ, params.SD, params.PT, params.uaux,
     params.u.qnm1, params.u.qnm2, params.RHS, params.Δt, mesh, metrics, T)
-        else
-            μ[:] .= inputs[:νx]
-        end
-        for i=1:neqs
-            idx = (i-1)*mesh.npoin
-            for j=1:mesh.npoin
-                u[idx+j] = uaux[j,i]
-            end
-        end
+        else=#
+        #    μ[:] .= inputs[:νx]
+        ##end
+       # for i=1:neqs
+       #     idx = (i-1)*params.mesh.npoin
+       #     for j=1:params.mesh.npoin
+       #         u[idx+j] = params.uaux[j,i]
+       #     end
+       # end
 
-        build_rhs_diff!(@view(rhs_diff_el[:,:,:,:]), SD, QT, PT, u, neqs, basis, ω, inputs, mesh, metrics, μ, T;)
+        @btime build_rhs_diff!($params, $u)
         
-        DSS_rhs!(SD, @view(RHS_visc[:,:]), rhs_diff_el, mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, T)
-        RHS .= RHS .+ RHS_visc
+        DSS_rhs!(params.SD, @view(params.RHS_visc[:,:]), @views(params.rhs_diff_el[:,:,:,:]), 
+                 params.mesh.connijk, params.mesh.nelem, params.mesh.npoin,
+                 neqs, params.mesh.nop, T)
+        
+        params.RHS .= params.RHS .+ params.RHS_visc
         
     end=#
     
