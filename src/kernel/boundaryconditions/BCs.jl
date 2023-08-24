@@ -186,7 +186,43 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_1D,nvars,metrics,ω,dirichle
     end
 end
 
+
+
 function build_custom_bcs!(t, mesh, qbdy, q, gradq, bdy_flux, rhs, ::NSD_2D, nvars, metrics, ω, dirichlet!, neumann, L, inputs)
+    
+    for iedge = 1:mesh.nedges_bdy 
+        iel  = mesh.bdy_edge_in_elem[iedge]
+
+        if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2"
+            tag = mesh.bdy_edge_type[iedge]
+            for k=1:mesh.ngl
+                ip = mesh.poin_in_bdy_edge[iedge,k]
+                
+                fill!(qbdy, 4325789.0)
+                ipp = 1 #ip               
+                qbdy = dirichlet!(@view(qbdy[:]),@view(gradq[:,ipp,:]), mesh.x[ip], mesh.y[ip], t, tag, inputs)
+                
+                mm=1; ll=1
+                for jj=1:mesh.ngl, ii=1:mesh.ngl
+                    if (mesh.connijk[ii,jj,iel] == ip)
+                        mm=jj
+                        ll=ii
+                    end
+                end
+                                
+                for var =1:nvars
+                    if !(AlmostEqual(qbdy[var],4325789.0)) # WHAT's this for?
+                        q[ip,var]          = qbdy[var]
+                        rhs[ll,mm,iel,var] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
+                    end
+                end
+            end
+        end
+    end
+end
+
+#=
+function yt_build_custom_bcs!(t, mesh, qbdy, q, gradq, bdy_flux, rhs, ::NSD_2D, nvars, metrics, ω, dirichlet!, neumann, L, inputs)
     
     # nedges =  mesh.nedges_int
     # q_size = size(q, 2)
@@ -252,3 +288,4 @@ function build_custom_bcs!(t, mesh, qbdy, q, gradq, bdy_flux, rhs, ::NSD_2D, nva
         end
     end
 end
+=#

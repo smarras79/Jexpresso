@@ -9,29 +9,28 @@ elseif (length(ARGS) === 2) #equations/equations_case_name
 end
 include(user_bc_dir)
 #---------------------------------------------------------------------------
+function dirichlet!(qbdy, gradq, x, y, t, tag, inputs::Dict)
 
-function neumann(q, gradq, x, y, t, mesh, metrics, tag, inputs::Dict)
+    user_bc_dirichlet!(qbdy, gradq, x, y, t, tag, inputs::Dict)
+    
+    return qbdy
+end
+
+function dirichlet!(qbdy, gradq, x, t, tag, inputs::Dict)
+    
+    user_bc_dirichlet!(qbdy, gradq, x, t, tag, inputs::Dict)
+
+    return qbdy
+end
+
+function neumann(q, gradq, x, y, t, tag, inputs::Dict)
     
     rhs = user_bc_neumann(q, gradq, x, y, t, tag, inputs::Dict)
     return rhs
 end
 
-function neumann(q, gradq, x, t, mesh, metrics, inputs::Dict)
+function neumann(q, gradq, x, t, inputs::Dict)
 
     rhs = user_bc_neumann(q, gradq, x, t, inputs)
     return rhs
-end
-
-function dirichlet!(q, gradq, x, y, t, mesh, metrics, tag, qbdy, inputs::Dict)
-
-    user_bc_dirichlet!(q, gradq, x, y, t, tag, qbdy, inputs::Dict)
-    
-    return qbdy
-end
-
-function dirichlet!(q, gradq, x, t, mesh, metrics, tag, qbdy, inputs::Dict)
-    
-    user_bc_dirichlet!(q, gradq, x, t, tag, qbdy, inputs::Dict)
-
-    return qbdy
 end

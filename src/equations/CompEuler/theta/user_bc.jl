@@ -24,36 +24,30 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, inputs::Dict)
+function user_bc_dirichlet!(qbdy, gradq, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
     
-    #flags = zeros(size(q,1),1)   
-    #qbdy[2] = 0.0
-    #qbdy[3] = 0.0
+    #fill!(flags, zero(Float64))
     if ( x <= -4990.0 || x >= 4990.0)
         qbdy[2] = 0.0
-        #flags[2] = 1
     end
     if (y <= 10.0 || y >= 9990.0)
         qbdy[3] = 0.0
-        #flags[3] = 1
     end
     if ((x >= 4990.0 || x <= -4990.0) && (y >= 9990.0 || y <= 10.0))
         qbdy[2] = 0.0
         qbdy[3] = 0.0
-        #flags[2] = 1
-        #flags[3] = 1
     end
 
-    return qbdy #, flags
+    return qbdy
     
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
-    flux = zeros(size(q,2),1)
+    fill!(flux, zero(Float64))
     return flux
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
-    flux = zeros(size(q,2),1)
+    fill!(flux, zero(Float64))
     return flux
 end
