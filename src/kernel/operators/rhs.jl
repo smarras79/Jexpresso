@@ -132,7 +132,7 @@ function _build_rhs(u, params, time)
     npoin   = params.mesh.npoin
 
     # rhs_el, RHS -> 0.0
-    resetRHSToZero!(params) 
+    resetRHSToZero_invisicd!(params) 
     
     #
     # Inviscid part:
