@@ -30,15 +30,16 @@ function time_loop!(QT,
     # rhs* -> inviscid and viscous ELEMENT rhs
     # RHS* -> inviscid and viscous GLOBAL  rhs
     #-----------------------------------------------------------------
-    u            = zeros(T, mesh.npoin*qp.neqs);
+    u            = zeros(T, mesh.npoin*qp.neqs)
     uaux         = zeros(T, mesh.npoin, qp.neqs)
-    F            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
-    G            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
-    S            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
+    uaux_el      = zeros(T, qp.neqs, mesh.ngl, mesh.ngl, mesh.nelem)
     rhs_el       = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, qp.neqs)
     rhs_diff_el  = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, qp.neqs)
     rhs_diffξ_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, qp.neqs)
     rhs_diffη_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, qp.neqs)
+    F            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
+    G            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
+    S            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
     RHS          = zeros(T, mesh.npoin, qp.neqs)
     RHS_visc     = zeros(T, mesh.npoin, qp.neqs)
 
@@ -60,8 +61,10 @@ function time_loop!(QT,
     tspan  = (inputs[:tinit], inputs[:tend])
     
     params = (T, F, G, S,
-              uaux, gradu, ubdy, bdy_flux,
+              uaux, uaux_el,
+              ubdy, gradu, bdy_flux, #for B.C.
               rhs_el, rhs_diff_el,
+              rhs_diffξ_el, rhs_diffη_el,
               RHS, RHS_visc, 
               SD=mesh.SD, QT, PT,
               neqs=qp.neqs,
