@@ -148,10 +148,10 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
         #else
             for i = 1:mesh.ngl-1
                 for j = 1:mesh.ngl-1
-                    ip1 = mesh.connijk[i,j,iel]
-                    ip2 = mesh.connijk[i+1,j,iel]
-                    ip3 = mesh.connijk[i+1,j+1,iel]
-                    ip4 = mesh.connijk[i,j+1,iel]
+                    ip1 = mesh.connijk[iel,i,j]
+                    ip2 = mesh.connijk[iel,i+1,j]
+                    ip3 = mesh.connijk[iel,i+1,j+1]
+                    ip4 = mesh.connijk[iel,i,j+1]
                     subelem[isel, 1] = ip1
                     subelem[isel, 2] = ip2
                     subelem[isel, 3] = ip3

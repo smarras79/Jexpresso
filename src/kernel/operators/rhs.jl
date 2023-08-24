@@ -36,16 +36,6 @@ include(user_source_dir)
 #---------------------------------------------------------------------------
 function rhs!(du, u, params, time)
     
-    #=RHS = build_rhs(params.SD, params.QT, params.PT,
-                    u,
-                    params.neqs,
-                    params.basis, params.ω,
-                    params.mesh, params.metrics,
-                    params.M, params.De, params.Le,
-                    time,
-                    params.inputs, params.Δt, params.deps, params.T;
-                    qnm1=params.qnm1, qnm2=params.qnm2, μ=params.μ)
-    =#
     RHS = build_rhs(u, params, time)
     
     for i=1:params.neqs
@@ -67,23 +57,23 @@ function inviscid_rhs_el!(F, G, S, rhs_el, uaux, u, SD::NSD_2D, mesh, metrics, b
     for iel=1:mesh.nelem
 
         for j=1:mesh.ngl, i=1:mesh.ngl
-            ip = mesh.connijk[i,j,iel]
-            
-            Fi  = @view(F[i,j,1:neqs])
-            Gi  = @view(G[i,j,1:neqs])
-            uauxi = @view(uaux[ip,1:neqs])
-            user_flux!(Fi, Gi, SD, uauxi, mesh; neqs=neqs)
-            
+            ip = mesh.connijk[iel,i,j]
+            user_flux!(@view(F[i,j,:]), @view(G[i,j,:]), SD, @view(uaux[ip,:]), mesh; neqs=neqs)
             if lsource
-                Si = @view(S[i,j,1:neqs])
-                user_source!(Si, uauxi, mesh.npoin; neqs=neqs)
+                user_source!(@view(S[i,j,:]), @view(uaux[ip,:]), mesh.npoin; neqs=neqs)
             end
         end
         
-        for ieq = 1:neqs
-            for j=1:mesh.ngl
-                for i=1:mesh.ngl
-                    ωJac = ω[i]*ω[j]*metrics.Je[i,j,iel]
+        for j=1:mesh.ngl
+            for i=1:mesh.ngl
+                ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+                    
+                dξdx_ij = metrics.dξdx[iel,i,j]
+                dξdy_ij = metrics.dξdy[iel,i,j]
+                dηdx_ij = metrics.dηdx[iel,i,j]
+                dηdy_ij = metrics.dηdy[iel,i,j]
+                                
+                for ieq = 1:neqs
                     
                     dFdξ = 0.0
                     dFdη = 0.0
@@ -98,14 +88,9 @@ function inviscid_rhs_el!(F, G, S, rhs_el, uaux, u, SD::NSD_2D, mesh, metrics, b
                         dGdη += basis.dψ[k,j]*G[i,k,ieq]
                     end
                     
-                    dξdx_ij = metrics.dξdx[i,j,iel]
-                    dξdy_ij = metrics.dξdy[i,j,iel]
-                    dηdx_ij = metrics.dηdx[i,j,iel]
-                    dηdy_ij = metrics.dηdy[i,j,iel]
-                    
                     dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
                     dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
-                    rhs_el[i,j,iel,ieq] -= ωJac*((dFdx + dGdy)  - S[i,j,ieq]) #gravity
+                    rhs_el[iel,i,j,ieq] -= ωJac*((dFdx + dGdy)  - S[i,j,ieq]) #gravity
                 end
             end
         end
@@ -147,12 +132,6 @@ function _build_rhs(u, params, time)
                      neqs, lsource=params.inputs[:lsource])
     
     apply_boundary_conditions!(u, params, time)
-
-    #apply_boundary_conditions!(params.SD, @view(params.rhs_el[:,:,:,:]),
-    #                           @view(params.uaux[:,:]), @view(params.gradu[:,:,:]), 
-    #                           params.mesh, params.inputs,  params.QT, params.metrics,
-    #                           params.basis.ψ, params.basis.dψ, params.ω, params.Δt, params.neqs)
-    
     
     DSS_rhs!(params.SD, @view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]),
              params.mesh.connijk, params.mesh.nelem, params.mesh.npoin, neqs, params.mesh.nop, Float64)
