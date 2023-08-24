@@ -36,12 +36,13 @@ function build_rhs_diff_work_array()
 end
 
 
-function build_rhs_diff!(rhs_diff::SubArray{Float64}, SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))
+#function build_rhs_diff!(rhs_diff::SubArray{Float64}, SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))   
+function build_rhs_diff!(params)
     
-    ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    vel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
-    Tel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
+    #ρel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
+    #uel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
+    #vel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
+    #Tel = zeros(mesh.ngl, mesh.ngl, mesh.nelem)
 
     rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)

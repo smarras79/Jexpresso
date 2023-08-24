@@ -112,10 +112,13 @@ function inviscid_rhs_el!(F, G, S, rhs_el, uaux, u, SD::NSD_2D, mesh, metrics, b
     end
 end
 
-function resetRHSToZero!(params)
+function resetRHSToZero_inviscid!(params)
     fill!(params.rhs_el, zero(params.T))
-    fill!(params.rhs_diff_el, zero(params.T))
     fill!(params.RHS, zero(params.T))
+end
+
+function resetRHSToZero_viscous!(params)
+    fill!(params.rhs_diff_el, zero(params.T))
     fill!(params.RHS_visc, zero(params.T))
 end
 

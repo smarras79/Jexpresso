@@ -30,15 +30,17 @@ function time_loop!(QT,
     # rhs* -> inviscid and viscous ELEMENT rhs
     # RHS* -> inviscid and viscous GLOBAL  rhs
     #-----------------------------------------------------------------
-    u           = zeros(T, mesh.npoin*qp.neqs);
-    uaux        = zeros(T, mesh.npoin, qp.neqs)
-    F           = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
-    G           = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
-    S           = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
-    rhs_el      = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, qp.neqs)
-    rhs_diff_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, qp.neqs)
-    RHS         = zeros(T, mesh.npoin, qp.neqs)
-    RHS_visc    = zeros(T, mesh.npoin, qp.neqs)
+    u            = zeros(T, mesh.npoin*qp.neqs);
+    uaux         = zeros(T, mesh.npoin, qp.neqs)
+    F            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
+    G            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
+    S            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
+    rhs_el       = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, qp.neqs)
+    rhs_diff_el  = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, qp.neqs)
+    rhs_diffξ_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, qp.neqs)
+    rhs_diffη_el = zeros(T, mesh.ngl, mesh.ngl, mesh.nelem, qp.neqs)
+    RHS          = zeros(T, mesh.npoin, qp.neqs)
+    RHS_visc     = zeros(T, mesh.npoin, qp.neqs)
 
     #The following are currently used by B.C.
     gradu       = zeros(2, 1, 1) #zeros(2,mesh.npoin,nvars)
