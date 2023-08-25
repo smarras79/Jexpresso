@@ -26,39 +26,35 @@ include("../ArtificialViscosity/DynSGS.jl")
 #
 function build_rhs_diff_work_array()
     
-    #qnel = zeros(mesh.ngl, mesh.nelem, neqs)
-    ρel = zeros(mesh.ngl, mesh.nelem)
-    uel = zeros(mesh.ngl, mesh.nelem)
-    Tel = zeros(mesh.ngl, mesh.nelem)
-    Eel = zeros(mesh.ngl, mesh.nelem)
-
+    ρel = zeros(mesh.ngl, mesh.ngl)
+    uel = zeros(mesh.ngl, mesh.ngl)
+    Tel = zeros(mesh.ngl, mesh.ngl)
+    Eel = zeros(mesh.ngl, mesh.ngl)
     
 end
 
 
 #function build_rhs_diff!(rhs_diff::SubArray{Float64}, SD::NSD_2D, QT, PT::CompEuler, qp, neqs, basis, ω, inputs, mesh::St_mesh, metrics::St_metrics, μ, T; qoutauxi=zeros(1,1))   
-function build_rhs_diff!(params, u)
+function viscous_rhs_el!(rhs_diff_el, uaux, u, SD::NSD_2D, mesh, metrics, basis, ω, neqs, inputs)#; νx=0.0, νy=0.0)
     
-    ρel = zeros(params.mesh.ngl, params.mesh.ngl, params.mesh.nelem)
-    uel = zeros(params.mesh.ngl, params.mesh.ngl, params.mesh.nelem)
-    vel = zeros(params.mesh.ngl, params.mesh.ngl, params.mesh.nelem)
-    Tel = zeros(params.mesh.ngl, params.mesh.ngl, params.mesh.nelem)
-
     #rhsdiffξ_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
     #rhsdiffη_el = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs)
-    
-    qq = zeros(params.neqs, params.mesh.npoin)
-    
+
+    ρel = zeros(Float64, mesh.ngl, mesh.ngl)
+    uel = zeros(Float64, mesh.ngl, mesh.ngl)
+    vel = zeros(Float64, mesh.ngl, mesh.ngl)
+    Tel = zeros(Float64, mesh.ngl, mesh.ngl)
+        
     #
     # qp[1:npoin]         <-- qq[1:npoin, "ρ"]
     # qp[npoin+1:2npoin]  <-- qq[1:npoin, "ρu"]
     # qp[2npoin+1:3npoin] <-- qq[1:npoin, "ρE"]
     #
-    for i=1:params.neqs
-        idx = (i-1)*params.mesh.npoin
-        qq[i,:] = u[idx+1:i*params.mesh.npoin]
+    for i=1:neqs
+        idx = (i-1)*mesh.npoin
+        uaux[:,i] = view(u, idx+1:i*mesh.npoin)
     end
-
+    
     #
     # Add diffusion ν∫∇ψ⋅∇q (ν = const for now)
     #
@@ -68,29 +64,22 @@ function build_rhs_diff!(params, u)
         δenergy = 1.0
     end
 
-    
-    μ = params.inputs[:νx]
+  #=  
+    μ = inputs[:νx]
     ν = 0.0
     κ = μ
     γ = 1.4
     Pr = 0.1
-    for iel=1:params.mesh.nelem
-        for j=1:params.mesh.ngl, i=1:params.mesh.ngl
+    for iel=1:mesh.nelem
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            
+            m = mesh.connijk[iel,i,j]
 
-            m = params.mesh.connijk[i,j,iel]
-
-            ρel[i,j,iel] = qq[1,m]          
-            uel[i,j,iel] = qq[2,m]/ρel[i,j,iel]
-            vel[i,j,iel] = qq[3,m]/ρel[i,j,iel]
+            ρel[i,j] = uaux[m,1]          
+            uel[i,j] = uaux[m,2]/ρel[i,j]
+            vel[i,j] = uaux[m,3]/ρel[i,j]
+            Tel[i,j] = uaux[m,4]/ρel[i,j] - δenergy*0.5*(uel[i,j]^2 + vel[i,j]^2)
             
-            Tel[i,j,iel] = qq[4,m]/ρel[i,j,iel] - δenergy*0.5*(uel[i,j,iel]^2 + vel[i,j,iel]^2)
-            
-            
-           # params.uaux_el[1,i,j,iel] = params.uaux[m, 1]
-            #params.uaux_el[2,i,j,iel] = params.uaux[m, 2]/params.uaux_el[1,i,j,iel]
-            #params.uaux_el[3,i,j,iel] = params.uaux[m, 3]/params.uaux_el[1,i,j,iel]
-            #
-            #params.uaux_el[4,i,j,iel] = params.uaux[m, 4]/params.uaux_el[1,i,j,iel] - δenergy*0.5*(params.uaux_el[2,i,j,iel]^2 + params.uaux_el[3, i,j,iel]^2)
         end
 
     end
@@ -98,7 +87,7 @@ function build_rhs_diff!(params, u)
         #κ = Pr*μ[iel]/(γ - 1.0)
         #ν = μ[iel]#10.0
         #κ = μ[iel]#10.0
-       
+       =#
     #=    for l = 1:params.mesh.ngl
             for k = 1:params.mesh.ngl
                 

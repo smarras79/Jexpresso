@@ -72,14 +72,13 @@ function inviscid_rhs_el!(F, G, S, rhs_el, uaux, u, SD::NSD_2D, mesh, metrics, b
                 dξdy_ij = metrics.dξdy[iel,i,j]
                 dηdx_ij = metrics.dηdx[iel,i,j]
                 dηdy_ij = metrics.dηdy[iel,i,j]
-                                
+
                 for ieq = 1:neqs
                     
                     dFdξ = 0.0
                     dFdη = 0.0
                     dGdξ = 0.0
                     dGdη = 0.0
-
                     for k = 1:mesh.ngl
                         dFdξ += basis.dψ[k,i]*F[k,j,ieq]
                         dFdη += basis.dψ[k,j]*F[i,k,ieq]
@@ -161,9 +160,12 @@ function _build_rhs(u, params, time)
        #         u[idx+j] = params.uaux[j,i]
        #     end
        # end
-
-        @btime build_rhs_diff!($params, $u)
-        
+=#
+        @btime viscous_rhs_el!($params.rhs_diff_el, $params.uaux, $u,
+                               $params.SD, $params.mesh, $params.metrics,
+                               $params.basis, $params.ω, $neqs, $params.inputs)
+    #$νx=params.inputs[:νx], νy=params.inputs[:νy])
+  #=      
         DSS_rhs!(params.SD, @view(params.RHS_visc[:,:]), @views(params.rhs_diff_el[:,:,:,:]), 
                  params.mesh.connijk, params.mesh.nelem, params.mesh.npoin,
                  neqs, params.mesh.nop, T)
