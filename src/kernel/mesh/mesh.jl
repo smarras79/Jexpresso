@@ -18,14 +18,6 @@ const VERTEX_NODES = UInt64(1)
 const EDGE_NODES   = UInt64(2)
 const FACE_NODES   = UInt64(4)
 
-#include("../../auxiliary/nodeRenumbering/src/create_adjacency_graph.jl")
-#include("../../auxiliary/nodeRenumbering/src/node_degrees.jl")
-#include("../../auxiliary/nodeRenumbering/src/RCM.jl")
-#include("../../auxiliary/nodeRenumbering/src/renumbering.jl")
-#include("../../auxiliary/nodeRenumbering/src/create_RCM_adjacency.jl")
-#include("../../auxiliary/nodeRenumbering/src/adjacency_visualization.jl")
-
-
 Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     
     x::Union{Array{TFloat}, Missing} = zeros(2)
@@ -87,7 +79,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
-    connijk           = Array{Int64}(undef, 0)
+    connijk::Array{Int64,3} = zeros(Int64,0,0,0)
     conn              = Array{Int64}(undef, 0)
     conn_unique_edges = Array{Int64}(undef,  1, 2)
     conn_unique_faces = Array{Int64}(undef,  1, 4)
@@ -272,8 +264,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 if (mesh.nsd == 1)
     nothing
 elseif (mesh.nsd == 2)
-    
-    mesh.connijk = Array{Int64}(undef, mesh.nelem, mesh.ngl, mesh.ngl)
+
+    mesh.connijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl)
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]
         mesh.conn[iel, 2] = mesh.cell_node_ids[iel][2]
@@ -342,7 +334,9 @@ elseif (mesh.nsd == 2)
     end #f
 
 elseif (mesh.nsd == 3)
-    mesh.connijk = Array{Int64}(undef, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
+
+    mesh.connijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
+    
     for iel = 1:mesh.nelem
         #CGNS numbering:
         mesh.conn[iel, 1] = mesh.cell_node_ids[iel][2] #9
