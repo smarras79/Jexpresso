@@ -508,11 +508,11 @@ function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npo
 end
 
 
-function DSS_rhs!(SD::NSD_2D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
+function DSS_rhs!(SD::NSD_2D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, ngl, neqs)
     
     for iel = 1:nelem
-        for j = 1:N+1
-            for i = 1:N+1
+        for j = 1:ngl
+            for i = 1:ngl
                 I = conn[iel,i,j]
                 
                 V[I,:] .= V[I,:] .+ Vel[iel,i,j,:]
