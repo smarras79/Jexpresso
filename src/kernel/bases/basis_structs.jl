@@ -59,9 +59,9 @@ mutable struct St_cgl{TFloat} <:AbstractIntegrationPointAndWeights
     ω::Array{TFloat}
 end
 
-mutable struct St_Lagrange{TFloat} <:AbstractInterpolationBasis
-    ψ::Matrix{TFloat}
-    dψ::Matrix{TFloat}
+Base.@kwdef mutable struct St_Lagrange{TFloat} <:AbstractInterpolationBasis
+    ψ::Array{TFloat, 2}  = zeros(TFloat, mesh.ngl, mesh.ngl)
+    dψ::Array{TFloat, 2} = zeros(TFloat, mesh.ngl, mesh.ngl)    
 end
 
 function basis_structs_ξ_ω!(::AbstractPointsType, nop::TInt) end

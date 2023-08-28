@@ -105,7 +105,7 @@ end
 
 fun_ωJac(x, y, z) = x*y*z
 
-function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, SD::NSD_2D; neqs=1, lsource=false)
+function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, SD::NSD_2D, neqs, lsource)
 
     u2uaux!(uaux, u, neqs, mesh.npoin)
     
@@ -119,35 +119,14 @@ function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, SD
             end
         end
         
-        for j=1:mesh.ngl
-            for i=1:mesh.ngl
-                ωJac = fun_ωJac(ω[i], ω[j], metrics.Je[iel,i,j])
-                dξdx_ij = metrics.dξdx[iel,i,j]
-                dξdy_ij = metrics.dξdy[iel,i,j]
-                dηdx_ij = metrics.dηdx[iel,i,j]
-                dηdy_ij = metrics.dηdy[iel,i,j]
-
-                for ieq = 1:neqs
-                    
-                    dFdξ = 0.0
-                    dFdη = 0.0
-                    dGdξ = 0.0
-                    dGdη = 0.0
-                    for k = 1:mesh.ngl
-                        dFdξ += basis.dψ[k,i]*F[k,j,ieq]
-                        dFdη += basis.dψ[k,j]*F[i,k,ieq]
-                        
-                        dGdξ += basis.dψ[k,i]*G[k,j,ieq]
-                        dGdη += basis.dψ[k,j]*G[i,k,ieq]
-                    end
-
-                    dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-                    dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
-                    
-                    rhs_el[iel,i,j,ieq] -= ωJac*((dFdx + dGdy)  - S[i,j,ieq])
-                end
-            end
-        end
+      #  @btime je_expansion_inviscid!(@view($rhs_el[$iel,:,:,:]), $metrics, $basis,
+      #                                @view($F[:,:,:]), @view($G[:,:,:]), @view($S[:,:,:]),
+      #                                $ω, $mesh.ngl, $mesh.npoin, $neqs, $iel)
+        
+        je_expansion_inviscid!(@view(rhs_el[iel,:,:,:]), metrics, basis,
+                               @view(F[:,:,:]), @view(G[:,:,:]), @view(S[:,:,:]),
+                               ω, mesh.ngl, mesh.npoin, neqs, iel)
+        
     end
 end
 
@@ -168,8 +147,7 @@ function viscous_rhs_el!(ρel, uel, vel, Tel,
         #uToPrimitives!(ρel, uel, vel, Tel, u,
         #               iel, mesh.nelem, mesh.ngl, mesh.npoin, mesh.connijk, 0.0)
 
-        je_expansion!(mesh.connijk, mesh, mesh.ngl, mesh.npoin, iel)
-        #je_expansion!(mesh, mesh.connijk, mesh.ngl, mesh.npoin, iel)
+        je_expansion_visc!(mesh.connijk, mesh, mesh.ngl, mesh.npoin, iel)
         
         
   #=      for l = 1:mesh.ngl
@@ -247,7 +225,45 @@ function viscous_rhs_el!(ρel, uel, vel, Tel,
     end
 end
 
-function je_expansion!(connijk, mesh, ngl, npoin, iel)
+function je_expansion_inviscid!(rhs_el, metrics, basis, F, G, S,
+                                ω, ngl, npoin, neqs, iel)
+
+
+    for ieq = 1:neqs
+        for j=1:ngl
+            for i=1:ngl
+                ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+                
+                dFdξ = 0.0
+                dFdη = 0.0
+                dGdξ = 0.0
+                dGdη = 0.0
+
+                for k = 1:ngl
+                    dFdξ += basis.dψ[k,i]*F[k,j,ieq]
+                    dFdη += basis.dψ[k,j]*F[i,k,ieq]
+                    
+                    dGdξ += basis.dψ[k,i]*G[k,j,ieq]
+                    dGdη += basis.dψ[k,j]*G[i,k,ieq]
+                end
+                dξdx_ij = metrics.dξdx[iel,i,j]
+                dξdy_ij = metrics.dξdy[iel,i,j]
+                dηdx_ij = metrics.dηdx[iel,i,j]
+                dηdy_ij = metrics.dηdy[iel,i,j]
+                
+                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
+                dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+
+                auxi = ωJac*((dFdx + dGdy)  - S[i,j,ieq])
+                rhs_el[i,j,ieq] -= auxi
+            end
+        end
+    end
+   
+end
+
+
+function je_expansion_visc!(connijk, mesh, ngl, npoin, iel)
     
     for l = 1:ngl
         for k = 1:ngl
@@ -303,12 +319,19 @@ function _build_rhs!(RHS, u, params, time)
     
     #
     # Inviscid part:
-    #
+    #=
+    @btime inviscid_rhs_el!($params.rhs_el, $params.uaux, $u,
+                            $params.F, $params.G, $params.S,
+                            $params.mesh, $params.metrics,
+                            $params.basis, $params.ω, $params.SD, 
+                            $neqs, true)
+    =#
     inviscid_rhs_el!(params.rhs_el, params.uaux, u,
                      params.F, params.G, params.S,
                      params.mesh, params.metrics,
-                     params.basis, params.ω, params.SD;
-                     neqs=neqs, lsource=params.inputs[:lsource])
+                     params.basis, params.ω, params.SD, 
+                     neqs, true)
+    
     
     apply_boundary_conditions!(u, params, time)
     
