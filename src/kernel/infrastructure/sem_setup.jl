@@ -1,5 +1,3 @@
-include("../bases/basis_structs.jl")
-include("../infrastructure/element_matrices.jl")
 include("../mesh/restructure_for_periodicity.jl")
 
 function sem_setup(inputs::Dict)

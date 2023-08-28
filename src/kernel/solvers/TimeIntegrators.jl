@@ -1,4 +1,3 @@
-include("../abstractTypes.jl")
 using BenchmarkTools
 
 function time_loop!(QT,
@@ -47,6 +46,11 @@ function time_loop!(QT,
     gradu       = zeros(2, 1, 1) #zeros(2,mesh.npoin,nvars)
     ubdy        = zeros(qp.neqs)
     bdy_flux    = zeros(qp.neqs,1)
+
+    ρel = zeros(T, mesh.ngl, mesh.ngl)
+    uel = zeros(T, mesh.ngl, mesh.ngl)
+    vel = zeros(T, mesh.ngl, mesh.ngl)
+    Tel = zeros(T, mesh.ngl, mesh.ngl)
     #-----------------------------------------------------------------
     
     for i=1:qp.neqs
@@ -63,6 +67,7 @@ function time_loop!(QT,
     params = (T, F, G, S,
               uaux, uaux_el,
               ubdy, gradu, bdy_flux, #for B.C.
+              ρel, uel, vel, Tel,
               rhs_el, rhs_diff_el,
               rhs_diffξ_el, rhs_diffη_el,
               RHS, RHS_visc, 

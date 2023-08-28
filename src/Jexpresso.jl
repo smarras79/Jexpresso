@@ -37,6 +37,14 @@ include(joinpath("kernel", "physics", "globalConstantsPhysics.jl"))
 
 include(joinpath("kernel", "physics", "constitutiveLaw.jl"))
 
+include(joinpath("kernel", "mesh", "mesh.jl"))
+
+include(joinpath("kernel", "bases", "basis_structs.jl"))
+
+include(joinpath("kernel", "mesh", "metric_terms.jl"))
+
+include(joinpath("kernel", "infrastructure", "element_matrices.jl"))
+
 include(joinpath("kernel", "infrastructure", "sem_setup.jl"))
 
 include(joinpath("kernel", "boundaryconditions", "BCs.jl"))
