@@ -333,10 +333,12 @@ function _build_rhs!(RHS, u, params, time)
                      neqs, true)
     
     
-    apply_boundary_conditions!(u, params, time)
+
+    #@btime DSS_rhs!($params.SD, @view($params.RHS[:,:]), @view($params.rhs_el[:,:,:,:]), $params.mesh.connijk, $nelem, $ngl, $neqs)
     
-    DSS_rhs!(params.SD, @view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]),
-             params.mesh.connijk, params.mesh.nelem, params.mesh.npoin, neqs, params.mesh.nop, Float64)
+    @time DSS_rhs!(params.SD, @view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh.connijk, nelem, ngl, neqs)
+        
+    apply_boundary_conditions!(u, params, time)
 
     #
     # Viscous part:
