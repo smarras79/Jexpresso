@@ -80,12 +80,12 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
     connijk::Array{Int64,3} = zeros(Int64,0,0,0)
-    conn              = Array{Int64}(undef, 0)
+    conn              = Array{Int64}(undef, 0, 0)
     conn_unique_edges = Array{Int64}(undef,  1, 2)
     conn_unique_faces = Array{Int64}(undef,  1, 4)
     poin_in_edge      = Array{Int64}(undef, 0, 0)
     conn_edge_el      = Array{Int64}(undef, 0, 0, 0)
-    poin_in_face      = Array{Int64}(undef, 0, 0)
+    poin_in_face      = Array{Int64}(undef, 0, 0, 0)
     conn_face_el      = Array{Int64}(undef, 0, 0, 0)
     face_in_elem      = Array{Int64}(undef, 0, 0, 0)
 
@@ -236,20 +236,20 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     resize!(mesh.y, (mesh.npoin))
     resize!(mesh.z, (mesh.npoin))
 
-    mesh.conn_edge_el     = Array{Int64}(undef, 2, mesh.NEDGES_EL, mesh.nelem)    
-    mesh.conn_face_el     = Array{Int64}(undef, 4, mesh.NFACES_EL, mesh.nelem)  
-    mesh.bdy_edge_in_elem = Array{Int64}(undef, mesh.nedges_bdy)  
-    mesh.bdy_edge_comp    = Array{Int64}(undef, mesh.nedges_bdy)
-    mesh.poin_in_edge     = Array{Int64}(undef, mesh.nedges, mesh.ngl)
-    mesh.poin_in_bdy_edge = Array{Int64}(undef, mesh.nedges_bdy, mesh.ngl)
-    mesh.poin_in_face     = Array{Int64}(undef, mesh.nfaces, mesh.ngl, mesh.ngl)
+    mesh.conn_edge_el::Array{Int64,3} = zeros(Int64, 2, mesh.NEDGES_EL, mesh.nelem)    
+    mesh.conn_face_el::Array{Int64,3} = zeros(Int64,  4, mesh.NFACES_EL, mesh.nelem)  
+    mesh.bdy_edge_in_elem::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)  
+    mesh.bdy_edge_comp::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)
+    mesh.poin_in_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges, mesh.ngl)
+    mesh.poin_in_bdy_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges_bdy, mesh.ngl)
+    mesh.poin_in_face::Array{Int64,3} = zeros(Int64,  mesh.nfaces, mesh.ngl, mesh.ngl)
     mesh.edge_type        = Array{String}(undef, mesh.nedges)
     mesh.bdy_edge_type    = Array{String}(undef, mesh.nedges_bdy)
     if mesh.nsd > 2
-        mesh.poin_in_bdy_face = Array{Int64}(undef, mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
+        mesh.poin_in_bdy_face::Array{Int64,3} = zeros( mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
-    mesh.conn             = Array{Int64}(undef, mesh.nelem, mesh.npoin_el)
+    mesh.conn::Array{Int64,2} = zeros(Int64, mesh.nelem, mesh.npoin_el)
     
     #
     # Connectivity matrices
@@ -2059,7 +2059,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     mesh.npoin_el = ngl
 
     #allocate mesh.conn and reshape it
-    mesh.conn = Array{Int64}(undef, mesh.npoin_el, mesh.nelem)
+    mesh.con::Array{Int64} = zeros(mesh.npoin_el, mesh.nelem)
     
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = iel

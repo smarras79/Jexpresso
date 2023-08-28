@@ -1,28 +1,30 @@
 Base.@kwdef mutable struct St_metrics{TFloat}
-    dxdξ::Union{Array{TFloat}, Missing} = zeros(1)
-    dxdη::Union{Array{TFloat}, Missing} = zeros(1)
-    dxdζ::Union{Array{TFloat}, Missing} = zeros(1)
-    
-    dydξ::Union{Array{TFloat}, Missing} = zeros(1)
-    dydη::Union{Array{TFloat}, Missing} = zeros(1)
-    dydζ::Union{Array{TFloat}, Missing} = zeros(1)
 
-    dzdξ::Union{Array{TFloat}, Missing} = zeros(1)
-    dzdη::Union{Array{TFloat}, Missing} = zeros(1)
-    dzdζ::Union{Array{TFloat}, Missing} = zeros(1)
     
-    dξdx::Union{Array{TFloat}, Missing} = zeros(1)
-    dξdy::Union{Array{TFloat}, Missing} = zeros(1)
-    dξdz::Union{Array{TFloat}, Missing} = zeros(1)
     
-    dηdx::Union{Array{TFloat}, Missing} = zeros(1)
-    dηdy::Union{Array{TFloat}, Missing} = zeros(1)
-    dηdz::Union{Array{TFloat}, Missing} = zeros(1)
+    dxdξ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dxdη::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dxdζ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    
+    dydξ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dydη::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dydζ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
 
-    dζdx::Union{Array{TFloat}, Missing} = zeros(1)
-    dζdy::Union{Array{TFloat}, Missing} = zeros(1)
-    dζdz::Union{Array{TFloat}, Missing} = zeros(1)
-    Jef ::Array{TFloat} = zeros(1)
+    dzdξ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dzdη::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dzdζ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    
+    dξdx::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dξdy::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dξdz::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    
+    dηdx::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dηdy::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dηdz::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+
+    dζdx::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dζdy::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dζdz::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
     #
     # Contravariant arrays
     #
@@ -31,10 +33,11 @@ Base.@kwdef mutable struct St_metrics{TFloat}
     #
     # Element jacobian determinant
     #
-    nx  ::Array{TFloat} = zeros(1)
-    ny  ::Array{TFloat} = zeros(1)
-    nz  ::Array{TFloat} = zeros(1)
-    Je  ::Array{TFloat} = zeros(1)
+    nx::Array{TFloat} = zeros(TFloat, 1)
+    ny::Array{TFloat} = zeros(TFloat, 1)
+    nz::Array{TFloat} = zeros(TFloat, 1)
+    Je::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    Jef::Array{TFloat,2} = zeros(TFloat, 0, 0)
 end
 
 function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, T)
@@ -43,7 +46,6 @@ function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     
     return metrics
 end
-
 
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, T)
     
@@ -71,13 +73,17 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 xij = mesh.x[ip]
                 yij = mesh.y[ip]
                 for l = 1:Q+1
+                    dψ_ik_ψ_jl = dψ[i, :] .* ψ[j, l]  # precompute the product
+                    ψ_ik_dψ_jl = ψ[i, :] .* dψ[j, l]  # precompute the product
+                    
                     for k = 1:Q+1
-             
-                        metrics.dxdξ[iel, k, l] += dψ[i,k]* ψ[j,l]*xij
-                        metrics.dxdη[iel, k, l] +=  ψ[i,k]*dψ[j,l]*xij
+
+                        metrics.dxdξ[iel, k, l] += dψ_ik_ψ_jl[k] * xij
+                        metrics.dxdη[iel, k, l] += ψ_ik_dψ_jl[k] * xij
+
+                        metrics.dydξ[iel, k, l] += dψ_ik_ψ_jl[k] * yij
+                        metrics.dydη[iel, k, l] += ψ_ik_dψ_jl[k] * yij
                         
-                        metrics.dydξ[iel, k, l] += dψ[i,k]* ψ[j,l]*yij
-                        metrics.dydη[iel, k, l] +=  ψ[i,k]*dψ[j,l]*yij                        
                         #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
                     end
                 end
@@ -87,12 +93,24 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
              
         for l = 1:Q+1
             for k = 1:Q+1
-                metrics.Je[iel, k, l] = metrics.dxdξ[iel, k, l]*metrics.dydη[iel, k, l] - metrics.dydξ[iel, k, l]*metrics.dxdη[iel, k, l]
-                
-                metrics.dξdx[iel, k, l] =  metrics.dydη[iel, k, l]/metrics.Je[iel, k, l]
-                metrics.dξdy[iel, k, l] = -metrics.dxdη[iel, k, l]/metrics.Je[iel, k, l]
-                metrics.dηdx[iel, k, l] = -metrics.dydξ[iel, k, l]/metrics.Je[iel, k, l]
-                metrics.dηdy[iel, k, l] =  metrics.dxdξ[iel, k, l]/metrics.Je[iel, k, l]
+              
+                # Extract values from memory once per iteration
+                dxdξ_val = metrics.dxdξ[iel, k, l]
+                dydη_val = metrics.dydη[iel, k, l]
+                dydξ_val = metrics.dydξ[iel, k, l]
+                dxdη_val = metrics.dxdη[iel, k, l]
+
+                # Compute Je once and reuse its value
+                Je_val = dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                metrics.Je[iel, k, l] = Je_val
+
+                # Use the precomputed Je value for the other calculations
+                inv_Je = 1.0 / Je_val
+
+                metrics.dξdx[iel, k, l] =  dydη_val * inv_Je
+                metrics.dξdy[iel, k, l] = -dxdη_val * inv_Je
+                metrics.dηdx[iel, k, l] = -dydξ_val * inv_Je
+                metrics.dηdy[iel, k, l] =  dxdξ_val * inv_Je
                 
             end
         end
