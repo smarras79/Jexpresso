@@ -24,7 +24,7 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(qbdy, gradq, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
+function user_bc_dirichlet!(qbdy, x, y, t, tag::String, inputs)    
     
     #fill!(flags, zero(Float64))
     if ( x <= -4990.0 || x >= 4990.0)
@@ -37,8 +37,6 @@ function user_bc_dirichlet!(qbdy, gradq, x::AbstractFloat, y::AbstractFloat, t::
         qbdy[2] = 0.0
         qbdy[3] = 0.0
     end
-
-    return qbdy
     
 end
 

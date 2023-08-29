@@ -9,12 +9,10 @@ elseif (length(ARGS) === 2) #equations/equations_case_name
 end
 include(user_bc_dir)
 #---------------------------------------------------------------------------
-function dirichlet!(qbdy, gradq, x, y, t, tag, inputs::Dict)
-
-    user_bc_dirichlet!(qbdy, gradq, x, y, t, tag, inputs::Dict)
-    
-    return qbdy
+function dirichlet!(qbdy, x, y, t, tag, inputs::Dict)
+    user_bc_dirichlet!(qbdy, x, y, t, tag, inputs::Dict)
 end
+
 
 function dirichlet!(qbdy, gradq, x, t, tag, inputs::Dict)
     
