@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 10,
+        :tend                 => 1000,
         #:Δt                   => 0.1,#8.75e-4,
         :ode_solver           => "Tsit5",
         :ndiagnostics_outputs => 2,
@@ -13,12 +13,12 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
-        :nop                 => 3,      # Polynomial order
+        :nop                 => 4,      # Polynomial order
         :luser_bc            => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => true, #false by default
+        :lvisc                => true, #false by default
         #:visc_model           => "dsgs", #"none", "dsgs"
         :νx                   => 60.0, #kinematic viscosity constant
         :νy                   => 60.0, #kinematic viscosity constant
