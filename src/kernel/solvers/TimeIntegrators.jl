@@ -62,18 +62,21 @@ function time_loop!(QT,
     end
     
     deps = zeros(1,1)
-    tspan  = (inputs[:tinit], inputs[:tend])
+    tspan  = (inputs[:tinit], inputs[:tend])    
+    visc_coeff = (νρ=inputs[:νρ], μx=inputs[:νx], μy=inputs[:νy], κ=inputs[:κ])
+    
     
     params = (T, F, G, S,
               uaux, uaux_el,
               ubdy, gradu, bdy_flux, #for B.C.
-              ρel, uel, vel, Tel,
               rhs_el, rhs_diff_el,
               rhs_diffξ_el, rhs_diffη_el,
+              ρel, uel, vel, Tel,
               RHS, RHS_visc, 
               SD=mesh.SD, QT, PT,
               neqs=qp.neqs,
               basis, ω, mesh, metrics, inputs,
+              visc_coeff, 
               M, De, Le,
               Δt, deps,
               qp.qnm1, qp.qnm2, qp.μ)

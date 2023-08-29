@@ -19,10 +19,6 @@ const EDGE_NODES   = UInt64(2)
 const FACE_NODES   = UInt64(4)
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat}
-    
-    #x::Union{Array{TFloat}, Missing} = zeros(2)
-    #y::Union{Array{TFloat}, Missing} = zeros(2)
-    #z::Union{Array{TFloat}, Missing} = zeros(2)
 
     x::Array{Float64, 1} = zeros(Float64, 2)
     y::Array{Float64, 1} = zeros(Float64, 2)
@@ -31,10 +27,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     x_ho::Array{Float64, 1} = zeros(Float64, 2)
     y_ho::Array{Float64, 1} = zeros(Float64, 2)
     z_ho::Array{Float64, 1} = zeros(Float64, 2)
-    
-    #x_ho::Union{Array{TFloat}, Missing} = zeros(2)
-    #y_ho::Union{Array{TFloat}, Missing} = zeros(2)
-    #z_ho::Union{Array{TFloat}, Missing} = zeros(2)
 
     Δx::Union{Array{TFloat}, Missing} = zeros(2)
     Δy::Union{Array{TFloat}, Missing} = zeros(2)
@@ -2076,7 +2068,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     mesh.npoin_el = ngl
 
     #allocate mesh.conn and reshape it
-    mesh.con::Array{Int64} = zeros(mesh.npoin_el, mesh.nelem)
+    mesh.conn::Array{Int64} = zeros(mesh.nelem, mesh.npoin_el)
     
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = iel
