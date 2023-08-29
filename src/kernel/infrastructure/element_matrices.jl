@@ -490,32 +490,15 @@ function newDSS_rhs!(SD::NSD_2D, du::AbstractArray, Vel::AbstractArray, conn::Ab
     #show(stdout, "text/plain", V)
 end
 
+function DSS_rhs!(SD::NSD_2D, V, Vel, mesh, nelem, ngl, neqs)
 
-function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
-    
-    V  = zeros(T, npoin,neqs)
-    for iel = 1:nelem
-        for j = 1:N+1
-            for i = 1:N+1
-                I = conn[iel,i,j]
-                
-                V[I,:] .= V[I,:] .+ Vel[iel,i,j,:]
-            end
-        end
-    end
-    #show(stdout, "text/plain", V)
-    return V
-end
-
-
-function DSS_rhs!(SD::NSD_2D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, ngl, neqs)
-    
-    for iel = 1:nelem
-        for j = 1:ngl
-            for i = 1:ngl
-                I = conn[iel,i,j]
-                
-                V[I,:] .= V[I,:] .+ Vel[iel,i,j,:]
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for j = 1:ngl
+                for i = 1:ngl
+                    I = mesh.connijk[iel,i,j]
+                    V[I,ieq] += Vel[iel,i,j,ieq]
+                end
             end
         end
     end
