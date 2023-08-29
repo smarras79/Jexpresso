@@ -20,13 +20,21 @@ const FACE_NODES   = UInt64(4)
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     
-    x::Union{Array{TFloat}, Missing} = zeros(2)
-    y::Union{Array{TFloat}, Missing} = zeros(2)
-    z::Union{Array{TFloat}, Missing} = zeros(2)
+    #x::Union{Array{TFloat}, Missing} = zeros(2)
+    #y::Union{Array{TFloat}, Missing} = zeros(2)
+    #z::Union{Array{TFloat}, Missing} = zeros(2)
+
+    x::Array{Float64, 1} = zeros(Float64, 2)
+    y::Array{Float64, 1} = zeros(Float64, 2)
+    z::Array{Float64, 1} = zeros(Float64, 2)
+
+    x_ho::Array{Float64, 1} = zeros(Float64, 2)
+    y_ho::Array{Float64, 1} = zeros(Float64, 2)
+    z_ho::Array{Float64, 1} = zeros(Float64, 2)
     
-    x_ho::Union{Array{TFloat}, Missing} = zeros(2)
-    y_ho::Union{Array{TFloat}, Missing} = zeros(2)
-    z_ho::Union{Array{TFloat}, Missing} = zeros(2)
+    #x_ho::Union{Array{TFloat}, Missing} = zeros(2)
+    #y_ho::Union{Array{TFloat}, Missing} = zeros(2)
+    #z_ho::Union{Array{TFloat}, Missing} = zeros(2)
 
     Δx::Union{Array{TFloat}, Missing} = zeros(2)
     Δy::Union{Array{TFloat}, Missing} = zeros(2)
@@ -79,8 +87,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
-    connijk::Array{Int64,3} = zeros(Int64,0,0,0)
-    conn              = Array{Int64}(undef, 0, 0)
+    connijk::Array{Int64,3} = zeros(Int64, 0, 0, 0)
+    conn::Array{Int64,2}    = zeros(Int64, 0, 0)
     conn_unique_edges = Array{Int64}(undef,  1, 2)
     conn_unique_faces = Array{Int64}(undef,  1, 4)
     poin_in_edge      = Array{Int64}(undef, 0, 0)
@@ -91,12 +99,13 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
 
     #Auxiliary arrays for boundary conditions
     bdy_edge_comp     = Array{Int64}(undef, 1)
-    bdy_edge_in_elem = Array{Int64}(undef, 1)
-    poin_in_bdy_edge = Array{Int64}(undef, 1, 1)
-    bdy_face_in_elem = Array{Int64}(undef, 1)
-    poin_in_bdy_face = Array{Int64}(undef, 1, 1)
-    edge_type        = Array{String}(undef, 1)
-    bdy_edge_type    = Array{String}(undef, 1)
+    
+    bdy_edge_in_elem::Array{Int64,1} = zeros(Int64, 0)
+    poin_in_bdy_edge::Array{Int64,2} = zeros(Int64, 0, 0)
+    bdy_face_in_elem::Array{Int64,1} = zeros(Int64, 0)
+    poin_in_bdy_face::Array{Int64,2} = zeros(Int64, 0, 0)
+    edge_type     = Array{Union{Nothing, String}}(nothing, 1)
+    bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
     
 
     #@YASSINE REMOVE WHAT NO LONGER NEEDED 
@@ -231,11 +240,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     
     #
     # Resize as needed
-    # 
-    resize!(mesh.x, (mesh.npoin))
-    resize!(mesh.y, (mesh.npoin))
-    resize!(mesh.z, (mesh.npoin))
-
+    #
+    mesh.x::Array{Float64, 1} = zeros(mesh.npoin)
+    mesh.y::Array{Float64, 1} = zeros(mesh.npoin)
+    mesh.z::Array{Float64, 1} = zeros(mesh.npoin)
+    #    resize!(mesh.x, (mesh.npoin))
+    #    resize!(mesh.y, (mesh.npoin))
+    #    resize!(mesh.z, (mesh.npoin))
+    
     mesh.conn_edge_el::Array{Int64,3} = zeros(Int64, 2, mesh.NEDGES_EL, mesh.nelem)    
     mesh.conn_face_el::Array{Int64,3} = zeros(Int64,  4, mesh.NFACES_EL, mesh.nelem)  
     mesh.bdy_edge_in_elem::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)  
@@ -243,8 +255,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.poin_in_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges, mesh.ngl)
     mesh.poin_in_bdy_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges_bdy, mesh.ngl)
     mesh.poin_in_face::Array{Int64,3} = zeros(Int64,  mesh.nfaces, mesh.ngl, mesh.ngl)
-    mesh.edge_type        = Array{String}(undef, mesh.nedges)
-    mesh.bdy_edge_type    = Array{String}(undef, mesh.nedges_bdy)
+    mesh.edge_type     = Array{Union{Nothing, String}}(nothing, mesh.nedges)
+    mesh.bdy_edge_type = Array{Union{Nothing, String}}(nothing, mesh.nedges_bdy)
+    
     if mesh.nsd > 2
         mesh.poin_in_bdy_face::Array{Int64,3} = zeros( mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
     end
@@ -278,10 +291,10 @@ elseif (mesh.nsd == 2)
         # |     |
         # 1-----2
         #
-        mesh.connijk[iel, 1,  1]     = mesh.cell_node_ids[iel][2]
+        mesh.connijk[iel, 1,      1] = mesh.cell_node_ids[iel][2]
         mesh.connijk[iel, 1,    ngl] = mesh.cell_node_ids[iel][1]
         mesh.connijk[iel, ngl,  ngl] = mesh.cell_node_ids[iel][3]
-        mesh.connijk[iel, ngl,1]     = mesh.cell_node_ids[iel][4]
+        mesh.connijk[iel, ngl,    1] = mesh.cell_node_ids[iel][4]
         
         #=
         # 4-----3
@@ -495,10 +508,13 @@ end
 #
 #
 # Free memory of obsolete arrays
-#
-resize!(mesh.x_ho, 1)
-resize!(mesh.y_ho, 1)
-resize!(mesh.z_ho, 1)
+    #
+    mesh.x_ho::Array{Float64, 1} = zeros(1)
+    mesh.y_ho::Array{Float64, 1} = zeros(1)
+    mesh.z_ho::Array{Float64, 1} = zeros(1)
+    #resize!(mesh.x_ho, 1)
+    #resize!(mesh.y_ho, 1)
+    #resize!(mesh.z_ho, 1)
 GC.gc()
 #
 # END Free memory of obsolete arrays
@@ -726,7 +742,8 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
-    resize!(mesh.x, (mesh.npoin))
+    #resize!(mesh.x, (mesh.npoin))
+    mesh.x::Array{Float64, 1} = zeros(mesh.npoin)
     
     #
     # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]

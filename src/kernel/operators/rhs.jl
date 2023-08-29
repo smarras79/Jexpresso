@@ -113,7 +113,9 @@ function _build_rhs!(RHS, u, params, time)
                      params.basis, params.ω, params.SD,
                      neqs, true)
     
-    apply_boundary_conditions!(u, params, time)
+    apply_boundary_conditions!(time, params.mesh, params.metrics, params.basis,
+                               params.rhs_el, params.ubdy, params.uaux,
+                               params.ω, SD, neqs, params.inputs)
     
     DSS_rhs!(SD, @view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs)
     
@@ -125,9 +127,9 @@ function _build_rhs!(RHS, u, params, time)
         # rhs_diff_el, RHS_diff -> 0.0
         resetRHSToZero_viscous!(params) 
         
-        @time viscous_rhs_el!(params.ρel, params.uel, params.vel, params.Tel,
+        viscous_rhs_el!(params.ρel, params.uel, params.vel, params.Tel,
                         params.rhs_diff_el, params.rhs_diffξ_el, params.rhs_diffη_el, 
-                        params.uaux, u,
+                        u,
                         params.mesh, params.metrics, params.basis,
                         params.inputs,
                         params.ω, neqs, SD)
@@ -160,20 +162,20 @@ function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, SD
             end
         end
         
-        _expansion_inviscid!(@view(rhs_el[iel,:,:,:]), metrics, basis,
-                             @view(F[:,:,:]), @view(G[:,:,:]), @view(S[:,:,:]),
-                             ω, mesh.ngl, mesh.npoin, neqs, iel)
+      _expansion_inviscid!(@view(rhs_el[iel,:,:,:]), metrics, basis,
+                           @view(F[:,:,:]), @view(G[:,:,:]), @view(S[:,:,:]),
+                           ω, mesh.ngl, mesh.npoin, neqs, iel)
         
     end
 end
 
 function viscous_rhs_el!(ρel, uel, vel, Tel, 
                          rhs_diff_el, rhs_diffξ_el, rhs_diffη_el,
-                         uaux, u,
+                         u,
                          mesh, metrics, basis, inputs,
                          ω, neqs, SD::NSD_2D)
-    
-    visc_coeff = (μx=inputs[:νx], μy=inputs[:νy], κ=inputs[:νx])
+
+    visc_coeff = (μx=inputs[:νx], μy=inputs[:νy], κ=inputs[:νy])
     
     for iel=1:mesh.nelem
         _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, vel, Tel, u, ω, mesh, basis, metrics, visc_coeff, iel)
@@ -266,12 +268,12 @@ function _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, 
             #dρdx =  0.0 #visc_coeff.ν*(dρdξ*dξdx_kl + dρdη*dηdx_kl)
             dudx =  visc_coeff.μx*(dudξ*dξdx_kl + dudη*dηdx_kl)
             dvdx =  visc_coeff.μx*(dvdξ*dξdx_kl + dvdη*dηdx_kl)
-            dTdx =  visc_coeff.κ*(dTdξ*dξdx_kl + dTdη*dηdx_kl) #+μ∇u⋅u
+            dTdx =  visc_coeff.μx*(dTdξ*dξdx_kl + dTdη*dηdx_kl) #+μ∇u⋅u
             
             #dρdy =  0.0 #ν*(dρdξ*dξdy_kl + dρdη*dηdy_kl)
             dudy =  visc_coeff.μy*(dudξ*dξdy_kl + dudη*dηdy_kl)
             dvdy =  visc_coeff.μy*(dvdξ*dξdy_kl + dvdη*dηdy_kl)
-            dTdy =  visc_coeff.κ*(dTdξ*dξdy_kl + dTdη*dηdy_kl) #+μ∇u⋅u
+            dTdy =  visc_coeff.μy*(dTdξ*dξdy_kl + dTdη*dηdy_kl) #+μ∇u⋅u
             
             #∇ξ∇ρ_kl = dξdx_kl*dρdx + dξdy_kl*dρdy
             #∇η∇ρ_kl = dηdx_kl*dρdx + dηdy_kl*dρdy
