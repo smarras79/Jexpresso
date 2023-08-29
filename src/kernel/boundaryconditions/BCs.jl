@@ -41,8 +41,9 @@ end
 #function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, gradq, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars;L=zeros(1,1))
 
 #function apply_boundary_conditions!(u, params, t)
-function apply_boundary_conditions!(t, mesh, metrics, basis,
-                                    rhs_el, ubdy, uaux, #gradu,
+function apply_boundary_conditions!(u, uaux, t,
+                                    mesh, metrics, basis,
+                                    rhs_el, ubdy,
                                     ω, SD, neqs, inputs)
     
     #If Neumann conditions are needed compute gradient
@@ -73,7 +74,7 @@ function apply_boundary_conditions!(t, mesh, metrics, basis,
   #                    zeros(1,1), inputs)
 
     build_custom_bcs!(SD, t, mesh, metrics, ω,
-                      ubdy, uaux, @view(rhs_el[:,:,:,:]), neqs, dirichlet!, neumann, inputs)
+                      ubdy, uaux, u, @view(rhs_el[:,:,:,:]), neqs, dirichlet!, neumann, inputs)
    
     #end
     
@@ -145,9 +146,12 @@ function _bc_dirichlet!(qbdy, x, y, t, tag)
 end
 
 function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
-                           qbdy, q, rhs, neqs,
+                           qbdy, uaux, u, rhs, neqs,
                            dirichlet!, neumann, inputs)
-    
+
+    #
+    # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
+    #          That
     for iedge = 1:mesh.nedges_bdy 
         iel  = mesh.bdy_edge_in_elem[iedge]
         
@@ -173,15 +177,17 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                                 
                 for var =1:neqs
                     if !(AlmostEqual(qbdy[var],4325789.0)) # WHAT's this for?
-                        q[ip,var]          = qbdy[var]
+                        uaux[ip,var]       = qbdy[var]
                         rhs[iel,ll,mm,var] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
                     end
                 end
             end
-        end
-        
+        end        
     end
-    
+
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, mesh.npoin)
+       
 end
 
 #=
