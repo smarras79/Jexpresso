@@ -117,23 +117,25 @@ function _build_rhs!(RHS, u, params, time)
     # rhs_el, RHS -> 0.0
     resetRHSToZero_inviscid!(params) 
     
-    #
-    # Inviscid part:
+    #-----------------------------------------------------------------------------------
+    # Inviscid rhs:
+    #-----------------------------------------------------------------------------------
     inviscid_rhs_el!(params.rhs_el, params.uaux, u,
                      params.F, params.G, params.S,
                      params.mesh, params.metrics,
                      params.basis, params.ω, params.SD,
                      neqs, true)
     
-    apply_boundary_conditions!(time, params.mesh, params.metrics, params.basis,
-                               params.rhs_el, params.ubdy, params.uaux,
+    apply_boundary_conditions!(u, params.uaux, time,
+                               params.mesh, params.metrics, params.basis,
+                               params.rhs_el, params.ubdy,
                                params.ω, SD, neqs, params.inputs)
     
     DSS_rhs!(SD, @view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs)
     
-    #
-    # Viscous part:
-    #
+    #-----------------------------------------------------------------------------------
+    # Viscous rhs:
+    #-----------------------------------------------------------------------------------
     if (params.inputs[:lvisc] == true)
 
         # rhs_diff_el, RHS_diff -> 0.0
@@ -152,8 +154,6 @@ function _build_rhs!(RHS, u, params, time)
         
     end
 
-    uaux2u!(u, params.uaux, neqs, npoin)
-    
     divive_by_mass_matrix!(@view(params.RHS[:,:]), @view(params.M[:]), params.QT, neqs)
 
     return params.RHS
