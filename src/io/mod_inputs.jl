@@ -274,13 +274,19 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     # Some physical constants and parameters:
     #    
     if(!haskey(inputs, :νx))
-        inputs[:νx] = Float16(0.0) #default kinematic viscosity
+        inputs[:νx] = Float64(0.0) #default kinematic viscosity
     end
     if(!haskey(inputs, :νy))
-        inputs[:νy] = Float16(0.0) #default kinematic viscosity
+        inputs[:νy] = Float64(0.0) #default kinematic viscosity
     end
     if(!haskey(inputs, :νz))
-        inputs[:νz] = Float16(0.0) #default kinematic viscosity
+        inputs[:νz] = Float64(0.0) #default kinematic viscosity
+    end
+    if(!haskey(inputs, :νρ))
+        inputs[:νρ] = Float64(0.0) #default kinematic viscosity
+    end
+    if(!haskey(inputs, :κ))
+        inputs[:κ] = Float64(0.0) #default kinematic viscosity
     end
 
     #

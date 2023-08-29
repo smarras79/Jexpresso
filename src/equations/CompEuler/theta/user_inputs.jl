@@ -20,8 +20,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default
         #:visc_model           => "dsgs", #"none", "dsgs"
-        :νx                   => 60.0, #kinematic viscosity constant
-        :νy                   => 60.0, #kinematic viscosity constant
+        :νx                   => 30.0, #horizontal viscosity constant for momentum
+        :νy                   => 30.0, #vertical   viscosity constant for momentum
+        :κ                    => 60.0, #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
