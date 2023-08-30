@@ -64,7 +64,6 @@ function time_loop!(QT,
     tspan  = (inputs[:tinit], inputs[:tend])    
     visc_coeff = (νρ=inputs[:νρ], μx=inputs[:νx], μy=inputs[:νy], κ=inputs[:κ])
     
-    
     params = (T, F, G, S,
               uaux, uaux_el,
               ubdy, gradu, bdy_flux, #for B.C.
@@ -74,10 +73,9 @@ function time_loop!(QT,
               RHS, RHS_visc, 
               SD=mesh.SD, QT, PT,
               neqs=qp.neqs,
-              basis, ω, mesh, metrics, inputs,
-              visc_coeff, 
-              M, 
-              Δt, deps,
+              basis, ω, mesh, metrics,
+              inputs, visc_coeff,              
+              M, Δt, deps,
               qp.qnm1, qp.qnm2, qp.μ)
     
     prob = ODEProblem(rhs!,
