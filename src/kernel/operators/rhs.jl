@@ -146,8 +146,7 @@ function _build_rhs!(RHS, u, params, time)
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
     if (params.inputs[:lvisc] == true)
-
-        # rhs_diff_el, RHS_diff -> 0.0
+        
         resetRHSToZero_viscous!(params) 
         
         viscous_rhs_el!(params.ρel, params.uel, params.vel, params.Tel,
@@ -162,10 +161,9 @@ function _build_rhs!(RHS, u, params, time)
         params.RHS .= params.RHS .+ params.RHS_visc
         
     end
-
+    
     divive_by_mass_matrix!(@view(params.RHS[:,:]), @view(params.M[:]), params.QT, neqs)
-
-    return params.RHS
+    
 end
 
 
