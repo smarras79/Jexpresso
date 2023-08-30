@@ -354,27 +354,18 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     #------------------------------------------------------------------------
     neqs::Int8 = 1
 
-    if (lowercase(equations) == "burgers")
+    if (lowercase(equations) == "compeuler")
+        inputs[:equations] = CompEuler()
+        inputs[:ldss_laplace] = false
+        inputs[:ldss_differentiation] = false
+    elseif (lowercase(equations) == "burgers")
         inputs[:equations] = Burgers()
         inputs[:ldss_laplace] = false
         inputs[:ldss_differentiation] = false
     elseif (lowercase(equations) == "shallowwater")
         inputs[:equations] = ShallowWater()    
         inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-        
-    elseif (lowercase(equations) == "compeuler")
-        inputs[:equations] = CompEuler()
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-        
-    elseif (lowercase(equations) == "linearclaw" ||
-        lowercase(equations) == "linclaw" ||
-        lowercase(equations) == "lclaw")
-        inputs[:equations] = LinearCLaw()
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-        
+        inputs[:ldss_differentiation] = false    
     elseif (lowercase(equations) == "advdiff" ||
         lowercase(equations) == "advdif" ||
         lowercase(equations) == "ad" ||
@@ -382,17 +373,11 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         inputs[:equations] = AdvDiff()
         inputs[:ldss_laplace] = false
         inputs[:ldss_differentiation] = false
-        
     elseif (lowercase(equations) == "elliptic" ||
         lowercase(equations) == "diffusion")
         inputs[:equations] = Elliptic()
         inputs[:ldss_laplace] = true
-        inputs[:ldss_differentiation] = false
-        
-    elseif (lowercase(equations) == "helmholtz")
-        inputs[:equations] = Helmholtz()
-        inputs[:ldss_laplace] = true
-        inputs[:ldss_differentiation] = false    
+        inputs[:ldss_differentiation] = false     
     else
         
         #inputs[:neqs] = 1 #default
@@ -400,15 +385,28 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         s = """
                 jexpresso  user_inputs.jl: equations ", the inputs[:equations] " that you chose is not coded!
                 Chose among:
+                         - "CompEuler"
                          - "AdvDiff"/"AD"/"Adv"
-                         - "LinearCLaw"/"LinClaw"
-                         - "Burgers"
-                         - "SW"
               """
         
         @error s
     end
 
+    if(!haskey(inputs, :energy_equation))
+        inputs[:energy_equation] = "theta"
+        inputs[:δtotal_energy] = 0.0
+    else
+        if (lowercase(inputs[:equation_set]) == "totalenergy" ||
+            lowercase(inputs[:equation_set]) == "totalene"    ||
+            lowercase(inputs[:equation_set]) == "totene"      ||
+            lowercase(inputs[:equation_set]) == "tene")
+            inputs[:δtotal_energy] = 1.0
+        else
+            #Default
+            inputs[:energy_equation] = "theta"
+            inputs[:δtotal_energy] = 0.0
+        end
+    end
     if(!haskey(inputs, :case))
         inputs[:case] = ""
     else
@@ -433,6 +431,7 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     else
         inputs[:δvisc] = 0.0
     end
+
 
     return inputs
 end

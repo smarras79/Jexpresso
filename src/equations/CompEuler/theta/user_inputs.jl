@@ -3,8 +3,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 1020,
-        #:Δt                   => 0.1,#8.75e-4,
+        :tend                 => 1000,
+        :Δt                   => 0.25,#8.75e-4,
         :ode_solver           => "Tsit5",
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",

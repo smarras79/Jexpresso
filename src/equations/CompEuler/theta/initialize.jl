@@ -14,7 +14,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
 
         xc = (maximum(mesh.x) + minimum(mesh.x))/2
         yc = 2500.0 #m
-        r0   = 2000.0 #m
+        r0 = 2000.0 #m
         
         θref = 300.0 #K
         θc   =   2.0 #K

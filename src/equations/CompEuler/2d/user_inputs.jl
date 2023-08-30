@@ -3,11 +3,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 50.0, #2π,
-        #:Δt                   => 0.1,#8.75e-4,
+        :tend                 => 1000,
         :ode_solver           => "Tsit5",
+        #:Δt                   => 1.25,#8.75e-4,
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
+        :lsource              => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -17,10 +18,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => false, #false by default
+        :lvisc                => true, #false by default
         #:visc_model           => "dsgs", #"none", "dsgs"
-        :νx                   => 25.0, #kinematic viscosity constant
-        :νy                   => 25.0, #kinematic viscosity constant
+        :νx                   => 30.0, #horizontal viscosity constant for momentum
+        :νy                   => 30.0, #vertical   viscosity constant for momentum
+        :κ                    => 60.0, #kinematic viscosity constant for θ equation
+        :energy_equation      => "TotalEnergy", #"theta" is default. 
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

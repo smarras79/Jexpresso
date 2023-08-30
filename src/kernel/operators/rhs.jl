@@ -36,7 +36,18 @@ elseif (length(ARGS) === 2)  #equations/equations_case_name
     include(user_source_dir)
 end
 
+
 #---------------------------------------------------------------------------
+# Optimized (more coud possibly be done)
+#---------------------------------------------------------------------------
+function build_rhs!(RHS, u, params, time)
+    #
+    # build_rhs()! is called by TimeIntegrators.jl -> time_loop!() via ODEProblem(rhs!, u, tspan, params)
+    #
+    _build_rhs!(RHS, u, params, time)
+    
+end
+
 function RHStoDU!(du, RHS, neqs, npoin)
     for i=1:neqs
         idx = (i-1)*npoin
@@ -65,8 +76,6 @@ function uaux2u!(u, uaux, neqs, npoin)
     
 end
 
-
-
 function resetRHSToZero_inviscid!(params)
     fill!(params.rhs_el, zero(params.T))
     fill!(params.RHS,    zero(params.T))
@@ -80,7 +89,7 @@ function resetRHSToZero_viscous!(params)
 end
 
 
-function uToPrimitives!(ρel, uel, vel, Tel, u, mesh, δenergy, iel)
+function uToPrimitives!(ρel, uel, vel, Tel, u, mesh, δtotal_energy, iel)
     
     for j=1:mesh.ngl, i=1:mesh.ngl
         
@@ -92,7 +101,7 @@ function uToPrimitives!(ρel, uel, vel, Tel, u, mesh, δenergy, iel)
         ρel[i,j] = u[m1]
         uel[i,j] = u[m2]/ρel[i,j]
         vel[i,j] = u[m3]/ρel[i,j]
-        Tel[i,j] = u[m4]/ρel[i,j] - δenergy*0.5*(uel[i,j]^2 + vel[i,j]^2)
+        Tel[i,j] = u[m4]/ρel[i,j] - δtotal_energy*0.5*(uel[i,j]^2 + vel[i,j]^2)
     end
     
 end
@@ -113,7 +122,7 @@ function _build_rhs!(RHS, u, params, time)
     ngl     = params.mesh.ngl
     nelem   = params.mesh.nelem
     npoin   = params.mesh.npoin
-
+    
     # rhs_el, RHS -> 0.0
     resetRHSToZero_inviscid!(params) 
     
@@ -145,7 +154,7 @@ function _build_rhs!(RHS, u, params, time)
                         params.rhs_diff_el, params.rhs_diffξ_el, params.rhs_diffη_el, 
                         u,
                         params.mesh, params.metrics, params.basis,
-                        params.visc_coeff,
+                        params.visc_coeff, params.inputs,
                         params.ω, neqs, SD)
         
         DSS_rhs!(SD, @view(params.RHS_visc[:,:]), @view(params.rhs_diff_el[:,:,:,:]), params.mesh, nelem, ngl, neqs)
@@ -188,12 +197,12 @@ end
 function viscous_rhs_el!(ρel, uel, vel, Tel,
                          rhs_diff_el, rhs_diffξ_el, rhs_diffη_el,
                          u,
-                         mesh, metrics, basis, visc_coeff, 
+                         mesh, metrics, basis, visc_coeff, inputs, 
                          ω, neqs, SD::NSD_2D)
     
     for iel=1:mesh.nelem
         _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, vel, Tel,
-                         u, ω, mesh, basis, metrics, visc_coeff, iel)
+                         u, ω, mesh, basis, metrics, visc_coeff, inputs, iel)
     end
     
     rhs_diff_el .= @views (rhs_diffξ_el[:,:,:,:] .+ rhs_diffη_el[:,:,:,:])
@@ -236,9 +245,9 @@ function _expansion_inviscid!(rhs_el, metrics, basis, F, G, S,
    
 end
 
-function _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, vel, Tel, u, ω, mesh, basis, metrics, visc_coeff, iel)
+function _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, vel, Tel, u, ω, mesh, basis, metrics, visc_coeff, inputs, iel)
     
-    uToPrimitives!(ρel, uel, vel, Tel, u, mesh, 0.0, iel)
+    uToPrimitives!(ρel, uel, vel, Tel, u, mesh, inputs[:δtotal_energy], iel)
     
     for l = 1:mesh.ngl
         for k = 1:mesh.ngl
@@ -312,16 +321,3 @@ function _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, 
     
 end
 
-
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-# CompEuler:
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-#
-# Optimized (more coud possibly be done)
-#
-
-function build_rhs!(RHS, u, params, time)   
-
-    _build_rhs!(RHS, u, params, time)
-    
-end
