@@ -117,7 +117,9 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         #show(stdout, "text/plain", metrics.Je[iel, :,:])
     end
     #show(stdout, "text/plain", metrics.Je)
-    for iedge =1:size(mesh.bdy_edge_comp,1)
+
+    nbdy_edges = size(mesh.bdy_edge_comp,1)
+    for iedge =1:nbdy_edges
         comp = mesh.bdy_edge_comp[iedge]
         for k=1:Q+1
             ip = mesh.poin_in_bdy_edge[iedge,k]

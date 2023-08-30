@@ -62,7 +62,7 @@ function sem_setup(inputs::Dict)
     #--------------------------------------------------------
     @info " --- METRICS"
     @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
-
+    
     periodicity_restructure!(mesh,inputs)
     
     #--------------------------------------------------------
