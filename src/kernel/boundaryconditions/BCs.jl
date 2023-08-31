@@ -1,10 +1,3 @@
-#Constants
-const TInt   = Int64
-const TFloat = Float64
-
-#--------------------------------------------------------
-# jexpresso modules
-#--------------------------------------------------------
 include("../operators/operators.jl")
 include("../infrastructure/Kopriva_functions.jl")
 include("custom_bcs.jl")

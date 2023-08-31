@@ -1,6 +1,7 @@
 #---------------------------------------------------------------------------
 # Fetch equations name to access the user_rhs functions
 #---------------------------------------------------------------------------
+#=
 if (length(ARGS) === 1) #equations
     if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/user_source.jl"))
         user_source_dir = string(@__DIR__, "../../equations/", ARGS[1], "/user_source.jl")
@@ -35,7 +36,7 @@ elseif (length(ARGS) === 2)  #equations/equations_case_name
     include(user_flux_dir)
     include(user_source_dir)
 end
-
+=#
 
 #---------------------------------------------------------------------------
 # Optimized (more coud possibly be done)

@@ -1,37 +1,9 @@
-using ArgParse
 using Crayons.Box
 using PrettyTables
 
-export mod_inputs_user_inputs
-export mod_inputs_print_welcome
-
-function parse_commandline()
-    s = ArgParseSettings()
-
-    @add_arg_table s begin
-        "--opt1"
-        help = "an option with an argument"
-        "--opt2", "-o"
-        help = "another option with an argument"
-        arg_type = Int
-        default = 0
-        "--flag1"
-        help = "an option without argument, i.e. a flag"
-        action = :store_true
-        "arg1"
-        help = "equations"
-        required = true
-        "arg2"
-        help = "case name within equations/equations"
-        required = false
-    end
-
-    return parse_args(s)
-end
-
 #macro datatype(str); :($(Symbol(str))); end
 
-function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::String)
+function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, equations_dir::String)
 
     error_flag::Int8 = 0
     
@@ -39,9 +11,12 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
     # was defined within this same function via the include(input_dir) above.
     # 
-    input_dir = string(equations_dir, "/", equations, "/", equations_case_name, "/user_inputs.jl")
+    input_dir = string(equations_dir, "/", parsed_equations, "/", parsed_equations_case_name, "/user_inputs.jl")
     include(input_dir)
     inputs = @Base.invokelatest(user_inputs())
+
+    #Store parsed arguments xxx into inputs[:xxx]
+    _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
     
     #
     print(GREEN_FG(string(" # Read inputs dict from ", input_dir, " ... \n")))
@@ -173,6 +148,7 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     
     #
     # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
+    # https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
     #
     if(haskey(inputs, :ode_solver))
         if(uppercase(inputs[:ode_solver]) == "TSIT5")
@@ -351,28 +327,27 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     # Define neqs based on the equations being solved
     #------------------------------------------------------------------------
     neqs::Int8 = 1
-
-    if (lowercase(equations) == "compeuler")
+    if (lowercase(parsed_equations) == "compeuler")
         inputs[:equations] = CompEuler()
         inputs[:ldss_laplace] = false
         inputs[:ldss_differentiation] = false
-    elseif (lowercase(equations) == "burgers")
+    elseif (lowercase(parsed_equations) == "burgers")
         inputs[:equations] = Burgers()
         inputs[:ldss_laplace] = false
         inputs[:ldss_differentiation] = false
-    elseif (lowercase(equations) == "shallowwater")
+    elseif (lowercase(parsed_equations) == "shallowwater")
         inputs[:equations] = ShallowWater()    
         inputs[:ldss_laplace] = false
         inputs[:ldss_differentiation] = false    
-    elseif (lowercase(equations) == "advdiff" ||
-        lowercase(equations) == "advdif" ||
-        lowercase(equations) == "ad" ||
-        lowercase(equations) == "adv2d")
+    elseif (lowercase(parsed_equations) == "advdiff" ||
+        lowercase(parsed_equations) == "advdif" ||
+        lowercase(parsed_equations) == "ad" ||
+        lowercase(parsed_equations) == "adv2d")
         inputs[:equations] = AdvDiff()
         inputs[:ldss_laplace] = false
         inputs[:ldss_differentiation] = false
-    elseif (lowercase(equations) == "elliptic" ||
-        lowercase(equations) == "diffusion")
+    elseif (lowercase(parsed_equations) == "elliptic" ||
+        lowercase(parsed_equations) == "diffusion")
         inputs[:equations] = Elliptic()
         inputs[:ldss_laplace] = true
         inputs[:ldss_differentiation] = false     
@@ -433,6 +408,16 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
 
     return inputs
 end
+
+
+function _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
+    #
+    # USER: DO NOT MODIFY inputs[:parsed_equations] and inputs[:parsed_equations_case_name]
+    #
+    inputs[:parsed_equations]           = parsed_equations
+    inputs[:parsed_equations_case_name] = parsed_equations_case_name
+end
+
 
 function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
     

@@ -1,3 +1,4 @@
+using ArgParse
 #--------------------------------------------------------
 # The problem name is a command line argument:
 #
@@ -19,76 +20,52 @@
 #  julia > include(./src/Jexpresso.jl)
 #
 #--------------------------------------------------------
+function parse_commandline()
+    s = ArgParseSettings()
 
-
-#=function myparsing()
-    if size(ARGS, 1) < 2
-        println("")
-        println(" ERROR: Missing command line arguments")
-        println(" Usage example:")
-        println("     julia> push!(empty!(ARGS), \"CompEuler\", \"theta\")")
-        println("     julia> include(./src/Jexpresso.jl)")
-        println(" -- See detailed instructions in the README file on github.")
-        println("")
-    else
-        include("./io/mod_inputs.jl")
+    @add_arg_table s begin
+        "eqs"
+        help = "equations"
+        default = "CompEuler"
+        required = false
         
-        parsed_args  = parse_commandline()
-        #s = ArgParseSettings()
-        #parsed_args = parse_args(s)
-        equations = string(parsed_args["arg1"])
-        @info equations
-        if (parsed_args["arg2"] === nothing)
-            equations_case_name = ""
-        else
-            equations_case_name = string(parsed_args["arg2"])
-        end
-        equations_dir  = string("equations")
-        driver_dir   = string("./", equations_dir, "/", equations, "/", equations_case_name, "/drivers.jl")
-        include(driver_dir)
+        "eqs_case"
+        help = "case name in equations directory"
+        default = "theta"
+        required = false
+        
     end
-end=#
 
-if isempty(ARGS)
-    s = """
-            
-            Please, run the following every time that EQUATIONS changes:
-                julia> push!(empty!(ARGS), EQUATIONS::String, , EQUATIONS_CASE_NAME::String);
-
-            and only then run jexpresso with:
-                julia> include(./src/run.jl)
-
-            Currently avaiable EQUATIONS options:
-            - Elliptic
-            - AdvDiff
-
-            EQUATIONS_CASE_NAME is user defined and must be the name of the case directory inside EQUATIONS:
-                For example, if "AdvDiff" contains a directory called "Case1", you would do the following:
-                    julia> push!(empty!(ARGS), "AdvDiff", "Case1");
-                but if you don't have any CASE DIRECTORY inside "AdvDiff", then you simply 
-                    julia> push!(empty!(ARGS), "AdvDiff");
-        """
-    error(s)
+    return parse_args(s)
 end
 
-include("./io/mod_inputs.jl")
-parsed_args  = parse_commandline()
-equations = string(parsed_args["arg1"])
-if (parsed_args["arg2"] === nothing)
-    equations_case_name = ""
-else
-    equations_case_name = string(parsed_args["arg2"])
-end
-equations_dir  = string("equations")
-driver_dir   = string("./", equations_dir, "/", equations, "/", equations_case_name, "/drivers.jl")
+#--------------------------------------------------------
+#Parse command line args:
+#--------------------------------------------------------
+parsed_args         = parse_commandline()
+equations           = string(parsed_args["eqs"])
+equations_case_name = string(parsed_args["eqs_case"])
+equations_dir       = string("equations")
+
+@info equations
+@info equations_case_name
+
+driver_dir          = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/drivers.jl")
+user_flux_dir       = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_flux.jl")
+user_source_dir     = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_source.jl")
+user_bc_dir         = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_bc.jl")
+
 include(driver_dir)
+include(user_flux_dir)
+include(user_source_dir)
+include(user_bc_dir)
 
 #--------------------------------------------------------
 #Read User Inputs:
 #--------------------------------------------------------
 mod_inputs_print_welcome()
-inputs        = Dict{}()
-inputs        = mod_inputs_user_inputs!(equations, equations_case_name, equations_dir)
+inputs = Dict{}()
+inputs = mod_inputs_user_inputs!(equations, equations_case_name, equations_dir)
 
 #--------------------------------------------------------
 #Create output directory if it doesn't exist:
