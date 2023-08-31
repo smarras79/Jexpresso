@@ -1,15 +1,14 @@
 using ArgParse
 using Crayons.Box
 using PrettyTables
-using Revise
 
 export mod_inputs_user_inputs
 export mod_inputs_print_welcome
 
-function parse_commandline()
+#=function parse_commandline()
     s = ArgParseSettings()
 
-    @add_arg_table s begin
+   #= @add_arg_table s begin
         "--opt1"
         help = "an option with an argument"
         "--opt2", "-o"
@@ -25,13 +24,12 @@ function parse_commandline()
         "arg2"
         help = "case name within equations/equations"
         required = false
-    end
+    end=#
 
     return parse_args(s)
-end
+end=#
 
-macro datatype(str); :($(Symbol(str))); end
-
+#macro datatype(str); :($(Symbol(str))); end
 
 function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::String)
 
@@ -39,7 +37,7 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     
     #
     # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
-    # was definied within this same function via the include(input_dir) above.
+    # was defined within this same function via the include(input_dir) above.
     # 
     input_dir = string(equations_dir, "/", equations, "/", equations_case_name, "/user_inputs.jl")
     include(input_dir)
