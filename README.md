@@ -29,9 +29,9 @@ julia> include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/src/equations/EQUATIONS/EQUATIONS_CASE_NAME```
 
-For example, if you wanted to run `AdvDiff` with the setup defined inside the case directory `case1`, then you would do the following:
+For example, if you wanted to run `CompEuler` with the setup defined inside the case directory `theta`, then you would do the following:
 ```bash
-julia> push!(empty!(ARGS), "AdvDiff", "case1");
+julia> push!(empty!(ARGS), "CompEuler", "theta");
 julia> include("./src/Jexpresso.jl")
 ```
 
