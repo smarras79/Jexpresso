@@ -1,44 +1,4 @@
 #---------------------------------------------------------------------------
-# Fetch equations name to access the user_rhs functions
-#---------------------------------------------------------------------------
-#=
-if (length(ARGS) === 1) #equations
-    if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/user_source.jl"))
-        user_source_dir = string(@__DIR__, "../../equations/", ARGS[1], "/user_source.jl")
-    else
-        user_source_dir = "../../fallbacks/source.jl"
-    end
-
-    if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/user_flux.jl"))
-        user_flux_dir = string(@__DIR__, "../../equations/", ARGS[1], "/user_flux.jl")
-    else
-        user_flux_dir = string("../../fallbacks/flux.jl")
-    end
-    
-    include(user_flux_dir)
-    include(user_source_dir)
-    
-elseif (length(ARGS) === 2)  #equations/equations_case_name   
-    if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl"))
-        user_source_dir = string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_source.jl")
-    else
-        @info " user_source.jl not defined. The fallback ../../fallbacks/source.jl will be used."
-        user_source_dir = "../../fallbacks/source.jl"
-    end
-
-    if isfile(string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_flux.jl"))
-        user_flux_dir = string(@__DIR__, "/../../equations/", ARGS[1], "/", ARGS[2], "/user_flux.jl")
-    else
-        @info " user_flux.jl not defined. The fallback ../../fallbacks/flux.jl will be used."
-        user_flux_dir = string("../../fallbacks/flux.jl")
-    end
-
-    include(user_flux_dir)
-    include(user_source_dir)
-end
-=#
-
-#---------------------------------------------------------------------------
 # Optimized (more coud possibly be done)
 #---------------------------------------------------------------------------
 function build_rhs!(RHS, u, params, time)
