@@ -1,10 +1,8 @@
 #---------------------------------------------------------------------------
 # Fetch problem name to access the user_bc functions
 #---------------------------------------------------------------------------
-if (length(ARGS) === 2) #equations/equations_case_name
-    user_bc_dir = string("../../equations/", ARGS[1], "/", ARGS[2], "/user_bc.jl")    
-    include(user_bc_dir)
-end
+user_bc_dir = string("../../equations/", ARGS[1], "/", ARGS[2], "/user_bc.jl")    
+include(user_bc_dir)
 #---------------------------------------------------------------------------
 function dirichlet!(qbdy, x, y, t, tag, inputs::Dict)
     user_bc_dirichlet!(qbdy, x, y, t, tag, inputs::Dict)

@@ -5,10 +5,10 @@ using PrettyTables
 export mod_inputs_user_inputs
 export mod_inputs_print_welcome
 
-#=function parse_commandline()
+function parse_commandline()
     s = ArgParseSettings()
 
-   #= @add_arg_table s begin
+    @add_arg_table s begin
         "--opt1"
         help = "an option with an argument"
         "--opt2", "-o"
@@ -24,10 +24,10 @@ export mod_inputs_print_welcome
         "arg2"
         help = "case name within equations/equations"
         required = false
-    end=#
+    end
 
     return parse_args(s)
-end=#
+end
 
 #macro datatype(str); :($(Symbol(str))); end
 
