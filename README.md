@@ -1,5 +1,8 @@
 # JEXPRESSO
-A research and educational software for the numerical solution of 1D, 2D, and 3D PDEs using spectral and spectral element methods on CPUs and GPUs. DISCLAIMER: this is WIP.
+
+WARNING: This is a minimal version specifically to allow the group at CSCS for the GPU addition!
+
+A research and educational software for the numerical solution of 2D, and 3D PDEs using spectral element methods. DISCLAIMER: this is WIP.
 
 If you are interested in contributing, please get in touch.
 
@@ -36,8 +39,6 @@ julia> include("./src/Jexpresso.jl")
 
 For ready to run tests, there are the currently available equations names:
 
-* AdvDiff
-* Elliptic
 * CompEuler (option with total energy and theta formulation)
 
 The code is designed to create any system of conservsation laws. See CompEuler/case1 to see an example of each file.
