@@ -5,8 +5,7 @@ If you are interested in contributing, please get in touch.
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia
-version 1.7.2 or higher (tested up to 1.8.5)
+To install and run the code assume Julia 1.8.5
 
 ## Setup with CPUs
 
