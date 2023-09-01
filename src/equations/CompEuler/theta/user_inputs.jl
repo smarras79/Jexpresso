@@ -5,8 +5,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                 => 150,
         #:ode_solver           => Tsit5(),   #28s
-        :ode_solver           => SSPRK54(), #13.8s dt=0.35
-        :Δt                   => 0.35,       
+        :ode_solver           => SSPRK53(), #13.8s dt=0.35
+        :Δt                   => 0.35,     
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         :lsource              => true,
