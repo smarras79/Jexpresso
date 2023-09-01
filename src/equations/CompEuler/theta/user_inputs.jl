@@ -4,9 +4,9 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :tend                 => 10,
-        #:ode_solver           => Tsit5(),
-        :ode_solver           => ExplicitRK(tableau = constructDormandPrince()),
-        :Δt                   => 0.25,
+        :ode_solver           => Tsit5(),
+        #:ode_solver           => ExplicitRK(tableau = constructDormandPrince()),
+        #:Δt                   => 0.25,
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         :lsource              => true,
