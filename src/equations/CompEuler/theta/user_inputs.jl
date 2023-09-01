@@ -4,19 +4,9 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :tend                 => 150,
-
         #:ode_solver           => Tsit5(),   #28s
-
         :ode_solver           => SSPRK54(), #13.8s dt=0.35
-        :Δt                   => 0.35,
-        
-        #:ode_solver           => SSPRK33(),  #14s dt=0.2
-        #:Δt                   => 0.2,
-        
-        #:ode_solver           => ExplicitRK(tableau = constructDormandPrince()), #WORKING (but slow)
-        #:ode_solver           => ExplicitRK(tableau = constructEuler()), #MEMORY BROKEN
-        #:ode_solver           => ExplicitRK(tableau = constructSSPRK33()), #MEMORY BROKEN
-        
+        :Δt                   => 0.35,       
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         :lsource              => true,
