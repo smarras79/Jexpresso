@@ -162,7 +162,6 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
             inputs[:ode_solver] = SSPRK54()
         
             @warn s
-        end
     end
     
     if(!haskey(inputs, :output_dir))
