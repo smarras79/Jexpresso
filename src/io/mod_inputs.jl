@@ -150,7 +150,7 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
     # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
     # https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
     #
-    if(haskey!(inputs, :ode_solver))
+    if(!haskey(inputs, :ode_solver))
         s = """
                         WARNING in user_inputs.jl --> :ode_solver
                         
