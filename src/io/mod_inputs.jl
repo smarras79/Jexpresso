@@ -150,43 +150,8 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
     # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
     # https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
     #
-    if(haskey(inputs, :ode_solver))
-        if(uppercase(inputs[:ode_solver]) == "TSIT5")
-            inputs[:ode_solver] = Tsit5() # Tsitouras 5/4 Runge-Kutta method. (free 4th order interpolant).
-        elseif(uppercase(inputs[:ode_solver]) == "RK4")
-            inputs[:ode_solver] = RK4()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK22")
-            inputs[:ode_solver] = SSPRK22()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK33")
-            inputs[:ode_solver] = SSPRK33()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK53" || uppercase(inputs[:ode_solver]) == "RK53")
-            inputs[:ode_solver] = SSPRK53()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK54")
-            inputs[:ode_solver] = SSPRK54()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK63")
-            inputs[:ode_solver] = SSPRK63()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK73")
-            inputs[:ode_solver] = SSPRK73()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK104")
-            inputs[:ode_solver] = SSPRK104()
-        elseif(uppercase(inputs[:ode_solver]) == "CARPENTERKENNEDY2N54")
-            inputs[:ode_solver] = CarpenterKennedy2N54()
-        elseif(uppercase(inputs[:ode_solver]) == "BICGSTAB" ||
-            uppercase(inputs[:ode_solver]) == "BICGSTABLE" ||
-            uppercase(inputs[:ode_solver]) == "IterativeSolversJL_BICGSTAB") 
-            inputs[:ode_solver] = IterativeSolversJL_BICGSTAB()
-        elseif(uppercase(inputs[:ode_solver]) == "GMRES"|| uppercase(inputs[:ode_solver]) == "IterativeSolversJL_GMRES")
-            inputs[:ode_solver] = IterativeSolversJL_GMRES()
-        elseif(uppercase(inputs[:ode_solver]) == "ADAMSBASHFORTH3"  ||
-            uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH3" ||
-            uppercase(inputs[:ode_solver]) == "AB3")
-            inputs[:ode_solver] = AB3()
-        elseif(uppercase(inputs[:ode_solver]) == "ADAMSBASHFORTH4"  ||
-            uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH4" ||
-            uppercase(inputs[:ode_solver]) == "AB4")
-            inputs[:ode_solver] = AB4()
-        else
-            s = """
+    if(haskey!(inputs, :ode_solver))
+        s = """
                         WARNING in user_inputs.jl --> :ode_solver
                         
                             See usable solvers at
@@ -195,11 +160,9 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
                         SSPRK53 will be used by default.
                             """            
             inputs[:ode_solver] = SSPRK54()
-
+        
             @warn s
         end
-    else
-        inputs[:ode_solver] = SSPRK54()
     end
     
     if(!haskey(inputs, :output_dir))

@@ -1,7 +1,4 @@
 # JEXPRESSO
-
-WARNING: This is a minimal version specifically to allow the group at CSCS for the GPU addition!
-
 A research and educational software for the numerical solution of 2D, and 3D PDEs using spectral element methods. DISCLAIMER: this is WIP.
 
 If you are interested in contributing, please get in touch.
