@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 1020,
+        :tend                 => 100,
         #:ode_solver           => Tsit5(),   #28s
         :ode_solver           => SSPRK54(), #13.8s dt=0.35
         :Δt                   => 0.4,
