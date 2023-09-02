@@ -46,10 +46,12 @@ function time_loop!(QT,
     ubdy        = zeros(qp.neqs)
     bdy_flux    = zeros(qp.neqs,1)
 
-    ρel = zeros(T, mesh.ngl, mesh.ngl)
-    uel = zeros(T, mesh.ngl, mesh.ngl)
-    vel = zeros(T, mesh.ngl, mesh.ngl)
-    Tel = zeros(T, mesh.ngl, mesh.ngl)
+    #ρel = zeros(T, mesh.ngl, mesh.ngl)
+    #uel = zeros(T, mesh.ngl, mesh.ngl)
+    #vel = zeros(T, mesh.ngl, mesh.ngl)
+    #Tel = zeros(T, mesh.ngl, mesh.ngl)
+    uprimitive = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
+        
     #-----------------------------------------------------------------
     
     for i=1:qp.neqs
@@ -62,14 +64,14 @@ function time_loop!(QT,
     
     deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])    
-    visc_coeff = (νρ=inputs[:νρ], μx=inputs[:νx], μy=inputs[:νy], κ=inputs[:κ])
+    visc_coeff = (inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ])
     
     params = (T, F, G, S,
               uaux, uaux_el,
               ubdy, gradu, bdy_flux, #for B.C.
               rhs_el, rhs_diff_el,
               rhs_diffξ_el, rhs_diffη_el,
-              ρel, uel, vel, Tel,
+              uprimitive,
               RHS, RHS_visc, 
               SD=mesh.SD, QT, PT,
               neqs=qp.neqs,
@@ -86,6 +88,7 @@ function time_loop!(QT,
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=inputs[:Δt],
                            save_everystep = false,
+                           adaptive=inputs[:ode_adaptive_solver],
                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
     
     println(" # Solving ODE  ................................ DONE")
