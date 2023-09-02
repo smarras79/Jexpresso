@@ -50,7 +50,25 @@ function resetRHSToZero_viscous!(params)
 end
 
 
-function uToPrimitives!(ρel, uel, vel, Tel, u, mesh, δtotal_energy, iel)
+function uToPrimitives!(uprimitive, u, mesh, δtotal_energy, iel)
+    
+    for j=1:mesh.ngl, i=1:mesh.ngl
+        
+        m1 = mesh.connijk[iel,i,j]
+        m2 = mesh.npoin + m1
+        m3 = 2*mesh.npoin + m1
+        m4 = 3*mesh.npoin + m1
+        
+        uprimitive[i,j,1] = u[m1]
+        uprimitive[i,j,2] = u[m2]/u[m1]
+        uprimitive[i,j,3] = u[m3]/u[m1]
+        uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+    end
+    
+end
+
+
+function uToPrimitives_or!(ρel, uel, vel, Tel, u, mesh, δtotal_energy, iel)
     
     for j=1:mesh.ngl, i=1:mesh.ngl
         
@@ -66,6 +84,7 @@ function uToPrimitives!(ρel, uel, vel, Tel, u, mesh, δtotal_energy, iel)
     end
     
 end
+
 
 function rhs!(du, u, params, time)
     
@@ -108,9 +127,10 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------
     if (params.inputs[:lvisc] == true)
         
-        resetRHSToZero_viscous!(params) 
+        resetRHSToZero_viscous!(params)
         
-        viscous_rhs_el!(params.ρel, params.uel, params.vel, params.Tel,
+        #viscous_rhs_el!(params.ρel, params.uel, params.vel, params.Tel,
+        viscous_rhs_el!(params.uprimitive,
                         params.rhs_diff_el, params.rhs_diffξ_el, params.rhs_diffη_el, 
                         u,
                         params.mesh, params.metrics, params.basis,
@@ -152,14 +172,23 @@ function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, SD
     end
 end
 
-function viscous_rhs_el!(ρel, uel, vel, Tel,
+function viscous_rhs_el!(uprimitive,
                          rhs_diff_el, rhs_diffξ_el, rhs_diffη_el,
                          u,
                          mesh, metrics, basis, visc_coeff, inputs, 
                          ω, neqs, SD::NSD_2D)
+
+#function viscous_rhs_el!(ρel, uel, vel, Tel,
+#                         rhs_diff_el, rhs_diffξ_el, rhs_diffη_el,
+#                         u,
+#                         mesh, metrics, basis, visc_coeff, inputs, 
+#                         ω, neqs, SD::NSD_2D)
     
     for iel=1:mesh.nelem
-        _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, vel, Tel,
+        #_expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, vel, Tel,
+        #                 u, ω, mesh, basis, metrics, visc_coeff, inputs, iel)
+
+          _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, uprimitive,
                          u, ω, mesh, basis, metrics, visc_coeff, inputs, iel)
     end
     
@@ -203,9 +232,13 @@ function _expansion_inviscid!(rhs_el, metrics, basis, F, G, S, ω, ngl, npoin, n
 end
 
 
-function _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, vel, Tel, u, ω, mesh, basis, metrics, visc_coeff, inputs, iel)
+function _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, uprimitive, u, ω, mesh, basis, metrics, visc_coeff, inputs, iel)
+
+#function _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, vel, Tel, u, ω, mesh, basis, metrics, visc_coeff, inputs, iel)
+
     
-    uToPrimitives!(ρel, uel, vel, Tel, u, mesh, inputs[:δtotal_energy], iel)
+    #uToPrimitives!(ρel, uel, vel, Tel, u, mesh, inputs[:δtotal_energy], iel)
+    uToPrimitives!(uprimitive, u, mesh, inputs[:δtotal_energy], iel)
     
     for l = 1:mesh.ngl
         for k = 1:mesh.ngl
@@ -222,15 +255,15 @@ function _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, 
             dTdη = 0.0
             for i = 1:mesh.ngl
                 
-                dρdξ += basis.dψ[i,k]*ρel[i,l]
-                dudξ += basis.dψ[i,k]*uel[i,l]
-                dvdξ += basis.dψ[i,k]*vel[i,l]
-                dTdξ += basis.dψ[i,k]*Tel[i,l]
+                dρdξ += basis.dψ[i,k]*uprimitive[i,l,1]
+                dudξ += basis.dψ[i,k]*uprimitive[i,l,2]
+                dvdξ += basis.dψ[i,k]*uprimitive[i,l,3]
+                dTdξ += basis.dψ[i,k]*uprimitive[i,l,4]
 
-                dρdη += basis.dψ[i,l]*ρel[k,i]
-                dudη += basis.dψ[i,l]*uel[k,i]
-                dvdη += basis.dψ[i,l]*vel[k,i]
-                dTdη += basis.dψ[i,l]*Tel[k,i]
+                dρdη += basis.dψ[i,l]*uprimitive[k,i,1]
+                dudη += basis.dψ[i,l]*uprimitive[k,i,2]
+                dvdη += basis.dψ[i,l]*uprimitive[k,i,3]
+                dTdη += basis.dψ[i,l]*uprimitive[k,i,4]
             end
             dξdx_kl = metrics.dξdx[iel,k,l]
             dξdy_kl = metrics.dξdy[iel,k,l]

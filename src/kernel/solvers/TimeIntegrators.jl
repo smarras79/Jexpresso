@@ -46,10 +46,11 @@ function time_loop!(QT,
     ubdy        = zeros(qp.neqs)
     bdy_flux    = zeros(qp.neqs,1)
 
-    ρel = zeros(T, mesh.ngl, mesh.ngl)
-    uel = zeros(T, mesh.ngl, mesh.ngl)
-    vel = zeros(T, mesh.ngl, mesh.ngl)
-    Tel = zeros(T, mesh.ngl, mesh.ngl)
+    #ρel = zeros(T, mesh.ngl, mesh.ngl)
+    #uel = zeros(T, mesh.ngl, mesh.ngl)
+    #vel = zeros(T, mesh.ngl, mesh.ngl)
+    #Tel = zeros(T, mesh.ngl, mesh.ngl)
+    uprimitive = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
     #-----------------------------------------------------------------
     
     for i=1:qp.neqs
@@ -69,7 +70,8 @@ function time_loop!(QT,
               ubdy, gradu, bdy_flux, #for B.C.
               rhs_el, rhs_diff_el,
               rhs_diffξ_el, rhs_diffη_el,
-              ρel, uel, vel, Tel,
+              uprimitive, 
+              #ρel, uel, vel, Tel,
               RHS, RHS_visc, 
               SD=mesh.SD, QT, PT,
               neqs=qp.neqs,
