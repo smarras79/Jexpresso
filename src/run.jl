@@ -47,9 +47,6 @@ equations           = string(parsed_args["eqs"])
 equations_case_name = string(parsed_args["eqs_case"])
 equations_dir       = string("equations")
 
-@info equations
-@info equations_case_name
-
 driver_dir          = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/drivers.jl")
 user_flux_dir       = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_flux.jl")
 user_source_dir     = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_source.jl")
