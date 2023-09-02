@@ -86,6 +86,7 @@ function time_loop!(QT,
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=inputs[:Δt],
                            save_everystep = false,
+                           adaptive=inputs[:ode_adaptive_solver],
                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
     
     println(" # Solving ODE  ................................ DONE")
