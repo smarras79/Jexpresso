@@ -180,9 +180,10 @@ function viscous_rhs_el!(uprimitive,
         
        uToPrimitives!(uprimitive, u, mesh, inputs[:δtotal_energy], iel)
 
-        #for ieq=2:neqs
-            _expansion_visc!(@view(rhs_diffξ_el[iel,:,:,:]), @view(rhs_diffη_el[iel,:,:,:]), @view(uprimitive[:,:,:]), visc_coeff, ω, mesh, basis, metrics, inputs, iel)
-        #end
+        for ieq=2:neqs
+            _expansion_visc1!(@view(rhs_diffξ_el[iel,:,:,ieq]), @view(rhs_diffη_el[iel,:,:,ieq]), @view(uprimitive[:,:,ieq]), visc_coeff[ieq], ω, mesh, basis, metrics, inputs, iel)
+            #_expansion_visc!(@view(rhs_diffξ_el[iel,:,:,:]), @view(rhs_diffη_el[iel,:,:,:]), @view(uprimitive[:,:,:]), visc_coeff, ω, mesh, basis, metrics, inputs, iel)
+        end
     
     end
     rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
@@ -299,7 +300,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitive, visc_coeff, 
     end  
 end
 
-function _expansion_visc1!(rhs_diffξ_el, rhs_diffη_el, uprimitive, visc_coeffieq, ω, mesh, basis, metrics, inputs, iel, ieq)
+function _expansion_visc1!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω, mesh, basis, metrics, inputs, iel, ieq)
     
     for l = 1:mesh.ngl
         for k = 1:mesh.ngl
@@ -317,12 +318,12 @@ function _expansion_visc1!(rhs_diffξ_el, rhs_diffη_el, uprimitive, visc_coeffi
             for i = 1:mesh.ngl
                 
                 #dρdξ += basis.dψ[i,k]*uprimitive[i,l,1]
-                dudξ += basis.dψ[i,k]*uprimitive[i,l]
+                dudξ += basis.dψ[i,k]*uprimitiveieq[i,l]
                 #dvdξ += basis.dψ[i,k]*uprimitive[i,l,3]
                 #dTdξ += basis.dψ[i,k]*uprimitive[i,l,4]
 
                 #dρdη += basis.dψ[i,l]*uprimitive[k,i,1]
-                dudη += basis.dψ[i,l]*uprimitive[k,i]
+                dudη += basis.dψ[i,l]*uprimitiveieq[k,i]
                 #dvdη += basis.dψ[i,l]*uprimitive[k,i,3]
                 #dTdη += basis.dψ[i,l]*uprimitive[k,i,4]
             end
@@ -332,12 +333,14 @@ function _expansion_visc1!(rhs_diffξ_el, rhs_diffη_el, uprimitive, visc_coeffi
             dηdy_kl = metrics.dηdy[iel,k,l]
             
             #dρdx =  visc_coeff.νρ*(dρdξ*dξdx_kl + dρdη*dηdx_kl)
-            dudx =  visc_coeffieq*(dudξ*dξdx_kl + dudη*dηdx_kl)
+            auxi = dudξ*dξdx_kl + dudη*dηdx_kl
+            dudx = visc_coeffieq*auxi
             #dvdx =  visc_coeff[3]*(dvdξ*dξdx_kl + dvdη*dηdx_kl)
             #dTdx =  visc_coeff[4]*(dTdξ*dξdx_kl + dTdη*dηdx_kl) #+μ∇u⋅u
             
             #dρdy =  visc_coeff.νρ*(dρdξ*dξdy_kl + dρdη*dηdy_kl)
-            dudy =  visc_coeffieq*(dudξ*dξdy_kl + dudη*dηdy_kl)
+            auxi = dudξ*dξdy_kl + dudη*dηdy_kl
+            dudy = visc_coeffieq*auxi
             #dvdy =  visc_coeff[3]*(dvdξ*dξdy_kl + dvdη*dηdy_kl)
             #dTdy =  visc_coeff[4]*(dTdξ*dξdy_kl + dTdη*dηdy_kl) #+μ∇u⋅u
             
