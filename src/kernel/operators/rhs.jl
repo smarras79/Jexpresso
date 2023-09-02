@@ -95,7 +95,7 @@ function _build_rhs!(RHS, u, params, time)
                      params.mesh, params.metrics,
                      params.basis, params.ω, params.SD,
                      neqs, true)
-    
+
     apply_boundary_conditions!(u, params.uaux, time,
                                params.mesh, params.metrics, params.basis,
                                params.rhs_el, params.ubdy,
@@ -143,14 +143,13 @@ function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, SD
                 user_source!(@view(S[i,j,:]), @view(uaux[ip,:]), mesh.npoin; neqs=neqs)
             end
         end
-        
-      _expansion_inviscid!(@view(rhs_el[iel,:,:,:]), metrics, basis,
-                           @view(F[:,:,:]), @view(G[:,:,:]), @view(S[:,:,:]),
-                           ω, mesh.ngl, mesh.npoin, neqs, iel)
-        
-    end
 
-    
+        for ieq = 1:neqs
+            
+            _expansion_inviscid!(@view(rhs_el[iel,:,:,ieq]), metrics, basis,
+                                 @view(F[:,:,ieq]), @view(G[:,:,ieq]), @view(S[:,:,ieq]), ω, mesh.ngl, mesh.npoin, neqs, iel)
+        end
+    end
 end
 
 function viscous_rhs_el!(ρel, uel, vel, Tel,
@@ -167,42 +166,42 @@ function viscous_rhs_el!(ρel, uel, vel, Tel,
     rhs_diff_el .= @views (rhs_diffξ_el[:,:,:,:] .+ rhs_diffη_el[:,:,:,:])
 end
 
-function _expansion_inviscid!(rhs_el, metrics, basis, F, G, S,
-                                ω, ngl, npoin, neqs, iel)
+function _expansion_inviscid!(rhs_el, metrics, basis, F, G, S, ω, ngl, npoin, neqs, iel)
 
-
-    for ieq = 1:neqs
-        for j=1:ngl
-            for i=1:ngl
-                ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+    for j=1:ngl
+        for i=1:ngl
+            ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+            
+            dFdξ = 0.0
+            dFdη = 0.0
+            dGdξ = 0.0
+            dGdη = 0.0
+            
+            for k = 1:ngl
+                dFdξ += basis.dψ[k,i]*F[k,j]
+                dFdη += basis.dψ[k,j]*F[i,k]
                 
-                dFdξ = 0.0
-                dFdη = 0.0
-                dGdξ = 0.0
-                dGdη = 0.0
-
-                for k = 1:ngl
-                    dFdξ += basis.dψ[k,i]*F[k,j,ieq]
-                    dFdη += basis.dψ[k,j]*F[i,k,ieq]
-                    
-                    dGdξ += basis.dψ[k,i]*G[k,j,ieq]
-                    dGdη += basis.dψ[k,j]*G[i,k,ieq]
-                end
-                dξdx_ij = metrics.dξdx[iel,i,j]
-                dξdy_ij = metrics.dξdy[iel,i,j]
-                dηdx_ij = metrics.dηdx[iel,i,j]
-                dηdy_ij = metrics.dηdy[iel,i,j]
-                
-                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-                dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
-
-                auxi = ωJac*((dFdx + dGdy)  - S[i,j,ieq])
-                rhs_el[i,j,ieq] -= auxi
+                dGdξ += basis.dψ[k,i]*G[k,j]
+                dGdη += basis.dψ[k,j]*G[i,k]
             end
+            dξdx_ij = metrics.dξdx[iel,i,j]
+            dξdy_ij = metrics.dξdy[iel,i,j]
+            dηdx_ij = metrics.dηdx[iel,i,j]
+            dηdy_ij = metrics.dηdy[iel,i,j]
+            
+            dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
+            dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij
+
+            dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
+            dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+            
+            auxi = ωJac*((dFdx + dGdy)  - S[i,j])
+            rhs_el[i,j] -= auxi
         end
     end
-   
+           
 end
+
 
 function _expansion_visc!(rhs_diff_el, rhs_diffξ_el, rhs_diffη_el, ρel, uel, vel, Tel, u, ω, mesh, basis, metrics, visc_coeff, inputs, iel)
     
