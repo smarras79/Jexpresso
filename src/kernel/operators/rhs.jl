@@ -181,7 +181,7 @@ function viscous_rhs_el!(uprimitive,
        uToPrimitives!(uprimitive, u, mesh, inputs[:δtotal_energy], iel)
 
         for ieq=2:neqs
-            _expansion_visc1!(@view(rhs_diffξ_el[iel,:,:,ieq]), @view(rhs_diffη_el[iel,:,:,ieq]), @view(uprimitive[:,:,ieq]), visc_coeff[ieq], ω, mesh, basis, metrics, inputs, iel)
+            _expansion_visc1!(@view(rhs_diffξ_el[iel,:,:,ieq]), @view(rhs_diffη_el[iel,:,:,ieq]), @view(uprimitive[:,:,ieq]), visc_coeff[ieq], ω, mesh, basis, metrics, inputs, iel, ieq)
             #_expansion_visc!(@view(rhs_diffξ_el[iel,:,:,:]), @view(rhs_diffη_el[iel,:,:,:]), @view(uprimitive[:,:,:]), visc_coeff, ω, mesh, basis, metrics, inputs, iel)
         end
     
