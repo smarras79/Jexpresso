@@ -7,6 +7,7 @@ using DelimitedFiles
 using DataStructures
 using LoopVectorization
 using ElasticArrays
+using InternedStrings
 using StaticArrays
 using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
 using DiffEqBase
@@ -49,6 +50,8 @@ include(joinpath("kernel", "mesh", "metric_terms.jl"))
 include(joinpath("kernel", "infrastructure", "element_matrices.jl"))
 
 include(joinpath("kernel", "infrastructure", "sem_setup.jl"))
+
+include(joinpath("kernel", "infrastructure", "Kopriva_functions.jl"))
 
 include(joinpath("kernel", "boundaryconditions", "BCs.jl"))
 

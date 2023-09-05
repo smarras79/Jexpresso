@@ -1,4 +1,4 @@
-include("../operators/operators.jl")
+#include("../operators/operators.jl")
 include("../infrastructure/Kopriva_functions.jl")
 include("custom_bcs.jl")
 
@@ -33,7 +33,6 @@ end
 
 #function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, gradq, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars;L=zeros(1,1))
 
-#function apply_boundary_conditions!(u, params, t)
 function apply_boundary_conditions!(u, uaux, t,
                                     mesh, metrics, basis,
                                     rhs_el, ubdy,
@@ -66,8 +65,8 @@ function apply_boundary_conditions!(u, uaux, t,
   #                    dirichlet!, neumann,
   #                    zeros(1,1), inputs)
 
-    build_custom_bcs!(SD, t, mesh, metrics, ω,
-                      ubdy, uaux, u, @view(rhs_el[:,:,:,:]), neqs, dirichlet!, neumann, inputs)
+   build_custom_bcs!(SD, t, mesh, metrics, ω,
+                     ubdy, uaux, u, @view(rhs_el[:,:,:,:]), neqs, dirichlet!, neumann, inputs)
    
     #end
     
@@ -125,6 +124,7 @@ function _bc_dirichlet!(qbdy, x, y, t, tag)
     # THIS SHOULD LEVERAGE the bdy node tag rather than checking coordinates
     # REWRITE and make sure that there is no allocation.
     #############
+   
     if ( x <= -4990.0 || x >= 4990.0)
         qbdy[2] = 0.0
     end
@@ -148,15 +148,16 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
     for iedge = 1:mesh.nedges_bdy 
         iel  = mesh.bdy_edge_in_elem[iedge]
         
-        if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2"
-            tag = mesh.bdy_edge_type[iedge]
+        #if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2"
+        if mesh.bdy_edge_type[iedge] == "free_slip"
             
+            #tag = mesh.bdy_edge_type[iedge]
             for k=1:mesh.ngl
                 ip = mesh.poin_in_bdy_edge[iedge,k]
                 
                 fill!(qbdy, 4325789.0)
                 #ipp = 1 #ip               
-                _bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, tag)
+                _bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge])
 
                 ####dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, tag, inputs) ###AS IT IS NOW, THIS IS ALLOCATING SHIT TONS. REWRITE to make it with ZERO allocation. hint: It may be due to passing the function but possibly not.
                 
@@ -167,17 +168,17 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                         ll=ii
                     end
                 end
-                                
-                for var =1:neqs
-                    if !(AlmostEqual(qbdy[var],4325789.0)) # WHAT's this for?
-                        uaux[ip,var]       = qbdy[var]
-                        rhs[iel,ll,mm,var] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
+                
+                    for var =1:neqs
+                        if !(AlmostEqual(qbdy[var],4325789.0)) # WHAT's this for?
+                            uaux[ip,var]       = qbdy[var]
+                            rhs[iel,ll,mm,var] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
+                        end
                     end
                 end
-            end
-        end        
+            end        
     end
-
+    
     #Map back to u after applying b.c.
     uaux2u!(u, uaux, neqs, mesh.npoin)
        
