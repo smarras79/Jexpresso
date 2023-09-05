@@ -95,6 +95,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     poin_in_bdy_face::Array{Int64,2} = zeros(Int64, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
+    bdy_edge_type_id::Array{Int64,1} = zeros(Int64, 0)
     
 
     #@YASSINE REMOVE WHAT NO LONGER NEEDED 
@@ -245,7 +246,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.poin_in_bdy_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges_bdy, mesh.ngl)
     mesh.poin_in_face::Array{Int64,3} = zeros(Int64,  mesh.nfaces, mesh.ngl, mesh.ngl)
     mesh.edge_type     = Array{Union{Nothing, String}}(nothing, mesh.nedges)
-    mesh.bdy_edge_type = Array{Union{Nothing, String}}(nothing, mesh.nedges_bdy)
+    mesh.bdy_edge_type                    = Array{Union{Nothing, String}}(nothing, mesh.nedges_bdy)
+    mesh.bdy_edge_type_id::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)  
     
     if mesh.nsd > 2
         mesh.poin_in_bdy_face::Array{Int64,3} = zeros( mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
@@ -457,6 +459,15 @@ if mesh.nsd == 2
             for igl = 1:mesh.ngl
                 mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
                 mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
+
+               #= if SubString(mesh.edge_type[iedge] == "free_slip"
+                    mesh.bdy_edge_type_id[iedge_bdy] = 1
+                elseif mesh.edge_type[iedge] == "no_slip"
+                    mesh.bdy_edge_type_id[iedge_bdy] = 2
+                else
+                    mesh.bdy_edge_type_id[iedge_bdy] = 0
+                end=#
+                
                 #@info iedge, mesh.edge_type[iedge]
             end
             iedge_bdy += 1

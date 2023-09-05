@@ -38,7 +38,7 @@ function uaux2u!(u, uaux, neqs, npoin)
 end
 
 function resetRHSToZero_inviscid!(params)
-    fill!(params.rhs_el, zero(params.T))
+    fill!(params.rhs_el, zero(params.T))   
     fill!(params.RHS,    zero(params.T))
 end
 
@@ -156,6 +156,7 @@ function viscous_rhs_el!(uprimitive,
                          u,
                          mesh, metrics, basis, visc_coeff, inputs, 
                          ω, neqs, SD::NSD_2D)
+
     
     for iel=1:mesh.nelem
         
