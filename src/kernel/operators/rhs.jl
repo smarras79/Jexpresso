@@ -18,7 +18,7 @@ end
 
 function u2uaux!(uaux, u, neqs, npoin)
 
-     for i=1:neqs
+    for i=1:neqs
         idx = (i-1)*npoin
         uaux[:,i] = view(u, idx+1:i*npoin)
     end
@@ -63,24 +63,6 @@ function uToPrimitives!(uprimitive, u, mesh, δtotal_energy, iel)
         uprimitive[i,j,2] = u[m2]/u[m1]
         uprimitive[i,j,3] = u[m3]/u[m1]
         uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
-    end
-    
-end
-
-
-function uToPrimitives_or!(ρel, uel, vel, Tel, u, mesh, δtotal_energy, iel)
-    
-    for j=1:mesh.ngl, i=1:mesh.ngl
-        
-        m1 = mesh.connijk[iel,i,j]
-        m2 = mesh.npoin + m1
-        m3 = 2*mesh.npoin + m1
-        m4 = 3*mesh.npoin + m1
-        
-        ρel[i,j] = u[m1]
-        uel[i,j] = u[m2]/ρel[i,j]
-        vel[i,j] = u[m3]/ρel[i,j]
-        Tel[i,j] = u[m4]/ρel[i,j] - δtotal_energy*0.5*(uel[i,j]^2 + vel[i,j]^2)
     end
     
 end
@@ -177,16 +159,14 @@ function viscous_rhs_el!(uprimitive,
     
     for iel=1:mesh.nelem
         
-       uToPrimitives!(uprimitive, u, mesh, inputs[:δtotal_energy], iel)
+        uToPrimitives!(uprimitive, u, mesh, inputs[:δtotal_energy], iel)
 
         for ieq=2:neqs
             _expansion_visc!(@view(rhs_diffξ_el[iel,:,:,ieq]), @view(rhs_diffη_el[iel,:,:,ieq]), @view(uprimitive[:,:,ieq]), visc_coeff[ieq], ω, mesh, basis, metrics, inputs, iel, ieq)
         end
-    
+        
     end
     rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
-    
-   
 end
 
 function _expansion_inviscid!(rhs_el, metrics, basis, F, G, S, ω, ngl, npoin, neqs, iel)
@@ -198,9 +178,8 @@ function _expansion_inviscid!(rhs_el, metrics, basis, F, G, S, ω, ngl, npoin, n
             dFdξ = 0.0
             dFdη = 0.0
             dGdξ = 0.0
-            dGdη = 0.0
-            
-            for k = 1:ngl
+            dGdη = 0.0            
+            @turbo for k = 1:ngl
                 dFdξ += basis.dψ[k,i]*F[k,j]
                 dFdη += basis.dψ[k,j]*F[i,k]
                 
@@ -218,14 +197,12 @@ function _expansion_inviscid!(rhs_el, metrics, basis, F, G, S, ω, ngl, npoin, n
             dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
             dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
             
-            auxi = ωJac*((dFdx + dGdy)  - S[i,j])
+            auxi = ωJac*((dFdx + dGdy) - S[i,j])
             rhs_el[i,j] -= auxi
         end
     end
-           
+    
 end
-
-
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω, mesh, basis, metrics, inputs, iel, ieq)
     
@@ -235,9 +212,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
             
             dudξ = 0.0
             dudη = 0.0
-            for i = 1:mesh.ngl
-                dudξ += basis.dψ[i,k]*uprimitiveieq[i,l]
-                dudη += basis.dψ[i,l]*uprimitiveieq[k,i]
+            @turbo for ii = 1:mesh.ngl
+                dudξ += basis.dψ[ii,k]*uprimitiveieq[ii,l]
+                dudη += basis.dψ[ii,l]*uprimitiveieq[k,ii]
             end
             dξdx_kl = metrics.dξdx[iel,k,l]
             dξdy_kl = metrics.dξdy[iel,k,l]
@@ -249,18 +226,17 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
             
             auxi = dudξ*dξdy_kl + dudη*dηdy_kl
             dudy = visc_coeffieq*auxi
-                        
+            
             ∇ξ∇u_kl = (dξdx_kl*dudx + dξdy_kl*dudy)*ωJac
             ∇η∇u_kl = (dηdx_kl*dudx + dηdy_kl*dudy)*ωJac     
             
-           for i = 1:mesh.ngl
-               dhdξ_ik = basis.dψ[i,k]
-               dhdη_il = basis.dψ[i,l]
-               
-               rhs_diffξ_el[i,l] -= dhdξ_ik * ∇ξ∇u_kl
-               rhs_diffη_el[k,i] -= dhdη_il * ∇η∇u_kl
-           end
-           
+            @turbo for i = 1:mesh.ngl
+                dhdξ_ik = basis.dψ[i,k]
+                dhdη_il = basis.dψ[i,l]
+                
+                rhs_diffξ_el[i,l] -= dhdξ_ik * ∇ξ∇u_kl
+                rhs_diffη_el[k,i] -= dhdη_il * ∇η∇u_kl
+            end
         end
     end  
 end

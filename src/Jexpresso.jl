@@ -5,8 +5,7 @@ using BenchmarkTools
 using Dates
 using DelimitedFiles
 using DataStructures
-using UnicodePlots
-using Printf
+using LoopVectorization
 using ElasticArrays
 using StaticArrays
 using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
@@ -22,6 +21,9 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
                   get_proposed_dt, set_proposed_dt!,
                   terminate!, remake
+
+using UnicodePlots
+using Printf
 
 const TInt   = Int64
 const TFloat = Float64

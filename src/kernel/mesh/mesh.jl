@@ -134,7 +134,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     #
     # Read GMSH grid from file
     #
+    ranks = [2]
+    
     model         = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+    g = GridapDistributed.compute_cell_graph(model)
+    #model         = GmshDiscreteModel(ranks, inputs[:gmsh_filename], renumber=true)
+    @info g
+    error("as")
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
     
