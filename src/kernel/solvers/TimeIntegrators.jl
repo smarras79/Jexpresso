@@ -45,11 +45,7 @@ function time_loop!(QT,
     gradu       = zeros(2, 1, 1) #zeros(2,mesh.npoin,nvars)
     ubdy        = zeros(qp.neqs)
     bdy_flux    = zeros(qp.neqs,1)
-
-    #ρel = zeros(T, mesh.ngl, mesh.ngl)
-    #uel = zeros(T, mesh.ngl, mesh.ngl)
-    #vel = zeros(T, mesh.ngl, mesh.ngl)
-    #Tel = zeros(T, mesh.ngl, mesh.ngl)
+    
     uprimitive = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
         
     #-----------------------------------------------------------------
@@ -57,8 +53,8 @@ function time_loop!(QT,
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] = @view qp.qn[:,i]
-        qp.qnm1 .= qp.qn[:,i]
-        qp.qnm2 .= qp.qn[:,i]
+        qp.qnm1[:,i] = @view(qp.qn[:,i])
+        qp.qnm2[:,i] = @view(qp.qn[:,i])
         
     end
     
@@ -84,15 +80,18 @@ function time_loop!(QT,
                       u,
                       tspan,
                       params);
-    
+
+    output_range = floor((inputs[:tend] - inputs[:tinit])/inputs[:ndiagnostics_outputs])
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=inputs[:Δt],
                            save_everystep = false,
                            adaptive=inputs[:ode_adaptive_solver],
-                           saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
+                           save_start=false, save_end=true);
+    
+#                           range(inputs[:tinit], inputs[:tend],
+#                                          length=inputs[:ndiagnostics_outputs]));
     
     println(" # Solving ODE  ................................ DONE")
-    
+
     return solution
-    
 end
