@@ -31,9 +31,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     Δx::Union{Array{TFloat}, Missing} = zeros(2)
     Δy::Union{Array{TFloat}, Missing} = zeros(2)
     Δz::Union{Array{TFloat}, Missing} = zeros(2)
-
-    #Δelem::Union{Array{TFloat}, Missing} = 0.0 #element characteristic size as if it were linear
-    #Δmean::Union{Array{TFloat}, Missing} = 0.0 #effective resolution considering the order Δmean = Δelem/nop
     
     xmin::Union{TFloat, Missing} = -1.0;
     xmax::Union{TFloat, Missing} = +1.0;
@@ -134,13 +131,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     #
     # Read GMSH grid from file
     #
-    ranks = [2]
-    
     model         = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-    g = GridapDistributed.compute_cell_graph(model)
-    #model         = GmshDiscreteModel(ranks, inputs[:gmsh_filename], renumber=true)
-    @info g
-    error("as")
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
     
