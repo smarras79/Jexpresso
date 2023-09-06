@@ -1,7 +1,9 @@
 # JEXPRESSO
 
-IMPORTANT NOTICE: this master branch is NOT the latest. We are working on the performant and optimized version of the code.
-You can try  CompEuler/theta with branch ```sm/efficientMemoryAccess```
+IMPORTANT NOTICE: this master branch is NOT the latest but it's stable. 
+
+For a performing version that is **as fast as a compiled code**, 
+try  CompEuler/theta with branch ```sm/efficientMemoryAccess``` (2d only)
 
 A research and educational software for the numerical solution of 1D, 2D, and 3D PDEs using spectral and spectral element methods on CPUs and GPUs. DISCLAIMER: this is WIP.
 
