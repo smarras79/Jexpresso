@@ -169,14 +169,14 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                     end
                 end
                 
-                    for var =1:neqs
-                        if !(AlmostEqual(qbdy[var],4325789.0)) # WHAT's this for?
-                            uaux[ip,var]       = qbdy[var]
-                            rhs[iel,ll,mm,var] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
-                        end
+                for var =1:neqs
+                    if !(AlmostEqual(qbdy[var],4325789.0)) # WHAT's this for?
+                        uaux[ip,var]       = qbdy[var]
+                        rhs[iel,ll,mm,var] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
                     end
                 end
-            end        
+            end
+        end
     end
     
     #Map back to u after applying b.c.
