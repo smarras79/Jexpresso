@@ -324,13 +324,12 @@ function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, ne
 end
 
 
-function DSS_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+
+function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     
-    M  = zeros(T, npoin, npoin)
     for iel=1:nelem
         
-        #show(stdout, "text/plain", 36.0*Mel[:,:,iel])
-        
+        #show(stdout, "text/plain", 36.0*Mel[:,:,iel])        
         for j = 1:N+1
             for i = 1:N+1
                 J = i + (j - 1)*(N + 1)
@@ -348,7 +347,7 @@ function DSS_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray
         #println("\n")
         #show(stdout, "text/plain", M[:,:, iel])
     end
-    return M
+    
 end
 
 function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
