@@ -12,6 +12,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
+        :lexact_integration  => true, 
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
         :luser_bc            => true,
