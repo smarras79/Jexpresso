@@ -100,7 +100,7 @@ function _build_rhs!(RHS, u, params, time)
 
     apply_boundary_conditions!(u, params.uaux, time,
                                params.mesh, params.metrics, params.basis,
-                               params.rhs_el, params.ubdy,
+                               params.RHS, params.rhs_el, params.ubdy,
                                params.ω, SD, neqs, params.inputs)
     
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, QT, SD)
