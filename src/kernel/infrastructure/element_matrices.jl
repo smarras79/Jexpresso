@@ -523,7 +523,7 @@ function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoi
 end
 
 
-function DSS_rhs!(SD::NSD_1D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
+function DSS_rhs!(V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T, QT::Inexact, SD::NSD_1D)
     
     for iel = 1:nelem
         for i = 1:N+1
@@ -535,32 +535,29 @@ function DSS_rhs!(SD::NSD_1D, V::SubArray{Float64}, Vel::AbstractArray, conn::Ab
     #show(stdout, "text/plain", V)
 end
 
-
-
-function newDSS_rhs!(SD::NSD_2D, du::AbstractArray, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
-
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, QT::Exact, SD::NSD_2D)
+    
     for ieq = 1:neqs
         for iel = 1:nelem
-            for j = 1:N+1
-                for i = 1:N+1
-                    I1d = (ieq - 1)*npoin + conn[iel,i,j]
-                    
-                    du[I1d] += Vel[iel,i,j,ieq]
+            for j = 1:ngl
+                for i = 1:ngl
+                    I = mesh.connijk[iel,i,j]
+                    RHS[I,ieq] += rhs_el[iel,i,j,ieq]
                 end
             end
         end
     end
-    #show(stdout, "text/plain", V)
+  
 end
 
-function DSS_rhs!(SD::NSD_2D, V, Vel, mesh, nelem, ngl, neqs)
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, QT::Inexact, SD::NSD_2D)
 
     for ieq = 1:neqs
         for iel = 1:nelem
             for j = 1:ngl
                 for i = 1:ngl
                     I = mesh.connijk[iel,i,j]
-                    V[I,ieq] += Vel[iel,i,j,ieq]
+                    RHS[I,ieq] += rhs_el[iel,i,j,ieq]
                 end
             end
         end
@@ -570,7 +567,7 @@ end
 
 
 
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact, neqs)
     RHS = M\RHS #M is not iagonal
 end
 
@@ -592,7 +589,12 @@ function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFl
     
     Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
     build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
-    M  = zeros(TFloat, mesh.npoin)
+    
+    if QT == Exact()
+        M  = zeros(TFloat, mesh.npoin, mesh.npoin)
+    else
+        M  = zeros(TFloat, mesh.npoin)
+    end
     DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat)
     
     Le = zeros(TFloat, 1, 1)

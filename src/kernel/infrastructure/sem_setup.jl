@@ -2,9 +2,9 @@ include("../mesh/restructure_for_periodicity.jl")
 
 function sem_setup(inputs::Dict)
     
-    Nξ = inputs[:nop]
-    lexact_integration = inputs[:lexact_integration]    
-    PT    = inputs[:equations]
+    Nξ = inputs[:nop] 
+    PT = inputs[:equations]
+    lexact_integration = inputs[:lexact_integration]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -31,7 +31,7 @@ function sem_setup(inputs::Dict)
         QT_String = "Exact"
         Qξ  = Nξ + 1
         
-        ξωQ   = basis_structs_ξ_ω!(inputs[:quadrature_nodes], mesh.nop)
+        ξωQ   = basis_structs_ξ_ω!(inputs[:quadrature_nodes], Qξ)
         ξq, ω = ξωQ.ξ, ξωQ.ω
     else  
         #

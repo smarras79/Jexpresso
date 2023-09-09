@@ -91,9 +91,9 @@ end
 #Profile.clear()
 
 driver(ContGal(),   # Space discretization type    
-                inputs, # input parameters from src/user_input.jl
-                OUTPUT_DIR,
-                TFloat)
+       inputs, # input parameters from src/user_input.jl
+       OUTPUT_DIR,
+       TFloat)
 
 # Export pprof profile and open interactive profiling web interface.
 #pprof()
