@@ -164,7 +164,6 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         end
     end
 
-
     return metrics
 end
 
