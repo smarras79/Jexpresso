@@ -247,8 +247,8 @@ end
 #
 # DSS
 #
-function DSS(SD::NSD_1D, QT::Exact, Me::AbstractArray, conn, nelem, npoin, N, T)
-
+function DSS_mass(SD::NSD_1D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+ 
     M    = zeros(npoin, npoin)
     Minv = zeros(npoin, npoin)
     
@@ -370,6 +370,22 @@ function DSS_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArr
     return M
 end
 
+
+function DSS_mass(SD::NSD_1D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+    
+    M  = zeros(npoin, npoin)
+    for iel=1:nelem
+        for j = 1:N+1
+            J = conn[j,iel]
+            for n = 1:N+1
+                I = conn[i,iel]
+                
+                M[I,J] = M[I,J] + Mel[i,j,iel]
+            end
+        end
+    end
+    return M
+end
     
 function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
     M  = zeros(npoin)
