@@ -47,6 +47,7 @@ function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     return metrics
 end
 
+
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, T)
     
     metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem, Q+1, Q+1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
@@ -70,24 +71,20 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             for i = 1:N+1
                 ip = mesh.connijk[iel,i,j]
                 
-                xij = mesh.x[ip]
-                yij = mesh.y[ip]
+                xij = mesh.x[ip]; yij = mesh.y[ip]
                 for l = 1:Q+1
-                    dψ_ik_ψ_jl = dψ[i, :] .* ψ[j, l]  # precompute the product
-                    ψ_ik_dψ_jl = ψ[i, :] .* dψ[j, l]  # precompute the product
-                    
                     for k = 1:Q+1
+                        
+                        metrics.dxdξ[iel, k, l] +=dψ[i,k]*ψ[j,l] * xij
+                        metrics.dxdη[iel, k, l] += ψ[i,k]*dψ[j,l] * xij
 
-                        metrics.dxdξ[iel, k, l] += dψ_ik_ψ_jl[k] * xij
-                        metrics.dxdη[iel, k, l] += ψ_ik_dψ_jl[k] * xij
-
-                        metrics.dydξ[iel, k, l] += dψ_ik_ψ_jl[k] * yij
-                        metrics.dydη[iel, k, l] += ψ_ik_dψ_jl[k] * yij
+                        metrics.dydξ[iel, k, l] += dψ[i,k]*ψ[j,l] * yij
+                        metrics.dydη[iel, k, l] += ψ[i,k]*dψ[j,l] * yij
                         
                         #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
                     end
                 end
-               # @printf(" dxdξ=%f, dxdη=%f, dydξ=%f dydη=%f \n",  metrics.dxdξ[iel, k, l],  metrics.dxdη[iel, k, l], metrics.dydξ[iel, k, l],  metrics.dydη[iel, k, l] )
+                # @printf(" dxdξ=%f, dxdη=%f, dydξ=%f dydη=%f \n",  metrics.dxdξ[iel, k, l],  metrics.dxdη[iel, k, l], metrics.dydξ[iel, k, l],  metrics.dydη[iel, k, l] )
             end
         end
              
@@ -118,6 +115,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     end
     #show(stdout, "text/plain", metrics.Je)
 
+    #=
     nbdy_edges = size(mesh.bdy_edge_comp,1)
     for iedge =1:nbdy_edges
         comp = mesh.bdy_edge_comp[iedge]
@@ -139,7 +137,33 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             metrics.nx[iedge, k] = comp2
             metrics.ny[iedge, k] = -comp1
         end
+    end=#
+
+    ##### CHECK BELOW WITH YASSINE WHETHER THIS
+    ##### SHOULD BE done on the quadrature or grid points
+    nbdy_edges = size(mesh.bdy_edge_comp,1)
+    for iedge =1:nbdy_edges
+        comp = mesh.bdy_edge_comp[iedge]
+        for k=1:N+1
+            ip = mesh.poin_in_bdy_edge[iedge,k]
+            if (k < N+1)
+              ip1 = mesh.poin_in_bdy_edge[iedge,k+1]
+            else
+              ip1 = mesh.poin_in_bdy_edge[iedge,k-1]
+            end
+            x1 = mesh.x[ip]
+            x2 = mesh.x[ip1]
+            y1 = mesh.y[ip]
+            y2 = mesh.y[ip1]
+            mag = sqrt((x1-x2)^2+(y1-y2)^2)
+            metrics.Jef[iedge, k] = mag/2
+            comp1 = (x1-x2)/mag
+            comp2 = (y1-y2)/mag
+            metrics.nx[iedge, k] = comp2
+            metrics.ny[iedge, k] = -comp1
+        end
     end
+
 
     return metrics
 end

@@ -80,6 +80,7 @@ function _build_rhs!(RHS, u, params, time)
 
     T       = Float64
     SD      = params.SD
+    QT      = params.QT
     neqs    = params.neqs
     ngl     = params.mesh.ngl
     nelem   = params.mesh.nelem
@@ -94,15 +95,15 @@ function _build_rhs!(RHS, u, params, time)
     inviscid_rhs_el!(params.rhs_el, params.uaux, u,
                      params.F, params.G, params.S,
                      params.mesh, params.metrics,
-                     params.basis, params.ω, params.SD,
-                     neqs, true)
+                     params.basis, params.ω,
+                     neqs, true, QT, SD)
 
     apply_boundary_conditions!(u, params.uaux, time,
                                params.mesh, params.metrics, params.basis,
                                params.rhs_el, params.ubdy,
                                params.ω, SD, neqs, params.inputs)
     
-    DSS_rhs!(SD, @view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs)
+    DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, QT, SD)
     
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
@@ -116,21 +117,21 @@ function _build_rhs!(RHS, u, params, time)
                         u,
                         params.mesh, params.metrics, params.basis,
                         params.visc_coeff, params.inputs,
-                        params.ω, neqs, SD)
+                        params.ω, neqs, QT, SD)
         
-        DSS_rhs!(SD, @view(params.RHS_visc[:,:]), @view(params.rhs_diff_el[:,:,:,:]), params.mesh, nelem, ngl, neqs)
+        DSS_rhs!(@view(params.RHS_visc[:,:]), @view(params.rhs_diff_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, QT, SD)
         
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
     
-    divive_by_mass_matrix!(@view(params.RHS[:,:]), @view(params.M[:]), params.QT, neqs)
+    divive_by_mass_matrix!(@view(params.RHS[:,:]), @view(params.M[:,:]), params.QT, neqs)
     
 end
 
 
 fun_ωJac(x, y, z) = x*y*z
 
-function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, SD::NSD_2D, neqs, lsource)
+function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, neqs, lsource, QT, SD::NSD_2D)
 
     u2uaux!(uaux, u, neqs, mesh.npoin)
     
@@ -145,8 +146,9 @@ function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, SD
         end
 
         for ieq = 1:neqs            
-            _expansion_inviscid!(@view(rhs_el[iel,:,:,ieq]), metrics, basis,
-                                 @view(F[:,:,ieq]), @view(G[:,:,ieq]), @view(S[:,:,ieq]), ω, mesh.ngl, mesh.npoin, neqs, iel)
+            _expansion_inviscid!(@view(rhs_el[iel,:,:,ieq]), mesh, metrics, basis,
+                                 @view(F[:,:,ieq]), @view(G[:,:,ieq]), @view(S[:,:,ieq]),
+                                 ω, mesh.ngl, mesh.npoin, neqs, iel, QT, SD)
         end
     end
 end
@@ -155,7 +157,7 @@ function viscous_rhs_el!(uprimitive,
                          rhs_diff_el, rhs_diffξ_el, rhs_diffη_el,
                          u,
                          mesh, metrics, basis, visc_coeff, inputs, 
-                         ω, neqs, SD::NSD_2D)
+                         ω, neqs, QT::Inexact, SD::NSD_2D)
 
     
     for iel=1:mesh.nelem
@@ -163,14 +165,62 @@ function viscous_rhs_el!(uprimitive,
         uToPrimitives!(uprimitive, u, mesh, inputs[:δtotal_energy], iel)
 
         for ieq=2:neqs
-            _expansion_visc!(@view(rhs_diffξ_el[iel,:,:,ieq]), @view(rhs_diffη_el[iel,:,:,ieq]), @view(uprimitive[:,:,ieq]), visc_coeff[ieq], ω, mesh, basis, metrics, inputs, iel, ieq)
+            _expansion_visc!(@view(rhs_diffξ_el[iel,:,:,ieq]), @view(rhs_diffη_el[iel,:,:,ieq]), @view(uprimitive[:,:,ieq]), visc_coeff[ieq], ω, mesh, basis, metrics, inputs, iel, ieq, QT, SD)
         end
         
     end
     rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
 end
 
-function _expansion_inviscid!(rhs_el, metrics, basis, F, G, S, ω, ngl, npoin, neqs, iel)
+
+function _expansion_inviscid!(rhs_el, mesh, metrics, basis, F, G, S, ω, ngl, npoin, neqs, iel, QT::Exact, SD::NSD_2D)
+    
+    N = ngl
+    Q = N + 1
+    for l=1:Q
+        for k=1:Q
+            ωJac = ω[k]*ω[l]*metrics.Je[iel,k,l]
+            
+            dFdξ = 0.0
+            dFdη = 0.0
+            dGdξ = 0.0
+            dGdη = 0.0
+             for n = 1:N
+                 for m = 1:N
+                     dFdξ += basis.dψ[m,k]* basis.ψ[n,l]*F[m,n]
+                     dFdη +=  basis.ψ[m,k]*basis.dψ[n,l]*F[n,m]
+                     
+                     dGdξ += basis.dψ[m,k]* basis.ψ[n,l]*G[m,n]
+                     dGdη +=  basis.ψ[m,k]*basis.dψ[n,l]*G[n,m]
+                 end
+             end
+            
+            dξdx_kl = metrics.dξdx[iel,k,l]
+            dξdy_kl = metrics.dξdy[iel,k,l]
+            dηdx_kl = metrics.dηdx[iel,k,l]
+            dηdy_kl = metrics.dηdy[iel,k,l]
+            for j = 1:N
+                for i = 1:N
+                    I = mesh.connijk[iel,i,j]
+                    
+                    dFdx = dFdξ*dξdx_kl + dFdη*dηdx_kl
+                    dGdx = dGdξ*dξdx_kl + dGdη*dηdx_kl
+
+                    dFdy = dFdξ*dξdy_kl + dFdη*dηdy_kl
+                    dGdy = dGdξ*dξdy_kl + dGdη*dηdy_kl
+                    
+                    #auxi = ωJac*((dFdx + dGdy) - S[i,j])
+                    auxi = ωJac*basis.ψ[i,k]*basis.ψ[j,l]*((dFdx + dGdy) - S[i,j])
+                    rhs_el[i,j] -= auxi
+                    #RHS[I, ]
+                end
+            end
+        end
+    end    
+end
+
+
+function _expansion_inviscid!(rhs_el, mesh, metrics, basis, F, G, S, ω, ngl, npoin, neqs, iel, QT::Inexact, SD::NSD_2D)
 
     for j=1:ngl
         for i=1:ngl
@@ -204,7 +254,9 @@ function _expansion_inviscid!(rhs_el, metrics, basis, F, G, S, ω, ngl, npoin, n
     end    
 end
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω, mesh, basis, metrics, inputs, iel, ieq)
+
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω, mesh, basis, metrics,
+                          inputs, iel, ieq, QT::Inexact, SD::NSD_2D)
     
     for l = 1:mesh.ngl
         for k = 1:mesh.ngl
