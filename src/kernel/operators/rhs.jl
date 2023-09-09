@@ -92,7 +92,7 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------
-    inviscid_rhs_el!(params.rhs_el, params.uaux, u,
+    inviscid_rhs_el!(params.RHS, params.rhs_el, params.uaux, u,
                      params.F, params.G, params.S,
                      params.mesh, params.metrics,
                      params.basis, params.ω,
@@ -131,7 +131,29 @@ end
 
 fun_ωJac(x, y, z) = x*y*z
 
-function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, neqs, lsource, QT, SD::NSD_2D)
+function inviscid_rhs_el!(RHS, rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, neqs, lsource, QT::Exact, SD::NSD_2D)
+
+    u2uaux!(uaux, u, neqs, mesh.npoin)
+    
+    for iel=1:mesh.nelem
+
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            ip = mesh.connijk[iel,i,j]
+            user_flux!(@view(F[i,j,:]), @view(G[i,j,:]), SD, @view(uaux[ip,:]), mesh; neqs=neqs)
+            if lsource
+                user_source!(@view(S[i,j,:]), @view(uaux[ip,:]), mesh.npoin; neqs=neqs)
+            end
+        end
+
+        for ieq = 1:neqs            
+            _expansion_inviscid!(@view(RHS[:,ieq]), mesh, metrics, basis,
+                                 @view(F[:,:,ieq]), @view(G[:,:,ieq]), @view(S[:,:,ieq]),
+                                 ω, mesh.ngl, mesh.npoin, neqs, iel, QT, SD)
+        end
+    end
+end
+
+function inviscid_rhs_el!(RHS, rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, neqs, lsource, QT::Inexact, SD::NSD_2D)
 
     u2uaux!(uaux, u, neqs, mesh.npoin)
     
@@ -153,6 +175,7 @@ function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, ne
     end
 end
 
+
 function viscous_rhs_el!(uprimitive,
                          rhs_diff_el, rhs_diffξ_el, rhs_diffη_el,
                          u,
@@ -173,7 +196,7 @@ function viscous_rhs_el!(uprimitive,
 end
 
 
-function _expansion_inviscid!(rhs_el, mesh, metrics, basis, F, G, S, ω, ngl, npoin, neqs, iel, QT::Exact, SD::NSD_2D)
+function _expansion_inviscid!(RHS, mesh, metrics, basis, F, G, S, ω, ngl, npoin, neqs, iel, QT::Exact, SD::NSD_2D)
     
     N = ngl
     Q = N + 1
@@ -211,8 +234,8 @@ function _expansion_inviscid!(rhs_el, mesh, metrics, basis, F, G, S, ω, ngl, np
                     
                     #auxi = ωJac*((dFdx + dGdy) - S[i,j])
                     auxi = ωJac*basis.ψ[i,k]*basis.ψ[j,l]*((dFdx + dGdy) - S[i,j])
-                    rhs_el[i,j] -= auxi
-                    #RHS[I, ]
+                    #rhs_el[i,j] -= auxi
+                    RHS[I] -= auxi
                 end
             end
         end
