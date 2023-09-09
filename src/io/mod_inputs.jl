@@ -166,9 +166,8 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
     if(!haskey(inputs, :ode_adaptive_solver))
         inputs[:ode_adaptive_solver] = false
     end
-    
     if(!haskey(inputs, :output_dir))
-        inputs[:output_dir] = ""
+        inputs[:output_dir] = "none"
     end
     if(!haskey(inputs, :loutput_pert))
         inputs[:loutput_pert] = false
