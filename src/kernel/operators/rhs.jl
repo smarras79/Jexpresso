@@ -186,10 +186,10 @@ function _expansion_inviscid!(rhs_el, mesh, metrics, basis, F, G, S, ω, ngl, np
             for n = 1:N
                 for m = 1:N
                     dFdξ += basis.dψ[m,k]* basis.ψ[n,l]*F[m,n]
-                    dFdη +=  basis.ψ[m,k]*basis.dψ[n,l]*F[n,m]
+                    dFdη +=  basis.ψ[m,k]*basis.dψ[n,l]*F[m,n]
                     
                     dGdξ += basis.dψ[m,k]* basis.ψ[n,l]*G[m,n]
-                    dGdη +=  basis.ψ[m,k]*basis.dψ[n,l]*G[n,m]
+                    dGdη +=  basis.ψ[m,k]*basis.dψ[n,l]*G[m,n]
                 end
             end
             

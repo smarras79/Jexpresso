@@ -536,8 +536,8 @@ function DSS_rhs!(V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray,
 end
 
 function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, QT::Exact, SD::NSD_2D)
-    nothing
-#=    for ieq = 1:neqs
+    
+    for ieq = 1:neqs
         for iel = 1:nelem
             for j = 1:ngl
                 for i = 1:ngl
@@ -547,7 +547,7 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, QT::Exact, SD::NSD_2D)
             end
         end
     end
-  =#
+
 end
 
 function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, QT::Inexact, SD::NSD_2D)
