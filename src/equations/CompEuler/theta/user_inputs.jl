@@ -6,7 +6,7 @@ function user_inputs()
         :tend                 => 100,
         :ode_solver           => SSPRK54(), #13.8s dt=0.35
         :Δt                   => 0.4,
-        :ndiagnostics_outputs => 1,
+        :ndiagnostics_outputs => 5,
         :case                 => "rtb",
         :lsource              => true,
         #---------------------------------------------------------------------------
@@ -33,8 +33,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
-        #:output_dir          => "YOUR/PREFERRED/DIR/"
+        :outformat           => "vtk",       
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
