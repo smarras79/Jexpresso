@@ -35,7 +35,7 @@ end
 
 function apply_boundary_conditions!(u, uaux, t,
                                     mesh, metrics, basis,
-                                    rhs_el, ubdy,
+                                    RHS, rhs_el, ubdy,
                                     ω, SD, neqs, inputs)
     
     #If Neumann conditions are needed compute gradient
@@ -66,7 +66,7 @@ function apply_boundary_conditions!(u, uaux, t,
   #                    zeros(1,1), inputs)
 
    build_custom_bcs!(SD, t, mesh, metrics, ω,
-                     ubdy, uaux, u, @view(rhs_el[:,:,:,:]), neqs, dirichlet!, neumann, inputs)
+                     ubdy, uaux, u, @view(RHS[:,:]), @view(rhs_el[:,:,:,:]), neqs, dirichlet!, neumann, inputs)
    
     #end
     
@@ -139,7 +139,7 @@ function _bc_dirichlet!(qbdy, x, y, t, tag)
 end
 
 function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
-                           qbdy, uaux, u, rhs, neqs,
+                           qbdy, uaux, u, RHS, rhs_el, neqs,
                            dirichlet!, neumann, inputs)
 
     #
@@ -169,10 +169,11 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                     end
                 end
                 
-                for var =1:neqs
-                    if !(AlmostEqual(qbdy[var],4325789.0)) # WHAT's this for?
-                        uaux[ip,var]       = qbdy[var]
-                        rhs[iel,ll,mm,var] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
+                for ieq =1:neqs
+                    if !(AlmostEqual(qbdy[ieq],4325789.0)) # WHAT's this for?
+                        uaux[ip,ieq]       = qbdy[ieq]
+                        rhs_el[iel,ll,mm,ieq] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
+                        RHS[ip,ieq] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
                     end
                 end
             end
