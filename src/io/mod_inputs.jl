@@ -28,6 +28,10 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
 
+    if(!haskey(inputs, :luser_bc))
+        inputs[:luser_bc] = true
+    end
+    
     #
     # Plotting parameters:
     #

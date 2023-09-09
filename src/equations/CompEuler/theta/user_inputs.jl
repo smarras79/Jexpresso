@@ -6,9 +6,8 @@ function user_inputs()
         :tend                 => 100,
         :ode_solver           => SSPRK54(), #13.8s dt=0.35
         :Δt                   => 0.4,
-        :ndiagnostics_outputs => 5,
+        :ndiagnostics_outputs => 2,
         :case                 => "rtb",
-        :lsource              => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -19,7 +18,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => true, #false by default
+        :lvisc                => true, #false by default NOTICE: works only for Inexact
         :νx                   => 30.0, #horizontal viscosity constant for momentum
         :νy                   => 30.0, #vertical   viscosity constant for momentum
         :κ                    => 60.0, #kinematic viscosity constant for θ equation
@@ -33,7 +32,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",       
+        :outformat           => "vtk",
+        #:output_dir          => "/Users/simone/Desktop",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
