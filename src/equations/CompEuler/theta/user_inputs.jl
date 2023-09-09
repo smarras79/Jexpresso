@@ -3,9 +3,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 0.4,
+        :tend                 => 100,
         :ode_solver           => SSPRK54(), #13.8s dt=0.35
-        :Δt                   => 0.2,
+        :Δt                   => 0.4,
         :ndiagnostics_outputs => 1,
         :case                 => "rtb",
         :lsource              => true,

@@ -103,7 +103,7 @@ function _build_rhs!(RHS, u, params, time)
                                params.rhs_el, params.ubdy,
                                params.ω, SD, neqs, params.inputs)
     
-    DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, QT, SD)
+    DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
     
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
@@ -119,12 +119,12 @@ function _build_rhs!(RHS, u, params, time)
                         params.visc_coeff, params.inputs,
                         params.ω, neqs, QT, SD)
         
-        DSS_rhs!(@view(params.RHS_visc[:,:]), @view(params.rhs_diff_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, QT, SD)
+        DSS_rhs!(@view(params.RHS_visc[:,:]), @view(params.rhs_diff_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
         
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
     
-    divive_by_mass_matrix!(@view(params.RHS[:,:]), @view(params.M[:,:]), params.QT, neqs)
+    divive_by_mass_matrix!(@view(params.RHS[:,:]), @view(params.M[:]), params.QT, neqs)
     
 end
 

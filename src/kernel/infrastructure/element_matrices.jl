@@ -326,7 +326,8 @@ end
 
 
 function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
-    
+
+    Maux = zeros(npoin, npoin)
     for iel=1:nelem
         
         #show(stdout, "text/plain", 36.0*Mel[:,:,iel])        
@@ -338,14 +339,20 @@ function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractA
                     for m = 1:N+1
                         I = m + (n - 1)*(N + 1)
                         IP = conn[iel,m,n]
-                        
-                        M[IP,JP] = M[IP,JP] + Mel[I,J,iel] #if exact
+                        Maux[IP,JP] = Maux[IP,JP] + Mel[I,J,iel] #if exact
                     end
                 end
             end
         end
         #println("\n")
         #show(stdout, "text/plain", M[:,:, iel])
+    end
+
+    #Lump M matrix:
+    for I = 1:npoin        
+        for J = 1:npoin
+            M[I] += Maux[I,J]
+        end
     end
     
 end
@@ -535,22 +542,7 @@ function DSS_rhs!(V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray,
     #show(stdout, "text/plain", V)
 end
 
-function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, QT::Exact, SD::NSD_2D)
-    
-    for ieq = 1:neqs
-        for iel = 1:nelem
-            for j = 1:ngl
-                for i = 1:ngl
-                    I = mesh.connijk[iel,i,j]
-                    RHS[I,ieq] += rhs_el[iel,i,j,ieq]
-                end
-            end
-        end
-    end
-
-end
-
-function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, QT::Inexact, SD::NSD_2D)
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
 
     for ieq = 1:neqs
         for iel = 1:nelem
@@ -567,12 +559,14 @@ end
 
 
 
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact, neqs)
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractMatrix, QT, neqs)
+    
     RHS = M\RHS #M is not iagonal
+    
 end
 
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs)
-
+function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractVector, QT, neqs)
+    
     for i = 1:neqs
         for j = 1:length(M)
             RHS[j, i] /= M[j]
@@ -590,11 +584,11 @@ function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFl
     Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
     build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
     
-    if QT == Exact()
-        M  = zeros(TFloat, mesh.npoin, mesh.npoin)
-    else
+    #if QT == Exact()
+    #    M  = zeros(TFloat, mesh.npoin, mesh.npoin)
+    #else
         M  = zeros(TFloat, mesh.npoin)
-    end
+    #end
     DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat)
     
     Le = zeros(TFloat, 1, 1)
