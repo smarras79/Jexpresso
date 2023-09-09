@@ -201,8 +201,7 @@ function _expansion_inviscid!(rhs_el, metrics, basis, F, G, S, ω, ngl, npoin, n
             auxi = ωJac*((dFdx + dGdy) - S[i,j])
             rhs_el[i,j] -= auxi
         end
-    end
-    
+    end    
 end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω, mesh, basis, metrics, inputs, iel, ieq)
