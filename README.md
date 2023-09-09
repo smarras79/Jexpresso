@@ -1,5 +1,5 @@
 # JEXPRESSO
-A research software for the numerical solution of 2D, and 3D PDEs using spectral element methods. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
+A research software for the numerical solution of conservation laws using spectral element methods. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
 
 If you are interested in contributing, please get in touch.
 
