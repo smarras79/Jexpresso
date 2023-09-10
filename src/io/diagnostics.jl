@@ -63,3 +63,16 @@ function compute_energy!(uaux, u, mesh, metrics, ω,neqs)
     return energy
 
 end
+
+function print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, neqs)
+    
+    iout = inputs[:ndiagnostics_outputs]
+    mass_final = compute_mass!(uaux, @view(solution.u[iout][:]), mesh, metrics, ω, neqs)
+    energy_final = compute_energy!(uaux, @view(solution.u[iout][:]), mesh, metrics, ω, neqs)
+    mass_loss = abs(mass_final-mass_ini)/mass_ini
+    energy_loss = abs(energy_final-energy_ini)/energy_ini
+
+    println(" # --- Mass   Loss: ",mass_loss)
+    println(" # --- Energy Loss: ",energy_loss)
+    #println("linf norm of u: ", norm(u, Inf))
+end

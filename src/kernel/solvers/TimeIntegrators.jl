@@ -83,28 +83,22 @@ function time_loop!(QT,
 
     output_range = floor((inputs[:tend] - inputs[:tinit])/inputs[:ndiagnostics_outputs])
 
-    mass_ini = compute_mass!(uaux, u, mesh, metrics, ω,qp.neqs)
+    
+    mass_ini   = compute_mass!(uaux, u, mesh, metrics, ω,qp.neqs)
     energy_ini = compute_energy!(uaux, u, mesh, metrics, ω,qp.neqs)
-    println("Initial Energy: ", energy_ini)
+    println(" # Initial Mass  :   ", mass_ini)
+    println(" # Initial Energy: ", energy_ini)
+    
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=inputs[:Δt],
                            save_everystep = false,
                            adaptive=inputs[:ode_adaptive_solver],
                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
-                           #save_start=false, save_end=true);
-
-
-   iout = inputs[:ndiagnostics_outputs]			   
-   u = solution.u[iout][:]
-   mass_final = compute_mass!(uaux, u, mesh, metrics, ω,qp.neqs)
-   energy_final = compute_energy!(uaux, u, mesh, metrics, ω,qp.neqs)
-   mass_loss = abs(mass_final-mass_ini)/mass_ini
-   energy_loss = abs(energy_final-energy_ini)/energy_ini
-
-   println("Mass Loss: ",mass_loss)
-   println("Energy Loss: ",energy_loss)
-   #println("linf norm of u: ", norm(u, Inf))
     println(" # Solving ODE  ................................ DONE")
 
+    println(" # Diagnostics  ................................ ")
+    print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs)
+    println(" # Diagnostics  ................................ DONE")
+    
     return solution
 end
