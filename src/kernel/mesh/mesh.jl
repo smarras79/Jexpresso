@@ -20,13 +20,13 @@ const FACE_NODES   = UInt64(4)
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat}
 
-    x::Array{Float64, 1} = zeros(Float64, 2)
-    y::Array{Float64, 1} = zeros(Float64, 2)
-    z::Array{Float64, 1} = zeros(Float64, 2)
+    x::Array{Float64, 1} = zeros(2)
+    y::Array{Float64, 1} = zeros(2)
+    z::Array{Float64, 1} = zeros(2)
 
-    x_ho::Array{Float64, 1} = zeros(Float64, 2)
-    y_ho::Array{Float64, 1} = zeros(Float64, 2)
-    z_ho::Array{Float64, 1} = zeros(Float64, 2)
+    x_ho::Array{Float64, 1} = zeros(2)
+    y_ho::Array{Float64, 1} = zeros(2)
+    z_ho::Array{Float64, 1} = zeros(2)
 
     Δx::Union{Array{TFloat}, Missing} = zeros(2)
     Δy::Union{Array{TFloat}, Missing} = zeros(2)
@@ -75,9 +75,15 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
-
-    connijk::Array{Int64,3} = zeros(Int64, 0, 0, 0)
-    conn::Array{Int64,2}    = zeros(Int64, 0, 0)
+    
+    #if nsd == 1
+    #    connijk::Array{Int64,1} = zeros(Int64, 0, 0)
+    #elseif nsd == 2
+        connijk::Array{Int64,3} = zeros(Int64, 0, 0, 0)
+    #elseif nsd == 3
+    #    connijk::Array{Int64,4} = zeros(Int64, 0, 0, 0, 0)
+    #end
+    conn::Array{Int64,2}  = zeros(Int64, 0, 0)
     conn_unique_edges = Array{Int64}(undef,  1, 2)
     conn_unique_faces = Array{Int64}(undef,  1, 4)
     poin_in_edge      = Array{Int64}(undef, 0, 0)
@@ -234,9 +240,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.x::Array{Float64, 1} = zeros(mesh.npoin)
     mesh.y::Array{Float64, 1} = zeros(mesh.npoin)
     mesh.z::Array{Float64, 1} = zeros(mesh.npoin)
-    #    resize!(mesh.x, (mesh.npoin))
-    #    resize!(mesh.y, (mesh.npoin))
-    #    resize!(mesh.z, (mesh.npoin))
     
     mesh.conn_edge_el::Array{Int64,3} = zeros(Int64, 2, mesh.NEDGES_EL, mesh.nelem)    
     mesh.conn_face_el::Array{Int64,3} = zeros(Int64,  4, mesh.NFACES_EL, mesh.nelem)  
@@ -269,7 +272,9 @@ if (mesh.nsd == 1)
     nothing
 elseif (mesh.nsd == 2)
 
+    #mesh.connijk::Array{Int64,1} = zeros(Int64, mesh.nelem*mesh.ngl*mesh.ngl)
     mesh.connijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl)
+    
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]
         mesh.conn[iel, 2] = mesh.cell_node_ids[iel][2]
@@ -338,8 +343,10 @@ elseif (mesh.nsd == 2)
     end #f
 
 elseif (mesh.nsd == 3)
-
-    mesh.connijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
+    
+    mesh.connijk::Array{Int64,1} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
+    #mesh.connijk::Array{Int64,1} = zeros(Int64, mesh.nelem*mesh.ngl*mesh.ngl*mesh.ngl)
+    #reshape(mesh.connijk, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
     
     for iel = 1:mesh.nelem
         #CGNS numbering:
