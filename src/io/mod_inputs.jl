@@ -427,7 +427,7 @@ function mod_inputs_print_welcome()
 
     print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
     print(BLUE_FG(" # Welcome to ", RED_FG("jexpresso\n")))
-    print(BLUE_FG(" # A Julia code to solve turbulence problems in the atmosphere\n"))
+    print(BLUE_FG(" # A Julia code to solve conservation laws with continuous spectral elements\n"))
     print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
 
 end
