@@ -18,7 +18,7 @@ function time_loop!(QT,
     # Initialize
     println(" # Solving ODE ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
-
+    
     #-----------------------------------------------------------------
     # Initialize:
     # u     -> solution array
@@ -42,10 +42,9 @@ function time_loop!(QT,
     RHS_visc     = zeros(T, mesh.npoin, qp.neqs)
 
     #The following are currently used by B.C.
-    gradu       = zeros(2, 1, 1) #zeros(2,mesh.npoin,nvars)
-    ubdy        = zeros(qp.neqs)
-    bdy_flux    = zeros(qp.neqs,1)
-    
+    gradu      = zeros(T, 2, 1, 1) #zeros(2,mesh.npoin,nvars)
+    ubdy       = zeros(qp.neqs)
+    bdy_flux   = zeros(qp.neqs,1)    
     uprimitive = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
         
     #-----------------------------------------------------------------

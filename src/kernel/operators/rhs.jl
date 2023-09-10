@@ -128,6 +128,30 @@ function _build_rhs!(RHS, u, params, time)
     
 end
 
+function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, neqs, lsource, QT, SD::NSD_1D)
+
+    nothing #WIP
+    
+    u2uaux!(uaux, u, neqs, mesh.npoin)
+    
+    for iel=1:mesh.nelem
+
+        for i=1:mesh.ngl
+            ip = mesh.conn[iel,i]
+            user_flux!(@view(F[i,:]), @view(G[i,:]), SD, @view(uaux[ip,:]), mesh; neqs=neqs)
+            if lsource
+                user_source!(@view(S[i,:]), @view(uaux[ip,:]), mesh.npoin; neqs=neqs)
+            end
+        end
+
+        for ieq = 1:neqs            
+            _expansion_inviscid!(@view(rhs_el[iel,:,ieq]), mesh, metrics, basis,
+                                 @view(F[:,ieq]), @view(G[:,ieq]), @view(S[:,ieq]),
+                                 ω, mesh.ngl, mesh.npoin, neqs, iel, QT, SD)
+        end
+    end
+end
+
 function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, neqs, lsource, QT, SD::NSD_2D)
 
     u2uaux!(uaux, u, neqs, mesh.npoin)
@@ -150,7 +174,6 @@ function inviscid_rhs_el!(rhs_el, uaux, u, F, G, S, mesh, metrics, basis, ω, ne
     end
 end
 
-
 function viscous_rhs_el!(uprimitive,
                          rhs_diff_el, rhs_diffξ_el, rhs_diffη_el,
                          u,
@@ -168,6 +191,64 @@ function viscous_rhs_el!(uprimitive,
         
     end
     rhs_diff_el .= @views (rhs_diffξ_el .+ rhs_diffη_el)
+end
+
+
+function _expansion_inviscid!(rhs_el, mesh, metrics, basis, F, G, S, ω, ngl, npoin, neqs, iel, QT::Inexact, SD::NSD_1D)
+
+    nothing #WIP
+    
+    for i=1:ngl
+        ωJac = ω[i]*metrics.Je[iel,i]
+        
+        dFdξ = 0.0
+        dGdξ = 0.0
+        @turbo for k = 1:ngl
+            dFdξ += basis.dψ[k,i]*F[k]
+            dGdξ += basis.dψ[k,i]*G[k]
+        end
+        dξdx_i = metrics.dξdx[iel,i]
+        
+        dFdx   = dFdξ*dξdx_i
+        
+        auxi = ωJac*((dFdx + dGdy) - S[i])
+        rhs_el[i] -= auxi
+    end
+end
+
+
+function _expansion_inviscid!(rhs_el, mesh, metrics, basis, F, G, S, ω, ngl, npoin, neqs, iel, QT::Inexact, SD::NSD_2D)
+    
+    for j=1:ngl
+        for i=1:ngl
+            ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+            
+            dFdξ = 0.0
+            dFdη = 0.0
+            dGdξ = 0.0
+            dGdη = 0.0
+            @turbo for k = 1:ngl
+                dFdξ += basis.dψ[k,i]*F[k,j]
+                dFdη += basis.dψ[k,j]*F[i,k]
+                
+                dGdξ += basis.dψ[k,i]*G[k,j]
+                dGdη += basis.dψ[k,j]*G[i,k]
+            end
+            dξdx_ij = metrics.dξdx[iel,i,j]
+            dξdy_ij = metrics.dξdy[iel,i,j]
+            dηdx_ij = metrics.dηdx[iel,i,j]
+            dηdy_ij = metrics.dηdy[iel,i,j]
+            
+            dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
+            dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij
+
+            dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
+            dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+            
+            auxi = ωJac*((dFdx + dGdy) - S[i,j])
+            rhs_el[i,j] -= auxi
+        end
+    end    
 end
 
 
@@ -218,44 +299,9 @@ function _expansion_inviscid!(rhs_el, mesh, metrics, basis, F, G, S, ω, ngl, np
 end
 
 
-function _expansion_inviscid!(rhs_el, mesh, metrics, basis, F, G, S, ω, ngl, npoin, neqs, iel, QT::Inexact, SD::NSD_2D)
-
-    for j=1:ngl
-        for i=1:ngl
-            ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
-            
-            dFdξ = 0.0
-            dFdη = 0.0
-            dGdξ = 0.0
-            dGdη = 0.0            
-            @turbo for k = 1:ngl
-                dFdξ += basis.dψ[k,i]*F[k,j]
-                dFdη += basis.dψ[k,j]*F[i,k]
-                
-                dGdξ += basis.dψ[k,i]*G[k,j]
-                dGdη += basis.dψ[k,j]*G[i,k]
-            end
-            dξdx_ij = metrics.dξdx[iel,i,j]
-            dξdy_ij = metrics.dξdy[iel,i,j]
-            dηdx_ij = metrics.dηdx[iel,i,j]
-            dηdy_ij = metrics.dηdy[iel,i,j]
-            
-            dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-            dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij
-
-            dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
-            dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
-            
-            auxi = ωJac*((dFdx + dGdy) - S[i,j])
-            rhs_el[i,j] -= auxi
-        end
-    end    
-end
-
-
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω, mesh, basis, metrics,
                           inputs, iel, ieq, QT::Inexact, SD::NSD_2D)
-    
+  
     for l = 1:mesh.ngl
         for k = 1:mesh.ngl
             ωJac = ω[k]*ω[l]*metrics.Je[iel,k,l]
