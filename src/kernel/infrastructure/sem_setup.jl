@@ -21,7 +21,7 @@ function sem_setup(inputs::Dict)
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
     ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)    
-    ξ,ω = ξω.ξ, ξω.ω
+    ξ,ω = ξω.ξ, ξω.ω    
     if lexact_integration
         #
         # Exact quadrature:
@@ -54,22 +54,22 @@ function sem_setup(inputs::Dict)
     # ψ     = basis.ψ[N+1, Q+1]
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
-    @info " --- BASES"
-    @time basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
+    #@info " --- BASES"
+    basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
     
     #--------------------------------------------------------
     # Build metric terms
     #--------------------------------------------------------
-    @info " --- METRICS"
-    @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
+    #@info " --- METRICS"
+    metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
     
     periodicity_restructure!(mesh,inputs)
     
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
-    @info " --- MATRICES"
-    @time matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+    #@info " --- MATRICES"
+    matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
     
     return (; QT, PT, mesh, metrics, basis, ω, matrix)
 end

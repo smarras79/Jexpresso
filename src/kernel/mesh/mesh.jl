@@ -399,20 +399,20 @@ println(" # POPULATE GRID with SPECTRAL NODES ............................ ")
 # Edges
 #
 populate_conn_edge_el!(mesh, mesh.SD)
-@time add_high_order_nodes_edges!(mesh, lgl, mesh.SD)
+add_high_order_nodes_edges!(mesh, lgl, mesh.SD)
 
 #
 # Faces
 #
 populate_conn_face_el!(mesh, mesh.SD)
-@time add_high_order_nodes_faces!(mesh, lgl, mesh.SD)
+add_high_order_nodes_faces!(mesh, lgl, mesh.SD)
 
 #
 # Volume
 #
 # NOTICE: in 2D we consider only edges. faces are the elements.
 #         
-@time add_high_order_nodes_volumes!(mesh, lgl, mesh.SD)
+add_high_order_nodes_volumes!(mesh, lgl, mesh.SD)
 
 for ip = mesh.npoin_linear+1:mesh.npoin
     mesh.x[ip] = mesh.x_ho[ip]
@@ -2163,7 +2163,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
         #vtkfile = vtk_grid("mySTRUCTURED_GRID", mesh.x, mesh.y, mesh.z) # 3-D
         #outfiles = vtk_save(vtkfile)
         
-        println(" # Build navite grid ........................ DONE")
+        println(" # Build native grid ........................ DONE")
     end
     
     if (mesh.nsd == 1)
