@@ -18,7 +18,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
         :νx                   => 30.0, #horizontal viscosity constant for momentum
         :νy                   => 30.0, #vertical   viscosity constant for momentum
         :κ                    => 60.0, #kinematic viscosity constant for θ equation

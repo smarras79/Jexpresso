@@ -72,7 +72,6 @@ inputs = mod_inputs_user_inputs!(equations, equations_case_name, equations_dir)
 #Create output directory if it doesn't exist:
 #--------------------------------------------------------
 user_defined_output_dir = inputs[:output_dir]
-@info user_defined_output_dir
 if user_defined_output_dir == "none"
     OUTPUT_DIR = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS/"))
 else
