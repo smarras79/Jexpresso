@@ -1,5 +1,3 @@
-#include("../operators/operators.jl")
-include("../infrastructure/Kopriva_functions.jl")
 include("custom_bcs.jl")
 
 function apply_periodicity!(SD::NSD_1D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars)
