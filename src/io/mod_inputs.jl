@@ -348,6 +348,13 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
             inputs[:δtotal_energy] = 0.0
         end
     end
+    if(!haskey(inputs, :CL))
+        # :CL stands for Conservation Law.
+        # :CL => CL()  means that we solve dq/dt + \nabla.F(q) = S(q)
+        # :CL => NCL() means that we solve dq/dt + u.\nabla(q)= S(q)        
+        inputs[:CL] = CL()
+    end
+
     if(!haskey(inputs, :case))
         inputs[:case] = ""
     else
