@@ -2,6 +2,7 @@ using BenchmarkTools
 
 function time_loop!(QT,
                     PT,
+                    CL,
                     mesh::St_mesh,
                     metrics::St_metrics,
                     basis, ω,
@@ -45,10 +46,8 @@ function time_loop!(QT,
     gradu      = zeros(T, 2, 1, 1) #zeros(2,mesh.npoin,nvars)
     ubdy       = zeros(qp.neqs)
     bdy_flux   = zeros(qp.neqs,1)    
-    uprimitive = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
-        
+    uprimitive = zeros(T, mesh.ngl, mesh.ngl, qp.neqs+1)
     #-----------------------------------------------------------------
-    
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] = @view qp.qn[:,i]
@@ -68,12 +67,12 @@ function time_loop!(QT,
               rhs_diffξ_el, rhs_diffη_el,
               uprimitive,
               RHS, RHS_visc, 
-              SD=mesh.SD, QT, PT,
+              SD=mesh.SD, QT, PT, CL,
               neqs=qp.neqs,
               basis, ω, mesh, metrics,
               inputs, visc_coeff,              
               M, Δt, deps,
-              qp.qnm1, qp.qnm2, qp.μ)
+              qp.qe, qp.qnm1, qp.qnm2, qp.μ)
     
     prob = ODEProblem(rhs!,
                       u,
