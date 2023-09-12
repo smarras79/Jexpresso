@@ -150,18 +150,20 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
             end
         end
 
+        #= WIP NONCON.
         _expansion_inviscid!(@view(params.rhs_el[iel,:,:,:]), params.uprimitive,
                              params.mesh, params.metrics, params.basis,
                              @view(params.F[:,:,:]), @view(params.G[:,:,:]), @view(params.S[:,:,:]),
                              params.ω, params.mesh.ngl, params.mesh.npoin, params.neqs, 0, iel,
-                             params.CL, params.QT, SD)
-        #=for ieq = 1:params.neqs        
-        _expansion_inviscid!(@view(params.rhs_el[iel,:,:,ieq]), params.uprimitive,
-        params.mesh, params.metrics, params.basis,
-        @view(params.F[:,:,ieq]), @view(params.G[:,:,ieq]), @view(params.S[:,:,ieq]),
-        params.ω, params.mesh.ngl, params.mesh.npoin, params.neqs, ieq, iel,
+                             params.CL, params.QT, SD)=#
+
+        for ieq = 1:params.neqs        
+            _expansion_inviscid!(@view(params.rhs_el[iel,:,:,ieq]), params.uprimitive,
+                                 params.mesh, params.metrics, params.basis,
+                                 @view(params.F[:,:,ieq]), @view(params.G[:,:,ieq]), @view(params.S[:,:,ieq]),
+                                 params.ω, params.mesh.ngl, params.mesh.npoin, params.neqs, ieq, iel,
                                  params.CL, params.QT, SD)
-        end=#
+        end
     end
 end
 
