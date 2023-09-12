@@ -149,13 +149,19 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
                              params.mesh.npoin; neqs=params.neqs)
             end
         end
-        
-        for ieq = 1:params.neqs        
-            _expansion_inviscid!(@view(params.rhs_el[iel,:,:,ieq]), params.uprimitive, params.mesh, params.metrics, params.basis,
-                                 @view(params.F[:,:,ieq]), @view(params.G[:,:,ieq]), @view(params.S[:,:,ieq]),
-                                 params.ω, params.mesh.ngl, params.mesh.npoin, params.neqs, ieq, iel,
+
+        _expansion_inviscid!(@view(params.rhs_el[iel,:,:,:]), params.uprimitive,
+                             params.mesh, params.metrics, params.basis,
+                             @view(params.F[:,:,:]), @view(params.G[:,:,:]), @view(params.S[:,:,:]),
+                             params.ω, params.mesh.ngl, params.mesh.npoin, params.neqs, 0, iel,
+                             params.CL, params.QT, SD)
+        #=for ieq = 1:params.neqs        
+        _expansion_inviscid!(@view(params.rhs_el[iel,:,:,ieq]), params.uprimitive,
+        params.mesh, params.metrics, params.basis,
+        @view(params.F[:,:,ieq]), @view(params.G[:,:,ieq]), @view(params.S[:,:,ieq]),
+        params.ω, params.mesh.ngl, params.mesh.npoin, params.neqs, ieq, iel,
                                  params.CL, params.QT, SD)
-        end
+        end=#
     end
 end
 
@@ -175,99 +181,57 @@ end
 
 
 function _expansion_inviscid!(rhs_el, uprimitive, mesh, metrics, basis, F, G, S, ω, ngl, npoin, neqs, ieq, iel, ::NCL, QT::Inexact, SD::NSD_2D)
-
-    dpdxflg = 0.0
-    dpdyflg = 0.0
-    if (ieq == 2)       
-        dpdxflg = 1
-    elseif (ieq == 3)
-        dpdyflg = 1
-    end
-
     
-    for j=1:ngl
-        for i=1:ngl
-            Fρ[i,j] = uprimitive[k,j,2]*uprimitive[k,j,1]
-            Gρ[i,j] = uprimitive[k,j,3]*uprimitive[k,j,1]
-        end
-    end
-    
-    for j=1:ngl
-        for i=1:ngl
-            ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+    for ieq=1:neqs
+        for j=1:ngl
+            for i=1:ngl
+                ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+                
+                dFdξ = 0.0; dFdη = 0.0
+                dGdξ = 0.0; dGdη = 0.0
+                dpdξ = 0.0; dpdη = 0.0               
+                for k = 1:ngl
+                    dFdξ += basis.dψ[k,i]*F[k,j,ieq]
+                    dFdη += basis.dψ[k,j]*F[i,k,ieq]
+                    
+                    dGdξ += basis.dψ[k,i]*G[k,j,ieq]
+                    dGdη += basis.dψ[k,j]*G[i,k,ieq]
+                                        
+                    dpdξ += basis.dψ[k,i]*uprimitive[k,j,neqs+1]
+                    dpdη += basis.dψ[k,j]*uprimitive[i,k,neqs+1]
+                end
+                dξdx_ij = metrics.dξdx[iel,i,j]
+                dξdy_ij = metrics.dξdy[iel,i,j]
+                dηdx_ij = metrics.dηdx[iel,i,j]
+                dηdy_ij = metrics.dηdy[iel,i,j]
+                
+                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij            
+                dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
 
-            dqdξ = 0.0
-            dqdη = 0.0
+                dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij            
+                dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+                
+                dpdx = dpdξ*dξdx_ij + dpdη*dηdx_ij            
+                dpdy = dpdξ*dξdy_ij + dpdη*dηdy_ij
 
-            #= dρdξ = 0.0
-            dρdη = 0.0
-            dudξ = 0.0
-            dudη = 0.0
-            dvdξ = 0.0
-            dvdη = 0.0
-            dθdξ = 0.0
-            dθdη = 0.0
-            dpdξ = 0.0
-            dpdη = 0.0=#
-            @turbo for k = 1:ngl
+                ρij = uprimitive[i,j,1]
+                uij = uprimitive[i,j,2]
+                vij = uprimitive[i,j,3]
                 
-                dFρdξ += basis.dψ[k,i]*Fρ[k,j]
-                dFρdη += basis.dψ[k,j]*Fρ[i,k]
+                if (ieq == 1)
+                    auxi = ωJac*(dFdx + dGdy)
+                elseif(ieq == 2)
+                    auxi = ωJac*(uij*dFdx + vij*dGdy + dpdx/ρij)
+                elseif(ieq == 3)
+                    auxi = ωJac*(uij*dFdx + vij*dGdy + dpdy/ρij )#- S[i,j,ieq])
+                elseif(ieq == 4)
+                    auxi = ωJac*(uij*dFdx + vij*dGdy)
+                end
                 
-                dGρdξ += basis.dψ[k,i]*Gρ[k,j]
-                dGρdη += basis.dψ[k,j]*Gρ[i,k]
-                
-                dqdξ += basis.dψ[k,i]*uprimitive[k,j,ieq]
-                dqdη += basis.dψ[k,j]*uprimitive[i,k,ieq]
-                
-                #=
-                dudξ += basis.dψ[k,i]*uprimitive[k,j,2]
-                dudη += basis.dψ[k,j]*uprimitive[i,k,2]
-                
-                dvdξ += basis.dψ[k,i]*uprimitive[k,j,3]
-                dvdη += basis.dψ[k,j]*uprimitive[i,k,3]
-
-                dθdξ += basis.dψ[k,i]*uprimitive[k,j,4]
-                dθdη += basis.dψ[k,j]*uprimitive[i,k,4]=#
-                
-                dpdξ += basis.dψ[k,i]*uprimitive[k,j,end]
-                dpdη += basis.dψ[k,j]*uprimitive[i,k,end]
+                rhs_el[i,j,ieq] -= auxi
             end
-            dξdx_ij = metrics.dξdx[iel,i,j]
-            dξdy_ij = metrics.dξdy[iel,i,j]
-            dηdx_ij = metrics.dηdx[iel,i,j]
-            dηdy_ij = metrics.dηdy[iel,i,j]
-
-            dqdx = dqdξ*dξdx_ij + dqdη*dηdx_ij            
-            dqdy = dqdξ*dξdy_ij + dqdη*dηdy_ij
-            
-            #=dρdx = dρdξ*dξdx_ij + dρdη*dηdx_ij
-            dudx = dudξ*dξdx_ij + dudη*dηdx_ij
-            dvdx = dvdξ*dξdx_ij + dvdη*dηdx_ij
-            dθdx = dθdξ*dξdx_ij + dθdη*dηdx_ij
-            
-            dρdy = dρdξ*dξdy_ij + dρdη*dηdy_ij
-            dudy = dudξ*dξdy_ij + dudη*dηdy_ij
-            dvdy = dvdξ*dξdy_ij + dvdη*dηdy_ij
-            dθdy = dθdξ*dξdy_ij + dθdη*dηdy_ij=#
-            
-            ρij = uprimitives[i,j,1]
-            uij = uprimitives[i,j,2]
-            vij = uprimitives[i,j,3]
-            if (ieq == 1)
-                auxi = ωJac*((dFρdx + dGρdy))
-            elseif(ieq == 2)
-                auxi = ωJac*((uij*dFdx + vij*dGdy + dpdxflg*dpdx/ρij + dpdxflg*dpdy/ρij) - S[i,j])
-            elseif(ieq == 3)
-
-            elseif(ieq == 4)
-                
-            end
-                
-            rhs_el[i,j] -= auxi
         end
-    end
-    
+    end        
 end
 
 function _expansion_inviscid!(rhs_el, uprimitiveieq, mesh, metrics, basis, F, G, S, ω, ngl, npoin, neqs, ieq, iel, ::CL, QT::Inexact, SD::NSD_2D)
