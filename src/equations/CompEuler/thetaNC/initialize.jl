@@ -56,15 +56,6 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     else
         error(" ERROR: CompEuler: initialize.jl:\n assign value to inputs[:case]")
     end
-
-   #= if inputs[:CL] == NCL()
-        q.qn[:,2] .= q.qn[:,2]./q.qn[:,1]
-        q.qn[:,3] .= q.qn[:,3]./q.qn[:,1]
-        q.qn[:,4] .= q.qn[:,4]./q.qn[:,1]
-
-        #Store initial background state for plotting and analysis of pertuebations
-        q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
-    end=#
     
     @info "Initialize fields for system of 2D CompEuler with θ equation ........................ DONE"
 

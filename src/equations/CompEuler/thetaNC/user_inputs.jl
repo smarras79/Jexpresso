@@ -15,7 +15,6 @@ function user_inputs()
         #:lexact_integration  => true,
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
-        #:luser_bc            => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
