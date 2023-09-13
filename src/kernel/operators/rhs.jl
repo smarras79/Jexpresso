@@ -156,14 +156,9 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
                              @view(params.F[:,:,:]), @view(params.G[:,:,:]), @view(params.S[:,:,:]),
                              params.ω, params.mesh.ngl, params.mesh.npoin, params.neqs, 0, iel,
                              params.CL, params.QT, SD)=#
-
-        for ieq = 1:params.neqs        
-            _expansion_inviscid!(@view(params.rhs_el[iel,:,:,ieq]), params.uprimitive,
-                                 params.mesh, params.metrics, params.basis,
-                                 @view(params.F[:,:,ieq]), @view(params.G[:,:,ieq]), @view(params.S[:,:,ieq]),
-                                 params.ω, params.mesh.ngl, params.mesh.npoin, params.neqs, ieq, iel,
-                                 params.CL, params.QT, SD)
-        end
+        
+        _expansion_inviscid!(params, iel, params.CL, params.QT, SD)
+        
     end
 end
 
@@ -236,38 +231,40 @@ function _expansion_inviscid!(rhs_el, uprimitive, mesh, metrics, basis, F, G, S,
     end        
 end
 
-function _expansion_inviscid!(rhs_el, uprimitiveieq, mesh, metrics, basis, F, G, S, ω, ngl, npoin, neqs, ieq, iel, ::CL, QT::Inexact, SD::NSD_2D)
-    
-    for j=1:ngl
-        for i=1:ngl
-            ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
-            
-            dFdξ = 0.0
-            dFdη = 0.0
-            dGdξ = 0.0
-            dGdη = 0.0
-            @turbo for k = 1:ngl
-                dFdξ += basis.dψ[k,i]*F[k,j]
-                dFdη += basis.dψ[k,j]*F[i,k]
-                
-                dGdξ += basis.dψ[k,i]*G[k,j]
-                dGdη += basis.dψ[k,j]*G[i,k]
-            end
-            dξdx_ij = metrics.dξdx[iel,i,j]
-            dξdy_ij = metrics.dξdy[iel,i,j]
-            dηdx_ij = metrics.dηdx[iel,i,j]
-            dηdy_ij = metrics.dηdy[iel,i,j]
-            
-            dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-            dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij
+function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_2D)
 
-            dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
-            dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
-            
-            auxi = ωJac*((dFdx + dGdy) - S[i,j])
-            rhs_el[i,j] -= auxi
+    for ieq=1:params.neqs
+        for j=1:params.mesh.ngl
+            for i=1:params.mesh.ngl
+                ωJac = params.ω[i]*params.ω[j]*params.metrics.Je[iel,i,j]
+                
+                dFdξ = 0.0
+                dFdη = 0.0
+                dGdξ = 0.0
+                dGdη = 0.0
+                @turbo for k = 1:params.mesh.ngl
+                    dFdξ += params.basis.dψ[k,i]*params.F[k,j,ieq]
+                    dFdη += params.basis.dψ[k,j]*params.F[i,k,ieq]
+                    
+                    dGdξ += params.basis.dψ[k,i]*params.G[k,j,ieq]
+                    dGdη += params.basis.dψ[k,j]*params.G[i,k,ieq]
+                end
+                dξdx_ij = params.metrics.dξdx[iel,i,j]
+                dξdy_ij = params.metrics.dξdy[iel,i,j]
+                dηdx_ij = params.metrics.dηdx[iel,i,j]
+                dηdy_ij = params.metrics.dηdy[iel,i,j]
+                
+                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
+                dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij
+
+                dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
+                dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+                
+                auxi = ωJac*((dFdx + dGdy) - params.S[i,j,ieq])
+                params.rhs_el[iel,i,j,ieq] -= auxi
+            end
         end
-    end    
+    end
 end
 
 
