@@ -5,16 +5,17 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                 => 100,
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :Δt                   => 0.1,
+        :Δt                   => 0.4,
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         :CL                   => NCL(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        #:lexact_integration  => true,
+        :lexact_integration  => true,
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
+        #:luser_bc            => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
