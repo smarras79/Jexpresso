@@ -400,12 +400,14 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
 
             for j=1:N
                 for i=1:N
+
+                    ψikψjl = params.basis.ψ[i,k]*params.basis.ψ[j,l]
                     
-                    params.rhs_el[iel,i,j,1] -= ωJac*(dρudx + dρvdy)
+                    params.rhs_el[iel,i,j,1] -= ψikψjl*ωJac*(dρudx + dρvdy)
                     
-                    params.rhs_el[iel,i,j,2] -= ωJac*(ukl*dudx + vkl*dudy + dpdx/ρkl)
-                    params.rhs_el[iel,i,j,3] -= ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl - params.S[i,j,3])
-                    params.rhs_el[iel,i,j,4] -= ωJac*(ukl*dθdx + vkl*dθdy)
+                    params.rhs_el[iel,i,j,2] -= ψikψjl*ωJac*(ukl*dudx + vkl*dudy + dpdx/ρkl)
+                    params.rhs_el[iel,i,j,3] -= ψikψjl*ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl - params.S[i,j,3])
+                    params.rhs_el[iel,i,j,4] -= ψikψjl*ωJac*(ukl*dθdx + vkl*dθdy)
                 end
             end
             
