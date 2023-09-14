@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 100,
+        :tend                 => 300,
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 0.4,
         :ndiagnostics_outputs => 2,
