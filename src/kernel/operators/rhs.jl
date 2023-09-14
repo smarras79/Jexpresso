@@ -172,7 +172,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
             end
         end
         
-        _expansion_inviscid!(params, iel, params.CL, params.QT, SD)
+       _expansion_inviscid!(params, iel, params.CL, params.QT, SD)
         
     end
 end
@@ -326,44 +326,54 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Exact, SD::NSD_2D)
 end
 
 function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
-    
-    N = params.mesh.ngl
-    Q = N + 1
+nothing #WIP
     for ieq=1:params.neqs
-        for l=1:Q
-            for k=1:Q
-                ωJac = params.ω[k]*params.ω[l]*params.metrics.Je[iel,k,l]
+        for j=1:params.mesh.ngl
+            for i=1:params.mesh.ngl
+                ωJac = params.ω[i]*params.ω[j]*params.metrics.Je[iel,i,j]
                 
-                dFdξ = 0.0
-                dFdη = 0.0
-                dGdξ = 0.0
-                dGdη = 0.0
-                for n = 1:N
-                    for m = 1:N
-                        dFdξ += params.basis.dψ[m,k]* params.basis.ψ[n,l]*params.F[m,n,ieq]
-                        dFdη +=  params.basis.ψ[m,k]*params.basis.dψ[n,l]*params.F[m,n,ieq]
-                        
-                        dGdξ += params.basis.dψ[m,k]* params.basis.ψ[n,l]*params.G[m,n,ieq]
-                        dGdη +=  params.basis.ψ[m,k]*params.basis.dψ[n,l]*params.G[m,n,ieq]
-                    end
+                dFdξ = 0.0; dFdη = 0.0
+                dGdξ = 0.0; dGdη = 0.0
+                dpdξ = 0.0; dpdη = 0.0               
+                for k = 1:params.mesh.ngl
+                    dFdξ += params.basis.dψ[k,i]*params.F[k,j,ieq]
+                    dFdη += params.basis.dψ[k,j]*params.F[i,k,ieq]
+                    
+                    dGdξ += params.basis.dψ[k,i]*params.G[k,j,ieq]
+                    dGdη += params.basis.dψ[k,j]*params.G[i,k,ieq]
+                                        
+                    dpdξ += params.basis.dψ[k,i]*params.uprimitive[k,j,params.neqs+1]
+                    dpdη += params.basis.dψ[k,j]*params.uprimitive[i,k,params.neqs+1]
                 end
+                dξdx_ij = params.metrics.dξdx[iel,i,j]
+                dξdy_ij = params.metrics.dξdy[iel,i,j]
+                dηdx_ij = params.metrics.dηdx[iel,i,j]
+                dηdy_ij = params.metrics.dηdy[iel,i,j]
                 
-                dξdx_kl = params.metrics.dξdx[iel,k,l]
-                dξdy_kl = params.metrics.dξdy[iel,k,l]
-                dηdx_kl = params.metrics.dηdx[iel,k,l]
-                dηdy_kl = params.metrics.dηdy[iel,k,l]
-                for j = 1:N
-                    for i = 1:N
-                        dFdx = dFdξ*dξdx_kl + dFdη*dηdx_kl
-                        dGdx = dGdξ*dξdx_kl + dGdη*dηdx_kl
+                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij            
+                dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
 
-                        dFdy = dFdξ*dξdy_kl + dFdη*dηdy_kl
-                        dGdy = dGdξ*dξdy_kl + dGdη*dηdy_kl
-                        
-                        auxi = ωJac*params.basis.ψ[i,k]*params.basis.ψ[j,l]*((dFdx + dGdy) - params.S[i,j,ieq])
-                        params.rhs_el[iel,i,j,ieq] -= auxi
-                    end
+                dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij            
+                dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+                
+                dpdx = dpdξ*dξdx_ij + dpdη*dηdx_ij            
+                dpdy = dpdξ*dξdy_ij + dpdη*dηdy_ij
+
+                ρij = params.uprimitive[i,j,1]
+                uij = params.uprimitive[i,j,2]
+                vij = params.uprimitive[i,j,3]
+                
+                if (ieq == 1)
+                    auxi = ωJac*(dFdx + dGdy)
+                elseif(ieq == 2)
+                    auxi = ωJac*(uij*dFdx + vij*dGdy + dpdx/ρij)
+                elseif(ieq == 3)
+                    auxi = ωJac*(uij*dFdx + vij*dGdy + dpdy/ρij - params.S[i,j,ieq])
+                elseif(ieq == 4)
+                    auxi = ωJac*(uij*dFdx + vij*dGdy)
                 end
+                
+                params.rhs_el[iel,i,j,ieq] -= auxi
             end
         end
     end
