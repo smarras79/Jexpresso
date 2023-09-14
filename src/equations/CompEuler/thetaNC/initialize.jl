@@ -39,24 +39,32 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 v = 0.0
                 
                 q.qn[ip,1] = ρ
-                q.qn[ip,2] = u
-                q.qn[ip,3] = v
-                q.qn[ip,4] = θ
-                q.qn[ip,end] = p
+                q.qn[ip,2] = ρ*u
+                q.qn[ip,3] = ρ*v
+                q.qn[ip,4] = ρ*θ
 
                 #Store initial background state for plotting and analysis of pertuebations
                 q.qe[ip,1] = ρref
                 q.qe[ip,2] = u
                 q.qe[ip,3] = v
-                q.qe[ip,4] = θref
-                q.qe[ip,end] = pref
+                q.qe[ip,4] = ρref*θref
             end
         end
         
     else
         error(" ERROR: CompEuler: initialize.jl:\n assign value to inputs[:case]")
     end
+
+    if inputs[:CL] == NCL()
+        q.qn[:,2] .= q.qn[:,2]./q.qn[:,1]
+        q.qn[:,3] .= q.qn[:,3]./q.qn[:,1]
+        q.qn[:,4] .= q.qn[:,4]./q.qn[:,1]
+
+        #Store initial background state for plotting and analysis of pertuebations
+        q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
+    end
     
+
     @info "Initialize fields for system of 2D CompEuler with θ equation ........................ DONE"
 
     return q

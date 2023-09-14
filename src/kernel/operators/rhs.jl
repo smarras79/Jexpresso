@@ -192,60 +192,6 @@ function viscous_rhs_el!(u, params, SD::NSD_2D)
 end
 
 
-function _expansion_inviscid!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D)
-    
-    for ieq=1:params.neqs
-        for j=1:params.mesh.ngl
-            for i=1:params.mesh.ngl
-                ωJac = params.ω[i]*params.ω[j]*params.metrics.Je[iel,i,j]
-                
-                dFdξ = 0.0; dFdη = 0.0
-                dGdξ = 0.0; dGdη = 0.0
-                dpdξ = 0.0; dpdη = 0.0               
-                for k = 1:params.mesh.ngl
-                    dFdξ += params.basis.dψ[k,i]*params.F[k,j,ieq]
-                    dFdη += params.basis.dψ[k,j]*params.F[i,k,ieq]
-                    
-                    dGdξ += params.basis.dψ[k,i]*params.G[k,j,ieq]
-                    dGdη += params.basis.dψ[k,j]*params.G[i,k,ieq]
-                                        
-                    dpdξ += params.basis.dψ[k,i]*params.uprimitive[k,j,params.neqs+1]
-                    dpdη += params.basis.dψ[k,j]*params.uprimitive[i,k,params.neqs+1]
-                end
-                dξdx_ij = params.metrics.dξdx[iel,i,j]
-                dξdy_ij = params.metrics.dξdy[iel,i,j]
-                dηdx_ij = params.metrics.dηdx[iel,i,j]
-                dηdy_ij = params.metrics.dηdy[iel,i,j]
-                
-                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij            
-                dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
-
-                dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij            
-                dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
-                
-                dpdx = dpdξ*dξdx_ij + dpdη*dηdx_ij            
-                dpdy = dpdξ*dξdy_ij + dpdη*dηdy_ij
-
-                ρij = params.uprimitive[i,j,1]
-                uij = params.uprimitive[i,j,2]
-                vij = params.uprimitive[i,j,3]
-                
-                if (ieq == 1)
-                    auxi = ωJac*(dFdx + dGdy)
-                elseif(ieq == 2)
-                    auxi = ωJac*(uij*dFdx + vij*dGdy + dpdx/ρij)
-                elseif(ieq == 3)
-                    auxi = ωJac*(uij*dFdx + vij*dGdy + dpdy/ρij - params.S[i,j,ieq])
-                elseif(ieq == 4)
-                    auxi = ωJac*(uij*dFdx + vij*dGdy)
-                end
-                
-                params.rhs_el[iel,i,j,ieq] -= auxi
-            end
-        end
-    end        
-end
-
 function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_2D)
 
     for ieq=1:params.neqs
@@ -325,8 +271,8 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Exact, SD::NSD_2D)
     end
 end
 
-function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
-nothing #WIP
+function _expansion_inviscid!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D)
+    
     for ieq=1:params.neqs
         for j=1:params.mesh.ngl
             for i=1:params.mesh.ngl
@@ -376,7 +322,96 @@ nothing #WIP
                 params.rhs_el[iel,i,j,ieq] -= auxi
             end
         end
+    end        
+end
+
+function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
+
+    N = params.mesh.ngl
+    Q = N + 1
+    #for ieq=1:params.neqs
+
+    for l=1:Q
+        for k=1:Q
+            ωJac = params.ω[k]*params.ω[l]*params.metrics.Je[iel,k,l]
+            
+            dFdξ = 0.0; dFdη = 0.0
+            dGdξ = 0.0; dGdη = 0.0
+            dudξ = 0.0; dudη = 0.0
+            dvdξ = 0.0; dvdη = 0.0
+            dθdξ = 0.0; dθdη = 0.0
+            dpdξ = 0.0; dpdη = 0.0
+            
+            ρkl = 0.0; ukl = 0.0; vkl = 0.0
+            for n=1:N
+                for m=1:N
+                    ψmk = params.basis.ψ[m,k]
+                    ψnl = params.basis.ψ[n,l]
+                    
+                    dψmk_ψnl = params.basis.dψ[m,k]* params.basis.ψ[n,l]
+                    ψmk_dψnl = params.basis.ψ[m,k]*params.basis.dψ[n,l]
+                    
+                    dFdξ += dψmk_ψnl*params.F[m,n,1]
+                    dFdη +=  ψmk_dψnl*params.F[m,n,1]
+                    
+                    dGdξ += dψmk_ψnl*params.G[m,n,1]
+                    dGdη +=  ψmk_dψnl*params.G[m,n,1]
+                    
+                    dudξ += dψmk_ψnl*params.uprimitive[m,n,2]
+                    dudη +=  ψmk_dψnl*params.uprimitive[m,n,2]
+
+                    dvdξ += dψmk_ψnl*params.uprimitive[m,n,3]
+                    dvdη +=  ψmk_dψnl*params.uprimitive[m,n,3]
+                    
+                    dθdξ += dψmk_ψnl*params.uprimitive[m,n,4]
+                    dθdη +=  ψmk_dψnl*params.uprimitive[m,n,4]
+
+                    dpdξ += dψmk_ψnl*params.uprimitive[m,n,params.neqs+1]
+                    dpdη +=  ψmk_dψnl*params.uprimitive[m,n,params.neqs+1]
+
+                    ρkl += ψmk*ψnl*params.uprimitive[m,n,1]
+                    ukl += ψmk*ψnl*params.uprimitive[m,n,2]
+                    vkl += ψmk*ψnl*params.uprimitive[m,n,3]                  
+                end
+            end
+
+            dξdx_kl = params.metrics.dξdx[iel,k,l]
+            dξdy_kl = params.metrics.dξdy[iel,k,l]
+            dηdx_kl = params.metrics.dηdx[iel,k,l]
+            dηdy_kl = params.metrics.dηdy[iel,k,l]
+            
+            dFdx = dFdξ*dξdx_kl + dFdη*dηdx_kl            
+            dFdy = dFdξ*dξdy_kl + dFdη*dηdy_kl
+            dGdx = dGdξ*dξdx_kl + dGdη*dηdx_kl            
+            dGdy = dGdξ*dξdy_kl + dGdη*dηdy_kl
+                                    
+            dudx = dudξ*dξdx_kl + dudη*dηdx_kl            
+            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+            
+            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl            
+            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+            
+            dθdx = dθdξ*dξdx_kl + dθdη*dηdx_kl            
+            dθdy = dθdξ*dξdy_kl + dθdη*dηdy_kl
+
+            dpdx = dpdξ*dξdx_kl + dpdη*dηdx_kl            
+            dpdy = dpdξ*dξdy_kl + dpdη*dηdy_kl
+
+
+            for j=1:N
+                for i=1:N
+                    
+                    params.rhs_el[iel,i,j,1] -= ωJac*(dFdx + dGdy)
+                    
+                    params.rhs_el[iel,i,j,2] -= ωJac*(ukl*dudx + vkl*dudy + dpdx/ρkl)
+                    params.rhs_el[iel,i,j,3] -= ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl )# - params.S[i,j,3])
+                    params.rhs_el[iel,i,j,4] -= ωJac*(ukl*dθdx + vkl*dθdy)
+                end
+            end
+            
+        end
     end
+    # end
 end
 
 
