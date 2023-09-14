@@ -335,8 +335,8 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
         for k=1:Q
             ωJac = params.ω[k]*params.ω[l]*params.metrics.Je[iel,k,l]
             
-            dFdξ = 0.0; dFdη = 0.0
-            dGdξ = 0.0; dGdη = 0.0
+            dρudξ = 0.0; dρudη = 0.0
+            dρvdξ = 0.0; dρvdη = 0.0
             dudξ = 0.0; dudη = 0.0
             dvdξ = 0.0; dvdη = 0.0
             dθdξ = 0.0; dθdη = 0.0
@@ -351,11 +351,11 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
                     dψmk_ψnl = params.basis.dψ[m,k]* params.basis.ψ[n,l]
                     ψmk_dψnl = params.basis.ψ[m,k]*params.basis.dψ[n,l]
                     
-                    dFdξ += dψmk_ψnl*params.F[m,n,1]
-                    dFdη +=  ψmk_dψnl*params.F[m,n,1]
+                    dρudξ += dψmk_ψnl*params.F[m,n,1]
+                    dρudη +=  ψmk_dψnl*params.F[m,n,1]
                     
-                    dGdξ += dψmk_ψnl*params.G[m,n,1]
-                    dGdη +=  ψmk_dψnl*params.G[m,n,1]
+                    dρvdξ += dψmk_ψnl*params.G[m,n,1]
+                    dρvdη +=  ψmk_dψnl*params.G[m,n,1]
                     
                     dudξ += dψmk_ψnl*params.uprimitive[m,n,2]
                     dudη +=  ψmk_dψnl*params.uprimitive[m,n,2]
@@ -380,10 +380,10 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
             dηdx_kl = params.metrics.dηdx[iel,k,l]
             dηdy_kl = params.metrics.dηdy[iel,k,l]
             
-            dFdx = dFdξ*dξdx_kl + dFdη*dηdx_kl            
-            dFdy = dFdξ*dξdy_kl + dFdη*dηdy_kl
-            dGdx = dGdξ*dξdx_kl + dGdη*dηdx_kl            
-            dGdy = dGdξ*dξdy_kl + dGdη*dηdy_kl
+            dρudx = dρudξ*dξdx_kl + dρudη*dηdx_kl            
+            dρudy = dρudξ*dξdy_kl + dρudη*dηdy_kl
+            dρvdx = dρvdξ*dξdx_kl + dρvdη*dηdx_kl            
+            dρvdy = dρvdξ*dξdy_kl + dρvdη*dηdy_kl
                                     
             dudx = dudξ*dξdx_kl + dudη*dηdx_kl            
             dudy = dudξ*dξdy_kl + dudη*dηdy_kl
@@ -401,10 +401,10 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
             for j=1:N
                 for i=1:N
                     
-                    params.rhs_el[iel,i,j,1] -= ωJac*(dFdx + dGdy)
+                    params.rhs_el[iel,i,j,1] -= ωJac*(dρudx + dρvdy)
                     
                     params.rhs_el[iel,i,j,2] -= ωJac*(ukl*dudx + vkl*dudy + dpdx/ρkl)
-                    params.rhs_el[iel,i,j,3] -= ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl )# - params.S[i,j,3])
+                    params.rhs_el[iel,i,j,3] -= ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl - params.S[i,j,3])
                     params.rhs_el[iel,i,j,4] -= ωJac*(ukl*dθdx + vkl*dθdy)
                 end
             end
