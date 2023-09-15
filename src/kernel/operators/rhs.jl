@@ -162,13 +162,13 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]), 
                        params.qe[ip,end],         #pref
-                       params.mesh; neqs=params.neqs)
+                       params.mesh, params.CL; neqs=params.neqs)
             
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
                              params.qe[ip,1],          #ρref 
-                             params.mesh.npoin; neqs=params.neqs)
+                             params.mesh.npoin, params.CL; neqs=params.neqs)
             end
         end
         
