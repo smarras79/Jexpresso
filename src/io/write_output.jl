@@ -168,17 +168,17 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     if (inputs[:CL] == CL())
         
         #ρ
-        qout[1:npoin] = q[1:npoin]
+        qout[1:npoin] .= q[1:npoin]
         
         #u = ρu/ρ
         ivar = 2
         idx = (ivar - 1)*npoin
-        qout[idx+1:2*npoin] = q[idx+1:2*npoin]./q[1:npoin]
+        qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./q[1:npoin]
 
         #v = ρv/ρ
         ivar = 3
         idx = (ivar - 1)*npoin
-        qout[idx+1:3*npoin] = q[idx+1:3*npoin]./q[1:npoin]
+        qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./q[1:npoin]
 
         if case === "rtb"
 
@@ -187,12 +187,12 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
             if (inputs[:loutput_pert] == true && size(qexact, 1) === npoin)
 
                 #ρ'
-                qout[1:npoin] = q[1:npoin] .- qexact[1:npoin,1]
+                qout[1:npoin] .= q[1:npoin] .- qexact[1:npoin,1]
                 
                 #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
                 ivar = 4
                 idx = (ivar - 1)*npoin
-                qout[idx+1:4*npoin] = q[idx+1:4*npoin]./q[1:npoin] .- qexact[1:npoin,4]./qexact[1:npoin,1]
+                qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin] .- qexact[1:npoin,4]./qexact[1:npoin,1]
                 
             else
                 outvars = ("rho", "u", "v", "E")
@@ -205,18 +205,18 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     elseif (inputs[:CL] == NCL())
             
         #ρ
-        qout[1:npoin] .= q[1:npoin]
+        qout[1:npoin] .= (q[1:npoin])
         
         #u = ρu/ρ
         ivar = 2
         idx = (ivar - 1)*npoin
-        qout[idx+1:2*npoin] .= q[idx+1:2*npoin]
+        qout[idx+1:2*npoin] .= (q[idx+1:2*npoin])
 
         #v = ρv/ρ
         ivar = 3
         idx = (ivar - 1)*npoin
-        qout[idx+1:3*npoin] .= q[idx+1:3*npoin]
-
+        qout[idx+1:3*npoin] .= (q[idx+1:3*npoin])
+        
         if case === "rtb"
 
             outvars = ("rho", "u", "v", "theta")
@@ -224,19 +224,19 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
             if (inputs[:loutput_pert] == true && size(qexact, 1) === npoin)
 
                 #ρ'
-                qout[1:npoin] = q[1:npoin] .- qexact[1:npoin,1]
-                
+                qout[1:npoin] .= (q[1:npoin] .- qexact[1:npoin,1])
+                                
                 #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
                 ivar = 4
                 idx = (ivar - 1)*npoin
-                qout[idx+1:4*npoin] = q[idx+1:4*npoin] .- qexact[1:npoin,4]
-                
+                qout[idx+1:4*npoin] .= (q[idx+1:4*npoin] .- qexact[1:npoin,4])
+                                
             else
                 outvars = ("rho", "u", "v", "E")
                 
                 #E = ρE/ρ
                 idx = 4*npoin
-                qout[idx+1:4*npoin] .= (q[2*npoin+1:4*npoin] .- 0.5*(q[npoin+1:2*npoin].*q[npoin+1:2*npoin] .+ q[npoin+1:3*npoin].*q[npoin+1:3*npoin])./q[1:npoin])./q[1:npoin] #internal energy: p/((γ-1)ρ)
+                qout[idx+1:4*npoin] .= @views((q[2*npoin+1:4*npoin] .- 0.5*(q[npoin+1:2*npoin].*q[npoin+1:2*npoin] .+ q[npoin+1:3*npoin].*q[npoin+1:3*npoin])./q[1:npoin])./q[1:npoin]) #internal energy: p/((γ-1)ρ)
             end
         end
     end
@@ -246,7 +246,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells)
     for ivar = 1:nvar
         idx = (ivar - 1)*npoin
-        vtkfile[string(outvars[ivar]), VTKPointData()] =  qout[idx+1:ivar*npoin]
+        vtkfile[string(outvars[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
     end
     outfiles = vtk_save(vtkfile)
     

@@ -18,7 +18,6 @@ function driver(DT::ContGal,       #Space discretization type
     
     if (inputs[:ndiagnostics_outputs] > 0)
         write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs, qexact=qp.qe, case="rtb")
-        #solution_norms(solution, OUTPUT_DIR, inputs;)
     end
     
 end
