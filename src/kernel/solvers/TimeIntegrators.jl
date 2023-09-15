@@ -19,7 +19,7 @@ function time_loop!(QT,
     # Initialize
     println(" # Solving ODE ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
-    
+    lexact_integration = inputs[:lexact_integration]
     #-----------------------------------------------------------------
     # Initialize:
     # u     -> solution array
@@ -81,8 +81,14 @@ function time_loop!(QT,
 
     output_range = floor((inputs[:tend] - inputs[:tinit])/inputs[:ndiagnostics_outputs])
 
-    
-    mass_ini   = compute_mass!(uaux, u, mesh, metrics, ω,qp.neqs)
+    if(lexact_integration)
+       N = mesh.ngl
+       Q = N + 1
+       mass_ini   = compute_mass!(uaux, u, mesh, metrics, ω,qp.neqs,QT,Q,basis.ψ)
+    else
+       mass_ini   = compute_mass!(uaux, u, mesh, metrics, ω,qp.neqs,QT)
+    end
+
     energy_ini = compute_energy!(uaux, u, mesh, metrics, ω,qp.neqs)
     println(" # Initial Mass  :   ", mass_ini)
     println(" # Initial Energy: ", energy_ini)
@@ -95,7 +101,7 @@ function time_loop!(QT,
     println(" # Solving ODE  ................................ DONE")
 
     println(" # Diagnostics  ................................ ")
-    print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs)
+    print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs,QT,basis.ψ)
     println(" # Diagnostics  ................................ DONE")
     
     return solution
