@@ -143,7 +143,7 @@ function _build_rhs!(RHS, u, params, time)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
     
-    divive_by_mass_matrix!(@view(params.RHS[:,:]), @view(params.M[:]), QT, neqs)
+    divive_by_mass_matrix!(@view(params.RHS[:,:]), params.Minv, QT, neqs, npoin)
     
 end
 

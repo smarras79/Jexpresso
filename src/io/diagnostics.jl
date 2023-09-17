@@ -135,10 +135,11 @@ function print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, 
 
     if mass_loss > 1.0e-13
         
-        println(" # --- Mass   Loss: ", RED_FG(string(mass_loss)), RED_FG(" !!! WARNING: Large value. Maybe diffusion is on."))
+        println(" # --- Mass   Loss: ", RED_FG(string(mass_loss)), RED_FG(" !!! WARNING: Large value. Bug? Difusion applied to mass? Something else? Check your code."))
         println(" # --- Energy Loss: ", energy_loss)
     else
-        println(" # --- Mass   Loss: ",mass_loss)
+        println(" # --- Mass   Loss: ", GREEN_FG(string(mass_loss)), GREEN_FG(" !!! If >2.2e-16, then it could still be better."))
+
         println(" # --- Energy Loss: ",energy_loss)
     end
     #println("linf norm of u: ", norm(u, Inf))
