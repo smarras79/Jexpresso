@@ -7,7 +7,7 @@ function time_loop!(QT,
                     metrics::St_metrics,
                     basis, ω,
                     qp::St_SolutionVars,
-                    M,
+                    M, Minv, 
                     Δt,
                     inputs::Dict,
                     OUTPUT_DIR::String,
@@ -59,6 +59,19 @@ function time_loop!(QT,
     deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])    
     visc_coeff = (inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ])
+
+    #=open("conn.txt", "w") do io
+        for iel=1:mesh.nelem
+            writedlm(io, mesh.connijk[iel,:,:])
+        end
+    end
+
+    open("coords.txt", "w") do io
+        for ip=1:length(mesh.x)
+            @printf(io, " %d %.16f %.16f\n", ip, mesh.x[ip],  mesh.y[ip])
+        end
+    end
+    error("asas")=#
     
     params = (T, F, G, S,
               uaux, uaux_el,
@@ -71,7 +84,8 @@ function time_loop!(QT,
               neqs=qp.neqs,
               basis, ω, mesh, metrics,
               inputs, visc_coeff,              
-              M, Δt, deps,
+              M, Minv,
+              Δt, deps,
               qp.qe, qp.qnm1, qp.qnm2, qp.μ)
     
     prob = ODEProblem(rhs!,
