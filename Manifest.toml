@@ -2,7 +2,7 @@
 
 julia_version = "1.9.3"
 manifest_format = "2.0"
-project_hash = "f12acba33a4b30e2e2c5ae3279c92d2e27557ffd"
+project_hash = "d3f79537e9d6142f80c5d990052242328ea074aa"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "d68758475ff90600488eb975b5ac222709a7dd6f"
@@ -1237,6 +1237,11 @@ git-tree-sha1 = "eb006abbd7041c28e0d16260e50a24f8f9104913"
 uuid = "856f044c-d86e-5d09-b602-aeab76dc8ba7"
 version = "2023.2.0+0"
 
+[[deps.MLStyle]]
+git-tree-sha1 = "bc38dff0548128765760c79eb7388a4b37fae2c8"
+uuid = "d8e11817-5142-5d16-987a-aa16d5891078"
+version = "0.4.17"
+
 [[deps.MMG_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "LinearElasticity_jll", "Pkg", "SCOTCH_jll"]
 git-tree-sha1 = "70a59df96945782bb0d43b56d0fbfdf1ce2e4729"
@@ -2213,6 +2218,19 @@ version = "0.1.1"
 [[deps.Test]]
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[[deps.TestingUtilities]]
+deps = ["Dates", "MLStyle", "OrderedCollections", "Preferences", "Test"]
+git-tree-sha1 = "89a73de4d80e0d2eabf67c47e26d41b95edb346c"
+uuid = "40452611-1178-4e48-bdfc-3af4bebad9c9"
+version = "1.7.0"
+
+    [deps.TestingUtilities.extensions]
+    TestingUtilitiesDataFramesExt = ["DataFrames", "PrettyTables"]
+
+    [deps.TestingUtilities.weakdeps]
+    DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+    PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
 
 [[deps.TextWrap]]
 git-tree-sha1 = "9250ef9b01b66667380cf3275b3f7488d0e25faf"

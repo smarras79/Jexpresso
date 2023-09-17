@@ -59,19 +59,6 @@ function time_loop!(QT,
     deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])    
     visc_coeff = (inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ])
-
-    #=open("conn.txt", "w") do io
-        for iel=1:mesh.nelem
-            writedlm(io, mesh.connijk[iel,:,:])
-        end
-    end
-
-    open("coords.txt", "w") do io
-        for ip=1:length(mesh.x)
-            @printf(io, " %d %.16f %.16f\n", ip, mesh.x[ip],  mesh.y[ip])
-        end
-    end
-    error("asas")=#
     
     params = (T, F, G, S,
               uaux, uaux_el,
