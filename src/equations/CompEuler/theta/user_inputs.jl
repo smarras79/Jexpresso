@@ -3,22 +3,22 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 10,
+        :tend                 => 1000,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 0.2,
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
-        #:CL                   => NCL(),
+        :CL                   => NCL(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :lexact_integration  => true,
+        #:lexact_integration  => true,
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        :lvisc                => true, #false by default NOTICE: works only for Inexact
         :νx                   => 30.0, #horizontal viscosity constant for momentum
         :νy                   => 30.0, #vertical   viscosity constant for momentum
         :κ                    => 60.0, #kinematic viscosity constant for θ equation
