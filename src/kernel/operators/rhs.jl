@@ -339,7 +339,6 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
 
     N = params.mesh.ngl
     Q = N + 1
-    #for ieq=1:params.neqs
 
     for l=1:Q
         for k=1:Q
@@ -423,7 +422,6 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
             
         end
     end
-    # end
 end
 
 
