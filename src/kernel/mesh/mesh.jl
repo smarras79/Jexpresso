@@ -1284,7 +1284,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
         #show(stdout, "text/plain", mesh.conn')
         #error("now")
 
-        println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
+        println(" #AAA POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
         return 
 end
 
