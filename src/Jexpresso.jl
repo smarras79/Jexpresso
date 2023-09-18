@@ -8,6 +8,7 @@ using DataStructures
 using LoopVectorization
 using ElasticArrays
 using InternedStrings
+using LinearAlgebra
 using StaticArrays
 using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
 using DiffEqBase
