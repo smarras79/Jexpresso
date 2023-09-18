@@ -121,12 +121,14 @@ function _build_rhs!(RHS, u, params, time)
     resetRHSToZero_inviscid!(params) 
     
     inviscid_rhs_el!(u, params, true, SD)
+
+    #DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
     
-    apply_boundary_conditions!(u, params.uaux, time,
-                               params.mesh, params.metrics, params.basis,
-                               params.rhs_el, params.ubdy,
-                               params.ω, SD, neqs, params.inputs)
-    
+    #apply_boundary_conditions!(u, params.uaux, time,
+    #                           params.mesh, params.metrics, params.basis,
+    #                           params.RHS, params.rhs_el, params.ubdy,
+    #                           params.ω, SD, neqs, params.inputs)
+    # 
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
     
     #-----------------------------------------------------------------------------------
@@ -142,8 +144,16 @@ function _build_rhs!(RHS, u, params, time)
         
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
+
+    for ieq=1:neqs
+        divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.Minv, neqs, npoin, QT)
+    end
     
-    divive_by_mass_matrix!(@view(params.RHS[:,:]), @view(params.M[:]), QT, neqs)
+    apply_boundary_conditions!(u, params.uaux, time,
+                               params.mesh, params.metrics, params.basis,
+                               params.RHS, params.rhs_el, params.ubdy,
+                               params.ω, SD, neqs, params.inputs)
+    
     
 end
 
@@ -162,13 +172,13 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]), 
                        params.qe[ip,end],         #pref
-                       params.mesh; neqs=params.neqs)
+                       params.mesh, params.CL; neqs=params.neqs)
             
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
                              params.qe[ip,1],          #ρref 
-                             params.mesh.npoin; neqs=params.neqs)
+                             params.mesh.npoin, params.CL; neqs=params.neqs)
             end
         end
         
