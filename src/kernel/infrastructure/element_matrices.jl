@@ -90,52 +90,13 @@ end
 #
 # Element mass matrix
 #
-function build_mass_matrix(SD::NSD_1D, QT::Inexact, ψ, ω, mesh, metrics, N, Q, T)
-        
-    Me = zeros(T, N+1, mesh.nelem)
-    
-    for iel=1:mesh.nelem
-        Jac = mesh.Δx[iel]/2
-        
-        for i=1:N+1
-            Me[i,iel] += Jac*ω[i]
-        end
-    end
-    #show(stdout, "text/plain", Me)
-    
-    return Me
-    
-end
-
-function build_mass_matrix(SD::NSD_1D, QT::Exact, ψ, ω, mesh, metrics, N, Q, T)
-    
-    MN = N + 1
-    QN = Q + 1
-    
-    M = zeros((N+1), (N+1), mesh.nelem)
-    
-    for iel=1:mesh.nelem
-        for k = 1:QN
-            ωk = ω[k]*mesh.Δx[iel]
-            for i = 1:MN
-                ψik = ψ[i,k]
-                for j = 1:MN
-                    ψjk = ψ[j,k]
-                    M[i,j,iel] += ωk*ψik*ψjk
-                end
-            end
-        end
-    end
-    #show(stdout, "text/plain", M)
-    
-    return M
-end
-
 function build_mass_matrix!(Me, SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
-    
+    @info Q N
+    @info size(Me)
+    error("as")
     for iel=1:mesh.nelem
         
         for l = 1:Q+1
@@ -161,41 +122,6 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
         end
     end
   
-end
-function build_mass_matrix(SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
-    
-    MN = N + 1
-    QN = Q + 1
-    
-    Me = zeros((N+1)^2, (N+1)^2, mesh.nelem)
-    
-    for iel=1:mesh.nelem
-        
-        for l = 1:Q+1
-            for k = 1:Q+1
-                
-                ωkl  = ω[k]*ω[l]
-                Jkle = metrics.Je[iel, k, l]
-                
-                for j = 1:N+1
-                    for i = 1:N+1
-                        I = i + (j - 1)*(N + 1)
-                        ψJK = ψ[i,k]*ψ[j,l]
-                        for n = 1:N+1
-                            for m = 1:N+1
-                                J = m + (n - 1)*(N + 1)
-                                ψIK = ψ[m,k]*ψ[n,l]
-                                Me[I,J,iel] += ωkl*Jkle*ψIK*ψJK #Sparse
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    #show(stdout, "text/plain", Me)
-    
-    return Me
 end
 
 #
@@ -362,7 +288,7 @@ function divide_by_mass_matrix!(RHS::AbstractArray, Minv, neqs, npoin, ::Exact)
     for ip=1:npoin
         a = 0.0
         for jp = 1:npoin
-            a + Minv[ip,jp]*RHS[jp]
+            a += Minv[ip,jp]*RHS[jp]
         end
         RHS[ip] = a
     end
@@ -417,15 +343,7 @@ end
 function mass_inverse!(Minv, M, QT)
     
     if (QT == Exact())
-        #Minv = I/M
         Minv .= inv(M)
-        
-        #open("Minv.txt", "w") do io
-        #    writedlm(io, Minv)
-        #end
-
-        
-        #Minv = M
     else
         Minv .= 1.0./M
     end
