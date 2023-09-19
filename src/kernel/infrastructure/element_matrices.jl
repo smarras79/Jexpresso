@@ -268,63 +268,6 @@ end
 #
 # DSS
 #
-function DSS(SD::NSD_1D, QT::Exact, Me::AbstractArray, conn, nelem, npoin, N, T)
-
-    M    = zeros(npoin, npoin)
-    Minv = zeros(npoin, npoin)
-    
-    for iel=1:nelem
-        for i=1:N+1
-            I = conn[iel,i]
-            for j=1:N+1
-                J = conn[iel,j]
-                M[I,J] = M[I,J] + Me[i,j,iel]                
-            end
-        end
-    end
-    Minv = inv(M)
-    
-    return M , Minv
-end
-
-function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
-
-    A = zeros(npoin)
-    Ainv = zeros(npoin)
-    
-    for iel=1:nelem
-        for i=1:N+1
-            I = conn[iel,i]
-            A[I] = A[I] + Ae[iel,i]
-        end
-    end
-    Ainv = 1.0./A
-    
-    return A, Ainv
-end
-
-
-function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
-
-    A  = zeros(npoin)
-    
-    for iel=1:nelem
-        for i=1:N+1
-            for j=1:N+1
-                m = i + (j - 1)*(N + 1)
-                
-                I = conn[iel,i,j]
-                                
-                A[I] = A[I] + Ae[iel,m]
-            end
-        end
-    end
-    #show(stdout, "text/plain", M)
-    return A
-end
-
-
-
 function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
     for iel=1:nelem    
@@ -466,40 +409,6 @@ function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFl
     return (; Me, De, Le, M, Minv, D, L)
 end
 
-function apply_bcs_to_mass!(M, mesh, ::NSD_2D, ::Exact)
-    
-    for ip=1:mesh.npoin
-        x = mesh.x[ip]; y=mesh.y[ip]
-        
-        if ( x <= -4990.0 || x >= 4990.0)
-            M[ip, :] .= 0.0
-            M[ip,ip] = 1.0
-        end
-        if (y <= 10.0 || y >= 9990.0)
-            M[ip, :] .= 0.0
-            M[ip,ip] = 1.0
-        end
-        if ((x >= 4990.0 || x <= -4990.0) && (y >= 9990.0 || y <= 10.0))
-            M[ip, :] .= 0.0
-            M[ip,ip] = 1.0
-        end
-    end
-    
-    #=
-    for iedge = 1:mesh.nedges_bdy 
-        iel  = mesh.bdy_edge_in_elem[iedge]
-        
-        if mesh.bdy_edge_type[iedge] == "free_slip"
-            for k=1:mesh.ngl
-                ip = mesh.poin_in_bdy_edge[iedge,k]
-
-                M[ip, :] .= 0.0
-                M[ip,ip] = 1.0
-            end
-        end
-    end=#
-end
-
 function mass_inverse!(Minv, M, QT)
     
     if (QT == Exact())
@@ -508,35 +417,3 @@ function mass_inverse!(Minv, M, QT)
         Minv .= 1.0./M
     end
 end
-
-#=
-function apply_bcs_to_mass!(M, mesh, ::NSD_2D, ::Inexact)
-
-    for ip=1:mesh.npoin
-        x = mesh.x[ip]; y=mesh.y[ip]
-        
-        if ( x <= -4990.0 || x >= 4990.0)
-            M[ip] = 1.0
-        end
-        if (y <= 10.0 || y >= 9990.0)
-            M[ip] = 1.0
-        end
-        if ((x >= 4990.0 || x <= -4990.0) && (y >= 9990.0 || y <= 10.0))
-            M[ip] = 1.0
-        end
-    end  
-        
-        #=
-    for iedge = 1:mesh.nedges_bdy 
-        iel  = mesh.bdy_edge_in_elem[iedge]
-        
-        if mesh.bdy_edge_type[iedge] == "free_slip"
-            for k=1:mesh.ngl
-                ip = mesh.poin_in_bdy_edge[iedge,k]
-
-                M[ip] = 1.0
-            end
-        end
-    end=#
-end
-=#
