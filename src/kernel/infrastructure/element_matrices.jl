@@ -360,13 +360,14 @@ end
 
 
 function divide_by_mass_matrix!(RHS::AbstractArray, Minv, neqs, npoin, ::Exact)
-    RHS[:] = Minv[:,:]*RHS[:]
+    #RHS = Minv*RHS
+    RHS = Minv\RHS
 end
 
 function divide_by_mass_matrix!(RHS::AbstractArray, Minv, neqs, npoin, ::Inexact)
     for ip=1:npoin
         RHS[ip] = Minv[ip]*RHS[ip]
-    end
+    end    
 end
 
 function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
@@ -412,7 +413,15 @@ end
 function mass_inverse!(Minv, M, QT)
     
     if (QT == Exact())
-        Minv .= inv(M)
+        #Minv = I/M
+        Minv = LinearAlgebra.inv(M)
+        
+        open("Minv.txt", "w") do io
+            writedlm(io, Minv)
+        end
+
+        
+        #Minv = M
     else
         Minv .= 1.0./M
     end

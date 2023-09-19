@@ -96,8 +96,8 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                 for ieq =1:neqs
                     if !(AlmostEqual(qbdy[ieq],4325789.0)) # WHAT's this for?
                         uaux[ip,ieq]       = qbdy[ieq]
-                        #rhs_el[iel,ll,mm,ieq] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
-                        RHS[ip, ieq] = 0.0
+                        rhs_el[iel,ll,mm,ieq] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
+                        #RHS[ip, ieq] = 0.0
                     end
                 end
             end
