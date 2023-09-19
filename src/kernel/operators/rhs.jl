@@ -124,13 +124,13 @@ function _build_rhs!(RHS, u, params, time)
 
     #DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
     
-    #apply_boundary_conditions!(u, params.uaux, time,
-    #                           params.mesh, params.metrics, params.basis,
-    #                           params.RHS, params.rhs_el, params.ubdy,
-    #                           params.ω, SD, neqs, params.inputs)
-    # 
+    apply_boundary_conditions!(u, params.uaux, time,
+                               params.mesh, params.metrics, params.basis,
+                               params.RHS, params.rhs_el, params.ubdy,
+                               params.ω, SD, neqs, params.inputs)
+     
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
-    
+    @info minimum(params.RHS[:,:]) maximum(params.RHS[:,:])
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -148,11 +148,12 @@ function _build_rhs!(RHS, u, params, time)
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.Minv, neqs, npoin, QT)
     end
-    
-    apply_boundary_conditions!(u, params.uaux, time,
-                               params.mesh, params.metrics, params.basis,
-                               params.RHS, params.rhs_el, params.ubdy,
-                               params.ω, SD, neqs, params.inputs)
+    @info "AFTER DIVIDE" minimum(params.RHS[:,:]) maximum(params.RHS[:,:])
+
+#    apply_boundary_conditions!(u, params.uaux, time,
+#                               params.mesh, params.metrics, params.basis,
+#                               params.RHS, params.rhs_el, params.ubdy,
+#                               params.ω, SD, neqs, params.inputs)
     
     
 end
