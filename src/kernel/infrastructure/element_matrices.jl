@@ -358,10 +358,14 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
     #show(stdout, "text/plain", V)
 end
 
-
 function divide_by_mass_matrix!(RHS::AbstractArray, Minv, neqs, npoin, ::Exact)
-    #RHS = Minv*RHS
-    RHS = Minv\RHS
+    for ip=1:npoin
+        a = 0.0
+        for jp = 1:npoin
+            a + Minv[ip,jp]*RHS[jp]
+        end
+        RHS[ip] = a
+    end
 end
 
 function divide_by_mass_matrix!(RHS::AbstractArray, Minv, neqs, npoin, ::Inexact)
@@ -414,11 +418,11 @@ function mass_inverse!(Minv, M, QT)
     
     if (QT == Exact())
         #Minv = I/M
-        Minv = LinearAlgebra.inv(M)
+        Minv .= inv(M)
         
-        open("Minv.txt", "w") do io
-            writedlm(io, Minv)
-        end
+        #open("Minv.txt", "w") do io
+        #    writedlm(io, Minv)
+        #end
 
         
         #Minv = M
