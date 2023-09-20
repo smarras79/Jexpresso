@@ -3,16 +3,17 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 1,
+        :tend                 => 300,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 0.2,
-        :ndiagnostics_outputs => 2,
+        :ndiagnostics_outputs => 10,
         :case                 => "rtb",
         #:CL                   => NCL(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :lexact_integration  => true,
+        :llump               => true,
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------

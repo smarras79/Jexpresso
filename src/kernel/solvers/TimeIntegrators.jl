@@ -41,7 +41,8 @@ function time_loop!(QT,
     S            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
     RHS          = zeros(T, mesh.npoin, qp.neqs)
     RHS_visc     = zeros(T, mesh.npoin, qp.neqs)
-
+    vaux         = zeros(T, mesh.npoin) #generic auxiliary array for general use
+    
     #The following are currently used by B.C.
     gradu      = zeros(T, 2, 1, 1) #zeros(2,mesh.npoin,nvars)
     ubdy       = zeros(qp.neqs)
@@ -61,7 +62,7 @@ function time_loop!(QT,
     visc_coeff = (inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ])
     
     params = (T, F, G, S,
-              uaux, uaux_el,
+              uaux, uaux_el, vaux,
               ubdy, gradu, bdy_flux, #for B.C.
               rhs_el, rhs_diff_el,
               rhs_diffξ_el, rhs_diffη_el,

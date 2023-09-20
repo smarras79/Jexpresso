@@ -94,9 +94,6 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
-    @info Q N
-    @info size(Me)
-    error("as")
     for iel=1:mesh.nelem
         
         for l = 1:Q+1
@@ -194,26 +191,48 @@ end
 #
 # DSS
 #
-function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
 
-    for iel=1:nelem    
-        for j = 1:N+1
-            for i = 1:N+1
-                J = i + (j - 1)*(N + 1)
-                JP = conn[iel,i,j]
-                for n = 1:N+1
-                    for m = 1:N+1
-                        I = m + (n - 1)*(N + 1)
-                        IP = conn[iel,m,n]
-                        M[IP,JP] += Mel[I,J,iel] #if exact
+    if llump == true
+        
+        for iel=1:nelem
+            for j = 1:N+1
+                for i = 1:N+1
+                    J = i + (j - 1)*(N + 1)
+                    JP = conn[iel,i,j]
+                    for n = 1:N+1
+                        for m = 1:N+1
+                            I = m + (n - 1)*(N + 1)
+                            IP = conn[iel,m,n]
+                            M[IP] += Mel[I,J,iel] #if inexact
+                        end
+                    end
+                end
+            end    
+        end
+       
+    else
+        
+        for iel=1:nelem    
+            for j = 1:N+1
+                for i = 1:N+1
+                    J = i + (j - 1)*(N + 1)
+                    JP = conn[iel,i,j]
+                    for n = 1:N+1
+                        for m = 1:N+1
+                            I = m + (n - 1)*(N + 1)
+                            IP = conn[iel,m,n]
+                            M[IP,JP] += Mel[I,J,iel] #if exact
+                        end
                     end
                 end
             end
         end
-    end    
+    end
+    
 end
 
-function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
+function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
     
     for iel=1:nelem
         for j = 1:N+1
@@ -284,20 +303,25 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
     #show(stdout, "text/plain", V)
 end
 
-function divide_by_mass_matrix!(RHS::AbstractArray, Minv, neqs, npoin, ::Exact)
+#function divide_by_mass_matrix!(RHS::AbstractArray, RHSaux, Minv, neqs, npoin, ::Exact)
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin)
+    
+    RHSaux .= RHS
     for ip=1:npoin
-        a = 0.0
+        a = zero(eltype(RHS))
         for jp = 1:npoin
-            a += Minv[ip,jp]*RHS[jp]
+            a += Minv[ip,jp]*RHSaux[jp]
         end
         RHS[ip] = a
     end
+    
 end
 
-function divide_by_mass_matrix!(RHS::AbstractArray, Minv, neqs, npoin, ::Inexact)
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin)
+
     for ip=1:npoin
         RHS[ip] = Minv[ip]*RHS[ip]
-    end    
+    end
 end
 
 function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
@@ -309,14 +333,14 @@ function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFl
     Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
     build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
     
-    if QT == Exact()
+    if (QT == Exact() && inputs[:llump] == false)
         M    = zeros(TFloat, mesh.npoin, mesh.npoin)
         Minv = zeros(TFloat, mesh.npoin, mesh.npoin)
     else
         M    = zeros(TFloat, mesh.npoin)
         Minv = zeros(TFloat, mesh.npoin)
     end
-    DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat)    
+    DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
     mass_inverse!(Minv, M, QT)
     
     Le = zeros(TFloat, 1, 1)
@@ -340,11 +364,21 @@ function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFl
     return (; Me, De, Le, M, Minv, D, L)
 end
 
-function mass_inverse!(Minv, M, QT)
-    
-    if (QT == Exact())
+function mass_inverse!(Minv, M::AbstractMatrix, QT)
+    @info "MAT"
+    #if (QT == Exact())
         Minv .= inv(M)
-    else
+    #else
+    #    Minv .= 1.0./M
+    #end
+end
+
+
+function mass_inverse!(Minv, M::AbstractVector, QT)
+    @info "VECT"
+    #if (QT == Exact())
+    #    Minv .= inv(M)
+    #else
         Minv .= 1.0./M
-    end
+    #end
 end

@@ -123,7 +123,7 @@ function _build_rhs!(RHS, u, params, time)
     inviscid_rhs_el!(u, params, true, SD)
 
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
-    #@info minimum(params.RHS[:,:]) maximum(params.RHS[:,:])
+    
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -137,12 +137,11 @@ function _build_rhs!(RHS, u, params, time)
         
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-
+    
     for ieq=1:neqs
-        divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.Minv, neqs, npoin, QT)
+        divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin)
     end
-    #@info "AFTER DIVIDE" minimum(params.RHS[:,:]) maximum(params.RHS[:,:])
-
+    
     #For conservaton apply B.C. to RHS after DSS and not to rhs_el:
     apply_boundary_conditions!(u, params.uaux, time,
                                params.mesh, params.metrics, params.basis,

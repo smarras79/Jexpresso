@@ -77,6 +77,9 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
     end
+    if(!haskey(inputs, :llump))
+        inputs[:llump] = false #Default no-mass lumping (this is only useful if we use Exact integration)
+    end
 
     if(haskey(inputs, :interpolation_nodes))
         
