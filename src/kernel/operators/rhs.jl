@@ -345,8 +345,9 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
             dvdξ = 0.0; dvdη = 0.0
             dθdξ = 0.0; dθdη = 0.0
             dpdξ = 0.0; dpdη = 0.0
+           
             
-            ρkl = 0.0; ukl = 0.0; vkl = 0.0
+            ρkl = 0.0; ukl = 0.0; vkl = 0.0; Skl = 0.0
             for n=1:N
                 for m=1:N
                     ψmk = params.basis.ψ[m,k]
@@ -375,7 +376,8 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
 
                     ρkl += ψmk*ψnl*params.uprimitive[m,n,1]
                     ukl += ψmk*ψnl*params.uprimitive[m,n,2]
-                    vkl += ψmk*ψnl*params.uprimitive[m,n,3]                  
+                    vkl += ψmk*ψnl*params.uprimitive[m,n,3]
+                    Skl += ψmk*ψnl*params.S[m,n,3]
                 end
             end
 
@@ -410,7 +412,7 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
                     params.rhs_el[iel,i,j,1] -= ψikψjl*ωJac*(dρudx + dρvdy)
                     
                     params.rhs_el[iel,i,j,2] -= ψikψjl*ωJac*(ukl*dudx + vkl*dudy + dpdx/ρkl)
-                    params.rhs_el[iel,i,j,3] -= ψikψjl*ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl - params.S[i,j,3])
+                    params.rhs_el[iel,i,j,3] -= ψikψjl*ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl - Skl)
                     params.rhs_el[iel,i,j,4] -= ψikψjl*ωJac*(ukl*dθdx + vkl*dθdy)
                 end
             end
