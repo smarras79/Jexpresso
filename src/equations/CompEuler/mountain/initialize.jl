@@ -15,23 +15,23 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
          θ0 = 250.0 #K
          T0 = θ0
          p0 = 100000.0
-         
-         N    = 0.01
-         N2   = N*N
-         g2 = PhysConst.g*PhysConst.g
+
+         auxi = PhysConst.cp*T0
+         N    = PhysConst.g/sqrt(auxi)
+         g2   = PhysConst.g*PhysConst.g
          
          for iel_g = 1:mesh.nelem
              for j=1:mesh.ngl, i=1:mesh.ngl
                  
                  ip = mesh.connijk[iel_g,i,j]
                  y  = mesh.y[ip]
-                 
-                 auxi = PhysConst.Rair*θ0
-                 p    = p0*exp(-PhysConst.g*y/auxi)
-                 θ    = θ0*exp(N2*y/PhysConst.g)
-                 
-                 ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
-                 ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
+
+                 π  = exp(-PhysConst.g*y/auxi)
+                 θ  = T0/π
+                 p  = p0*π^PhysConst.cpoverR
+                 ρ = 1/(PhysConst.Rair*T0)*p;
+                 #ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
+                 ρref = ρ
                  
                  u = 0.0
                  v = 0.0

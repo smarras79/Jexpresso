@@ -365,20 +365,10 @@ function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFl
 end
 
 function mass_inverse!(Minv, M::AbstractMatrix, QT)
-    @info "MAT"
-    #if (QT == Exact())
-        Minv .= inv(M)
-    #else
-    #    Minv .= 1.0./M
-    #end
+    Minv .= inv(M)
 end
 
 
 function mass_inverse!(Minv, M::AbstractVector, QT)
-    @info "VECT"
-    #if (QT == Exact())
-    #    Minv .= inv(M)
-    #else
-        Minv .= 1.0./M
-    #end
+    Minv .= 1.0./M
 end

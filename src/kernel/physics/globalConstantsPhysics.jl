@@ -13,8 +13,10 @@ using Parameters
     pref::T = 100000.0 #Pa
     Rovercv = Rair/cv
     cpoverR = cp/Rair
-    C0::T   = (Rair^γ)/pref^Rovercv
-        
+    cpovercv = cp/cv
+    cvovercv = cv/cp
+    C0::T   = (Rair^γ)/pref^(γ-1.0) #Rovercv
+    
     #Gravity
     g::T = 9.80616 #m/s²
 

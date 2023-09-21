@@ -41,20 +41,33 @@ function apply_boundary_conditions!(u, uaux, t,
     
 end
 
-function _bc_dirichlet!(qbdy, x, y, t, tag)
+function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
 
     # WARNING!!!!
     # THIS SHOULD LEVERAGE the bdy node tag rather than checking coordinates
     # REWRITE and make sure that there is no allocation.
     #############
-   
-    if ( x <= -4990.0 || x >= 4990.0)
+    eps = 10.0
+    xmin = mesh.xmin + eps; xmax = mesh.xmax - eps
+    ymin = mesh.ymin + eps; ymax = mesh.ymax - eps
+    
+    #=if ( x <= -4990.0 || x >= 4990.0)
         qbdy[2] = 0.0
     end
     if (y <= 10.0 || y >= 9990.0)
         qbdy[3] = 0.0
     end
     if ((x >= 4990.0 || x <= -4990.0) && (y >= 9990.0 || y <= 10.0))
+        qbdy[2] = 0.0
+        qbdy[3] = 0.0
+    end=#
+    if ( x <= xmin || x >= xmax)
+        qbdy[2] = 0.0
+    end
+    if (y <= ymin || y >= ymax)
+        qbdy[3] = 0.0
+    end
+    if ((x >= xmax || x <= xmin) && (y >= ymax || y <= ymin))
         qbdy[2] = 0.0
         qbdy[3] = 0.0
     end
@@ -81,7 +94,7 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                 
                 fill!(qbdy, 4325789.0)
                 #ipp = 1 #ip               
-                _bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge])
+                _bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge], mesh)
 
                 ####dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, tag, inputs) ###AS IT IS NOW, THIS IS ALLOCATING SHIT TONS. REWRITE to make it with ZERO allocation. hint: It may be due to passing the function but possibly not.
                 
