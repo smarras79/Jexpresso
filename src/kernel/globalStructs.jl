@@ -43,10 +43,10 @@ end
 function define_q(SD, nelem, npoin, ngl, TFloat; neqs=1)
 
     q = St_SolutionVars{TFloat}(neqs=neqs,
-                                qn   = zeros(npoin, neqs), # qn
-                                qnm1 = zeros(npoin, neqs), # qⁿ
-                                qnm2 = zeros(npoin, neqs), # qⁿ
-                                qe   = zeros(npoin, neqs), # qexact
+                                qn   = zeros(npoin, neqs+1), # qn
+                                qnm1 = zeros(npoin, neqs+1), # qⁿ
+                                qnm2 = zeros(npoin, neqs+1), # qⁿ
+                                qe   = zeros(npoin, neqs+1), # qexact
                                 μ    = zeros(nelem)) # μ
     
     return q

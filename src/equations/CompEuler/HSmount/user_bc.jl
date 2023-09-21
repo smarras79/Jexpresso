@@ -26,6 +26,7 @@
 """
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, inputs::Dict, nx, ny)
 #    if (tag == "free_slip")
+      
       qnl = nx*q[2] + ny*q[3]
       qbdy[2] = q[2] - qnl*nx
       qbdy[3] = q[3] - qnl*ny

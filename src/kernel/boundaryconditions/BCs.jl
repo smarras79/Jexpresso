@@ -48,7 +48,7 @@ function apply_boundary_conditions!(SD::NSD_1D, rhs, qp, mesh,inputs, QT, metric
     #end
 end
 
-function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars;L=zeros(1,1))
+function apply_boundary_conditions!(SD::NSD_2D, rhs, RHS, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars;L=zeros(1,1))
     #If Neumann conditions are needed compute gradient
     #calc_grad = false
     #   for key in keys(inputs)
@@ -72,7 +72,7 @@ function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, mesh, inputs, QT, metri
     ##TODO remake build custom_bcs for new boundary data
     ##if (calc_grad)
     ##    gradq = build_gradient(SD, QT::Inexact, qp, ψ, dψ, ω, mesh, metrics,gradq,nvars)
-    build_custom_bcs!(t,mesh,qp,gradq,rhs,SD,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
+    build_custom_bcs!(t,mesh,qp,gradq,rhs,RHS,SD,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
     #end
     
 end
@@ -181,7 +181,7 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_1D,nvars,metrics,ω,dirichle
     end
 end
 
-function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
+function build_custom_bcs!(t,mesh,q,gradq,rhs,RHS,::NSD_2D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
 
     nedges = size(mesh.bdy_edge_in_elem, 1)
     q_size = size(q, 2)
@@ -228,7 +228,8 @@ function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_2D,nvars,metrics,ω,dirichle
                 for var =1:q_size
                     if !(AlmostEqual(qbdy[var],4325789.0))
                         #@info var,x,y,qbdy[var]
-                        rhs[ll,mm,iel,var] = 0.0
+                        #rhs[ll,mm,iel,var] = 0.0
+                        RHS[ip,var] = 0.0
                         q[ip,var]          = qbdy[var]
                     end
                 end

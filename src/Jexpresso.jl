@@ -48,6 +48,8 @@ include(joinpath("kernel", "operators", "rhs.jl"))
 
 include(joinpath("kernel", "operators", "rhs_diff.jl"))
 
+include(joinpath("kernel", "operators", "filter.jl"))
+
 include(joinpath("kernel", "solvers", "TimeIntegrators.jl"))
 
 include(joinpath("kernel", "solvers", "Axb.jl"))

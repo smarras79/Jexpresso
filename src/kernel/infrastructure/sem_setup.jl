@@ -4,7 +4,8 @@ include("../mesh/restructure_for_periodicity.jl")
 include("../mesh/warping.jl")
 
 function sem_setup(inputs::Dict)
-    
+    fx = zeros(Float64,1,1)
+    fy = zeros(Float64,1,1) 
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:equations]
@@ -19,10 +20,11 @@ function sem_setup(inputs::Dict)
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    mesh.x = mesh.x*10
-    mesh.y .= mesh.y*3#(mesh.y .+ 1) .*15000
+    mesh.x = mesh.x*100000.0
+    mesh.y .= (mesh.y .+ 1) .*15000.0
+    @info "xmax", maximum(mesh.x),maximum(mesh.y)
     mesh.ymax = maximum(mesh.y)
-    warp_mesh!(mesh,inputs)    
+    #warp_mesh!(mesh,inputs)    
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
@@ -78,7 +80,9 @@ function sem_setup(inputs::Dict)
       
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
             ω1 = ω
-            ω = ω1 
+            ω = ω1
+            fx = init_filter(mesh.ngl-1,ξ,0.01)
+            fy = init_filter(mesh.ngl-1,ξ,0.01) 
     #--------------------------------------------------------
     # Build metric terms
     #--------------------------------------------------------
@@ -87,7 +91,7 @@ function sem_setup(inputs::Dict)
     
            @info " periodicity_restructure!"
            @time periodicity_restructure!(mesh,inputs)
-        
+           #warp_mesh!(mesh,inputs)
             matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         end
     else 
@@ -102,11 +106,11 @@ function sem_setup(inputs::Dict)
         periodicity_restructure!(mesh,inputs)
      
         matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
-       
+         
     end
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
     
-    return (; QT, PT, mesh, metrics, basis, ω, matrix)
+    return (; QT, PT, mesh, metrics, basis, ω, matrix,fx,fy)
 end

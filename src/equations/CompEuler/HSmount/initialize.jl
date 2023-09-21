@@ -13,10 +13,11 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=4)
     
     θref = 250.0 #K
-    T0   = θref
+    θ0 = 250.0
+    T0   = θ0
     p0   = 100000.0
     
-    N    = PhysConst.g/sqrt(PhysConst.cp*T0)
+    N    = 0.01#PhysConst.g/sqrt(PhysConst.cp*T0)
     N2   = N*N
     
     for iel_g = 1:mesh.nelem
@@ -24,15 +25,22 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
             
             ip = mesh.connijk[i,j,iel_g]
             y = mesh.y[ip]
-            θ    = θref*exp(N2*y/PhysConst.g)         
-            if (y > 0.1) 
+            #=θ    = θref*exp(N2*y/PhysConst.g)         
+            #if (y > 0.1) 
               p    = p0*(1.0 + PhysConst.g2*(exp(-y*N2/PhysConst.g) - 1.0)/(PhysConst.cp*θref*N2))^PhysConst.cpoverR
-            else
-              p = p0
-            end
+            #else
+             # p = p0
+            #end
             ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p) #kg/m³
             ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
-
+            =#
+            auxi = PhysConst.Rair*θ0
+                 p    = p0*exp(-PhysConst.g*y/auxi)
+                 θ    = θ0*exp(N2*y/PhysConst.g)
+                 
+                 ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
+                 ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p)
+            
             u = 20.0
             v = 0.0
             
@@ -40,12 +48,14 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
             q.qn[ip,2] = ρ*u
             q.qn[ip,3] = ρ*v
             q.qn[ip,4] = ρ*θ
+            q.qn[ip,end] = p
             #@info θ, ρ, p, y, mesh.x[ip]
             #Store initial background state for plotting and analysis of pertuebations
             q.qe[ip,1] = ρref
             q.qe[ip,2] = ρref*u
             q.qe[ip,3] = ρref*v
             q.qe[ip,4] = ρref*0
+            q.qe[ip,end] = p
         end
     end
 
@@ -64,7 +74,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
             ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p) #kg/m³
             ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
             
-            u = 20.0
+            u = 0.0
             v = 0.0
 
             q.qn[ip,1] = ρ

@@ -42,7 +42,7 @@ function periodicity_restructure!(mesh,inputs)
         xx .= mesh.x
         yy .= mesh.y
         poin_bdy .=mesh.poin_in_bdy_edge
-        interval = [2,3,4]
+        #=interval = [2,3,4]
         for iedge_bdy =1:size(mesh.bdy_edge_type,1)
             if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" || mesh.bdy_edge_type[iedge_bdy] == "periodic2")
                 iel = mesh.bdy_edge_in_elem[iedge_bdy]
@@ -95,7 +95,7 @@ function periodicity_restructure!(mesh,inputs)
                     end   
                 end
             end
-        end 
+        end=# 
         # New periodicity interface
         for iedge_bdy =1:size(mesh.bdy_edge_type,1)
             if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" || mesh.bdy_edge_type[iedge_bdy] == "periodic2")
@@ -124,6 +124,7 @@ function periodicity_restructure!(mesh,inputs)
                     x3 = xx[ip1]
                     y3 = yy[ip1]
                     vec_bdy = [x1-x3,y1-y3]
+                    #@info vec_bdy, per1, per2, determine_colinearity(vec_bdy,per2), determine_colinearity(vec_bdy,per1),x1, x3, y1, y3
                     if (determine_colinearity(vec_bdy,per1))
                         per = per2
                     elseif (determine_colinearity(vec_bdy,per2))
