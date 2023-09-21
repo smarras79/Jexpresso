@@ -1,16 +1,17 @@
 
-function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, npoin; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -100000, xmax =100000)
+function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, ρref, npoin; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -100000, xmax =100000)
    
     PhysConst = PhysicalConst{Float64}()
     
     #
     # S(q(x)) = -ρg
     #
-    ρ  = q[1]
+    ρ  = q[1] -ρref
     
     S[1] = 0.0
     S[2] = 0.0
     S[3] = -ρ*PhysConst.g
+    #S[3] = -PhysConst.g
     S[4] = 0.0
 
     #### SPONGE
@@ -22,35 +23,59 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, npoin; neqs=1,
     # distance from the boundary. xs in Restelli's thesis
     dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
     dbl = ymax - y
-   
+    zs = ymax - 18000.0
     dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
     dbx = min(xmax - x,x-xmin) 
-
-    if (abs(dbl) <= 5000.0)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betay_coe =  1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+    xr = 60000.0
+    xl = -60000.0
+    if (y > zs)#nsponge_points * dsy) #&& dbl >= 0.0)
+        betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betay_coe = 0.0
     end
-    ctop= 0.0075*betay_coe
+    ctop= 0.75*betay_coe
    
-    #=if (abs(dbx) <= 20000) #&& dbl >= 0.0)
-        betax_coe =  1.0 - tanh(dbx/20000.0)#(nsponge_points * dsy))
+    if (x > xr)#nsponge_points * dsy) #&& dbl >= 0.0)
+        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
-        betax_coe = 0.0
+        betaxr_coe = 0.0
     end
-    cside= 0.0075*beta_coe=#
- 
-    θref=250.0
-    pref = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θref))^(PhysConst.cpoverR)
-    ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=pref) #kg/m³
-    
+   
+    if (x < xl)#nsponge_points * dsy) #&& dbl >= 0.0)
+        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+    else
+        betaxl_coe = 0.0
+    end
+
+    cxr = 0.05*betaxr_coe
+    cxl = 0.05*betaxl_coe
+
+    cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
+
+    θ0 = 250.0 #K
+    T0   = θ0
+    p0   = 100000.0
+
+    N    = 0.01#PhysConst.g/sqrt(PhysConst.cp*T0)
+    N2   = N*N
+    #θ    = θref*exp(N2*y/PhysConst.g)
+    auxi = PhysConst.Rair*θ0
+                 p    = p0*exp(-PhysConst.g*y/auxi)
+                 θ    = θ0*exp(N2*y/PhysConst.g)
+    #if (y > 0.1)
+     # p    = p0*(1.0 + PhysConst.g2*(exp(-y*N2/PhysConst.g) - 1.0)/(PhysConst.cp*θref*N2))^PhysConst.cpoverR
+    #else
+    #  p = p0
+    #end
+    #ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
+
     #@info nsponge_points * dsy
      
-    #@info "β x: " beta_coe, y, ymin, ymax, dsy, dbl
-    S[1] -= (ctop)*(q[1]-ρref)
-    S[2] -= (ctop)*(q[2]-ρref*20.0)
-    S[3] -= (ctop)*q[3]
-    S[4] -= (ctop)*(q[4]-ρref*θref)
+    #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
+    S[1] -= (cs)*(q[1]-ρref)
+    S[2] -= (cs)*(q[2]-ρref*20.0)
+    S[3] -= (cs)*q[3]
+    S[4] -= (cs)*(q[4]-ρref*θ)
     
     
     return  S

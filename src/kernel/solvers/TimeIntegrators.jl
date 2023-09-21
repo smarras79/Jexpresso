@@ -12,7 +12,7 @@ function time_loop!(QT,
                     Δt,
                     inputs::Dict,
                     OUTPUT_DIR::String,
-                    T)
+                    T;fx=zeros(Float64,1,1), fy = zeros(Float64,1,1))
     
     #
     # ODE: solvers come from DifferentialEquations.j;
@@ -37,7 +37,7 @@ function time_loop!(QT,
     deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])
     
-    params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt, deps, qp.qnm1, qp.qnm2, qp.μ)
+    params = (; T, SD=mesh.SD, QT, PT, neqs=qp.neqs, basis, ω, mesh, metrics, inputs, M, De, Le, Δt, deps, qp.qe, qp.qnm1, qp.qnm2, qp.μ, fx, fy)
     
     prob = ODEProblem(rhs!,
                       u,

@@ -3,10 +3,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 20.0, #2π,
-        :Δt                   => 0.1,#8.75e-4,
-        :ode_solver           => "Tsit5",
-        :ndiagnostics_outputs => 10,
+        :tend                 => 750.0, #2π,
+        :Δt                   => 0.5,#8.75e-4,
+        :ode_solver           => "SSPRK33",
+        :ndiagnostics_outputs => 30,
         :case                 => "rtb",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -20,8 +20,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => false, #false by default
         #:visc_model           => "dsgs", #"none", "dsgs"
-        :νx                   => 400.0, #kinematic viscosity constant
-        :νy                   => 400.0, #kinematic viscosity constant
+        :νx                   => 0.000015, #kinematic viscosity constant
+        :νy                   => 0.000015, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -29,7 +29,8 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/agnesi240kmX30km_coarse.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_laguerre_top.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/agnesi-120kmx30km-hm5000.msh",
-        :gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_RTB.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_RTB.msh",
+        :gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_50x25_periodic.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/agnesi240kmX30km_coarse_laguerreTopLateral.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
