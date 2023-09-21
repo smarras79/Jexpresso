@@ -457,3 +457,97 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
         end
     end  
 end
+
+function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitive, visc_coeffieq, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Exact, SD::NSD_2D)
+    
+    N = params.mesh.ngl
+    Q = N + 1
+
+    for l=1:Q
+        for k=1:Q
+            ωJac = params.ω[k]*params.ω[l]*params.metrics.Je[iel,k,l]
+            
+            dρudξ = 0.0; dρudη = 0.0
+            dρvdξ = 0.0; dρvdη = 0.0
+            dudξ = 0.0; dudη = 0.0
+            dvdξ = 0.0; dvdη = 0.0
+            dθdξ = 0.0; dθdη = 0.0
+            dpdξ = 0.0; dpdη = 0.0
+            
+            ρkl = 0.0; ukl = 0.0; vkl = 0.0; Skl = 0.0
+            for n=1:N
+                for m=1:N
+                    ψmk = params.basis.ψ[m,k]
+                    ψnl = params.basis.ψ[n,l]
+                    
+                    dψmk_ψnl = params.basis.dψ[m,k]* params.basis.ψ[n,l]
+                    ψmk_dψnl = params.basis.ψ[m,k]*params.basis.dψ[n,l]
+                    
+                    dρudξ += dψmk_ψnl*params.F[m,n,1]
+                    dρudη +=  ψmk_dψnl*params.F[m,n,1]
+                    
+                    dρvdξ += dψmk_ψnl*params.G[m,n,1]
+                    dρvdη +=  ψmk_dψnl*params.G[m,n,1]
+                    
+                    dudξ += dψmk_ψnl*params.uprimitive[m,n,2]
+                    dudη +=  ψmk_dψnl*params.uprimitive[m,n,2]
+
+                    dvdξ += dψmk_ψnl*params.uprimitive[m,n,3]
+                    dvdη +=  ψmk_dψnl*params.uprimitive[m,n,3]
+                    
+                    dθdξ += dψmk_ψnl*params.uprimitive[m,n,4]
+                    dθdη +=  ψmk_dψnl*params.uprimitive[m,n,4]
+
+                    dpdξ += dψmk_ψnl*params.uprimitive[m,n,params.neqs+1]
+                    dpdη +=  ψmk_dψnl*params.uprimitive[m,n,params.neqs+1]
+
+                    ρkl += ψmk*ψnl*params.uprimitive[m,n,1]
+                    ukl += ψmk*ψnl*params.uprimitive[m,n,2]
+                    vkl += ψmk*ψnl*params.uprimitive[m,n,3]
+                    Skl += ψmk*ψnl*params.S[m,n,3]
+                end
+            end
+
+            dξdx_kl = params.metrics.dξdx[iel,k,l]
+            dξdy_kl = params.metrics.dξdy[iel,k,l]
+            dηdx_kl = params.metrics.dηdx[iel,k,l]
+            dηdy_kl = params.metrics.dηdy[iel,k,l]
+            
+            dρudx = dρudξ*dξdx_kl + dρudη*dηdx_kl
+            dρudx = dρudx*visc_coeffieq
+            
+            dρudy = dρudξ*dξdy_kl + dρudη*dηdy_kl
+            
+            
+            dρvdx = dρvdξ*dξdx_kl + dρvdη*dηdx_kl            
+            dρvdy = dρvdξ*dξdy_kl + dρvdη*dηdy_kl
+                                    
+            dudx = dudξ*dξdx_kl + dudη*dηdx_kl            
+            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+            
+            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl            
+            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+            
+            dθdx = dθdξ*dξdx_kl + dθdη*dηdx_kl            
+            dθdy = dθdξ*dξdy_kl + dθdη*dηdy_kl
+
+            dpdx = dpdξ*dξdx_kl + dpdη*dηdx_kl            
+            dpdy = dpdξ*dξdy_kl + dpdη*dηdy_kl
+
+
+            for j=1:N
+                for i=1:N
+
+                    ψikψjl = params.basis.ψ[i,k]*params.basis.ψ[j,l]
+                    
+                    params.rhs_el[iel,i,j,1] -= ψikψjl*ωJac*(dρudx + dρvdy)
+                    
+                    params.rhs_el[iel,i,j,2] -= ψikψjl*ωJac*(ukl*dudx + vkl*dudy + dpdx/ρkl)
+                    params.rhs_el[iel,i,j,3] -= ψikψjl*ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl - Skl)
+                    params.rhs_el[iel,i,j,4] -= ψikψjl*ωJac*(ukl*dθdx + vkl*dθdy)
+                end
+            end
+            
+        end
+    end
+end

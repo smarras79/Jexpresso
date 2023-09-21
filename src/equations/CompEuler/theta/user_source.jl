@@ -19,7 +19,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qref::Float64,
     PhysConst = PhysicalConst{Float64}()
         
     #
-    # S(q(x)) = -ρg
+    # S(q(x)) = -g
     #
     
     S[1] = 0.0

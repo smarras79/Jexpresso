@@ -10,7 +10,7 @@ function driver(DT::ContGal,       #Space discretization type
     @time qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
     solution = time_loop!(sem.QT, sem.PT, inputs[:CL], sem.mesh, sem.metrics, sem.basis, sem.ω, qp,
-                          sem.matrix.M,
+                          sem.matrix.M, sem.matrix.Minv,
                           inputs[:Δt],
                           inputs,
                           OUTPUT_DIR,

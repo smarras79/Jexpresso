@@ -414,6 +414,13 @@ add_high_order_nodes_faces!(mesh, lgl, mesh.SD)
 #         
 add_high_order_nodes_volumes!(mesh, lgl, mesh.SD)
 
+    mesh.xmax = maximum(mesh.x)
+    mesh.xmin = minimum(mesh.x)
+    mesh.ymax = maximum(mesh.y)
+    mesh.ymin = minimum(mesh.y)
+    mesh.zmax = maximum(mesh.z)
+    mesh.zmin = minimum(mesh.z)
+    
 for ip = mesh.npoin_linear+1:mesh.npoin
     mesh.x[ip] = mesh.x_ho[ip]
     mesh.y[ip] = mesh.y_ho[ip]
