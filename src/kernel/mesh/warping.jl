@@ -1,6 +1,6 @@
 function warp_mesh!(mesh,inputs)
   
-  am = 10000.0
+  am = 1000.0
   hm = 1.0
   xc = 0.0
   ztop = 30000.0

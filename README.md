@@ -1,12 +1,11 @@
 # JEXPRESSO
-A research and educational software for the numerical solution of 1D, 2D, and 3D PDEs using spectral and spectral element methods on CPUs and GPUs. DISCLAIMER: this is WIP.
+A research software for the numerical solution of conservation laws using spectral element methods. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
 
 If you are interested in contributing, please get in touch.
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia
-version 1.7.2 or higher (tested up to 1.8.5)
+To install and run the code assume Julia 1.8.5
 
 ## Setup with CPUs
 
@@ -29,16 +28,14 @@ julia> include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/src/problems/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
-For example, if you wanted to run `AdvDiff` with the setup defined inside the case directory `case1`, then you would do the following:
+For example, if you wanted to run `CompEuler` with the setup defined inside the case directory `theta`, then you would do the following:
 ```bash
-julia> push!(empty!(ARGS), "AdvDiff", "case1");
+julia> push!(empty!(ARGS), "CompEuler", "theta");
 julia> include("./src/Jexpresso.jl")
 ```
 
 For ready to run tests, there are the currently available equations names:
 
-* AdvDiff
-* Elliptic
 * CompEuler (option with total energy and theta formulation)
 
 The code is designed to create any system of conservsation laws. See CompEuler/case1 to see an example of each file.

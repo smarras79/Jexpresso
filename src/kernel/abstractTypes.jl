@@ -44,6 +44,14 @@ struct COVAR <: AbstractMetricForm end
 struct CNVAR <: AbstractMetricForm end
 
 
+#
+# Coservation vs non-conservation formulation
+#
+abstract type AbstractLaw end
+struct CL <: AbstractLaw end
+struct NCL <: AbstractLaw end
+
+
 abstract type AbstractOutFormat end
 struct PNG <: AbstractOutFormat end
 struct ASCII <: AbstractOutFormat end

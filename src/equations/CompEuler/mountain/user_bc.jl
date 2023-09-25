@@ -24,44 +24,28 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat,
-                            tag::String, qbdy::AbstractArray, inputs::Dict)
+function user_bc_dirichlet!(qbdy, x, y, t, tag::String, inputs)    
     
-    PhysConst = PhysicalConst{Float64}()
-    γ = 1.4
-
-    case = inputs[:case]
-    if (case == "sod")
-        ρL, uL, pL = 1.000, 0.0, 1.0
-        ρR, uR, pR = 0.125, 0.0, 0.1
-        xshock_initial = 0.5
-        if (x < xshock_initial)
-            ρ = ρL
-            u = uL
-            p = pL
-        else
-            ρ = ρR
-            u = uR
-            p = pR
-        end
-    elseif (case == "sound")
-        ρ = 1.0
-        u = 0.0
-        p = 1.0
-    else
-        ρ = 1.0
-        u = 0.0
-        p = 1.0
+    #fill!(flags, zero(Float64))
+    if ( x <= -4990.0 || x >= 4990.0)
+        qbdy[2] = 0.0
     end
-    E = p/(γ - 1.0) + 0.5*ρ*u*u
-    qbdy[1] = ρ
-    qbdy[2] = ρ*u
-    qbdy[3] = E
+    if (y <= 10.0 || y >= 9990.0)
+        qbdy[3] = 0.0
+    end
+    if ((x >= 4990.0 || x <= -4990.0) && (y >= 9990.0 || y <= 10.0))
+        qbdy[2] = 0.0
+        qbdy[3] = 0.0
+    end
     
-    return qbdy
+end
+
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
+    fill!(flux, zero(Float64))
+    return flux
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
-    flux = zeros(size(q,2),1)
+    fill!(flux, zero(Float64))
     return flux
 end

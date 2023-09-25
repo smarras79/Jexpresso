@@ -14,14 +14,14 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
 
         xc = (maximum(mesh.x) + minimum(mesh.x))/2
         yc = 2500.0 #m
-        r0   = 2000.0 #m
+        r0 = 2000.0 #m
         
         θref = 300.0 #K
         θc   =   2.0 #K
         for iel_g = 1:mesh.nelem
             for j=1:mesh.ngl, i=1:mesh.ngl
                 
-                ip = mesh.connijk[i,j,iel_g]
+                ip = mesh.connijk[iel_g,i,j]
                 x, y = mesh.x[ip], mesh.y[ip]
                 r = sqrt( (x - xc)^2 + (y - yc)^2 )
                 
@@ -53,6 +53,15 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         
     else
         error(" ERROR: CompEuler: initialize.jl:\n assign value to inputs[:case]")
+    end
+
+    if inputs[:equationSet] == NCL()
+        q.qn[:,2] .= q.qn[:,2]./q.qn[:,1]
+        q.qn[:,3] .= q.qn[:,3]./q.qn[:,1]
+        q.qn[:,4] .= q.qn[:,4]./q.qn[:,1]
+
+        #Store initial background state for plotting and analysis of pertuebations
+        q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
     end
     
 

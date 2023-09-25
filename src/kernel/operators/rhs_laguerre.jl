@@ -1,164 +1,488 @@
-include("rhs_diff_laguerre.jl")
-function _build_rhs(SD::NSD_2D, QT::Inexact, PT, qp::Array, neqs, basis1, basis2, ω1, ω2,
-                    mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+#---------------------------------------------------------------------------
+# Optimized (more coud possibly be done)
+#---------------------------------------------------------------------------
+function build_rhs_laguerre!(RHS, u, params, time)
+    #
+    # build_rhs()! is called by TimeIntegrators.jl -> time_loop!() via ODEProblem(rhs!, u, tspan, params)
+    #
+    _build_rhs_laguerre!(RHS, u, params, time)
     
-    F      = zeros(mesh.ngl,mesh.ngr, neqs)
-    G      = zeros(mesh.ngl,mesh.ngr, neqs)
-    S      = zeros(mesh.ngl,mesh.ngr, neqs)
-    rhs_el = zeros(mesh.ngl,mesh.ngr, mesh.nelem_semi_inf, neqs)
-    qq     = zeros(mesh.npoin,neqs)   
-    
-    #ωJe = zeros(mesh.ngl,mesh.ngl)
+end
+
+function RHStoDU!(du, RHS, neqs, npoin)
     for i=1:neqs
-        idx = (i-1)*mesh.npoin
-        qq[:,i] .= 0.0 .+ view(qp, idx+1:i*mesh.npoin)
+        idx = (i-1)*npoin
+        du[idx+1:i*npoin] = @view RHS[:,i]
+    end  
+end
+
+function u2uaux!(uaux, u, neqs, npoin)
+
+    for i=1:neqs
+        idx = (i-1)*npoin
+        uaux[:,i] = view(u, idx+1:i*npoin)
     end
-    ωJe = zeros(mesh.ngl,mesh.ngr)
     
-    
-    #F      = zeros(T, mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
-    #G      = zeros(T, mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
-    #rhs_el = zeros(T, mesh.ngl, mesh.ngr, mesh.nelem_semi_inf, neqs)
+end
 
-   
-    for iel=1:mesh.nelem_semi_inf
 
-        for j=1:mesh.ngr, i=1:mesh.ngl
-            ip = mesh.connijk_lag[i,j,iel]
+function uaux2u!(u, uaux, neqs, npoin)
 
-            user_flux!(@view(F[i,j,1:neqs]), @view(G[i,j,1:neqs]), SD, @view(qq[ip,1:neqs]), mesh, ip; neqs=neqs)
-            #if (inputs[:lsource] == true)
-             #   user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs, y=mesh.y[ip],ymax=mesh.ymax)
-            #end
-            #if (inputs[:lsource] == true)
-                #user_source!(@view(S[i,j,1:neqs]), @view(qq[ip,1:neqs]), mesh.npoin; neqs=neqs)
-            #end
+    for i=1:neqs
+        idx = (i-1)*npoin
+        for j=1:npoin
+            u[idx+j] = uaux[j,i]
         end
-        ωJe[:,:] .= @view(metrics2.ωJe[:,:,iel])
+    end
+    
+end
+
+function resetRHSToZero_inviscid_laguerre!(params)
+    fill!(params.rhs_el, zero(params.T))   
+    fill!(params.RHS_lag,    zero(params.T))
+end
+
+function resetRHSToZero_viscous!(params)
+    fill!(params.rhs_diff_el,  zero(params.T))
+    fill!(params.rhs_diffξ_el, zero(params.T))
+    fill!(params.rhs_diffη_el, zero(params.T))
+    fill!(params.RHS_visc,     zero(params.T))
+end
+
+
+
+function uToPrimitives_laguerre!(uprimitive, u, mesh, δtotal_energy, iel, ::CL)
+
+    PhysConst = PhysicalConst{Float64}()
+    
+    for j=1:mesh.ngr, i=1:mesh.ngl
         
-        for ieq = 1:neqs
-           
-            for j=1:mesh.ngr, i=1:mesh.ngl
+        m1 = mesh.connijk_lag[iel,i,j]
+        m2 = mesh.npoin + m1
+        m3 = 2*mesh.npoin + m1
+        m4 = 3*mesh.npoin + m1
+        
+        uprimitive[i,j,1] = u[m1]
+        uprimitive[i,j,2] = u[m2]/u[m1]
+        uprimitive[i,j,3] = u[m3]/u[m1]
+        uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+
+        #Pressure:
+        uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
+        
+    end
+    
+end
+
+function uToPrimitives_laguerre!(uprimitive, u, mesh, δtotal_energy, iel, ::NCL)
+    
+    PhysConst = PhysicalConst{Float64}()
+    
+    for j=1:mesh.ngl, i=1:mesh.ngl
+        
+        m1 = mesh.connijk_lag[iel,i,j]
+        m2 = mesh.npoin + m1
+        m3 = 2*mesh.npoin + m1
+        m4 = 3*mesh.npoin + m1
+        
+        uprimitive[i,j,1] = u[m1]
+        uprimitive[i,j,2] = u[m2]
+        uprimitive[i,j,3] = u[m3]
+        uprimitive[i,j,4] = u[m4]
+
+        #Pressure:
+        uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
+        
+    end
+end
+
+function _build_rhs_laguerre!(RHS, u, params, time)
+
+    T       = Float64
+    SD      = params.SD
+    QT      = params.QT
+    CL      = params.CL
+    neqs    = params.neqs
+    ngl     = params.mesh.ngl
+    nelem   = params.mesh.nelem
+    npoin   = params.mesh.npoin
+    
+    #-----------------------------------------------------------------------------------
+    # Inviscid rhs:
+    #-----------------------------------------------------------------------------------    
+    resetRHSToZero_inviscid_laguerre!(params) 
+    
+    #filter!(u, params, SD)
+     
+    inviscid_rhs_el_laguerre!(u, params, true, SD)
+
+    DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
+    
+    #-----------------------------------------------------------------------------------
+    # Viscous rhs:
+    #-----------------------------------------------------------------------------------
+    if (params.inputs[:lvisc] == true)
+
+        resetRHSToZero_viscous!(params)
+        
+        viscous_rhs_el_laguerre!(u, params, SD)
+        
+        DSS_rhs!(@view(params.RHS_visc[:,:]), @view(params.rhs_diff_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
+        
+        params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
+    end
+    
+    for ieq=1:neqs
+        divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin)
+    end
+    
+    #For conservaton apply B.C. to RHS after DSS and not to rhs_el:
+    apply_boundary_conditions!(u, params.uaux, time,
+                               params.mesh, params.metrics, params.basis,
+                               params.RHS, params.rhs_el, params.ubdy,
+                               params.ω, SD, neqs, params.inputs)
+    
+    
+end
+
+
+function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
+    
+    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    
+    for iel=1:params.mesh.nelem_semi_inf
+        
+        uToPrimitives_laguerre!(params.uprimitive, u, params.mesh, params.inputs[:δtotal_energy], iel, params.CL)
+        
+        for j=1:params.mesh.ngr, i=1:params.mesh.ngl
+            ip = params.mesh.connijk[iel,i,j]
+            
+            user_flux!(@view(params.F_lag[i,j,:]), @view(params.G_lag[i,j,:]), SD,
+                       @view(params.uaux[ip,:]), 
+                       params.qe[ip,end],         #pref
+                       params.mesh, params.CL; neqs=params.neqs)
+            
+            if lsource
+                user_source!(@view(params.S_lag[i,j,:]),
+                             @view(params.uaux[ip,:]),
+                             params.qe[ip,1],          #ρref 
+                             params.mesh.npoin, params.CL; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip])
+            end
+        end
+        
+        _expansion_inviscid_laguerre!(params, iel, params.CL, params.QT, SD)
+        
+    end
+end
+
+function viscous_rhs_el!(u, params, SD::NSD_2D)
+    
+    for iel=1:params.mesh.nelem
+        
+        uToPrimitives_laguerre!(params.uprimitive, u, params.mesh, params.inputs[:δtotal_energy], iel, params.CL)
+
+        for ieq=2:params.neqs
+            _expansion_visc!(@view(params.rhs_diffξ_el[iel,:,:,ieq]), @view(params.rhs_diffη_el[iel,:,:,ieq]), @view(params.uprimitive[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.mesh, params.basis, params.metrics, params.inputs, iel, ieq, params.QT, SD)
+        end
+        
+    end
+    params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el)
+end
+
+
+function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2D)
+    ω1 = @view(ω[1])
+    ω2 = @view(ω[2])
+    basis1 = @view(params.basis[1])
+    basis2 = @view(params.basis[2])
+    for ieq=1:params.neqs
+        for j=1:params.mesh.ngr
+            for i=1:params.mesh.ngl
+                ωJac = ω1[i]*ω2[j]*params.metrics[2].Je[iel,i,j]
                 
                 dFdξ = 0.0
                 dFdη = 0.0
                 dGdξ = 0.0
                 dGdη = 0.0
-                for k = 1:mesh.ngl
-                    dFdξ += basis1.dψ[k,i]*F[k,j,ieq]
-                    dFdη += basis2.dψ[k,j]*F[i,k,ieq]
+                @turbo for k = 1:params.mesh.ngl
+                    dFdξ += basis1.dψ[k,i]*params.F_lag[k,j,ieq]
                     
-                    dGdξ += basis1.dψ[k,i]*G[k,j,ieq]
-                    dGdη += basis2.dψ[k,j]*G[i,k,ieq]
+                    dGdξ += basis1.dψ[k,i]*params.G_lag[k,j,ieq]
                 end
+                @turbo for k = 1:params.mesh.ngr
+                    dFdη += basis2.dψ[k,j]*params.F_lag[i,k,ieq]
 
-                dFdx = dFdξ*metrics2.dξdx[i,j,iel] + dFdη*metrics2.dηdx[i,j,iel]
-                dGdy = dGdξ*metrics2.dξdy[i,j,iel] + dGdη*metrics2.dηdy[i,j,iel]
-                rhs_el[i,j,iel,ieq] -= ωJe[i,j]*(dFdx + dGdy)  - ωJe[i,j]*S[i,j,ieq] #gravity
+                    dGdη += basis2.dψ[k,j]*params.G_lag[i,k,ieq]
+                end
+                dξdx_ij = params.metrics[2].dξdx[iel,i,j]
+                dξdy_ij = params.metrics[2].dξdy[iel,i,j]
+                dηdx_ij = params.metrics[2].dηdx[iel,i,j]
+                dηdy_ij = params.metrics[2].dηdy[iel,i,j]
                 
+                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
+                dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij
+
+                dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
+                dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+                
+                auxi = ωJac*((dFdx + dGdy) - params.S_lag[i,j,ieq])
+                params.rhs_el[iel,i,j,ieq] -= auxi
             end
         end
     end
-    
-    
-    #apply_boundary_conditions!(SD, rhs_el, qq, mesh, inputs, QT, metrics1, basis1.ψ, basis1.dψ, ω1, Δt*(floor(time/Δt)), neqs)
-    RHS = DSS_rhs_laguerre(SD, rhs_el, mesh, neqs, T)
+end
 
-    for i=1:neqs
-        idx = (i-1)*mesh.npoin
-        qp[idx+1:i*mesh.npoin] .= qq[:,i]
-    end
+
+function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Exact, SD::NSD_2D)
     
-    if (inputs[:lvisc] == true)
-        
-        if (lowercase(inputs[:visc_model]) === "dsgs")
+    basis1 = @view(params.basis[1])
+    basis2 = @view(params.basis[2])
+    ω1 = @view(ω[1])
+    ω2 = @view(ω[2])
+    N = params.mesh.ngl
+    N_lag = params.mesh.ngr
+    Q = N + 1
+    Q_lag = N_lag + 1
+    for ieq=1:params.neqs
+        for l=1:Q_lag
+            for k=1:Q
+                ωJac = ω1[k]*ω2[l]*params.metrics[2].Je[iel,k,l]
+                
+                dFdξ = 0.0
+                dFdη = 0.0
+                dGdξ = 0.0
+                dGdη = 0.0
+                for n = 1:N_lag
+                    for m = 1:N
+                        dFdξ += basis1.dψ[m,k] * basis2.ψ[n,l]*params.F_lag[m,n,ieq]
+                        dFdη += basis1.ψ[m,k] * basis2.dψ[n,l]*params.F_lag[m,n,ieq]
+                        
+                        dGdξ += basis1.dψ[m,k] * basis2.ψ[n,l]*params.G_lag[m,n,ieq]
+                        dGdη += basis1.ψ[m,k] * basis2.dψ[n,l]*params.G_lag[m,n,ieq]
+                    end
+                end
+                
+                dξdx_kl = params.metrics[2].dξdx[iel,k,l]
+                dξdy_kl = params.metrics[2].dξdy[iel,k,l]
+                dηdx_kl = params.metrics[2].dηdx[iel,k,l]
+                dηdy_kl = params.metrics[2].dηdy[iel,k,l]
+                for j = 1:N_lag
+                    for i = 1:N
+                        dFdx = dFdξ*dξdx_kl + dFdη*dηdx_kl
+                        dGdx = dGdξ*dξdx_kl + dGdη*dηdx_kl
+
+                        dFdy = dFdξ*dξdy_kl + dFdη*dηdy_kl
+                        dGdy = dGdξ*dξdy_kl + dGdη*dηdy_kl
+                        
+                        auxi = ωJac*basis1.ψ[i,k]*basis2.ψ[j,l]*((dFdx + dGdy) - params.S_lag[i,j,ieq])
+                        params.rhs_el[iel,i,j,ieq] -= auxi
+                    end
+                end
+            end
+        end
+    end
+end
+
+function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D)
+  
+    basis1 = @view(params.basis[1])
+    basis2 = @view(params.basis[2])
+    ω1 = @view(ω[1])
+    ω2 = @view(ω[2]) 
+    for ieq=1:params.neqs
+        for j=1:params.mesh.ngr
+            for i=1:params.mesh.ngl
+                ωJac = ω1[i]*ω2[j]*params.metrics[2].Je[iel,i,j]
+                
+                dFdξ = 0.0; dFdη = 0.0
+                dGdξ = 0.0; dGdη = 0.0
+                dpdξ = 0.0; dpdη = 0.0               
+                for k = 1:params.mesh.ngl
+                    dFdξ += basis1.dψ[k,i]*params.F_lag[k,j,ieq]
+                    
+                    dGdξ += basis1.dψ[k,i]*params.G_lag[k,j,ieq]
+                                        
+                    dpdξ += basis1.dψ[k,i]*params.uprimitive[k,j,params.neqs+1]
+                end
+                for k = 1:params.mesh.ngr
+                    dFdη += basis2.dψ[k,j]*params.F_lag[i,k,ieq]
+
+                    dGdη += basis2.dψ[k,j]*params.G_lag[i,k,ieq]
+
+                    dpdη += basis2.dψ[k,j]*params.uprimitive[i,k,params.neqs+1]
+                end
+                dξdx_ij = params.metrics[2].dξdx[iel,i,j]
+                dξdy_ij = params.metrics[2].dξdy[iel,i,j]
+                dηdx_ij = params.metrics[2].dηdx[iel,i,j]
+                dηdy_ij = params.metrics[2].dηdy[iel,i,j]
+                
+                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij            
+                dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
+
+                dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij            
+                dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+                
+                dpdx = dpdξ*dξdx_ij + dpdη*dηdx_ij            
+                dpdy = dpdξ*dξdy_ij + dpdη*dηdy_ij
+
+                ρij = params.uprimitive[i,j,1]
+                uij = params.uprimitive[i,j,2]
+                vij = params.uprimitive[i,j,3]
+                
+                if (ieq == 1)
+                    auxi = ωJac*(dFdx + dGdy)
+                elseif(ieq == 2)
+                    auxi = ωJac*(uij*dFdx + vij*dGdy + dpdx/ρij)
+                elseif(ieq == 3)
+                    auxi = ωJac*(uij*dFdx + vij*dGdy + dpdy/ρij - params.S_lag[i,j,ieq])
+                elseif(ieq == 4)
+                    auxi = ωJac*(uij*dFdx + vij*dGdy)
+                end
+                
+                params.rhs_el[iel,i,j,ieq] -= auxi
+            end
+        end
+    end        
+end
+
+function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
+
+    
+    basis1 = @view(params.basis[1])
+    basis2 = @view(params.basis[2])
+    ω1 = @view(ω[1])
+    ω2 = @view(ω[2])
+    N = params.mesh.ngl
+    Q = N + 1
+    N_lag = params.mesh.ngr
+    Q_lag = N_lag + 1
+    for l=1:Q_lag
+        for k=1:Q
+            ωJac = ω1[k]*ω2[l]*params.metrics[2].Je[iel,k,l]
             
-            if (rem(time, Δt) == 0 && time > 0.0)
-                qnm1 .= qnm2
-                qnm2 .= qq
+            dρudξ = 0.0; dρudη = 0.0
+            dρvdξ = 0.0; dρvdη = 0.0
+            dudξ = 0.0; dudη = 0.0
+            dvdξ = 0.0; dvdη = 0.0
+            dθdξ = 0.0; dθdη = 0.0
+            dpdξ = 0.0; dpdη = 0.0
+           
+            
+            ρkl = 0.0; ukl = 0.0; vkl = 0.0; Skl = 0.0
+            for n=1:N_lag
+                for m=1:N
+                    ψmk = basis1.ψ[m,k]
+                    ψnl = basis2.ψ[n,l]
+                    
+                    dψmk_ψnl = basis1.dψ[m,k]*basis2.ψ[n,l]
+                    ψmk_dψnl = basis1.ψ[m,k]*basis2.dψ[n,l]
+                    
+                    dρudξ += dψmk_ψnl*params.F_lag[m,n,1]
+                    dρudη +=  ψmk_dψnl*params.F_lag[m,n,1]
+                    
+                    dρvdξ += dψmk_ψnl*params.G_lag[m,n,1]
+                    dρvdη +=  ψmk_dψnl*params.G_lag[m,n,1]
+                    
+                    dudξ += dψmk_ψnl*params.uprimitive[m,n,2]
+                    dudη +=  ψmk_dψnl*params.uprimitive[m,n,2]
+
+                    dvdξ += dψmk_ψnl*params.uprimitive[m,n,3]
+                    dvdη +=  ψmk_dψnl*params.uprimitive[m,n,3]
+                    
+                    dθdξ += dψmk_ψnl*params.uprimitive[m,n,4]
+                    dθdη +=  ψmk_dψnl*params.uprimitive[m,n,4]
+
+                    dpdξ += dψmk_ψnl*params.uprimitive[m,n,params.neqs+1]
+                    dpdη +=  ψmk_dψnl*params.uprimitive[m,n,params.neqs+1]
+
+                    ρkl += ψmk*ψnl*params.uprimitive[m,n,1]
+                    ukl += ψmk*ψnl*params.uprimitive[m,n,2]
+                    vkl += ψmk*ψnl*params.uprimitive[m,n,3]
+                    Skl += ψmk*ψnl*params.S_lag[m,n,3]
+                end
+            end
+
+            dξdx_kl = params.metrics[2].dξdx[iel,k,l]
+            dξdy_kl = params.metrics[2].dξdy[iel,k,l]
+            dηdx_kl = params.metrics[2].dηdx[iel,k,l]
+            dηdy_kl = params.metrics[2].dηdy[iel,k,l]
+            
+            dρudx = dρudξ*dξdx_kl + dρudη*dηdx_kl            
+            dρudy = dρudξ*dξdy_kl + dρudη*dηdy_kl
+            dρvdx = dρvdξ*dξdx_kl + dρvdη*dηdx_kl            
+            dρvdy = dρvdξ*dξdy_kl + dρvdη*dηdy_kl
+                                    
+            dudx = dudξ*dξdx_kl + dudη*dηdx_kl            
+            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+            
+            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl            
+            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+            
+            dθdx = dθdξ*dξdx_kl + dθdη*dηdx_kl            
+            dθdy = dθdξ*dξdy_kl + dθdη*dηdy_kl
+
+            dpdx = dpdξ*dξdx_kl + dpdη*dηdx_kl            
+            dpdy = dpdξ*dξdy_kl + dpdη*dηdy_kl
+
+
+            for j=1:N_lag
+                for i=1:N
+
+                    ψikψjl = basis1.ψ[i,k]*basis2.ψ[j,l]
+                    
+                    params.rhs_el[iel,i,j,1] -= ψikψjl*ωJac*(dρudx + dρvdy)
+                    
+                    params.rhs_el[iel,i,j,2] -= ψikψjl*ωJac*(ukl*dudx + vkl*dudy + dpdx/ρkl)
+                    params.rhs_el[iel,i,j,3] -= ψikψjl*ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl - Skl)
+                    params.rhs_el[iel,i,j,4] -= ψikψjl*ωJac*(ukl*dθdx + vkl*dθdy)
+                end
             end
             
-            compute_viscosity!(μ, SD, PT, qq, qnm1, qnm2, RHS, Δt, mesh, metrics, T)
-        else
-            μ[:] .= inputs[:νx]
         end
-        rhs_diff_el = build_rhs_diff(SD, QT, PT, qp, neqs, basis1, basis2, ω1, ω2, inputs, mesh, metrics1, metrics2, μ, T;)
-        RHS .= RHS .+ DSS_rhs_laguerre(SD, rhs_diff_el, mesh, neqs, T)
     end
-    
-    divive_by_mass_matrix!(RHS, M, QT,neqs)
-    
-    return RHS
 end
 
 
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-# CompEuler:
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-#
-# Optimized (more coud possibly be done)
-#
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::CompEuler, qp::Array, neqs, basis1, basis2, ω1, ω2,
-                   mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
+function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Inexact, SD::NSD_2D)
     
-    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis1, basis2, ω1, ω2, mesh, metrics1, metrics2, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
-    
-    return RHS
-    
-end
+    basis1 = @view(basis[1])
+    basis2 = @view(basis[2])
+    ω1 = @view(ω[1])
+    ω2 = @view(ω[2]) 
+    for l = 1:mesh.ngr
+        for k = 1:mesh.ngl
+            ωJac = ω1[k]*ω2[l]*metrics[2].Je[iel,k,l]
+            
+            dudξ = 0.0
+            dudη = 0.0
+            @turbo for ii = 1:mesh.ngl
+                dudξ += basis1.dψ[ii,k]*uprimitiveieq[ii,l]
+                dudη += basis2.dψ[ii,l]*uprimitiveieq[k,ii]
+            end
+            dξdx_kl = metrics[2].dξdx[iel,k,l]
+            dξdy_kl = metrics[2].dξdy[iel,k,l]
+            dηdx_kl = metrics[2].dηdx[iel,k,l]
+            dηdy_kl = metrics[2].dηdy[iel,k,l]
+            
+            auxi = dudξ*dξdx_kl + dudη*dηdx_kl
+            dudx = visc_coeffieq*auxi
+            
+            auxi = dudξ*dξdy_kl + dudη*dηdy_kl
+            dudy = visc_coeffieq*auxi
+            
+            ∇ξ∇u_kl = (dξdx_kl*dudx + dξdy_kl*dudy)*ωJac
+            ∇η∇u_kl = (dηdx_kl*dudx + dηdy_kl*dudy)*ωJac     
+            
+            @turbo for i = 1:mesh.ngl
+                dhdξ_ik = basis1.dψ[i,k]
+                
+                rhs_diffξ_el[i,l] -= dhdξ_ik * ∇ξ∇u_kl
+            end
+            @turbo for i = 1:mesh.ngr
+                dhdη_il = basis2.dψ[i,l]
 
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-# AdvDiff
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::AdvDiff, qp::Array, neqs, basis1, basis2, ω1, ω2, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
-                   qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
-
-    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis1, basis2, ω1, ω2, mesh, metrics1, metrics2, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
-    
-    return RHS
-    
-end
-
-function build_rhs(SD::NSD_2D, QT::Exact, PT::AdvDiff, qp::Array, neqs, basis1, basis2, ω1, ω2, mesh::St_mesh, metrics1::St_metrics, metrics2::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
-                   qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))
-    nothing
-end
-
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-# LinearCLaw
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-function build_rhs(SD::NSD_2D, QT::Inexact, PT::LinearCLaw, qp::Array, neqs, basis, ω, mesh::St_mesh, metrics::St_metrics, M, De, Le, time, inputs, Δt, deps, T;
-                   qnm1=zeros(Float64,1,1), qnm2=zeros(Float64,1,1), μ=zeros(Float64,1,1))    
-    
-    
-    RHS = _build_rhs(SD, QT, PT, qp, neqs, basis, ω, mesh, metrics, M, De, Le, time, inputs, Δt, deps, T; qnm1=qnm1, qnm2=qnm2, μ=μ)
-    
-    return RHS
-end
-
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-# Source terms:
-#--------------------------------------------------------------------------------------------------------------------------------------------------
-function build_rhs_source(SD::NSD_2D,
-                          QT::Inexact,
-                          q::Array,
-                          mesh::St_mesh,
-                          M::AbstractArray, #M is sparse for exact integration
-                          T)
-
-    S = user_source(q, mesh, T)
-    
-    return M.*S    
-end
-
-function build_rhs_source(SD::NSD_2D,
-                          QT::Exact,
-                          q::Array,
-                          mesh::St_mesh,
-                          M::Matrix, #M is sparse for exact integration
-                          T)
-
-    S = user_source(q, mesh, T)
-    
-    return M*S   
+                rhs_diffη_el[k,i] -= dhdη_il * ∇η∇u_kl
+            end
+        end
+    end  
 end
