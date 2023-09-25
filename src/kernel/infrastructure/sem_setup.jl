@@ -1,5 +1,3 @@
-include("../bases/basis_structs.jl")
-include("../infrastructure/element_matrices.jl")
 include("../mesh/restructure_for_periodicity.jl")
 include("../mesh/warping.jl")
 
@@ -20,7 +18,7 @@ function sem_setup(inputs::Dict)
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    mesh.x = mesh.x*100000.0
+    mesh.x = mesh.x*77000.0
     mesh.y .= (mesh.y .+ 1) .*15000.0
     @info "xmax", maximum(mesh.x),maximum(mesh.y)
     mesh.ymax = maximum(mesh.y)
@@ -29,7 +27,7 @@ function sem_setup(inputs::Dict)
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
     ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)    
-    ξ,ω = ξω.ξ, ξω.ω
+    ξ,ω = ξω.ξ, ξω.ω    
     if lexact_integration
         #
         # Exact quadrature:
@@ -39,7 +37,7 @@ function sem_setup(inputs::Dict)
         QT_String = "Exact"
         Qξ  = Nξ + 1
         
-        ξωQ   = basis_structs_ξ_ω!(inputs[:quadrature_nodes], mesh.nop)
+        ξωQ   = basis_structs_ξ_ω!(inputs[:quadrature_nodes], Qξ)
         ξq, ω = ξωQ.ξ, ξωQ.ω
     else  
         #
@@ -81,11 +79,12 @@ function sem_setup(inputs::Dict)
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
             ω1 = ω
             ω = ω1
-            fx = init_filter(mesh.ngl-1,ξ,0.01)
-            fy = init_filter(mesh.ngl-1,ξ,0.01) 
+            fx = init_filter(mesh.ngl-1,ξ,0.05)
+            fy = init_filter(mesh.ngl-1,ξ,0.05) 
     #--------------------------------------------------------
     # Build metric terms
     #--------------------------------------------------------
+           warp_mesh!(mesh,inputs)
            @info " metrics"
            @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
     

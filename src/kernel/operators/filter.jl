@@ -1,36 +1,39 @@
 using Quadmath
 
-function filter!(q,::CompEuler,SD::NSD_2D,QT,M,mesh,metrics,qe,neqs,fx,fy)
-  fy_t = transpose(fy)
+function filter!(u, params, SD::NSD_2D)
+  
+  u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+
+  fy_t = transpose(params.fy)
   ## Subtract background velocity
   #qv = copy(q)
-  q[:,2:4] .= q[:,2:4] .- qe[:,2:4]
-  q_t = zeros(Float64,neqs,mesh.ngl,mesh.ngl)
-  fqf = zeros(Float64,neqs,mesh.ngl,mesh.ngl)
+  params.uaux[:,2:4] .= params.uaux[:,2:4] .- params.qe[:,2:4]
+  q_t = zeros(Float64,params.neqs,params.mesh.ngl,params.mesh.ngl)
+  fqf = zeros(Float64,params.neqs,params.mesh.ngl,params.mesh.ngl)
   ## store Dimension of MxM object
-  b = zeros(mesh.ngl, mesh.ngl, mesh.nelem, neqs) 
-  inode = zeros(Int64,mesh.ngl*mesh.ngl)
-  ndim = neqs
+  b = zeros(params.mesh.nelem, params.mesh.ngl, params.mesh.ngl, params.neqs) 
+  inode = zeros(Int64,params.mesh.ngl*params.mesh.ngl)
+  ndim = params.neqs
 
   ## Loop through the elements
 
-  for e=1:mesh.nelem
-    for j=1:mesh.ngl
-      for i=1:mesh.ngl
-        ip = mesh.connijk[i,j,e]
-        for m =1:neqs
-          q_t[m,i,j] = q[ip,m]
+  for e=1:params.mesh.nelem
+    for j=1:params.mesh.ngl
+      for i=1:params.mesh.ngl
+        ip = params.mesh.connijk[e,i,j]
+        for m =1:params.neqs
+          q_t[m,i,j] = params.uaux[ip,m]
         end
       end
     end
   
   ### Construct local derivatives for prognostic variables
   
-    for m=1:neqs
+    for m=1:params.neqs
     
     ##KSI Derivative
 
-      q_ti = fx * q_t[m,:,:] 
+      q_ti = params.fx * q_t[m,:,:] 
 
     ## ETA Derivative
  
@@ -41,22 +44,27 @@ function filter!(q,::CompEuler,SD::NSD_2D,QT,M,mesh,metrics,qe,neqs,fx,fy)
     
   ## Do Numerical Integration
 
-    for j=1:mesh.ngl
-      for i=1:mesh.ngl
-        ip = mesh.connijk[i,j,e]
-        for m=1:neqs
-          b[i,j,e,m] = b[i,j,e,m] + fqf[m,i,j] * metrics.ωJe[i,j,e]
+    for j=1:params.mesh.ngl
+      for i=1:params.mesh.ngl
+        ip = params.mesh.connijk[e,i,j]
+        for m=1:params.neqs
+          b[e,i,j,m] = b[e,i,j,m] + fqf[m,i,j] * params.ω[i]*params.ω[j]*params.metrics.Je[e,i,j]
         end
       end
     end
   end
   
-  B         = zeros(Float64, mesh.npoin, neqs)
-  DSS_rhs!(SD, @view(B[:,:]), @view(b[:,:,:,:]), mesh.connijk, mesh.nelem, mesh.npoin, neqs, mesh.nop, Float64)
-  divive_by_mass_matrix!(B, M, QT,neqs)
-  q .= B
-  q[:,2:4] .= q[:,2:4] .+ qe[:,2:4]
+  B         = zeros(Float64, params.mesh.npoin, params.neqs)
+  DSS_rhs!(@view(B[:,:]), @view(b[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD)
   
+  for ieq=1:params.neqs
+        divide_by_mass_matrix!(@view(B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
+  end
+  
+  params.uaux .= B
+  params.uaux[:,2:4] .= params.uaux[:,2:4] .+ params.qe[:,2:4]
+
+  uaux2u!(u, @view(params.uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
 
 function init_filter(nop,xgl,mu_x)
@@ -107,7 +115,7 @@ function init_filter(nop,xgl,mu_x)
   end
   
   ## Compute Boyd-Vandeven (ERF-LOG) Transfer function
-  filter_type = "exp"
+  filter_type = "erf"
   if (filter_type == "erf")   
     @info "erf filtering on"
     for k=1:nop+1

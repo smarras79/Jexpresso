@@ -54,8 +54,8 @@ function periodicity_restructure!(mesh,inputs)
                         for e=1:mesh.nelem
                             for ii=1:mesh.ngl
                                 for jj=1:mesh.ngl
-                                    if (mesh.connijk[ii,jj,iel] == ip_kill)
-                                        mesh.connijk[ii,jj,iel] = ip_dest
+                                    if (mesh.connijk[iel,ii,jj] == ip_kill)
+                                        mesh.connijk[iel,ii,jj] = ip_dest
                                     end
                                 end
                             end
@@ -80,9 +80,9 @@ function periodicity_restructure!(mesh,inputs)
                         for e=1:mesh.nelem
                             for ii=1:mesh.ngl
                                 for jj=1:mesh.ngl
-                                    ipp = mesh.connijk[ii,jj,e]
+                                    ipp = mesh.connijk[e,ii,jj]
                                     if (ipp > ip_kill)
-                                        mesh.connijk[ii,jj,e] -= 1
+                                        mesh.connijk[e,ii,jj] -= 1
                                     end
                                 end
                             end
@@ -110,7 +110,7 @@ function periodicity_restructure!(mesh,inputs)
                     l=1
                     for ii=1:mesh.ngl
                         for jj=1:mesh.ngl
-                            if (mesh.connijk[ii,jj,iel] == ip_true)
+                            if (mesh.connijk[iel,ii,jj] == ip_true)
                                 l=ii
                                 m=jj
                             end
@@ -160,7 +160,7 @@ function periodicity_restructure!(mesh,inputs)
                                     l1=1
                                     for ii=1:mesh.ngl
                                         for jj=1:mesh.ngl
-                                            if (mesh.connijk[ii,jj,iel_per] == ip_true1)
+                                            if (mesh.connijk[iel_per,ii,jj] == ip_true1)
                                                 l1=ii
                                                 m1=jj
                                             end
@@ -173,8 +173,8 @@ function periodicity_restructure!(mesh,inputs)
                                         ip_dest = ip_true1
                                         ip_kill = ip_true
                                     end
-                                    mesh.connijk[l1,m1,iel_per] = ip_dest
-                                    mesh.connijk[l,m,iel] = ip_dest
+                                    mesh.connijk[iel_per,l1,m1] = ip_dest
+                                    mesh.connijk[iel,l,m] = ip_dest
                                     mesh.poin_in_bdy_edge[iedge_per,k_per] = ip_dest
                                     mesh.poin_in_bdy_edge[iedge_bdy,k] = ip_dest
                                     ip_true = ip_dest
@@ -200,9 +200,9 @@ function periodicity_restructure!(mesh,inputs)
                                         for e=1:mesh.nelem
                                             for ii=1:mesh.ngl
                                                 for jj=1:mesh.ngl
-                                                    ipp = mesh.connijk[ii,jj,e]
+                                                    ipp = mesh.connijk[e,ii,jj]
                                                     if (ipp > ip_kill)
-                                                        mesh.connijk[ii,jj,e] -= 1
+                                                        mesh.connijk[e,ii,jj] -= 1
                                                     end
                                                 end
                                             end

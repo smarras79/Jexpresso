@@ -5,10 +5,6 @@ import SciMLBase
 
 include("./plotting/jeplots.jl")
 
-abstract type AbstractOutFormat end
-struct PNG <: AbstractOutFormat end
-struct ASCII <: AbstractOutFormat end 
-
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # ∂q/∂t = RHS -> q(x,t)
 #----------------------------------------------------------------------------------------------------------------------------------------------
@@ -148,10 +144,10 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
         #else
             for i = 1:mesh.ngl-1
                 for j = 1:mesh.ngl-1
-                    ip1 = mesh.connijk[i,j,iel]
-                    ip2 = mesh.connijk[i+1,j,iel]
-                    ip3 = mesh.connijk[i+1,j+1,iel]
-                    ip4 = mesh.connijk[i,j+1,iel]
+                    ip1 = mesh.connijk[iel,i,j]
+                    ip2 = mesh.connijk[iel,i+1,j]
+                    ip3 = mesh.connijk[iel,i+1,j+1]
+                    ip4 = mesh.connijk[iel,i,j+1]
                     subelem[isel, 1] = ip1
                     subelem[isel, 2] = ip2
                     subelem[isel, 3] = ip3
@@ -167,60 +163,90 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     
     npoin = mesh.npoin
     qout = copy(q)
+
     
-    #ρ
-    qout[1:npoin] = q[1:npoin]
-
-    #u = ρu/ρ
-    ivar = 2
-    idx = (ivar - 1)*npoin
-    qout[idx+1:2*npoin] = q[idx+1:2*npoin]./q[1:npoin]
-
-    #v = ρv/ρ
-    ivar = 3
-    idx = (ivar - 1)*npoin
-    qout[idx+1:3*npoin] = q[idx+1:3*npoin]./q[1:npoin]
-
-    if case === "rtb"
-
-        outvars = ("rho", "u", "v", "theta")
+    if (inputs[:CL] == CL())
         
-        if (inputs[:loutput_pert] == true && size(qexact, 1) === npoin)
+        #ρ
+        qout[1:npoin] .= q[1:npoin]
+        
+        #u = ρu/ρ
+        ivar = 2
+        idx = (ivar - 1)*npoin
+        qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./q[1:npoin]
 
-            #ρ'
-            qout[1:npoin] = q[1:npoin] .- qexact[1:npoin,1]
+        #v = ρv/ρ
+        ivar = 3
+        idx = (ivar - 1)*npoin
+        qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./q[1:npoin]
+
+        if case === "rtb"
+
+            outvars = ("rho", "u", "v", "theta")
             
-            #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
-            ivar = 4
-            idx = (ivar - 1)*npoin
-            qout[idx+1:4*npoin] = q[idx+1:4*npoin]./q[1:npoin] .- qexact[1:npoin,4]./qexact[1:npoin,1]
-           
-        else
-            outvars = ("rho", "u", "v", "E")
+            if (inputs[:loutput_pert] == true && size(qexact, 1) === npoin)
+
+                #ρ'
+                qout[1:npoin] .= q[1:npoin] .- qexact[1:npoin,1]
+                
+                #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
+                ivar = 4
+                idx = (ivar - 1)*npoin
+                qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin] .- qexact[1:npoin,4]./qexact[1:npoin,1]
+                
+            else
+                outvars = ("rho", "u", "v", "E")
+                
+                #E = ρE/ρ
+                idx = 4*npoin
+                qout[idx+1:4*npoin] .= (q[2*npoin+1:4*npoin] .- 0.5*(q[npoin+1:2*npoin].*q[npoin+1:2*npoin] .+ q[npoin+1:3*npoin].*q[npoin+1:3*npoin])./q[1:npoin])./q[1:npoin] #internal energy: p/((γ-1)ρ)
+            end
+        end
+    elseif (inputs[:CL] == NCL())
             
-            #E = ρE/ρ
-            idx = 4*npoin
-            qout[idx+1:4*npoin] .= (q[2*npoin+1:4*npoin] .- 0.5*(q[npoin+1:2*npoin].*q[npoin+1:2*npoin] .+ q[npoin+1:3*npoin].*q[npoin+1:3*npoin])./q[1:npoin])./q[1:npoin] #internal energy: p/((γ-1)ρ)
+        #ρ
+        qout[1:npoin] .= (q[1:npoin])
+        
+        #u = ρu/ρ
+        ivar = 2
+        idx = (ivar - 1)*npoin
+        qout[idx+1:2*npoin] .= (q[idx+1:2*npoin])
+
+        #v = ρv/ρ
+        ivar = 3
+        idx = (ivar - 1)*npoin
+        qout[idx+1:3*npoin] .= (q[idx+1:3*npoin])
+        
+        if case === "rtb"
+
+            outvars = ("rho", "u", "v", "theta")
+            
+            if (inputs[:loutput_pert] == true && size(qexact, 1) === npoin)
+
+                #ρ'
+                qout[1:npoin] .= (q[1:npoin] .- qexact[1:npoin,1])
+                                
+                #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
+                ivar = 4
+                idx = (ivar - 1)*npoin
+                qout[idx+1:4*npoin] .= (q[idx+1:4*npoin] .- qexact[1:npoin,4])
+                                
+            else
+                outvars = ("rho", "u", "v", "E")
+                
+                #E = ρE/ρ
+                idx = 4*npoin
+                qout[idx+1:4*npoin] .= @views((q[2*npoin+1:4*npoin] .- 0.5*(q[npoin+1:2*npoin].*q[npoin+1:2*npoin] .+ q[npoin+1:3*npoin].*q[npoin+1:3*npoin])./q[1:npoin])./q[1:npoin]) #internal energy: p/((γ-1)ρ)
+            end
         end
     end
-    
-    #=for ivar=1:nvar
-        idx = (ivar - 1)*npoin
-        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".vtu")
-    
-        vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells) do vtk
-            vtk[string("q", ivar), VTKPointData()] = qout[idx+1:ivar*npoin]
-        end
-    end=#
-     
     
     fout_name = string(OUTPUT_DIR, "/rtb_it", iout, ".vtu")
     
     vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells)
     for ivar = 1:nvar
         idx = (ivar - 1)*npoin
-        vtkfile[string(outvars[ivar]), VTKPointData()] =  qout[idx+1:ivar*npoin]
+        vtkfile[string(outvars[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
     end
     outfiles = vtk_save(vtkfile)
     

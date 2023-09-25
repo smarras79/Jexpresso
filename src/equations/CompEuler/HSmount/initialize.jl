@@ -17,15 +17,15 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     T0   = θ0
     p0   = 100000.0
     
-    N    = 0.01#PhysConst.g/sqrt(PhysConst.cp*T0)
+    N    = PhysConst.g/sqrt(PhysConst.cp*T0)
     N2   = N*N
     
     for iel_g = 1:mesh.nelem
         for j=1:mesh.ngl, i=1:mesh.ngl
             
-            ip = mesh.connijk[i,j,iel_g]
+            ip = mesh.connijk[iel_g,i,j]
             y = mesh.y[ip]
-            #=θ    = θref*exp(N2*y/PhysConst.g)         
+            θ    = θref*exp(N2*y/PhysConst.g)         
             #if (y > 0.1) 
               p    = p0*(1.0 + PhysConst.g2*(exp(-y*N2/PhysConst.g) - 1.0)/(PhysConst.cp*θref*N2))^PhysConst.cpoverR
             #else
@@ -33,15 +33,15 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
             #end
             ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p) #kg/m³
             ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
-            =#
+            #=
             auxi = PhysConst.Rair*θ0
                  p    = p0*exp(-PhysConst.g*y/auxi)
                  θ    = θ0*exp(N2*y/PhysConst.g)
                  
                  ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
                  ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p)
-            
-            u = 20.0
+            =#
+            u = 10.0
             v = 0.0
             
             q.qn[ip,1] = ρ
