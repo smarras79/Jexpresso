@@ -38,7 +38,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 u = 0.0
                 v = 0.0
 
-                if inputs[:SOL_VARS_TYPE] == PERT()  
+                if inputs[:SOL_VARS_TYPE] == PERT()
                     q.qn[ip,1] = ρ - ρref
                     q.qn[ip,2] = ρ*u
                     q.qn[ip,3] = ρ*v
