@@ -133,9 +133,7 @@ end
 #------------
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
     #nothing
-    
-    #outvars = inputs[:sol_vars_names] #("rho", "u", "v", "theta")
-    
+   
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
     cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
     
@@ -271,6 +269,8 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
         end
     end
     #=
+    outvars = ("ρ", "ρu", "ρv", "ρθ")
+    
     #ρ
     qout[1:npoin] .= q[1:npoin]
     
@@ -290,7 +290,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     =#
 
     #Solution:
-    fout_name = string(OUTPUT_DIR, "/rtb_it", iout, ".vtu")    
+    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")    
     vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells)
     for ivar = 1:nvar
         idx = (ivar - 1)*npoin
