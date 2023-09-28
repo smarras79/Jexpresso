@@ -49,7 +49,7 @@ function resetRHSToZero_viscous!(params)
     fill!(params.RHS_visc,     zero(params.T))
 end
 
-function uToPrimitives!(uprimitive, u, mesh, δtotal_energy, iel, ::CL, ::TOTAL)
+function uToPrimitives!(uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, ::TOTAL)
 
     PhysConst = PhysicalConst{Float64}()
     
@@ -72,31 +72,7 @@ function uToPrimitives!(uprimitive, u, mesh, δtotal_energy, iel, ::CL, ::TOTAL)
     
 end
 
-function uToPrimitives!(uprimitive, u, mesh, δtotal_energy, iel, ::CL, ::PERT)
-
-    PhysConst = PhysicalConst{Float64}()
-    
-    for j=1:mesh.ngl, i=1:mesh.ngl
-        
-        m1 = mesh.connijk[iel,i,j]
-        m2 = mesh.npoin + m1
-        m3 = 2*mesh.npoin + m1
-        m4 = 3*mesh.npoin + m1
-
-        uprimitive[i,j,1] = u[m1]
-        uprimitive[i,j,2] = u[m2]/u[m1]
-        uprimitive[i,j,3] = u[m3]/u[m1]
-        uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
-        
-        #Pressure:
-        uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
-        
-    end
-    
-end
-
-
-function uToPrimitives!(uprimitive, u, mesh, δtotal_energy, iel, ::NCL, ::TOTAL)
+function uToPrimitives!(uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, ::PERT)
     
     PhysConst = PhysicalConst{Float64}()
     
@@ -106,20 +82,21 @@ function uToPrimitives!(uprimitive, u, mesh, δtotal_energy, iel, ::NCL, ::TOTAL
         m2 = mesh.npoin + m1
         m3 = 2*mesh.npoin + m1
         m4 = 3*mesh.npoin + m1
-        
-        uprimitive[i,j,1] = u[m1]
-        uprimitive[i,j,2] = u[m2]
-        uprimitive[i,j,3] = u[m3]
-        uprimitive[i,j,4] = u[m4]
 
+        uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
+        uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]
+        uprimitive[i,j,3] = u[m3]/uprimitive[i,j,1]
+        uprimitive[i,j,4] = (u[m4] + uprimitive[i,j,1]*uauxe[m1,4])/uprimitive[i,j,1] # CHECK THIS FOR ENE- δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+        
         #Pressure:
         uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
         
     end
+    
 end
 
 
-function uToPrimitives!(uprimitive, u, mesh, δtotal_energy, iel, ::NCL, ::PERT)
+function uToPrimitives!(uprimitive, u, uprimitivee, mesh, δtotal_energy, iel, ::NCL, ::AbstractPert)
     
     PhysConst = PhysicalConst{Float64}()
     
@@ -202,7 +179,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
     
     for iel=1:params.mesh.nelem
         
-        uToPrimitives!(params.uprimitive, u, params.mesh, params.inputs[:δtotal_energy], iel,
+        uToPrimitives!(params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel,
                        params.CL, params.SOL_VARS_TYPE)
         
         for j=1:params.mesh.ngl, i=1:params.mesh.ngl
@@ -234,7 +211,7 @@ function viscous_rhs_el!(u, params, SD::NSD_2D)
     
     for iel=1:params.mesh.nelem
         
-        uToPrimitives!(params.uprimitive, u, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
+        uToPrimitives!(params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
 
         for ieq=2:params.neqs
             _expansion_visc!(@view(params.rhs_diffξ_el[iel,:,:,ieq]), @view(params.rhs_diffη_el[iel,:,:,ieq]), @view(params.uprimitive[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.mesh, params.basis, params.metrics, params.inputs, iel, ieq, params.QT, SD)
