@@ -31,7 +31,7 @@ function user_source!(S::SubArray{Float64},
     #
     # S(q(x)) = -ρg
     #
-    ρ = q[1] - qe[1]
+    ρ = q[1] #- qe[1]
     
     S[1] = 0.0
     S[2] = 0.0
