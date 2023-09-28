@@ -358,6 +358,10 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
         inputs[:CL] = CL()
     end
 
+    if(!haskey(inputs, :SOL_VARS_TYPE))
+        inputs[:SOL_VARS_TYPE] = TOTAL() #vs PERT()
+    end
+    
     if(!haskey(inputs, :case))
         inputs[:case] = ""
     else

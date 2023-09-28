@@ -11,10 +11,11 @@ using Parameters
     Pr::T   = 0.7
     Prnum::T= 0.1
     pref::T = 100000.0 #Pa
+    
     Rovercv = Rair/cv
     cpoverR = cp/Rair
-    cpovercv = cp/cv
-    cvovercv = cv/cp
+    cpovercv= cp/cv
+    cvovercp= cv/cp
     C0::T   = (Rair^γ)/pref^(γ-1.0) #Rovercv
     
     #Gravity
