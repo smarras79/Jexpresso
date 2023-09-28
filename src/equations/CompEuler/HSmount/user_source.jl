@@ -1,5 +1,5 @@
 
-function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, ρref, npoin, CL; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -77000, xmax =77000)
+function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, ρref, npoin, CL; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
    
     PhysConst = PhysicalConst{Float64}()
     
@@ -26,8 +26,8 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, ρref, npoin, 
     zs = ymax - 5000.0
     dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
     dbx = min(xmax - x,x-xmin) 
-    xr = 60000.0
-    xl = -60000.0
+    xr = 80000.0
+    xl = -80000.0
     if (y > zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
@@ -47,8 +47,8 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, ρref, npoin, 
         betaxl_coe = 0.0
     end
    
-    cxr = 0.1*betaxr_coe
-    cxl = 0.1*betaxl_coe
+    cxr = 1.0*betaxr_coe
+    cxl = 1.0*betaxl_coe
     #@info x,y,cxr,cxl,ctop
     cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
 
@@ -71,13 +71,13 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, ρref, npoin, 
     #ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
 
     #@info nsponge_points * dsy
-     
+    if (x >= xmin && x <= xmax)     
     #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
-    S[1] -= (cs)*(q[1]-ρref)
-    S[2] -= (cs)*(q[2]-ρref*10.0)
-    S[3] -= (cs)*q[3]
-    S[4] -= (cs)*(q[4]-ρref*θ)
-    
+      S[1] -= (cs)*(q[1]-ρref)
+      S[2] -= (cs)*(q[2]-ρref*20.0)
+      S[3] -= (cs)*q[3]
+      S[4] -= (cs)*(q[4]-ρref*θ)
+    end
     
     return  S
 end    

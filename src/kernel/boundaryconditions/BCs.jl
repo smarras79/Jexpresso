@@ -49,7 +49,7 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
     for iedge = 1:mesh.nedges_bdy 
         iel  = mesh.bdy_edge_in_elem[iedge]
         
-        if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2"
+        if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2" && mesh.bdy_edge_type != "Laguerre"
         #if mesh.bdy_edge_type[iedge] == "free_slip"
             
             #tag = mesh.bdy_edge_type[iedge]

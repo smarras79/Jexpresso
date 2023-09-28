@@ -630,7 +630,7 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
 end
 
 function LaguerreAndDerivative!(nop,SL::St_Laguerre)
-  Laguerre = zeros(nop+1,1)
+  Laguerre = zeros(Float64,nop+1)
   if (nop == 0)
      Laguerre[1] = 1.0
   elseif (nop == 1)
@@ -645,7 +645,7 @@ function LaguerreAndDerivative!(nop,SL::St_Laguerre)
 
     for k=2:nop
         
-        Laguerre = zeros(nop+1,1);
+        Laguerre = zeros(Float64,nop+1);
 
         for e=nop-k+1:nop
             Laguerre[e] = (2*k-1)*Lkm1[e] - Lkm1[e+1] + (1-k)*Lkm2[e];
@@ -661,7 +661,6 @@ function LaguerreAndDerivative!(nop,SL::St_Laguerre)
       Laguerre[k] = Lkm1[nop+2-k]
     end
   end
-  
   SL.Laguerre = Polynomial(Laguerre)
   SL.dLaguerre = Polynomials.derivative(SL.Laguerre) 
 end
@@ -684,8 +683,6 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     J .= diagm(an) .+ Bidiagonal(filler,bn,:U) .+ Bidiagonal(filler,bn,:L)
     xi = eigen(J)
     gr.ξ .= xi.values
-    @info "eigens", xi.values
-    @info "J", J
     ngr = length(gr.ξ)
     thresh = 1e-8
     x0 = 0.0

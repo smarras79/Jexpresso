@@ -3,7 +3,8 @@ include("../mesh/warping.jl")
 
 function sem_setup(inputs::Dict)
     fx = zeros(Float64,1,1)
-    fy = zeros(Float64,1,1) 
+    fy = zeros(Float64,1,1)
+    fy_lag = zeros(Float64,1,1) 
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:equations]
@@ -18,7 +19,7 @@ function sem_setup(inputs::Dict)
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    mesh.x = mesh.x*77000.0
+    mesh.x = mesh.x*120000.0
     mesh.y .= (mesh.y .+ 1) .*15000.0
     @info "xmax", maximum(mesh.x),maximum(mesh.y)
     mesh.ymax = maximum(mesh.y)
@@ -69,10 +70,14 @@ function sem_setup(inputs::Dict)
             basis = (basis1, basis2)
             ω1 = ω
             ω = (ω1,ω2)
+            fx = init_filter(mesh.ngl-1,ξ,0.05)
+            fy = init_filter(mesh.ngl-1,ξ,0.05)
+            fy_lag = init_filter(mesh.ngr-1,ξ2,0.05)
+            warp_mesh!(mesh,inputs)
             metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat)
             metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat)
             metrics = (metrics1, metrics2)
-    
+          
             matrix = matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         else
       
@@ -90,6 +95,7 @@ function sem_setup(inputs::Dict)
     
            @info " periodicity_restructure!"
            @time periodicity_restructure!(mesh,inputs)
+           
            #warp_mesh!(mesh,inputs)
             matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         end
@@ -111,5 +117,5 @@ function sem_setup(inputs::Dict)
     # Build matrices
     #--------------------------------------------------------
     
-    return (; QT, PT, mesh, metrics, basis, ω, matrix,fx,fy)
+    return (; QT, PT, mesh, metrics, basis, ω, matrix,fx,fy,fy_lag)
 end

@@ -64,7 +64,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
     ngl::Union{TInt, Missing} = nop + 1
-    ngr::Union{TInt, Missing} = 25#nop_gr
+    ngr::Union{TInt, Missing} = 24#nop_gr
     npoin_el::Union{TInt, Missing} = 1     # Total number of points in the reference element
     
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
@@ -474,9 +474,9 @@ if mesh.nsd == 2
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1) 
         factorx = 1000
         factory = 0.01
-        mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, mesh.n_semi_inf, mesh.ngl, mesh.ngr)
-        mesh.bdy_normals = zeros(n_semi_inf, 2)
-        mesh.bdy_tangents = zeros(n_semi_inf, 2)
+        mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, n_semi_inf, mesh.ngl, mesh.ngr)
+        bdy_normals = zeros(n_semi_inf, 2)
+        bdy_tangents = zeros(n_semi_inf, 2)
         e_iter = 1
         iter = mesh.npoin + 1
         x_new = zeros(mesh.npoin + n_semi_inf*mesh.ngl*(mesh.ngr-1))
@@ -535,8 +535,8 @@ if mesh.nsd == 2
                 if (dot(v,nor) > 0.0)
                     nor .= -nor
                 end
-                mesh.bdy_normals[e_iter,:] .= nor
-                mesh.bdy_tangents[e_iter,:] .= tan
+                bdy_normals[e_iter,:] .= nor
+                bdy_tangents[e_iter,:] .= tan
                 for i=1:mesh.ngl
                     ip = mesh.poin_in_bdy_edge[iedge,i]
                     mesh.connijk_lag[e_iter,i,1] = ip

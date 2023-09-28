@@ -169,49 +169,45 @@ end
 
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange ,N, Q, NGR, QGR, ξ, ω1, ω2, T)
     
-    metrics = St_metrics{T}(dxdξ = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dxdη = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dydξ = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dydη = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
+    metrics = St_metrics{T}(dxdξ = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dxdη = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                            dydξ = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dydη = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
 
-                            dξdx = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dηdx = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dξdy = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
-                            dηdy = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
-                            Jef  = zeros(mesh.ngl, size(mesh.bound_elem,1)+4),
-                            Je   = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf),
-                            ωJe  = zeros(mesh.ngl, mesh.ngr, mesh.nelem_semi_inf)) #   Je[1:Nq, 1:Nq, 1:nelem])    
+                            dξdx = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dηdx = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dξdy = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                            dηdy = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
+                            Jef  = zeros(T, mesh.nedges_bdy, Q+1),
+                            Je   = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr))
     ψ  = basis.ψ
     dψ = basis.dψ
     ψ1  = basisGR.ψ
     dψ1 = basisGR.dψ
     if ("Laguerre" in mesh.bdy_edge_type)
         for iel=1:mesh.nelem_semi_inf
-            tan = mesh.bdy_tangents[iel,:]
-            nor = mesh.bdy_normals[iel,:]
             for l=1:mesh.ngr
                 for k =1:mesh.ngl
                     for j=1:mesh.ngr
                         for i=1:mesh.ngl
-                            ip = mesh.connijk_lag[i,j,iel]
+                            ip = mesh.connijk_lag[iel,i,j]
                             xij = mesh.x[ip]
                             yij = mesh.y[ip]
-                            metrics.dxdξ[k, l, iel] += dψ[i,k]*ψ1[j,l]*xij 
-                            metrics.dxdη[k, l, iel] +=  ψ[i,k]*dψ1[j,l]*xij
-                            metrics.dydξ[k, l, iel] += dψ[i,k]* ψ1[j,l]*yij
-                            metrics.dydη[k, l, iel] +=  ψ[i,k]*dψ1[j,l]*yij
+                            metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij 
+                            metrics.dxdη[iel, k, l] +=  ψ[i,k]*dψ1[j,l]*xij
+                            metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
+                            metrics.dydη[iel, k, l] +=  ψ[i,k]*dψ1[j,l]*yij
                         end
                     end
                 end
             end
             for l = 1:mesh.ngr
                 for k = 1:mesh.ngl
-                    metrics.Je[k, l, iel] = metrics.dxdξ[k, l, iel]*metrics.dydη[k, l, iel] - metrics.dydξ[k, l, iel]*metrics.dxdη[k, l, iel]
-                    metrics.ωJe[k, l, iel] = ω1[k]*ω2[l]*metrics.Je[k, l, iel]
-                    metrics.dξdx[k, l, iel] =  metrics.dydη[k, l, iel]/metrics.Je[k, l, iel]
-                    metrics.dξdy[k, l, iel] = -metrics.dxdη[k, l, iel]/metrics.Je[k, l, iel]
-                    metrics.dηdx[k, l, iel] = -metrics.dydξ[k, l, iel]/metrics.Je[k, l, iel]
-                    metrics.dηdy[k, l, iel] =  metrics.dxdξ[k, l, iel]/metrics.Je[k, l, iel]
+                    metrics.Je[iel, k, l] = metrics.dxdξ[iel, k, l]*metrics.dydη[iel, k, l] - metrics.dydξ[iel, k, l]*metrics.dxdη[iel, k, l]
+                    metrics.dξdx[iel, k, l] =  metrics.dydη[iel, k, l]/metrics.Je[iel, k, l]
+                    metrics.dξdy[iel, k, l] = -metrics.dxdη[iel, k, l]/metrics.Je[iel, k, l]
+                    metrics.dηdx[iel, k, l] = -metrics.dydξ[iel, k, l]/metrics.Je[iel, k, l]
+                    metrics.dηdy[iel, k, l] =  metrics.dxdξ[iel, k, l]/metrics.Je[iel, k, l]
        
                 end
             end

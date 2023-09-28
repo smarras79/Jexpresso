@@ -60,6 +60,64 @@ function filter!(u, params, SD::NSD_2D)
   for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
   end
+  #=if (params.laguerre)
+      
+      fy_t_lag = transpose(params.fy_lag)
+      @info fy_t_lag
+      @info fx
+      q_t_lag = zeros(Float64,params.neqs,params.mesh.ngl,params.mesh.ngr)
+      fqf_lag = zeros(Float64,params.neqs,params.mesh.ngl,params.mesh.ngr)
+      ## store Dimension of MxM object
+      b_lag = zeros(params.mesh.nelem, params.mesh.ngl, params.mesh.ngr, params.neqs)
+      inode_lag = zeros(Int64,params.mesh.ngl*params.mesh.ngr)
+      ndim = params.neqs
+
+  ## Loop through the elements
+  
+      for e=1:params.mesh.nelem_semi_inf
+        for j=1:params.mesh.ngr
+          for i=1:params.mesh.ngl
+            ip = params.mesh.connijk_lag[e,i,j]
+            for m =1:params.neqs
+              q_t_lag[m,i,j] = params.uaux[ip,m]
+            end
+          end
+        end
+ 
+  ### Construct local derivatives for prognostic variables
+ 
+        for m=1:params.neqs
+ 
+    ##KSI Derivative
+          q_ti_lag = params.fx * q_t_lag[m,:,:]
+
+    ## ETA Derivative
+          
+          q_tij_lag = q_ti_lag * fy_t_lag
+          fqf_lag[m,:,:] = q_tij_lag
+        end
+  
+  ## Do Numerical Integration
+
+        for j=1:params.mesh.ngr
+          for i=1:params.mesh.ngl
+            ip = params.mesh.connijk_lag[e,i,j]
+            for m=1:params.neqs
+              b_lag[e,i,j,m] = b_lag[e,i,j,m] + fqf_lag[m,i,j] * params.ω[i]*params.ω_lag[j]*params.metrics_lag.Je[e,i,j]
+            end
+          end
+        end
+      end
+      @info maximum(b_lag), minimum(b_lag)
+      B_lag = zeros(Float64, params.mesh.npoin, params.neqs)
+      DSS_rhs_laguerre!(@view(B_lag[:,:]), @view(b_lag[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD) 
+      @info maximum(B_lag), minimum(B_lag)
+      for ieq=1:params.neqs
+            divide_by_mass_matrix!(@view(B_lag[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
+      end
+      @info maximum(B), minimum(B), maximum(B_lag), minimum(B_lag)
+      B .= @views(B .+ B_lag)      
+  end=#
   
   params.uaux .= B
   params.uaux[:,2:4] .= params.uaux[:,2:4] .+ params.qe[:,2:4]
