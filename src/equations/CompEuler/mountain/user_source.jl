@@ -17,7 +17,7 @@ end
 function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qref::Float64, npoin::Int64, ::NCL; neqs=1)
 
     PhysConst = PhysicalConst{Float64}()
-        
+    
     #
     # S(q(x)) = -g
     #
