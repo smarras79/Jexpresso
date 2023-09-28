@@ -18,7 +18,7 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
-function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     
     if inputs[:lplot_surf3d]
@@ -58,7 +58,7 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
     end
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") )
 end
-function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1, PT=nothing)
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1, PT=nothing)
     
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     for iout = 1:size(sol.t[:],1)
@@ -69,11 +69,11 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
                 @printf(f, " %d %.6f %.6f %.6f \n", ip, mesh.x[ip], mesh.y[ip], sol.u[iout][ip])
             end
         end #f
-    end    
+    end
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") ) 
 end
 
-function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
     for iout = 1:size(sol.t[:],1)
@@ -84,10 +84,10 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
     
 end
 
-
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # Aq = b -> q(x)
 #----------------------------------------------------------------------------------------------------------------------------------------------
+#=
 # PNG
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
 
@@ -103,9 +103,9 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
 end
 
 # ASCII
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1) nothing end
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1) nothing end
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)   
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict,  outformat::ASCII; nvar=1) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict,  outformat::ASCII; nvar=1) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict,  outformat::ASCII; nvar=1)   
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
     fname = @sprintf "Axb.dat"
@@ -117,7 +117,7 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE") )
 end
 
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::VTK; nvar=1)
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict,  outformat::VTK; nvar=1)
     
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
     for iout = 1:inputs[:ndiagnostics_outputs]
@@ -127,7 +127,7 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
 end
-
+=#
 #------------
 # VTK writer
 #------------
@@ -166,46 +166,69 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
 
     
     if (inputs[:CL] == CL())
-        
-        #ρ
-        qout[1:npoin] .= q[1:npoin]
-        
-        #u = ρu/ρ
-        ivar = 2
-        idx = (ivar - 1)*npoin
-        qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./q[1:npoin]
 
-        #v = ρv/ρ
-        ivar = 3
-        idx = (ivar - 1)*npoin
-        qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./q[1:npoin]
-
-        if case == "rtb" || case == "mountain"
-
-            outvars = ("rho", "u", "v", "theta")
+        if (inputs[:SOL_VARS_TYPE] == TOTAL())
+            #ρ
+            qout[1:npoin] .= q[1:npoin]
             
-            if (size(qexact, 1) === npoin)
+            #u = ρu/ρ
+            ivar = 2
+            idx = (ivar - 1)*npoin
+            qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./q[1:npoin]
 
-                if inputs[:loutput_pert] == true
-                    
-                    #ρ'
-                    qout[1:npoin] .= q[1:npoin] .- qexact[1:npoin,1]
-                    
-                    #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
-                    ivar = 4
-                    idx = (ivar - 1)*npoin
-                    qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin] .- qexact[1:npoin,4]./qexact[1:npoin,1]
-                else
-                    ivar = 4
-                    idx = (ivar - 1)*npoin
-                    qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin] 
+            #v = ρv/ρ
+            ivar = 3
+            idx = (ivar - 1)*npoin
+            qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./q[1:npoin]
+
+            if case == "rtb" || case == "mountain"
+
+                outvars = ("rho", "u", "v", "theta")
+                
+                if (size(qexact, 1) === npoin)
+
+                    if inputs[:loutput_pert] == true
+                        
+                        #ρ'
+                        qout[1:npoin] .= q[1:npoin] .- qexact[1:npoin,1]
+                        
+                        #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
+                        ivar = 4
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin] .- qexact[1:npoin,4]./qexact[1:npoin,1]
+                    else
+                        ivar = 4
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin] 
+                    end
                 end
-                #else
-            #    outvars = ("rho", "u", "v", "E")
-            #    
-            #    #E = ρE/ρ
-            #    idx = 4*npoin
-            #    qout[idx+1:4*npoin] .= (q[2*npoin+1:4*npoin] .- 0.5*(q[npoin+1:2*npoin].*q[npoin+1:2*npoin] .+ q[npoin+1:3*npoin].*q[npoin+1:3*npoin])./q[1:npoin])./q[1:npoin] #internal energy: p/((γ-1)ρ)
+            end
+        else
+         
+            #ρ
+            qout[1:npoin] .= q[1:npoin]
+            
+            #u = ρu/ρ
+            ivar = 2
+            idx = (ivar - 1)*npoin
+            qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./qout[1:npoin]
+
+            #v = ρv/ρ
+            ivar = 3
+            idx = (ivar - 1)*npoin
+            qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./qout[1:npoin]
+
+            if case == "rtb" || case == "mountain"
+
+                outvars = ("rho", "u", "v", "theta")
+                
+                if (size(qexact, 1) === npoin)
+                    
+                    ivar = 4
+                    idx = (ivar - 1)*npoin
+                    qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./(qout[1:npoin] .+ qexact[1:npoin,1])
+                    
+                end
             end
         end
     elseif (inputs[:CL] == NCL())
