@@ -361,6 +361,10 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
     if(!haskey(inputs, :SOL_VARS_TYPE))
         inputs[:SOL_VARS_TYPE] = TOTAL() #vs PERT()
     end
+
+    if(!haskey(inputs, :sol_vars_names))
+        inputs[:sol_vars_names] = ("rho", "rho.u", "rho.v", "rho.theta")
+    end
     
     if(!haskey(inputs, :case))
         inputs[:case] = ""
