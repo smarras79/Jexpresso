@@ -1,4 +1,7 @@
 # JEXPRESSO
+NOTICE: PLEASE CONTACT ME IF YOU ARE INTERESTED IN TESTING THIS WIP. 
+I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
+
 A research software for the numerical solution of conservation laws using spectral element methods. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
 
 If you are interested in contributing, please get in touch.
