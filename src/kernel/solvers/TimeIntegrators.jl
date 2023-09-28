@@ -11,7 +11,7 @@ function time_loop!(QT,
                     Δt,
                     inputs::Dict,
                     OUTPUT_DIR::String,
-                    T;fx=zeros(Float64,1,1), fy = zeros(Float64,1,1))
+                    T;fx=zeros(Float64,1,1), fy = zeros(Float64,1,1), fy_lag = zeros(Float64,1,1))
     
     #
     # ODE: solvers come from DifferentialEquations.j;
@@ -48,6 +48,20 @@ function time_loop!(QT,
     ubdy       = zeros(qp.neqs)
     bdy_flux   = zeros(qp.neqs,1)    
     uprimitive = zeros(T, mesh.ngl, mesh.ngl, qp.neqs+1)
+    #The following are only built and active if Laguerre boundaries are to be used
+    if ("Laguerre" in mesh.bdy_edge_type)
+        uaux_el_lag      = zeros(T, mesh.nelem, mesh.ngl, mesh.ngr, qp.neqs)
+        rhs_el_lag       = zeros(T, mesh.nelem, mesh.ngl, mesh.ngr, qp.neqs)
+        rhs_diff_el_lag  = zeros(T, mesh.nelem, mesh.ngl, mesh.ngr, qp.neqs)
+        rhs_diffξ_el_lag = zeros(T, mesh.nelem, mesh.ngl, mesh.ngr, qp.neqs)
+        rhs_diffη_el_lag = zeros(T, mesh.nelem, mesh.ngl, mesh.ngr, qp.neqs)
+        F_lag            = zeros(T, mesh.ngl, mesh.ngr, qp.neqs)
+        G_lag            = zeros(T, mesh.ngl, mesh.ngr, qp.neqs)
+        S_lag            = zeros(T, mesh.ngl, mesh.ngr, qp.neqs)
+        RHS_lag          = zeros(T, mesh.npoin, qp.neqs)
+        RHS_visc_lag     = zeros(T, mesh.npoin, qp.neqs)
+        uprimitive_lag = zeros(T, mesh.ngl, mesh.ngr, qp.neqs+1)
+    end
     #-----------------------------------------------------------------
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
@@ -60,22 +74,44 @@ function time_loop!(QT,
     deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])    
     visc_coeff = (inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ])
-    
-    params = (T, F, G, S,
-              uaux, uaux_el, vaux,
-              ubdy, gradu, bdy_flux, #for B.C.
-              rhs_el, rhs_diff_el,
-              rhs_diffξ_el, rhs_diffη_el,
-              uprimitive,
-              RHS, RHS_visc, 
-              SD=mesh.SD, QT, PT, CL,
-              neqs=qp.neqs,
-              basis, ω, mesh, metrics,
-              inputs, visc_coeff,              
-              M, Minv,
-              Δt, deps,
-              qp.qe, qp.qnm1, qp.qnm2, qp.μ,fx,fy)
-    
+    if ("Laguerre" in mesh.bdy_edge_type)
+ 
+        params = (T, F, G, S,
+                  uaux, uaux_el, vaux,
+                  ubdy, gradu, bdy_flux, #for B.C.
+                  rhs_el, rhs_diff_el,
+                  rhs_diffξ_el, rhs_diffη_el,
+                  uprimitive,
+                  RHS, RHS_visc,
+                  F_lag, G_lag, S_lag, 
+                  uaux_el_lag,
+                  rhs_el_lag,
+                  rhs_diff_el_lag,
+                  rhs_diffξ_el_lag, rhs_diffη_el_lag,
+                  RHS_lag, RHS_visc_lag, uprimitive_lag, 
+                  SD=mesh.SD, QT, PT, CL,
+                  neqs=qp.neqs,
+		  basis=basis[1], basis_lag = basis[2], ω = ω[1], ω_lag = ω[2], mesh, metrics = metrics[1], metrics_lag = metrics[2], 
+                  inputs, visc_coeff,              
+                  M, Minv,
+                  Δt, deps,
+                  qp.qe, qp.qnm1, qp.qnm2, qp.μ,fx,fy, fy_lag, laguerre=true)
+    else
+        params = (T, F, G, S,
+                  uaux, uaux_el, vaux,
+                  ubdy, gradu, bdy_flux, #for B.C.
+                  rhs_el, rhs_diff_el,
+                  rhs_diffξ_el, rhs_diffη_el,
+                  uprimitive,
+                  RHS, RHS_visc,
+                  SD=mesh.SD, QT, PT, CL,
+                  neqs=qp.neqs,
+                  basis, ω, mesh, metrics,
+                  inputs, visc_coeff,
+                  M, Minv,
+                  Δt, deps,
+                  qp.qe, qp.qnm1, qp.qnm2, qp.μ,fx,fy,laguerre=false)
+    end 
     prob = ODEProblem(rhs!,
                       u,
                       tspan,
@@ -103,7 +139,11 @@ function time_loop!(QT,
     println(" # Solving ODE  ................................ DONE")
 
     println(" # Diagnostics  ................................ ")
-    print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs,QT,basis.ψ)
+    if ("Laguerre" in mesh.bdy_edge_type)
+        print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs,QT,basis[1].ψ)
+    else
+        print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs,QT,basis.ψ)
+    end
     println(" # Diagnostics  ................................ DONE")
     
     return solution

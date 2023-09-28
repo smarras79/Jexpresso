@@ -97,18 +97,18 @@ function uToPrimitives!(uprimitive, u, mesh, δtotal_energy, iel, ::NCL)
 end
 
 function rhs!(du, u, params, time)
-   #Uncomment when ready to fix Laguerre again goddamn changes 
-   #if (params.SD isa NSD_2D)
-     #   if ("Laguerre" in params.mesh.bdy_edge_type) 
-      #      build_rhs!(@view(params.RHS[:,:]), u, params, time)
-       #     build_rhs_lag!(@view(params.RHS_lag[:,:]), u, params, time)
-       # else
-       #     build_rhs!(@view(params.RHS[:,:]), u, params, time)
-       # end
-    #else
-        build_rhs!(@view(params.RHS[:,:]), u, params, time)
-    #end
-    RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+   if (params.SD isa NSD_2D)
+     if (params.laguerre) 
+       build_rhs!(@view(params.RHS[:,:]), u, params, time)
+       build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+       params.RHS .= @views(params.RHS .+ params.RHS_lag) 
+   else
+       build_rhs!(@view(params.RHS[:,:]), u, params, time)
+     end
+   else
+     build_rhs!(@view(params.RHS[:,:]), u, params, time)
+   end
+   RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
 end
 
 function _build_rhs!(RHS, u, params, time)
@@ -127,12 +127,10 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------    
     resetRHSToZero_inviscid!(params) 
     
-    filter!(u, params, SD)
+    #filter!(u, params, SD)
      
     inviscid_rhs_el!(u, params, true, SD)
-
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
-    
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -150,7 +148,6 @@ function _build_rhs!(RHS, u, params, time)
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin)
     end
-    
     #For conservaton apply B.C. to RHS after DSS and not to rhs_el:
     apply_boundary_conditions!(u, params.uaux, time,
                                params.mesh, params.metrics, params.basis,

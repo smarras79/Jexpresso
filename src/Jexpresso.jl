@@ -58,6 +58,7 @@ include(joinpath("kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath("kernel", "operators", "rhs.jl"))
 
+include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
 
 include(joinpath("kernel", "operators", "filter.jl"))
 
