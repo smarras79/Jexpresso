@@ -32,7 +32,8 @@ const TFloat = Float64
 
 #using DocStringExtensions
 
-include(joinpath("equations", "AbstractEquations.jl"))
+#include(joinpath("equations", "AbstractEquations.jl"))
+include(joinpath("..", "problems", "equations", "AbstractEquations.jl"))
 
 include(joinpath("kernel", "abstractTypes.jl"))
 
