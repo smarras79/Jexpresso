@@ -17,6 +17,7 @@ end
 function perfectGasLaw_ρθtoP(PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
     
     return PhysConst.C0*(ρ*θ)^PhysConst.γ #Press
+    #return PhysConst.pref*(ρ*θ*PhysConst.Rair/PhysConst.pref)^PhysConst.cpovercv #Press
 
 end
 

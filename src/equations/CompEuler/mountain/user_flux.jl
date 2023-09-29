@@ -1,8 +1,8 @@
 function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
                     q::SubArray{Float64},
-                    Pref::Float64,
-                    mesh::St_mesh; neqs=4)
-
+                    pref::Float64,
+                    mesh::St_mesh, ::CL; neqs=4)
+    
     PhysConst = PhysicalConst{Float64}()
     
     ρ  = q[1]
@@ -14,7 +14,8 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     v  = ρv/ρ
     
     Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-    dPress = Press - Pref
+    dPress = Press - pref
+    
     F[1] = ρu
     F[2] = ρu*u + dPress
     F[3] = ρv*u
@@ -24,4 +25,28 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     G[2] = ρu*v
     G[3] = ρv*v + dPress
     G[4] = ρθ*v
+end
+
+function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
+                    q::SubArray{Float64},
+                    pref::Float64,
+                    mesh::St_mesh, ::NCL; neqs=4)
+
+    PhysConst = PhysicalConst{Float64}()
+                
+    ρ = q[1]
+    u = q[2]
+    v = q[3]
+    θ = q[4]
+    
+    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    F[1] = ρ*u
+    F[2] = u
+    F[3] = u
+    F[4] = θ
+    
+    G[1] = ρ*v
+    G[2] = v
+    G[3] = v
+    G[4] = θ
 end

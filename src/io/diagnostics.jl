@@ -18,7 +18,7 @@ end
 
 
 
-function compute_mass!(uaux, u, mesh, metrics, ω,neqs,::Inexact)
+function compute_mass!(uaux, u, mesh, metrics, ω,neqs,::Inexact,::TOTAL)
     if ("Laguerre" in mesh.bdy_edge_type)
         u2uaux!(uaux, u, neqs, mesh.npoin)
         mass = 0.0
@@ -58,9 +58,49 @@ function compute_mass!(uaux, u, mesh, metrics, ω,neqs,::Inexact)
     return mass
 
 end
+function compute_mass!(uaux, u, uauxe, mesh, metrics, ω,neqs,::Inexact,::PERT)
+   if ("Laguerre" in mesh.bdy_edge_type)
+       u2uaux!(uaux, u, neqs, mesh.npoin)
+       mass = 0.0
+       ω1 = ω[1]
+       ω2 = ω[2]
+       for iel=1:mesh.nelem
+
+           for j=1:mesh.ngl, i=1:mesh.ngl
+               ip = mesh.connijk[iel,i,j]
+               ωJac = ω1[i]*ω1[j]*metrics[1].Je[iel,i,j]
+               ρ    = uaux[ip,1] + uauxe[ip,1]
+               mass += ρ*ωJac
+           end
+       end
+       for iel=1:mesh.nelem_semi_inf
+
+           for j=1:mesh.ngr, i=1:mesh.ngl
+               ip = mesh.connijk_lag[iel,i,j]
+               ωJac = ω1[i]*ω2[j]*metrics[2].Je[iel,i,j]
+               ρ    = uaux[ip,1] + uauxe[ip,1]
+               mass += ρ*ωJac
+           end
+       end
+   else
+       u2uaux!(uaux, u, neqs, mesh.npoin)
+       mass = 0.0	
+       for iel=1:mesh.nelem
+
+           for j=1:mesh.ngl, i=1:mesh.ngl
+               ip = mesh.connijk[iel,i,j]
+               ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+               ρ    = uaux[ip,1] + uauxe[ip,1]
+               mass += ρ*ωJac        
+           end
+       end
+    end
+    return mass
+
+end
 
 
-function compute_mass!(uaux, u, mesh, metrics, ω,neqs,::Exact,Q,ψ)
+function compute_mass!(uaux, u, uauxe, mesh, metrics, ω,neqs,::Exact,Q,ψ)
 
     u2uaux!(uaux, u, neqs, mesh.npoin)
     mass = 0.0	
@@ -78,7 +118,7 @@ function compute_mass!(uaux, u, mesh, metrics, ω,neqs,::Exact,Q,ψ)
 
 end
 
-function compute_energy!(uaux, u, mesh, metrics, ω,neqs)
+function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
 
     PhysConst = PhysicalConst{Float64}()	 
     u2uaux!(uaux, u, neqs, mesh.npoin)
@@ -150,7 +190,7 @@ function compute_energy!(uaux, u, mesh, metrics, ω,neqs)
 
 end
 
-function compute_energy!(uaux, u, mesh, metrics, ω,neqs,QT::Exact,Q,ψ)
+function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs,QT::Exact,Q,ψ)
 
     PhysConst = PhysicalConst{Float64}()	 
     u2uaux!(uaux, u, neqs, mesh.npoin)
@@ -183,23 +223,22 @@ function compute_energy!(uaux, u, mesh, metrics, ω,neqs,QT::Exact,Q,ψ)
 end
 
 
-function print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, neqs,QT,ψ)
+function print_diagnostics(mass_ini, energy_ini, uaux, uauxe, solution, mesh, metrics, ω, neqs,QT,ψ)
     
     iout = inputs[:ndiagnostics_outputs]
     lexact_integration = inputs[:lexact_integration]
     @info size(solution.u)
     if(lexact_integration)
-       N = mesh.ngl
-       Q = N + 1
-       mass_final   = compute_mass!(uaux, @view(solution.u[end][:]), mesh, metrics, ω,neqs,QT,Q,ψ)
+        N = mesh.ngl
+        Q = N + 1
+        mass_final   = compute_mass!(uaux, @view(solution.u[iout][:]), @view(uauxe[:,:]), mesh, metrics, ω,neqs,QT,Q,ψ)
     else
-       mass_final   = compute_mass!(uaux, @view(solution.u[end][:]), mesh, metrics, ω,neqs,QT)
+        mass_final   = compute_mass!(uaux, @view(solution.u[iout][:]), @view(uauxe[:,:]), mesh, metrics, ω,neqs,QT)
     end
-
-    #mass_final = compute_mass!(uaux, @view(solution.u[iout][:]), mesh, metrics, ω, neqs,QT)
-    energy_final = compute_energy!(uaux, @view(solution.u[end][:]), mesh, metrics, ω, neqs)
+    
+    #energy_final = compute_energy!(uaux, @view(solution.u[iout][:]), @view(uauxe[:,:]), mesh, metrics, ω, neqs)
     mass_loss = abs(mass_final-mass_ini)/mass_ini
-    energy_loss = abs(energy_final-energy_ini)/energy_ini
+    #energy_loss = abs(energy_final-energy_ini)/energy_ini
 
     if mass_loss > 1.0e-13
         

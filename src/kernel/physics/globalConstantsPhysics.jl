@@ -11,11 +11,13 @@ using Parameters
     Pr::T   = 0.7
     Prnum::T= 0.1
     pref::T = 100000.0 #Pa
+    
     Rovercv = Rair/cv
     cpoverR = cp/Rair
-    cvoverR = cv/Rair
-    C0::T   = (Rair^γ)/pref^Rovercv
-        
+    cpovercv= cp/cv
+    cvovercp= cv/cp
+    C0::T   = (Rair^γ)/pref^(γ-1.0) #Rovercv
+    
     #Gravity
     g::T = 9.80616 #m/s²
     g2::T= 9.80616*9.80616
