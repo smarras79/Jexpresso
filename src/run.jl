@@ -82,17 +82,12 @@ if !isdir(OUTPUT_DIR)
     mkpath(OUTPUT_DIR)
 end
 
-command = "cp"
+#--------------------------------------------------------
+#Save a copy of user_inputs.jl for the case being run 
+#--------------------------------------------------------
 f =  string(case_dir, "/user_inputs.jl")
-run(`$command $f $OUTPUT_DIR`) 
+run(`$cp $f $OUTPUT_DIR`) 
 
-#--------------------------------------------------------
-# Equations setup
-# !!!!!!
-# !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
-# !!!!!!
-#--------------------------------------------------------
-#Profile.clear()
 
 driver(ContGal(),   # Space discretization type    
        inputs, # input parameters from src/user_input.jl
