@@ -51,10 +51,11 @@ equations           = string(parsed_args["eqs"])
 equations_case_name = string(parsed_args["eqs_case"])
 equations_dir       = string("equations")
 
-driver_dir          = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/drivers.jl")
-user_flux_dir       = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_flux.jl")
-user_source_dir     = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_source.jl")
-user_bc_dir         = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_bc.jl")
+case_dir            = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name)
+driver_dir          = string(case_dir, "/drivers.jl")
+user_flux_dir       = string(case_dir, "/user_flux.jl")
+user_source_dir     = string(case_dir, "/user_source.jl")
+user_bc_dir         = string(case_dir, "/user_bc.jl")
 
 include(driver_dir)
 include(user_flux_dir)
@@ -80,6 +81,10 @@ end
 if !isdir(OUTPUT_DIR)
     mkpath(OUTPUT_DIR)
 end
+
+command = "cp"
+f =  string(case_dir, "/user_inputs.jl")
+run(`$command $f $OUTPUT_DIR`) 
 
 #--------------------------------------------------------
 # Equations setup

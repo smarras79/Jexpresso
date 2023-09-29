@@ -42,8 +42,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                     q.qn[ip,1] = ρ - ρref
                     q.qn[ip,2] = ρ*u
                     q.qn[ip,3] = ρ*v
-                    q.qn[ip,4] = (ρ*θ - ρrefθref)
-                    #q.qn[ip,4] = ρ*Δθ
+                    q.qn[ip,4] = ρ*θ - ρref*θref
                     q.qn[ip,end] = p
                     
                     #Store initial background state for plotting and analysis of pertuebations

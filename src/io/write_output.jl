@@ -226,9 +226,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                     
                     ivar = 4
                     idx = (ivar - 1)*npoin
-                    # qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./(qout[1:npoin] .+ qexact[1:npoin,1])
-                    qout[idx+1:4*npoin] .= (q[idx+1:4*npoin] .+ qexact[1:npoin,4]) ./(qout[1:npoin] .+ qexact[1:npoin,1]) - qexact[1:npoin,4]/qexact[1:npoin,1]
-                    
+                    qout[idx+1:4*npoin] .= (q[idx+1:4*npoin] .+ qexact[1:npoin,4])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,4]./qexact[1:npoin,1]
                 end
             end
         end
