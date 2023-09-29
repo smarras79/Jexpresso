@@ -1,8 +1,3 @@
-include("../abstractTypes.jl")
-include("../mesh/mesh.jl")
-include("../mesh/metric_terms.jl")
-include("../bases/basis_structs.jl")
-
 abstract type AbstractMassType end
 mutable struct St_ElMat{TFloat} <: AbstractMassType
     M::Array{TFloat} #Mass
@@ -80,79 +75,32 @@ function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
             end
         end
     end
-    #show(stdout, "text/plain", el_matrices.D)
-    
     return Del
     
 end
 
+
 function build_differentiation_matrix(SD::NSD_2D, ψ, dψdξ, ω, mesh, N, Q, T)
     nothing
 end
-
 function build_differentiation_matrix(SD::NSD_3D, ψ, dψdξ, ω, mesh, N, Q, T)
     nothing
 end
 
-
 #
 # Element mass matrix
 #
-function build_mass_matrix(SD::NSD_1D, QT::Inexact, ψ, ω, mesh, metrics, N, Q, T)
-        
-    Me = zeros(T, N+1, mesh.nelem)
-    
-    for iel=1:mesh.nelem
-        Jac = mesh.Δx[iel]/2
-        
-        for i=1:N+1
-            Me[i,iel] += Jac*ω[i]
-        end
-    end
-    #show(stdout, "text/plain", Me)
-    
-    return Me
-    
-end
-
-function build_mass_matrix(SD::NSD_1D, QT::Exact, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix!(Me, SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
-    
-    M = zeros((N+1), (N+1), mesh.nelem)
-    
-    for iel=1:mesh.nelem
-        for k = 1:QN
-            ωk = ω[k]*mesh.Δx[iel]
-            for i = 1:MN
-                ψik = ψ[i,k]
-                for j = 1:MN
-                    ψjk = ψ[j,k]
-                    M[i,j,iel] += ωk*ψik*ψjk
-                end
-            end
-        end
-    end
-    #show(stdout, "text/plain", M)
-    
-    return M
-end
-
-function build_mass_matrix(SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
-    
-    MN = N + 1
-    QN = Q + 1
-    
-    Me = zeros((N+1)^2, (N+1)^2, mesh.nelem)
-    
     for iel=1:mesh.nelem
         
         for l = 1:Q+1
             for k = 1:Q+1
                 
                 ωkl  = ω[k]*ω[l]
-                Jkle = metrics.Je[k, l, iel]
+                Jkle = metrics.Je[iel, k, l]
                 
                 for j = 1:N+1
                     for i = 1:N+1
@@ -170,9 +118,7 @@ function build_mass_matrix(SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
             end
         end
     end
-    #show(stdout, "text/plain", Me)
-    
-    return Me
+  
 end
 
 #
@@ -217,15 +163,15 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
                     for i = 1:N+1
                         J = i + (j - 1)*(N + 1)
                         
-                        dψJK_dx = dψ[i,k]*ψ[j,l]*metrics.dξdx[k,l,iel] + ψ[i,k]*dψ[j,l]*metrics.dηdx[k,l,iel]
-                        dψJK_dy = dψ[i,k]*ψ[j,l]*metrics.dξdy[k,l,iel] + ψ[i,k]*dψ[j,l]*metrics.dηdy[k,l,iel]
+                        dψJK_dx = dψ[i,k]*ψ[j,l]*metrics.dξdx[iel,k,l] + ψ[i,k]*dψ[j,l]*metrics.dηdx[iel,k,l]
+                        dψJK_dy = dψ[i,k]*ψ[j,l]*metrics.dξdy[iel,k,l] + ψ[i,k]*dψ[j,l]*metrics.dηdy[iel,k,l]
                         
                         for n = 1:N+1
                             for m = 1:N+1
                                 I = m + (n - 1)*(N + 1)
                                 
-                                dψIK_dx = dψ[m,k]*ψ[n,l]*metrics.dξdx[k,l,iel] + ψ[m,k]*dψ[n,l]*metrics.dηdx[k,l,iel]
-                                dψIK_dy = dψ[m,k]*ψ[n,l]*metrics.dξdy[k,l,iel] + ψ[m,k]*dψ[n,l]*metrics.dηdy[k,l,iel]
+                                dψIK_dx = dψ[m,k]*ψ[n,l]*metrics.dξdx[iel,k,l] + ψ[m,k]*dψ[n,l]*metrics.dηdx[iel,k,l]
+                                dψIK_dy = dψ[m,k]*ψ[n,l]*metrics.dξdy[iel,k,l] + ψ[m,k]*dψ[n,l]*metrics.dηdy[iel,k,l]
                                 
                                 Le[I,J, iel] += ω[k]*ω[l]*(dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy)
                             end
@@ -242,202 +188,81 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     return -Le
 end
 
-
-
 #
 # DSS
 #
-function DSS_mass(SD::NSD_1D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
- 
-    M    = zeros(npoin, npoin)
-    Minv = zeros(npoin, npoin)
-    
-    for iel=1:nelem
-        for i=1:N+1
-            I = conn[i,iel]
-            for j=1:N+1
-                J = conn[j,iel]
-                M[I,J] = M[I,J] + Me[i,j,iel]                
-            end
+function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
+
+    if llump == true
+        for iel=1:nelem
+            for j = 1:N+1
+                for i = 1:N+1
+                    J = i + (j - 1)*(N + 1)
+                    JP = conn[iel,i,j]
+                    for n = 1:N+1
+                        for m = 1:N+1
+                            I = m + (n - 1)*(N + 1)
+                            IP = conn[iel,m,n]
+                            M[IP] += Mel[I,J,iel] #if inexact
+                        end
+                    end
+                end
+            end    
         end
-    end
-    Minv = inv(M)
-    
-    return M , Minv
-end
-
-function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn, nelem, npoin, N, T)
-
-    A = zeros(npoin)
-    Ainv = zeros(npoin)
-    
-    for iel=1:nelem
-        for i=1:N+1
-            I = conn[i,iel]
-            A[I] = A[I] + Ae[i,iel]
-        end
-    end
-    Ainv = 1.0./A
-    
-    return A, Ainv
-end
-
-
-function DSS(SD::NSD_2D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
-
-    A  = zeros(npoin)
-    
-    for iel=1:nelem
-        for i=1:N+1
-            for j=1:N+1
-                m = i + (j - 1)*(N + 1)
-                
-                I = conn[i,j,iel]
-                                
-                A[I] = A[I] + Ae[m,iel]
-            end
-        end
-    end
-    #show(stdout, "text/plain", M)
-    return A
-end
-
-
-function DSS_mass(SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
-    
-    M  = zeros(npoin, npoin)
-    for iel=1:nelem
+       
+    else
         
-        #show(stdout, "text/plain", 36.0*Mel[:,:,iel])
-        
-        for j = 1:N+1
-            for i = 1:N+1
-                J = i + (j - 1)*(N + 1)
-                JP = conn[i,j,iel]
-                for n = 1:N+1
-                    for m = 1:N+1
-                        I = m + (n - 1)*(N + 1)
-                        IP = conn[m,n,iel]
-                        
-                        M[IP,JP] = M[IP,JP] + Mel[I,J,iel] #if exact
+        for iel=1:nelem    
+            for j = 1:N+1
+                for i = 1:N+1
+                    J = i + (j - 1)*(N + 1)
+                    JP = conn[iel,i,j]
+                    for n = 1:N+1
+                        for m = 1:N+1
+                            I = m + (n - 1)*(N + 1)
+                            IP = conn[iel,m,n]
+                            M[IP,JP] += Mel[I,J,iel] #if exact
+                        end
                     end
                 end
             end
         end
-        #println("\n")
-        #show(stdout, "text/plain", M[:,:, iel])
     end
-    return M
+    
 end
 
-function DSS_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
-
-    M  = zeros(npoin)
+function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
+    
     for iel=1:nelem
-
-        #show(stdout, "text/plain", 36.0*Mel[:,:,iel])
-
         for j = 1:N+1
             for i = 1:N+1
                 J = i + (j - 1)*(N + 1)
-                JP = conn[i,j,iel]
+                JP = conn[iel,i,j]
                 for n = 1:N+1
                     for m = 1:N+1
                         I = m + (n - 1)*(N + 1)
-                        IP = conn[m,n,iel]
+                        IP = conn[iel,m,n]
                         M[IP] = M[IP] + Mel[I,J,iel] #if inexact
                     end
                 end
             end
-        end
-        #println("\n")
-        #show(stdout, "text/plain", M[:,:, iel])
+        end    
     end
-    return M
 end
 
-function DSS_mass(SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
 
+
+function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, SD::NSD_2D)
     
-    M = zeros(npoin)
-    for iel=1:nelem
-        for i=1:N+1
-            I = conn[i,iel]
-            M[I] = M[I] + Mel[i,iel]
-        end
-    end
-    #show(stdout, "text/plain", M)
-    return M
-end
-
-
-function DSS_mass(SD::NSD_1D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
-    
-    M  = zeros(npoin, npoin)
-    for iel=1:nelem
-        for j = 1:N+1
-            J = conn[j,iel]
-            for n = 1:N+1
-                I = conn[i,iel]
-                
-                M[I,J] = M[I,J] + Mel[i,j,iel]
-            end
-        end
-    end
-    return M
-end
-    
-function DSSijk_mass(SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
-    M  = zeros(npoin)
-    for iel=1:nelem
-        for j = 1:N+1
-            for i = 1:N+1
-                J = i + (j - 1)*(N + 1)
-                JP = conn[i,j,iel]
-                for n = 1:N+1
-                    for m = 1:N+1
-                        I = m + (n - 1)*(N + 1)
-                        IP = conn[m,n,iel]
-                        
-                        M[IP] = M[IP] + Mel[I,J,iel] #if inexact
-                    end
-                end
-            end
-        end
-    end    
-    #show(stdout, "text/plain", M)
-    return M
-end
-
-function DSS_laplace(SD::NSD_1D, Lel::AbstractArray, mesh::St_mesh, T)
-
-    L = zeros(mesh.npoin, mesh.npoin)    
-    for iel=1:mesh.nelem
-        for i=1:mesh.ngl
-            I = mesh.connijk[i,iel]
-            for j=1:mesh.ngl
-                J = mesh.connijl[j,iel]
-                L[I,J] = L[I,J] + Le[i,j,iel]                
-            end
-        end
-    end
-        
-    return L
-end
-
-
-function DSS_laplace(SD::NSD_2D, Lel::AbstractArray, mesh::St_mesh, T)
-    
-    L  = zeros(mesh.npoin, mesh.npoin)
     for iel=1:mesh.nelem
         for j = 1:mesh.ngl
             for i = 1:mesh.ngl
                 J = i + (j - 1)*mesh.ngl
-                JP = mesh.connijk[i,j,iel]
+                JP = mesh.connijk[iel,i,j]
                 for n = 1:mesh.ngl
                     for m = 1:mesh.ngl
                         I = m + (n - 1)*mesh.ngl
-                        IP = mesh.connijk[m,n,iel]
+                        IP = mesh.connijk[iel,m,n]
                         
                         L[IP,JP] = L[IP,JP] + Lel[I,J,iel] #if exact
                     end
@@ -446,119 +271,103 @@ function DSS_laplace(SD::NSD_2D, Lel::AbstractArray, mesh::St_mesh, T)
         end
     end    
     #show(stdout, "text/plain", L)
-    return L
-end
-
-function DSS(SD::NSD_1D, QT::Inexact, Ae::AbstractArray, conn::AbstractArray, nelem, npoin, N, T)
-
-    A = zeros(npoin)
-    Ainv = zeros(npoin)
-    
-    for iel=1:nelem
-        for i=1:N+1
-            I = conn[i,iel]
-            A[I] = A[I] + Ae[i,iel]
-        end
-    end
-    Ainv = 1.0./A
-    
-    return A, Ainv
 end
 
 
-function DSS_rhs(SD::NSD_1D, Ve::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)
 
-    V = zeros(npoin,neqs)
-    for iel=1:nelem
-        for i=1:N+1
-            I = conn[i,iel]
-            V[I,:] = V[I,:] + Ve[i,iel,:]
-        end
-    end
-    
-    return V
-end
-
-
-function DSS_rhs!(SD::NSD_1D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
+function DSS_rhs!(V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T, QT::Inexact, SD::NSD_1D)
     
     for iel = 1:nelem
         for i = 1:N+1
-            I = conn[i,iel]
+            I = conn[iel,i]
             
-            V[I,:] += Vel[i,iel,:]
+            V[I,:] += Vel[iel,i,:]
         end
     end
     #show(stdout, "text/plain", V)
 end
 
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
 
-
-function DSS_rhs(SD::NSD_2D, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
-    
-    V  = zeros(T, npoin,neqs)
-    for iel = 1:nelem
-        for j = 1:N+1
-            for i = 1:N+1
-                I = conn[i,j,iel]
-                
-                V[I,:] .= V[I,:] .+ Vel[i,j,iel,:]
-            end
-        end
-    end
-    #show(stdout, "text/plain", V)
-    return V
-end
-
-
-function DSS_rhs!(SD::NSD_2D, V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T)   
-    
-    for iel = 1:nelem
-        for j = 1:N+1
-            for i = 1:N+1
-                I = conn[i,j,iel]
-                
-                V[I,:] .= V[I,:] .+ Vel[i,j,iel,:]
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for j = 1:ngl
+                for i = 1:ngl
+                    I = mesh.connijk[iel,i,j]
+                    RHS[I,ieq] += rhs_el[iel,i,j,ieq]
+                end
             end
         end
     end
     #show(stdout, "text/plain", V)
 end
 
-
-
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Exact)
-    RHS = M\RHS #M is not iagonal
+#function divide_by_mass_matrix!(RHS::AbstractArray, RHSaux, Minv, neqs, npoin, ::Exact)
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin)
+    
+    RHSaux .= RHS
+    for ip=1:npoin
+        a = zero(eltype(RHS))
+        for jp = 1:npoin
+            a += Minv[ip,jp]*RHSaux[jp]
+        end
+        RHS[ip] = a
+    end
+    
 end
 
-function divive_by_mass_matrix!(RHS::AbstractArray, M::AbstractArray, QT::Inexact, neqs)
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin)
 
-    for i = 1:neqs
-        for j = 1:length(M)
-            RHS[j, i] /= M[j]
+    for ip=1:npoin
+        RHS[ip] = Minv[ip]*RHS[ip]
+    end
+end
+
+function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
+                        ldss_laplace=false, ldss_differentiation=false)
+
+    lbuild_differentiation_matrix = false
+    lbuild_laplace_matrix = false
+    
+    Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
+    build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
+    
+    if (QT == Exact() && inputs[:llump] == false)
+        M    = zeros(TFloat, mesh.npoin, mesh.npoin)
+        Minv = zeros(TFloat, mesh.npoin, mesh.npoin)
+    else
+        M    = zeros(TFloat, mesh.npoin)
+        Minv = zeros(TFloat, mesh.npoin)
+    end
+    DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
+    mass_inverse!(Minv, M, QT)
+    
+    Le = zeros(TFloat, 1, 1)
+    L  = zeros(TFloat, 1,1)
+    if lbuild_laplace_matrix
+        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
+        if ldss_laplace
+            L  = DSS_generic_matrix(SD, Le, mesh, TFloat)
         end
     end
     
-   # for i=1:neqs 
-   #    RHS[:,i] .= RHS[:,i]./M[:] #M is diagonal (stored as a vector)
-   #end
-end
-
-function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)
-
-    Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
-    De = build_differentiation_matrix(SD, basis.ψ, basis.dψ, ω, mesh,  N, Q, TFloat)
-    Me = build_mass_matrix(SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
-    M  = DSS_mass(SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat)
-    L  = zeros(1,1)
-    if ldss_laplace
-        L  = DSS_laplace(SD, Le, mesh, TFloat)
-    end
-    D  = zeros(1,1)
-    if ldss_differentiation
-        D  = DSS_laplace(SD, De, mesh, TFloat)
+    De = zeros(TFloat, 1, 1)
+    D  = zeros(TFloat, 1,1)
+    if lbuild_differentiation_matrix
+        De = build_differentiation_matrix(SD, basis.ψ, basis.dψ, ω, mesh,  N, Q, TFloat)
+        if ldss_differentiation
+            D  = DSS_generic_matrix(SD, De, mesh, TFloat)
+        end
     end
     
-    return (; Me, De, Le, M, D, L)
+    return (; Me, De, Le, M, Minv, D, L)
 end
 
+function mass_inverse!(Minv, M::AbstractMatrix, QT)
+    Minv .= inv(M)
+end
+
+
+function mass_inverse!(Minv, M::AbstractVector, QT)
+    Minv .= 1.0./M
+end

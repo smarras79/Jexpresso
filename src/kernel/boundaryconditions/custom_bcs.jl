@@ -1,38 +1,23 @@
-include("../abstractTypes.jl")
-
 #---------------------------------------------------------------------------
 # Fetch problem name to access the user_bc functions
 #---------------------------------------------------------------------------
-if (length(ARGS) === 1) #equations
-    user_bc_dir = string("../../equations/", ARGS[1], "/user_bc.jl")
-elseif (length(ARGS) === 2) #equations/equations_case_name
-    user_bc_dir = string("../../equations/", ARGS[1], "/", ARGS[2], "/user_bc.jl")
-end
-include(user_bc_dir)
+#if (size(ARGS) === 2)
+#    user_bc_dir = string("../../equations/", ARGS[1], "/", ARGS[2], "/user_bc.jl")    
+#    include(user_bc_dir)
+#end
 #---------------------------------------------------------------------------
+function dirichlet!(qbdy, x, y, t, tag, inputs::Dict)
+    user_bc_dirichlet!(qbdy, x, y, t, tag, inputs::Dict)
+end
 
-function neumann(q, gradq, x, y, t, mesh, metrics, tag, inputs::Dict)
+function neumann(q, gradq, x, y, t, tag, inputs::Dict)
     
     rhs = user_bc_neumann(q, gradq, x, y, t, tag, inputs::Dict)
     return rhs
 end
 
-function neumann(q, gradq, x, t, mesh, metrics, inputs::Dict)
+function neumann(q, gradq, x, t, inputs::Dict)
 
     rhs = user_bc_neumann(q, gradq, x, t, inputs)
     return rhs
-end
-
-function dirichlet!(q, gradq, x, y, t, mesh, metrics, tag, qbdy, inputs::Dict)
-
-    qbdy = user_bc_dirichlet!(q, gradq, x, y, t, tag, qbdy, inputs::Dict)
-    
-    return qbdy
-end
-
-function dirichlet!(q, gradq, x, t, mesh, metrics, tag, qbdy, inputs::Dict)
-    
-    qbdy = user_bc_dirichlet!(q, gradq, x, t, tag, qbdy, inputs::Dict)
-
-    return qbdy
 end
