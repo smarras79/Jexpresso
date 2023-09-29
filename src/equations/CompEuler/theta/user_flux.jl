@@ -40,7 +40,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     ρ  = q[1] + qe[1]
     ρu = q[2]
     ρv = q[3]
-    ρθ = q[4] + qe[4]#(q[4] + ρ*qe[4]/qe[1])
+    ρθ = q[4] + qe[4]
     
     θ  = ρθ/ρ
     u  = ρu/ρ
