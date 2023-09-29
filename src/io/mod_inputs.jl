@@ -3,7 +3,9 @@ using PrettyTables
 
 #macro datatype(str); :($(Symbol(str))); end
 
-function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, equations_dir::String)
+#function mod_inputs_user_inputs!(equations_dir::String, parsed_equations, parsed_equations_case_name, )
+
+function mod_inputs_user_inputs!(user_input_file)
 
     error_flag::Int8 = 0
     
@@ -11,17 +13,16 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
     # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
     # was defined within this same function via the include(input_dir) above.
     # 
-    input_dir = string(equations_dir, "/", parsed_equations, "/", parsed_equations_case_name, "/user_inputs.jl")
-    include(input_dir)
+    include(user_input_file)
     inputs = @Base.invokelatest(user_inputs())
 
     #Store parsed arguments xxx into inputs[:xxx]
     _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
     
     #
-    print(GREEN_FG(string(" # Read inputs dict from ", input_dir, " ... \n")))
+    print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")))
     pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
-    print(GREEN_FG(string(" # Read inputs dict from ", input_dir, " ... DONE\n")))
+    print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")))
     
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
