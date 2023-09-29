@@ -46,48 +46,53 @@ end
 #--------------------------------------------------------
 #Parse command line args:
 #--------------------------------------------------------
-parsed_args         = parse_commandline()
-equations           = string(parsed_args["eqs"])
-equations_case_name = string(parsed_args["eqs_case"])
-equations_dir       = string("equations")
+parsed_args                = parse_commandline()
+parsed_equations           = string(parsed_args["eqs"])
+parsed_equations_case_name = string(parsed_args["eqs_case"])
 
-driver_dir          = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/drivers.jl")
-user_flux_dir       = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_flux.jl")
-user_source_dir     = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_source.jl")
-user_bc_dir         = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/user_bc.jl")
+driver_file         = string(dirname(@__DIR__()), "/problems/equations/drivers.jl")
+case_name            = string(dirname(@__DIR__()), "/problems/equations", "/", parsed_equations, "/", parsed_equations_case_name)
+user_input_file      = string(case_name, "/user_inputs.jl")
+user_flux_file       = string(case_name, "/user_flux.jl")
+user_source_file     = string(case_name, "/user_source.jl")
+user_bc_file         = string(case_name, "/user_bc.jl")
+user_initialize_file = string(case_name, "/initialize.jl")
 
-include(driver_dir)
-include(user_flux_dir)
-include(user_source_dir)
-include(user_bc_dir)
+include(driver_file)
+
+include(user_input_file)
+include(user_flux_file)
+include(user_source_file)
+include(user_bc_file)
+include(user_initialize_file)
 
 #--------------------------------------------------------
 #Read User Inputs:
 #--------------------------------------------------------
 mod_inputs_print_welcome()
 inputs = Dict{}()
-inputs = mod_inputs_user_inputs!(equations, equations_case_name, equations_dir)
+
+#inputs = mod_inputs_user_inputs!(equations_dir, parsed_equations_case_name, parsed_equations_dir)
+inputs = mod_inputs_user_inputs!(user_input_file)
 
 #--------------------------------------------------------
 #Create output directory if it doesn't exist:
 #--------------------------------------------------------
 user_defined_output_dir = inputs[:output_dir]
 if user_defined_output_dir == "none"
-    OUTPUT_DIR = string(dirname(@__DIR__()), "/src/", equations_dir, "/", equations, "/", equations_case_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS/"))
+    OUTPUT_DIR = string(dirname(@__DIR__()), "/src/", parsed_equations, "/equations", "/", parsed_equations_case_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS/"))
 else
-    OUTPUT_DIR = string(user_defined_output_dir, "/", equations, "/", equations_case_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS/"))
+    OUTPUT_DIR = string(user_defined_output_dir, "/", parsed_equations, "/", parsed_equations_case_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS/"))
 end
 if !isdir(OUTPUT_DIR)
     mkpath(OUTPUT_DIR)
 end
 
 #--------------------------------------------------------
-# Equations setup
-# !!!!!!
-# !!!!!! WARNING: MOVE all the setup parameters to user_input.jl
-# !!!!!!
+#Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
-#Profile.clear()
+run(`$cp $user_input_file $OUTPUT_DIR`) 
+
 
 driver(ContGal(),   # Space discretization type    
        inputs, # input parameters from src/user_input.jl

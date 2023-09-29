@@ -96,7 +96,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 dydη_val = metrics.dydη[iel, k, l]
                 dydξ_val = metrics.dydξ[iel, k, l]
                 dxdη_val = metrics.dxdη[iel, k, l]
-
+                
                 # Compute Je once and reuse its value
                 Je_val = dxdξ_val * dydη_val - dydξ_val * dxdη_val
                 metrics.Je[iel, k, l] = Je_val

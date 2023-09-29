@@ -3,7 +3,9 @@ using PrettyTables
 
 #macro datatype(str); :($(Symbol(str))); end
 
-function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, equations_dir::String)
+#function mod_inputs_user_inputs!(equations_dir::String, parsed_equations, parsed_equations_case_name, )
+
+function mod_inputs_user_inputs!(user_input_file)
 
     error_flag::Int8 = 0
     
@@ -11,17 +13,16 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
     # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
     # was defined within this same function via the include(input_dir) above.
     # 
-    input_dir = string(equations_dir, "/", parsed_equations, "/", parsed_equations_case_name, "/user_inputs.jl")
-    include(input_dir)
+    include(user_input_file)
     inputs = @Base.invokelatest(user_inputs())
 
     #Store parsed arguments xxx into inputs[:xxx]
     _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
     
     #
-    print(GREEN_FG(string(" # Read inputs dict from ", input_dir, " ... \n")))
+    print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")))
     pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
-    print(GREEN_FG(string(" # Read inputs dict from ", input_dir, " ... DONE\n")))
+    print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")))
     
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
@@ -76,6 +77,9 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
     
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
+    end
+    if(!haskey(inputs, :llump))
+        inputs[:llump] = false #Default no-mass lumping (this is only useful if we use Exact integration)
     end
 
     if(haskey(inputs, :interpolation_nodes))
@@ -348,6 +352,21 @@ function mod_inputs_user_inputs!(parsed_equations, parsed_equations_case_name, e
             inputs[:δtotal_energy] = 0.0
         end
     end
+    if(!haskey(inputs, :CL))
+        # :CL stands for Conservation Law.
+        # :CL => CL()  means that we solve dq/dt + \nabla.F(q) = S(q)
+        # :CL => NCL() means that we solve dq/dt + u.\nabla(q)= S(q)        
+        inputs[:CL] = CL()
+    end
+
+    if(!haskey(inputs, :SOL_VARS_TYPE))
+        inputs[:SOL_VARS_TYPE] = TOTAL() #vs PERT()
+    end
+
+    if(!haskey(inputs, :sol_vars_names))
+        inputs[:sol_vars_names] = ("rho", "rho.u", "rho.v", "rho.theta")
+    end
+    
     if(!haskey(inputs, :case))
         inputs[:case] = ""
     else

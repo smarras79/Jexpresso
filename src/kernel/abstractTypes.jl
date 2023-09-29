@@ -44,6 +44,21 @@ struct COVAR <: AbstractMetricForm end
 struct CNVAR <: AbstractMetricForm end
 
 
+#
+# Coservation vs non-conservation formulation
+#
+abstract type AbstractLaw end
+struct CL <: AbstractLaw end
+struct NCL <: AbstractLaw end
+
+#
+# Solve for perturbation vs not perturbation variables
+# ex. solve for either α or for α' = α-αref:
+#
+abstract type AbstractPert end
+struct PERT  <: AbstractPert end
+struct TOTAL <: AbstractPert end
+
 abstract type AbstractOutFormat end
 struct PNG <: AbstractOutFormat end
 struct ASCII <: AbstractOutFormat end

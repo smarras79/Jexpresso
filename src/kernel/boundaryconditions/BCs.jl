@@ -1,39 +1,8 @@
 include("custom_bcs.jl")
 
-function apply_periodicity!(SD::NSD_1D, rhs, qp, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars)
-
-    #NOTICE: " apply_periodicity!() in 1D is now only working for nvars=1!"
-    
-    #
-    # 1D periodic
-    #
-    qp[mesh.npoin_linear] = 0.5*(qp[mesh.npoin_linear] .+ qp[1])
-    qp[1] = qp[mesh.npoin_linear]
-
-end
-
-function apply_boundary_conditions!(SD::NSD_1D, rhs, qp, mesh,inputs, QT, metrics, ψ, dψ, ω, t, nvars;L=zeros(1,1))
-    #If Neumann conditions are needed compute gradient
-    calc_grad = false
-    #   for key in keys(inputs)
-    #     if (inputs[key] == "dirichlet" || inputs[key] == "neumann" || inputs[key] == "dirichlet/neumann")
-    calc_grad = true
-    #    end
-    #  end
-    gradq = zeros(mesh.npoin,nvars)
-    #TODO remake build custom_bcs for new boundary data
-    #if (calc_grad)
-    #    gradq = build_gradient(SD, QT::Inexact, qp, ψ, dψ, ω, mesh, metrics,gradq,nvars)
-    build_custom_bcs!(t,mesh,qp,gradq,rhs,SD,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
-    
-    #end
-end
-
-#function apply_boundary_conditions!(SD::NSD_2D, rhs, qp, gradq, mesh, inputs, QT, metrics, ψ, dψ, ω, t, nvars;L=zeros(1,1))
-
 function apply_boundary_conditions!(u, uaux, t,
                                     mesh, metrics, basis,
-                                    rhs_el, ubdy,
+                                    RHS, rhs_el, ubdy,
                                     ω, SD, neqs, inputs)
     
     #If Neumann conditions are needed compute gradient
@@ -64,66 +33,25 @@ function apply_boundary_conditions!(u, uaux, t,
   #                    zeros(1,1), inputs)
 
    build_custom_bcs!(SD, t, mesh, metrics, ω,
-                     ubdy, uaux, u, @view(rhs_el[:,:,:,:]), neqs, dirichlet!, neumann, inputs)
+                     ubdy, uaux, u,
+                     @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
+                     neqs, dirichlet!, neumann, inputs)
    
     #end
     
 end
 
-function build_custom_bcs!(t,mesh,q,gradq,rhs,::NSD_1D,nvars,metrics,ω,dirichlet!,neumann,L,inputs)
-
-    for ip in [1, mesh.npoin_linear]
-        x = mesh.x[ip]
-        if (ip == 1)
-            k=1
-            iel = 1
-        else
-            k=mesh.ngl
-            iel = mesh.nelem
-        end
-        qbdy = zeros(size(q,2),1) #NO
-        
-        qbdy[:] .= 4325789.0
-        if (inputs[:luser_bc])
-            qbdy = dirichlet!(q[ip,:], gradq[ip,:], x, t, mesh, metrics, "notag", qbdy, inputs)
-            bdy_flux = (ω[k]*neumann(q[ip,:],gradq[ip,:],x,t,mesh,metrics,inputs))
-        else
-            q[ip,:] .= 0.0
-            bdy_flux = zeros(size(q,2),1)
-        end
-        
-        rhs[iel,k,:] .= rhs[iel,k,:] .+ bdy_flux[:]
-        for var =1:size(q,2)
-            if !(AlmostEqual(qbdy[var],4325789.0))
-                #@info var,x,y,qbdy[var]
-                rhs[iel,k,var] = 0.0
-                q[ip,var] = qbdy[var]
-            end
-        end
-        if (size(L,1)>1)
-            for ii=1:mesh.npoin
-                L[ip,ii] = 0.0
-            end
-            L[ip,ip] =1.0
-        end
-    end
-end
-
-
-
-#function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
-#                           qbdy, q, rhs, neqs,
-#                           dirichlet!, neumann,
-#                           L, inputs)
-
-function _bc_dirichlet!(qbdy, x, y, t, tag)
+function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
 
     # WARNING!!!!
     # THIS SHOULD LEVERAGE the bdy node tag rather than checking coordinates
     # REWRITE and make sure that there is no allocation.
     #############
-   
-    if ( x <= -4990.0 || x >= 4990.0)
+    eps = 10.0
+    xmin = mesh.xmin + eps; xmax = mesh.xmax - eps
+    ymin = mesh.ymin + eps; ymax = mesh.ymax - eps
+    
+    #=if ( x <= -4990.0 || x >= 4990.0)
         qbdy[2] = 0.0
     end
     if (y <= 10.0 || y >= 9990.0)
@@ -132,13 +60,24 @@ function _bc_dirichlet!(qbdy, x, y, t, tag)
     if ((x >= 4990.0 || x <= -4990.0) && (y >= 9990.0 || y <= 10.0))
         qbdy[2] = 0.0
         qbdy[3] = 0.0
+    end=#
+    if ( x <= xmin || x >= xmax)
+        qbdy[2] = 0.0
+    end
+    if (y <= ymin || y >= ymax)
+        qbdy[3] = 0.0
+    end
+    if ((x >= xmax || x <= xmin) && (y >= ymax || y <= ymin))
+        qbdy[2] = 0.0
+        qbdy[3] = 0.0
     end
     
 end
 
 function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
-                           qbdy, uaux, u, rhs_el, neqs,
-                           dirichlet!, neumann, inputs)
+                           qbdy, uaux, u,
+                           RHS, rhs_el,
+                           neqs, dirichlet!, neumann, inputs)
 
     #
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
@@ -155,7 +94,7 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                 
                 fill!(qbdy, 4325789.0)
                 #ipp = 1 #ip               
-                _bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge])
+                _bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge], mesh)
 
                 ####dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, tag, inputs) ###AS IT IS NOW, THIS IS ALLOCATING SHIT TONS. REWRITE to make it with ZERO allocation. hint: It may be due to passing the function but possibly not.
                 
@@ -170,7 +109,8 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                 for ieq =1:neqs
                     if !(AlmostEqual(qbdy[ieq],4325789.0)) # WHAT's this for?
                         uaux[ip,ieq]       = qbdy[ieq]
-                        rhs_el[iel,ll,mm,ieq] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
+                        #rhs_el[iel,ll,mm,ieq] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
+                        RHS[ip, ieq] = 0.0
                     end
                 end
             end
