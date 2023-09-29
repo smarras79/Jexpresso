@@ -6,7 +6,7 @@ function user_inputs()
         :tend                 => 100.0,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 0.2,
-        :ndiagnostics_outputs => 10,
+        :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         #:CL                   => NCL(), #CL() is defaults
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
