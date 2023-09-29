@@ -68,6 +68,6 @@ include(joinpath( "io", "write_output.jl"))
 
 include(joinpath( "io", "diagnostics.jl"))
 
-include("./src/run.jl")
+include("./run.jl")
 
 end
