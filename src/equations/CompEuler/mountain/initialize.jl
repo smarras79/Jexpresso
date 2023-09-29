@@ -15,26 +15,31 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
          θ0 = 250.0 #K
          T0 = θ0
          p0 = 100000.0
-         
-         N    = 0.01
-         N2   = N*N
-         g2 = PhysConst.g*PhysConst.g
+
+         auxi = PhysConst.cp*T0
+         N    = PhysConst.g/sqrt(auxi)
+         g2   = PhysConst.g*PhysConst.g
          
          for iel_g = 1:mesh.nelem
              for j=1:mesh.ngl, i=1:mesh.ngl
                  
                  ip = mesh.connijk[iel_g,i,j]
                  y  = mesh.y[ip]
-                 
-                 auxi = PhysConst.Rair*θ0
-                 p    = p0*exp(-PhysConst.g*y/auxi)
-                 θ    = θ0*exp(N2*y/PhysConst.g)
-                 
-                 ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
-                 ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
+
+                 π  = exp(-PhysConst.g*y/auxi)
+                 θ  = T0/π
+                 p  = p0*π^PhysConst.cpoverR
+                 ρ = 1/(PhysConst.Rair*T0)*p;
+                 #ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
+                 ρref = ρ
+                 θref = θ
                  
                  u = 0.0
                  v = 0.0
+
+                 if inputs[:lperturbation_vars] == true
+                     θ = θ - θref
+                 end
                  
                  q.qn[ip,1]   = ρ
                  q.qn[ip,2]   = ρ*u
@@ -47,10 +52,14 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                  q.qe[ip,1] = ρref
                  q.qe[ip,2] = ρref*u
                  q.qe[ip,3] = ρref*v
-                 q.qe[ip,4] = ρref*0          
+                 q.qe[ip,4] = ρref*0ref          
                  q.qe[ip,end] = p   #pressure
                  
              end
+         end
+
+         if inputs[:lperturbation_vars] == true
+             q.qn[:,1] .= q.qn[:,1] .- q.qe[:,1]
          end
          
      elseif(inputs[:case] === "rtb")

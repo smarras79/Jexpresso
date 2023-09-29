@@ -1,8 +1,9 @@
 using BenchmarkTools
 
-function time_loop!(QT,
-                    PT,
-                    CL,
+function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
+                    PT,            #Problem type: this is the name of the directory such as CompEuler
+                    SOL_VARS_TYPE, #TOTAL() vs PERT() for total vs perturbation solution variables
+                    CL,            #law type: CL() vs NCL() for conservative vs not-conservative forms
                     mesh::St_mesh,
                     metrics,
                     basis, ω,
@@ -89,7 +90,8 @@ function time_loop!(QT,
                   rhs_diff_el_lag,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
                   RHS_lag, RHS_visc_lag, uprimitive_lag, 
-                  SD=mesh.SD, QT, PT, CL,
+                  SD=mesh.SD, QT, CL,
+                  SOL_VARS_TYPE,
                   neqs=qp.neqs,
 		  basis=basis[1], basis_lag = basis[2], ω = ω[1], ω_lag = ω[2], mesh, metrics = metrics[1], metrics_lag = metrics[2], 
                   inputs, visc_coeff,              
@@ -104,7 +106,8 @@ function time_loop!(QT,
                   rhs_diffξ_el, rhs_diffη_el,
                   uprimitive,
                   RHS, RHS_visc,
-                  SD=mesh.SD, QT, PT, CL,
+                  SD=mesh.SD, QT, CL,
+                  SOL_VARS_TYPE, 
                   neqs=qp.neqs,
                   basis, ω, mesh, metrics,
                   inputs, visc_coeff,
@@ -112,6 +115,7 @@ function time_loop!(QT,
                   Δt, deps,
                   qp.qe, qp.qnm1, qp.qnm2, qp.μ,fx,fy,laguerre=false)
     end 
+    
     prob = ODEProblem(rhs!,
                       u,
                       tspan,
@@ -122,14 +126,15 @@ function time_loop!(QT,
     if(lexact_integration)
        N = mesh.ngl
        Q = N + 1
-       mass_ini   = compute_mass!(uaux, u, mesh, metrics, ω,qp.neqs,QT,Q,basis.ψ)
+       mass_ini   = compute_mass!(uaux, u, params.qe, mesh, metrics, ω, qp.neqs, QT, Q, basis.ψ)
     else
-       mass_ini   = compute_mass!(uaux, u, mesh, metrics, ω,qp.neqs,QT)
+       mass_ini   = compute_mass!(uaux, u, params.qe, mesh, metrics, ω, qp.neqs, QT, SOL_VARS_TYPE)
     end
-
-    energy_ini = compute_energy!(uaux, u, mesh, metrics, ω,qp.neqs)
     println(" # Initial Mass  :   ", mass_ini)
-    println(" # Initial Energy: ", energy_ini)
+
+    energy_ini = 0.0
+    #energy_ini = compute_energy!(uaux, u, params.qe, mesh, metrics, ω,qp.neqs)
+    #println(" # Initial Energy: ", energy_ini)
     
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=inputs[:Δt],
