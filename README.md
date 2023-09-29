@@ -19,7 +19,7 @@ Push equations name to ARGS
 You need to do this only when you run a new equations
 ```bash
 julia> push!(empty!(ARGS), EQUATIONS::String, EQUATIONS_CASE_NAME::String);
-julia> include("./Jexpresso.jl")
+julia> include("./src/Jexpresso.jl")
 ```
 
 * EQUATIONS is the name of your equations directory as $JEXPRESSO/src/equations/equations
@@ -31,7 +31,7 @@ The path would look like
 For example, if you wanted to run `CompEuler` with the setup defined inside the case directory `theta`, then you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "theta");
-julia> include("./Jexpresso.jl")
+julia> include("./src/Jexpresso.jl")
 ```
 
 For ready to run tests, there are the currently available equations names:
