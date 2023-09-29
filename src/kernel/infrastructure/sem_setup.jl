@@ -1,12 +1,10 @@
-include("../bases/basis_structs.jl")
-include("../infrastructure/element_matrices.jl")
 include("../mesh/restructure_for_periodicity.jl")
 
 function sem_setup(inputs::Dict)
     
-    Nξ = inputs[:nop]
-    lexact_integration = inputs[:lexact_integration]    
-    PT    = inputs[:equations]
+    Nξ = inputs[:nop] 
+    PT = inputs[:equations]
+    lexact_integration = inputs[:lexact_integration]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -23,7 +21,7 @@ function sem_setup(inputs::Dict)
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
     ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)    
-    ξ,ω = ξω.ξ, ξω.ω
+    ξ,ω = ξω.ξ, ξω.ω    
     if lexact_integration
         #
         # Exact quadrature:
@@ -33,7 +31,7 @@ function sem_setup(inputs::Dict)
         QT_String = "Exact"
         Qξ  = Nξ + 1
         
-        ξωQ   = basis_structs_ξ_ω!(inputs[:quadrature_nodes], mesh.nop)
+        ξωQ   = basis_structs_ξ_ω!(inputs[:quadrature_nodes], Qξ)
         ξq, ω = ξωQ.ξ, ξωQ.ω
     else  
         #
@@ -56,22 +54,22 @@ function sem_setup(inputs::Dict)
     # ψ     = basis.ψ[N+1, Q+1]
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
+    #@info " --- BASES"
     basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
     
     #--------------------------------------------------------
     # Build metric terms
     #--------------------------------------------------------
-    @info " metrics"
-    @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
-
-    @info " periodicity_restructure!"
-    @time periodicity_restructure!(mesh,inputs)
+    #@info " --- METRICS"
+    metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
+    
+    periodicity_restructure!(mesh,inputs)
     
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
-    @info " build matrices"
-    @time matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+    #@info " --- MATRICES"
+    matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
     
     return (; QT, PT, mesh, metrics, basis, ω, matrix)
 end

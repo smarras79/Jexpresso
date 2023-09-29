@@ -1,60 +1,38 @@
-using ArgParse
 using Crayons.Box
 using PrettyTables
-using Revise
 
-export mod_inputs_user_inputs
-export mod_inputs_print_welcome
+#macro datatype(str); :($(Symbol(str))); end
 
-function parse_commandline()
-    s = ArgParseSettings()
+#function mod_inputs_user_inputs!(equations_dir::String, parsed_equations, parsed_equations_case_name, )
 
-    @add_arg_table s begin
-        "--opt1"
-        help = "an option with an argument"
-        "--opt2", "-o"
-        help = "another option with an argument"
-        arg_type = Int
-        default = 0
-        "--flag1"
-        help = "an option without argument, i.e. a flag"
-        action = :store_true
-        "arg1"
-        help = "equations"
-        required = true
-        "arg2"
-        help = "case name within equations/equations"
-        required = false
-    end
-
-    return parse_args(s)
-end
-
-macro datatype(str); :($(Symbol(str))); end
-
-
-function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::String)
+function mod_inputs_user_inputs!(user_input_file)
 
     error_flag::Int8 = 0
     
     #
     # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
-    # was definied within this same function via the include(input_dir) above.
+    # was defined within this same function via the include(input_dir) above.
     # 
-    input_dir = string(equations_dir, "/", equations, "/", equations_case_name, "/user_inputs.jl")
-    include(input_dir)
+    include(user_input_file)
     inputs = @Base.invokelatest(user_inputs())
+
+    #Store parsed arguments xxx into inputs[:xxx]
+    _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
     
     #
-    print(GREEN_FG(string(" # Read inputs dict from ", input_dir, " ... \n")))
+    print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")))
     pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
-    print(GREEN_FG(string(" # Read inputs dict from ", input_dir, " ... DONE\n")))
+    print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")))
     
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
 
+    if(!haskey(inputs, :luser_bc))
+        inputs[:luser_bc] = true
+    end
+    
     #
     # Plotting parameters:
     #
@@ -99,6 +77,9 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
+    end
+    if(!haskey(inputs, :llump))
+        inputs[:llump] = false #Default no-mass lumping (this is only useful if we use Exact integration)
     end
 
     if(haskey(inputs, :interpolation_nodes))
@@ -175,44 +156,10 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     
     #
     # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
+    # https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
     #
-    if(haskey(inputs, :ode_solver))
-        if(uppercase(inputs[:ode_solver]) == "TSIT5")
-            inputs[:ode_solver] = Tsit5() # Tsitouras 5/4 Runge-Kutta method. (free 4th order interpolant).
-        elseif(uppercase(inputs[:ode_solver]) == "RK4")
-            inputs[:ode_solver] = RK4()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK22")
-            inputs[:ode_solver] = SSPRK22()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK33")
-            inputs[:ode_solver] = SSPRK33()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK53" || uppercase(inputs[:ode_solver]) == "RK53")
-            inputs[:ode_solver] = SSPRK53()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK54")
-            inputs[:ode_solver] = SSPRK54()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK63")
-            inputs[:ode_solver] = SSPRK63()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK73")
-            inputs[:ode_solver] = SSPRK73()
-        elseif(uppercase(inputs[:ode_solver]) == "SSPRK104")
-            inputs[:ode_solver] = SSPRK104()
-        elseif(uppercase(inputs[:ode_solver]) == "CARPENTERKENNEDY2N54")
-            inputs[:ode_solver] = CarpenterKennedy2N54()
-        elseif(uppercase(inputs[:ode_solver]) == "BICGSTAB" ||
-            uppercase(inputs[:ode_solver]) == "BICGSTABLE" ||
-            uppercase(inputs[:ode_solver]) == "IterativeSolversJL_BICGSTAB") 
-            inputs[:ode_solver] = IterativeSolversJL_BICGSTAB()
-        elseif(uppercase(inputs[:ode_solver]) == "GMRES"|| uppercase(inputs[:ode_solver]) == "IterativeSolversJL_GMRES")
-            inputs[:ode_solver] = IterativeSolversJL_GMRES()
-        elseif(uppercase(inputs[:ode_solver]) == "ADAMSBASHFORTH3"  ||
-            uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH3" ||
-            uppercase(inputs[:ode_solver]) == "AB3")
-            inputs[:ode_solver] = AB3()
-        elseif(uppercase(inputs[:ode_solver]) == "ADAMSBASHFORTH4"  ||
-            uppercase(inputs[:ode_solver]) == "ADAMS-BASHFORTH4" ||
-            uppercase(inputs[:ode_solver]) == "AB4")
-            inputs[:ode_solver] = AB4()
-        else
-            s = """
+    if(!haskey(inputs, :ode_solver))
+        s = """
                         WARNING in user_inputs.jl --> :ode_solver
                         
                             See usable solvers at
@@ -221,15 +168,14 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
                         SSPRK53 will be used by default.
                             """            
             inputs[:ode_solver] = SSPRK54()
-
+        
             @warn s
-        end
-    else
-        inputs[:ode_solver] = SSPRK54()
     end
-    
+    if(!haskey(inputs, :ode_adaptive_solver))
+        inputs[:ode_adaptive_solver] = false
+    end
     if(!haskey(inputs, :output_dir))
-        inputs[:output_dir] = ""
+        inputs[:output_dir] = "none"
     end
     if(!haskey(inputs, :loutput_pert))
         inputs[:loutput_pert] = false
@@ -274,13 +220,19 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     # Some physical constants and parameters:
     #    
     if(!haskey(inputs, :νx))
-        inputs[:νx] = Float16(0.0) #default kinematic viscosity
+        inputs[:νx] = Float64(0.0) #default kinematic viscosity
     end
     if(!haskey(inputs, :νy))
-        inputs[:νy] = Float16(0.0) #default kinematic viscosity
+        inputs[:νy] = Float64(0.0) #default kinematic viscosity
     end
     if(!haskey(inputs, :νz))
-        inputs[:νz] = Float16(0.0) #default kinematic viscosity
+        inputs[:νz] = Float64(0.0) #default kinematic viscosity
+    end
+    if(!haskey(inputs, :νρ))
+        inputs[:νρ] = Float64(0.0) #default kinematic viscosity
+    end
+    if(!haskey(inputs, :κ))
+        inputs[:κ] = Float64(0.0) #default kinematic viscosity
     end
 
     #
@@ -347,46 +299,30 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
     # Define neqs based on the equations being solved
     #------------------------------------------------------------------------
     neqs::Int8 = 1
-
-    if (lowercase(equations) == "burgers")
-        inputs[:equations] = Burgers()
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-    elseif (lowercase(equations) == "shallowwater")
-        inputs[:equations] = ShallowWater()    
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-        
-    elseif (lowercase(equations) == "compeuler")
+    if (lowercase(parsed_equations) == "compeuler")
         inputs[:equations] = CompEuler()
         inputs[:ldss_laplace] = false
         inputs[:ldss_differentiation] = false
-        
-    elseif (lowercase(equations) == "linearclaw" ||
-        lowercase(equations) == "linclaw" ||
-        lowercase(equations) == "lclaw")
-        inputs[:equations] = LinearCLaw()
+    elseif (lowercase(parsed_equations) == "burgers")
+        inputs[:equations] = Burgers()
         inputs[:ldss_laplace] = false
         inputs[:ldss_differentiation] = false
-        
-    elseif (lowercase(equations) == "advdiff" ||
-        lowercase(equations) == "advdif" ||
-        lowercase(equations) == "ad" ||
-        lowercase(equations) == "adv2d")
+    elseif (lowercase(parsed_equations) == "shallowwater")
+        inputs[:equations] = ShallowWater()    
+        inputs[:ldss_laplace] = false
+        inputs[:ldss_differentiation] = false    
+    elseif (lowercase(parsed_equations) == "advdiff" ||
+        lowercase(parsed_equations) == "advdif" ||
+        lowercase(parsed_equations) == "ad" ||
+        lowercase(parsed_equations) == "adv2d")
         inputs[:equations] = AdvDiff()
         inputs[:ldss_laplace] = false
         inputs[:ldss_differentiation] = false
-        
-    elseif (lowercase(equations) == "elliptic" ||
-        lowercase(equations) == "diffusion")
+    elseif (lowercase(parsed_equations) == "elliptic" ||
+        lowercase(parsed_equations) == "diffusion")
         inputs[:equations] = Elliptic()
         inputs[:ldss_laplace] = true
-        inputs[:ldss_differentiation] = false
-        
-    elseif (lowercase(equations) == "helmholtz")
-        inputs[:equations] = Helmholtz()
-        inputs[:ldss_laplace] = true
-        inputs[:ldss_differentiation] = false    
+        inputs[:ldss_differentiation] = false     
     else
         
         #inputs[:neqs] = 1 #default
@@ -394,15 +330,43 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         s = """
                 jexpresso  user_inputs.jl: equations ", the inputs[:equations] " that you chose is not coded!
                 Chose among:
+                         - "CompEuler"
                          - "AdvDiff"/"AD"/"Adv"
-                         - "LinearCLaw"/"LinClaw"
-                         - "Burgers"
-                         - "SW"
               """
         
         @error s
     end
 
+    if(!haskey(inputs, :energy_equation))
+        inputs[:energy_equation] = "theta"
+        inputs[:δtotal_energy] = 0.0
+    else
+        if (lowercase(inputs[:equation_set]) == "totalenergy" ||
+            lowercase(inputs[:equation_set]) == "totalene"    ||
+            lowercase(inputs[:equation_set]) == "totene"      ||
+            lowercase(inputs[:equation_set]) == "tene")
+            inputs[:δtotal_energy] = 1.0
+        else
+            #Default
+            inputs[:energy_equation] = "theta"
+            inputs[:δtotal_energy] = 0.0
+        end
+    end
+    if(!haskey(inputs, :CL))
+        # :CL stands for Conservation Law.
+        # :CL => CL()  means that we solve dq/dt + \nabla.F(q) = S(q)
+        # :CL => NCL() means that we solve dq/dt + u.\nabla(q)= S(q)        
+        inputs[:CL] = CL()
+    end
+
+    if(!haskey(inputs, :SOL_VARS_TYPE))
+        inputs[:SOL_VARS_TYPE] = TOTAL() #vs PERT()
+    end
+
+    if(!haskey(inputs, :sol_vars_names))
+        inputs[:sol_vars_names] = ("rho", "rho.u", "rho.v", "rho.theta")
+    end
+    
     if(!haskey(inputs, :case))
         inputs[:case] = ""
     else
@@ -428,8 +392,19 @@ function mod_inputs_user_inputs!(equations, equations_case_name, equations_dir::
         inputs[:δvisc] = 0.0
     end
 
+
     return inputs
 end
+
+
+function _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
+    #
+    # USER: DO NOT MODIFY inputs[:parsed_equations] and inputs[:parsed_equations_case_name]
+    #
+    inputs[:parsed_equations]           = parsed_equations
+    inputs[:parsed_equations_case_name] = parsed_equations_case_name
+end
+
 
 function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
     
@@ -471,7 +446,7 @@ function mod_inputs_print_welcome()
 
     print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
     print(BLUE_FG(" # Welcome to ", RED_FG("jexpresso\n")))
-    print(BLUE_FG(" # A Julia code to solve turbulence problems in the atmosphere\n"))
+    print(BLUE_FG(" # A Julia code to solve conservation laws with continuous spectral elements\n"))
     print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
 
 end

@@ -5,7 +5,7 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::ShallowWater, q, 
     Hu_avg = 0.0
     for ie=1:mesh.nelem
         for i=1:mesh.ngl
-            ip = mesh.conn[i,ie]
+            ip = mesh.conn[ie,i]
             H_avg += q[ip,1]
             Hu_avg += q[ip,2]
         end
@@ -19,7 +19,7 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::ShallowWater, q, 
     Hudiff = zeros(mesh.ngl,mesh.nelem)
     for ie=1:mesh.nelem
         for i=1:mesh.ngl
-            ip = mesh.conn[i,ie]
+            ip = mesh.conn[ie,i]
             Hdiff[i,ie] = abs(q[ip,1] - H_avg)
             Hudiff[i,ie] = abs(q[ip,2] - Hu_avg)
         end
@@ -36,7 +36,7 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::ShallowWater, q, 
         RHu = zeros(mesh.ngl)
         ughs = zeros(mesh.ngl)
         for i=1:mesh.ngl
-            ip = mesh.conn[i,ie]
+            ip = mesh.conn[ie,i]
             x = mesh.x[ip]
             #@info "mass", (3*q[ip,1]-4*q1[ip,1]+q2[ip,1])/(2*Δt),q[ip,1],q1[ip,1],q2[ip,1]
             #@info "velocity", (3*q[ip,2]-4*q1[ip,2]+q2[ip,2])/(2*Δt),q[ip,2],q1[ip,2],q2[ip,2]      
@@ -76,7 +76,7 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q
     ρdiff  = zeros(mesh.ngl,mesh.nelem)
     for ie=1:mesh.nelem
         for i=1:mesh.ngl
-            ip = mesh.conn[i,ie]
+            ip = mesh.conn[ie,i]
             ρdiff[i,ie]  = abs(q[ip,1] - ρ_avg)
         end
     end
@@ -91,7 +91,7 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q
         Rρ = zeros(mesh.ngl)
         #Rρu = zeros(mesh.ngl)
         for i=1:mesh.ngl
-            ip = mesh.conn[i,ie]
+            ip = mesh.conn[ie,i]
             x = mesh.x[ip]
             Rρ[i] = abs((q[ip,1] - q1[ip,1])/Δt - rhs[ip,1])
             Rρu[i] = (q[ip,2] - q1[ip,2])/Δt - rhs[ip,2]
@@ -152,7 +152,7 @@ function compute_viscosity!(μ_SGS, ::NSD_1D, PT::CompEuler, q, q1, q2, rhs, Δt
     for ie =1:mesh.nelem
         Δ = mesh.Δx[ie]/mesh.ngl
         for i=1:mesh.ngl
-            ip = mesh.conn[i,ie]
+            ip = mesh.conn[ie,i]
             
              Rρ[i] = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) + rhs[ip,1])
             Rρu[i] = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) + rhs[ip,2])
@@ -188,7 +188,7 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_2D, PT::CompEuler, q, q1,
     for e=1:mesh.nelem
         for i=1:mesh.ngl
             for j=1:mesh.ngl
-                ip = mesh.connijk[i,j,e]
+                ip = mesh.connijk[e,i,j]
                 ρ_avg  += q[ip,1]
                 ρu_avg += q[ip,2]
                 ρv_avg += q[ip,3]
@@ -209,12 +209,12 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_2D, PT::CompEuler, q, q1,
     for e=1:mesh.nelem
         for i=1:mesh.ngl
             for j=1:mesh.ngl
-                ip = mesh.connijk[i,j,e]
+                ip = mesh.connijk[e,i,j]
             
-                ρdiff[i,j,e]  = abs(q[ip,1] - ρ_avg)
-                ρudiff[i,j,e] = abs(q[ip,2] - ρu_avg)
-                ρvdiff[i,j,e] = abs(q[ip,3] - ρv_avg)
-                ρEdiff[i,j,e] = abs(q[ip,4] - ρE_avg)
+                ρdiff[e,i,j]  = abs(q[ip,1] - ρ_avg)
+                ρudiff[e,i,j] = abs(q[ip,2] - ρu_avg)
+                ρvdiff[e,i,j] = abs(q[ip,3] - ρv_avg)
+                ρEdiff[e,i,j] = abs(q[ip,4] - ρE_avg)
             end
         end
     end

@@ -2,8 +2,6 @@ using LinearSolve
 using LinearSolve: solve
 using SnoopCompile
 
-include("../abstractTypes.jl")
-
 """
     solveAx(L, RHS, linear_solver... preconditionr)
 

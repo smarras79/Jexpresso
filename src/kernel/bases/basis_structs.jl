@@ -2,7 +2,6 @@
 # This file contains all the structs definitions
 # S. Marras, Feb 2022
 #
-include("../abstractTypes.jl")
 
 export St_Lagrange
 export St_Legendre
@@ -60,9 +59,9 @@ mutable struct St_cgl{TFloat} <:AbstractIntegrationPointAndWeights
     ω::Array{TFloat}
 end
 
-mutable struct St_Lagrange{TFloat} <:AbstractInterpolationBasis
-    ψ::Matrix{TFloat}
-    dψ::Matrix{TFloat}
+Base.@kwdef mutable struct St_Lagrange{TFloat} <:AbstractInterpolationBasis
+    ψ::Array{TFloat, 2}  = zeros(TFloat, mesh.ngl, mesh.ngl)
+    dψ::Array{TFloat, 2} = zeros(TFloat, mesh.ngl, mesh.ngl)    
 end
 
 function basis_structs_ξ_ω!(::AbstractPointsType, nop::TInt) end
@@ -78,7 +77,9 @@ function basis_structs_ξ_ω!(ξωtype::LG, nop::TInt)
 end
 
 function basis_structs_ξ_ω!(ξωtype::LGL, nop::TInt)
-    
+    #
+    # Note: `nop` means `nq` when building the quadrature points in sem_setup.jl
+    #
     lgl = St_lgl{TFloat}(zeros(TFloat, nop+1),
                          zeros(TFloat, nop+1))
     
@@ -89,6 +90,9 @@ end
 
 function basis_structs_ξ_ω!(ξωtype::CG, nop::TInt)
     
+    #
+    # Note: `nop` means `nq` when building the quadrature points in sem_setup.jl
+    #
     cg = St_cg{TFloat}(zeros(TFloat, nop+1),
                        zeros(TFloat, nop+1))
     
@@ -511,7 +515,7 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
     #Initialize arrays
     L    = zeros(TFloat, N+1, Q+1)
     dLdx = zeros(TFloat, N+1, Q+1)
- 
+    
     for l=1:Q+1
         xl = ξq[l]
 
@@ -548,6 +552,7 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat)
     return (L, dLdx)
 end
 
+#=
 function function_space_wrapper(inputs::Dict, )
 
     Nξ = inputs[:nop]
@@ -605,3 +610,4 @@ function function_space_wrapper(inputs::Dict, )
     
     return (; basis, ω, metrics, mesh, SD, QT)
 end
+=#
