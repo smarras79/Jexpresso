@@ -1,12 +1,14 @@
 using BenchmarkTools
 
-function time_loop!(QT,
-                    PT,
+function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
+                    PT,            #Problem type: this is the name of the directory such as CompEuler
+                    SOL_VARS_TYPE, #TOTAL() vs PERT() for total vs perturbation solution variables
+                    CL,            #law type: CL() vs NCL() for conservative vs not-conservative forms
                     mesh::St_mesh,
                     metrics::St_metrics,
                     basis, ω,
                     qp::St_SolutionVars,
-                    M,
+                    M, Minv, 
                     Δt,
                     inputs::Dict,
                     OUTPUT_DIR::String,
@@ -18,7 +20,7 @@ function time_loop!(QT,
     # Initialize
     println(" # Solving ODE ................................")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
-
+    lexact_integration = inputs[:lexact_integration]
     #-----------------------------------------------------------------
     # Initialize:
     # u     -> solution array
@@ -40,16 +42,14 @@ function time_loop!(QT,
     S            = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
     RHS          = zeros(T, mesh.npoin, qp.neqs)
     RHS_visc     = zeros(T, mesh.npoin, qp.neqs)
-
+    vaux         = zeros(T, mesh.npoin) #generic auxiliary array for general use
+    
     #The following are currently used by B.C.
-    gradu       = zeros(2, 1, 1) #zeros(2,mesh.npoin,nvars)
-    ubdy        = zeros(qp.neqs)
-    bdy_flux    = zeros(qp.neqs,1)
-    
-    uprimitive = zeros(T, mesh.ngl, mesh.ngl, qp.neqs)
-        
+    gradu      = zeros(T, 2, 1, 1) #zeros(2,mesh.npoin,nvars)
+    ubdy       = zeros(qp.neqs)
+    bdy_flux   = zeros(qp.neqs,1)    
+    uprimitive = zeros(T, mesh.ngl, mesh.ngl, qp.neqs+1)
     #-----------------------------------------------------------------
-    
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
         u[idx+1:i*mesh.npoin] = @view qp.qn[:,i]
@@ -63,18 +63,22 @@ function time_loop!(QT,
     visc_coeff = (inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ])
     
     params = (T, F, G, S,
-              uaux, uaux_el,
+              uaux, uaux_el, vaux,
               ubdy, gradu, bdy_flux, #for B.C.
               rhs_el, rhs_diff_el,
               rhs_diffξ_el, rhs_diffη_el,
               uprimitive,
               RHS, RHS_visc, 
-              SD=mesh.SD, QT, PT,
+              SD=mesh.SD,
+              QT, #quadrature type: Exact() vs Inexact() 
+              CL, #Law type: CL() for conservative vs NCL() for non-conservative forms
+              SOL_VARS_TYPE, #Solution variable types: PERT() vs TOTAL()
               neqs=qp.neqs,
               basis, ω, mesh, metrics,
               inputs, visc_coeff,              
-              M, Δt, deps,
-              qp.qnm1, qp.qnm2, qp.μ)
+              M, Minv,
+              Δt, deps,
+              qp.qe, qp.qnm1, qp.qnm2, qp.μ)
     
     prob = ODEProblem(rhs!,
                       u,
@@ -83,11 +87,18 @@ function time_loop!(QT,
 
     output_range = floor((inputs[:tend] - inputs[:tinit])/inputs[:ndiagnostics_outputs])
 
-    
-    mass_ini   = compute_mass!(uaux, u, mesh, metrics, ω,qp.neqs)
-    energy_ini = compute_energy!(uaux, u, mesh, metrics, ω,qp.neqs)
+    if(lexact_integration)
+       N = mesh.ngl
+       Q = N + 1
+       mass_ini   = compute_mass!(uaux, u, params.qe, mesh, metrics, ω, qp.neqs, QT, Q, basis.ψ)
+    else
+       mass_ini   = compute_mass!(uaux, u, params.qe, mesh, metrics, ω, qp.neqs, QT, SOL_VARS_TYPE)
+    end
     println(" # Initial Mass  :   ", mass_ini)
-    println(" # Initial Energy: ", energy_ini)
+
+    energy_ini = 0.0
+    #energy_ini = compute_energy!(uaux, u, params.qe, mesh, metrics, ω,qp.neqs)
+    #println(" # Initial Energy: ", energy_ini)
     
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=inputs[:Δt],
@@ -97,7 +108,7 @@ function time_loop!(QT,
     println(" # Solving ODE  ................................ DONE")
 
     println(" # Diagnostics  ................................ ")
-    print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs)
+   # print_diagnostics(mass_ini, energy_ini, uaux, params.qe, solution, mesh, metrics, ω, qp.neqs,QT,basis.ψ)
     println(" # Diagnostics  ................................ DONE")
     
     return solution

@@ -18,7 +18,7 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
-function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     
     if inputs[:lplot_surf3d]
@@ -58,7 +58,7 @@ function write_output(sol::ODESolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::S
     end
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") )
 end
-function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1, PT=nothing)
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1, PT=nothing)
     
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
     for iout = 1:size(sol.t[:],1)
@@ -69,11 +69,11 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
                 @printf(f, " %d %.6f %.6f %.6f \n", ip, mesh.x[ip], mesh.y[ip], sol.u[iout][ip])
             end
         end #f
-    end    
+    end
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") ) 
 end
 
-function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
     for iout = 1:size(sol.t[:],1)
@@ -84,54 +84,222 @@ function write_output(sol::ODESolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::S
     
 end
 
-
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # Aq = b -> q(x)
 #----------------------------------------------------------------------------------------------------------------------------------------------
+#=
 # PNG
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
 
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
-    title = @sprintf "Solution to ∇⋅∇(q) = f"
-    
-    if inputs[:lplot_surf3d]
-        plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1, smoothing_factor=inputs[:smoothing_factor])
-    else
-        plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR;)
-    end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
+println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
+title = @sprintf "Solution to ∇⋅∇(q) = f"
+
+if inputs[:lplot_surf3d]
+plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1, smoothing_factor=inputs[:smoothing_factor])
+else
+plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR;)
+end
+println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
 end
 
 # ASCII
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1) nothing end
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1) nothing end
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::ASCII; nvar=1)   
-    println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
-    title = @sprintf "Solution to ∇⋅∇(q) = f"
-    fname = @sprintf "Axb.dat"
-    open(string(OUTPUT_DIR, "/", fname), "w") do f
-        for ip = 1:length(sol.u)
-            @printf(f, " %d %.6f %.6f %.6f \n", ip, mesh.x[ip], mesh.y[ip], sol.u[ip])
-        end #f
-    end
-    println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE") )
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_1D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict,  outformat::ASCII; nvar=1) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_3D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict,  outformat::ASCII; nvar=1) nothing end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict,  outformat::ASCII; nvar=1)   
+println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
+title = @sprintf "Solution to ∇⋅∇(q) = f"
+fname = @sprintf "Axb.dat"
+open(string(OUTPUT_DIR, "/", fname), "w") do f
+for ip = 1:length(sol.u)
+@printf(f, " %d %.6f %.6f %.6f \n", ip, mesh.x[ip], mesh.y[ip], sol.u[ip])
+end #f
+end
+println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE") )
 end
 
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::VTK; nvar=1)
-    
-    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
-    for iout = 1:inputs[:ndiagnostics_outputs]
-        title = @sprintf " ∇²q = f"
-        write_vtk(SD, mesh, sol.u, title, OUTPUT_DIR, inputs;)
-        #vtkss()
-    end
-    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
-end
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict,  outformat::VTK; nvar=1)
 
+println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
+for iout = 1:inputs[:ndiagnostics_outputs]
+title = @sprintf " ∇²q = f"
+write_vtk(SD, mesh, sol.u, title, OUTPUT_DIR, inputs;)
+#vtkss()
+end
+println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
+end
+=#
 #------------
 # VTK writer
 #------------
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+    #nothing
+   
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+    cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                ip1 = mesh.connijk[iel,i,j]
+                ip2 = mesh.connijk[iel,i+1,j]
+                ip3 = mesh.connijk[iel,i+1,j+1]
+                ip4 = mesh.connijk[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+        #end
+    end
+    
+    npoin = mesh.npoin
+    qout = copy(q)
+
+    
+    if (inputs[:CL] == CL())
+
+        if (inputs[:SOL_VARS_TYPE] == TOTAL())
+            
+            outvars = ("ρ", "u", "v", "θ")
+            #ρ
+            qout[1:npoin] .= q[1:npoin]
+            
+            #u = ρu/ρ
+            ivar = 2
+            idx = (ivar - 1)*npoin
+            qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./q[1:npoin]
+
+            #v = ρv/ρ
+            ivar = 3
+            idx = (ivar - 1)*npoin
+            qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./q[1:npoin]
+
+            if case == "rtb" || case == "mountain"
+                
+                if (size(qexact, 1) === npoin)
+
+                    if inputs[:loutput_pert] == true
+                        ("dρ", "u", "v", "dθ")
+                        
+                        #ρ'
+                        qout[1:npoin] .= q[1:npoin] .- qexact[1:npoin,1]
+                        
+                        #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
+                        ivar = 4
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin] .- qexact[1:npoin,4]./qexact[1:npoin,1]
+                    else
+                        
+                        outvars = ("ρ", "u", "v", "θ")
+                        ivar = 4
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin] 
+                    end
+                end
+            end
+        else
+            
+            outvars = ("dρ", "u", "v", "dθ")
+            
+            #ρ
+            qout[1:npoin] .= q[1:npoin]
+            
+            #u = ρu/ρ
+            ivar = 2
+            idx = (ivar - 1)*npoin
+            qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./(qout[1:npoin] .+ qexact[1:npoin,1])
+
+            #v = ρv/ρ
+            ivar = 3
+            idx = (ivar - 1)*npoin
+            qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./(qout[1:npoin] .+ qexact[1:npoin,1])
+
+            if case == "rtb" || case == "mountain"
+                
+                if (size(qexact, 1) === npoin)
+                    
+                    ivar = 4
+                    idx = (ivar - 1)*npoin
+                    qout[idx+1:4*npoin] .= (q[idx+1:4*npoin] .+ qexact[1:npoin,4])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,4]./qexact[1:npoin,1]
+                end
+            end
+        end
+    elseif (inputs[:CL] == NCL())
+
+        outvars = ("ρ", "u", "v", "θ")
+        #ρ
+        qout[1:npoin] .= (q[1:npoin])
+        
+        #u = ρu/ρ
+        ivar = 2
+        idx = (ivar - 1)*npoin
+        qout[idx+1:2*npoin] .= (q[idx+1:2*npoin])
+
+        #v = ρv/ρ
+        ivar = 3
+        idx = (ivar - 1)*npoin
+        qout[idx+1:3*npoin] .= (q[idx+1:3*npoin])
+        
+        if case === "rtb"
+            
+            if (inputs[:loutput_pert] == true && size(qexact, 1) === npoin)
+                outvars = ("dρ", "u", "v", "dθ")
+                #ρ'
+                qout[1:npoin] .= (q[1:npoin] .- qexact[1:npoin,1])
+                
+                #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
+                ivar = 4
+                idx = (ivar - 1)*npoin
+                qout[idx+1:4*npoin] .= (q[idx+1:4*npoin] .- qexact[1:npoin,4])
+                
+            else
+                
+                outvars = ("ρ'", "u", "v", "e")
+                #E = ρE/ρ
+                idx = 4*npoin
+                qout[idx+1:4*npoin] .= @views((q[2*npoin+1:4*npoin] .- 0.5*(q[npoin+1:2*npoin].*q[npoin+1:2*npoin] .+ q[npoin+1:3*npoin].*q[npoin+1:3*npoin])./q[1:npoin])./q[1:npoin]) #internal energy: p/((γ-1)ρ)
+            end
+        end
+    end
+    #=
+    outvars = ("ρ", "ρu", "ρv", "ρθ")
+    
+    #ρ
+    qout[1:npoin] .= q[1:npoin]
+    
+    #u = ρu/ρ
+    ivar = 2
+    idx = (ivar - 1)*npoin
+    qout[idx+1:2*npoin] .= q[idx+1:2*npoin]
+
+    #v = ρv/ρ
+    ivar = 3
+    idx = (ivar - 1)*npoin
+    qout[idx+1:3*npoin] .= q[idx+1:3*npoin]
+    
+    ivar = 4
+    idx = (ivar - 1)*npoin
+    qout[idx+1:4*npoin] .= q[idx+1:4*npoin]
+    =#
+
+    #Solution:
+    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")    
+    vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells)
+    for ivar = 1:nvar
+        idx = (ivar - 1)*npoin
+        vtkfile[string(outvars[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+    end
+    outfiles = vtk_save(vtkfile)
+        
+end
+
+function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
     #nothing
     
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
@@ -139,85 +307,31 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     
     isel = 1
     for iel = 1:mesh.nelem
-        #if iel in mesh.bdy_edge_in_elem[:]
-        #    nothing
-        #else
-            for i = 1:mesh.ngl-1
-                for j = 1:mesh.ngl-1
-                    ip1 = mesh.connijk[iel,i,j]
-                    ip2 = mesh.connijk[iel,i+1,j]
-                    ip3 = mesh.connijk[iel,i+1,j+1]
-                    ip4 = mesh.connijk[iel,i,j+1]
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    
-                    cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-                    
-                    isel = isel + 1
-                end
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                ip1 = mesh.connijk[iel,i,j]
+                ip2 = mesh.connijk[iel,i+1,j]
+                ip3 = mesh.connijk[iel,i+1,j+1]
+                ip4 = mesh.connijk[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
             end
+        end
         #end
     end
-    
-    npoin = mesh.npoin
-    qout = copy(q)
-    
-    #ρ
-    qout[1:npoin] = q[1:npoin]
-
-    #u = ρu/ρ
-    ivar = 2
-    idx = (ivar - 1)*npoin
-    qout[idx+1:2*npoin] = q[idx+1:2*npoin]./q[1:npoin]
-
-    #v = ρv/ρ
-    ivar = 3
-    idx = (ivar - 1)*npoin
-    qout[idx+1:3*npoin] = q[idx+1:3*npoin]./q[1:npoin]
-
-    if case === "rtb"
-
-        outvars = ("rho", "u", "v", "theta")
         
-        if (inputs[:loutput_pert] == true && size(qexact, 1) === npoin)
-
-            #ρ'
-            qout[1:npoin] = q[1:npoin] .- qexact[1:npoin,1]
-            
-            #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
-            ivar = 4
-            idx = (ivar - 1)*npoin
-            qout[idx+1:4*npoin] = q[idx+1:4*npoin]./q[1:npoin] .- qexact[1:npoin,4]./qexact[1:npoin,1]
-           
-        else
-            outvars = ("rho", "u", "v", "E")
-            
-            #E = ρE/ρ
-            idx = 4*npoin
-            qout[idx+1:4*npoin] .= (q[2*npoin+1:4*npoin] .- 0.5*(q[npoin+1:2*npoin].*q[npoin+1:2*npoin] .+ q[npoin+1:3*npoin].*q[npoin+1:3*npoin])./q[1:npoin])./q[1:npoin] #internal energy: p/((γ-1)ρ)
-        end
-    end
+    #Reference values only (definied in initial conditions)
+    fout_name = string(OUTPUT_DIR, "/REFER.vtu")
     
-    #=for ivar=1:nvar
-        idx = (ivar - 1)*npoin
-        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".vtu")
-    
-        vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells) do vtk
-            vtk[string("q", ivar), VTKPointData()] = qout[idx+1:ivar*npoin]
-        end
-    end=#
-     
-    
-    fout_name = string(OUTPUT_DIR, "/rtb_it", iout, ".vtu")
-    
-    vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells)
+    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*0.0, cells)
     for ivar = 1:nvar
-        idx = (ivar - 1)*npoin
-        vtkfile[string(outvars[ivar]), VTKPointData()] =  qout[idx+1:ivar*npoin]
+        vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
     end
     outfiles = vtk_save(vtkfile)
-    
 end

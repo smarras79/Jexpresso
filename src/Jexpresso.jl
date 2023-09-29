@@ -8,6 +8,7 @@ using DataStructures
 using LoopVectorization
 using ElasticArrays
 using InternedStrings
+using LinearAlgebra
 using StaticArrays
 using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
 using DiffEqBase
@@ -31,7 +32,8 @@ const TFloat = Float64
 
 #using DocStringExtensions
 
-include(joinpath("equations", "AbstractEquations.jl"))
+#include(joinpath("equations", "AbstractEquations.jl"))
+include(joinpath("..", "problems", "equations", "AbstractEquations.jl"))
 
 include(joinpath("kernel", "abstractTypes.jl"))
 
