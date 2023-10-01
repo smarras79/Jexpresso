@@ -8,7 +8,7 @@ function user_inputs()
         :Δt                   => 0.2,
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
-        :CL                   => NCL(), #CL() is defaults
+        #:CL                   => NCL(), #CL() is defaults
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -20,7 +20,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        :lvisc                => true, #false by default NOTICE: works only for Inexact
         :νx                   => 30.0, #horizontal viscosity constant for momentum
         :νy                   => 30.0, #vertical   viscosity constant for momentum
         :κ                    => 60.0, #kinematic viscosity constant for θ equation
