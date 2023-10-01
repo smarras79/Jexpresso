@@ -178,7 +178,9 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     for iel=1:params.mesh.nelem
-        
+
+        uToPrimitives!(params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
+
         for j=1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,j]
             
