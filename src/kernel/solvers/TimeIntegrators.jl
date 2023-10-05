@@ -60,7 +60,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
     
     deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])    
-    visc_coeff = (inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ])
+    visc_coeff = (inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
     
     params = (T, F, G, S,
               uaux, uaux_el, vaux,
