@@ -3,10 +3,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 1000.0,
+        :tend                 => 1500.0,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 0.2,
-        :ndiagnostics_outputs => 2,
+        :ndiagnostics_outputs => 20,
         :case                 => "rtb",
         #:CL                   => NCL(), #CL() is defaults
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
