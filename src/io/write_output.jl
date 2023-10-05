@@ -199,7 +199,8 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                         outvars = ("ρ", "u", "v", "θ")
                         ivar = 4
                         idx = (ivar - 1)*npoin
-                        qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin] 
+                        qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin]
+
                     end
                 end
             end
@@ -288,12 +289,22 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     qout[idx+1:4*npoin] .= q[idx+1:4*npoin]
     =#
 
+
+if nvar >= 5
+    for ivar = 5:nvar
+        idx = (ivar - 1)*npoin
+        qout[idx+1:ivar*npoin] .= q[idx+1:ivar*npoin]
+    end
+end
+
+
     #Solution:
     fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")    
     vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells)
     for ivar = 1:nvar
         idx = (ivar - 1)*npoin
-        vtkfile[string(outvars[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+        vtkfile[string(ivar), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+        #vtkfile[string(outvars[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
     end
     outfiles = vtk_save(vtkfile)
         
@@ -330,8 +341,10 @@ function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPU
     fout_name = string(OUTPUT_DIR, "/REFER.vtu")
     
     vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*0.0, cells)
+    @info nvar
     for ivar = 1:nvar
-        vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+        #vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+        vtkfile[string(ivar), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
     end
     outfiles = vtk_save(vtkfile)
 end

@@ -6,10 +6,19 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     """
     @info " Initialize fields for 2D CompEuler with θ equation ........................ "
     
+    #---------------------------------------------------------------------------------
+    # Solution variables:
+    #
+    # NOTICE: while these names can be arbitrary, the length of this tuple
+    # defines neqs, which is the second dimension of q = define_q()
+    # 
+    #---------------------------------------------------------------------------------
+    qvars = ("ρ", "ρu", "ρv", "ρθ")
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
+    #---------------------------------------------------------------------------------
+
+
     PhysConst = PhysicalConst{Float64}()
-    
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=4)
-    
     if (inputs[:case] === "rtb")
         
         xc = (maximum(mesh.x) + minimum(mesh.x))/2
@@ -90,10 +99,10 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         end
     end
     
-    outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")    
-    write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-    
-    @info "Initialize fields for system of 2D CompEuler with θ equation ........................ DONE"
+    #outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")    
+    #write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
 
+    @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
+    
     return q
 end

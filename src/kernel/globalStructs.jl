@@ -12,8 +12,7 @@ Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
     qnel::Array{TFloat,4} = zeros(TFloat, 0, 0, 0, 0)
     μ::Array{TFloat,1}    = zeros(TFloat, 0)  
     neqs = UInt8(1)
-    qvars= Array{String}(undef, neqs)
-    
+    qvars = Array{Union{Nothing, String}}(nothing, 0)
 end
 
 Base.@kwdef mutable struct St_PostProcessVars{TFloat <: AbstractFloat}
@@ -30,14 +29,13 @@ function allocate_post_process_vars(nelem, npoin, ngl, TFloat; neqs)
 end
 
 
-function define_q(SD, nelem, npoin, ngl, TFloat; neqs=1)
+function define_q(SD, nelem, npoin, ngl, qvars, TFloat; neqs=1)
 
     q = St_SolutionVars{TFloat}(neqs=neqs,
-                                qn   = zeros(npoin, neqs+1), # qn
-                                qnm1 = zeros(npoin, neqs+1), # qⁿ
-                                qnm2 = zeros(npoin, neqs+1), # qⁿ
-                                qe   = zeros(npoin, neqs+1), # qexact
-                                μ    = zeros(nelem)) # μ
-    
+                                qn   = zeros(TFloat, npoin, neqs+1), # qn
+                                qnm1 = zeros(TFloat, npoin, neqs+1), # qⁿ
+                                qnm2 = zeros(TFloat, npoin, neqs+1), # qⁿ
+                                qe   = zeros(TFloat, npoin, neqs+1), # qexact
+                                qvars=qvars) # μ
     return q
 end

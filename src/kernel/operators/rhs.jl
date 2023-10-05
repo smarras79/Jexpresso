@@ -59,12 +59,15 @@ function uToPrimitives!(uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, :
         m2 = mesh.npoin + m1
         m3 = 2*mesh.npoin + m1
         m4 = 3*mesh.npoin + m1
+        m5 = 4*mesh.npoin + m1
         
         uprimitive[i,j,1] = u[m1]
         uprimitive[i,j,2] = u[m2]/u[m1]
         uprimitive[i,j,3] = u[m3]/u[m1]
         uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
-        
+        #for ieq=4:5 #Tracers only
+        uprimitive[i,j,5] = u[m5]
+        #end        
         #Pressure:
         uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
         
@@ -82,11 +85,14 @@ function uToPrimitives!(uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, :
         m2 = mesh.npoin + m1
         m3 = 2*mesh.npoin + m1
         m4 = 3*mesh.npoin + m1
+        m5 = 4*mesh.npoin + m1
 
         uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
         uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]
         uprimitive[i,j,3] = u[m3]/uprimitive[i,j,1]
         uprimitive[i,j,4] = (u[m4] + uprimitive[i,j,1]*uauxe[m1,4])/uprimitive[i,j,1] # CHECK THIS FOR ENE- δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+        
+        uprimitive[i,j,5] = u[m5] + uauxe[m5,1]
         
         #Pressure:
         uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
@@ -106,11 +112,13 @@ function uToPrimitives!(uprimitive, u, uprimitivee, mesh, δtotal_energy, iel, :
         m2 = mesh.npoin + m1
         m3 = 2*mesh.npoin + m1
         m4 = 3*mesh.npoin + m1
+        m5 = 4*mesh.npoin + m1
         
         uprimitive[i,j,1] = u[m1]
         uprimitive[i,j,2] = u[m2]
         uprimitive[i,j,3] = u[m3]
         uprimitive[i,j,4] = u[m4]
+        uprimitive[i,j,5] = u[m5]
 
         #Pressure:
         uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
