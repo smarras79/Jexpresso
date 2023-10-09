@@ -229,7 +229,6 @@ end
     for ivar = 1:nvar
         idx = (ivar - 1)*npoin
         vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
-        #vtkfile[string(ivar), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
     end
     outfiles = vtk_save(vtkfile)
         
@@ -259,7 +258,6 @@ function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPU
                 isel = isel + 1
             end
         end
-        #end
     end
         
     #Reference values only (definied in initial conditions)
