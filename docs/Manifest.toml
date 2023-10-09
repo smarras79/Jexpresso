@@ -2,7 +2,7 @@
 
 julia_version = "1.9.3"
 manifest_format = "2.0"
-project_hash = "4cd48359f638ac1e88ddf3806998fde5eb46a0ae"
+project_hash = "2469dda3a9b1395fad0e3eb8ae46d4bf11827b8c"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "5d2e21d7b0d8c22f67483ef95ebdc39c0e6b6003"
@@ -1009,7 +1009,7 @@ uuid = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 version = "0.21.4"
 
 [[deps.Jexpresso]]
-deps = ["ArgParse", "BenchmarkTools", "CairoMakie", "ColorSchemes", "Crayons", "DataStructures", "Dates", "DelimitedFiles", "Dierckx", "DiffEqBase", "DiffEqDevTools", "ElasticArrays", "Gridap", "GridapDistributed", "GridapGmsh", "InternedStrings", "LaTeXStrings", "LinearAlgebra", "LinearSolve", "LoopVectorization", "MPI", "MPIPreferences", "Makie", "OrdinaryDiffEq", "PProf", "Parameters", "PartitionedArrays", "PrettyTables", "Printf", "Profile", "Revise", "SciMLBase", "SnoopCompile", "StaticArrays", "TestingUtilities", "UnicodePlots", "WriteVTK"]
+deps = ["ArgParse", "BenchmarkTools", "CairoMakie", "ColorSchemes", "Crayons", "DataStructures", "Dates", "DelimitedFiles", "Dierckx", "DiffEqBase", "DiffEqDevTools", "DocStringExtensions", "Documenter", "ElasticArrays", "Gridap", "GridapDistributed", "GridapGmsh", "InternedStrings", "LaTeXStrings", "LinearAlgebra", "LinearSolve", "LoopVectorization", "MPI", "MPIPreferences", "Makie", "OrdinaryDiffEq", "PProf", "Parameters", "PartitionedArrays", "PrettyTables", "Printf", "Profile", "Revise", "SciMLBase", "SnoopCompile", "StaticArrays", "TestingUtilities", "UnicodePlots", "WriteVTK"]
 path = "/Users/simone/Work/Codes/Jexpresso"
 uuid = "60551be2-40ab-4403-a4bd-ad35d0cc3d31"
 version = "0.1.0"

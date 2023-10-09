@@ -1,3 +1,8 @@
+"""
+A research software for the numerical solution of a system of an arbitrary number of conservation laws using continuous spectral elements. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
+
+If you are interested in contributing, please get in touch.
+"""
 module Jexpresso
 
 using Revise
@@ -30,7 +35,7 @@ using Printf
 const TInt   = Int64
 const TFloat = Float64
 
-#using DocStringExtensions
+using DocStringExtensions
 
 include(joinpath( "..", "problems", "equations", "AbstractEquations.jl"))
 
