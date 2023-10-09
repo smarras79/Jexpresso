@@ -15,6 +15,6 @@ makedocs(
 )
 
 deploydocs(;
-#    repo="https://github.com/smarras79/Jexpresso.jl/blob/{commit}{path}#L{line}",
-           repo="github.com/smarras79/Jexpresso.jl",
+    repo="https://github.com/smarras79/Jexpresso.jl/blob/{commit}{path}#L{line}",
+#           repo="github.com/smarras79/Jexpresso.jl",
 )
