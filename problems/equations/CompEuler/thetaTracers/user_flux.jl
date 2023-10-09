@@ -10,6 +10,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     ρu = q[2]
     ρv = q[3]
     ρθ = q[4]
+    qtr= q[5]
     θ  = ρθ/ρ
     u  = ρu/ρ
     v  = ρv/ρ
@@ -19,18 +20,22 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     F[2] = ρu*u + Press
     F[3] = ρv*u
     F[4] = ρθ*u
+    F[5] = q[5]*u
+    F[6] = q[6]*u
     
     G[1] = ρv
     G[2] = ρu*v
     G[3] = ρv*v + Press
     G[4] = ρθ*v
+    G[5] = q[5]*v
+    G[6] = q[6]*v
 end
 
 function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
                     q::SubArray{Float64},
                     qe::SubArray{Float64},
                     mesh::St_mesh,
-                    ::CL, ::PERT; neqs=4)
+                    ::CL, ::PERT; neqs=5)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -38,6 +43,8 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     ρu = q[2]
     ρv = q[3]
     ρθ = q[4] + qe[4]
+    qtr= q[5] + qe[5]
+    qtr2=q[6] + qe[6]
     
     θ  = ρθ/ρ
     u  = ρu/ρ
@@ -50,11 +57,15 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     F[2] = ρu*u + Press
     F[3] = ρv*u
     F[4] = ρθ*u
+    F[5] = qtr*u
+    F[6] = qtr2*u
     
     G[1] = ρv
     G[2] = ρu*v
     G[3] = ρv*v + Press
     G[4] = ρθ*v
+    G[5] = qtr*v
+    G[6] = qtr2*v
 end
 
 
@@ -62,7 +73,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
                     q::SubArray{Float64},
                     qe::SubArray{Float64},
                     mesh::St_mesh,
-                    ::NCL, ::AbstractPert; neqs=4)
+                    ::NCL, ::AbstractPert; neqs=5)
     
     PhysConst = PhysicalConst{Float64}()
                 
@@ -76,9 +87,13 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     F[2] = u
     F[3] = v
     F[4] = θ
+    F[5] = q[5]
+    F[6] = q[6]
     
     G[1] = ρ*v
     G[2] = u
     G[3] = v
     G[4] = θ
+    G[5] = q[5]
+    G[6] = q[6]
 end

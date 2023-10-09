@@ -13,33 +13,50 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("ρ", "ρu", "ρv", "ρθ")
+    qvars = ("ρ", "ρu", "ρv", "ρθ", "qtr", "qtr2")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
     #---------------------------------------------------------------------------------
-
-
+    
     PhysConst = PhysicalConst{Float64}()
     if (inputs[:case] === "rtb")
         
         xc = (maximum(mesh.x) + minimum(mesh.x))/2
         yc = 2500.0 #m
         r0 = 2000.0 #m
+
+        xc2   = -2000.0
+        yc2   =  4000.0 #m
+        r02   =  1000.0 #m
+        qtrc2 =     1.0 #K
         
         θref = 300.0 #K
         θc   =   2.0 #K
+        qtrref = 0.0 #K
+        qtrc   = 1.0 #K
         for iel_g = 1:mesh.nelem
             for j=1:mesh.ngl, i=1:mesh.ngl
                 
                 ip = mesh.connijk[iel_g,i,j]
                 x, y = mesh.x[ip], mesh.y[ip]
                 r = sqrt( (x - xc)^2 + (y - yc)^2 )
-                
-                Δθ = 0.0 #K
+                Δθ   = 0.0 #K
+                Δqtr = 0.0 #K
                 if r < r0
                     Δθ = θc*(1.0 - r/r0)
+                    Δqtr = qtrc
                 end
-                θ = θref + Δθ
-                p    = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
+
+                #Tracer 2
+                r = sqrt( (x - xc2)^2 + (y - yc2)^2 )
+                Δqtr2 = 0.0 #K
+                if r < r02
+                    Δqtr2 = qtrc2
+                end
+                qtr  = qtrref + Δqtr
+                qtr2 = qtrref + Δqtr2
+
+                θ   = θref + Δθ
+                p   = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
                 pref = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θref))^(PhysConst.cpoverR)
                 ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p)    #kg/m³
                 ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=pref) #kg/m³
@@ -52,6 +69,8 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                     q.qn[ip,2] = ρ*u
                     q.qn[ip,3] = ρ*v
                     q.qn[ip,4] = ρ*θ - ρref*θref
+                    q.qn[ip,5] = qtr - qtrref
+                    q.qn[ip,6] = qtr2 - qtrref
                     q.qn[ip,end] = p
                     
                     #Store initial background state for plotting and analysis of pertuebations
@@ -59,12 +78,16 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                     q.qe[ip,2] = u
                     q.qe[ip,3] = v
                     q.qe[ip,4] = ρref*θref
+                    q.qe[ip,5] = qtrref
+                    q.qe[ip,6] = qtrref
                     q.qe[ip,end] = pref
                 else
                     q.qn[ip,1] = ρ
                     q.qn[ip,2] = ρ*u
                     q.qn[ip,3] = ρ*v
                     q.qn[ip,4] = ρ*θ
+                    q.qn[ip,5] = qtr
+                    q.qn[ip,6] = qtr2
                     q.qn[ip,end] = p
 
                     #Store initial background state for plotting and analysis of pertuebations
@@ -72,6 +95,8 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                     q.qe[ip,2] = u
                     q.qe[ip,3] = v
                     q.qe[ip,4] = ρref*θref
+                    q.qe[ip,5] = qtrref
+                    q.qe[ip,6] = qtrref
                     q.qe[ip,end] = pref
                 end
             end
@@ -98,9 +123,15 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
             q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
         end
     end
-    
-    #outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")    
-    #write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
+
+    #
+    # Write reference to VTK:
+    #
+    outvarsref = Array{Union{Nothing, String}}(nothing, q.neqs)
+    for i = 1:length(outvarsref)
+        outvarsref[i] = string(qvars[i], "_ref")
+    end
+    write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
 
     @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
     
