@@ -13,4 +13,5 @@ makedocs(
 
 deploydocs(;
            repo="github.com/smarras79/Jexpresso.jl",
-)
+           )
+
