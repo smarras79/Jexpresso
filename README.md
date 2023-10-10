@@ -1,8 +1,6 @@
-
 | **Documentation** |
 |:------------ |
 | [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
-
 
 # JEXPRESSO
 NOTICE: PLEASE CONTACT ME IF YOU ARE INTERESTED IN TESTING THIS WIP. 
@@ -53,11 +51,11 @@ Details will be given in the documentation (still WIP). Write us if you need hel
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
 ## Plotting
-For plotting we rely on [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
+Files can be written to VTK (recommended) or png. For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
 modify ./src/io/plotting/jplots.jl accordinly.
 
 For non-periodic 2D tests, the output can also be written to VTK files by setting the value "vtk" for the usier_input key :outformat
 
 ## Contacts
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-
+<<<<<<< HEAD
