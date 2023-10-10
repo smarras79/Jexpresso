@@ -55,4 +55,4 @@ For non-periodic 2D tests, the output can also be written to VTK files by settin
 ## Contacts
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
 
-[![Documentation](https://github.com/smarras79/Jexpresso/actions/workflows/Documentation.yml/badge.svg)](https://github.com/smarras79/Jexpresso/actions/workflows/Documentation.yml)
+[![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/) [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
