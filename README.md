@@ -1,3 +1,9 @@
+
+| **Documentation** |
+|:------------ |
+| [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
+
+
 # JEXPRESSO
 NOTICE: PLEASE CONTACT ME IF YOU ARE INTERESTED IN TESTING THIS WIP. 
 I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
@@ -55,4 +61,3 @@ For non-periodic 2D tests, the output can also be written to VTK files by settin
 ## Contacts
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
 
-[![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/) [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
