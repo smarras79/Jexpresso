@@ -18,7 +18,7 @@ end
 
 
 
-function compute_mass!(uaux, u, mesh, metrics, ω,neqs,::Inexact,::TOTAL)
+function compute_mass!(uaux, u, uauxe, mesh, metrics, ω, neqs, ::Inexact,::TOTAL)
     if ("Laguerre" in mesh.bdy_edge_type)
         u2uaux!(uaux, u, neqs, mesh.npoin)
         mass = 0.0

@@ -33,9 +33,9 @@ Base.@kwdef mutable struct St_metrics{TFloat}
     #
     # Element jacobian determinant
     #
-    nx::Array{TFloat} = zeros(TFloat, 1)
-    ny::Array{TFloat} = zeros(TFloat, 1)
-    nz::Array{TFloat} = zeros(TFloat, 1)
+    nx::Array{TFloat, 2} = zeros(TFloat, 0, 0)
+    ny::Array{TFloat, 2} = zeros(TFloat, 0, 0)
+    nz::Array{TFloat, 2} = zeros(TFloat, 0, 0)
     Je::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
     Jef::Array{TFloat,2} = zeros(TFloat, 0, 0)
 end

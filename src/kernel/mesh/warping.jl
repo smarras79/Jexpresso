@@ -1,9 +1,9 @@
 function warp_mesh!(mesh,inputs)
   
-  am = 10000.0
-  hm = 1.0
-  xc = 0.0
-  ztop = 30000.0
+  am = inputs[:a_mount]
+  hm = inputs[:h_mount]
+  xc = inputs[:c_mount]
+  ztop = maximum(mesh.y)#30000.0
   zsurf = zeros(Float64,mesh.npoin)
   sigma = zeros(Float64,mesh.npoin)
   for i=1:mesh.npoin
@@ -13,10 +13,22 @@ function warp_mesh!(mesh,inputs)
     
     mesh.y[i] = z
   end
-
-  for ip = 1:mesh.npoin
-    x = mesh.x[ip]
-    zsurf[ip] = hm/(1+ ((x-xc)/am)^2)
+  if (inputs[:mount_type] == "agnesi")
+    am = inputs[:a_mount]
+    hm = inputs[:h_mount]
+    xc = inputs[:c_mount]
+    for ip = 1:mesh.npoin
+      x = mesh.x[ip]
+      zsurf[ip] = hm/(1+ ((x-xc)/am)^2)
+    end
+  elseif (inputs[:mount_type] == "schar")
+    ac = inputs[:a_mount]
+    hc = inputs[:h_mount]
+    lambdac = inputs[:lambda_mount]
+    for ip = 1:mesh.npoin
+      x = mesh.x[ip]
+      zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2 
+    end
   end
 
   for ip = 1:mesh.npoin
@@ -40,7 +52,6 @@ function warp_mesh!(mesh,inputs)
             #end
         end
    end=#
-
 end
 
 

@@ -28,11 +28,66 @@ function mod_inputs_user_inputs!(user_input_file)
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
+    
+    if(!haskey(inputs, :nop_laguerre))
+        inputs[:nop_laguerre] = 18
+    end
+
+    if(!haskey(inputs, :lfilter))
+        inputs[:lfilter] = false
+    end
+
+    if(!haskey(inputs, :mu_x))
+        inputs[:mu_x] = 0.0
+    end
+
+    if(!haskey(inputs, :mu_y))
+        inputs[:mu_y] = 0.0
+    end
+
+    if(!haskey(inputs, :lwarp))
+        inputs[:lwarp] = false
+    end
+
+    if(!haskey(inputs, :mount_type))
+        inputs[:lagnesi] = "agnesi"
+    end
+
+    if(!haskey(inputs, :a_mount))
+        inputs[:a_mount] = 10000.0
+    end
+
+    if(!haskey(inputs, :h_mount))
+        inputs[:h_mount] = 1.0
+    end
+    
+    if(!haskey(inputs, :c_mount))
+        inputs[:c_mount] = 0.0
+    end
 
     if(!haskey(inputs, :luser_bc))
         inputs[:luser_bc] = true
     end
     
+    if(!haskey(inputs, :xscale))
+        inputs[:xscale] = 1.0
+    end
+
+    if(!haskey(inputs, :yscale))
+        inputs[:yscale] = 1.0
+    end
+    
+    if(!haskey(inputs, :xdisp))
+        inputs[:ydisp] = 0.0
+    end
+    
+    if(!haskey(inputs, :ydisp))
+        inputs[:ydisp] = 0.0
+    end
+
+    if(!haskey(inputs, :filter_type))
+        inputs[:filter_type] = "erf"
+    end
     #
     # Plotting parameters:
     #

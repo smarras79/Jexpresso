@@ -5,7 +5,7 @@ function build_rhs_laguerre!(RHS, u, params, time)
     #
     # build_rhs()! is called by TimeIntegrators.jl -> time_loop!() via ODEProblem(rhs!, u, tspan, params)
     #
-    _build_rhs_laguerre!(RHS, u, params, time)
+   _build_rhs_laguerre!(RHS, u, params, time)
     
 end
 
@@ -110,31 +110,46 @@ function _build_rhs_laguerre!(RHS, u, params, time)
                                #params.mesh, params.metrics, params.basis,
                                #params.RHS, params.rhs_el, params.ubdy,
                                #params.ω, SD, neqs, params.inputs)
-    
+   
+    #=for e= 1:params.mesh.nelem_semi_inf
+       for j=1:params.mesh.ngr
+          for i=1:params.mesh.ngl
+             ip = params.mesh.connijk_lag[e,i,j]
+             x = params.mesh.x[ip]
+             if (abs(x) > 119500.0)#if ( y <10.0 || y > 29990.0)
+               params.RHS_lag[ip,2] = 0.0
+               params.RHS_lag[ip,3] = 0.0
+             end
+           end
+        end
+     end=#
+ 
 end
 
 
 function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_2D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    
+    xmax = params.xmax
+    xmin = params.xmin
+    ymax = params.ymax
     for iel=1:params.mesh.nelem_semi_inf
         
-        uToPrimitives_laguerre!(params.uprimitive_lag, u, params.mesh, params.inputs[:δtotal_energy], iel, params.CL)
+        #uToPrimitives_laguerre!(params.uprimitive_lag, u, params.mesh, params.inputs[:δtotal_energy], iel, params.CL)
         
         for j=1:params.mesh.ngr, i=1:params.mesh.ngl
             ip = params.mesh.connijk_lag[iel,i,j]
             
             user_flux!(@view(params.F_lag[i,j,:]), @view(params.G_lag[i,j,:]), SD,
                        @view(params.uaux[ip,:]), 
-                       params.qe[ip,end],         #pref
-                       params.mesh, params.CL; neqs=params.neqs)
+                       @view(params.qe[ip,:]),         #pref
+                       params.mesh, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs)
             
             if lsource
                 user_source!(@view(params.S_lag[i,j,:]),
                              @view(params.uaux[ip,:]),
-                             params.qe[ip,1],          #ρref 
-                             params.mesh.npoin, params.CL; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip])
+                             @view(params.qe[ip,:]),          #ρref 
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax = xmax, xmin=xmin,ymax=ymax)
             end
         end
         

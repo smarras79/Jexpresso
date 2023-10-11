@@ -4,7 +4,6 @@ include("../mesh/warping.jl")
 function sem_setup(inputs::Dict)
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
-    fy_lag = zeros(Float64,1,1) 
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:equations]
@@ -19,9 +18,22 @@ function sem_setup(inputs::Dict)
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    mesh.x = mesh.x*120000.0
-    mesh.y .= (mesh.y .+ 1) .*15000.0
-    @info "xmax", maximum(mesh.x),maximum(mesh.y)
+    
+    if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
+      mesh.x .= (mesh.x .+ inputs[:xdisp]) .*inputs[:xscale]
+    elseif (inputs[:xscale] != 1.0)
+     mesh.x = mesh.x*inputs[:xscale]#mesh.x*120000.0
+    elseif (inputs[:xdisp] != 0.0)
+       mesh.x .= (mesh.x .+ inputs[:xdisp])
+    end
+    if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
+      mesh.y .= (mesh.y .+ inputs[:ydisp]) .*inputs[:yscale]#15000.0
+    elseif(inputs[:yscale] != 1.0)
+      mesh.y .= (mesh.y) .*inputs[:yscale]
+    elseif(inputs[:ydisp] != 0.0)
+       mesh.y .= (mesh.y .+ inputs[:ydisp])
+    end
+    @info "xmax, ymax", maximum(mesh.x),maximum(mesh.y)
     mesh.ymax = maximum(mesh.y)
     #warp_mesh!(mesh,inputs)    
     #--------------------------------------------------------
@@ -70,10 +82,13 @@ function sem_setup(inputs::Dict)
             basis = (basis1, basis2)
             ω1 = ω
             ω = (ω1,ω2)
-            fx = init_filter(mesh.ngl-1,ξ,0.05)
-            fy = init_filter(mesh.ngl-1,ξ,0.05)
-            fy_lag = init_filter(mesh.ngr-1,ξ2,0.05)
-            warp_mesh!(mesh,inputs)
+            if (inputs[:lfilter])
+              fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
+              fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs)
+            end
+            if (inputs[:lwarp])
+              warp_mesh!(mesh,inputs)
+            end
             metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat)
             metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat)
             metrics = (metrics1, metrics2)
@@ -117,5 +132,5 @@ function sem_setup(inputs::Dict)
     # Build matrices
     #--------------------------------------------------------
     
-    return (; QT, PT, mesh, metrics, basis, ω, matrix,fx,fy,fy_lag)
+    return (; QT, PT, mesh, metrics, basis, ω, matrix,fx,fy)
 end
