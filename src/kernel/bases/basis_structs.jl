@@ -745,7 +745,7 @@ function scaled_laguerre(x,n)
     LaguerreAndDerivative!(n,Laguerre)
     #Lkx = Laguerre.Laguerre(x)
     Lkx = Real(Laguerre.Laguerre(x))
-    y = exp(-x/2)*Lkx
+    y = exp(-x/2)*Lkx#exp(-x/2)*Lkx
     return y
 end 
   
