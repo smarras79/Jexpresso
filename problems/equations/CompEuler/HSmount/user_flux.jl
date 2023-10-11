@@ -25,7 +25,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::S
     
 end
 
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::SubArray{Float64}, qe::SubArray{Float64}, mesh::St_mesh, ::CL, ::PERT, ip; neqs=4)
+function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::SubArray{Float64}, qe::SubArray{Float64}, mesh::St_mesh, ::CL, ::PERT; neqs=4)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -39,9 +39,6 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::S
     
     PhysConst = PhysicalConst{Float64}()
     Pressure = zeros(Float64, 1)
-    #if (abs(mesh.x[ip]) >= 120000.0)
-     # @info mesh.x[ip], mesh.y[ip], ρ,θ,q[1],q[4] 
-    #end
     perfectGasLaw_ρθtoP!(Pressure, PhysConst;  ρ=ρ, θ=θ)
 
     F[1] = ρu

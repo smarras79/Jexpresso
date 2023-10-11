@@ -158,7 +158,7 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_2D)
     end
 end
 
-function viscous_rhs_el!(u, params, SD::NSD_2D)
+function viscous_rhs_el_laguerre!(u, params, SD::NSD_2D)
     
     for iel=1:params.mesh.nelem
         

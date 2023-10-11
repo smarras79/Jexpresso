@@ -99,12 +99,14 @@ function sem_setup(inputs::Dict)
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
             ω1 = ω
             ω = ω1
-            fx = init_filter(mesh.ngl-1,ξ,0.05)
-            fy = init_filter(mesh.ngl-1,ξ,0.05) 
+            fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
+            fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs) 
     #--------------------------------------------------------
     # Build metric terms
     #--------------------------------------------------------
-           warp_mesh!(mesh,inputs)
+           if (inputs[:lwarp])
+              warp_mesh!(mesh,inputs)
+           end
            @info " metrics"
            @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
     

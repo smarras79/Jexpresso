@@ -78,7 +78,7 @@ function mod_inputs_user_inputs!(user_input_file)
     end
     
     if(!haskey(inputs, :xdisp))
-        inputs[:ydisp] = 0.0
+        inputs[:xdisp] = 0.0
     end
     
     if(!haskey(inputs, :ydisp))
@@ -136,10 +136,10 @@ function mod_inputs_user_inputs!(user_input_file)
     if(!haskey(inputs, :llump))
         inputs[:llump] = false #Default no-mass lumping (this is only useful if we use Exact integration)
     end
-
+    
     if(haskey(inputs, :interpolation_nodes))
         
-        if(lowercase(inputs[:interpolation_nodes]) == "llg" ||
+        if(lowercase(inputs[:interpolation_nodes]) == "llg"  ||
             lowercase(inputs[:interpolation_nodes]) == "gll" ||
             lowercase(inputs[:interpolation_nodes]) == "lgl")
             inputs[:interpolation_nodes] = LGL()
