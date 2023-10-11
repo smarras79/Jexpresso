@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 15000.0, #2π,
+        :tend                 => 1000.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 2,
@@ -15,6 +15,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
+        :nop_laguerre        => 24,
         :luser_bc            => true,
         :lsource             => true,
         #---------------------------------------------------------------------------
@@ -34,6 +35,28 @@ function user_inputs()
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_RTB.msh",
         :gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_120x31_top_lag.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/agnesi240kmX30km_coarse_laguerreTopLateral.msh",
+        #---------------------------------------------------------------------------
+        # grid modification parameters
+        #---------------------------------------------------------------------------
+        :xscale              => 120000.0,
+        :yscale              => 7500.0,
+        :xdisp               => 0.0,
+        :ydisp               => 1.0,
+        #---------------------------------------------------------------------------
+        # Mountain parameters
+        #---------------------------------------------------------------------------
+        :lwarp               => true,
+        :mount_type          => "agnesi",
+        :a_mount             => 10000.0,
+        :h_mount             => 1.0,
+        :c_mount             => 0.0,
+        #---------------------------------------------------------------------------
+        # Filter parameters
+        #---------------------------------------------------------------------------
+        :lfilter             => true,
+        :mu_x                => 0.05,
+        :mu_y                => 0.05,
+        :filter_type         => "erf",  ##default is erf, use either "erf" for Boyd-Vandeven,"exp" for Warburton Exponential filter, or "quad" for Fischer quadratic filter
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------

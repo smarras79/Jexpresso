@@ -24,7 +24,7 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet(q::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
+function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
 #    if (tag == "free_slip")
       qnl = nx*q[2] + ny*q[3]
       qbdy[2] = q[2] - qnl*nx
@@ -33,11 +33,11 @@ function user_bc_dirichlet(q::AbstractArray, x::AbstractFloat, y::AbstractFloat,
  #   else
   #    qbdy[2] = 0.0
    # end
-    return qbdy #, flags
+   #return qbdy #, flags
     
 end
 
-function user_bc_dirichlet(q::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::PERT)
+function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe::SubArray{Float64},::PERT)
 #    if (tag == "free_slip")
       
       if (y<=14950) #(abs(x) < 119500.0 && y<= 14950.0)
@@ -54,7 +54,7 @@ function user_bc_dirichlet(q::AbstractArray, x::AbstractFloat, y::AbstractFloat,
       #  qbdy[3] = 0.0
       #end
      #@info x,y,nx,ny,qbdy[2],qbdy[3] 
-   return qbdy #, flags
+  # return qbdy #, flags
     
 end
 
