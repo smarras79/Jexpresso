@@ -64,7 +64,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
     ngl::Union{TInt, Missing} = nop + 1
-    ngr::Union{TInt, Missing} = 24#nop_gr
+    ngr::Union{TInt, Missing} = 18#nop_gr
     npoin_el::Union{TInt, Missing} = 1     # Total number of points in the reference element
     
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
@@ -479,8 +479,8 @@ if mesh.nsd == 2
     # build mesh data structs for Laguerre semi-infinite elements
     if ("Laguerre" in mesh.bdy_edge_type)
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1) 
-        factorx = 1000
-        factory = 0.01
+        factorx = 0.1
+        factory = 0.025
         mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, n_semi_inf, mesh.ngl, mesh.ngr)
         bdy_normals = zeros(n_semi_inf, 2)
         bdy_tangents = zeros(n_semi_inf, 2)
@@ -2178,6 +2178,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
         # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
         mesh = St_mesh{TInt,TFloat}(nsd=Int64(inputs[:nsd]),
                                     nop=Int64(inputs[:nop]),
+                                    ngr=Int64(inputs[:nop_laguerre]),
                                     SD=NSD_1D())
         
         # Read gmsh grid using the GridapGmsh reader

@@ -40,6 +40,8 @@ end
 function resetRHSToZero_inviscid!(params)
     fill!(params.rhs_el, zero(params.T))   
     fill!(params.RHS,    zero(params.T))
+    fill!(params.b,      zero(params.T))
+    fill!(params.B,      zero(params.T))
 end
 
 function resetRHSToZero_viscous!(params)
@@ -122,10 +124,10 @@ end
 function rhs!(du, u, params, time)
    if (params.SD isa NSD_2D)
      if (params.laguerre) 
-       build_rhs!(@view(params.RHS[:,:]), u, params, time)
-       build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
-       params.RHS .= @views(params.RHS .+ params.RHS_lag) 
-   else
+      build_rhs!(@view(params.RHS[:,:]), u, params, time)
+      build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+      params.RHS .= @views(params.RHS .+ params.RHS_lag) 
+     else
        build_rhs!(@view(params.RHS[:,:]), u, params, time)
      end
    else
@@ -149,9 +151,9 @@ function _build_rhs!(RHS, u, params, time)
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
     resetRHSToZero_inviscid!(params) 
-    
-    #filter!(u, params, SD)
-     
+    if (params.inputs[:lfilter])
+        filter!(u, params, SD,params.SOL_VARS_TYPE)
+    end
     inviscid_rhs_el!(u, params, true, SD)
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
     #-----------------------------------------------------------------------------------
@@ -172,7 +174,7 @@ function _build_rhs!(RHS, u, params, time)
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin)
     end
     #For conservaton apply B.C. to RHS after DSS and not to rhs_el:
-    apply_boundary_conditions!(u, params.uaux, time,
+    apply_boundary_conditions!(u, params.uaux, time, params.qe,
                                params.mesh, params.metrics, params.basis,
                                params.RHS, params.rhs_el, params.ubdy,
                                params.ω, SD, neqs, params.inputs)
@@ -182,9 +184,11 @@ end
 function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    
+    xmax = params.xmax
+    xmin = params.xmin
+    ymax = params.ymax    
     for iel=1:params.mesh.nelem
-        
+         
         for j=1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,j]
             
@@ -198,8 +202,8 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
-                             params.qe[ip,1],          #ρref 
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip])
+                             @view(params.qe[ip,:]),          #ρref 
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
         

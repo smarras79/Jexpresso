@@ -134,11 +134,11 @@ function build_mass_matrix_Laguerre!(Me, SD::NSD_2D, QT, ψ, ψ1, ω, ω1, mesh,
 
                 for j = 1:mesh.ngr
                     for i = 1:mesh.ngl
-                        I = i + (j - 1)*(mesh.ngl)
+                        J = i + (j - 1)*(mesh.ngl)
                         ψJK = ψ[i,k]*ψ1[j,l]
                         for n = 1:mesh.ngr
                             for m = 1:mesh.ngl
-                                J = m + (n - 1)*(mesh.ngl)
+                                I = m + (n - 1)*(mesh.ngl)
                                 ψIK = ψ[m,k]*ψ1[n,l]
                                 Me[I,J,iel] += ωkl*Jkle*ψIK*ψJK #Sparse
                             end

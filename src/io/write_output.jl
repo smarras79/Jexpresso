@@ -133,10 +133,13 @@ end
 #------------
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
     #nothing
-   
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-    cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
-    
+    if ("Laguerre" in mesh.bdy_edge_type)
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
+    else
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    end
     isel = 1
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl-1
@@ -156,6 +159,28 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
             end
         end
         #end
+    end
+   
+    if ("Laguerre" in mesh.bdy_edge_type)
+      for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngr-1
+                ip1 = mesh.connijk_lag[iel,i,j]
+                ip2 = mesh.connijk_lag[iel,i+1,j]
+                ip3 = mesh.connijk_lag[iel,i+1,j+1]
+                ip4 = mesh.connijk_lag[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+    
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+    
+                isel = isel + 1
+            end
+        end
+        #end
+      end
     end
     
     npoin = mesh.npoin
@@ -213,12 +238,13 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
             #u = ρu/ρ
             ivar = 2
             idx = (ivar - 1)*npoin
-            qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./(qout[1:npoin] .+ qexact[1:npoin,1])
-
+            #qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./(qout[1:npoin] .+ qexact[1:npoin,1])
+            qout[idx+1:2*npoin] .= (q[idx+1:2*npoin] .+ qexact[1:npoin,2])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,2]./qexact[1:npoin,1]
             #v = ρv/ρ
             ivar = 3
             idx = (ivar - 1)*npoin
-            qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./(qout[1:npoin] .+ qexact[1:npoin,1])
+            #qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./(qout[1:npoin] .+ qexact[1:npoin,1])
+            qout[idx+1:3*npoin] .= (q[idx+1:3*npoin] .+ qexact[1:npoin,3])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,3]./qexact[1:npoin,1]
 
             if case == "rtb" || case == "mountain"
                 

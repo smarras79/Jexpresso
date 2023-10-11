@@ -1,6 +1,6 @@
 using Quadmath
 
-function filter!(u, params, SD::NSD_2D)
+function filter!(u, params, SD::NSD_2D,::TOTAL)
   
   u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -8,12 +8,7 @@ function filter!(u, params, SD::NSD_2D)
   ## Subtract background velocity
   #qv = copy(q)
   params.uaux[:,2:4] .= params.uaux[:,2:4] .- params.qe[:,2:4]
-  q_t = zeros(Float64,params.neqs,params.mesh.ngl,params.mesh.ngl)
-  fqf = zeros(Float64,params.neqs,params.mesh.ngl,params.mesh.ngl)
   ## store Dimension of MxM object
-  b = zeros(params.mesh.nelem, params.mesh.ngl, params.mesh.ngl, params.neqs) 
-  inode = zeros(Int64,params.mesh.ngl*params.mesh.ngl)
-  ndim = params.neqs
 
   ## Loop through the elements
 
@@ -22,7 +17,7 @@ function filter!(u, params, SD::NSD_2D)
       for i=1:params.mesh.ngl
         ip = params.mesh.connijk[e,i,j]
         for m =1:params.neqs
-          q_t[m,i,j] = params.uaux[ip,m]
+          params.q_t[m,i,j] = params.uaux[ip,m]
         end
       end
     end
@@ -32,14 +27,31 @@ function filter!(u, params, SD::NSD_2D)
     for m=1:params.neqs
     
     ##KSI Derivative
+      for i=1:params.mesh.ngl
+        for j=1:params.mesh.ngl
+          params.q_ti[i,j] = 0.0
+          for k=1:params.mesh.ngl
+            params.q_ti[i,j] += params.fx[i,k] * params.q_t[m,k,j]
+          end
+        end
+      end
 
-      q_ti = params.fx * q_t[m,:,:] 
+
+    ## ETA Derivative
+      ## this is allocating
+      #params.fqf[m,:,:] .= params.q_ti * params.fy_t
+      for i=1:params.mesh.ngl
+        for j=1:params.mesh.ngl
+          params.fqf[m,i,j] = 0.0
+          for k=1:params.mesh.ngl
+            params.fqf[m,i,j] += params.q_ti[i,k] * params.fy_t[k,j]
+          end
+        end
+      end
 
     ## ETA Derivative
  
-      q_tij = q_ti * fy_t
 
-      fqf[m,:,:] = q_tij
     end
     
   ## Do Numerical Integration
@@ -48,89 +60,125 @@ function filter!(u, params, SD::NSD_2D)
       for i=1:params.mesh.ngl
         ip = params.mesh.connijk[e,i,j]
         for m=1:params.neqs
-          b[e,i,j,m] = b[e,i,j,m] + fqf[m,i,j] * params.ω[i]*params.ω[j]*params.metrics.Je[e,i,j]
+          b[e,i,j,m] = params.b[e,i,j,m] + params.fqf[m,i,j] * params.ω[i]*params.ω[j]*params.metrics.Je[e,i,j]
         end
       end
     end
   end
   
-  B         = zeros(Float64, params.mesh.npoin, params.neqs)
-  DSS_rhs!(@view(B[:,:]), @view(b[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD)
+  DSS_rhs!(@view(params.B[:,:]), @view(params.b[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD)
   
   for ieq=1:params.neqs
-        divide_by_mass_matrix!(@view(B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
+        divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
   end
-  #=if (params.laguerre)
-      
-      fy_t_lag = transpose(params.fy_lag)
-      @info fy_t_lag
-      @info fx
-      q_t_lag = zeros(Float64,params.neqs,params.mesh.ngl,params.mesh.ngr)
-      fqf_lag = zeros(Float64,params.neqs,params.mesh.ngl,params.mesh.ngr)
-      ## store Dimension of MxM object
-      b_lag = zeros(params.mesh.nelem, params.mesh.ngl, params.mesh.ngr, params.neqs)
-      inode_lag = zeros(Int64,params.mesh.ngl*params.mesh.ngr)
-      ndim = params.neqs
-
-  ## Loop through the elements
   
-      for e=1:params.mesh.nelem_semi_inf
-        for j=1:params.mesh.ngr
-          for i=1:params.mesh.ngl
-            ip = params.mesh.connijk_lag[e,i,j]
-            for m =1:params.neqs
-              q_t_lag[m,i,j] = params.uaux[ip,m]
-            end
-          end
-        end
- 
-  ### Construct local derivatives for prognostic variables
- 
+  for e=1:params.mesh.nelem
+    for j=1:params.mesh.ngl
+      for i=1:params.mesh.ngl
+        ip = params.mesh.connijk[e,i,j]
         for m=1:params.neqs
- 
-    ##KSI Derivative
-          q_ti_lag = params.fx * q_t_lag[m,:,:]
-
-    ## ETA Derivative
-          
-          q_tij_lag = q_ti_lag * fy_t_lag
-          fqf_lag[m,:,:] = q_tij_lag
+          params.uaux[ip,m] = params.B[ip,m]
         end
-  
-  ## Do Numerical Integration
-
-        for j=1:params.mesh.ngr
-          for i=1:params.mesh.ngl
-            ip = params.mesh.connijk_lag[e,i,j]
-            for m=1:params.neqs
-              b_lag[e,i,j,m] = b_lag[e,i,j,m] + fqf_lag[m,i,j] * params.ω[i]*params.ω_lag[j]*params.metrics_lag.Je[e,i,j]
-            end
-          end
+        for m=2:4
+          params.uaux[ip,m] -= params.qe[ip,m]
         end
       end
-      @info maximum(b_lag), minimum(b_lag)
-      B_lag = zeros(Float64, params.mesh.npoin, params.neqs)
-      DSS_rhs_laguerre!(@view(B_lag[:,:]), @view(b_lag[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD) 
-      @info maximum(B_lag), minimum(B_lag)
-      for ieq=1:params.neqs
-            divide_by_mass_matrix!(@view(B_lag[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
-      end
-      @info maximum(B), minimum(B), maximum(B_lag), minimum(B_lag)
-      B .= @views(B .+ B_lag)      
-  end=#
-  
-  params.uaux .= B
-  params.uaux[:,2:4] .= params.uaux[:,2:4] .+ params.qe[:,2:4]
+    end
+  end 
 
   uaux2u!(u, @view(params.uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
 
-function init_filter(nop,xgl,mu_x)
+function filter!(u, params, SD::NSD_2D,::PERT)
+ 
+  u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+
+  #fy_t = transpose(params.fy)
+  ## Subtract background velocity
+  #qv = copy(q)
+  #params.uaux[:,2:4] .= params.uaux[:,2:4] .- params.qe[:,2:4]
+  ## store Dimension of MxM object
+
+  ## Loop through the elements
+
+  for e=1:params.mesh.nelem
+    for j=1:params.mesh.ngl
+      for i=1:params.mesh.ngl
+        ip = params.mesh.connijk[e,i,j]
+        for m =1:params.neqs
+          params.q_t[m,i,j] = params.uaux[ip,m]
+        end
+      end
+    end
+ 
+  ### Construct local derivatives for prognostic variables
+   ### this section accouns for 1/3 of the allocations and more than half in terms of storage size 
+   ##(159.84 k allocations: 22.544 MiB) current function total, killed 1/3 of allocations thanks to loop unroll
+    for m=1:params.neqs
+      #this loop unroll works well for both matmuls allocations now: (108.00 k allocations: 9.888 MiB)
+      for i=1:params.mesh.ngl 
+        for j=1:params.mesh.ngl
+          params.q_ti[i,j] = 0.0
+          for k=1:params.mesh.ngl
+            params.q_ti[i,j] += params.fx[i,k] * params.q_t[m,k,j]
+          end
+        end
+      end
+
+
+    ## ETA Derivative
+      ## this is allocating
+      #params.fqf[m,:,:] .= params.q_ti * params.fy_t
+      for i=1:params.mesh.ngl
+        for j=1:params.mesh.ngl
+          params.fqf[m,i,j] = 0.0
+          for k=1:params.mesh.ngl
+            params.fqf[m,i,j] += params.q_ti[i,k] * params.fy_t[k,j]
+          end
+        end
+      end
+
+    end
+   
+  ## Do Numerical Integration
+
+    for j=1:params.mesh.ngl
+      for i=1:params.mesh.ngl
+        ip = params.mesh.connijk[e,i,j]
+        for m=1:params.neqs
+          params.b[e,i,j,m] += params.fqf[m,i,j] * params.ω[i]*params.ω[j]*params.metrics.Je[e,i,j]
+        end
+      end
+    end
+  end
+
+  DSS_rhs!(@view(params.B[:,:]), @view(params.b[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD)
+
+  for ieq=1:params.neqs
+       divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
+  end
+
+  for e=1:params.mesh.nelem
+    for j=1:params.mesh.ngl
+      for i=1:params.mesh.ngl
+        ip = params.mesh.connijk[e,i,j]
+        for m=1:params.neqs
+          params.uaux[ip,m] = params.B[ip,m]
+        end
+      end
+    end
+  end
+
+
+  uaux2u!(u, @view(params.uaux[:,:]), params.neqs, params.mesh.npoin)
+end
+
+function init_filter(nop,xgl,mu_x,inputs)
 
   f = zeros(Float64,nop+1,nop+1)
   weight = ones(Float64,nop+1)
   exp_alpha = 36
-  exp_order = 12
+  exp_order = 64
   quad_alpha = 1.0
   quad_order = (nop+1)/3
   erf_alpha = 0.0
@@ -173,7 +221,7 @@ function init_filter(nop,xgl,mu_x)
   end
   
   ## Compute Boyd-Vandeven (ERF-LOG) Transfer function
-  filter_type = "erf"
+  filter_type = inputs[:filter_type]
   if (filter_type == "erf")   
     @info "erf filtering on"
     for k=1:nop+1
