@@ -506,9 +506,9 @@ version = "0.9.3"
 
 [[deps.Documenter]]
 deps = ["ANSIColoredPrinters", "AbstractTrees", "Base64", "Dates", "DocStringExtensions", "Downloads", "IOCapture", "InteractiveUtils", "JSON", "LibGit2", "Logging", "Markdown", "MarkdownAST", "Pkg", "PrecompileTools", "REPL", "RegistryInstances", "SHA", "Test", "Unicode"]
-git-tree-sha1 = "f667b805e90d643aeb1ca70189827f991a7cc115"
+git-tree-sha1 = "147a3cbb6ddcd9448fe5e6c426b347efc68f9c86"
 uuid = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-version = "1.1.0"
+version = "1.1.1"
 
 [[deps.Downloads]]
 deps = ["ArgTools", "FileWatching", "LibCURL", "NetworkOptions"]
@@ -540,9 +540,9 @@ version = "1.0.4"
 
 [[deps.EnzymeCore]]
 deps = ["Adapt"]
-git-tree-sha1 = "1091d4bbc2f2f7840a65fc0496c782b955dd82fb"
+git-tree-sha1 = "42fbaf6858c7eabb58cdfdcdd1b160cfbae2416b"
 uuid = "f151be2c-9106-41f4-ab19-57ee4f262869"
-version = "0.6.0"
+version = "0.6.1"
 
 [[deps.ErrorfreeArithmetic]]
 git-tree-sha1 = "d6863c556f1142a061532e79f611aa46be201686"
