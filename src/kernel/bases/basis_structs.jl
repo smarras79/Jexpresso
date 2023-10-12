@@ -11,8 +11,6 @@ export St_gr
 export build_lgl!
 export LegendreGaussLobattoNodesAndWeights
 export build_gr!
- 
-include("../abstractTypes.jl")
 
 export St_lg
 export St_cg
@@ -22,8 +20,6 @@ abstract type AbstractIntegrationPointAndWeights end
 abstract type AbstractInterpolationBasis end
 abstract type AbstractSpaceDimensions end
 
-struct LagrangeBasis <: AbstractInterpolationBasis end
-struct LaguerreBasis <: AbstractInterpolationBasis end
 mutable struct St_Legendre{TFloat}
     
     """
@@ -59,9 +55,6 @@ abstract type AbstractSpaceDimensions end
 
 struct LagrangeBasis <: AbstractInterpolationBasis end
 struct ScaledLaguerreBasis <: AbstractInterpolationBasis end
-struct NSD_1D <: AbstractSpaceDimensions end
-struct NSD_2D <: AbstractSpaceDimensions end
-struct NSD_3D <: AbstractSpaceDimensions end
 
 mutable struct St_Chebyshev{TFloat} <:AbstractIntegrationPointAndWeights
     chebyshev ::TFloat
