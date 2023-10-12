@@ -13,12 +13,12 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     qvars = ("dρ", "dρu", "dρv", "dρθ")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
     
-    θref = 250.0 #K
-    θ0 = 250.0
+    θref = 280.0 #K
+    θ0 = 280.0
     T0   = θ0
     p0   = 100000.0
     
-    N    = PhysConst.g/sqrt(PhysConst.cp*T0)
+    N    = 0.01#PhysConst.g/sqrt(PhysConst.cp*T0)
     N2   = N*N
     
     for iel_g = 1:mesh.nelem
@@ -42,7 +42,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                  ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
                  ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p)
             =#
-            u = 20.0
+            u = 10.0
             v = 0.0
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[ip,1] = ρ-ρref
@@ -66,7 +66,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         end
     end
 
-    for iel_g = 1:mesh.nelem_semi_inf
+    #=for iel_g = 1:mesh.nelem_semi_inf
         for j=1:mesh.ngr, i=1:mesh.ngl
 
             ip = mesh.connijk_lag[iel_g,i,j]
@@ -87,7 +87,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                  ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p) #kg/m³
                  ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=p)
             =#
-            u = 20.0
+            u = 10.0
             v = 0.0
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[ip,1] = ρ-ρref
@@ -109,7 +109,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
             q.qe[ip,4] = ρref*θ
             q.qe[ip,end] = p
         end
-    end
+    end=#
     
     @info "Initialize fields for system of 2D CompEuler with θ equation ........................ DONE"
     

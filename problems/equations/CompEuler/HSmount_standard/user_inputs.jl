@@ -15,7 +15,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
-        :nop_laguerre        => 24,
+        #:nop_laguerre        => 24,
         :luser_bc            => true,
         :lsource             => true,
         #---------------------------------------------------------------------------
@@ -33,13 +33,13 @@ function user_inputs()
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_laguerre_top.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/agnesi-120kmx30km-hm5000.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_RTB.msh",
-        :gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_120x31_top_lag.msh",
+        :gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_120x31_periodic.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/agnesi240kmX30km_coarse_laguerreTopLateral.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #---------------------------------------------------------------------------
         :xscale              => 120000.0,
-        :yscale              => 7500.0,
+        :yscale              => 15000.0,
         :xdisp               => 0.0,
         :ydisp               => 1.0,
         #---------------------------------------------------------------------------

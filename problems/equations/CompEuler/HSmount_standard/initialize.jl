@@ -66,7 +66,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         end
     end
 
-    for iel_g = 1:mesh.nelem_semi_inf
+    #=for iel_g = 1:mesh.nelem_semi_inf
         for j=1:mesh.ngr, i=1:mesh.ngl
 
             ip = mesh.connijk_lag[iel_g,i,j]
@@ -109,7 +109,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
             q.qe[ip,4] = ρref*θ
             q.qe[ip,end] = p
         end
-    end
+    end=#
     
     @info "Initialize fields for system of 2D CompEuler with θ equation ........................ DONE"
     
