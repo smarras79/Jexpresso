@@ -33,7 +33,7 @@ function user_inputs()
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_laguerre_top.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/agnesi-120kmx30km-hm5000.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_RTB.msh",
-        :gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_180x24_periodic.msh",
+        :gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_180x48_periodic.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/agnesi240kmX30km_coarse_laguerreTopLateral.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
