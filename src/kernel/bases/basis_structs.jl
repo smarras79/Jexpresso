@@ -201,7 +201,6 @@ function build_Interpolation_basis!(TP::ScaledLaguerreBasis, ξ, ξq, T::Type{Fl
 
     N  = (Nξ + 1)
     Q  = (Qξ + 1)
-    @info N, Q
     basis = St_Lagrange{T}(zeros(N,Q), zeros(N,Q))
     (basis.ψ, basis.dψ) = LagrangeLaguerreBasis(ξ, ξq, T)
     @info "built laguerre basis"
@@ -705,8 +704,6 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     #if(scale)
       gr.ω .= exp.(gr.ξ).*gr.ω 
     #end
-    @info gr.ξ
-    @info gr.ω
 end
 
 function LagrangeLaguerreBasis(ξ, ξq, TFloat)

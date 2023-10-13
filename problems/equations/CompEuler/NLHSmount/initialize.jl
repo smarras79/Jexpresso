@@ -6,7 +6,6 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 """
     @info " Initialize fields for 2D CompEuler with θ equation ........................ "
     
-    @info "main domain height, and laguerre height", mesh.ymax, maximum(mesh.y)
 
     PhysConst = PhysicalConst{Float64}()
     

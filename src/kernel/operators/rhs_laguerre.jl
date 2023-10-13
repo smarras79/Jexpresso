@@ -50,7 +50,7 @@ function uToPrimitives_laguerre!(uprimitive, u, mesh, δtotal_energy, iel, ::NCL
     
     PhysConst = PhysicalConst{Float64}()
     
-    for j=1:mesh.ngl, i=1:mesh.ngl
+    for j=1:mesh.ngr, i=1:mesh.ngl
         
         m1 = mesh.connijk_lag[iel,i,j]
         m2 = mesh.npoin + m1
