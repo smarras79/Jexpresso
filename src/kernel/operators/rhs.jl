@@ -215,7 +215,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
     ymax = params.ymax
     for iel=1:params.mesh.nelem
 
-      @time  uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
+      uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
 
         for j=1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,j]
