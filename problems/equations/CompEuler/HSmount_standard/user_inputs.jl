@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 1000.0, #2π,
+        :tend                 => 1.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 2,
@@ -32,7 +32,7 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/agnesi240kmX30km_coarse.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_laguerre_top.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/agnesi-120kmx30km-hm5000.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_RTB.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_50x25.msh",
         :gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_120x31_periodic.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/agnesi240kmX30km_coarse_laguerreTopLateral.msh",
         #---------------------------------------------------------------------------

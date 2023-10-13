@@ -60,7 +60,7 @@ function filter!(u, params, SD::NSD_2D,::TOTAL)
       for i=1:params.mesh.ngl
         ip = params.mesh.connijk[e,i,j]
         for m=1:params.neqs
-          b[e,i,j,m] = params.b[e,i,j,m] + params.fqf[m,i,j] * params.ω[i]*params.ω[j]*params.metrics.Je[e,i,j]
+          params.b[e,i,j,m] = params.b[e,i,j,m] + params.fqf[m,i,j] * params.ω[i]*params.ω[j]*params.metrics.Je[e,i,j]
         end
       end
     end
