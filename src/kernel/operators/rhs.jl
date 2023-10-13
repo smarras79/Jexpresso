@@ -52,7 +52,7 @@ function resetRHSToZero_viscous!(params)
 end
 
 function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, ::TOTAL)
-
+    
     PhysConst = PhysicalConst{Float64}()
     
     for j=1:mesh.ngl, i=1:mesh.ngl
@@ -106,7 +106,7 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, :
                 uprimitive[i,j,ieq] = u[mieq] + uauxe[mieq,1]
             end
         end
-                
+        
         #Pressure:
         uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
         
@@ -212,10 +212,10 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmax = params.xmax
     xmin = params.xmin
-    ymax = params.ymax    
+    ymax = params.ymax
     for iel=1:params.mesh.nelem
 
-        uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
+      @time  uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
 
         for j=1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,j]
