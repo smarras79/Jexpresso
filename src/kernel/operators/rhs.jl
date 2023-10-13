@@ -215,7 +215,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
     ymax = params.ymax    
     for iel=1:params.mesh.nelem
 
-        uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
+    uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
 
         for j=1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,j]
@@ -228,7 +228,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
                        neqs=params.neqs)
             
             if lsource
-                user_source!(@view(params.S[i,j,:]),
+               user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
@@ -290,6 +290,7 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_2D)
         end
     end
 end
+
 function _expansion_inviscid!(params, iel, ::CL, QT::Exact, SD::NSD_2D)
     
     N = params.mesh.ngl
