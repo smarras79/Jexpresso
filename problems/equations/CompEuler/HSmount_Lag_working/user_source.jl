@@ -23,7 +23,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     # distance from the boundary. xs in Restelli's thesis
     dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
     dbl = ymax - y
-    zs = 14000.0#ymax - 16000.0
+    zs = 14500.0#ymax - 16000.0
     dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
     dbx = min(xmax - x,x-xmin) 
     xr = 120000.0
@@ -87,18 +87,20 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     # distance from the boundary. xs in Restelli's thesis
     dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
     dbl = ymax - y
-    zs = 14000.0#ymax - 20000.0
+    zs = 15000.0#ymax - 20000.0
     dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
     dbx = min(xmax - x,x-xmin)
     xr = 80000.0
     xl = -80000.0
     
-    if (y > zs)#nsponge_points * dsy) #&& dbl >= 0.0)
+    #if (y > zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         #betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-        betay_coe = 2.0/(1+exp((0.25*ymax-y)/(ymax/18)))
-    else
-        betay_coe = 0.0
-    end
+        #betay_coe = 0.9/(1+exp((0.4*ymax-y)/(ymax/18)))
+        #betay_coe = 25.0/(1+exp((0.9*ymax-y)/(ymax/15))) ### damps too far down
+        betay_coe = 2.0/(1+exp((0.67*ymax-y)/(ymax/49)))
+    #else
+     #   betay_coe = 0.0
+    #end
     #if (abs(x) <=xmin)
       ctop= betay_coe#0.5*betay_coe
     #else
@@ -106,13 +108,13 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     #end 
 
     if (x > xr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxr_coe = 0.0
     end
 
     if (x < xl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxl_coe = 0.0
     end
