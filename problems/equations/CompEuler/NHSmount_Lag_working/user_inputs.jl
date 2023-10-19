@@ -15,7 +15,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
-        :nop_laguerre        => 24,     # Laguerre polynomial Order
+        :nop_laguerre        => 14,     # Laguerre polynomial Order
         :luser_bc            => true,
         :lsource             => true,
         #---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ function user_inputs()
         # grid modification parameters
         #--------------------------------------------------------------------------- 
         :xscale              => 72000.0,
-        :yscale              => 7500.0,
+        :yscale              => 10000.0,
         :xdisp               => 0.0,
         :ydisp               => 1.0,
         #---------------------------------------------------------------------------
