@@ -46,7 +46,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     npz::Union{TInt, Missing} = 1
     
     nelem::Union{TInt, Missing} = 1
-    nelem_semi_inf::Union{TInt, Missing} = 1# Semi infinite elements for Laguerre BC
+    nelem_semi_inf::Union{TInt, Missing} = 0# Semi infinite elements for Laguerre BC
     nelem_int::Union{TInt, Missing} = 1    # internal elements
     npoin::Union{TInt, Missing} = 1        # This is updated after populating with high-order nodes
     npoin_original::Union{TInt, Missing} =1# Storage for original npoin if modified for Laguerre semi_inf
@@ -64,7 +64,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
     ngl::Union{TInt, Missing} = nop + 1
-    ngr::Union{TInt, Missing} = 18#nop_gr
+    ngr::Union{TInt, Missing} = 0#nop_gr
     npoin_el::Union{TInt, Missing} = 1     # Total number of points in the reference element
     
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
