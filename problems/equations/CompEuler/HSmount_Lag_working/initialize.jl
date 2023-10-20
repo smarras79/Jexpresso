@@ -109,7 +109,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
             q.qe[ip,end] = p
         end
     end
-
+    
     outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")
     write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
     
