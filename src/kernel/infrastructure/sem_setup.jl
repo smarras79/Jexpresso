@@ -33,7 +33,7 @@ function sem_setup(inputs::Dict)
     elseif(inputs[:ydisp] != 0.0)
        mesh.y .= (mesh.y .+ inputs[:ydisp])
     end
-    @info "xmax, ymax", maximum(mesh.x),maximum(mesh.y)
+    
     mesh.ymax = maximum(mesh.y)
     #warp_mesh!(mesh,inputs)    
     #--------------------------------------------------------
