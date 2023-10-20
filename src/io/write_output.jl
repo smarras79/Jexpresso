@@ -260,7 +260,7 @@ end
         
 end
 
-function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
+function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
     #nothing
     
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
@@ -287,7 +287,7 @@ function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPU
     end
         
     #Reference values only (definied in initial conditions)
-    fout_name = string(OUTPUT_DIR, "/REFERERENCE.vtu")
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
     
     vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*0.0, cells)
 
