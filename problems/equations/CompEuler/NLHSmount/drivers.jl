@@ -9,15 +9,14 @@ function driver(DT::ContGal,       #Space discretization type
     
     @time qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
-    solution = time_loop!(sem.QT, sem.PT, inputs[:SOL_VARS_TYPE], inputs[:CL], sem.mesh, sem.metrics, sem.basis, sem.ω, qp,
+    solution = time_loop!(sem.QT, sem.PT, inputs[:CL], sem.mesh, sem.metrics, sem.basis, sem.ω, qp,
                           sem.matrix.M, sem.matrix.Minv,
                           inputs[:Δt],
                           inputs,
                           OUTPUT_DIR,
-                          TFloat)
+                          TFloat; fx = sem.fx, fy = sem.fy, fy_lag = sem.fy_lag)
     
-    if (inputs[:ndiagnostics_outputs] > 0)
-        write_output(sem.mesh.SD, solution,  sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs, qexact=qp.qe, case="rtb")
-    end
+    write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs, qexact=qp.qe, case="rtb")
+    #solution_norms(solution, OUTPUT_DIR, inputs;)
     
 end

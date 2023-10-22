@@ -99,10 +99,13 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     This function uses the amazing package Mackie to plot arbitrarily gridded
     unstructured data to filled contour plot
 """
-    npoin = floor(Int64, size(q, 1)/nvar)
+    if ("Laguerre" in mesh.bdy_edge_type)
+        npoin = mesh.npoin_original
+    else
+        npoin = floor(Int64, size(q, 1)/nvar)
+    end
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
-        
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
         fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin], colormap = :viridis)
         Colorbar(fig[1,2], colormap = :viridis)        

@@ -6,9 +6,6 @@
 #    include(user_bc_dir)
 #end
 #---------------------------------------------------------------------------
-function dirichlet!(qbdy, x, y, t, tag, inputs::Dict)
-    user_bc_dirichlet!(qbdy, x, y, t, tag, inputs::Dict)
-end
 
 function neumann(q, gradq, x, y, t, tag, inputs::Dict)
     
@@ -20,4 +17,16 @@ function neumann(q, gradq, x, t, inputs::Dict)
 
     rhs = user_bc_neumann(q, gradq, x, t, inputs)
     return rhs
+end
+
+function dirichlet!(q, qbdy, x, y, t, nx, ny, tag,qe,SOL)
+
+   user_bc_dirichlet!(q, x, y, t, tag, qbdy, nx, ny,qe,SOL)
+end
+
+function dirichlet!(q, gradq, x, t, mesh, metrics, tag, qbdy, inputs::Dict)
+    
+    qbdy = user_bc_dirichlet!(q, gradq, x, t, tag, qbdy, inputs::Dict)
+
+    return qbdy
 end
