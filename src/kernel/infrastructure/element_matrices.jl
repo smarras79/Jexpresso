@@ -225,7 +225,6 @@ end
 function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
 
     if llump == true
-        
         for iel=1:nelem
             for j = 1:N+1
                 for i = 1:N+1
