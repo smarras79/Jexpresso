@@ -58,7 +58,8 @@ end
 #------------
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
     #nothing
-    if ("Laguerre" in mesh.bdy_edge_type)
+    
+    if (mesh.nelem_semi_inf > 0)
         subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
         cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
     else
@@ -83,11 +84,9 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                 isel = isel + 1
             end
         end
-        #end
     end
-   
-    if ("Laguerre" in mesh.bdy_edge_type)
-      for iel = 1:mesh.nelem_semi_inf
+    
+    for iel = 1:mesh.nelem_semi_inf
         for i = 1:mesh.ngl-1
             for j = 1:mesh.ngr-1
                 ip1 = mesh.connijk_lag[iel,i,j]
@@ -98,14 +97,12 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                 subelem[isel, 2] = ip2
                 subelem[isel, 3] = ip3
                 subelem[isel, 4] = ip4
-    
+                
                 cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-    
+                
                 isel = isel + 1
             end
         end
-        #end
-      end
     end
     
     npoin = mesh.npoin
@@ -260,11 +257,16 @@ end
         
 end
 
-function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
+function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
+
     #nothing
-    
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-    cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    if (mesh.nelem_semi_inf > 0)
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
+    else
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    end
     
     isel = 1
     for iel = 1:mesh.nelem
@@ -285,9 +287,29 @@ function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPU
             end
         end
     end
-        
+    
+    for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngr-1
+                ip1 = mesh.connijk_lag[iel,i,j]
+                ip2 = mesh.connijk_lag[iel,i+1,j]
+                ip3 = mesh.connijk_lag[iel,i+1,j+1]
+                ip4 = mesh.connijk_lag[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+        #end
+    end
+    
     #Reference values only (definied in initial conditions)
-    fout_name = string(OUTPUT_DIR, "/REFERERENCE.vtu")
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
     
     vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*0.0, cells)
 
