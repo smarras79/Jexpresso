@@ -486,8 +486,8 @@ if mesh.nsd == 2
         bdy_tangents = zeros(n_semi_inf, 2)
         e_iter = 1
         iter = mesh.npoin + 1
-        x_new = zeros(mesh.npoin + n_semi_inf*mesh.ngl*(mesh.ngr-1))
-        y_new = zeros(mesh.npoin + n_semi_inf*mesh.ngl*(mesh.ngr-1))
+        x_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
+        y_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
         x_new[1:mesh.npoin] .= mesh.x[:]
         y_new[1:mesh.npoin] .= mesh.y[:]
         for iedge = 1:size(mesh.bdy_edge_type,1)
@@ -548,10 +548,41 @@ if mesh.nsd == 2
                     ip = mesh.poin_in_bdy_edge[iedge,i]
                     mesh.connijk_lag[e_iter,i,1] = ip
                     for j=2:mesh.ngr
-                        mesh.connijk_lag[e_iter,i,j] = iter
-                        x_new[iter] = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx 
-                        y_new[iter] = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
-                        iter += 1
+                        x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx 
+                        y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                        matched = 0
+                        if (i == mesh.ngl || i == 1)
+                          iter_end = 0
+                          while (matched == 0 && iter_end == 0)
+                            for e_check = 1:n_semi_inf
+                              for i_check =1:mesh.ngl
+                                for j_check =1:mesh.ngr
+                                  ip_check = mesh.connijk_lag[e_check,i_check,j_check]
+                                  if (ip_check != 0.0 && e_check != e_iter)
+                                    if (AlmostEqual(x_temp,x_new[ip_check]) && AlmostEqual(y_temp,y_new[ip_check]))
+                                       mesh.connijk_lag[e_iter,i,j] = ip_check
+                                       matched = 1
+                                    end
+                                  end
+                                end
+                              end 
+                            end
+                            iter_end = 1
+                          end    
+                        else
+                          x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
+                          y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                          mesh.connijk_lag[e_iter,i,j] = iter
+                          iter += 1
+                          matched = 1
+                        end
+                        if (matched == 0)
+                          x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
+                          y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                          mesh.connijk_lag[e_iter,i,j] = iter
+                          iter += 1 
+                        end
+                        
                         #@info nor[1],nor[2],x_new[iter],y_new[iter], mesh.x[ip],mesh.y[ip]
                     end
                 end
