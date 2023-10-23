@@ -30,6 +30,7 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB_unitsize.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/mygmsh.msh", #for nop=4
         #:gmsh_filename        => "./meshes/gmsh_grids/test_allocation.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_120x31_periodic.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB27x27.msh", #for nop=3
