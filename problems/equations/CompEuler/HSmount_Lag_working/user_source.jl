@@ -119,11 +119,11 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betaxl_coe = 0.0
     end
     
-      cxr = 0.035*betaxr_coe#0.25*betaxr_coe
-      cxl = 0.035*betaxl_coe#0.25*betaxl_coe
+    cxr = 0.035*betaxr_coe#0.25*betaxr_coe
+    cxl = 0.035*betaxl_coe#0.25*betaxl_coe
     ctop = min(ctop,1)
-    cxr = min(cxr,1)
-    cxl = min(cxl,1)
+    cxr  = min(cxr,1)
+    cxl  = min(cxl,1)
     cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
     
     #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
@@ -133,4 +133,4 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     S[4] -= (cs)*(q[4])
 
     return  S
-end    
+end
