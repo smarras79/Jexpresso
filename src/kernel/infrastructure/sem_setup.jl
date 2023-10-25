@@ -86,13 +86,14 @@ function sem_setup(inputs::Dict)
               fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
               fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs)
             end
+            @time periodicity_restructure!(mesh,inputs)
             if (inputs[:lwarp])
               warp_mesh!(mesh,inputs)
             end
             metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat)
             metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat)
             metrics = (metrics1, metrics2)
-          
+             
             matrix = matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         else
       

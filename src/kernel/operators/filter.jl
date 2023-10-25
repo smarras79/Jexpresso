@@ -7,7 +7,7 @@ function filter!(u, params, SD::NSD_2D,::TOTAL)
   fy_t = transpose(params.fy)
   ## Subtract background velocity
   #qv = copy(q)
-  params.uaux[:,2:4] .= params.uaux[:,2:4] .- params.qe[:,2:4]
+  params.uaux[:,2:3] .= params.uaux[:,2:3] .- params.qe[:,2:3]
   ## store Dimension of MxM object
 
   ## Loop through the elements
@@ -79,8 +79,8 @@ function filter!(u, params, SD::NSD_2D,::TOTAL)
         for m=1:params.neqs
           params.uaux[ip,m] = params.B[ip,m]
         end
-        for m=2:4
-          params.uaux[ip,m] -= params.qe[ip,m]
+        for m=2:3
+          params.uaux[ip,m] += params.qe[ip,m]
         end
       end
     end
