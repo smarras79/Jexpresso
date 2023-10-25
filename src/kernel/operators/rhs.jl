@@ -147,18 +147,14 @@ end
 
 
 function rhs!(du, u, params, time)
-    if (params.SD isa NSD_2D)
-        if (params.laguerre) 
-            build_rhs!(@view(params.RHS[:,:]), u, params, time)
-            build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
-            params.RHS .= @views(params.RHS .+ params.RHS_lag) 
-        else
-            build_rhs!(@view(params.RHS[:,:]), u, params, time)
-        end
-    else
-        build_rhs!(@view(params.RHS[:,:]), u, params, time)
+
+    build_rhs!(@view(params.RHS[:,:]), u, params, time)
+    if (params.laguerre) 
+        build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+        params.RHS .= @views(params.RHS .+ params.RHS_lag) 
     end
     RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+    
 end
 
 function _build_rhs!(RHS, u, params, time)

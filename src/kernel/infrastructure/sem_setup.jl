@@ -20,16 +20,16 @@ function sem_setup(inputs::Dict)
     mesh = mod_mesh_mesh_driver(inputs)
     
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
-      mesh.x .= (mesh.x .+ inputs[:xdisp]) .*inputs[:xscale]
+      mesh.x .= (mesh.x .+ inputs[:xdisp]) .*inputs[:xscale]*0.5
     elseif (inputs[:xscale] != 1.0)
-     mesh.x = mesh.x*inputs[:xscale]#mesh.x*120000.0
+     mesh.x = mesh.x*inputs[:xscale]*0.5
     elseif (inputs[:xdisp] != 0.0)
        mesh.x .= (mesh.x .+ inputs[:xdisp])
     end
     if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
-      mesh.y .= (mesh.y .+ inputs[:ydisp]) .*inputs[:yscale]#15000.0
+      mesh.y .= (mesh.y .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
     elseif(inputs[:yscale] != 1.0)
-      mesh.y .= (mesh.y) .*inputs[:yscale]
+      mesh.y .= (mesh.y) .*inputs[:yscale]*0.5
     elseif(inputs[:ydisp] != 0.0)
        mesh.y .= (mesh.y .+ inputs[:ydisp])
     end

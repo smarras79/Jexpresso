@@ -1,13 +1,25 @@
-lc = 0.25;
+lc = 250;
 
-Point(1) = {0, 0, 0, lc};
-Point(2) = {10, 0,  0, lc};
-Point(3) = {10, 4, 0, lc};
-Point(4) = {0,  4, 0, lc};
+xmin = 0.0;
+xmax = 10000.0;
+ymin = 0.0;
+ymax = 6400.0;
 
-Point(5) = {1,  1, 0, lc};
-Point(6) = {3,  1, 0, lc};
-Point(7) = {2,  2, 0, lc};
+Point(1) = {xmin, ymin, 0, lc};
+Point(2) = {xmax, ymin, 0, lc};
+Point(3) = {xmax, ymax, 0, lc};
+Point(4) = {xmin, ymax, 0, lc};
+
+x5 = 1000;
+y5 = 1000;
+x6 = 2500;
+y6 = 1000;
+x7 = 1250;
+y7 = 2000;
+
+Point(5) = {x5, y5, 0, lc};
+Point(6) = {x6, y6, 0, lc};
+Point(7) = {x7, y7, 0, lc};
 
 Line(1) = {1,2};
 Line(2) = {3,2};
