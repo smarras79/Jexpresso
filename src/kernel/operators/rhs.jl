@@ -74,7 +74,6 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, :
                 uprimitive[i,j,ieq] = u[mieq]
             end
         end
-        
         #Pressure:
         uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
         

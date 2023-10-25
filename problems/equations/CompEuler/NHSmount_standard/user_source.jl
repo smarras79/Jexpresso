@@ -21,42 +21,38 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     nsponge_points = 8
 
     # distance from the boundary. xs in Restelli's thesis
-    dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
-    dbl = ymax - y
-    zs = 15000.0 #ymax - 16000.0
-    dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
-    dbx = min(xmax - x,x-xmin) 
+    zs = 25000.0 #ymax - 16000.0
     xr = 55000.0
     xl = -55000.0
     if (y > zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betay_coe = 0.0
     end
-    ctop= 0.25*betay_coe
+    ctop= 0.5*betay_coe
    
     if (x > xr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxr_coe = 0.0
     end
    
     if (x < xl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxl_coe = 0.0
     end
    
-    cxr = 0.1*betaxr_coe
-    cxl = 0.1*betaxl_coe
+    cxr = 0.15*betaxr_coe
+    cxl = 0.15*betaxl_coe
     #@info x,y,cxr,cxl,ctop
     cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
 
     if (x >= xmin && x <= xmax)     
     #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
       S[1] -= (cs)*(q[1]-qe[1])
-      S[2] -= (cs)*(q[2]-qe[1]*20.0)
-      S[3] -= (cs)*q[3]
+      S[2] -= (cs)*(q[2]-qe[1]*10.0)
+      S[3] -= (cs)*(q[3]-qe[3])
       S[4] -= (cs)*(q[4]-qe[4])
     end
     
@@ -87,7 +83,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     # distance from the boundary. xs in Restelli's thesis
     dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
     dbl = ymax - y
-    zs = 15000.0#ymax - 20000.0
+    zs = 25000.0#ymax - 20000.0
     dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
     dbx = min(xmax - x,x-xmin)
     xr = 55000.0
@@ -99,22 +95,22 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     else
         betay_coe = 0.0
     end
-    ctop= 0.25*betay_coe
+    ctop= 0.5*betay_coe
 
     if (x > xr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxr_coe = 0.0
     end
 
     if (x < xl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxl_coe = 0.0
     end
     
-      cxr = 0.1*betaxr_coe
-      cxl = 0.1*betaxl_coe
+      cxr = 0.15*betaxr_coe
+      cxl = 0.15*betaxl_coe
     cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
 
     #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
