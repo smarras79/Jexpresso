@@ -30,7 +30,6 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractF
     qbdy[3] = q[3] - qnl*ny
     #qbdy[2] = 0.0
     #qbdy[3] = 0.0
-    
 end
 
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe::SubArray{Float64},::PERT)
