@@ -35,6 +35,7 @@ function sem_setup(inputs::Dict)
     end
     
     mesh.ymax = maximum(mesh.y)
+    @info "xmax, ymax", maximum(mesh.x),maximum(mesh.y)
     #warp_mesh!(mesh,inputs)    
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights

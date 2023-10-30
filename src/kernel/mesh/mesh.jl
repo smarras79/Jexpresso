@@ -479,8 +479,8 @@ if mesh.nsd == 2
     # build mesh data structs for Laguerre semi-infinite elements
     if ("Laguerre" in mesh.bdy_edge_type)
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1) 
-        factorx = 0.1
-        factory = 0.025
+        factorx = inputs[:xfac_laguerre]#0.1
+        factory = inputs[:yfac_laguerre]#0.025
         mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, n_semi_inf, mesh.ngl, mesh.ngr)
         bdy_normals = zeros(n_semi_inf, 2)
         bdy_tangents = zeros(n_semi_inf, 2)
