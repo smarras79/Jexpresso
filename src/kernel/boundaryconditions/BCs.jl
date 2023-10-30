@@ -70,6 +70,7 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                 nx = metrics.nx[iedge,k]
                 ny = metrics.ny[iedge,k]
                 fill!(qbdy, 4325789.0)
+                #qbdy[:] .= uaux[ip,:]
                 #ipp = 1 #ip               
                 ###_bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge])
 
@@ -77,7 +78,8 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                 user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge], qbdy, nx, ny, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
                 
                 for ieq =1:neqs
-                    if !(AlmostEqual(qbdy[ieq],4325789.0)) # WHAT's this for?
+                    if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                        #@info mesh.x[ip],mesh.y[ip],ieq,t 
                         uaux[ip,ieq] = qbdy[ieq]
                         RHS[ip, ieq] = 0.0
                     end
@@ -139,7 +141,7 @@ function yt_build_custom_bcs!(t, mesh, qbdy, q, gradq, bdy_flux, rhs, ::NSD_2D, 
                 
                 for var =1:nvars
                     if !(AlmostEqual(qbdy[var],4325789.0)) # WHAT's this for?
-                        @info var,x,y,qbdy[var]
+                        @info var,x,y,qbdy[var],
                         
                         rhs[iel,ll,mm,var] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
                         

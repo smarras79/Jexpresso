@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 300, #2π,
+        :tend                 => 1500, #2π,
         :Δt                   => 0.3,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 100,
@@ -24,6 +24,7 @@ function user_inputs()
         #:visc_model           => "dsgs", #"none", "dsgs"
         :νx                   => 75.0, #kinematic viscosity constant
         :νy                   => 75.0, #kinematic viscosity constant
+        :κ                    => 75.0, #diffusivity for theta 
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -48,9 +49,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => false,
-        :mu_x                => 0.05,
-        :mu_y                => 0.05,
+        :lfilter             => true,
+        :mu_x                => 0.01,
+        :mu_y                => 0.01,
         :filter_type         => "erf",  ##default is erf, use either "erf" for Boyd-Vandeven,"exp" for Warburton Exponential filter, or "quad" for Fischer quadratic filter
         #---------------------------------------------------------------------------
         # Plotting parameters
