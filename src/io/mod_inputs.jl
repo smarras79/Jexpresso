@@ -32,7 +32,15 @@ function mod_inputs_user_inputs!(user_input_file)
     if(!haskey(inputs, :nop_laguerre))
         inputs[:nop_laguerre] = 18
     end
+    
+    if(!haskey(inputs, :xfac_laguerre))
+        inputs[:xfac_laguerre] = 1.0
+    end
 
+    if(!haskey(inputs, :yfac_laguerre))
+        inputs[:yfac_laguerre] = 1.0
+    end
+     
     if(!haskey(inputs, :lfilter))
         inputs[:lfilter] = false
     end

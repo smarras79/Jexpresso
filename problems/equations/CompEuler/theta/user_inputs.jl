@@ -36,6 +36,13 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB27x27.msh", #for nop=3
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB40x40.msh", #for nop=2
         #---------------------------------------------------------------------------
+        # Filter parameters
+        #---------------------------------------------------------------------------
+        #:lfilter             => true,
+        #:mu_x                => 0.01,
+        #:mu_y                => 0.01,
+        #:filter_type         => "erf",
+        #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",

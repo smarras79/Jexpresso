@@ -74,7 +74,6 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, :
                 uprimitive[i,j,ieq] = u[mieq]
             end
         end
-        
         #Pressure:
         uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
         
@@ -148,18 +147,14 @@ end
 
 
 function rhs!(du, u, params, time)
-    if (params.SD isa NSD_2D)
-        if (params.laguerre) 
-            build_rhs!(@view(params.RHS[:,:]), u, params, time)
-            build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
-            params.RHS .= @views(params.RHS .+ params.RHS_lag) 
-        else
-            build_rhs!(@view(params.RHS[:,:]), u, params, time)
-        end
-    else
-        build_rhs!(@view(params.RHS[:,:]), u, params, time)
+
+    build_rhs!(@view(params.RHS[:,:]), u, params, time)
+    if (params.laguerre) 
+        build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+        params.RHS .= @views(params.RHS .+ params.RHS_lag) 
     end
     RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+    
 end
 
 function _build_rhs!(RHS, u, params, time)
@@ -180,6 +175,11 @@ function _build_rhs!(RHS, u, params, time)
     if (params.inputs[:lfilter])
         filter!(u, params, SD,params.SOL_VARS_TYPE)
     end
+    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    apply_boundary_conditions!(u, params.uaux, time, params.qe,
+                               params.mesh, params.metrics, params.basis,
+                               params.RHS, params.rhs_el, params.ubdy,
+                               params.ω, SD, neqs, params.inputs)
     inviscid_rhs_el!(u, params, true, SD)
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
     #-----------------------------------------------------------------------------------
@@ -200,10 +200,10 @@ function _build_rhs!(RHS, u, params, time)
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin)
     end
     #For conservaton apply B.C. to RHS after DSS and not to rhs_el:
-    apply_boundary_conditions!(u, params.uaux, time, params.qe,
-                               params.mesh, params.metrics, params.basis,
-                               params.RHS, params.rhs_el, params.ubdy,
-                               params.ω, SD, neqs, params.inputs)
+    #apply_boundary_conditions!(u, params.uaux, time, params.qe,
+    #                           params.mesh, params.metrics, params.basis,
+    #                           params.RHS, params.rhs_el, params.ubdy,
+    #                           params.ω, SD, neqs, params.inputs)
     
 end
 
