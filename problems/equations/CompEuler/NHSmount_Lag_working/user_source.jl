@@ -87,20 +87,21 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     # distance from the boundary. xs in Restelli's thesis
     dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
     dbl = ymax - y
-    zs = 15000.0#ymax - 20000.0
+    zs = 20000.0#ymax - 20000.0
     dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
     dbx = min(xmax - x,x-xmin)
-    xr = 55000.0
-    xl = -55000.0
+    xr = 40000.0
+    xl = -40000.0
     
-    #if (y > zs)#nsponge_points * dsy) #&& dbl >= 0.0)
+    if (y >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         #betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betay_coe = 0.005/(1+exp((0.82*ymax-y)/(ymax/18)))
         #betay_coe = 0.9/(1+exp((0.4*ymax-y)/(ymax/18)))
-        betay_coe = 25.0/(1+exp((0.9*ymax-y)/(ymax/15))) ### damps too far down
-        #betay_coe = 2.0/(1+exp((0.67*ymax-y)/(ymax/49)))
-    #else
-     #   betay_coe = 0.0
-    #end
+        #betay_coe = 25.0/(1+exp((0.9*ymax-y)/(ymax/15))) ### damps too far down
+        #betay_coe = 1.0/(1+exp((0.67*ymax-y)/(ymax/49)))
+    else
+        betay_coe = 0.0
+    end
     #if (abs(x) <=xmin)
       ctop= betay_coe#0.5*betay_coe
     #else
@@ -119,8 +120,8 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betaxl_coe = 0.0
     end
     
-      cxr = 0.15*betaxr_coe
-      cxl = 0.15*betaxl_coe
+      cxr = 0.05*betaxr_coe
+      cxl = 0.05*betaxl_coe
     ctop = min(ctop,1)
     cxr = min(cxr,1)
     cxl = min(cxl,1)

@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 1500.0, #2π,
+        :tend                 => 30000.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 100,
@@ -16,6 +16,7 @@ function user_inputs()
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
         :nop_laguerre        => 14,
+        :yfac_laguerre       => 0.025,
         :luser_bc            => true,
         :lsource             => true,
         #---------------------------------------------------------------------------
@@ -33,7 +34,9 @@ function user_inputs()
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_laguerre_top.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/agnesi-120kmx30km-hm5000.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_RTB.msh",
-        :gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_120x31_top_lag.msh",
+        #:gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_120x31_top_lag.msh",
+        #:gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_120x31_top_lag_periodic.msh",
+        :gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_120x21_top_lag_periodic.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/agnesi240kmX30km_coarse_laguerreTopLateral.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
