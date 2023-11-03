@@ -206,13 +206,6 @@ function _build_rhs!(RHS, u, params, time)
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin)
     end
-
-    #=apply_periodicity!(u, params.uaux, time, params.qe,
-                       params.mesh, params.metrics, params.basis,
-                       params.RHS, params.rhs_el, params.ubdy,
-                       params.ω, params.neqs, params.inputs, SD)
-    =#
-    #uaux2u!(@view(params.uaux[:]), u, params.neqs, params.mesh.npoin)
     
 end
 
@@ -305,10 +298,10 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D)
             
             dFdξ = 0.0
             for k = 1:params.mesh.ngl
-                dFdξ += params.basis.dψ[k,i]*params.F[k,ieq]
+                dFdξ += params.basis.dψ[k,i]*params.F[k,1,ieq]
             end
             
-            params.rhs_el[iel,i,1,ieq] -= params.ω[i]*dFdξ #  - params.S[i,ieq]) #gravity
+            params.rhs_el[iel,i,1,ieq] -= params.ω[i]*dFdξ #  - params.S[i,1,ieq]) #gravity
         end
     end
 end

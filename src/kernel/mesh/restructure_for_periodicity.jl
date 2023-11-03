@@ -216,7 +216,10 @@ function periodicity_restructure!(mesh,inputs)
                 end
             end
         end
-    else
+else
+#
+# 1D periodicity
+#
         ip_dest = 1
         ip_kill = mesh.npoin_linear
         for e=1:mesh.nelem
