@@ -24,6 +24,35 @@ using Makie
 #
 # Curves (1D) or Contours (2D) with PlotlyJS
 #
+function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar; iout=1, nvar=1, PT=nothing)
+   
+    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
+    qmin = minimum(q);      qmax = maximum(q);
+    epsi = 1.1
+    npoin = floor(Int64, size(q, 1)/nvar)
+   
+    qout = copy(q)
+        
+    qout[1:npoin, :] .= @view q[1:npoin, :]
+    
+    for ivar=1:nvar
+
+        idx = (ivar - 1)*npoin
+        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
+                                          markersize = 10, markercolor="Blue",
+                                          xlabel = "x", ylabel = "q(x)",
+                                          fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "xx")
+                                          )
+
+        
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
+        save(string(fout_name), fig; resolution = (600, 400))
+        fig
+    end
+end
+
+
+
 function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, PT=nothing)
 
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
@@ -99,10 +128,13 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     This function uses the amazing package Mackie to plot arbitrarily gridded
     unstructured data to filled contour plot
 """
-    npoin = floor(Int64, size(q, 1)/nvar)
+    if ("Laguerre" in mesh.bdy_edge_type)
+        npoin = mesh.npoin_original
+    else
+        npoin = floor(Int64, size(q, 1)/nvar)
+    end
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
-        
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
         fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin], colormap = :viridis)
         Colorbar(fig[1,2], colormap = :viridis)        
