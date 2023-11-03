@@ -14,7 +14,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 4,     # Polynomial order
+        :nop                 => 6,     # Polynomial order
         :lexact_integration  => false,
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
@@ -40,7 +40,7 @@ function user_inputs()
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
         :xmin          =>   0.0,
-        :xmax          =>   2.0,
+        :xmax          =>   5.0,
         :nelx          =>   50,
     ) #Dict
     #---------------------------------------------------------------------------
