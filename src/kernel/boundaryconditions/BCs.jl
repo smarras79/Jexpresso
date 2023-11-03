@@ -1,45 +1,48 @@
 include("custom_bcs.jl")
 
-function apply_boundary_conditions!(u, uaux, t,
+function apply_boundary_conditions!(u, uaux, t,qe,
                                     mesh, metrics, basis,
                                     RHS, rhs_el, ubdy,
-                                    ω, SD, neqs, inputs)
-    
-    #If Neumann conditions are needed compute gradient
-    #calc_grad = false
-    #   for key in keys(inputs)
-    #     if (inputs[key] == "dirichlet" || inputs[key] == "neumann" || inputs[key] == "dirichlet/neumann")
-    #calc_grad = true
-    #    end
-    #  end
-    #nface = size(mesh.bdy_edge_comp,1)
-    #dqdx_st = zeros(nvars,2)
-    #q_st = zeros(nvars,1)
+                                    ω, neqs, inputs, SD::NSD_1D)
+    nothing
+end
 
-    #gradq = zeros(2, 1, 1) #zeros(2,mesh.npoin,nvars)
-    #fill!(params.gradu, zero(Float64))
-    
-    #bdy_flux_q = zeros(mesh.ngl,nface,2,nvars)
-    #exact = zeros(mesh.ngl,nface,nvars)
-    #penalty =0.0#50000
-    #nx = metrics.nx
-    #ny = metrics.ny
-    ##TODO remake build custom_bcs for new boundary data
-    ##if (calc_grad)
-    ##    gradq = build_gradient(SD, QT::Inexact, qp, ψ, dψ, ω, mesh, metrics,gradq,nvars)
-  #  build_custom_bcs!(SD, t, mesh, metrics, ω,
-  #                    ubdy, uaux, gradu, @view(rhs_el[:,:,:,:]), neqs,
-  #                    dirichlet!, neumann,
-  #                    zeros(1,1), inputs)
+function apply_boundary_conditions!(u, uaux, t,qe,
+                                    mesh, metrics, basis,
+                                    RHS, rhs_el, ubdy,
+                                    ω, neqs, inputs, SD::NSD_2D)
 
-   build_custom_bcs!(SD, t, mesh, metrics, ω,
-                     ubdy, uaux, u,
-                     @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
-                     neqs, dirichlet!, neumann, inputs)
-   
-    #end
+    build_custom_bcs!(SD, t, mesh, metrics, ω,
+                      ubdy, uaux, u, qe,
+                      @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
+                      neqs, dirichlet!, neumann, inputs)
     
 end
+
+function apply_periodicity!(u, uaux, t,qe,
+                            mesh, metrics, basis,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, SD::NSD_1D)
+
+    #NOTICE: " apply_periodicity!() in 1D is now only working for nvars=1!"
+    
+    #
+    # 1D periodic
+    #
+    for ieq =1:neqs
+        uaux[mesh.npoin_linear, ieq] = 0.5*(uaux[mesh.npoin_linear, ieq] + uaux[1, ieq])
+        uaux[1, ieq] = uaux[mesh.npoin_linear, ieq]
+    end
+    
+end
+
+function apply_periodicity!(u, uaux, t,qe,
+                            mesh, metrics, basis,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, SD::NSD_2D)
+    nothing
+end
+
 
 function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
 
@@ -75,41 +78,35 @@ function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
 end
 
 function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
-                           qbdy, uaux, u,
+                           qbdy, uaux, u, qe,
                            RHS, rhs_el,
                            neqs, dirichlet!, neumann, inputs)
-
     #
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
     for iedge = 1:mesh.nedges_bdy 
         iel  = mesh.bdy_edge_in_elem[iedge]
         
-        #if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2"
-        if mesh.bdy_edge_type[iedge] == "free_slip"
+        if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2" && mesh.bdy_edge_type != "Laguerre"
+        #if mesh.bdy_edge_type[iedge] == "free_slip"
             
             #tag = mesh.bdy_edge_type[iedge]
             for k=1:mesh.ngl
                 ip = mesh.poin_in_bdy_edge[iedge,k]
-                
+                nx = metrics.nx[iedge,k]
+                ny = metrics.ny[iedge,k]
                 fill!(qbdy, 4325789.0)
+                #qbdy[:] .= uaux[ip,:]
                 #ipp = 1 #ip               
-                _bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge], mesh)
+                ###_bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge])
 
-                ####dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, tag, inputs) ###AS IT IS NOW, THIS IS ALLOCATING SHIT TONS. REWRITE to make it with ZERO allocation. hint: It may be due to passing the function but possibly not.
-                
-                mm=1; ll=1
-                for jj=1:mesh.ngl, ii=1:mesh.ngl
-                    if (mesh.connijk[iel,ii,jj] == ip)
-                        mm=jj
-                        ll=ii
-                    end
-                end
+                #dirichlet!(@view(uaux[ip,:]),qbdy, mesh.x[ip], mesh.y[ip], t, metrics.nx[iedge,k], metrics.ny[iedge,k], mesh.bdy_edge_type[iedge], @view(qe[ip,:]), inputs[:SOL_VARS_TYPE]) ###AS IT IS NOW, THIS IS ALLOCATING SHIT TONS. REWRITE to make it with ZERO allocation. hint: It may be due to passing the function but possibly not.
+                user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge], qbdy, nx, ny, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
                 
                 for ieq =1:neqs
-                    if !(AlmostEqual(qbdy[ieq],4325789.0)) # WHAT's this for?
-                        uaux[ip,ieq]       = qbdy[ieq]
-                        #rhs_el[iel,ll,mm,ieq] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
+                    if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                        #@info mesh.x[ip],mesh.y[ip],ieq,t 
+                        uaux[ip,ieq] = qbdy[ieq]
                         RHS[ip, ieq] = 0.0
                     end
                 end
@@ -170,7 +167,7 @@ function yt_build_custom_bcs!(t, mesh, qbdy, q, gradq, bdy_flux, rhs, ::NSD_2D, 
                 
                 for var =1:nvars
                     if !(AlmostEqual(qbdy[var],4325789.0)) # WHAT's this for?
-                        #@info var,x,y,qbdy[var]
+                        @info var,x,y,qbdy[var],
                         
                         rhs[iel,ll,mm,var] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
                         
