@@ -51,8 +51,7 @@ function resetRHSToZero_viscous!(params)
     fill!(params.RHS_visc,     zero(params.T))
 end
 
-function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, ::TOTAL, SD::NSD_1D)
-
+function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, ::AbstractPert, SD::NSD_1D)
     nothing
 end
 
@@ -212,7 +211,9 @@ function _build_rhs!(RHS, u, params, time)
                        params.mesh, params.metrics, params.basis,
                        params.RHS, params.rhs_el, params.ubdy,
                        params.ω, params.neqs, params.inputs, SD)
-      
+
+    #uaux2u!(@view(params.uaux[:]), u, params.neqs, params.mesh.npoin)
+    
 end
 
 function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
