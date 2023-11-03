@@ -28,11 +28,16 @@ julia> include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/src/problems/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
-Example 1: to solve the 2D Euler equations with buyoancy defined in `src/problems/CompEuler/theta` you would do the following:
+Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `src/problems/CompEuler/thetaTracers` you would do the following:
 ```bash
-julia> push!(empty!(ARGS), "CompEuler", "theta");
+julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
 ```
+
+<img src="assets/thetaTracersMesh.png"
+     alt="Markdown Monster icon"
+     style="float: left; margin-right: 10px;" />
+
 
 Example 2: to solve the 1D wave equation  defined in `src/problems/CompEuler/wave1d` you would do the following:
 ```bash
