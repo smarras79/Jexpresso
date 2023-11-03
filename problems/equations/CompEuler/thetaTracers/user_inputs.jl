@@ -8,7 +8,7 @@ function user_inputs()
         :Δt                   => 0.2,
         :ndiagnostics_outputs => 20,
         :case                 => "rtb",
-        :lsouce               => true,
+        :lsource              => true,
         #:CL                   => NCL(), #CL() is defaults
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
