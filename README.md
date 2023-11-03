@@ -3,6 +3,8 @@
 | [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
 
 # JEXPRESSO
+A research software for the numerical solution of a system of arbitrary conservation laws using continuous spectral elements. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
+
 NOTICE: PLEASE CONTACT ME IF YOU ARE INTERESTED IN TESTING THIS WIP. 
 I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
 
@@ -35,11 +37,27 @@ julia> include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/src/problems/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
-For example, if you wanted to run `CompEuler` with the setup defined inside the case directory `theta`, then you would do the following:
+Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `src/problems/CompEuler/thetaTracers` you would do the following:
 ```bash
-julia> push!(empty!(ARGS), "CompEuler", "theta");
+julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
 ```
+
+<img src="assets/thetaTracersMesh.png"
+     alt="Markdown Monster icon"
+     style="float: left; margin-right: 5px;" />
+
+
+Example 2: to solve the 1D wave equation  defined in `src/problems/CompEuler/wave1d` you would do the following:
+```bash
+julia> push!(empty!(ARGS), "CompEuler", "wave1d");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/wave1d-v.png"
+     alt="Markdown Monster icon"
+     style="float: left; margin-right: 7px;" />
+
 
 For ready to run tests, there are the currently available equations names:
 
@@ -58,4 +76,3 @@ For non-periodic 2D tests, the output can also be written to VTK files by settin
 
 ## Contacts
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-<<<<<<< HEAD
