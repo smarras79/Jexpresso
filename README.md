@@ -36,7 +36,7 @@ julia> include("./src/Jexpresso.jl")
 
 <img src="assets/thetaTracersMesh.png"
      alt="Markdown Monster icon"
-     style="float: left; margin-right: 10px;" />
+     style="float: left; margin-right: 5px;" />
 
 
 Example 2: to solve the 1D wave equation  defined in `src/problems/CompEuler/wave1d` you would do the following:
@@ -47,7 +47,7 @@ julia> include("./src/Jexpresso.jl")
 
 <img src="assets/wave1d-v.png"
      alt="Markdown Monster icon"
-     style="float: left; margin-right: 10px;" />
+     style="float: left; margin-right: 7px;" />
 
 
 For ready to run tests, there are the currently available equations names:
