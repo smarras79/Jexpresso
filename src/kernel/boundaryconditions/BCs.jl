@@ -23,17 +23,7 @@ function apply_periodicity!(u, uaux, t,qe,
                             mesh, metrics, basis,
                             RHS, rhs_el, ubdy,
                             ω, neqs, inputs, SD::NSD_1D)
-
-    #NOTICE: " apply_periodicity!() in 1D is now only working for nvars=1!"
-    
-    #
-    # 1D periodic
-    #
-    #=for ieq =1:neqs
-        uaux[mesh.npoin_linear, ieq] = 0.5*(uaux[mesh.npoin_linear, ieq] + uaux[1, ieq])
-        uaux[1, ieq] = uaux[mesh.npoin_linear, ieq]
-    end=#
-    
+    nothing
 end
 
 function apply_periodicity!(u, uaux, t,qe,
@@ -118,72 +108,3 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
     uaux2u!(u, uaux, neqs, mesh.npoin)
        
 end
-
-#=
-function yt_build_custom_bcs!(t, mesh, qbdy, q, gradq, bdy_flux, rhs, ::NSD_2D, nvars, metrics, ω, dirichlet!, neumann, L, inputs)
-    
-    # nedges =  mesh.nedges_int
-    # q_size = size(q, 2)
-    # L_size = size(L, 1)
-    # fill!(bdy_flux, zero(Float64))
-        
-    for iedge = 1:size(mesh.bdy_edge_in_elem,1)
-        iel  = mesh.bdy_edge_in_elem[iedge]
-
-        if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2"
-            tag = mesh.bdy_edge_type[iedge]
-            for k=1:mesh.ngl
-                ip = mesh.poin_in_bdy_edge[iedge,k]
-                ωJacedge = ω[k]*metrics.Jef[iedge,k]
-                
-                #bdy_flux = zeros(q_size,1)
-                x    = mesh.x[ip]
-                y    = mesh.y[ip]
-
-                fill!(qbdy, 4325789.0)
-                #flags = zeros(q_size,1) #NO, NEVER ALLOCATE INSIDE A LOOP
-                if (inputs[:luser_bc]) #in contrast to what?
-                    #q[ip,:], flags = dirichlet!(q[ip,:],gradq[:,ip,:],x,y,t,mesh,metrics,tag,qbdy)
-                    ipp=1 #ip               
-                    qbdy = dirichlet!(@view(q[ip,:]),@view(gradq[:,ipp,:]),x,y,t,mesh,metrics,tag,qbdy,inputs)
-                    ##SM change this to set bdy_flux to zero and do not allocate gradq unless neumann is required explicitly by the user
-                    bdy_flux .= ωJacedge.*neumann(q[ip,:],gradq[:,ipp,:],x,y,t,mesh,metrics,tag,inputs)
-                else
-                    q[ip,:] .= 0.0
-                end
-
-                
-                mm=1; ll=1
-                for jj=1:mesh.ngl
-                    for ii=1:mesh.ngl
-                        if (mesh.connijk[iel,ii,jj] == ip)
-                            mm=jj
-                            ll=ii
-                        end
-                    end
-                end
-                rhs[iel,ll,mm,:] .= rhs[iel,ll,mm,:] .+ bdy_flux[:]
-                
-                
-                for var =1:nvars
-                    if !(AlmostEqual(qbdy[var],4325789.0)) # WHAT's this for?
-                        @info var,x,y,qbdy[var],
-                        
-                        rhs[iel,ll,mm,var] = 0.0 #WHAT DOES THIS DO? here is only updated the  `ll` and `mm` row outside of any ll or mm loop
-                        
-                        q[ip,var]          = qbdy[var]
-                    end
-                end
-                # if (L_size > 1)  ALL THI SABOUT L should exist when we use L
-                #, which we don't ever unless we explicitly build it.
-                #     for ii=1:mesh.npoin
-                #         L[ip,ii] = 0.0
-                #     end
-                #     L[ip,ip] = 1.0
-                # end
-                
-            end
-        end
-    end
-end
-=#

@@ -24,7 +24,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             x = mesh.x[ip]
 
             ex = -(x - 1)^2/σ2
-            q.qn[ip,1] = exp(ex)
+            q.qn[ip,1] = 2^ex
             q.qn[ip,2] = 0.0
 
             #Store initial background state for plotting and analysis of pertuebations
@@ -33,12 +33,11 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             
         end
     end
-
+    
     for ivar=1:length(qvars)
         plot_initial(SD, mesh.x, q.qn[:,ivar], ivar, OUTPUT_DIR)
     end
-        
-    @mystop("initialize.jl")
+    
     @info " Initialize fields for 1D adv diff ........................ DONE "
     
     return q

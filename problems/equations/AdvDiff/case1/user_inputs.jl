@@ -42,7 +42,6 @@ function user_inputs()
         :xmin          =>   0.0,
         :xmax          =>   2.0,
         :nelx          =>   50,
-        #:lperiodic1d   => true,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
