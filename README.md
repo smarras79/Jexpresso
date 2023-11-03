@@ -1,5 +1,14 @@
+| **Documentation** |
+|:------------ |
+| [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
+
 # JEXPRESSO
 A research software for the numerical solution of a system of arbitrary conservation laws using continuous spectral elements. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
+
+NOTICE: PLEASE CONTACT ME IF YOU ARE INTERESTED IN TESTING THIS WIP. 
+I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
+
+A research software for the numerical solution of conservation laws using spectral element methods. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
 
 If you are interested in contributing, please get in touch.
 
@@ -60,7 +69,7 @@ Details will be given in the documentation (still WIP). Write us if you need hel
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
 ## Plotting
-For plotting we rely on [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
+Files can be written to VTK (recommended) or png. For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
 modify ./src/io/plotting/jplots.jl accordinly.
 
 For non-periodic 2D tests, the output can also be written to VTK files by setting the value "vtk" for the usier_input key :outformat
