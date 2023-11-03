@@ -2,7 +2,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
                     q::SubArray{Float64},
                     qe::SubArray{Float64},
                     mesh::St_mesh,
-                    ::CL, ::TOTAL; neqs=4)
+                    ::CL, ::TOTAL; neqs=6)
 
     PhysConst = PhysicalConst{Float64}()
     
