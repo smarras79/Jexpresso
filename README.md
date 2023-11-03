@@ -34,8 +34,38 @@ julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
 ```
 
+$$
+\begin{matrix}
+\rho  \\
+\rho u \\
+\rho v \\
+\rho \theta 
+\end{matrix}_t
++
+\begin{matrix}
+\rho u  \\
+\rho uu + p\\
+\rho vu \\
+\rho \theta u
+\end{matrix}_x
++
+\begin{matrix}
+\rho v  \\
+\rho uv \\
+\rho vv + p\\
+\rho \theta v
+\end{matrix}_y
+= 
+\begin{matrix}
+0  \\
+0 \\
+\rho g \\
+0
+\end{matrix}
+$$
+
 <img src="assets/thetaTracersMesh.png"
-     alt="Markdown Monster icon"
+     alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
 
 
@@ -46,7 +76,7 @@ julia> include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/wave1d-v.png"
-     alt="Markdown Monster icon"
+     alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
 
