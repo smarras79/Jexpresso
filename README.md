@@ -42,8 +42,55 @@ Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers
 julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
 ```
+
+<img src="assets/thetaTracersMesh.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
+
+Example 2: to solve the 2D Euler equations leading to a density current defined in `src/problems/CompEuler/dc` you would do the following:
+```bash
+julia> push!(empty!(ARGS), "CompEuler", "dc");
+julia> include("./src/Jexpresso.jl")
 ```
-$$
+
+<img src="assets/dc.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Example 3: to solve the 1D wave equation  defined in `src/problems/CompEuler/wave1d` you would do the following:
+```bash
+julia> push!(empty!(ARGS), "CompEuler", "wave1d");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/wave1d-v.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+
+
+For ready to run tests, there are the currently available equations names:
+
+* CompEuler (option with total energy and theta formulation)
+
+The code is designed to create any system of conservsation laws. See CompEuler/case1 to see an example of each file.
+Details will be given in the documentation (still WIP). Write us if you need help.
+
+More are already implemented but currently only in individual branches. They will be added to master after proper testing.
+
+## Plotting
+Files can be written to VTK (recommended) or png. For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
+modify ./src/io/plotting/jplots.jl accordinly.
+
+For non-periodic 2D tests, the output can also be written to VTK files by setting the value "vtk" for the usier_input key :outformat
+
+## Contacts
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
+
+
+
+$
 \begin{matrix}
 \rho  \\
 \rho u \\
@@ -71,38 +118,4 @@ $$
 \rho g \\
 0
 \end{matrix}
-$$
-```
-<img src="assets/thetaTracersMesh.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
-
-
-Example 2: to solve the 1D wave equation  defined in `src/problems/CompEuler/wave1d` you would do the following:
-```bash
-julia> push!(empty!(ARGS), "CompEuler", "wave1d");
-julia> include("./src/Jexpresso.jl")
-```
-
-<img src="assets/wave1d-v.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-
-For ready to run tests, there are the currently available equations names:
-
-* CompEuler (option with total energy and theta formulation)
-
-The code is designed to create any system of conservsation laws. See CompEuler/case1 to see an example of each file.
-Details will be given in the documentation (still WIP). Write us if you need help.
-
-More are already implemented but currently only in individual branches. They will be added to master after proper testing.
-
-## Plotting
-Files can be written to VTK (recommended) or png. For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
-modify ./src/io/plotting/jplots.jl accordinly.
-
-For non-periodic 2D tests, the output can also be written to VTK files by setting the value "vtk" for the usier_input key :outformat
-
-## Contacts
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
+$
