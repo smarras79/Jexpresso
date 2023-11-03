@@ -217,19 +217,20 @@ function periodicity_restructure!(mesh,inputs)
             end
         end
     else
-        #=ip_dest = 1
+        ip_dest = 1
         ip_kill = mesh.npoin_linear
         for e=1:mesh.nelem
-        for i=1:mesh.ngl
-        if (mesh.conn[i,e] == ip_kill)
-        mesh.conn[i,e] = ip_dest
-        elseif (mesh.conn[i,e] > ip_kill)
-        mesh.conn[i,e] -= 1
-        end
-        end
+          for i=1:mesh.ngl
+            if (mesh.connijk[e,i,1] == ip_kill)
+               mesh.connijk[e,i,1] = ip_dest
+            elseif (mesh.connijk[e,i,1] > ip_kill)
+               mesh.connijk[e,i,1] -= 1
+            end
+          end
         end
         for ip=ip_kill:mesh.npoin-1
-        mesh.x[ip] = mesh.x[ip+1]
-        end=#
+          mesh.x[ip] = mesh.x[ip+1]
+        end
+        mesh.npoin = mesh.npoin-1
     end
 end

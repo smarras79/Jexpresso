@@ -6,9 +6,9 @@ function user_inputs()
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
         :ode_solver          => SSPRK33(),
-        :tend                 => 1.5,
+        :tend                 => 3.0,
         :Δt                   => 1.0e-3,
-        :ndiagnostics_outputs => 15, #these are steps, not seconds
+        :ndiagnostics_outputs => 30, #these are steps, not seconds
         :output_dir          => "./",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -17,6 +17,7 @@ function user_inputs()
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         :lsource             => false,
+        :lperiodic_1d        => true, #false by default
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------

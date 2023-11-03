@@ -207,11 +207,11 @@ function _build_rhs!(RHS, u, params, time)
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin)
     end
 
-    apply_periodicity!(u, params.uaux, time, params.qe,
+    #=apply_periodicity!(u, params.uaux, time, params.qe,
                        params.mesh, params.metrics, params.basis,
                        params.RHS, params.rhs_el, params.ubdy,
                        params.ω, params.neqs, params.inputs, SD)
-
+    =#
     #uaux2u!(@view(params.uaux[:]), u, params.neqs, params.mesh.npoin)
     
 end

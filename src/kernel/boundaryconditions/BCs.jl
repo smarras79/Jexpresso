@@ -29,10 +29,10 @@ function apply_periodicity!(u, uaux, t,qe,
     #
     # 1D periodic
     #
-    for ieq =1:neqs
+    #=for ieq =1:neqs
         uaux[mesh.npoin_linear, ieq] = 0.5*(uaux[mesh.npoin_linear, ieq] + uaux[1, ieq])
         uaux[1, ieq] = uaux[mesh.npoin_linear, ieq]
-    end
+    end=#
     
 end
 
