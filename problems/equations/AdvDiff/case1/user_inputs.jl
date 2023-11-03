@@ -5,24 +5,22 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                 => 2.5,
+        :ode_solver          => SSPRK33(),
+        :tend                 => 1.5,
         :Δt                   => 1.0e-3,
         :ndiagnostics_outputs => 15, #these are steps, not seconds
-        :lsource              => false,
-        #:output_dir          => "/Users/simone/runs/",
+        :output_dir          => "./",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :ode_solver          => "AB4", #"Tsit5",
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
-        :luser_bc            => true,
-        :lsource             => true,
+        :lsource             => false,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => false,
+        :lvisc                => false,
         :νx                   => 0.01, #kinematic viscosity constant
         :νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------

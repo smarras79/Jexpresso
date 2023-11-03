@@ -78,6 +78,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     ngl     = params.mesh.ngl
     nelem   = params.mesh.nelem
     npoin   = params.mesh.npoin
+    lsource = params.inputs[:lsource]
     
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
@@ -86,7 +87,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     
     #filter!(u, params, SD)
      
-    inviscid_rhs_el_laguerre!(u, params, true, SD)
+    inviscid_rhs_el_laguerre!(u, params, lsource, SD)
     DSS_rhs_laguerre!(@view(params.RHS_lag[:,:]), @view(params.rhs_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
@@ -109,7 +110,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     #apply_boundary_conditions!(u, params.uaux, time,
                                #params.mesh, params.metrics, params.basis,
                                #params.RHS, params.rhs_el, params.ubdy,
-                               #params.ω, SD, neqs, params.inputs)
+                               #params.ω, neqs, params.inputs, SD)
    
     #=for e= 1:params.mesh.nelem_semi_inf
        for j=1:params.mesh.ngr
