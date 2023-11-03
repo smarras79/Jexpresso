@@ -138,19 +138,21 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
 
     output_range = floor((inputs[:tend] - inputs[:tinit])/inputs[:ndiagnostics_outputs])
 
-    if(lexact_integration)
-       N = mesh.ngl
-       Q = N + 1
-       mass_ini   = compute_mass!(uaux, u, params.qe, mesh, metrics, ω, qp.neqs, QT, Q, basis.ψ)
-    else
-       mass_ini   = compute_mass!(uaux, u, params.qe, mesh, metrics, ω, qp.neqs, QT, SOL_VARS_TYPE)
+    if typeof(mesh.SD) == NSD_2D
+        if(lexact_integration)
+            N = mesh.ngl
+            Q = N + 1
+            mass_ini   = compute_mass!(uaux, u, params.qe, mesh, metrics, ω, qp.neqs, QT, Q, basis.ψ)
+        else
+            mass_ini   = compute_mass!(uaux, u, params.qe, mesh, metrics, ω, qp.neqs, QT, SOL_VARS_TYPE)
+        end
+        println(" # Initial Mass  :   ", mass_ini)
+        energy_ini = 0.0
+        #energy_ini = compute_energy!(uaux, u, params.qe, mesh, metrics, ω,qp.neqs)
+        #println(" # Initial Energy: ", energy_ini)
     end
-    println(" # Initial Mass  :   ", mass_ini)
 
-    energy_ini = 0.0
-    #energy_ini = compute_energy!(uaux, u, params.qe, mesh, metrics, ω,qp.neqs)
-    #println(" # Initial Energy: ", energy_ini)
-    
+   
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=inputs[:Δt],
                            save_everystep = false,
@@ -158,13 +160,16 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
     println(" # Solving ODE  ................................ DONE")
 
-    println(" # Diagnostics  ................................ ")
-    if ("Laguerre" in mesh.bdy_edge_type)
-    #    print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs,QT,basis[1].ψ)
-    else
-     #   print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs,QT,basis.ψ)
+
+    if typeof(mesh.SD) == NSD_2D
+        println(" # Diagnostics  ................................ ")
+        if ("Laguerre" in mesh.bdy_edge_type)
+            #    print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs,QT,basis[1].ψ)
+        else
+            #   print_diagnostics(mass_ini, energy_ini, uaux, solution, mesh, metrics, ω, qp.neqs,QT,basis.ψ)
+        end
+        println(" # Diagnostics  ................................ DONE")
     end
-    println(" # Diagnostics  ................................ DONE")
-    
+
     return solution
 end

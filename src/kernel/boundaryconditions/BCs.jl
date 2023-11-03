@@ -3,20 +3,46 @@ include("custom_bcs.jl")
 function apply_boundary_conditions!(u, uaux, t,qe,
                                     mesh, metrics, basis,
                                     RHS, rhs_el, ubdy,
-                                    ω, SD, neqs, inputs)
-  #  build_custom_bcs!(SD, t, mesh, metrics, ω,
-  #                    ubdy, uaux, gradu, @view(rhs_el[:,:,:,:]), neqs,
-  #                    dirichlet!, neumann,
-  #                    zeros(1,1), inputs)
+                                    ω, neqs, inputs, SD::NSD_1D)
+    nothing
+end
+
+function apply_boundary_conditions!(u, uaux, t,qe,
+                                    mesh, metrics, basis,
+                                    RHS, rhs_el, ubdy,
+                                    ω, neqs, inputs, SD::NSD_2D)
 
     build_custom_bcs!(SD, t, mesh, metrics, ω,
                       ubdy, uaux, u, qe,
                       @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
                       neqs, dirichlet!, neumann, inputs)
     
-    #end
+end
+
+function apply_periodicity!(u, uaux, t,qe,
+                            mesh, metrics, basis,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, SD::NSD_1D)
+
+    #NOTICE: " apply_periodicity!() in 1D is now only working for nvars=1!"
+    
+    #
+    # 1D periodic
+    #
+    for ieq =1:neqs
+        uaux[mesh.npoin_linear, ieq] = 0.5*(uaux[mesh.npoin_linear, ieq] + uaux[1, ieq])
+        uaux[1, ieq] = uaux[mesh.npoin_linear, ieq]
+    end
     
 end
+
+function apply_periodicity!(u, uaux, t,qe,
+                            mesh, metrics, basis,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, SD::NSD_2D)
+    nothing
+end
+
 
 function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
 
