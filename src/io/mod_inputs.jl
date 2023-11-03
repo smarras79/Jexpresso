@@ -29,6 +29,10 @@ function mod_inputs_user_inputs!(user_input_file)
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
+    if(!haskey(inputs, :lperiodic_1d))
+      inputs[:lperiodic_1d] = false
+    end
+    
     if(!haskey(inputs, :nop_laguerre))
         inputs[:nop_laguerre] = 18
     end

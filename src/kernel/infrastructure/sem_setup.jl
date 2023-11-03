@@ -100,8 +100,10 @@ function sem_setup(inputs::Dict)
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
             ω1 = ω
             ω = ω1
-            fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
-            fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs) 
+            if (inputs[:lfilter])
+                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
+                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs)
+            end
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
@@ -126,8 +128,9 @@ function sem_setup(inputs::Dict)
         #--------------------------------------------------------
         metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
         
-        periodicity_restructure!(mesh,inputs)
-        
+        if (inputs[:lperiodic_1d])
+          periodicity_restructure!(mesh,inputs)
+        end
         matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         
     end
