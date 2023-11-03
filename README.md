@@ -42,7 +42,7 @@ Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers
 julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
 ```
-
+```
 $$
 \begin{matrix}
 \rho  \\
@@ -72,7 +72,7 @@ $$
 0
 \end{matrix}
 $$
-
+```
 <img src="assets/thetaTracersMesh.png"
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
