@@ -6,7 +6,7 @@ function user_inputs()
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
         :ode_solver          => SSPRK33(),
-        :tend                 => 1.0,
+        :tend                 => 1000.0,
         :Δt                   => 0.1,
         :ndiagnostics_outputs => 10, #these are steps, not seconds
         :output_dir          => "./",
@@ -40,7 +40,7 @@ function user_inputs()
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
         :xmin          =>   0.0,
-        :xmax          =>   5000.0,
+        :xmax          =>   20000.0,
         :nelx          =>   1000,
     ) #Dict
     #---------------------------------------------------------------------------
