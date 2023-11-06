@@ -20,22 +20,21 @@ function sem_setup(inputs::Dict)
     mesh = mod_mesh_mesh_driver(inputs)
     
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
-      mesh.x .= (mesh.x .+ inputs[:xdisp]) .*inputs[:xscale]*0.5
+        mesh.x .= (mesh.x .+ inputs[:xdisp]) .*inputs[:xscale]*0.5
     elseif (inputs[:xscale] != 1.0)
-     mesh.x = mesh.x*inputs[:xscale]*0.5
+        mesh.x = mesh.x*inputs[:xscale]*0.5
     elseif (inputs[:xdisp] != 0.0)
-       mesh.x .= (mesh.x .+ inputs[:xdisp])
+        mesh.x .= (mesh.x .+ inputs[:xdisp])
     end
     if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
-      mesh.y .= (mesh.y .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
+        mesh.y .= (mesh.y .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
     elseif(inputs[:yscale] != 1.0)
-      mesh.y .= (mesh.y) .*inputs[:yscale]*0.5
+        mesh.y .= (mesh.y) .*inputs[:yscale]*0.5
     elseif(inputs[:ydisp] != 0.0)
-       mesh.y .= (mesh.y .+ inputs[:ydisp])
+        mesh.y .= (mesh.y .+ inputs[:ydisp])
     end
-    
     mesh.ymax = maximum(mesh.y)
-    @info "xmax, ymax", maximum(mesh.x),maximum(mesh.y)
+    
     #warp_mesh!(mesh,inputs)    
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
@@ -84,57 +83,60 @@ function sem_setup(inputs::Dict)
             ω1 = ω
             ω = (ω1,ω2)
             if (inputs[:lfilter])
-              fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
-              fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs)
+                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
+                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs)
             end
             @time periodicity_restructure!(mesh,inputs)
             if (inputs[:lwarp])
-              warp_mesh!(mesh,inputs)
+                warp_mesh!(mesh,inputs)
             end
             metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat)
             metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat)
             metrics = (metrics1, metrics2)
-             
+            
             matrix = matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         else
-      
+            
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
             ω1 = ω
             ω = ω1
-            fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
-            fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs) 
-    #--------------------------------------------------------
-    # Build metric terms
-    #--------------------------------------------------------
-           if (inputs[:lwarp])
-              warp_mesh!(mesh,inputs)
-           end
-           @info " metrics"
-           @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
-    
-           @info " periodicity_restructure!"
-           @time periodicity_restructure!(mesh,inputs)
-           
-           #warp_mesh!(mesh,inputs)
+            if (inputs[:lfilter])
+                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
+                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs)
+            end
+            #--------------------------------------------------------
+            # Build metric terms
+            #--------------------------------------------------------
+            if (inputs[:lwarp])
+                warp_mesh!(mesh,inputs)
+            end
+            @info " metrics"
+            @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
+            
+            @info " periodicity_restructure!"
+            @time periodicity_restructure!(mesh,inputs)
+            
+            #warp_mesh!(mesh,inputs)
             matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         end
     else 
         basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
         ω1 = ω
         ω = ω1
-    #--------------------------------------------------------
-    # Build metric terms
-    #--------------------------------------------------------
-        metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, TFloat)
-    
-        periodicity_restructure!(mesh,inputs)
-     
+        #--------------------------------------------------------
+        # Build metric terms
+        #--------------------------------------------------------
+        metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
+        
+        if (inputs[:lperiodic_1d])
+          periodicity_restructure!(mesh,inputs)
+        end
         matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
-         
+        
     end
-    #--------------------------------------------------------
-    # Build matrices
-    #--------------------------------------------------------
-    
-    return (; QT, PT, mesh, metrics, basis, ω, matrix,fx,fy)
+#--------------------------------------------------------
+# Build matrices
+#--------------------------------------------------------
+
+return (; QT, PT, mesh, metrics, basis, ω, matrix,fx,fy)
 end
