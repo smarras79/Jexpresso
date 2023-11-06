@@ -4,7 +4,10 @@ function apply_boundary_conditions!(u, uaux, t,qe,
                                     mesh, metrics, basis,
                                     RHS, rhs_el, ubdy,
                                     ω, neqs, inputs, SD::NSD_1D)
-    nothing
+    build_custom_bcs!(SD, t, mesh, metrics, ω,
+                      ubdy, uaux, u, qe,
+                      @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
+                      neqs, dirichlet!, neumann, inputs)
 end
 
 function apply_boundary_conditions!(u, uaux, t,qe,
@@ -65,6 +68,36 @@ function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
         qbdy[3] = 0.0
     end
     
+end
+
+function build_custom_bcs!(::NSD_1D, t, mesh, metrics, ω,
+                           qbdy, uaux, u, qe,
+                           RHS, rhs_el,
+                           neqs, dirichlet!, neumann, inputs)
+   ip = 1
+   fill!(qbdy, 4325789.0)
+   user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], t, "left", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+   for ieq =1:neqs
+      if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+         uaux[ip,ieq] = qbdy[ieq]
+         RHS[ip, ieq] = 0.0
+      end
+    end
+    
+    ip=mesh.npoin_linear
+    fill!(qbdy, 4325789.0)
+    user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], t, "right", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+
+    for ieq =1:neqs
+      if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+         uaux[ip,ieq] = qbdy[ieq]
+         RHS[ip, ieq] = 0.0
+      end
+    end
+
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, mesh.npoin)
+
 end
 
 function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
