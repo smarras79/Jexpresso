@@ -90,7 +90,18 @@ end
 #
 # Element mass matrix
 #
-function build_mass_matrix!(Me, SD::NSD_2D, QT, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix!(Me, SD::NSD_1D, QT::Inexact, ψ, ω, mesh, metrics, N, Q, T)
+    
+    for iel=1:mesh.nelem
+        Jac = mesh.Δx[iel]/2
+        
+        for i=1:N+1
+            Me[i,iel] += Jac*ω[i]
+        end
+    end
+end
+
+function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, mesh, metrics, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -309,6 +320,18 @@ function DSS_mass_Laguerre!(M, SD::NSD_2D, Mel::AbstractArray, Mel_lag::Abstract
     end
 end
 
+function DSS_mass!(M, SD::NSD_1D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
+    
+    for iel=1:nelem
+        for i = 1:N+1
+            IP = conn[iel,i,1]
+            M[IP] = M[IP] + Mel[i,iel] #if inexact
+        end
+    end
+    
+end
+
+
 function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
     
     for iel=1:nelem
@@ -327,7 +350,6 @@ function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstrac
         end    
     end
 end
-
 
 
 function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, SD::NSD_2D)
@@ -352,17 +374,17 @@ function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, SD::NSD_2D)
 end
 
 
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_1D)
 
-function DSS_rhs!(V::SubArray{Float64}, Vel::AbstractArray, conn::AbstractArray, nelem, npoin, neqs, N, T, QT::Inexact, SD::NSD_1D)
-    
-    for iel = 1:nelem
-        for i = 1:N+1
-            I = conn[iel,i]
-            
-            V[I,:] += Vel[iel,i,:]
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for i = 1:ngl
+                I = mesh.connijk[iel,i,1]
+                RHS[I,ieq] += rhs_el[iel,i,1,ieq]
+            end
         end
     end
-    #show(stdout, "text/plain", V)
+    
 end
 
 function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
@@ -421,8 +443,14 @@ function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFl
 
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false
-    
-    Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
+
+    if typeof(SD) == NSD_1D
+        Me = zeros(TFloat, (N+1)^2, mesh.nelem)
+    elseif typeof(SD) == NSD_2D
+        Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
+    elseif typeof(SD) == NSD_3D
+        Me = zeros(TFloat, (N+1)^2, (N+1)^2, (N+1)^2, mesh.nelem)
+    end
     build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
     
     if (QT == Exact() && inputs[:llump] == false)
@@ -468,7 +496,12 @@ function matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, N, Q, TFloat;
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false
 
-    Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
+    if typeof(SD) == NSD_1D
+        Me = zeros(TFloat, (N+1)^2, mesh.nelem)
+    elseif typeof(SD) == NSD_2D
+        Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
+    end
+    
     build_mass_matrix!(Me, SD, QT, basis[1].ψ, ω[1], mesh, metrics[1], N, Q, TFloat)
     M_lag = zeros(TFloat, mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
     if (QT == Exact() && inputs[:llump] == false)

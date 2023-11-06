@@ -24,6 +24,48 @@ using Makie
 #
 # Curves (1D) or Contours (2D) with PlotlyJS
 #
+
+function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
+    
+    npoin = length(q)
+    fig, ax, plt = CairoMakie.scatter(x[1:npoin], q[1:npoin];
+                                      markersize = 10, markercolor="Blue",
+                                      xlabel = "x", ylabel = "q(x)",
+                                      fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = "u", xlabel = "x")
+                                      )
+    
+    fout_name = string(OUTPUT_DIR, "/INIT-", ivar, ".png")
+    @info fout_name
+    save(string(fout_name), fig; resolution = (600, 400))
+    fig
+end
+
+function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar; iout=1, nvar=1, PT=nothing)
+   
+    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
+    qmin = minimum(q);      qmax = maximum(q);
+    epsi = 1.1
+    npoin = floor(Int64, size(q, 1)/nvar)
+    #qout = copy(q)
+    
+    for ivar=1:nvar
+
+        idx = (ivar - 1)*npoin
+        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
+                                          markersize = 10, markercolor="Blue",
+                                          xlabel = "x", ylabel = "q(x)",
+                                          fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "x")
+                                          )
+
+        
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
+        save(string(fout_name), fig; resolution = (600, 400))
+        fig
+    end
+end
+
+
+
 function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, PT=nothing)
 
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
@@ -91,6 +133,11 @@ function plot_1d_grid(mesh::St_mesh)
     for i=1:mesh.npoin
         display(CairoMakie.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin), markersizes=4, markercolor="Blue"))
     end 
+end
+
+
+function plot_initial(SD::NSD_2D, x::Array, q::Array, ivar, OUTPUT_DIR::String)
+    nothing
 end
 
 function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)

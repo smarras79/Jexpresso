@@ -849,9 +849,10 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
-    #resize!(mesh.x, (mesh.npoin))
-    mesh.x::Array{Float64, 1} = zeros(mesh.npoin)
+    resize!(mesh.x, (mesh.npoin))
     
+    mesh.connijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.ngl, 1)
+
     #
     # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
     #
@@ -862,6 +863,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
         ip2 = iel_g + 1
         
         mesh.conn[iel_g, 1], mesh.conn[iel_g, ngl] = ip1, ip2
+        mesh.connijk[iel_g, 1, 1], mesh.connijk[iel_g, ngl, 1] = ip1, ip2
         x1, x2 = mesh.x[ip1], mesh.x[ip2]
         
         iconn = 1
@@ -871,16 +873,17 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
             
             mesh.conn[iel_g, l] = ip #OK
+            mesh.connijk[iel_g, l, 1] = ip #OK
             iconn = iconn + 1
             
             ip = ip + 1
         end
     end
-    mesh.connijk = copy(mesh.conn)
     
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
 end
+
 
 function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
     
@@ -2146,7 +2149,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     
     Δx::TFloat=0.0
     resize!(mesh.Δx, mesh.nelem)
-    
+        
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
     mesh.npoin = mesh.npx
 
@@ -2183,7 +2186,8 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     mesh.npoin_el = ngl
 
     #allocate mesh.conn and reshape it
-    mesh.conn::Array{Int64} = zeros(mesh.nelem, mesh.npoin_el)
+    mesh.conn::Array{Int64, 2}   = zeros(mesh.nelem, mesh.npoin_el)
+    mesh.connijk::Array{Int64,3} = zeros(mesh.nelem, mesh.ngl, 1)
     
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = iel
@@ -2229,6 +2233,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                             npx  = Int64(inputs[:npx]),
                                             xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
                                             nop=Int64(inputs[:nop]),
+                                            connijk = zeros(Int64,  inputs[:nelx], inputs[:nop]+1, 1),
                                             SD=NSD_1D())
                 
             elseif (inputs[:nsd]==2)

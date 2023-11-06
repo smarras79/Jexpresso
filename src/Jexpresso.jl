@@ -39,6 +39,8 @@ using DocStringExtensions
 
 include(joinpath( "..", "problems", "equations", "AbstractEquations.jl"))
 
+include(joinpath( "macros", "je_macros.jl"))
+
 include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))

@@ -42,7 +42,20 @@ end
 
 function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)
     
-    metrics = St_metrics{T}(dxdξ = zeros(1))
+    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem, Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
+                            dξdx = zeros(T, mesh.nelem, Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
+                            Je   = zeros(T, mesh.nelem, Q+1, 1),
+                            nx   = zeros(T, mesh.nedges_bdy, 1))
+
+    for iel = 1:mesh.nelem
+        for i = 1:N+1
+            for k = 1:Q+1
+                metrics.dxdξ[iel, k,1]  = mesh.Δx[iel]/2
+                metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
+                metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+            end
+        end        
+    end     
     
     return metrics
 end
