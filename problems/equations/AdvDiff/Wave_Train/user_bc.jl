@@ -27,7 +27,7 @@
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe::SubArray{Float64},::Any)
 
     if (tag == "left")
-      qbdy[2] = 0.025*sinpi(2*30/5000.0)    
+      qbdy[2] = 0.025*sinpi(2*30*t/5000.0)    
     end
 end
 
