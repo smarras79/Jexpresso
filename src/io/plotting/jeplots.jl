@@ -25,19 +25,53 @@ using Makie
 # Curves (1D) or Contours (2D) with PlotlyJS
 #
 
-function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
+function plot_initial(SD::NSD_1D, x, q, ivarname, OUTPUT_DIR::String)
     
     npoin = length(q)
     fig, ax, plt = CairoMakie.scatter(x[1:npoin], q[1:npoin];
                                       markersize = 10, markercolor="Blue",
                                       xlabel = "x", ylabel = "q(x)",
-                                      fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = "u", xlabel = "x")
+                                      fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = ivarname, xlabel = "x")
                                       )
     
-    fout_name = string(OUTPUT_DIR, "/INIT-", ivar, ".png")
+    fout_name = string(OUTPUT_DIR, "/INIT-", ivarname, ".png")
     @info fout_name
     save(string(fout_name), fig; resolution = (600, 400))
     fig
+end
+
+function uToPrimitives(q, mesh::St_mesh, nvars, ::NSD_1D)
+
+    ρ = 0.0
+    T = 0.0
+    
+    γm1 = 0.4
+    γ   = 1.4
+
+    qaux = zeros(Float64, mesh.npoin, nvars+1)
+    u2uaux!(qaux, q, nvars, mesh.npoin)
+
+    qprim = copy(qaux)
+    for iel_g = 1:mesh.nelem
+        for i=1:mesh.ngl
+            
+            ip = mesh.connijk[iel_g,i,1]
+            x  = mesh.x[ip]
+
+            A = 1.0 + 2.2*(x - 1.5)^2
+
+            ρ             = qaux[ip,1]/A       #ρ
+            qprim[ip,1]   = ρ               #ρ
+            u             = qaux[ip,2]/qaux[ip,1]
+            qprim[ip,2]   = u               #u
+            T             = γm1*(qaux[ip,3]/qaux[ip,1] - 0.5*γ*u*u) #T
+            qprim[ip,3]   = T
+            qprim[ip,end] = ρ*T  #p
+            
+        end
+    end
+    
+    return qprim
 end
 
 function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar; iout=1, nvar=1, PT=nothing)
@@ -46,12 +80,13 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
     npoin = floor(Int64, size(q, 1)/nvar)
-    #qout = copy(q)
+    qprim = uToPrimitives(q, mesh, nvar, SD)
+    nvar = length(outvar)
     
     for ivar=1:nvar
 
         idx = (ivar - 1)*npoin
-        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
+        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], qprim[1:npoin,ivar]; #q[idx+1:ivar*npoin];
                                           markersize = 10, markercolor="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "x")

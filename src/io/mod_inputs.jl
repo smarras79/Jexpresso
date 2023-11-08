@@ -435,6 +435,10 @@ function mod_inputs_user_inputs!(user_input_file)
         inputs[:CL] = CL()
     end
 
+    if(!haskey(inputs, :outvars))
+        inputs[:outvars] = []
+    end
+    
     if(!haskey(inputs, :SOL_VARS_TYPE))
         inputs[:SOL_VARS_TYPE] = TOTAL() #vs PERT()
     end

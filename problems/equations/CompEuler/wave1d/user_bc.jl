@@ -24,12 +24,13 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, tag::String)
+function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe::SubArray{Float64},::Any)
 
-    qbdy[1] = 0.0    
-    
-    return qbdy
+    if (tag == "left")
+      qbdy[2] = 0.025*sinpi(2*30*t/5000.0)    
+    end
 end
+
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
 
     qbdy[1] = 0.0    
