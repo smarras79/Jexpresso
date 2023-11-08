@@ -21,6 +21,8 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     qout = copy(q.qn)
     ρ = 0.0
     T = 0.0
+
+    lshock = false
     
     mass_flow = 0.59
     for iel_g = 1:mesh.nelem
@@ -30,16 +32,32 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             x  = mesh.x[ip]
 
             A = 1.0 + 2.2*(x - 1.5)^2
-            
-            if (x >= 0.0 && x < 0.5)
-                ρ = 1.0
-                T = 1.0
-            elseif (x >= 0.5 && x < 1.5)
-                ρ = 1.0 - 0.366*(x - 0.5)
-                T = 1.0 - 0.167*(x - 0.5)
-            elseif (x >= 1.5 && x <= 3.5)
-                ρ = 0.634 - 0.3879*(x - 1.5)
-                T = 0.833 - 0.3507*(x - 1.5)
+
+            if lshock
+                if (x >= 0.0 && x < 0.5)
+                    ρ = 1.0
+                    T = 1.0
+                elseif (x >= 0.5 && x < 1.5)
+                    ρ = 1.0 - 0.366*(x - 0.5)
+                    T = 1.0 - 0.167*(x - 0.5)
+                elseif (x >= 1.5 && x < 2.1)
+                    ρ = 0.634 - 0.702*(x - 1.5)
+                    T = 0.833 - 0.4908*(x - 1.5)
+                elseif (x >= 2.1 && x <= 3.0)
+                    ρ = 0.5892 - 0.10228*(x - 1.5)
+                    T = 0.93968 - 0.0622*(x - 1.5)
+                end
+            else
+                if (x >= 0.0 && x < 0.5)
+                    ρ = 1.0
+                    T = 1.0
+                elseif (x >= 0.5 && x < 1.5)
+                    ρ = 1.0 - 0.366*(x - 0.5)
+                    T = 1.0 - 0.167*(x - 0.5)
+                elseif (x >= 1.5 && x <= 3.5)
+                    ρ = 0.634 - 0.3879*(x - 1.5)
+                    T = 0.833 - 0.3507*(x - 1.5)
+                end
             end
             u = mass_flow/(ρ*A)
             e = T
