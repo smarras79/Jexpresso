@@ -5,29 +5,29 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :tend                 => 1.5,
+        :ode_solver          => SSPRK33(),
+        :tend                 => 3.0,
         :Δt                   => 1.0e-3,
-        :ndiagnostics_outputs => 15, #these are steps, not seconds
-        :lsource              => false,
-        #:output_dir          => "/Users/simone/runs/",
+        :ndiagnostics_outputs => 30, #these are steps, not seconds
+        :output_dir          => "./",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :ode_solver          => "AB4", #"Tsit5",
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
-        :luser_bc            => true,
+        :lsource             => false,
+        :lperiodic_1d        => true, #false by default
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => false,
+        :lvisc                => false,
         :νx                   => 0.01, #kinematic viscosity constant
         :νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
+        :lread_gmsh          => false, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh", 
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
@@ -40,8 +40,8 @@ function user_inputs()
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
         :xmin          =>   0.0,
-        :xmax          =>   1.0,
-        :nelx          =>   25,        
+        :xmax          =>   2.0,
+        :nelx          =>   50,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter

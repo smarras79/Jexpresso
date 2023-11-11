@@ -1,23 +1,39 @@
-function initialize(SD::NSD_1D, ET::AdvDiff, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+    """
 
-    println(" # Initialize fields for AdvDiff ........................")
+    """
+    @info " Initialize fields for 1D adv diff ........................ "
     
-    qinit = Array{TFloat}(undef, mesh.npoin, 1)
-    q     = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, TFloat; neqs=1)
+    #---------------------------------------------------------------------------------
+    # Solution variables:
+    #
+    # NOTICE: while these names can be arbitrary, the length of this tuple
+    # defines neqs, which is used to allocate all necessary equation-dependent arrays
+    # 
+    #---------------------------------------------------------------------------------
+    qvars = ("q")
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
+    #---------------------------------------------------------------------------------
     
     σ = Float64(64.0)
     for iel_g = 1:mesh.nelem
         for i=1:mesh.ngl
             
-            ip = mesh.connijk[i,iel_g]
-            x  = mesh.x[ip]
+            ip = mesh.connijk[iel_g,i,1]
+            x = mesh.x[ip]
             
-            #q.qn[ip, 1] = exp(-σ*x*x)
-            q.qn[ip, 1] = exp(-200.0*(x - 0.5)^2)
+            q.qn[ip,1] = exp(-200.0*(x - 0.5)^2)
+
+            #Store initial background state for plotting and analysis of pertuebations
+            q.qe[ip,1] = 0.0
             
         end
-    end    
-    println(" # Initialize fields for AdvDiff ........................ DONE")
+    end
+
+    varnames = ["q1"]
+    write_output(NSD_1D(), q.qn, mesh, OUTPUT_DIR, inputs, varnames, PNG())
+    
+    @info " Initialize fields for 1D adv diff ........................ DONE "
     
     return q
 end

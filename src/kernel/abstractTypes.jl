@@ -35,7 +35,7 @@ struct LG <: AbstractPointsType end
 struct LGL <: AbstractPointsType end
 struct CG <: AbstractPointsType end
 struct CGL <: AbstractPointsType end
-
+struct LGR <: AbstractPointsType end
 #
 # System of reference
 #
