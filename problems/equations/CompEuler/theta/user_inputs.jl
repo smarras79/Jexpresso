@@ -8,6 +8,7 @@ function user_inputs()
         :Δt                   => 0.2,
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
+        :lsource              => true, 
         #:CL                   => NCL(), #CL() is defaults
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
@@ -30,8 +31,17 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB_unitsize.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
+        #:gmsh_filename        => "./meshes/gmsh_grids/test_allocation.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_120x31_periodic.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB27x27.msh", #for nop=3
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB40x40.msh", #for nop=2
+        #---------------------------------------------------------------------------
+        # Filter parameters
+        #---------------------------------------------------------------------------
+        #:lfilter             => true,
+        #:mu_x                => 0.01,
+        #:mu_y                => 0.01,
+        #:filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------

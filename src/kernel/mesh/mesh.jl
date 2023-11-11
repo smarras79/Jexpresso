@@ -46,8 +46,10 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     npz::Union{TInt, Missing} = 1
     
     nelem::Union{TInt, Missing} = 1
+    nelem_semi_inf::Union{TInt, Missing} = 0# Semi infinite elements for Laguerre BC
     nelem_int::Union{TInt, Missing} = 1    # internal elements
     npoin::Union{TInt, Missing} = 1        # This is updated after populating with high-order nodes
+    npoin_original::Union{TInt, Missing} =1# Storage for original npoin if modified for Laguerre semi_inf
     npoin_linear::Union{TInt, Missing} = 1 # This is always the original number of the first-order grid
     nelem_bdy::Union{TInt, Missing} = 1    # bdy elements
     
@@ -62,6 +64,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     nsd::Union{TInt, Missing} = 1
     nop::Union{TInt, Missing} = 4
     ngl::Union{TInt, Missing} = nop + 1
+    ngr::Union{TInt, Missing} = 0#nop_gr
     npoin_el::Union{TInt, Missing} = 1     # Total number of points in the reference element
     
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
@@ -75,6 +78,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
+
+    connijk_lag ::Array{Int64,3} = zeros(Int64, 0, 0, 0)
     
     #if nsd == 1
     #    connijk::Array{Int64,1} = zeros(Int64, 0, 0)
@@ -104,32 +109,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     bdy_edge_type_id::Array{Int64,1} = zeros(Int64, 0)
     
 
-    #@YASSINE REMOVE WHAT NO LONGER NEEDED 
-    bc_xmin = Array{Int64}(undef, 0)
-    bc_xmax = Array{Int64}(undef, 0)
-    bc_ymin = Array{Int64}(undef, 0)
-    bc_ymax = Array{Int64}(undef, 0)
-    bc_zmin = Array{Int64}(undef, 0)
-    bc_zmax = Array{Int64}(undef, 0)
     
-    xperiodicity = Dict{Int64,Int64}()
-    yperiodicity = Dict{Int64,Int64}()
-    zperiodicity = Dict{Int64,Int64}()
-    
-    xmax_faces = Array{Int64}(undef, 0)
-    ymax_faces = Array{Int64}(undef, 0)
-    zmax_faces = Array{Int64}(undef, 0)
-    xmin_faces = Array{Int64}(undef, 0)
-    ymin_faces = Array{Int64}(undef, 0)
-    zmin_faces = Array{Int64}(undef, 0)
-    bound_elem = Array{Int64}(undef, 0)   
-    xmax_facetoelem = Array{Int64}(undef, 0)
-    ymax_facetoelem = Array{Int64}(undef, 0)
-    zmax_facetoelem = Array{Int64}(undef, 0)
-    xmin_facetoelem = Array{Int64}(undef, 0)
-    ymin_facetoelem = Array{Int64}(undef, 0)
-    zmin_facetoelem = Array{Int64}(undef, 0)
-
     SD::AbstractSpaceDimensions
 end
 
@@ -141,7 +121,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     model         = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
-    
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
     
     POIN_flg = 0
@@ -430,6 +409,11 @@ for ip = mesh.npoin_linear+1:mesh.npoin
     end
 end
 
+mesh.xmax = maximum(mesh.x)
+mesh.xmin = minimum(mesh.x)
+mesh.ymax = maximum(mesh.y)
+mesh.ymin = minimum(mesh.y)
+
 #----------------------------------------------------------------------
 # Extract boundary edges and faces nodes:
 #----------------------------------------------------------------------
@@ -441,6 +425,7 @@ if mesh.nsd == 2
     #
     # Get labels contained in the current GMSH grid:
     #
+    n_semi_inf = 0
     labels = get_face_labeling(model)
     for ilabel in labels.tag_to_name
         edges_to_tag  = get_face_tag_index(labels,ilabel,EDGE_flg)
@@ -469,10 +454,12 @@ if mesh.nsd == 2
                 
                 #@info iedge, mesh.edge_type[iedge]
             end
+            if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
+                n_semi_inf += 1
+            end
             iedge_bdy += 1
         end
     end
-
     for iel = 1:mesh.nelem
         for iedge_bdy = 1:mesh.nedges_bdy
             if issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, :, :])
@@ -488,6 +475,127 @@ if mesh.nsd == 2
                 mesh.bdy_edge_comp[iedge_bdy] = 4
             end
         end
+    end
+    # build mesh data structs for Laguerre semi-infinite elements
+    if ("Laguerre" in mesh.bdy_edge_type)
+        gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1) 
+        factorx = inputs[:xfac_laguerre]#0.1
+        factory = inputs[:yfac_laguerre]#0.025
+        mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, n_semi_inf, mesh.ngl, mesh.ngr)
+        bdy_normals = zeros(n_semi_inf, 2)
+        bdy_tangents = zeros(n_semi_inf, 2)
+        e_iter = 1
+        iter = mesh.npoin + 1
+        x_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
+        y_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
+        x_new[1:mesh.npoin] .= mesh.x[:]
+        y_new[1:mesh.npoin] .= mesh.y[:]
+        for iedge = 1:size(mesh.bdy_edge_type,1)
+            if (mesh.bdy_edge_type[iedge] == "Laguerre") 
+                iel = mesh.bdy_edge_in_elem[iedge]
+                #find tangent and normal vectors to the boundary
+                ip = mesh.poin_in_bdy_edge[iedge,1]
+                ip1 = mesh.poin_in_bdy_edge[iedge,2]
+                #tangent vector 
+                x = mesh.x[ip]
+                x1 = mesh.x[ip1]
+                y = mesh.y[ip]
+                y1 = mesh.y[ip1]
+                tan = [x-x1, y-y1]
+                # deduce normal vector components
+                if (tan[2] > 1e-7)
+                    x2 = 1.0
+                    y2 = -x2*tan[1]/tan[2]
+                else
+                    y2 = 1.0
+                    x2 = -y2*tan[2]/tan[1]
+                end
+                nor = [x2,y2]
+                # generate unit versions of tangent and normal vectors
+                modu = sqrt(tan[1]^2+tan[2]^2)
+                tan = tan * (1/modu)
+                modu = sqrt(nor[1]^2+nor[2]^2)
+                nor = nor * (1/modu)
+                #make sure normal is outward facing
+                l = 1
+                m = 1
+                l1 = 1
+                m1 = 1
+                for ii=1:mesh.ngl
+                    for jj=1:mesh.ngl
+                        if (mesh.connijk[iel,ii,jj] == ip)
+                            l=ii
+                            m=jj
+                        end
+                        if (mesh.connijk[iel,ii,jj] == ip1)
+                            l1 = ii
+                            m1 = jj
+                        end
+                    end
+                end
+                if (l == l1)
+                    ip2 = mesh.connijk[iel,3,m]
+                else
+                    ip2 = mesh.connijk[iel,l,3]
+                end
+                v = [mesh.x[ip2]-x, mesh.y[ip2]-y]
+                if (dot(v,nor) > 0.0)
+                    nor .= -nor
+                end
+                bdy_normals[e_iter,:] .= nor
+                bdy_tangents[e_iter,:] .= tan
+                for i=1:mesh.ngl
+                    ip = mesh.poin_in_bdy_edge[iedge,i]
+                    mesh.connijk_lag[e_iter,i,1] = ip
+                    for j=2:mesh.ngr
+                        x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx 
+                        y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                        matched = 0
+                        if (i == mesh.ngl || i == 1)
+                          iter_end = 0
+                          while (matched == 0 && iter_end == 0)
+                            for e_check = 1:n_semi_inf
+                              for i_check =1:mesh.ngl
+                                for j_check =1:mesh.ngr
+                                  ip_check = mesh.connijk_lag[e_check,i_check,j_check]
+                                  if (ip_check != 0.0 && e_check != e_iter)
+                                    if (AlmostEqual(x_temp,x_new[ip_check]) && AlmostEqual(y_temp,y_new[ip_check]))
+                                       mesh.connijk_lag[e_iter,i,j] = ip_check
+                                       matched = 1
+                                    end
+                                  end
+                                end
+                              end 
+                            end
+                            iter_end = 1
+                          end    
+                        else
+                          x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
+                          y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                          mesh.connijk_lag[e_iter,i,j] = iter
+                          iter += 1
+                          matched = 1
+                        end
+                        if (matched == 0)
+                          x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
+                          y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                          mesh.connijk_lag[e_iter,i,j] = iter
+                          iter += 1 
+                        end
+                        
+                        #@info nor[1],nor[2],x_new[iter],y_new[iter], mesh.x[ip],mesh.y[ip]
+                    end
+                end
+                e_iter += 1
+            end
+        end
+        #@info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
+        mesh.npoin_original = mesh.npoin
+        mesh.npoin = iter -1
+        mesh.x = x_new
+        mesh.y = y_new
+        mesh.z = zeros(mesh.npoin)
+        mesh.nelem_semi_inf = n_semi_inf 
     end
     #=for iedge_bdy = 1:mesh.nedges_bdy
         @printf(" bdy edge %d of type %s ∈ elem %d with nodes\n", iedge_bdy, mesh.bdy_edge_type[iedge_bdy], mesh.bdy_edge_in_elem[iedge_bdy])
@@ -741,9 +849,10 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
-    #resize!(mesh.x, (mesh.npoin))
-    mesh.x::Array{Float64, 1} = zeros(mesh.npoin)
+    resize!(mesh.x, (mesh.npoin))
     
+    mesh.connijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.ngl, 1)
+
     #
     # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
     #
@@ -754,6 +863,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
         ip2 = iel_g + 1
         
         mesh.conn[iel_g, 1], mesh.conn[iel_g, ngl] = ip1, ip2
+        mesh.connijk[iel_g, 1, 1], mesh.connijk[iel_g, ngl, 1] = ip1, ip2
         x1, x2 = mesh.x[ip1], mesh.x[ip2]
         
         iconn = 1
@@ -763,16 +873,17 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
             
             mesh.conn[iel_g, l] = ip #OK
+            mesh.connijk[iel_g, l, 1] = ip #OK
             iconn = iconn + 1
             
             ip = ip + 1
         end
     end
-    mesh.connijk = copy(mesh.conn)
     
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
 end
+
 
 function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
     
@@ -2038,7 +2149,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     
     Δx::TFloat=0.0
     resize!(mesh.Δx, mesh.nelem)
-    
+        
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
     mesh.npoin = mesh.npx
 
@@ -2075,7 +2186,8 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     mesh.npoin_el = ngl
 
     #allocate mesh.conn and reshape it
-    mesh.conn::Array{Int64} = zeros(mesh.nelem, mesh.npoin_el)
+    mesh.conn::Array{Int64, 2}   = zeros(mesh.nelem, mesh.npoin_el)
+    mesh.connijk::Array{Int64,3} = zeros(mesh.nelem, mesh.ngl, 1)
     
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = iel
@@ -2101,6 +2213,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
         # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
         mesh = St_mesh{TInt,TFloat}(nsd=Int64(inputs[:nsd]),
                                     nop=Int64(inputs[:nop]),
+                                    ngr=Int64(inputs[:nop_laguerre]),
                                     SD=NSD_1D())
         
         # Read gmsh grid using the GridapGmsh reader
@@ -2120,6 +2233,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                             npx  = Int64(inputs[:npx]),
                                             xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
                                             nop=Int64(inputs[:nop]),
+                                            connijk = zeros(Int64,  inputs[:nelx], inputs[:nop]+1, 1),
                                             SD=NSD_1D())
                 
             elseif (inputs[:nsd]==2)

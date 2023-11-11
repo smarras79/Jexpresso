@@ -28,11 +28,78 @@ function mod_inputs_user_inputs!(user_input_file)
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
+    
+    if(!haskey(inputs, :lperiodic_1d))
+      inputs[:lperiodic_1d] = false
+    end
+    
+    if(!haskey(inputs, :nop_laguerre))
+        inputs[:nop_laguerre] = 18
+    end
+    
+    if(!haskey(inputs, :xfac_laguerre))
+        inputs[:xfac_laguerre] = 1.0
+    end
+
+    if(!haskey(inputs, :yfac_laguerre))
+        inputs[:yfac_laguerre] = 1.0
+    end
+     
+    if(!haskey(inputs, :lfilter))
+        inputs[:lfilter] = false
+    end
+
+    if(!haskey(inputs, :mu_x))
+        inputs[:mu_x] = 0.0
+    end
+
+    if(!haskey(inputs, :mu_y))
+        inputs[:mu_y] = 0.0
+    end
+
+    if(!haskey(inputs, :lwarp))
+        inputs[:lwarp] = false
+    end
+
+    if(!haskey(inputs, :mount_type))
+        inputs[:lagnesi] = "agnesi"
+    end
+
+    if(!haskey(inputs, :a_mount))
+        inputs[:a_mount] = 10000.0
+    end
+
+    if(!haskey(inputs, :h_mount))
+        inputs[:h_mount] = 1.0
+    end
+    
+    if(!haskey(inputs, :c_mount))
+        inputs[:c_mount] = 0.0
+    end
 
     if(!haskey(inputs, :luser_bc))
         inputs[:luser_bc] = true
     end
     
+    if(!haskey(inputs, :xscale))
+        inputs[:xscale] = 1.0
+    end
+
+    if(!haskey(inputs, :yscale))
+        inputs[:yscale] = 1.0
+    end
+    
+    if(!haskey(inputs, :xdisp))
+        inputs[:xdisp] = 0.0
+    end
+    
+    if(!haskey(inputs, :ydisp))
+        inputs[:ydisp] = 0.0
+    end
+
+    if(!haskey(inputs, :filter_type))
+        inputs[:filter_type] = "erf"
+    end
     #
     # Plotting parameters:
     #
@@ -67,7 +134,7 @@ function mod_inputs_user_inputs!(user_input_file)
         inputs[:ndiagnostics_outputs] = 2
         inputs[:ndiagnostics_output]  = 2
     end
-    mod_inputs_check(inputs, :Δt, Float64(1.0), "w") #Δt --> this will be computed from CFL later on
+    mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
     end
@@ -246,8 +313,17 @@ function mod_inputs_user_inputs!(user_input_file)
     else
         inputs[:visc_model] = lowercase(inputs[:visc_model])
     end
-    
-    
+
+    #
+    # BC
+    #
+    if(!haskey(inputs, :luser_bc))
+        inputs[:luser_bc] = false
+    end
+    if(!haskey(inputs, :lneumann))
+        inputs[:lneumann] = false
+    end
+
     #
     # Correct quantities based on a hierarchy of input variables
     #

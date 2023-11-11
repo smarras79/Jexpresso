@@ -40,6 +40,8 @@ end
 function resetRHSToZero_inviscid!(params)
     fill!(params.rhs_el, zero(params.T))   
     fill!(params.RHS,    zero(params.T))
+    fill!(params.b,      zero(params.T))
+    fill!(params.B,      zero(params.T))
 end
 
 function resetRHSToZero_viscous!(params)
@@ -49,7 +51,11 @@ function resetRHSToZero_viscous!(params)
     fill!(params.RHS_visc,     zero(params.T))
 end
 
-function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, ::TOTAL)
+function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, ::AbstractPert, SD::NSD_1D)
+    nothing
+end
+
+function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, ::TOTAL, SD::NSD_2D)
 
     PhysConst = PhysicalConst{Float64}()
     
@@ -72,7 +78,6 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, :
                 uprimitive[i,j,ieq] = u[mieq]
             end
         end
-        
         #Pressure:
         uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
         
@@ -80,7 +85,7 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, :
     
 end
 
-function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, ::PERT)
+function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, ::CL, ::PERT, SD::NSD_2D)
     
     PhysConst = PhysicalConst{Float64}()
     
@@ -104,7 +109,7 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, :
                 uprimitive[i,j,ieq] = u[mieq] + uauxe[mieq,1]
             end
         end
-                
+        
         #Pressure:
         uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
         
@@ -113,7 +118,7 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, :
 end
 
 
-function uToPrimitives!(neqs, uprimitive, u, uprimitivee, mesh, δtotal_energy, iel, ::NCL, ::AbstractPert)
+function uToPrimitives!(neqs, uprimitive, u, uprimitivee, mesh, δtotal_energy, iel, ::NCL, ::AbstractPert, SD::NSD_2D)
     
     PhysConst = PhysicalConst{Float64}()
     
@@ -146,12 +151,15 @@ end
 
 
 function rhs!(du, u, params, time)
-    
-    build_rhs!(@view(params.RHS[:,:]), u, params, time)
-    
-    RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
-end
 
+    build_rhs!(@view(params.RHS[:,:]), u, params, time)
+    if (params.laguerre) 
+        build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+        params.RHS .= @views(params.RHS .+ params.RHS_lag) 
+    end
+    RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+    
+end
 
 function _build_rhs!(RHS, u, params, time)
 
@@ -163,14 +171,22 @@ function _build_rhs!(RHS, u, params, time)
     ngl     = params.mesh.ngl
     nelem   = params.mesh.nelem
     npoin   = params.mesh.npoin
-    
+    lsource = params.inputs[:lsource]
+        
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
     resetRHSToZero_inviscid!(params) 
+    if (params.inputs[:lfilter])
+        filter!(u, params, SD,params.SOL_VARS_TYPE)
+    end
+    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    apply_boundary_conditions!(u, params.uaux, time, params.qe,
+                               params.mesh, params.metrics, params.basis,
+                               params.RHS, params.rhs_el, params.ubdy,
+                               params.ω, neqs, params.inputs, SD)
     
-    inviscid_rhs_el!(u, params, true, SD)
-
+    inviscid_rhs_el!(u, params, lsource, SD)
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
     
     #-----------------------------------------------------------------------------------
@@ -191,21 +207,50 @@ function _build_rhs!(RHS, u, params, time)
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin)
     end
     
-    #For conservaton apply B.C. to RHS after DSS and not to rhs_el:
-    apply_boundary_conditions!(u, params.uaux, time,
-                               params.mesh, params.metrics, params.basis,
-                               params.RHS, params.rhs_el, params.ubdy,
-                               params.ω, SD, neqs, params.inputs)
+end
+
+function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
     
+    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    xmax = params.xmax
+    xmin = params.xmin
+    ymax = params.ymax    
+    for iel=1:params.mesh.nelem
+
+        uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE, SD)
+        
+        for i=1:params.mesh.ngl
+            ip = params.mesh.connijk[iel,i,1]
+            
+            user_flux!(@view(params.F[i,1,:]), @view(params.G[i,1,:]), SD,
+                       @view(params.uaux[ip,:]),
+                       @view(params.qe[ip,:]),         #pref
+                       params.mesh,
+                       params.CL, params.SOL_VARS_TYPE;
+                       neqs=params.neqs)
+            
+            if lsource
+                user_source!(@view(params.S[i,1,:]),
+                             @view(params.uaux[ip,:]),
+                             @view(params.qe[ip,:]),          #ρref 
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
+            end
+        end
+        
+        _expansion_inviscid!(params, iel, params.CL, params.QT, SD)
+        
+    end
 end
 
 function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    
+    xmax = params.xmax
+    xmin = params.xmin
+    ymax = params.ymax    
     for iel=1:params.mesh.nelem
 
-        uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
+        uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE, SD)
 
         for j=1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,j]
@@ -220,10 +265,8 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
-                             @view(params.qe[ip,:]), #          #ρref 
-                             params.mesh.npoin,
-                             params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs)
+                             @view(params.qe[ip,:]),          #ρref 
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
         
@@ -236,7 +279,7 @@ function viscous_rhs_el!(u, params, SD::NSD_2D)
     
     for iel=1:params.mesh.nelem
         
-        uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE)
+        uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE, SD)
 
         for ieq=2:params.neqs
             _expansion_visc!(@view(params.rhs_diffξ_el[iel,:,:,ieq]), @view(params.rhs_diffη_el[iel,:,:,ieq]), @view(params.uprimitive[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.mesh, params.basis, params.metrics, params.inputs, iel, ieq, params.QT, SD)
@@ -244,6 +287,23 @@ function viscous_rhs_el!(u, params, SD::NSD_2D)
         
     end
     params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el)
+end
+
+function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D)
+    
+    for ieq = 1:params.neqs
+        for i=1:params.mesh.ngl
+            ωJac = params.ω[i]*params.mesh.Δx[iel]/2
+            dξdx = 2.0/params.mesh.Δx[iel]
+            
+            dFdξ = 0.0
+            for k = 1:params.mesh.ngl
+                dFdξ += params.basis.dψ[k,i]*params.F[k,1,ieq]
+            end
+            
+            params.rhs_el[iel,i,1,ieq] -= params.ω[i]*dFdξ #  - params.S[i,1,ieq]) #gravity
+        end
+    end
 end
 
 
@@ -282,6 +342,7 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_2D)
         end
     end
 end
+
 function _expansion_inviscid!(params, iel, ::CL, QT::Exact, SD::NSD_2D)
     
     N = params.mesh.ngl
@@ -342,7 +403,7 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D)
                     
                     dGdξ += params.basis.dψ[k,i]*params.G[k,j,ieq]
                     dGdη += params.basis.dψ[k,j]*params.G[i,k,ieq]
-                                        
+                    
                     dpdξ += params.basis.dψ[k,i]*params.uprimitive[k,j,params.neqs+1]
                     dpdη += params.basis.dψ[k,j]*params.uprimitive[i,k,params.neqs+1]
                 end
@@ -439,7 +500,7 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
             dρudy = dρudξ*dξdy_kl + dρudη*dηdy_kl
             dρvdx = dρvdξ*dξdx_kl + dρvdη*dηdx_kl            
             dρvdy = dρvdξ*dξdy_kl + dρvdη*dηdy_kl
-                                    
+            
             dudx = dudξ*dξdx_kl + dudη*dηdx_kl            
             dudy = dudξ*dξdy_kl + dudη*dηdy_kl
             
@@ -472,7 +533,7 @@ end
 
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Inexact, SD::NSD_2D)
-  
+    
     for l = 1:mesh.ngl
         for k = 1:mesh.ngl
             ωJac = ω[k]*ω[l]*metrics.Je[iel,k,l]
@@ -544,7 +605,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
 
             dudy = dudξ*dξdy_kl + dudη*dηdy_kl
             dudy = dudy*visc_coeff[2]
-                        
+            
             ∇ξ∇u_kl = (dξdx_kl*dudx + dξdy_kl*dudy)*ωJac
             ∇η∇u_kl = (dηdx_kl*dudx + dηdy_kl*dudy)*ωJac     
             
