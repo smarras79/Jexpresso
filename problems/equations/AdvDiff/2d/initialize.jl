@@ -1,4 +1,4 @@
-function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
 
         """
@@ -17,7 +17,8 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     xc = (maximum(mesh.x) + minimum(mesh.x))/2
     yc = 8.0 #m
     sx = 1.0
-
+    sy = 1.0
+    A = 1.0
     for iel_g = 1:mesh.nelem
         for j=1:mesh.ngl, i=1:mesh.ngl
             
