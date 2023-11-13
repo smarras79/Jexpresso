@@ -63,7 +63,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
     ymin = minimum(mesh.y)
     
     #The following are only built and active if Laguerre boundaries are to be used
-    if ("Laguerre" in mesh.bdy_edge_type)
+    if ( "Laguerre" in mesh.bdy_edge_type)
         uaux_el_lag      = zeros(T, mesh.nelem, mesh.ngl, mesh.ngr, qp.neqs)
         rhs_el_lag       = zeros(T, mesh.nelem, mesh.ngl, mesh.ngr, qp.neqs)
         rhs_diff_el_lag  = zeros(T, mesh.nelem, mesh.ngl, mesh.ngr, qp.neqs)
@@ -76,6 +76,20 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
         RHS_visc_lag     = zeros(T, mesh.npoin, qp.neqs)
         uprimitive_lag = zeros(T, mesh.ngl, mesh.ngr, qp.neqs+1)
     end
+    if (inputs[:llaguerre_1d])
+        uaux_el_lag      = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
+        rhs_el_lag       = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
+        rhs_diff_el_lag  = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
+        rhs_diffξ_el_lag = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
+        rhs_diffη_el_lag = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
+        F_lag            = zeros(T, mesh.ngr, mesh.ngl, qp.neqs)
+        G_lag            = zeros(T, mesh.ngr, mesh.ngl, qp.neqs)
+        S_lag            = zeros(T, mesh.ngr, mesh.ngl, qp.neqs)
+        RHS_lag          = zeros(T, mesh.npoin, qp.neqs)
+        RHS_visc_lag     = zeros(T, mesh.npoin, qp.neqs)
+        uprimitive_lag = zeros(T, mesh.ngl, mesh.ngr, qp.neqs+1)
+    end
+
     #-----------------------------------------------------------------
     for i=1:qp.neqs
         idx = (i-1)*mesh.npoin
@@ -88,7 +102,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
     deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])    
     visc_coeff = (inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
-    if ("Laguerre" in mesh.bdy_edge_type)
+    if ("Laguerre" in mesh.bdy_edge_type||inputs[:llaguerre_1d])
  
         params = (T, F, G, S,
                   uaux, uaux_el, vaux,

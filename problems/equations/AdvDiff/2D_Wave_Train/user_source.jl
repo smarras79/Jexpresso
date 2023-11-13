@@ -71,14 +71,14 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     # S(q(x)) = -ρg
     #
     
-    if (x >= 5000.0)#nsponge_points * dsy) #&& dbl >= 0.0)
-        sponge_coe = 2.0/(1+exp((0.3*xmax-x)/(xmax/18)))
+    if (y >= 5000.0)#nsponge_points * dsy) #&& dbl >= 0.0)
+        sponge_coe = 2.0/(1+exp((0.3*ymax-y)/(ymax/18)))
     else
         sponge_coe = 0.0
     end
-    zt = xmax
+    zt = ymax
     zd = 5000.0
-    z = max(x-zd,0.0)
+    z = max(y-zd,0.0)
     dgamma  =0.00005
     alpha = 0.85
     sigma = zt/18.0

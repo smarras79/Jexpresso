@@ -6,9 +6,9 @@ function user_inputs()
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
         :ode_solver          => SSPRK33(),
-        :tend                 => 5000.0,
-        :Δt                   => 0.1,
-        :ndiagnostics_outputs => 100, #these are steps, not seconds
+        :tend                 => 100.0,
+        :Δt                   => 0.001,
+        :ndiagnostics_outputs => 10, #these are steps, not seconds
         :output_dir          => "./",
         :SOL_VARS_TYPE        => PERT(),
         #---------------------------------------------------------------------------
@@ -16,12 +16,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
-        :nop_laguerre        => 15,
+        :nop_laguerre        => 12,
         :lexact_integration  => false,
         :lsource             => true,
         :llaguerre_1d        => true,
         :laguerre_beta       => 1.0,
-        :yfac_laguerre       => 100.0,
+        :yfac_laguerre       => 0.25,
         #:lperiodic_1d        => true, #false by default
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
@@ -45,8 +45,8 @@ function user_inputs()
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
         :xmin          =>   0.0,
-        :xmax          =>   5000.0,
-        :nelx          =>   300,
+        :xmax          =>   60.0,
+        :nelx          =>   40,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
