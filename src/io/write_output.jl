@@ -15,6 +15,7 @@ function write_output(SD::NSD_1D, q::Array, mesh::St_mesh, OUTPUT_DIR::String, i
   
     nvar = length(varnames)
     for ivar = 1:nvar
+        #plot_results!(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames; iout=1, nvar=nvar, PT=nothing)
         plot_results(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames; iout=1, nvar=nvar, PT=nothing)
     end
 end
@@ -22,9 +23,15 @@ end
 function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+   # fig = Figure()
+    #colors = ["Blue","Red","Green","Yellow","Black","Purple","Orange"]
+    #p = []
     for iout = 1:size(sol.t[:], 1)
+        #icolor = mod(iout,size(colors,1))+1
+        #color = colors[icolor]
         title = string("sol.u at time ", sol.t[iout])
-        plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames; iout=iout, nvar=nvar, PT=nothing)
+        #plot_results!(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames; iout=iout, nvar=nvar, fig=fig,color = color,p=p,PT=nothing)
+        plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames; iout=iout, nvar=nvar,PT=nothing)
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end

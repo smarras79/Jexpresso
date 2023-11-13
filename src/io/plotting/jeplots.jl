@@ -41,23 +41,21 @@ function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
 end
 
 function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar; iout=1, nvar=1, PT=nothing)
-   
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
     npoin = floor(Int64, size(q, 1)/nvar)
     #qout = copy(q)
-    
+ 
     for ivar=1:nvar
-
         idx = (ivar - 1)*npoin
         fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
                                           markersize = 10, markercolor="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "x")
                                           )
-
         
+        #ylims!(ax, -0.05, 1.0)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
         save(string(fout_name), fig; resolution = (600, 400))
         fig
@@ -65,9 +63,33 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
 end
 
 
+#=function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar; iout=1, nvar=1, fig=Figure(),color ="Blue",p=[],PT=nothing)
+    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
+    qmin = minimum(q);      qmax = maximum(q);
+    epsi = 1.1
+    npoin = floor(Int64, size(q, 1)/nvar)
+    #qout = copy(q)
+    ax = Axis(fig[1,1])      
+    
+    for ivar=1:nvar
+        idx = (ivar - 1)*npoin
+        #fig, ax, plt = 
+        push!(p,CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
+                                          markersize = 10, markercolor=color,
+                                          xlabel = "x", ylabel = "q(x)",
+                                          fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery")#,  axis = (; title = string(outvar[ivar]), xlabel = "x")
+                                          ))
+       
+        p[end].color = color
+        ylims!(ax, -0.05, 1.0)
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")  
+        save(string(fout_name), fig; resolution = (600, 400))
+        fig
+    end
+end=#
+
 
 function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, PT=nothing)
-
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1

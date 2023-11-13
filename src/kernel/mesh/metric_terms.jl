@@ -60,6 +60,28 @@ function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     return metrics
 end
 
+function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, inputs,T)
+   
+    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem_semi_inf, Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
+                            dξdx = zeros(T, mesh.nelem_semi_inf, Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
+                            Je   = zeros(T, mesh.nelem_semi_inf, Q+1, 1),
+                            nx   = zeros(T, mesh.nedges_bdy, 1))
+
+    dψ = basis.dψ
+    for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngr
+            ip = mesh.connijk_lag[iel,i,1]
+            xij = mesh.x[ip]
+            for k = 1:mesh.ngr
+                metrics.dxdξ[iel, k,1]  += dψ[i,k] * xij
+                metrics.Je[iel, k, 1]   = inputs[:yfac_laguerre]#abs(metrics.dxdξ[iel, k, 1])
+                metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+            end
+        end
+    end    
+
+    return metrics
+end
 
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)
     
@@ -207,9 +229,9 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                             xij = mesh.x[ip]
                             yij = mesh.y[ip]
                             metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij 
-                            metrics.dxdη[iel, k, l] +=  ψ[i,k]*dψ1[j,l]*xij
+                            metrics.dxdη[iel, k, l] +=  ψ[i,k]*xij*inputs[:xfac_laguerre]#*dψ1[j,l]*xij
                             metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
-                            metrics.dydη[iel, k, l] +=  ψ[i,k]*dψ1[j,l]*yij
+                            metrics.dydη[iel, k, l] +=  ψ[i,k]*yij*inputs[:yfac_laguerre]#*dψ1[j,l]*yij
                         end
                     end
                 end

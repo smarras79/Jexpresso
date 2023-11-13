@@ -26,23 +26,13 @@
 """
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe::SubArray{Float64},::TOTAL)
 
-    if (tag == "left")
-      qbdy[2] = 0.025*sinpi(2*30*t/5000.0)    
-    end
-    if (tag == "right")
-      if (abs(q[1]-qe[1]) < 0.0001)
-         qbdy[2] = 0.0
-      else
-         qbdy[1] = 0.025*sinpi(2*30*t/5000.0)+qe[1]
-         qbdy[2] = 0.025*sinpi(2*30*t/5000.0)
-      end
-    end
+   nothing
 end
 
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe::SubArray{Float64},::PERT)
 
     if (tag == "left")
-      qbdy[2] = 0.025*sinpi(2*30*t/5000.0)
+      qbdy[1] = 0.0
     end
 end
 
