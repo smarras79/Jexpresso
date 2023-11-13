@@ -11,7 +11,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     qv  = v*q[1]
         
     F[1] = qu
-    G[1] = ρv
+    G[1] = qv
     
 end
 
@@ -28,7 +28,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     qv  = v*q[1]
         
     F[1] = qu
-    G[1] = ρv
+    G[1] = qv
     
 end
 
@@ -46,5 +46,5 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     qv  = v*q[1]
         
     F[1] = qu
-    G[1] = ρv
+    G[1] = qv
 end
