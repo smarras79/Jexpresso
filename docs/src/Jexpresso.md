@@ -1,5 +1,0 @@
-# Jexpresso
-
-```@docs
-Jexpresso
-```
