@@ -9,7 +9,7 @@ function user_inputs()
         :ndiagnostics_outputs => 20,
         :lsource              => false,
         #:CL                   => NCL(), #CL() is defaults
-        :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
