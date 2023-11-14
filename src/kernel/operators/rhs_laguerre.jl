@@ -22,56 +22,104 @@ function resetRHSToZero_viscous_laguerre!(params)
 end
 
 
+function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::TOTAL, SD::NSD_2D)
 
-function uToPrimitives_laguerre!(uprimitive, u, mesh, δtotal_energy, iel, ::CL,::NSD_2D)
+    if typeof(PT) == CompEuler
 
-    PhysConst = PhysicalConst{Float64}()
-    
-    for j=1:mesh.ngr, i=1:mesh.ngl
-        
-        m1 = mesh.connijk_lag[iel,i,j]
-        m2 = mesh.npoin + m1
-        m3 = 2*mesh.npoin + m1
-        m4 = 3*mesh.npoin + m1
-        
-        uprimitive[i,j,1] = u[m1]
-        uprimitive[i,j,2] = u[m2]/u[m1]
-        uprimitive[i,j,3] = u[m3]/u[m1]
-        uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+        PhysConst = PhysicalConst{Float64}()
 
-        #Pressure:
-        uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
-        
-    end
-    
-end
+        for j=1:mesh.ngr, i=1:mesh.ngl
 
-function uToPrimitives_laguerre!(uprimitive, u, mesh, δtotal_energy, iel, CL,::NSD_1D)
+            m1 = mesh.connijk_lag[iel,i,j]
+            m2 = m1 + mesh.npoin
+            m3 = m2 + mesh.npoin
+            m4 = m3 + mesh.npoin
 
-   nothing
-end
+            uprimitive[i,j,1] = u[m1]
+            uprimitive[i,j,2] = u[m2]/u[m1]
+            uprimitive[i,j,3] = u[m3]/u[m1]
+            uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+            #Tracers
+            if(neqs > 4)
+                mieq = m4
+                for ieq = 5:neqs
+                    mieq = mieq + mesh.npoin
+                    uprimitive[i,j,ieq] = u[mieq]
+                end
+            end
+            #Pressure:
+            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
 
-function uToPrimitives_laguerre!(uprimitive, u, mesh, δtotal_energy, iel, ::NCL,::NSD_2D)
-    
-    PhysConst = PhysicalConst{Float64}()
-    
-    for j=1:mesh.ngr, i=1:mesh.ngl
-        
-        m1 = mesh.connijk_lag[iel,i,j]
-        m2 = mesh.npoin + m1
-        m3 = 2*mesh.npoin + m1
-        m4 = 3*mesh.npoin + m1
-        
-        uprimitive[i,j,1] = u[m1]
-        uprimitive[i,j,2] = u[m2]
-        uprimitive[i,j,3] = u[m3]
-        uprimitive[i,j,4] = u[m4]
+        end
 
-        #Pressure:
-        uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
-        
+    elseif typeof(PT) == AdvDiff
+
+        for j=1:mesh.ngr, i=1:mesh.ngl
+
+            mieq = mesh.connijk_lag[iel,i,j]
+            uprimitive[i,j,1] = u[mieq]
+
+            for ieq = 2:neqs
+                mieq = mieq + mesh.npoin
+                uprimitive[i,j,ieq] = u[mieq]
+            end
+
+        end
     end
 end
+
+function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
+    nothing
+end
+
+function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::PERT, SD::NSD_2D)
+
+    if typeof(PT) == CompEuler
+        PhysConst = PhysicalConst{Float64}()
+
+        for j=1:mesh.ngr, i=1:mesh.ngl
+
+            m1 = mesh.connijk_lag[iel,i,j]
+            m2 = m1 + mesh.npoin
+            m3 = m2 + mesh.npoin
+            m4 = m3 + mesh.npoin
+
+            uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
+            uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]
+            uprimitive[i,j,3] = u[m3]/uprimitive[i,j,1]
+            uprimitive[i,j,4] = (u[m4] + uprimitive[i,j,1]*uauxe[m1,4])/uprimitive[i,j,1] # CHECK THIS FOR ENE- δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+
+            #Tracers
+            if(neqs > 4)
+                mieq = m4
+                for ieq = 5:neqs
+                    mieq = mieq + mesh.npoin
+                    uprimitive[i,j,ieq] = u[mieq] + uauxe[mieq,1]
+                end
+            end
+
+            #Pressure:
+            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
+
+        end
+
+    elseif typeof(PT) == AdvDiff
+
+        for j=1:mesh.ngr, i=1:mesh.ngl
+
+            mieq = mesh.connijk_lag[iel,i,j]
+            uprimitive[i,j,1] = u[mieq]
+
+            for ieq = 2:neqs
+                mieq = mieq + mesh.npoin
+                uprimitive[i,j,ieq] = u[mieq]
+            end
+
+        end
+    end
+
+end
+
 
 function _build_rhs_laguerre!(RHS, u, params, time)
 
@@ -142,7 +190,7 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
     ymax = params.ymax   
     for iel=1:params.mesh.nelem_semi_inf
 
-        #uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.CL, params.SOL_VARS_TYPE, SD)
+        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for i=1:params.mesh.ngr
             ip = params.mesh.connijk_lag[iel,i,1]
@@ -176,8 +224,8 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_2D)
     ymax = params.ymax
     for iel=1:params.mesh.nelem_semi_inf
         
-        #uToPrimitives_laguerre!(params.uprimitive_lag, u, params.mesh, params.inputs[:δtotal_energy], iel, params.CL)
-        
+        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)       
+ 
         for j=1:params.mesh.ngr, i=1:params.mesh.ngl
             ip = params.mesh.connijk_lag[iel,i,j]
             
@@ -201,9 +249,9 @@ end
 
 function viscous_rhs_el_laguerre!(u, params, SD::NSD_2D)
     
-    for iel=1:params.mesh.nelem
+    for iel=1:params.mesh.nelem_semi_inf
         
-        uToPrimitives_laguerre!(params.uprimitive_lag, u, params.mesh, params.inputs[:δtotal_energy], iel, params.CL)
+        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for ieq=2:params.neqs
             _expansion_visc_laguerre!(@view(params.rhs_diffξ_el[iel,:,:,ieq]), @view(params.rhs_diffη_el[iel,:,:,ieq]), @view(params.uprimitive_lag[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.ω_lag, params.mesh, params.basis, params.basis_lag, params.metrics, params.metrics_lag, params.inputs, iel, ieq, params.QT, SD)
@@ -501,6 +549,8 @@ function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, 
             dudη = 0.0
             @turbo for ii = 1:mesh.ngl
                 dudξ += basis1.dψ[ii,k]*uprimitiveieq[ii,l]
+            end
+            @turbo for ii = 1:mesh.ngr
                 dudη += basis2.dψ[ii,l]*uprimitiveieq[k,ii]
             end
             dξdx_kl = metrics_lag.dξdx[iel,k,l]
@@ -530,3 +580,4 @@ function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, 
         end
     end  
 end
+

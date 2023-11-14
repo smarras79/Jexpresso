@@ -101,8 +101,10 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
     
     deps = zeros(1,1)
     tspan  = (inputs[:tinit], inputs[:tend])    
-    visc_coeff = (inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
-    if ("Laguerre" in mesh.bdy_edge_type||inputs[:llaguerre_1d])
+    visc_coeff = inputs[:μ]#(inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
+    ivisc_equations = inputs[:ivisc_equations]   
+ 
+    if ("Laguerre" in mesh.bdy_edge_type || inputs[:llaguerre_1d])
  
         params = (T, F, G, S,
                   uaux, uaux_el, vaux,
@@ -122,7 +124,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
                   SOL_VARS_TYPE,
                   neqs=qp.neqs,
 		  basis=basis[1], basis_lag = basis[2], ω = ω[1], ω_lag = ω[2], mesh, metrics = metrics[1], metrics_lag = metrics[2], 
-                  inputs, visc_coeff,              
+                  inputs, visc_coeff, ivisc_equations,
                   M, Minv,
                   Δt, deps, xmax, xmin, ymax, ymin,
                   qp.qe, qp.qnm1, qp.qnm2, qp.μ,fx,fy, fy_t,  laguerre=true)
@@ -139,7 +141,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
                   SOL_VARS_TYPE, 
                   neqs=qp.neqs,
                   basis, ω, mesh, metrics,
-                  inputs, visc_coeff,
+                  inputs, visc_coeff, ivisc_equations,
                   M, Minv,
                   Δt, deps, xmax, xmin, ymax, ymin,
                   qp.qe, qp.qnm1, qp.qnm2, qp.μ,fx,fy,fy_t,laguerre=false)

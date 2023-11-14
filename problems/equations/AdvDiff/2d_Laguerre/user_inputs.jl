@@ -3,10 +3,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 2000.0, #2π,
-        :Δt                   => 0.1,#8.75e-4,
+        :tend                 => 20.0, #2π,
+        :Δt                   => 0.01,#8.75e-4,
         :ode_solver           => SSPRK54(),
-        :ndiagnostics_outputs => 100,
+        :ndiagnostics_outputs => 10,
         :output_dir          => "./",
         :case                 => "rtb",
         #:CL                   => NCL(),
@@ -18,16 +18,15 @@ function user_inputs()
         :nop                 => 4,      # Polynomial order
         :nop_laguerre        => 14,     # Laguerre polynomial Order
         :xfac_laguerre       => 0.0,
-        :yfac_laguerre       => 100.0,
+        :yfac_laguerre       => 0.25,
         :luser_bc            => true,
         :lsource             => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => false, #false by default
-        #:visc_model           => "dsgs", #"none", "dsgs"
-        :νx                   => 0.000015, #kinematic viscosity constant
-        :νy                   => 0.000015, #kinematic viscosity constant
+        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        :ivisc_equations      => (1),
+        :μ                    => (0.001), #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -42,8 +41,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # grid modification parameters
         #--------------------------------------------------------------------------- 
-        :xscale              => 5000.0,
-        :yscale              => 5000.0,
+        :xscale              => 30.0,
+        :yscale              => 20.0,
         :xdisp               => 0.0,
         :ydisp               => 1.0,
         #---------------------------------------------------------------------------

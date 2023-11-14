@@ -293,21 +293,13 @@ function mod_inputs_user_inputs!(user_input_file)
     end #lread_gmsh
     #
     # Some physical constants and parameters:
-    #    
-    if(!haskey(inputs, :νx))
-        inputs[:νx] = Float64(0.0) #default kinematic viscosity
+    #
+    if(!haskey(inputs, :μ))
+        inputs[:μ] = (Float64(0.0)) #default kinematic viscosity
     end
-    if(!haskey(inputs, :νy))
-        inputs[:νy] = Float64(0.0) #default kinematic viscosity
-    end
-    if(!haskey(inputs, :νz))
-        inputs[:νz] = Float64(0.0) #default kinematic viscosity
-    end
-    if(!haskey(inputs, :νρ))
-        inputs[:νρ] = Float64(0.0) #default kinematic viscosity
-    end
-    if(!haskey(inputs, :κ))
-        inputs[:κ] = Float64(0.0) #default kinematic viscosity
+
+    if(!haskey(inputs, :ivisc_equations))
+        inputs[:ivisc_equations] = (1)
     end
 
     #
@@ -470,7 +462,7 @@ function mod_inputs_user_inputs!(user_input_file)
     # The following quantities stored in the inputs[] dictionary are only
     # auxiliary and are NEVER to be defined by the user
     #------------------------------------------------------------------------
-    if ((inputs[:νx] != 0.0) || (inputs[:νy] != 0.0) || (inputs[:νz] != 0.0))
+    if inputs[:μ] != (0.0)
         inputs[:δvisc] = 1.0
     else
         inputs[:δvisc] = 0.0

@@ -39,7 +39,7 @@ end
 
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe::SubArray{Float64},::PERT)
   if (y < 0.01)
-    qbdy[2] = 0.025*sinpi(2*30*t/5000.0)
+    qbdy[1] = 0.0#0.025*sinpi(2*30*t/5000.0)
   end
 end
 

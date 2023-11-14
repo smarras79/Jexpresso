@@ -755,11 +755,11 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
       gr.ξ[k] = x1
     end
     gr.ξ[1] = 0
-    ScaledLaguerreAndDerivative!(nop+1,Laguerre,beta)
+    #ScaledLaguerreAndDerivative!(nop+1,Laguerre,beta)
     #gr.ξ[2:ngr] = AMRVW.roots((coeffs(Laguerre.dLaguerre)))
-    for k=1:ngr
-      @info Laguerre.dLaguerre(gr.ξ[k]), gr.ξ[k]
-    end
+    #for k=1:ngr
+    #  @info Laguerre.dLaguerre(gr.ξ[k]), gr.ξ[k]
+    #end
  
     ScaledLaguerreAndDerivative!(nop,Laguerre,beta)
     Lkx = zeros(nop+1,1)
@@ -771,7 +771,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     
     end
     #gr.ω[1] = 1-sum(gr.ω[2:nop+1])
-    @info gr.ω
+    #@info gr.ω
     #if(scale)
       #gr.ω .= exp.(gr.ξ*beta).*gr.ω 
     #end
