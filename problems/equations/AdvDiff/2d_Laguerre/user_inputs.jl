@@ -3,8 +3,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 20.0, #2π,
-        :Δt                   => 0.01,#8.75e-4,
+        :tend                 => 4.0, #2π,
+        :Δt                   => 0.02,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 10,
         :output_dir          => "./",
@@ -16,9 +16,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
-        :nop_laguerre        => 14,     # Laguerre polynomial Order
+        :nop_laguerre        => 50,     # Laguerre polynomial Order
         :xfac_laguerre       => 0.0,
-        :yfac_laguerre       => 0.25,
+        :yfac_laguerre       => 0.055,
         :luser_bc            => true,
         :lsource             => true,
         #---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1),
-        :μ                    => (0.001), #kinematic viscosity constant for θ equation
+        :μ                    => (0.1), #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -41,8 +41,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # grid modification parameters
         #--------------------------------------------------------------------------- 
-        :xscale              => 30.0,
-        :yscale              => 20.0,
+        :xscale              => 10.0,
+        :yscale              => 10.0,
         :xdisp               => 0.0,
         :ydisp               => 1.0,
         #---------------------------------------------------------------------------

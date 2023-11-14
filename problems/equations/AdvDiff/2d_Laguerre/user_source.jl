@@ -91,7 +91,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     cs = 1.0*sinpi(0.5*z/(zt-zd))^2
     #cs = min(sponge_coe,1)
     #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
-    S[1] = -(cs)*(q[1])
+    #S[1] = -(cs)*(q[1])
     #S[2] = -(cs)*(q[2])
     return  S
 end    
