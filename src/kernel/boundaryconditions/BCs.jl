@@ -4,10 +4,14 @@ function apply_boundary_conditions!(u, uaux, t,qe,
                                     mesh, metrics, basis,
                                     RHS, rhs_el, ubdy,
                                     ω, neqs, inputs, SD::NSD_1D)
-    build_custom_bcs!(SD, t, mesh, metrics, ω,
-                      ubdy, uaux, u, qe,
-                      @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
-                      neqs, dirichlet!, neumann, inputs)
+    if inputs[:lperiodic_1d]
+        nothing
+    else
+        build_custom_bcs!(SD, t, mesh, metrics, ω,
+                          ubdy, uaux, u, qe,
+                          @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
+                          neqs, dirichlet!, neumann, inputs)
+    end
 end
 
 function apply_boundary_conditions!(u, uaux, t,qe,
