@@ -49,7 +49,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
  
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
-        fig, ax, plt = CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
+        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
                                           markersize = 10, markercolor="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "x")
@@ -173,8 +173,10 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     else
         npoin = floor(Int64, size(q, 1)/nvar)
     end
+    npoin = mesh.npoin
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
+        @info maximum(q[idx+1:ivar*npoin])
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
         fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin], colormap = :viridis)
         Colorbar(fig[1,2], colormap = :viridis)        
