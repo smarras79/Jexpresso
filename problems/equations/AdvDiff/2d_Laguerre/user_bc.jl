@@ -41,6 +41,9 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractF
   if (y < 0.01)
     qbdy[1] = 0.0#0.025*sinpi(2*30*t/5000.0)
   end
+  if (y < 10.0 && abs(x) >9.9)
+    qbdy[1] = 0.0
+  end
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)

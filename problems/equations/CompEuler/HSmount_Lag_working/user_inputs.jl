@@ -15,7 +15,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
-        :nop_laguerre        => 14,
+        :nop_laguerre        => 20,
         :yfac_laguerre       => 300.0,
         :luser_bc            => true,
         :lsource             => true,
@@ -57,8 +57,8 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.01,
-        :mu_y                => 0.01,
+        :mu_x                => 0.005,
+        :mu_y                => 0.005,
         :filter_type         => "erf",  ##default is erf, use either "erf" for Boyd-Vandeven,"exp" for Warburton Exponential filter, or "quad" for Fischer quadratic filter
         #---------------------------------------------------------------------------
         # Plotting parameters
