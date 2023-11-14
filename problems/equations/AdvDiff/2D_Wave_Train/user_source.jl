@@ -88,7 +88,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     else
      cs = 0.0
     end=#
-    #cs = 1.0*sinpi(0.5*z/(zt-zd))^2
+    cs = 0.5*sinpi(0.5*z/(zt-zd))^2
     cs = min(sponge_coe,1)
     #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
     S[1] = -(cs)*(q[1])

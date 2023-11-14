@@ -168,6 +168,7 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     This function uses the amazing package Mackie to plot arbitrarily gridded
     unstructured data to filled contour plot
 """
+    
     if ("Laguerre" in mesh.bdy_edge_type)
         npoin = mesh.npoin_original
     else
@@ -176,10 +177,18 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     npoin = mesh.npoin
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
-        @info maximum(q[idx+1:ivar*npoin])
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-        fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin], colormap = :viridis)
-        Colorbar(fig[1,2], colormap = :viridis)        
+        fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin],
+                                         colormap = :viridis)
+
+        minq = minimum(q[idx+1:ivar*npoin])
+        maxq = maximum(q[idx+1:ivar*npoin])
+        
+        Lx = abs(maximum(mesh.x) - minimum(mesh.x))
+        Ly = abs(maximum(mesh.y) - minimum(mesh.y))
+        ax.aspect = Lx/Ly; colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
+        
+        Colorbar(fig[1,2], colormap = :viridis,  limits = (minq, maxq))        
         save(string(fout_name), fig) #, resolution = (600, 600))
         fig
     end
