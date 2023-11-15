@@ -228,9 +228,10 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                         for k=1:mesh.ngl
                             metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij 
                             metrics.dxdη[iel, k, l] +=  ψ[i,k]*inputs[:xfac_laguerre]#*dψ1[j,l]*xij
+                            ###metrics.dxdη[iel, k, l] +=  ψ[i,k]*dψ1[j,l]*xij
                             metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
                             metrics.dydη[iel, k, l] +=  ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
-                            
+                            ###metrics.dydη[iel, k, l] +=  ψ[i,k]*dψ1[j,l]*yij
                         end
                     end
                     #@info metrics.dxdξ[iel, k, l],metrics.dxdη[iel, k, l],metrics.dydξ[iel, k, l],metrics.dydη[iel, k, l],xij,yij

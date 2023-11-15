@@ -94,7 +94,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     xl = -50000.0
     
     if (y >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betay_coe =  1.0*sinpi(0.5*(y-zs)/(ymax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betay_coe =  0.5*sinpi(0.5*(y-zs)/(ymax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
         #betay_coe = 0.9/(1+exp((0.4*ymax-y)/(ymax/18)))
         #betay_coe = 25.0/(1+exp((0.9*ymax-y)/(ymax/15))) ### damps too far down
         #betay_coe = 1.5/(1+exp((0.67*ymax-y)/(ymax/49)))

@@ -718,7 +718,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     xi = eigen(J)
     gr.ξ .= Float128.(xi.values)
     ngr = length(gr.ξ)
-    thresh = 1e-14
+    thresh = 1e-10
     x0 = 0.0
     x1 = 0.0
     for k=1:ngr
