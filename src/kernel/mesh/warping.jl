@@ -32,9 +32,11 @@ function warp_mesh!(mesh,inputs)
   end
 
   for ip = 1:mesh.npoin
-    sigma[ip] = mesh.y[ip] 
-    z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-    mesh.y[ip] = z
+    sigma[ip] = mesh.y[ip]
+    if (mesh.y[ip] < ztop/2)  
+      z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+      mesh.y[ip] = z
+    end
   end 
   
   #=for iedge = 1:size(mesh.bdy_edge_in_elem,1)

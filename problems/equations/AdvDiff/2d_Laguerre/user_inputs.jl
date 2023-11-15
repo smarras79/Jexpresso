@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :tend                 => 4.0, #2π,
-        :Δt                   => 0.0015,#8.75e-4,
+        :Δt                   => 0.0005,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 10,
         :output_dir          => "./",

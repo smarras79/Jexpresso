@@ -253,8 +253,8 @@ function viscous_rhs_el_laguerre!(u, params, SD::NSD_2D)
         
         uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
-        for ieq=2:params.neqs
-            _expansion_visc_laguerre!(@view(params.rhs_diffξ_el[iel,:,:,ieq]), @view(params.rhs_diffη_el[iel,:,:,ieq]), @view(params.uprimitive_lag[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.ω_lag, params.mesh, params.basis, params.basis_lag, params.metrics, params.metrics_lag, params.inputs, iel, ieq, params.QT, SD)
+        for ieq in params.ivisc_equations    
+              _expansion_visc_laguerre!(@view(params.rhs_diffξ_el_lag[iel,:,:,ieq]), @view(params.rhs_diffη_el_lag[iel,:,:,ieq]), @view(params.uprimitive_lag[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.ω_lag, params.mesh, params.basis, params.basis_lag, params.metrics, params.metrics_lag, params.inputs, iel, ieq, params.QT, SD)
         end
         
     end
@@ -539,8 +539,8 @@ function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, 
     
     basis1 = basis
     basis2 = basis_lag
-    ω1 = params.ω
-    ω2 = params.ω_lag 
+    ω1 = ω
+    ω2 = ω_lag 
     for l = 1:mesh.ngr
         for k = 1:mesh.ngl
             ωJac = ω1[k]*ω2[l]*metrics_lag.Je[iel,k,l]
@@ -570,12 +570,12 @@ function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, 
             @turbo for i = 1:mesh.ngl
                 dhdξ_ik = basis1.dψ[i,k]
                 
-                rhs_diffξ_el_lag[i,l] -= dhdξ_ik * ∇ξ∇u_kl
+                rhs_diffξ_el[i,l] -= dhdξ_ik * ∇ξ∇u_kl
             end
             @turbo for i = 1:mesh.ngr
                 dhdη_il = basis2.dψ[i,l]
 
-                rhs_diffη_el_lag[k,i] -= dhdη_il * ∇η∇u_kl
+                rhs_diffη_el[k,i] -= dhdη_il * ∇η∇u_kl
             end
         end
     end  
