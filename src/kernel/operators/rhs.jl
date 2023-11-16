@@ -42,6 +42,8 @@ function resetRHSToZero_inviscid!(params)
     fill!(params.RHS,    zero(params.T))
     fill!(params.b,      zero(params.T))
     fill!(params.B,      zero(params.T))
+    fill!(params.b_lag,      zero(params.T))
+    fill!(params.B_lag,      zero(params.T))
 end
 
 function resetRHSToZero_viscous!(params)
@@ -204,6 +206,8 @@ function rhs!(du, u, params, time)
     build_rhs!(@view(params.RHS[:,:]), u, params, time)
     if (params.laguerre) 
         build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+        #n@info time, params.mesh.x[params.mesh.npoin_linear], u[params.mesh.npoin_linear], maximum(params.RHS[params.mesh.npoin_linear,1]), maximum(params.RHS_lag[params.mesh.npoin_linear,1])
+        #@info time, params.mesh.x[params.mesh.npoin-params.mesh.ngr], u[params.mesh.npoin-params.mesh.ngr], maximum(params.RHS[params.mesh.npoin-params.mesh.ngr,1])
         params.RHS .= @views(params.RHS .+ params.RHS_lag) 
     end
     RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
@@ -227,7 +231,7 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------    
     resetRHSToZero_inviscid!(params) 
     if (params.inputs[:lfilter])
-        filter!(u, params, SD,params.SOL_VARS_TYPE)
+        filter!(u, params, time, SD,params.SOL_VARS_TYPE)
     end
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     apply_boundary_conditions!(u, params.uaux, time, params.qe,
@@ -237,7 +241,6 @@ function _build_rhs!(RHS, u, params, time)
     
     inviscid_rhs_el!(u, params, lsource, SD)
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
-    
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -251,11 +254,15 @@ function _build_rhs!(RHS, u, params, time)
         
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-    
+    #@info "pre div"
+    #@info time, params.mesh.x[params.mesh.npoin_linear], u[params.mesh.npoin_linear], maximum(params.RHS[params.mesh.npoin_linear,1]), maximum(params.RHS_lag[params.mesh.npoin_linear,1])
+    #@info time, params.mesh.x[params.mesh.npoin-params.mesh.ngr], u[params.mesh.npoin-params.mesh.ngr], maximum(params.RHS[params.mesh.npoin-params.mesh.ngr,1]) 
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin)
     end
-    
+    #@info "post div"
+    #@info time, params.mesh.x[params.mesh.npoin_linear], u[params.mesh.npoin_linear], maximum(params.RHS[params.mesh.npoin_linear,1]), maximum(params.RHS_lag[params.mesh.npoin_linear,1])
+    #@info time, params.mesh.x[params.mesh.npoin-params.mesh.ngr], u[params.mesh.npoin-params.mesh.ngr], maximum(params.RHS[params.mesh.npoin-params.mesh.ngr,1])
 end
 
 function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
@@ -350,8 +357,7 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D)
             for k = 1:params.mesh.ngl
                 dFdξ += params.basis.dψ[k,i]*params.F[k,1,ieq]
             end
-            
-            params.rhs_el[iel,i,1,ieq] -= params.ω[i]*dFdξ #  - params.S[i,1,ieq]) #gravity
+            params.rhs_el[iel,i,1,ieq] -= params.ω[i]*dFdξ  - params.ω[i]*params.S[i,1,ieq] #gravity
         end
     end
 end

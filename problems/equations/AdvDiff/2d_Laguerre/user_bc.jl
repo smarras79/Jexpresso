@@ -38,24 +38,12 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractF
 end
 
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe::SubArray{Float64},::PERT)
-#    if (tag == "free_slip")
-      
-      if (y<=14950) #(abs(x) < 119500.0 && y<= 19950.0)
-        qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
-        qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
-        qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
-      end
-      #else 
-       # qbdy[2] = 0.0
-        #qbdy[3] = 0.0
-      #end
-      #if (abs(x) > 119500.0 && y < 0.1)
-      #  qbdy[2] = 0.0
-      #  qbdy[3] = 0.0
-      #end
-     #@info x,y,nx,ny,qbdy[2],qbdy[3] 
-  # return qbdy #, flags
-    
+  if (y < 0.01)
+    qbdy[1] = 0.0#0.025*sinpi(2*30*t/5000.0)
+  end
+  if (y < 10.0 && abs(x) >9.9)
+    qbdy[1] = 0.0
+  end
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)

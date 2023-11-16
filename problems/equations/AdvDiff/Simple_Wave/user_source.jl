@@ -47,8 +47,8 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betaxl_coe = 0.0
     end
    
-    cxr = 0.25*betaxr_coe
-    cxl = 0.25*betaxl_coe
+    cxr = 1.0*betaxr_coe
+    cxl = 1.0*betaxl_coe
     #@info x,y,cxr,cxl,ctop
     cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
 
@@ -70,67 +70,27 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     #
     # S(q(x)) = -ρg
     #
-    ρ  = q[1]
-
-    S[1] = 0.0
-    S[2] = 0.0
-    S[3] = -ρ*PhysConst.g
-    #S[3] = -PhysConst.g
-    S[4] = 0.0
-
-    #### SPONGE
-
-    #
-    # clateral
-    nsponge_points = 8
-
-    # distance from the boundary. xs in Restelli's thesis
-    dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
-    dbl = ymax - y
-    zs = 15000.0#ymax - 20000.0
-    dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
-    dbx = min(xmax - x,x-xmin)
-    xr = 90000.0
-    xl = -90000.0
-    
-    if (y >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-        #betay_coe = 0.9/(1+exp((0.4*ymax-y)/(ymax/18)))
-        #betay_coe = 25.0/(1+exp((0.9*ymax-y)/(ymax/15))) ### damps too far down
-        #betay_coe = 1.5/(1+exp((0.67*ymax-y)/(ymax/49)))
-    else
-        betay_coe = 0.0
-    end
-    #if (abs(x) <=xmin)
-      ctop= betay_coe#0.5*betay_coe
-    #else
-     # ctop = 0.0
-    #end 
-
-    if (x > xr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-    else
-        betaxr_coe = 0.0
-    end
-
-    if (x < xl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-    else
-        betaxl_coe = 0.0
-    end
-    
-    cxr = 0.15*betaxr_coe#0.25*betaxr_coe
-    cxl = 0.15*betaxl_coe#0.25*betaxl_coe
-    ctop = 1.0*min(ctop,1)
-    cxr  = min(cxr,1)
-    cxl  = min(cxl,1)
-    cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
-    
+    zt = xmax
+    zd = 60.0
+    z = max(x-zd,0.0) 
+    dgamma  =0.00005
+    alpha = 0.85    
+    sigma = zt/18.0
+    fac1 = (alpha*zt-x)/sigma
+    #=if (x >=60.0)
+      cs = dgamma/(1+exp(fac1))
+    else 
+     cs = 0.0
+    end=#
+    cs = 1.0*sinpi(0.5*z/(zt-zd))^2
     #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
-    S[1] -= (cs)*(q[1])
-    S[2] -= (cs)*(q[2])
-    S[3] -= (cs)*q[3]
-    S[4] -= (cs)*(q[4])
-
+    #if (q[1] > 0.000001 && cs >0.0)
+    #@info x,cs,S[1],q[1],cs*q[1]
+    #end
+    S[1] = -(cs)*(q[1])
+    #if (q[1] > 0.000001 && cs >0.0)
+    #@info x,cs,S[1],q[1],cs*q[1],(cs)*(q[1])
+    #end
+    #S[2] -= (cs)*(q[2])
     return  S
-end
+end    

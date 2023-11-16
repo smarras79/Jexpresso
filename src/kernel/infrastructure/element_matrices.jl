@@ -132,6 +132,17 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, mesh, metrics, 
   
 end
 
+function build_mass_matrix_Laguerre!(Me, SD::NSD_1D, QT, ψ, ω, mesh, metrics, N, Q, T)
+
+    for iel=1:mesh.nelem_semi_inf
+        for i=1:mesh.ngr
+            Jac = metrics.Je[iel,i,1]
+            Me[i,iel] += Jac*ω[i]
+        end
+    end
+
+end
+
 function build_mass_matrix_Laguerre!(Me, SD::NSD_2D, QT, ψ, ψ1, ω, ω1, mesh, metrics, N, Q, T)
 
 
@@ -272,6 +283,25 @@ function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractA
     end
 end
 
+function DSS_mass_Laguerre!(M, SD::NSD_1D, Mel::AbstractArray, Mel_lag::AbstractArray, mesh, N, T; llump=false)
+
+    for iel=1:mesh.nelem
+        for i = 1:mesh.ngl
+            IP = mesh.connijk[iel,i,1]
+            M[IP] = M[IP] + Mel[i,iel] #if inexact
+        end
+    end
+    #@info M[mesh.npoin_linear] 
+    for iel=1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngr
+            IP = mesh.connijk_lag[iel,i,1]
+            M[IP] = M[IP] + Mel_lag[i,iel] #if inexact
+        end
+    end
+    #@info M[mesh.npoin_linear]
+end
+
+
 function DSS_mass_Laguerre!(M, SD::NSD_2D, Mel::AbstractArray, Mel_lag::AbstractArray, mesh, N, T; llump=false)
 
     for iel=1:mesh.nelem
@@ -402,6 +432,19 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
     #show(stdout, "text/plain", V)
 end
 
+function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_1D)
+
+  for ieq = 1:neqs
+    for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngr
+            I = mesh.connijk_lag[iel,i,1]
+
+            RHS[I,ieq] += rhs_el[iel,i,1,ieq]
+        end
+    end
+  end
+end
+
 function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
 
   for ieq = 1:neqs
@@ -503,7 +546,11 @@ function matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, N, Q, TFloat;
     end
     
     build_mass_matrix!(Me, SD, QT, basis[1].ψ, ω[1], mesh, metrics[1], N, Q, TFloat)
-    M_lag = zeros(TFloat, mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
+    if typeof(SD) == NSD_1D
+      M_lag = zeros(TFloat, mesh.ngr*mesh.ngr, mesh.nelem_semi_inf)
+    elseif typeof(SD) == NSD_2D
+      M_lag = zeros(TFloat, mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
+    end
     if (QT == Exact() && inputs[:llump] == false)
         M    = zeros(TFloat, mesh.npoin, mesh.npoin)
         Minv = zeros(TFloat, mesh.npoin, mesh.npoin)
@@ -511,7 +558,11 @@ function matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, N, Q, TFloat;
         M    = zeros(TFloat, mesh.npoin)
         Minv = zeros(TFloat, mesh.npoin)
     end
-    build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[1].ψ, basis[2].ψ, ω[1], ω[2], mesh, metrics[2], N, Q, TFloat)
+    if typeof(SD) == NSD_1D
+        build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[2].ψ, ω[2], mesh, metrics[2], N, Q, TFloat)
+    elseif typeof(SD) == NSD_2D
+        build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[1].ψ, basis[2].ψ, ω[1], ω[2], mesh, metrics[2], N, Q, TFloat)
+    end
     #@info maximum(Me), minimum(Me), maximum(M_lag),minimum(M_lag) 
     DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
     mass_inverse!(Minv, M, QT)

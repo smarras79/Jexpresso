@@ -4,6 +4,7 @@ authors = ["Simone Marras <smarras@njit.edu>"]
 version = "0.1.0"
 
 [deps]
+AMRVW = "233ec0c9-6b8d-4766-b9a2-a16e389fc38a"
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
@@ -22,6 +23,7 @@ Gmsh = "705231aa-382f-11e9-3f0c-b7cb4346fdeb"
 Gridap = "56d4f2e9-7ea1-5844-9cf6-b9c51ca7ce8e"
 GridapDistributed = "f9701e48-63b3-45aa-9a63-9bc6c271f355"
 GridapGmsh = "3025c34a-b394-11e9-2a55-3fee550c04c8"
+Hecke = "3e1990a7-5d81-5526-99ce-9ba3ff248f21"
 InternedStrings = "7d512f48-7fb1-5a58-b986-67e6dc259f01"
 JLD = "4138dd39-2aa7-5051-a626-17a0bb65d9c8"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
