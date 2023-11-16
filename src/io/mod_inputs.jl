@@ -33,6 +33,14 @@ function mod_inputs_user_inputs!(user_input_file)
       inputs[:lperiodic_1d] = false
     end
     
+    if(!haskey(inputs,:llaguerre_1d))
+      inputs[:llaguerre_1d] = false
+    end
+
+    if(!haskey(inputs,:laguerre_beta))
+      inputs[:laguerre_beta] = 1.0
+    end
+    
     if(!haskey(inputs, :nop_laguerre))
         inputs[:nop_laguerre] = 18
     end
