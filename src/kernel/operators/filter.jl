@@ -189,9 +189,9 @@ function filter!(u, params, t, SD::NSD_2D,::PERT)
             for k=1:params.mesh.ngr
               params.fqf_lag[m,i,j] += params.q_ti_lag[i,k] * params.fy_t_lag[k,j]
               #if (k == j)
-                #params.fqf_lag[m,i,j] += params.q_ti_lag[i,k] * 1.0
+               # params.fqf_lag[m,i,j] += params.q_ti_lag[i,k] * 1.0
               #else
-                #params.fqf_lag[m,i,j] += params.q_ti_lag[i,k] * 0.0
+              #  params.fqf_lag[m,i,j] += params.q_ti_lag[i,k] * 0.0
               #end
             end
           end
@@ -262,7 +262,7 @@ function filter!(u, params, t, SD::NSD_2D,::PERT)
   uaux2u!(u, @view(params.uaux[:,:]), params.neqs, params.mesh.npoin)
 end
 
-function init_filter(nop,xgl,mu_x,inputs)
+function init_filter(nop,xgl,mu_x,mesh,inputs)
 
   f = zeros(Float64,nop+1,nop+1)
   weight = ones(Float64,nop+1)
@@ -275,29 +275,56 @@ function init_filter(nop,xgl,mu_x,inputs)
   Legendre = St_Legendre{Float128}(0.0,0.0,0.0,0.0)  
   leg = zeros(Float128,nop+1,nop+1)
   ## Legendre Polynomial matrix
-  for i = 1:nop+1
-    ξ = xgl[i]
-    for j = 1:nop+1
-      jj = j - 1
-      LegendreAndDerivativeAndQ!(Legendre, jj, ξ)      
-      leg[i,j] = Legendre.legendre
-    end
-  end
-  
-  ### Heirarchical Modal Legendre Basis
-  leg2 = zeros(Float128,nop+1,nop+1)
-  leg2 .= leg
-  for i=1:nop+1
-    ξ = xgl[i]
-    leg2[i,1] = 0.5*(1 - ξ)
-    if (nop +1 > 1)
-      leg2[i,2] = 0.5*(1 + ξ)
-      for j=3:nop+1
-        leg2[i,j] = leg[i,j] - leg[i,j-2]
+  if (nop+1 == mesh.ngl)
+    @info "Legendre filter"
+    for i = 1:nop+1
+      ξ = xgl[i]
+      for j = 1:nop+1
+        jj = j - 1
+        LegendreAndDerivativeAndQ!(Legendre, jj, ξ)      
+        leg[i,j] = Legendre.legendre
       end
     end
+  
+  ### Heirarchical Modal Legendre Basis
+    leg2 = zeros(Float128,nop+1,nop+1)
+    leg2 .= leg
+    for i=1:nop+1
+      ξ = xgl[i]
+      leg2[i,1] = 0.5*(1 - ξ)
+      if (nop +1 > 1)
+        leg2[i,2] = 0.5*(1 + ξ)
+        for j=3:nop+1
+          leg2[i,j] = leg[i,j] - leg[i,j-2]
+        end
+      end
+    end
+  elseif (nop+1 == mesh.ngr)
+    @info "Laguerre filter"
+    Laguerre = St_Laguerre(Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)))
+    for i=1:nop+1
+      ξ = xgl[i]
+      for j=1:nop+1
+        jj = j-1
+        ScaledLaguerreAndDerivative!(jj,Laguerre,1.0)
+        leg[i,j] = Laguerre.Laguerre(ξ)
+      end
+    end
+   
+    ### Scaled Laguerre Basis
+    leg2 = zeros(Float128,nop+1,nop+1)
+    leg2 .= leg
+    for i=1:nop+1
+      ξ = xgl[i]
+      leg2[i,1] = exp(-ξ/2)
+      if (nop +1 > 1)
+        for j=2:nop+1
+          leg2[i,j] = exp(-ξ/2)*(leg[i,j] - leg[i,j-1])
+        end
+      end
+    end
+    
   end
-
   #### Compute Inverse Matrix
   leg_inv = zeros(Float128,nop+1,nop+1)
   leg_inv .= leg2
@@ -346,6 +373,8 @@ function init_filter(nop,xgl,mu_x,inputs)
   end
   return f
 end
+
+
 function gaujordf!(a,n,ierr)
   
   ## Initialize
