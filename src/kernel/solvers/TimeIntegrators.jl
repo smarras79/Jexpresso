@@ -12,7 +12,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
                     Δt,
                     inputs::Dict,
                     OUTPUT_DIR::String,
-                    T;fx=zeros(Float64,1,1), fy = zeros(Float64,1,1))
+                    T;fx=zeros(Float64,1,1), fy = zeros(Float64,1,1),fy_lag = zeros(Float64,1,1))
     
     #
     # ODE: solvers come from DifferentialEquations.j;
@@ -53,6 +53,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
     q_t = zeros(Float64,qp.neqs,mesh.ngl,mesh.ngl)
     q_ti = zeros(Float64,mesh.ngl,mesh.ngl)
     fy_t = transpose(fy)
+    fy_t_lag = transpose(fy_lag)
     fqf = zeros(Float64,qp.neqs,mesh.ngl,mesh.ngl)
     b = zeros(mesh.nelem, mesh.ngl, mesh.ngl, qp.neqs)
     B = zeros(Float64, mesh.npoin, qp.neqs) 
@@ -75,6 +76,11 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
         RHS_lag          = zeros(T, mesh.npoin, qp.neqs)
         RHS_visc_lag     = zeros(T, mesh.npoin, qp.neqs)
         uprimitive_lag = zeros(T, mesh.ngl, mesh.ngr, qp.neqs+1)
+        q_t_lag = zeros(Float64,qp.neqs,mesh.ngl,mesh.ngr)
+        q_ti_lag = zeros(Float64,mesh.ngl,mesh.ngr)
+        fqf_lag = zeros(Float64,qp.neqs,mesh.ngl,mesh.ngr)
+        b_lag = zeros(mesh.nelem, mesh.ngl, mesh.ngr, qp.neqs)
+        B_lag = zeros(Float64, mesh.npoin, qp.neqs)
     end
     if (inputs[:llaguerre_1d])
         uaux_el_lag      = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
@@ -113,6 +119,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
                   rhs_diffξ_el, rhs_diffη_el,
                   uprimitive,
                   q_t, q_ti, fqf, b, B,
+                  q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag,
                   RHS, RHS_visc,
                   F_lag, G_lag, S_lag, 
                   uaux_el_lag,
@@ -127,7 +134,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
                   inputs, visc_coeff, ivisc_equations,
                   M, Minv,
                   Δt, deps, xmax, xmin, ymax, ymin,
-                  qp.qe, qp.qnm1, qp.qnm2, qp.μ,fx,fy, fy_t,  laguerre=true)
+                  qp.qe, qp.qnm1, qp.qnm2, qp.μ,fx,fy, fy_t, fy_lag, fy_t_lag, laguerre=true)
     else
         params = (T, F, G, S,
                   uaux, uaux_el, vaux,

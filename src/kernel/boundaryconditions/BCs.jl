@@ -131,7 +131,7 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                 
                 for ieq =1:neqs
                     if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                        #@info mesh.x[ip],mesh.y[ip],ieq,t 
+                        #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq] 
                         uaux[ip,ieq] = qbdy[ieq]
                         RHS[ip, ieq] = 0.0
                     end

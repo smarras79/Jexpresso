@@ -33,7 +33,7 @@ function warp_mesh!(mesh,inputs)
 
   for ip = 1:mesh.npoin
     sigma[ip] = mesh.y[ip]
-    if (mesh.y[ip] < ztop/2)  
+    if (mesh.y[ip] < 8000.0)  
       z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
       mesh.y[ip] = z
     end

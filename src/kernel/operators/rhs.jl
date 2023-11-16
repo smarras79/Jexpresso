@@ -42,6 +42,8 @@ function resetRHSToZero_inviscid!(params)
     fill!(params.RHS,    zero(params.T))
     fill!(params.b,      zero(params.T))
     fill!(params.B,      zero(params.T))
+    fill!(params.b_lag,      zero(params.T))
+    fill!(params.B_lag,      zero(params.T))
 end
 
 function resetRHSToZero_viscous!(params)
@@ -229,7 +231,7 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------    
     resetRHSToZero_inviscid!(params) 
     if (params.inputs[:lfilter])
-        filter!(u, params, SD,params.SOL_VARS_TYPE)
+        filter!(u, params, time, SD,params.SOL_VARS_TYPE)
     end
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     apply_boundary_conditions!(u, params.uaux, time, params.qe,

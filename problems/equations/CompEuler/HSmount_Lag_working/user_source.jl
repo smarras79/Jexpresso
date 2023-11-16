@@ -90,11 +90,11 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     zs = 15000.0#ymax - 20000.0
     dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
     dbx = min(xmax - x,x-xmin)
-    xr = 50000.0
-    xl = -50000.0
+    xr = 90000.0
+    xl = -90000.0
     
     if (y >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betay_coe =  0.5*sinpi(0.5*(y-zs)/(ymax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
         #betay_coe = 0.9/(1+exp((0.4*ymax-y)/(ymax/18)))
         #betay_coe = 25.0/(1+exp((0.9*ymax-y)/(ymax/15))) ### damps too far down
         #betay_coe = 1.5/(1+exp((0.67*ymax-y)/(ymax/49)))
@@ -119,9 +119,9 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betaxl_coe = 0.0
     end
     
-    cxr = 0.25*betaxr_coe#0.25*betaxr_coe
-    cxl = 0.25*betaxl_coe#0.25*betaxl_coe
-    ctop = min(ctop,1)
+    cxr = 0.15*betaxr_coe#0.25*betaxr_coe
+    cxl = 0.15*betaxl_coe#0.25*betaxl_coe
+    ctop = 1.0*min(ctop,1)
     cxr  = min(cxr,1)
     cxl  = min(cxl,1)
     cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
