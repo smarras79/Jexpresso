@@ -86,9 +86,10 @@ function sem_setup(inputs::Dict)
             if (inputs[:lfilter])
                 ξω3 = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.ngr-1)
                 ξ3,ω3 = ξω3.ξ, ξω3.ω
-                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
-                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs)
-                fy_lag = init_filter(mesh.ngr-1,ξ3,inputs[:mu_y],inputs)
+                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
+                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
+                #fy_lag = init_filter(mesh.ngr-1,ξ3,inputs[:mu_y],mesh,inputs)
+                fy_lag = init_filter(mesh.ngr-1,ξ2,inputs[:mu_y],mesh,inputs)
             end
             @time periodicity_restructure!(mesh,inputs)
             if (inputs[:lwarp])
@@ -105,8 +106,8 @@ function sem_setup(inputs::Dict)
             ω1 = ω
             ω = ω1
             if (inputs[:lfilter])
-                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
-                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs)
+                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
+                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
             end
             #--------------------------------------------------------
             # Build metric terms
