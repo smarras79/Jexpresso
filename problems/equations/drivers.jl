@@ -14,7 +14,7 @@ function driver(DT::ContGal,       #Space discretization type
                           inputs[:Δt],
                           inputs,
                           OUTPUT_DIR,
-                          TFloat;fx=sem.fx,fy=sem.fy)
+                          TFloat;fx=sem.fx,fy=sem.fy,fy_lag=sem.fy_lag)
     
     if (inputs[:ndiagnostics_outputs] > 0)
         write_output(sem.mesh.SD, solution,  sem.mesh, OUTPUT_DIR, inputs, qp.qvars, inputs[:outformat]; nvar=qp.neqs, qexact=qp.qe, case="rtb")
