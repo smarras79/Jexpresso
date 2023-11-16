@@ -42,6 +42,9 @@ function resetRHSToZero_inviscid!(params)
     fill!(params.RHS,    zero(params.T))
     fill!(params.b,      zero(params.T))
     fill!(params.B,      zero(params.T))
+end
+
+function reset_laguerre_filters!(params)
     fill!(params.b_lag,      zero(params.T))
     fill!(params.B_lag,      zero(params.T))
 end
@@ -230,6 +233,9 @@ function _build_rhs!(RHS, u, params, time)
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
     resetRHSToZero_inviscid!(params) 
+    if (params.laguerre && params.inputs[:lfilter])
+         reset_laguerre_filters!(params)
+    end
     if (params.inputs[:lfilter])
         filter!(u, params, time, SD,params.SOL_VARS_TYPE)
     end
