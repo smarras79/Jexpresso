@@ -271,19 +271,13 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_1
     beta = params.inputs[:laguerre_beta]
     for ieq = 1:params.neqs
         for i=1:params.mesh.ngr
-            ωJac = params.ω_lag[i]*params.metrics_lag.Je[iel,i,1]
-            dξdx = params.metrics_lag.dξdx[iel,i,1]
             dFdξ = 0.0
             for k = 1:params.mesh.ngr
-                dFdξ += params.basis_lag.dψ[k,i]*params.F_lag[k,1,ieq]#*params.ω_lag[k]
-                #@info dFdξ, params.basis_lag.dψ[k,i],params.F_lag[k,1,ieq],params.ω_lag[k] 
+                dFdξ += params.basis_lag.dψ[k,i]*params.F_lag[k,1,ieq]
             end
-            params.rhs_el_lag[iel,i,1,ieq] -= dFdξ*params.ω_lag[i]  - params.ω_lag[i]*params.S_lag[i,1,ieq] #gravity
-            #@info i, params.rhs_el_lag[iel,i,1,ieq],dFdξ*params.ω_lag[i], params.ω_lag[i]*params.S_lag[i,1,ieq]
+            params.rhs_el_lag[iel,i,1,ieq] -= dFdξ*params.ω_lag[i]  - params.ω_lag[i]*params.S_lag[i,1,ieq]
         end
     end
-    #@info params.F_lag[:,1,1] 
-    #@info params.rhs_el_lag[iel,:,1,1]
 end
 
 function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2D)
