@@ -25,7 +25,6 @@ function user_inputs()
         #:lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (2,3,4),
         :μ                    => (0.0,1.0,1.0,1.0), #kinematic viscosity constant for θ equation
-        #:νy                   => 0.000015, #kinematic viscosity constantdd
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
