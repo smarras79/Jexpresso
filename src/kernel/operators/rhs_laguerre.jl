@@ -21,6 +21,10 @@ function resetRHSToZero_viscous_laguerre!(params)
     fill!(params.RHS_visc_lag,     zero(params.T))
 end
 
+function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
+   nothing
+end
+
 
 function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::TOTAL, SD::NSD_2D)
 

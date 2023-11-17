@@ -359,7 +359,17 @@ function init_filter(nop,xgl,mu_x,mesh,inputs)
     for k=1:nop+1
       weight[k] = exp(-exp_alpha*(Float64(k-1)/nop)^exp_order)
     end
-  end 
+  end
+
+  ### Use Laguerre Weights perhaps???
+  #=if (nop +1 == mesh.ngr)
+    ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
+    ξ2,ω2 = ξω2.ξ, ξω2.ω 
+    for k=1:nop+1
+      weight[k] = ω2[k]
+    end
+  end=# ####This doesn't do a good job 
+
   ## Construct 1D Filter matrix
   for i=1:nop+1
     for j=1:nop+1
