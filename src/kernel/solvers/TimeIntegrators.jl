@@ -93,7 +93,12 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
         S_lag            = zeros(T, mesh.ngr, mesh.ngl, qp.neqs)
         RHS_lag          = zeros(T, mesh.npoin, qp.neqs)
         RHS_visc_lag     = zeros(T, mesh.npoin, qp.neqs)
-        uprimitive_lag = zeros(T, mesh.ngl, mesh.ngr, qp.neqs+1)
+        uprimitive_lag = zeros(T, mesh.ngr, mesh.ngl, qp.neqs+1)
+        q_t_lag = zeros(Float64,qp.neqs,mesh.ngr,mesh.ngl)
+        q_ti_lag = zeros(Float64,mesh.ngr,mesh.ngl)
+        fqf_lag = zeros(Float64,qp.neqs,mesh.ngr,mesh.ngl)
+        b_lag = zeros(mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
+        B_lag = zeros(Float64, mesh.npoin, qp.neqs)
     end
 
     #-----------------------------------------------------------------
