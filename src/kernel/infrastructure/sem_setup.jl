@@ -4,6 +4,7 @@ include("../mesh/warping.jl")
 function sem_setup(inputs::Dict)
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
+    fy_lag = zeros(Float64,1,1)
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:equations]
@@ -83,8 +84,12 @@ function sem_setup(inputs::Dict)
             ω1 = ω
             ω = (ω1,ω2)
             if (inputs[:lfilter])
-                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
-                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs)
+                ξω3 = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.ngr-1)
+                ξ3,ω3 = ξω3.ξ, ξω3.ω
+                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
+                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
+                #fy_lag = init_filter(mesh.ngr-1,ξ3,inputs[:mu_y],mesh,inputs)
+                fy_lag = init_filter(mesh.ngr-1,ξ2,inputs[:mu_y],mesh,inputs)
             end
             @time periodicity_restructure!(mesh,inputs)
             if (inputs[:lwarp])
@@ -101,8 +106,8 @@ function sem_setup(inputs::Dict)
             ω1 = ω
             ω = ω1
             if (inputs[:lfilter])
-                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],inputs)
-                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],inputs)
+                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
+                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
             end
             #--------------------------------------------------------
             # Build metric terms
@@ -155,5 +160,5 @@ function sem_setup(inputs::Dict)
 # Build matrices
 #--------------------------------------------------------
 
-return (; QT, PT, mesh, metrics, basis, ω, matrix,fx,fy)
+return (; QT, PT, mesh, metrics, basis, ω, matrix,fx,fy,fy_lag)
 end
