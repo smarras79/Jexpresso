@@ -90,8 +90,8 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     zs = 15000.0#ymax - 20000.0
     dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
     dbx = min(xmax - x,x-xmin)
-    xr = 100000.0
-    xl = -100000.0
+    xr = 90000.0
+    xl = -90000.0
     
     if (y > zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
@@ -112,8 +112,8 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betaxl_coe = 0.0
     end
     
-      cxr = 0.1*betaxr_coe
-      cxl = 0.1*betaxl_coe
+      cxr = 0.05*betaxr_coe
+      cxl = 0.05*betaxl_coe
     cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
 
     #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl

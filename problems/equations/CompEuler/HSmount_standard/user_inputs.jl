@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 3000.0, #2π,
+        :tend                 => 30000.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 2,
@@ -21,10 +21,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => false, #false by default
-        #:visc_model           => "dsgs", #"none", "dsgs"
-        :νx                   => 0.000015, #kinematic viscosity constant
-        :νy                   => 0.000015, #kinematic viscosity constant
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        :ivisc_equations      => (2,3,4),
+        :μ                    => (0.0,1.0,1.0,1.0), #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -38,7 +37,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # grid modification parameters
         #---------------------------------------------------------------------------
-        :xscale              => 120000.0,
+        :xscale              => 240000.0,
         :yscale              => 15000.0,
         :xdisp               => 0.0,
         :ydisp               => 1.0,
