@@ -86,7 +86,6 @@ end
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing output to HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
-    #for iout = 1:size(sol.t[:],1)
     iout = size(sol.t[:],1)
     title = @sprintf "Final solution at t=%6.4f" sol.t[iout]
     write_hdf5(SD, mesh, sol.u[iout][:], qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
@@ -111,10 +110,10 @@ function write_hdf5(SD::NSD_2D, mesh::St_mesh, q::Array, qe::Array, title::Strin
     
     #Write one HDF5 file per variable
     for ivar = 1:nvar
-        fout_name = string(OUTPUT_DIR, "/iter_", ivar, ".h5")
+        fout_name = string(OUTPUT_DIR, "/var_", ivar, ".h5")
         idx = (ivar - 1)*mesh.npoin
-        h5write(fout_name, "group",  q[idx+1:ivar*mesh.npoin]);
-        h5write(fout_name, "exact",  qe[1:mesh.npoin, ivar]);
+        h5write(fout_name, "q",  q[idx+1:ivar*mesh.npoin]);
+        h5write(fout_name, "qe", qe[1:mesh.npoin, ivar]);
     end
 end
 function read_hdf5(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, nvar)
@@ -124,10 +123,10 @@ function read_hdf5(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     
     #Write one HDF5 file per variable
     for ivar = 1:nvar
-        fout_name = string(INPUT_DIR, "/iter_", ivar, ".h5")
+        fout_name = string(INPUT_DIR, "/var_", ivar, ".h5")
         idx = (ivar - 1)*npoin
-        q[:, ivar]  = convert(Array{Float64, 1}, h5read(fout_name, "group"))
-        qe[:, ivar] = convert(Array{Float64, 1}, h5read(fout_name, "exact"))
+        q[:, ivar]  = convert(Array{Float64, 1}, h5read(fout_name, "q"))
+        qe[:, ivar] = convert(Array{Float64, 1}, h5read(fout_name, "qe"))
     end
     
     return q, qe
