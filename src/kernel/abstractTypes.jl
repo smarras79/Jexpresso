@@ -63,6 +63,7 @@ abstract type AbstractOutFormat end
 struct PNG <: AbstractOutFormat end
 struct ASCII <: AbstractOutFormat end
 struct VTK <: AbstractOutFormat end
+struct HDF5 <: AbstractOutFormat end
 
 #
 # Boundary flags/conditions

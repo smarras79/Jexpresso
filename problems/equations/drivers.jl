@@ -1,3 +1,5 @@
+using HDF5
+
 function driver(DT::ContGal,       #Space discretization type
                 inputs::Dict,      #input parameters from src/user_input.jl
                 OUTPUT_DIR::String,
@@ -15,6 +17,9 @@ function driver(DT::ContGal,       #Space discretization type
                           inputs,
                           OUTPUT_DIR,
                           TFloat;fx=sem.fx,fy=sem.fy,fy_lag=sem.fy_lag)
+    
+    #HDF5
+    write_output(sem.mesh.SD, solution,  sem.mesh, OUTPUT_DIR, inputs, qp.qvars, HDF5(); nvar=qp.neqs, qexact=qp.qe, case="rtb")
     
     if (inputs[:ndiagnostics_outputs] > 0)
         write_output(sem.mesh.SD, solution,  sem.mesh, OUTPUT_DIR, inputs, qp.qvars, inputs[:outformat]; nvar=qp.neqs, qexact=qp.qe, case="rtb")

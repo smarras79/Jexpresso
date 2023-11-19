@@ -135,8 +135,16 @@ function mod_inputs_user_inputs!(user_input_file)
     #
     # END Plotting parameters:
     #
-    
-    
+
+    #Restart:
+    if (haskey(inputs, :lrestart))
+        if(inputs[:lrestart] == true && !haskey(inputs, :restart_input_file_path))
+            mod_inputs_check(inputs, :restart_input_file_path, "e")
+        end
+    else
+        inputs[:lrestart] = false
+    end
+            
     #Time:
     if(!haskey(inputs, :ndiagnostics_outputs) && !haskey(inputs, :ndiagnostics_output))
         inputs[:ndiagnostics_outputs] = 2
@@ -486,7 +494,7 @@ function mod_inputs_check(inputs::Dict, key, error_or_warning::String)
     
     if (!haskey(inputs, key))
         s = """
-                    jexpresso: $key is missing in .../IO/user_inputs.jl
+              jexpresso: $key is missing in problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME/user_inputs.jl
                     """
         if (error_or_warning=="e")
             error(s)
