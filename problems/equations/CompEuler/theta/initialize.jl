@@ -1,7 +1,7 @@
 function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
 
-    """
+        """
     @info " Initialize fields for 2D CompEuler with θ equation ........................ "
     
     #---------------------------------------------------------------------------------
@@ -14,11 +14,32 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     qvars = ("ρ", "ρu", "ρv", "ρθ")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
     #---------------------------------------------------------------------------------
-
-
+    
     PhysConst = PhysicalConst{Float64}()
-    if (inputs[:case] === "rtb")
+    if inputs[:lrestart] == true
+        #
+        # READ RESTART HDF5:
+        #
+        q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
+        PhysConst = PhysicalConst{Float64}()
+        for ip=1:mesh.npoin
+            ρ  = q.qn[ip,1]
+            ρθ = q.qn[ip,4]
+            θ  = ρθ/ρ
+            P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+            q.qn[ip,end] = P
+            
+            ρe  = q.qe[ip,1]
+            ρθe = q.qe[ip,4]
+            θe  = ρθe/ρ
+            Pe = perfectGasLaw_ρθtoP(PhysConst, ρ=ρe, θ=θe)
+            q.qe[ip,end] = Pe
+        end
         
+    else
+        #
+        # INITIAL STATE from scratch:
+        #
         xc = (maximum(mesh.x) + minimum(mesh.x))/2
         yc = 2500.0 #m
         r0 = 2000.0 #m
@@ -74,9 +95,6 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 end
             end
         end
-        
-    else
-        error(" ERROR: CompEuler: initialize.jl:\n assign value to inputs[:case]")
     end
     
     if inputs[:CL] == NCL()

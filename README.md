@@ -31,13 +31,13 @@ julia> push!(empty!(ARGS), EQUATIONS::String, EQUATIONS_CASE_NAME::String);
 julia> include("./src/Jexpresso.jl")
 ```
 
-* PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/src/problems/problem_name
+* PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/problems/equations/problem_name
 * PROBLEM_CASE_NAME is the name of the subdirectory containing the specific setup that you want to run: 
 
 The path would look like 
-```$JEXPRESSO/src/problems/PROBLEM_NAME/PROBLEM_CASE_NAME```
+```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
-Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `src/problems/CompEuler/thetaTracers` you would do the following:
+Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
@@ -48,7 +48,7 @@ julia> include("./src/Jexpresso.jl")
      style="float: left; margin-right: 5px;" />
 
 
-Example 2: to solve the 2D Euler equations leading to a density current defined in `src/problems/CompEuler/dc` you would do the following:
+Example 2: to solve the 2D Euler equations leading to a density current defined in `problems/equations/CompEuler/dc` you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "dc");
 julia> include("./src/Jexpresso.jl")
@@ -58,7 +58,7 @@ julia> include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Example 3: to solve the 1D wave equation  defined in `src/problems/CompEuler/wave1d` you would do the following:
+Example 3: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "wave1d");
 julia> include("./src/Jexpresso.jl")
