@@ -74,7 +74,7 @@ end
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         #fig, ax, plt = 
-        push!(p,CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
+        push!(p,CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
                                           markersize = 10, markercolor=color,
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery")#,  axis = (; title = string(outvar[ivar]), xlabel = "x")
