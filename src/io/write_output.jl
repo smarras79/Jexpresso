@@ -85,19 +85,19 @@ end
 
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
-    println(string(" # Writing output to HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
+    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(sol.t[:],1)
     title = @sprintf "Final solution at t=%6.4f" sol.t[iout]
     write_hdf5(SD, mesh, sol.u[iout][:], qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
     #end
-    println(string(" # Writing output to HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
+    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
     
 end
 function read_output(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5; nvar=1)
     
-    println(string(" # Reading HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
+    println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
     q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
-    println(string(" # Reading HDF5 file:", INPUT_DIR, "*.h5 ... DONE") )
+    println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ... DONE") )
 
     return q, qe
 end
