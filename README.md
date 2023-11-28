@@ -87,35 +87,3 @@ For non-periodic 2D tests, the output can also be written to VTK files by settin
 
 ## Contacts
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-
-
-
-$
-\begin{matrix}
-\rho  \\
-\rho u \\
-\rho v \\
-\rho \theta 
-\end{matrix}_t
-+
-\begin{matrix}
-\rho u  \\
-\rho uu + p\\
-\rho vu \\
-\rho \theta u
-\end{matrix}_x
-+
-\begin{matrix}
-\rho v  \\
-\rho uv \\
-\rho vv + p\\
-\rho \theta v
-\end{matrix}_y
-= 
-\begin{matrix}
-0  \\
-0 \\
-\rho g \\
-0
-\end{matrix}
-$
