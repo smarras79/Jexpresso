@@ -72,7 +72,7 @@ function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energ
     end
 end
 
-function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
+function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
     nothing
 end
 
