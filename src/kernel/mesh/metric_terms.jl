@@ -239,7 +239,10 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             end
             for l = 1:mesh.ngr
                 for k = 1:mesh.ngl
-                    #@info metrics.dxdξ[iel, k, l],metrics.dydη[iel, k, l], metrics.dydξ[iel, k, l],metrics.dxdη[iel, k, l]
+                    ip = mesh.connijk_lag[iel,k,l]
+                    #xij = mesh.x[ip]
+                    #yij = mesh.y[ip]
+                    #@info metrics.dxdξ[iel, k, l],metrics.dydη[iel, k, l], metrics.dydξ[iel, k, l],metrics.dxdη[iel, k, l],xij
                     metrics.Je[iel, k, l] = metrics.dxdξ[iel, k, l]*metrics.dydη[iel, k, l] - metrics.dydξ[iel, k, l]*metrics.dxdη[iel, k, l]
                     metrics.dξdx[iel, k, l] =  metrics.dydη[iel, k, l]/metrics.Je[iel, k, l]
                     metrics.dξdy[iel, k, l] = -metrics.dxdη[iel, k, l]/metrics.Je[iel, k, l]

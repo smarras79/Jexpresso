@@ -16,7 +16,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
-        :nop_laguerre        => 15,
+        :nop_laguerre        => 50,
         :lexact_integration  => false,
         :lsource             => true,
         :llaguerre_1d        => true,
