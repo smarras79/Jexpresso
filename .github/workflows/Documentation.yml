@@ -2,7 +2,7 @@ name: Documentation
 on:
   push:
     branches:
-      - master
+      - lf/documenter-test      
     tags: '*'
   pull_request:
 jobs:
