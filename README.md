@@ -49,7 +49,7 @@ for a constant value of $\alpha$ and $\mu$, which are case-dependent.
 
 4. 2D scalar advection-diffusion:
 
-$$**q**=\begin{bmatrix}
+$${\bf S}=\begin{bmatrix}
 q\\
 \end{bmatrix}\quad {\bf F}_1=\begin{bmatrix}
 qu\\
