@@ -10,7 +10,7 @@ Jexpresso uses arbitrarily high-order (3rd and above) continuous spectral elemen
 
 $$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2{\bf q} + {\bf S}({\bf q}) + ~{\rm b.c.}$$
 
-where the vectors {\bf q}, {\bf F}, and {\bf S} are problem-dependent as shown below,
+where the vectors {$\bf q}$, ${\bf F}$, and ${\bf S}$ are problem-dependent as shown below,
 and are taken to be zero vectors of the appropriate size when not explicitly stated otherwise.
 
 In order, we provide tests and results for the following equations:
@@ -105,9 +105,8 @@ cN_{xx} + cN_{zz}
 \end{bmatrix}.$$
 
 
-* If you are interested in contributing, please get in touch:
+If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-
 I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
 
 
