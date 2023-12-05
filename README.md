@@ -78,7 +78,7 @@ $${\bf q}=\begin{bmatrix}
 \rho u c1\\
 ...\\
 \rho u cN
-\end{bmatrix}\quad {\bf F}_{2}=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}2=\begin{bmatrix}
 \rho v\\
 \rho v u\\
 \rho v^2 + p\\
