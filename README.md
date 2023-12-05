@@ -70,7 +70,7 @@ $${\bf q}=\begin{bmatrix}
 \rho c1\\
 ...\\
 \rho cN
-\end{bmatrix}\quad ${\bf F}_1$=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}1=\begin{bmatrix}
 \rho u\\
 \rho u^2 + p\\
 \rho u v\\
