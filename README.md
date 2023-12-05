@@ -13,6 +13,8 @@ $$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf 
 where the vectors ${\bf q}$, ${\bf F}$, and ${\bf S}$ are problem-dependent as shown below,
 and are taken to be zero vectors of the appropriate size when not explicitly stated otherwise.
 
+The Julia package [DifferentialEquations.jl](https://docs.sciml.ai/DiffEqDocs/stable/) is used for time discretization and stepping.
+
 In order, we provide tests and results for the following equations:
 
 
