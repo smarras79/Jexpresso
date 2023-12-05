@@ -21,10 +21,6 @@ Documentation of `Jexpresso.jl`.
      
      A research software for the numerical solution of a system of an arbitrary number of conservation laws using continuous spectral elements. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
 
-If you are interested in contributing, please get in touch:
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-
-
 Jexpresso uses arbitrarily high-order (3rd and above) continuous spectral elements to solve
 
 $$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2**q** + {\bf S}({\bf q}) + ~{\rm b.c.}$$
@@ -32,55 +28,85 @@ $$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf 
 where the vectors **q**, **F**, and **S** are problem-dependent as shown below,
 and are taken to be zero vectors of the appropriate size when not explicitly stated otherwise.
 
-
 In order, we provide tests and results for the following equations:
+
+
 1. 1D wave equation:
    
-$$**q**=\begin{bmatrix}
+$${\bf q}=\begin{bmatrix}
 u \\
 v
-\end{bmatrix}, **F**=\begin{bmatrix}
+\end{bmatrix}\quad **F**=\begin{bmatrix}
 v\\
 u
-\end{bmatrix}.$$
+\end{bmatrix}$$
 
 2: 1D shallow water:
 
-$$**q**=\begin{bmatrix}
+$${\bf q}=\begin{bmatrix}
 h \\
 u
-\end{bmatrix}, **F**=\begin{bmatrix}
+\end{bmatrix}\quad **F**=\begin{bmatrix}
 Uh + Hu\\
 gh + Uu
-\end{bmatrix}.$$
-   
-3. 2D Helmholtz:
+\end{bmatrix}, $$
 
-$$**S**=\begin{bmatrix}
+where $H$ and $U$ are a reference height and velocity, respectively.
+
+3. 2D Helmholtz:
+   
+$${\bf S}=\begin{bmatrix}
 \alpha^2 u + f(x,z)
-\end{bmatrix}, \mu\nabla^2**q**=\mu\begin{bmatrix}
+\end{bmatrix}\quad \mu\nabla^2**q**=\mu\begin{bmatrix}
 u_{xx} + u_{zz}
-\end{bmatrix}.$$
-for a constant value of $\mu$ which is case-dependent.
+\end{bmatrix},$$
+
+for a constant value of $\alpha$ and $\mu$, which are case-dependent.
 
 4. 2D scalar advection-diffusion:
 
-$$**S**=\begin{bmatrix}
+$${\bf q}=\begin{bmatrix}
 q\\
-\end{bmatrix}, **F_1**=\begin{bmatrix}
+\end{bmatrix}\quad **F_1**=\begin{bmatrix}
 qu\\
-\end{bmatrix}, **F_2**=\begin{bmatrix}
+\end{bmatrix}\quad **F_2**=\begin{bmatrix}
 qv\\
-\end{bmatrix}, \mu\nabla^2**q**=\mu\begin{bmatrix}
+\end{bmatrix}\quad \mu\nabla^2**q**=\mu\begin{bmatrix}
 q_{xx} + q_{zz}
+\end{bmatrix},$$
+
+5. 2D Euler equations of compressible flows with gravity.
+
+$${\bf q}=\begin{bmatrix}
+\rho \\
+\rho u\\
+\rho v\\
+\rho \theta
+\end{bmatrix}\quad **F_1**=\begin{bmatrix}
+\rho u\\
+\rho u^2 + p\\
+\rho u v\\
+\rho u \theta
+\end{bmatrix}\quad **F_2**=\begin{bmatrix}
+\rho v\\
+\rho v u\\
+\rho v^2 + p\\
+\rho v \theta
+\end{bmatrix}\quad **S**=\begin{bmatrix}
+0\\
+0\\
+-\rho g\\
+0
+\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
+0\\
+u_{xx} + u_{zz}\\
+v_{xx} + v_{zz}\\
+\theta_{xx} + \theta_{zz}
 \end{bmatrix}.$$
-where $H$ and $U$ are the reference height and velocity respectively.
 
 
-
-4. 2D Euler Equations of compressible flows with gravity:
-
-
+If you are interested in contributing, please get in touch:
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
 
 # Some notes on using JEXPRESSO
 
