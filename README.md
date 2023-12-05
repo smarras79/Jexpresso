@@ -46,13 +46,14 @@ u_{xx} + u_{zz}
 
 $$**S**=\begin{bmatrix}
 q\\
-\end{bmatrix} **F**=\begin{bmatrix}
+\end{bmatrix}, **F_1**=\begin{bmatrix}
 qu\\
-\end{bmatrix} **F**=\begin{bmatrix}
+\end{bmatrix}, **F_2**=\begin{bmatrix}
 qv\\
 \end{bmatrix}, \mu\nabla^2**q**=\mu\begin{bmatrix}
 q_{xx} + q_{zz}
 \end{bmatrix},$$
+
 where $H$ and $U$ are a reference height and velocity, respectively.
 
 for a constant value of $\mu$ which is case-dependent.
