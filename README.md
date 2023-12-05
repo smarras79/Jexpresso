@@ -19,9 +19,7 @@ In order, we provide tests and results for the following equations:
 $$**q**=\begin{bmatrix}
 u \\
 v
-\end{bmatrix}$$
-
-$$**F**=\begin{bmatrix}
+\end{bmatrix}**F**=\begin{bmatrix}
 v\\
 u
 \end{bmatrix}$$
