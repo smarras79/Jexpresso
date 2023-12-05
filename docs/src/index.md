@@ -71,7 +71,6 @@ q_{xx} + q_{zz}
 where $H$ and $U$ are a reference height and velocity, respectively.
 
 
-
 for a constant value of $\mu$ which is case-dependent.
 
 If you are interested in contributing, please get in touch:
