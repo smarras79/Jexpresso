@@ -49,13 +49,13 @@ for a constant value of $\alpha$ and $\mu$, which are case-dependent.
 
 4. 2D scalar advection-diffusion:
 
-$${\bf S}=\begin{bmatrix}
+$${\bf q}=\begin{bmatrix}
 q\\
 \end{bmatrix}\quad **F_1**=\begin{bmatrix}
 qu\\
 \end{bmatrix}\quad **F_2**=\begin{bmatrix}
 qv\\
-\end{bmatrix}\quad  \mu\nabla^2**q**=\mu\begin{bmatrix}
+\end{bmatrix}\quad \mu\nabla^2**q**=\mu\begin{bmatrix}
 q_{xx} + q_{zz}
 \end{bmatrix},$$
 
@@ -66,22 +66,22 @@ $${\bf q}=\begin{bmatrix}
 \rho u\\
 \rho v\\
 \rho \theta
-\end{bmatrix}\quad {\bf F}_1=\begin{bmatrix}
+\end{bmatrix}\quad **F_1**=\begin{bmatrix}
 \rho u\\
 \rho u^2 + p\\
 \rho u v\\
 \rho u \theta
-\end{bmatrix}\quad {\bf F}_2=\begin{bmatrix}
+\end{bmatrix}\quad **F_2**=\begin{bmatrix}
 \rho v\\
 \rho v u\\
 \rho v^2 + p\\
 \rho v \theta
-\end{bmatrix}\quad{\bf S}=\begin{bmatrix}
+\end{bmatrix}\quad **S**=\begin{bmatrix}
 0\\
 0\\
 -\rho g\\
 0
-\end{bmatrix}\quad  \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
+\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
 0\\
 u_{xx} + u_{zz}\\
 v_{xx} + v_{zz}\\
