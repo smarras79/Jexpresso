@@ -21,6 +21,39 @@ Documentation of `Jexpresso.jl`.
      
      A research software for the numerical solution of a system of an arbitrary number of conservation laws using continuous spectral elements. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
 
+
+     In order, we provide tests and results for the following equations:
+1. 1D wave equation:
+   
+$$**q**=\begin{bmatrix}
+u \\
+v
+\end{bmatrix} **F**=\begin{bmatrix}
+v\\
+u
+\end{bmatrix}$$
+
+2: 1D shallow water:
+
+$$**q**=\begin{bmatrix}
+h \\
+u
+\end{bmatrix} **F**=\begin{bmatrix}
+Uh + Hu\\
+gh + Uu
+\end{bmatrix}$$
+   
+3. 2D Helmholtz:
+   
+$$**S**=\begin{bmatrix}
+\alpha^2 u + f(x,z)
+\end{bmatrix}, \mu\nabla^2**V**=\mu\begin{bmatrix}
+u_{xx} + u_{zz}
+\end{bmatrix}.$$
+
+
+for a constant value of $\mu$ which is case-dependent.
+
 If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
 
