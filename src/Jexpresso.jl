@@ -2,6 +2,7 @@
 A research software for the numerical solution of a system of an arbitrary number of conservation laws using continuous spectral elements. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
 
 If you are interested in contributing, please get in touch.
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
 """
 module Jexpresso
 
