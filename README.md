@@ -7,6 +7,15 @@ A research software for the numerical solution of a system of arbitrary conserva
 
 Jexpresso uses arbitrarily high-order (3rd and above) continuous spectral elements to solve
 
+$$
+M = 
+\begin{bmatrix}
+\frac{5}{6} & \frac{1}{6} & 0 \\[0.3em]
+\frac{5}{6} & 0 & \frac{1}{6} \\[0.3em]
+0 & \frac{5}{6} & \frac{1}{6}
+\end{bmatrix}
+$$
+
 $$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = {\bf S}({\bf q}) + ~{\rm b.c.}$$
 
 where the vectors ``\textbf{q}``, ``\textbf{F}``, and ``\textbf{S}`` are problem-dependent as shown below,
