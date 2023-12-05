@@ -27,7 +27,7 @@ If you are interested in contributing, please get in touch:
 
 Jexpresso uses arbitrarily high-order (3rd and above) continuous spectral elements to solve
 
-$$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2**V** + {\bf S}({\bf q}) + ~{\rm b.c.}$$
+$$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2**q** + {\bf S}({\bf q}) + ~{\rm b.c.}$$
 
 where the vectors **q**, **F**, and **S** are problem-dependent as shown below,
 and are taken to be zero vectors of the appropriate size when not explicitly stated otherwise.
@@ -42,7 +42,7 @@ v
 \end{bmatrix}, **F**=\begin{bmatrix}
 v\\
 u
-\end{bmatrix}$$
+\end{bmatrix}.$$
 
 2: 1D shallow water:
 
@@ -52,17 +52,34 @@ u
 \end{bmatrix}, **F**=\begin{bmatrix}
 Uh + Hu\\
 gh + Uu
-\end{bmatrix}$$
+\end{bmatrix}.$$
    
 3. 2D Helmholtz:
 
 $$**S**=\begin{bmatrix}
 \alpha^2 u + f(x,z)
-\end{bmatrix}, \mu\nabla^2**V**=\mu\begin{bmatrix}
+\end{bmatrix}, \mu\nabla^2**q**=\mu\begin{bmatrix}
 u_{xx} + u_{zz}
 \end{bmatrix}.$$
-
 for a constant value of $\mu$ which is case-dependent.
+
+4. 2D scalar advection-diffusion:
+
+$$**S**=\begin{bmatrix}
+q\\
+\end{bmatrix}, **F_1**=\begin{bmatrix}
+qu\\
+\end{bmatrix}, **F_2**=\begin{bmatrix}
+qv\\
+\end{bmatrix}, \mu\nabla^2**q**=\mu\begin{bmatrix}
+q_{xx} + q_{zz}
+\end{bmatrix}.$$
+where $H$ and $U$ are the reference height and velocity respectively.
+
+
+
+4. 2D Euler Equations of compressible flows with gravity:
+
 
 
 # Some notes on using JEXPRESSO
