@@ -19,7 +19,7 @@ In order, we provide tests and results for the following equations:
 $$**q**=\begin{bmatrix}
 u \\
 v
-\end{bmatrix}\quad **F**=\begin{bmatrix}
+\end{bmatrix} **F**=\begin{bmatrix}
 v\\
 u
 \end{bmatrix}$$
@@ -29,18 +29,18 @@ u
 $$**q**=\begin{bmatrix}
 h \\
 u
-\end{bmatrix}\quad **F**=\begin{bmatrix}
+\end{bmatrix} **F**=\begin{bmatrix}
 Uh + Hu\\
 gh + Uu
 \end{bmatrix}$$
    
-3. 2D Helmholtz,
-    
+3. 2D Helmholtz:
+   
 $$**S**=\begin{bmatrix}
 \alpha^2 u + f(x,z)
-\end{bmatrix}\quad **V**=\mu\begin{bmatrix}
+\end{bmatrix} **V**=\mu\begin{bmatrix}
 u_{xx} + u_{zz}
-\end{bmatrix}$$.
+\end{bmatrix}.$$
 
 
 for a constant value of $\mu$ which is case-dependent.
