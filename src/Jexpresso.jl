@@ -1,16 +1,6 @@
 """
 A research software for the numerical solution of a system of an arbitrary number of conservation laws using continuous spectral elements. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
 
- 
-
-```math
-\begin{equation}
-  \label{eq:CL}
-  \frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = {\bf S}({\bf q}) + ~{\rm b.c.}
-\end{equation}
-```
-
-
 If you are interested in contributing, please get in touch.
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
 """
