@@ -6,20 +6,21 @@
 A research software for the numerical solution of a system of arbitrary conservation laws using continuous spectral elements. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
 
 
-     Jexpresso uses arbitrarily high-order (3rd and above) continuous spectral elements to solve
+Jexpresso uses arbitrarily high-order (3rd and above) continuous spectral elements to solve
 
 $$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2**q** + {\bf S}({\bf q}) + ~{\rm b.c.}$$
 
 where the vectors **q**, **F**, and **S** are problem-dependent as shown below,
 and are taken to be zero vectors of the appropriate size when not explicitly stated otherwise.
 
-     In order, we provide tests and results for the following equations:
+In order, we provide tests and results for the following equations:
+
 1. 1D wave equation:
    
 $$**q**=\begin{bmatrix}
 u \\
 v
-\end{bmatrix} **F**=\begin{bmatrix}
+\end{bmatrix}\qquad **F**=\begin{bmatrix}
 v\\
 u
 \end{bmatrix}$$
@@ -29,7 +30,7 @@ u
 $$**q**=\begin{bmatrix}
 h \\
 u
-\end{bmatrix} **F**=\begin{bmatrix}
+\end{bmatrix}, **F**=\begin{bmatrix}
 Uh + Hu\\
 gh + Uu
 \end{bmatrix}$$
