@@ -85,7 +85,7 @@ $${\bf q}=\begin{bmatrix}
 \rho \theta\\
 \rho c1\\
 ...\\
-\rho cN\\
+\rho cN
 \end{bmatrix}\quad {\bf F}_1=\begin{bmatrix}
 \rho u\\
 \rho u^2 + p\\
