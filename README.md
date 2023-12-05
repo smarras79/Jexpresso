@@ -3,10 +3,10 @@
 | [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
 
 # JEXPRESSO
-A research software for the numerical solution of a system of arbitrary conservation laws using continuous spectral elements. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
+A research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements**. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
 
 # Equations:
-Jexpresso uses arbitrarily high-order (3rd and above) continuous spectral elements to solve
+Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
 
 $$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2{\bf q} + {\bf S}({\bf q}) + ~{\rm b.c.}$$
 
