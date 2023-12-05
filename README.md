@@ -15,6 +15,7 @@ and are taken to be zero vectors of the appropriate size when not explicitly sta
 
 In order, we provide tests and results for the following equations:
 1. 1D wave equation:
+   
 $$**q**=\begin{bmatrix}
 u \\
 v
@@ -23,7 +24,8 @@ v\\
 u
 \end{bmatrix}$$
 
-2: 1D shallow water
+2: 1D shallow water:
+
 $$**q**=\begin{bmatrix}
 h \\
 u
