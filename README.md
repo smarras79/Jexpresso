@@ -14,15 +14,32 @@ and are taken to be zero vectors of the appropriate size when not explicitly sta
 
 
 In order, we provide tests and results for the following equations:
-1. 1D wave equation,
-
+1. 1D wave equation:
 $$**q**=\begin{bmatrix}
 u \\
 v
-\end{bmatrix}**F**=\begin{bmatrix}
+\end{bmatrix}\quad**F**=\begin{bmatrix}
 v\\
 u
 \end{bmatrix}$$
+
+2: 1D shallow water
+$$**q**=\begin{bmatrix}
+h \\
+u
+\end{bmatrix}\quad**F**=\begin{bmatrix}
+Uh + Hu\\
+gh + Uu
+\end{bmatrix}$$
+   
+3. 2D Helmholtz,
+    
+$$**S**=\begin{bmatrix}
+\alpha^2 u + f(x,z)
+\end{bmatrix}\quad**V**=\mu\begin{bmatrix}
+u_{xx} + u_{zz}
+\end{bmatrix}$$.
+
 
 for a constant value of $\mu$ which is case-dependent.
 
