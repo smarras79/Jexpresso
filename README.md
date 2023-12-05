@@ -5,6 +5,8 @@
 # JEXPRESSO
 A research software for the numerical solution of a system of arbitrary conservation laws using continuous spectral elements. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
 
+$$\mathbb{N} = \{ a \in \mathbb{Z} : a > 0 \}$$
+
 NOTICE: PLEASE CONTACT ME IF YOU ARE INTERESTED IN TESTING THIS WIP. 
 I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
 
