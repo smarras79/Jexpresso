@@ -52,9 +52,9 @@ for a constant value of $\alpha$ and $\mu$, which are case-dependent.
 
 $${\bf q}=\begin{bmatrix}
 q\\
-\end{bmatrix}\quad {\bf F}_1=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}=\begin{bmatrix}
 qu\\
-\end{bmatrix}\quad {\bf F}_2=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}=\begin{bmatrix}
 qv\\
 \end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
 q_{xx} + q_{zz}
