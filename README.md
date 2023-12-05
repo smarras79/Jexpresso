@@ -60,7 +60,7 @@ qv\\
 q_{xx} + q_{zz}
 \end{bmatrix},$$
 
-5. 2D Euler equations of compressible flows with gravity and N passive chemicals ``c_i, \forall i=1,...,N`` 
+5. 2D Euler equations of compressible flows with gravity and N passive chemicals $c_i, \forall i=1,...,N$ 
 
 $${\bf q}=\begin{bmatrix}
 \rho \\
