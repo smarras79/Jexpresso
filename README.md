@@ -5,6 +5,46 @@
 # JEXPRESSO
 A research software for the numerical solution of a system of arbitrary conservation laws using continuous spectral elements. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
 
+Jexpresso uses arbitrarily high-order (3rd and above) continuous spectral elements to solve
+
+$$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2**V** + {\bf S}({\bf q}) + ~{\rm b.c.}$$
+
+where the vectors **q**, **F**, and **S** are problem-dependent as shown below,
+and are taken to be zero vectors of the appropriate size when not explicitly stated otherwise.
+
+
+In order, we provide tests and results for the following equations:
+1. 1D wave equation:
+   
+$$**q**=\begin{bmatrix}
+u \\
+v
+\end{bmatrix} **F**=\begin{bmatrix}
+v\\
+u
+\end{bmatrix}$$
+
+2: 1D shallow water:
+
+$$**q**=\begin{bmatrix}
+h \\
+u
+\end{bmatrix} **F**=\begin{bmatrix}
+Uh + Hu\\
+gh + Uu
+\end{bmatrix}$$
+   
+3. 2D Helmholtz:
+   
+$$**S**=\begin{bmatrix}
+\alpha^2 u + f(x,z)
+\end{bmatrix}, \mu\nabla^2**V**=\mu\begin{bmatrix}
+u_{xx} + u_{zz}
+\end{bmatrix}.$$
+
+
+for a constant value of $\mu$ which is case-dependent.
+
 NOTICE: PLEASE CONTACT ME IF YOU ARE INTERESTED IN TESTING THIS WIP. 
 I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
 
