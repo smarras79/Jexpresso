@@ -30,34 +30,65 @@ u
 $$**q**=\begin{bmatrix}
 h \\
 u
-\end{bmatrix}, **F**=\begin{bmatrix}
+\end{bmatrix}\qquad **F**=\begin{bmatrix}
 Uh + Hu\\
 gh + Uu
-\end{bmatrix}$$
-   
+\end{bmatrix}, $$
+
+where $H$ and $U$ are a reference height and velocity, respectively.
+
 3. 2D Helmholtz:
    
 $$**S**=\begin{bmatrix}
 \alpha^2 u + f(x,z)
-\end{bmatrix}, \mu\nabla^2**q**=\mu\begin{bmatrix}
+\end{bmatrix}\qquad \mu\nabla^2**q**=\mu\begin{bmatrix}
 u_{xx} + u_{zz}
-\end{bmatrix}.$$
+\end{bmatrix},$$
+
+for a constant value of $\alpha$ and $\mu$, which are case-dependent.
 
 4. 2D scalar advection-diffusion:
 
 $$**S**=\begin{bmatrix}
 q\\
-\end{bmatrix}, **F_1**=\begin{bmatrix}
+\end{bmatrix}\qquad  **F_1**=\begin{bmatrix}
 qu\\
-\end{bmatrix}, **F_2**=\begin{bmatrix}
+\end{bmatrix}\qquad  **F_2**=\begin{bmatrix}
 qv\\
-\end{bmatrix}, \mu\nabla^2**q**=\mu\begin{bmatrix}
+\end{bmatrix}\qquad  \mu\nabla^2**q**=\mu\begin{bmatrix}
 q_{xx} + q_{zz}
 \end{bmatrix},$$
 
-where $H$ and $U$ are a reference height and velocity, respectively.
+5. 2D Euler equations of compressible flows with gravity.
 
-for a constant value of $\mu$ which is case-dependent.
+$$**S**=\begin{bmatrix}
+q\\
+\rho \\
+\rho u\\
+\rho v\\
+\rho \theta
+\end{bmatrix}\qquad  **F_1**=\begin{bmatrix}
+\rho u\\
+\rho u^2 + p\\
+\rho u v\\
+\rho u \theta
+\end{bmatrix}\qquad  **F_2**=\begin{bmatrix}
+\rho v\\
+\rho v u\\
+\rho v^2 + p\\
+\rho v \theta
+\end{bmatrix}\quad{\bf S}=\begin{bmatrix}
+0\\
+0\\
+-\rho g\\
+0
+\end{bmatrix}\qquad  \mu\nabla^2**q**=\mu\begin{bmatrix}
+0\\
+u_{xx} + u_{zz}\\
+v_{xx} + v_{zz}\\
+\theta_{xx} + \theta_{zz}
+\end{bmatrix}.$$
+
 
 NOTICE: PLEASE CONTACT ME IF YOU ARE INTERESTED IN TESTING THIS WIP. 
 I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
