@@ -17,20 +17,20 @@ In order, we provide tests and results for the following equations:
 
 1. 1D wave equation:
    
-$$**q**=\begin{bmatrix}
+$${\bf q}=\begin{bmatrix}
 u \\
 v
-\end{bmatrix}\qquad **F**=\begin{bmatrix}
+\end{bmatrix}\quad **F**=\begin{bmatrix}
 v\\
 u
 \end{bmatrix}$$
 
 2: 1D shallow water:
 
-$$**q**=\begin{bmatrix}
+$${\bf q}=\begin{bmatrix}
 h \\
 u
-\end{bmatrix}\qquad **F**=\begin{bmatrix}
+\end{bmatrix}\quad **F**=\begin{bmatrix}
 Uh + Hu\\
 gh + Uu
 \end{bmatrix}, $$
@@ -39,9 +39,9 @@ where $H$ and $U$ are a reference height and velocity, respectively.
 
 3. 2D Helmholtz:
    
-$$**S**=\begin{bmatrix}
+$${\bf S}=\begin{bmatrix}
 \alpha^2 u + f(x,z)
-\end{bmatrix}\qquad \mu\nabla^2**q**=\mu\begin{bmatrix}
+\end{bmatrix}\quad \mu\nabla^2**q**=\mu\begin{bmatrix}
 u_{xx} + u_{zz}
 \end{bmatrix},$$
 
@@ -49,30 +49,29 @@ for a constant value of $\alpha$ and $\mu$, which are case-dependent.
 
 4. 2D scalar advection-diffusion:
 
-$$**S**=\begin{bmatrix}
+$$**q**=\begin{bmatrix}
 q\\
-\end{bmatrix}\qquad  **F_1**=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}_1=\begin{bmatrix}
 qu\\
-\end{bmatrix}\qquad  **F_2**=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}_2=\begin{bmatrix}
 qv\\
-\end{bmatrix}\qquad  \mu\nabla^2**q**=\mu\begin{bmatrix}
+\end{bmatrix}\quad  \mu\nabla^2**q**=\mu\begin{bmatrix}
 q_{xx} + q_{zz}
 \end{bmatrix},$$
 
 5. 2D Euler equations of compressible flows with gravity.
 
-$$**S**=\begin{bmatrix}
-q\\
+$${\bf q}=\begin{bmatrix}
 \rho \\
 \rho u\\
 \rho v\\
 \rho \theta
-\end{bmatrix}\qquad  **F_1**=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}_1=\begin{bmatrix}
 \rho u\\
 \rho u^2 + p\\
 \rho u v\\
 \rho u \theta
-\end{bmatrix}\qquad  **F_2**=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}_2=\begin{bmatrix}
 \rho v\\
 \rho v u\\
 \rho v^2 + p\\
@@ -82,7 +81,7 @@ q\\
 0\\
 -\rho g\\
 0
-\end{bmatrix}\qquad  \mu\nabla^2**q**=\mu\begin{bmatrix}
+\end{bmatrix}\quad  \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
 0\\
 u_{xx} + u_{zz}\\
 v_{xx} + v_{zz}\\
