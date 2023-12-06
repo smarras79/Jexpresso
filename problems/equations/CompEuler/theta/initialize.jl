@@ -46,10 +46,11 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         
         θref = 300.0 #K
         θc   =   2.0 #K
-        for iel_g = 1:mesh.nelem
-            for j=1:mesh.ngl, i=1:mesh.ngl
+        for ip = 1:mesh.npoin
+            #for iel_g = 1:mesh.nelem
+            #for j=1:mesh.ngl, i=1:mesh.ngl
                 
-                ip = mesh.connijk[iel_g,i,j]
+                #ip = mesh.connijk[iel_g,i,j]
                 x, y = mesh.x[ip], mesh.y[ip]
                 r = sqrt( (x - xc)^2 + (y - yc)^2 )
                 
@@ -68,9 +69,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
                 if inputs[:SOL_VARS_TYPE] == PERT()
                     q.qn[ip,1] = ρ - ρref
-                    q.qn[ip,2] = ρ*u
-                    q.qn[ip,3] = ρ*v
-                    q.qn[ip,4] = ρ*θ - ρref*θref
+                    q.qn[ip,2] = ρ*u - ρref*u
+                    q.qn[ip,3] = ρ*v - ρref*v
+                    q.qn[ip,4] = ρ*θ - ρref*θ
                     q.qn[ip,end] = p
                     
                     #Store initial background state for plotting and analysis of pertuebations
@@ -93,7 +94,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qe[ip,4] = ρref*θref
                     q.qe[ip,end] = pref
                 end
-            end
+            #end
         end
     end
     
