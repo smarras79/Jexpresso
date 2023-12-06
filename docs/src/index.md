@@ -124,7 +124,6 @@ cN_{xx} + cN_{zz}
 
 The equation of state for a perfect gas is used to close the system.
 
-
 If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
 

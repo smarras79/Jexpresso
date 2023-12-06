@@ -3,15 +3,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
+        :tend                 => 0.05,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :Δt                   => 0.2,
-        :tinit                => 0.0,
-        :tend                 => 1.0,
-        #:tinit                => 100.0,
-        #:tend                 => 1000.0,
-        #:lrestart             => true,
-        :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :ndiagnostics_outputs => 2,
+        :Δt                   => 0.00001,
+        :ndiagnostics_outputs => 20,
         :case                 => "rtb",
         :lsource              => true, 
         #:CL                   => NCL(), #CL() is defaults
@@ -22,24 +17,22 @@ function user_inputs()
         #:lexact_integration  => true,
         #:llump               => true,
         :interpolation_nodes =>"lgl",
-        :nop                 => 4,      # Polynomial order
+        :nop                 => 2,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => (1, 2, 3, 4),
-        :μ                   => (0.0, 30.0, 30.0, 60.0), #horizontal viscosity constant for momentum
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:νx                   => 30.0, #horizontal viscosity constant for momentum
+        #:νy                   => 30.0, #vertical   viscosity constant for momentum
+        #:κ                    => 60.0, #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB_unitsize.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/mygmsh.msh", #for nop=4
-        #:gmsh_filename        => "./meshes/gmsh_grids/test_allocation.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_120x31_periodic.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB27x27.msh", #for nop=3
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB40x40.msh", #for nop=2
+        #:lread_gmsh => false, #If false, a 1D problem will be enforced
+        :xmin => 0.0,
+        :xmax => 3.0,
+        :nelx => 100,
+        :lperiodic_1d => true,
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -50,9 +43,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
-        :output_dir          => "./output/",
-        :loutput_pert        => true,  #this is only implemented for VTK for now
+        :outformat  => "png",
+        :output_dir => "./output/",
+        :outvars    => ("ρ", "u", "T", "p"),
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
