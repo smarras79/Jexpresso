@@ -145,7 +145,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     #filter!(u, params, SD)
      
     inviscid_rhs_el_laguerre!(u, params, lsource, SD)
-    DSS_rhs_laguerre!(@view(params.RHS_lag[:,:]), @view(params.rhs_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
+    DSS_rhs_laguerre!(@view(params.RHS_lag[:,:]), @view(params.rhs_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, AD)
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -155,7 +155,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
         
         viscous_rhs_el_laguerre!(u, params, SD)
         
-        DSS_rhs_laguerre!(@view(params.RHS_visc_lag[:,:]), @view(params.rhs_diff_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
+        DSS_rhs_laguerre!(@view(params.RHS_visc_lag[:,:]), @view(params.rhs_diff_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, AD)
         
         params.RHS_lag[:,:] .= @view(params.RHS_lag[:,:]) .+ @view(params.RHS_visc_lag[:,:])
     end
@@ -163,7 +163,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     
  
     for ieq=1:neqs
-        divide_by_mass_matrix!(@view(params.RHS_lag[:,ieq]), params.vaux, params.Minv, neqs, npoin)
+        divide_by_mass_matrix!(@view(params.RHS_lag[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
     end
     #For conservaton apply B.C. to RHS after DSS and not to rhs_el:
     #apply_boundary_conditions!(u, params.uaux, time,
@@ -214,7 +214,7 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
             end
         end
 
-        _expansion_inviscid_laguerre!(params, iel, params.CL, params.QT, SD)
+        _expansion_inviscid_laguerre!(params, iel, params.CL, params.QT, SD, AD)
 
     end
 end
@@ -246,7 +246,7 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_2D)
             end
         end
         
-        _expansion_inviscid_laguerre!(params, iel, params.CL, params.QT, SD)
+        _expansion_inviscid_laguerre!(params, iel, params.CL, params.QT, SD, AD)
         
     end
 end
@@ -258,7 +258,7 @@ function viscous_rhs_el_laguerre!(u, params, SD::NSD_2D)
         uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for ieq in params.ivisc_equations    
-              _expansion_visc_laguerre!(@view(params.rhs_diffξ_el_lag[iel,:,:,ieq]), @view(params.rhs_diffη_el_lag[iel,:,:,ieq]), @view(params.uprimitive_lag[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.ω_lag, params.mesh, params.basis, params.basis_lag, params.metrics, params.metrics_lag, params.inputs, iel, ieq, params.QT, SD)
+              _expansion_visc_laguerre!(@view(params.rhs_diffξ_el_lag[iel,:,:,ieq]), @view(params.rhs_diffη_el_lag[iel,:,:,ieq]), @view(params.uprimitive_lag[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.ω_lag, params.mesh, params.basis, params.basis_lag, params.metrics, params.metrics_lag, params.inputs, iel, ieq, params.QT, SD, AD)
         end
         
     end
@@ -266,7 +266,10 @@ function viscous_rhs_el_laguerre!(u, params, SD::NSD_2D)
 end
 
 
-function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_1D)
+
+function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_1D, ::FD) nothing end
+
+function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_1D, ::ContGal)
 
     beta = params.inputs[:laguerre_beta]
     for ieq = 1:params.neqs
@@ -280,7 +283,9 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_1
     end
 end
 
-function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2D)
+function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2D, ::FD) nothing end
+
+function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2D, ::ContGal)
     ω1 = params.ω
     ω2 = params.ω_lag
     basis1 = params.basis
@@ -322,8 +327,9 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2
     end
 end
 
+function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Exact, SD::NSD_2D, ::FD) nothing end
 
-function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Exact, SD::NSD_2D)
+function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Exact, SD::NSD_2D, ::ContGal)
     
     basis1 = params.basis
     basis2 = params.basis_lag
@@ -373,7 +379,9 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Exact, SD::NSD_2D)
     end
 end
 
-function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D)
+function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D, ::FD) nothing end
+
+function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D, ::ContGal)
   
     basis1 = params.basis
     basis2 = params.basis_lag
@@ -435,7 +443,10 @@ function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Inexact, SD::NSD_
     end        
 end
 
-function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
+
+function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Exact, SD::NSD_2D, ::FD) nothing end
+
+function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Exact, SD::NSD_2D, ::ContGal)
 
     
     basis1 = params.basis
@@ -533,7 +544,18 @@ function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Exact, SD::NSD_2D
 end
 
 
-function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω, ω_lag, mesh, basis, basis_lag, metrics, metrics_lag, inputs, iel, ieq, QT::Inexact, SD::NSD_2D)
+
+function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq,
+                                   visc_coeffieq, ω, ω_lag, mesh, basis, basis_lag,
+                                   metrics, metrics_lag, inputs, iel, ieq,
+                                   QT::Inexact, SD::NSD_2D, ::FD)
+    nothing
+end
+
+function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq,
+                                   visc_coeffieq, ω, ω_lag, mesh, basis, basis_lag,
+                                   metrics, metrics_lag, inputs, iel, ieq,
+                                   QT::Inexact, SD::NSD_2D, ::ContGal)
     
     basis1 = basis
     basis2 = basis_lag

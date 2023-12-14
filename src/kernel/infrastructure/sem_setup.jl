@@ -8,6 +8,7 @@ function sem_setup(inputs::Dict)
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:equations]
+    AD    = inputs[:AD]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -99,7 +100,7 @@ function sem_setup(inputs::Dict)
             metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat)
             metrics = (metrics1, metrics2)
             
-            matrix = matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         else
             
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
@@ -122,7 +123,7 @@ function sem_setup(inputs::Dict)
             @time periodicity_restructure!(mesh,inputs)
             
             #warp_mesh!(mesh,inputs)
-            matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         end
     else 
         if(inputs[:llaguerre_1d])
@@ -140,7 +141,7 @@ function sem_setup(inputs::Dict)
            metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat)
            metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat)
            metrics = (metrics1, metrics2) 
-           matrix = matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+           matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         else
            basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
             ω1 = ω
@@ -153,7 +154,7 @@ function sem_setup(inputs::Dict)
            if (inputs[:lperiodic_1d])
               periodicity_restructure!(mesh,inputs)
            end
-           matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+           matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
        end
     end
 #--------------------------------------------------------

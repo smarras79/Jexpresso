@@ -415,7 +415,7 @@ function mod_inputs_user_inputs!(user_input_file)
                 jexpresso  user_inputs.jl: equations ", the inputs[:equations] " that you chose is not coded!
                 Chose among:
                          - "CompEuler"
-                         - "AdvDiff"/"AD"/"Adv"
+                         - "AdvDiff"
               """
         
         @error s
@@ -443,6 +443,14 @@ function mod_inputs_user_inputs!(user_input_file)
         inputs[:CL] = CL()
     end
 
+    if(!haskey(inputs, :AD))
+        inputs[:AD] = ContGal()
+    else
+        if inputs[:AD] != ContGal() && inputs[:AD] != FD()
+            @mystop(" :AD can only be either ContGal() or FD() at the moment.")
+        end
+    end
+    
     if(!haskey(inputs, :SOL_VARS_TYPE))
         inputs[:SOL_VARS_TYPE] = TOTAL() #vs PERT()
     end
