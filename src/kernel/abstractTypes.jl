@@ -29,6 +29,7 @@ struct NSD_3D <: AbstractSpaceDimensions end
 abstract type AbstractDiscretization end
 struct ContGal <: AbstractDiscretization end
 struct DiscGal <: AbstractDiscretization end
+struct FD <: AbstractDiscretization end
 
 abstract type AbstractPointsType end
 struct LG <: AbstractPointsType end

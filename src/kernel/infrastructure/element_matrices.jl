@@ -382,7 +382,7 @@ function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstrac
 end
 
 
-function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, SD::NSD_2D)
+function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, ::NSD_2D)
     
     for iel=1:mesh.nelem
         for j = 1:mesh.ngl
@@ -404,7 +404,15 @@ function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, SD::NSD_2D)
 end
 
 
-function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_1D)
+
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::FD)
+    nothing
+end
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::FD)
+    nothing
+end
+
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
 
     for ieq = 1:neqs
         for iel = 1:nelem
@@ -417,7 +425,7 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_1D)
     
 end
 
-function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
 
     for ieq = 1:neqs
         for iel = 1:nelem
@@ -432,7 +440,7 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
     #show(stdout, "text/plain", V)
 end
 
-function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_1D)
+function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
 
   for ieq = 1:neqs
     for iel = 1:mesh.nelem_semi_inf
@@ -445,7 +453,7 @@ function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_1D)
   end
 end
 
-function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
+function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
 
   for ieq = 1:neqs
     for iel = 1:mesh.nelem_semi_inf
@@ -460,8 +468,13 @@ function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, SD::NSD_2D)
   end
 end
 
-#function divide_by_mass_matrix!(RHS::AbstractArray, RHSaux, Minv, neqs, npoin, ::Exact)
-function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin)
+
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, ::FD)
+    nothing
+end
+
+#function divide_by_mass_matrix!(RHS::AbstractArray, RHSaux, Minv, neqs, npoin, ::Exact, ::ContGal)
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, ::ContGal)
     
     RHSaux .= RHS
     for ip=1:npoin
@@ -474,14 +487,25 @@ function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin)
     
 end
 
-function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin)
+
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::FD)
+    nothing
+end
+
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::ContGal)
 
     for ip=1:npoin
         RHS[ip] = Minv[ip]*RHS[ip]
     end
 end
 
-function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
+function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
+                        ldss_laplace=false, ldss_differentiation=false)
+
+     return 0
+end
+
+function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
                         ldss_laplace=false, ldss_differentiation=false)
 
     lbuild_differentiation_matrix = false
@@ -527,11 +551,21 @@ function matrix_wrapper(SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFl
     return (; Me, De, Le, M, Minv, D, L)
 end
 
-function mass_inverse!(Minv, M::AbstractMatrix, QT)
+
+function mass_inverse!(Minv, M::AbstractMatrix, QT, ::FD)
+    nothing
+end
+
+function mass_inverse!(Minv, M::AbstractMatrix, QT, ::ContGal)
     Minv .= inv(M)
 end
 
-function matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)
+function matrix_wrapper_laguerre(::FD, SD, QT, basis, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)
+    
+    return 0
+end
+
+function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)
 
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false

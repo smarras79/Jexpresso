@@ -4,6 +4,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
                     PT,            #Problem type: this is the name of the directory such as CompEuler
                     SOL_VARS_TYPE, #TOTAL() vs PERT() for total vs perturbation solution variables
                     CL,            #law type: CL() vs NCL() for conservative vs not-conservative forms
+                    AD,            #AbstractDiscretization: ContGal(), DiscGal(), FD()
                     mesh::St_mesh,
                     metrics,
                     basis, ω,
@@ -110,8 +111,8 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
         
     end
     
-    deps = zeros(1,1)
-    tspan  = (inputs[:tinit], inputs[:tend])    
+    deps  = zeros(1,1)
+    tspan = (inputs[:tinit], inputs[:tend])    
     visc_coeff = inputs[:μ]#(inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
     ivisc_equations = inputs[:ivisc_equations]   
  
@@ -132,7 +133,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
                   rhs_diff_el_lag,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
                   RHS_lag, RHS_visc_lag, uprimitive_lag, 
-                  SD=mesh.SD, QT, CL, PT,
+                  SD=mesh.SD, QT, CL, PT, AD,
                   SOL_VARS_TYPE,
                   neqs=qp.neqs,
 		  basis=basis[1], basis_lag = basis[2], ω = ω[1], ω_lag = ω[2], mesh, metrics = metrics[1], metrics_lag = metrics[2], 
@@ -149,7 +150,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
                   uprimitive,
                   q_t, q_ti, fqf, b, B,
                   RHS, RHS_visc,
-                  SD=mesh.SD, QT, CL, PT,
+                  SD=mesh.SD, QT, CL, PT, AD, 
                   SOL_VARS_TYPE, 
                   neqs=qp.neqs,
                   basis, ω, mesh, metrics,

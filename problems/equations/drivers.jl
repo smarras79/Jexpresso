@@ -1,7 +1,6 @@
 using HDF5
 
-function driver(DT::ContGal,       #Space discretization type
-                inputs::Dict,      #input parameters from src/user_input.jl
+function driver(inputs::Dict,      #input parameters from src/user_input.jl
                 OUTPUT_DIR::String,
                 TFloat) 
 
@@ -11,7 +10,12 @@ function driver(DT::ContGal,       #Space discretization type
     
     check_length(qp.qn[1,:], qp.neqs+1, "drivers --> initialize.jl")
         
-    solution = time_loop!(sem.QT, sem.PT, inputs[:SOL_VARS_TYPE], inputs[:CL], sem.mesh, sem.metrics, sem.basis, sem.ω, qp,
+    solution = time_loop!(sem.QT,
+                          sem.PT,
+                          inputs[:SOL_VARS_TYPE],
+                          inputs[:CL],
+                          inputs[:AD],
+                          sem.mesh, sem.metrics, sem.basis, sem.ω, qp,
                           sem.matrix.M, sem.matrix.Minv,
                           inputs[:Δt],
                           inputs,
