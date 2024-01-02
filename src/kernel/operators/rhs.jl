@@ -371,7 +371,7 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD
     for ieq = 1:params.neqs
         for i = 1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,1]
-            params.RHS[ip,ieq] = D*(params.uPrimitive[ip+1,ieq] - 2*params.uPrimitive[ip,ieq] + params.uPrimitive[ip-1,ieq])/Δx^2
+            params.RHS[ip,ieq] = 0.0
         end
     end
     
