@@ -57,7 +57,26 @@ function resetRHSToZero_viscous!(params)
 end
 
 function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
-    nothing
+    
+    γ = 1.4
+    γm1 = 0.4
+    for i=1:mesh.ngl
+        
+        m1 = mesh.connijk[iel,i,1]
+        m2 = m1 + mesh.npoin
+        m3 = m2 + mesh.npoin
+        
+        x  = mesh.x[m1]           
+        A = 1.0 + 2.2*(x - 1.5)^2
+        
+        uprimitive[i,1,1] = u[m1]/A #ρ
+        uprimitive[i,1,2] = u[m2]/u[m1] #u
+        uprimitive[i,1,3] = γm1*(u[m3]/u[m1] - 0.5*γ*uprimitive[i,j,1]*uprimitive[i,j,1]) #T
+
+        #Pressure:
+        uprimitive[i,1,end] = uprimitive[i,1,1]*uprimitive[i,1,3] #ρ*T
+           
+    end
 end
 
 function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::TOTAL, SD::NSD_2D)
@@ -352,7 +371,7 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD
     for ieq = 1:params.neqs
         for i = 1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,1]
-            params.RHS[ip,ieq] = 0
+            params.RHS[ip,ieq] = D*(params.uPrimitive[ip+1,ieq] - 2*params.uPrimitive[ip,ieq] + params.uPrimitive[ip-1,ieq])/Δx^2
         end
     end
     
@@ -367,7 +386,7 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::Co
             for k = 1:params.mesh.ngl
                 dFdξ += params.basis.dψ[k,i]*params.F[k,1,ieq]
             end
-            params.rhs_el[iel,i,1,ieq] -= params.ω[i]*dFdξ  - params.ω[i]*params.S[i,1,ieq]
+            params.rhs_el[iel,i,1,ieq] -= params.ω[i]*dFdξ - params.ω[i]*params.S[i,1,ieq]
         end
     end
 end
