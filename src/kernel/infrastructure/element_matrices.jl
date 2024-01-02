@@ -502,7 +502,30 @@ end
 function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
                         ldss_laplace=false, ldss_differentiation=false)
 
-     return 0
+    if typeof(SD) == NSD_1D
+        Me = zeros(TFloat, 1, 1)
+    elseif typeof(SD) == NSD_2D
+        Me = zeros(TFloat, 1, 1, 1)
+    elseif typeof(SD) == NSD_3D
+        Me = zeros(TFloat, 1, 1, 1, 1)
+    end
+    
+    if (QT == Exact() && inputs[:llump] == false)
+        M    = zeros(TFloat, 1, 1)
+        Minv = zeros(TFloat, 1, 1)
+    else
+        M    = zeros(TFloat, 1)
+        Minv = zeros(TFloat, 1)
+    end
+    
+    Le = zeros(TFloat, 1, 1)
+    L  = zeros(TFloat, 1,1)
+    
+    De = zeros(TFloat, 1, 1)
+    D  = zeros(TFloat, 1,1)
+    
+    return (; Me, De, Le, M, Minv, D, L)
+    
 end
 
 function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
