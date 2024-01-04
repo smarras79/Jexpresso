@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 30000.0, #2π,
+        :tend                 => 1000.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 100,
@@ -16,9 +16,10 @@ function user_inputs()
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
         :nop_laguerre        => 14,
-        :yfac_laguerre       => 500.0,
+        :yfac_laguerre       => 300.0,
         :luser_bc            => true,
         :lsource             => true,
+        :lperiodic_laguerre  => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------

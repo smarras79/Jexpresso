@@ -548,9 +548,13 @@ if mesh.nsd == 2
                     ip = mesh.poin_in_bdy_edge[iedge,i]
                     mesh.connijk_lag[e_iter,i,1] = ip
                     for j=2:mesh.ngr
-                        x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx 
-                        y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory/(inputs[:yscale] * 0.5)
-                        matched = 0
+                        x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
+                        if (inputs[:yscale] == 1.0)
+			  y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+			else 
+                          y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory/(inputs[:yscale] * 0.5)
+                        end
+			matched = 0
                         if (i == mesh.ngl || i == 1)
                           iter_end = 0
                           while (matched == 0 && iter_end == 0)
@@ -595,7 +599,7 @@ if mesh.nsd == 2
         mesh.x = x_new
         mesh.y = y_new
         mesh.z = zeros(mesh.npoin)
-        mesh.nelem_semi_inf = n_semi_inf 
+        mesh.nelem_semi_inf = n_semi_inf
     end
     #=for iedge_bdy = 1:mesh.nedges_bdy
         @printf(" bdy edge %d of type %s ∈ elem %d with nodes\n", iedge_bdy, mesh.bdy_edge_type[iedge_bdy], mesh.bdy_edge_in_elem[iedge_bdy])
@@ -2196,10 +2200,14 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     
     #Add high-order nodes
     add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes)
-    mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, 1, mesh.ngr, 1)
-    mesh.nelem_semi_inf = 1
-    @info mesh.ngr
-    if (inputs[:llaguerre_1d])
+    
+    mesh.nelem_semi_inf = 0
+    if (inputs[:llaguerre_1d_right]) mesh.nelem_semi_inf +=1 end 
+    if (inputs[:llaguerre_1d_left]) mesh.nelem_semi_inf +=1 end
+    if (mesh.nelem_semi_inf == 0) mesh.nelem_semi_inf = 1 end  
+    mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, mesh.nelem_semi_inf, mesh.ngr, 1)
+    mesh.npoin_original = mesh.npoin
+    if (inputs[:llaguerre_1d_right])
       x = zeros(Float64,mesh.npoin+mesh.ngr-1)      
       x[1:mesh.npoin] .= mesh.x[1:mesh.npoin] 
       gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
@@ -2209,7 +2217,20 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
          mesh.connijk_lag[1,i,1] = ip
          x[ip] = mesh.xmax + inputs[:yfac_laguerre]*gr.ξ[i]
       end    
-      mesh.npoin_original = mesh.npoin
+      mesh.npoin = mesh.npoin + mesh.ngr-1
+      mesh.x = x
+    end
+    if (inputs[:llaguerre_1d_left])
+      e = min(2,mesh.nelem_semi_inf)
+      x = zeros(Float64,mesh.npoin+mesh.ngr-1)
+      x[1:mesh.npoin] .= mesh.x[1:mesh.npoin]
+      gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
+      mesh.connijk_lag[e,1,1] = 1
+      for i=2:mesh.ngr
+         ip = mesh.npoin+i-1
+         mesh.connijk_lag[e,i,1] = ip
+         x[ip] = mesh.xmin - inputs[:yfac_laguerre]*gr.ξ[i]
+      end
       mesh.npoin = mesh.npoin + mesh.ngr-1
       mesh.x = x
     end 
