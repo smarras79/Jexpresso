@@ -5,7 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                 => 1000.0,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :Δt                   => 0.1,
+        :Δt                   => 0.05,
         :ndiagnostics_outputs => 20,
         :case                 => "rtb",
         :lsource              => true, 
@@ -18,7 +18,7 @@ function user_inputs()
         #:llump               => true,
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
-        :nop_laguerre        => 24,
+        :nop_laguerre        => 48,
         :xfac_laguerre       => 0.0,
         :yfac_laguerre       => 110.0,
         :llaguerre_bc        => true,
@@ -28,7 +28,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1, 2, 3, 4),
-        :μ                   => (0.0, 60.0, 60.0, 120.0), #horizontal viscosity constant for momentum
+        :μ                   => (0.0, 75.0, 75.0, 75.0), #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        #:lfilter             => true,
         :mu_x                => 0.01,
         :mu_y                => 0.01,
         :filter_type         => "erf",
