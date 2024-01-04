@@ -72,13 +72,18 @@ function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, ba
         for i = 1:mesh.ngr
             ip = mesh.connijk_lag[iel,i,1]
             xij = mesh.x[ip]
+            
             for k = 1:mesh.ngr
-                metrics.dxdξ[iel, k,1]  += dψ[i,k] * xij
+                metrics.dxdξ[iel, k,1]  += dψ[i,k] * (xij) * inputs[:yfac_laguerre]
                 metrics.Je[iel, k, 1]   = inputs[:yfac_laguerre]#abs(metrics.dxdξ[iel, k, 1])
-                metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+                if (xij > 0.1)
+                  metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+                else
+                  metrics.dξdx[iel, k, 1] = -1.0/metrics.Je[iel, k, 1]
+                end
             end
         end
-    end    
+    end
 
     return metrics
 end
@@ -230,8 +235,9 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                             metrics.dxdη[iel, k, l] +=  ψ[i,k]*inputs[:xfac_laguerre]#*dψ1[j,l]*xij
                             ###metrics.dxdη[iel, k, l] +=  ψ[i,k]*dψ1[j,l]*xij
                             metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
+                            ##metrics.dydη[iel, k, l] +=  2*ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
                             metrics.dydη[iel, k, l] +=  ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
-                            ###metrics.dydη[iel, k, l] +=  ψ[i,k]*dψ1[j,l]*yij
+                            ##metrics.dydη[iel, k, l] +=  ψ[i,k]*dψ1[j,l]*(yij-5000.0)
                         end
                     end
                     #@info metrics.dxdξ[iel, k, l],metrics.dxdη[iel, k, l],metrics.dydξ[iel, k, l],metrics.dydη[iel, k, l],xij,yij
@@ -242,7 +248,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     ip = mesh.connijk_lag[iel,k,l]
                     #xij = mesh.x[ip]
                     #yij = mesh.y[ip]
-                    #@info metrics.dxdξ[iel, k, l],metrics.dydη[iel, k, l], metrics.dydξ[iel, k, l],metrics.dxdη[iel, k, l],xij
+                    #@info metrics.dxdξ[iel, k, l],metrics.dydη[iel, k, l], metrics.dydξ[iel, k, l],metrics.dxdη[iel, k, l]
                     metrics.Je[iel, k, l] = metrics.dxdξ[iel, k, l]*metrics.dydη[iel, k, l] - metrics.dydξ[iel, k, l]*metrics.dxdη[iel, k, l]
                     metrics.dξdx[iel, k, l] =  metrics.dydη[iel, k, l]/metrics.Je[iel, k, l]
                     metrics.dξdy[iel, k, l] = -metrics.dxdη[iel, k, l]/metrics.Je[iel, k, l]

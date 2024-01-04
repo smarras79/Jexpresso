@@ -82,12 +82,12 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
         b_lag = zeros(mesh.nelem, mesh.ngl, mesh.ngr, qp.neqs)
         B_lag = zeros(Float64, mesh.npoin, qp.neqs)
     end
-    if (inputs[:llaguerre_1d])
-        uaux_el_lag      = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
-        rhs_el_lag       = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
-        rhs_diff_el_lag  = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
-        rhs_diffξ_el_lag = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
-        rhs_diffη_el_lag = zeros(T, mesh.nelem, mesh.ngr, mesh.ngl, qp.neqs)
+    if (inputs[:llaguerre_1d_right]||inputs[:llaguerre_1d_left])
+        uaux_el_lag      = zeros(T, mesh.nelem_semi_inf, mesh.ngr, mesh.ngl, qp.neqs)
+        rhs_el_lag       = zeros(T, mesh.nelem_semi_inf, mesh.ngr, mesh.ngl, qp.neqs)
+        rhs_diff_el_lag  = zeros(T, mesh.nelem_semi_inf, mesh.ngr, mesh.ngl, qp.neqs)
+        rhs_diffξ_el_lag = zeros(T, mesh.nelem_semi_inf, mesh.ngr, mesh.ngl, qp.neqs)
+        rhs_diffη_el_lag = zeros(T, mesh.nelem_semi_inf, mesh.ngr, mesh.ngl, qp.neqs)
         F_lag            = zeros(T, mesh.ngr, mesh.ngl, qp.neqs)
         G_lag            = zeros(T, mesh.ngr, mesh.ngl, qp.neqs)
         S_lag            = zeros(T, mesh.ngr, mesh.ngl, qp.neqs)
@@ -115,7 +115,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
     visc_coeff = inputs[:μ]#(inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
     ivisc_equations = inputs[:ivisc_equations]   
  
-    if ("Laguerre" in mesh.bdy_edge_type || inputs[:llaguerre_1d])
+    if ("Laguerre" in mesh.bdy_edge_type || inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
  
         params = (T, F, G, S,
                   uaux, uaux_el, vaux,

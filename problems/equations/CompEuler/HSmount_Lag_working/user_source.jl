@@ -47,8 +47,8 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betaxl_coe = 0.0
     end
    
-    cxr = 0.25*betaxr_coe
-    cxl = 0.25*betaxl_coe
+    cxr = 0.0*betaxr_coe
+    cxl = 0.0*betaxl_coe
     #@info x,y,cxr,cxl,ctop
     cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
 
@@ -97,7 +97,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
         #betay_coe = 0.9/(1+exp((0.4*ymax-y)/(ymax/18)))
         #betay_coe = 25.0/(1+exp((0.9*ymax-y)/(ymax/15))) ### damps too far down
-        #betay_coe = 10.0/(1+exp((0.67*ymax-y)/(ymax/49)))
+        #betay_coe = 2.0/(1+exp((0.3*(ymax-15000)-y+15000)/((ymax-15000)/18)))
     else
         betay_coe = 0.0
     end
@@ -119,8 +119,8 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betaxl_coe = 0.0
     end
     
-    cxr = 0.05*betaxr_coe#0.25*betaxr_coe
-    cxl = 0.05*betaxl_coe#0.25*betaxl_coe
+    cxr = 0.035*betaxr_coe#0.25*betaxr_coe
+    cxl = 0.035*betaxl_coe#0.25*betaxl_coe
     ctop = 0.5*min(ctop,1)
     cxr  = min(cxr,1)
     cxl  = min(cxl,1)

@@ -16,22 +16,34 @@ function write_output(SD::NSD_1D, q::Array, mesh::St_mesh, OUTPUT_DIR::String, i
     nvar = length(varnames)
     for ivar = 1:nvar
         #plot_results!(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames; iout=1, nvar=nvar, PT=nothing)
-        plot_results(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames; iout=1, nvar=nvar, PT=nothing)
+        plot_results(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
     end
 end
 
 function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
-   # fig = Figure()
-    #colors = ["Blue","Red","Green","Yellow","Black","Purple","Orange"]
-    #p = []
-    for iout = 1:size(sol.t[:], 1)
-        #icolor = mod(iout,size(colors,1))+1
-        #color = colors[icolor]
-        title = string("sol.u at time ", sol.t[iout])
-        #plot_results!(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames; iout=iout, nvar=nvar, fig=fig,color = color,p=p,PT=nothing)
-        plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames; iout=iout, nvar=nvar,PT=nothing)
+    
+    if (inputs[:plot_overlap])
+        fig = Figure(resolution = (1200,800),fontsize=22)
+        colors = ["Blue","Red","Green","Yellow","Black","Purple","Orange"]
+        markers = [:circle, :rect, :diamond,:hexagon,:cross,:xcross,:utriangle,:dtriangle,:pentagon,:star4,:star8]
+        p = []
+        for iout = 1:size(sol.t[:], 1)
+            icolor = mod(iout,size(colors,1))+1
+            color = colors[icolor]
+            imarker = mod(iout,size(markers,1))+1
+            marker = markers[imarker]
+            title = string("sol.u at time ", sol.t[iout])
+            plot_results!(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
+        #plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+        end
+    else
+        fig = Figure(resolution = (1200,800),fontsize=22)
+        for iout = 1:size(sol.t[:], 1)
+            title = string("sol.u at time ", sol.t[iout])
+            plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+        end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
@@ -96,6 +108,147 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
         cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
     end
     isel = 1
+    npoin = mesh.npoin
+    xx = zeros(size(mesh.x,1))
+    yy = zeros(size(mesh.x,1))
+    xx .= mesh.x
+    yy .= mesh.y
+    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl)
+    conn .= mesh.connijk
+    if ("Laguerre" in mesh.bdy_edge_type)
+      conn_lag = zeros(mesh.nelem_semi_inf,mesh.ngl,mesh.ngr)
+      conn_lag .= mesh.connijk_lag
+    end
+    poin_bdy = zeros(size(mesh.bdy_edge_type,1),mesh.ngl)
+    poin_bdy .= mesh.poin_in_bdy_edge
+    qe_temp = zeros(mesh.npoin,5)
+    qe_temp .= qexact
+    if ("periodic1" in mesh.bdy_edge_type)
+    	xmin = 1000000000.0
+        ymax = -1000000000.0
+        for e=1:mesh.nelem
+                for i=1:mesh.ngl
+                        for j=1:mesh.ngl
+                                ip = mesh.connijk[e,i,j]
+                                ymax = max(ymax,mesh.y[ip])
+                        	xmin = min(xmin,mesh.x[ip])
+                	end
+        	end
+        end
+	xmax = -xmin
+	nedges = size(mesh.bdy_edge_type,1)
+        new_size = size(mesh.x,1)
+        diff = new_size-mesh.npoin 
+	q_new = zeros(new_size*4)
+        q_exact1 = zeros(new_size,5)
+        q_exact1[1:mesh.npoin,:] .= qexact[1:mesh.npoin,:] 
+
+        for ieq = 1:4
+		ivar = new_size*(ieq-1)
+                ivar1 = mesh.npoin*(ieq-1)
+                #@info ivar,ivar1,new_size*ieq-diff,mesh.npoin*ieq
+		q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:mesh.npoin*ieq]
+	end
+
+        iter = 1
+    	for iedge = 1:nedges
+    		if (mesh.bdy_edge_type[iedge] == "periodic1")
+			e = mesh.bdy_edge_in_elem[iedge]
+			for k=1:mesh.ngl
+                		ip = mesh.poin_in_bdy_edge[iedge,k]
+				xedge = mesh.x[ip]
+				unwind = 0
+                        	l = 0
+				m = 0
+        	                dx = abs(mesh.x[mesh.connijk[e,2,1]]-mesh.x[mesh.connijk[e,mesh.ngl-1,1]])/(mesh.ngl-3)
+				for i=1:mesh.ngl
+					for j=1:mesh.ngl
+                        			ip1 = mesh.connijk[e,i,j]
+						if (mesh.x[ip1] > xedge + (mesh.ngl)*dx)
+							unwind=1
+						end
+						if (ip1 == ip)
+							l=i
+							m=j
+						end
+					end
+				end
+				rep = 0
+                	        ip_rep = 0
+        	                if (k == 1 || k == mesh.ngl)
+					for ee=1:mesh.nelem
+						for i=1:mesh.ngl
+							for j=1:mesh.ngl
+								ip1 = mesh.connijk[ee,i,j]
+								if (ip1 > mesh.npoin && mesh.y[ip1] == mesh.y[ip])
+									ip_rep = ip1
+									rep = 1
+								end
+							end
+						end
+					end
+				end
+                        	if (rep==1 && unwind==1)
+					#@info iter,ip,e,mesh.y[ip] 
+					ip_new = ip_rep
+                        		mesh.connijk[e,l,m] = ip_new
+                                	mesh.poin_in_bdy_edge[iedge,k] = ip_new
+				elseif (unwind==1)
+					#@info iter,ip,e,mesh.y[ip]
+					ip_new = mesh.npoin + iter
+                                	mesh.x[ip_new] = xmax
+                                	mesh.connijk[e,l,m] = ip_new
+                             		mesh.y[ip_new] = mesh.y[ip]
+					mesh.poin_in_bdy_edge[iedge,k] = ip_new
+                        	        iter += 1
+                	                for ieq=1:4
+        	                                ivar = new_size*(ieq-1)
+	                                        ivar1 = mesh.npoin*(ieq-1)
+                                        	q_new[ivar+ip_new] = q[ivar1+ip]
+					end
+					q_exact1[ip_new,:] .= qexact[ip,:]
+				end
+			end
+		end
+
+        end
+        npoin += iter-1;
+        if ("Laguerre" in mesh.bdy_edge_type)
+	      	
+        	e = mesh.nelem_semi_inf
+		iter = 1
+		for j=1:mesh.ngr
+			ip = mesh.connijk_lag[e,mesh.ngl,j]
+			if (j==1)
+				ip1=1
+				while (ip1 <= npoin)
+					if(mesh.x[ip1] == xmax && mesh.y[ip1] == ymax)
+						ip_new = ip1
+					end
+					ip1 +=1
+				end
+                                mesh.connijk_lag[e,mesh.ngl,j] = ip_new
+			else
+				ip_new = npoin + iter
+                        	mesh.x[ip_new] = xmax
+                        	mesh.connijk_lag[e,mesh.ngl,j] = ip_new
+                        	mesh.y[ip_new] = mesh.y[ip]
+                        	iter += 1
+				for ieq=1:4
+                        		ivar = new_size*(ieq-1)
+                                	ivar1 = mesh.npoin*(ieq-1)
+                                	q_new[ivar+ip_new] = q[ivar1+ip]
+                        	end
+				q_exact1[ip_new,:] .= qexact[ip,:]
+			end
+		end
+		npoin +=iter -1
+	end
+        q = q_new
+	qexact = q_exact1
+	
+    end  
+
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl-1
             for j = 1:mesh.ngl-1
@@ -134,7 +287,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
         end
     end
     
-    npoin = mesh.npoin
+    #npoin = mesh.npoin
     qout = copy(q)
 
     
@@ -283,7 +436,14 @@ end
         vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
     end
     outfiles = vtk_save(vtkfile)
-        
+    mesh.x .= xx
+    mesh.y .= yy
+    mesh.connijk .= conn
+    mesh.poin_in_bdy_edge .= poin_bdy
+    qexact = copy(qe_temp)
+    if ("Laguerre" in mesh.bdy_edge_type)
+    	mesh.connijk_lag .= conn_lag 
+    end
 end
 
 function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))

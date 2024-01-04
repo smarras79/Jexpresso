@@ -19,7 +19,7 @@ function user_inputs()
         :nop_laguerre        => 40,
         :lexact_integration  => false,
         :lsource             => true,
-        :llaguerre_1d        => true,
+        :llaguerre_1d_right  => true,
         :laguerre_beta       => 1.0,
         :yfac_laguerre       => 0.25,
         #:lperiodic_1d        => true, #false by default
