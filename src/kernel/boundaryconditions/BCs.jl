@@ -40,6 +40,55 @@ function apply_periodicity!(u, uaux, t,qe,
     nothing
 end
 
+function apply_boundary_conditions_lin_solve!(L,RHS,mesh,inputs,SD::NSD_2D)
+    
+    for iedge = 1:mesh.nedges_bdy
+        if (mesh.bdy_edge_type[iedge] != "Laguerre")
+            for k=1:mesh.ngl
+                ip = mesh.poin_in_bdy_edge[iedge,k]
+                for ip1 = 1:mesh.npoin
+                    L[ip,ip1] = 0.0
+                end
+                L[ip,ip] = 1.0
+                RHS[ip] = 0.0
+            end
+        end
+    end
+    
+    if ("Laguerre" in mesh.bdy_edge_type)
+        for k=1:mesh.ngr
+            ip = mesh.connijk_lag[1,1,k]
+            for ip1 = 1:mesh.npoin
+                L[ip,ip1] = 0.0
+            end
+            L[ip,ip] = 1.0
+            RHS[ip] = 0.0
+        end
+
+        for k=1:mesh.ngr
+            ip = mesh.connijk_lag[mesh.nelem_semi_inf,mesh.ngl,k]
+            for ip1 = 1:mesh.npoin
+                L[ip,ip1] = 0.0
+            end
+            L[ip,ip] = 1.0
+            RHS[ip] = 0.0
+        end
+       
+        for e=1:mesh.nelem_semi_inf
+            for i=1:mesh.ngl
+                ip = mesh.connijk_lag[e,i,mesh.ngr]
+                for ip1 = 1:mesh.npoin
+                    L[ip,ip1] = 0.0
+                end
+                L[ip,ip] = 1.0
+                RHS[ip] = 0.0
+            end
+        end
+
+    end
+
+end
+
 
 function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
 

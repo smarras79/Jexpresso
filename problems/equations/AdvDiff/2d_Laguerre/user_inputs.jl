@@ -7,7 +7,7 @@ function user_inputs()
         :Δt                   => 0.0005,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 10,
-        :output_dir          => "./",
+        :output_dir          => "./output/",
         :case                 => "rtb",
         #:CL                   => NCL(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
@@ -16,7 +16,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
-        :nop_laguerre        => 20,     # Laguerre polynomial Order
+        :nop_laguerre        => 40,     # Laguerre polynomial Order
         :xfac_laguerre       => 0.0,
         :yfac_laguerre       => 0.07,
         :luser_bc            => true,
@@ -43,7 +43,7 @@ function user_inputs()
         #--------------------------------------------------------------------------- 
         :xscale              => 10.0,
         :yscale              => 10.0,
-        :xdisp               => 0.0,
+        :xdisp               => 1.0,
         :ydisp               => 1.0,
         #---------------------------------------------------------------------------
         # Mountain parameters
