@@ -94,6 +94,18 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     
 end
 
+function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
+
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
+    title = @sprintf "Solution to ∇⋅∇(q) = f"
+    if inputs[:lplot_surf3d]
+        plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1, smoothing_factor=inputs[:smoothing_factor])
+    else
+        plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR;)
+    end
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
+end
+
 #------------
 # VTK writer
 #------------

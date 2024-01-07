@@ -211,8 +211,12 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
         if (maxq > minq) 
           Lx = abs(maximum(mesh.x) - minimum(mesh.x))
           Ly = abs(maximum(mesh.y) - minimum(mesh.y))
-          ax.aspect = Lx/Ly; colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
-        
+          if (Ly > Lx)
+            ax.aspect = Lx/Ly; colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
+          else
+            #ax.aspect = Lx/Ly; #colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
+          end      
+
           Colorbar(fig[1,2], colormap = :viridis,  limits = (minq, maxq))        
           save(string(fout_name), fig) #, resolution = (600, 600))
           fig

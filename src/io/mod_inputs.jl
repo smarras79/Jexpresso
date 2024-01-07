@@ -31,6 +31,10 @@ function mod_inputs_user_inputs!(user_input_file)
     
     ##1D plotting inputs for paper
 
+    if(!haskey(inputs, :llinsolve))
+      inputs[:llinsolve] = false
+    end
+
     if(!haskey(inputs, :plot_vlines))
       inputs[:plot_vlines] = "empty"
     end
@@ -71,59 +75,59 @@ function mod_inputs_user_inputs!(user_input_file)
       inputs[:laguerre_beta] = 1.0
     end
     
-    if(!haskey(inputs, :nop_laguerre))
+    if(!haskey(inputs,:nop_laguerre))
         inputs[:nop_laguerre] = 18
     end
     
-    if(!haskey(inputs, :xfac_laguerre))
+    if(!haskey(inputs,:xfac_laguerre))
         inputs[:xfac_laguerre] = 1.0
     end
 
-    if(!haskey(inputs, :yfac_laguerre))
+    if(!haskey(inputs,:yfac_laguerre))
         inputs[:yfac_laguerre] = 1.0
     end
      
-    if(!haskey(inputs, :lfilter))
+    if(!haskey(inputs,:lfilter))
         inputs[:lfilter] = false
     end
 
-    if(!haskey(inputs, :mu_x))
+    if(!haskey(inputs,:mu_x))
         inputs[:mu_x] = 0.0
     end
 
-    if(!haskey(inputs, :mu_y))
+    if(!haskey(inputs,:mu_y))
         inputs[:mu_y] = 0.0
     end
 
-    if(!haskey(inputs, :lwarp))
+    if(!haskey(inputs,:lwarp))
         inputs[:lwarp] = false
     end
 
-    if(!haskey(inputs, :mount_type))
+    if(!haskey(inputs,:mount_type))
         inputs[:lagnesi] = "agnesi"
     end
 
-    if(!haskey(inputs, :a_mount))
+    if(!haskey(inputs,:a_mount))
         inputs[:a_mount] = 10000.0
     end
 
-    if(!haskey(inputs, :h_mount))
+    if(!haskey(inputs,:h_mount))
         inputs[:h_mount] = 1.0
     end
     
-    if(!haskey(inputs, :c_mount))
+    if(!haskey(inputs,:c_mount))
         inputs[:c_mount] = 0.0
     end
 
-    if(!haskey(inputs, :luser_bc))
+    if(!haskey(inputs,:luser_bc))
         inputs[:luser_bc] = true
     end
     
-    if(!haskey(inputs, :xscale))
+    if(!haskey(inputs,:xscale))
         inputs[:xscale] = 1.0
     end
 
-    if(!haskey(inputs, :yscale))
+    if(!haskey(inputs,:yscale))
         inputs[:yscale] = 1.0
     end
     
@@ -429,6 +433,11 @@ function mod_inputs_user_inputs!(user_input_file)
         inputs[:equations] = Elliptic()
         inputs[:ldss_laplace] = true
         inputs[:ldss_differentiation] = false     
+    elseif (lowercase(parsed_equations) == "helmholtz" ||
+        lowercase(parsed_equations) == "diffusion")
+        inputs[:equations] = Helmholtz()
+        inputs[:ldss_laplace] = true
+        inputs[:ldss_differentiation] = false
     else
         
         #inputs[:neqs] = 1 #default
