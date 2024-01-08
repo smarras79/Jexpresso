@@ -39,6 +39,10 @@ function mod_inputs_user_inputs!(user_input_file)
       inputs[:plot_vlines] = "empty"
     end
 
+    if(!haskey(inputs, :plot_hlines))
+      inputs[:plot_hlines] = "empty"
+    end
+    
     if(!haskey(inputs, :plot_axis))
       inputs[:plot_axis] = "empty"
     end
