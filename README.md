@@ -180,6 +180,21 @@ Details will be given in the documentation (still WIP). Write us if you need hel
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
 ## Laguerre semi-infinite element test suite
+This section contains instructions to run all of the test cases presented in
+
+```
+@article{tissaoui2024,
+  doi = {},
+  url = {},
+  year = {2020},
+  volume = {},
+  number = {},
+  pages = {},
+  author = {Yassine Tissaoui and James F. Kelly and Simone Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions},
+  journal = {arXiv},
+}
+```
 
 Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
 
