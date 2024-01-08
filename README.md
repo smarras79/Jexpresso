@@ -196,7 +196,7 @@ julia> include("./src/Jexpresso.jl")
 
 Test 2: 1D wave train for linearized shallow water equations
 
-The problem is defined in `problems/equations/AdvDiff/Wave_Train` and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/equations/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
 julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train");
@@ -209,7 +209,7 @@ julia> include("./src/Jexpresso.jl")
 
 A second version of this tests generate images with the solutions at different times overlapped.
 
-This version is defined in `problems/equations/AdvDiff/Wave_Train_Overlapping_Plot` and by default output will be written to `output/AdvDiff/Wave_Train_Overlapping_Plot`. To run this version of the problem execute the following from the Julia command line:
+This version is defined in [`problems/equations/AdvDiff/Wave_Train_Overlapping_Plot`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/AdvDiff/Wave_Train_Overlapping_Plot) and by default output will be written to `output/AdvDiff/Wave_Train_Overlapping_Plot`. To run this version of the problem execute the following from the Julia command line:
 
 ```bash
 julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train_Overlapping_Plot");
@@ -222,7 +222,7 @@ julia> include("./src/Jexpresso.jl")
 
 Test 3: 2D advection-diffusion equation
 
-The problem is defined in `problems/equations/AdvDiff/2D_laguerre` and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
 julia> push!(empty!(ARGS), "AdvDiff", "2D_laguerre");
@@ -235,7 +235,7 @@ julia> include("./src/Jexpresso.jl")
 
 Test 4: 2D Helmholtz equation
 
-The problem is defined in `problems/equations/Helmholtz/case1` and by default output will be written to `output/Helmholtz/case1`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/equations/Helmholtz/case1`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/Helmholtz/case1) and by default output will be written to `output/Helmholtz/case1`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
 julia> push!(empty!(ARGS), "Helmholtz", "case1");
@@ -248,7 +248,7 @@ julia> include("./src/Jexpresso.jl")
 
 Test 5: Rising thermal bubble
 
-The problem is defined in `problems/equations/CompEuler/theta_laguerre` and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "theta_laguerre");
@@ -261,7 +261,7 @@ julia> include("./src/Jexpresso.jl")
 
 Test 6: Hydrostatic linear mountain waves
 
-The problem is defined in `problems/equations/CompEuler/HSmount_Lag_working` and by default output will be written to `output/CompEuler/HSmount_Lag_working`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/equations/CompEuler/HSmount_Lag_working`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/CompEuler/HSmount_Lag_working) and by default output will be written to `output/CompEuler/HSmount_Lag_working`. To solve this problem run the following commands from the Julia command line:
 
 ```bash      
 julia> push!(empty!(ARGS), "CompEuler", "HSmount_Lag_working");
