@@ -183,7 +183,7 @@ More are already implemented but currently only in individual branches. They wil
 
 Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
 
-The problem is defined in [`problems/CompEuler/wave1d_lag](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "wave1d_lag");
