@@ -216,7 +216,7 @@ julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train_Overlapping_Plot");
 julia> include("./src/Jexpresso.jl")
 ```
 
-<img src="assets/Wave_Train_overlap.eps"
+<img src="assets/Wave_Train_overlap.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
