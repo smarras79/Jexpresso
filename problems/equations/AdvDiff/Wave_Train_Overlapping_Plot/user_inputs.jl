@@ -9,7 +9,7 @@ function user_inputs()
         :tend                 => 50000.0,
         :Δt                   => 0.1,
         :ndiagnostics_outputs => 11, #these are steps, not seconds
-        :output_dir          => "./",
+        :output_dir          => "./output/",
         :SOL_VARS_TYPE        => PERT(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

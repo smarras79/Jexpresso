@@ -61,11 +61,18 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
         ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
         CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin];markersize = 10, markercolor="Blue")
         vlines = inputs[:plot_vlines]
+        hlines = inputs[:plot_hlines]
         axis = inputs[:plot_axis]
         if !(vlines == "empty")
             for i=1:size(vlines,1) 
                 #vlines!(ax, [-2.5,2.5], color = :red)
                 vlines!(ax,vlines[i], color = :red)
+            end
+        end
+        if !(hlines == "empty")
+            for i=1:size(hlines,1)
+                #vlines!(ax, [-2.5,2.5], color = :red)
+                hlines!(ax,hlines[i], color = :red)
             end
         end
         if !(axis == "empty")
@@ -187,7 +194,7 @@ function plot_initial(SD::NSD_2D, x::Array, q::Array, ivar, OUTPUT_DIR::String)
     nothing
 end
 
-function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1)
 
 """
     This function uses the amazing package Mackie to plot arbitrarily gridded
@@ -211,6 +218,19 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
         if (maxq > minq) 
           Lx = abs(maximum(mesh.x) - minimum(mesh.x))
           Ly = abs(maximum(mesh.y) - minimum(mesh.y))
+          vlines = inputs[:plot_vlines]
+          hlines = inputs[:plot_hlines]
+          if !(vlines == "empty")
+              for i=1:size(vlines,1)
+                  vlines!(ax,vlines[i], color = :red, linestyle = :dash)
+              end
+          end
+          if !(hlines == "empty")
+              for i=1:size(hlines,1)
+                  hlines!(ax,hlines[i], color = :red, linstyle = :dash)
+              end
+          end
+          
           if (Ly > Lx)
             ax.aspect = Lx/Ly; colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
           else

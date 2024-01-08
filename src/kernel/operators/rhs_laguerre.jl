@@ -265,7 +265,8 @@ function viscous_rhs_el_laguerre!(u, params, SD::NSD_2D)
         end
         
     end
-    #@info maximum(params.rhs_diffξ_el_lag[:,:,:,4]),maximum(params.rhs_diffη_el_lag[:,:,:,4])
+    
+    #@info maximum(params.rhs_diffξ_el_lag[:,:,:,1]),maximum(params.rhs_diffη_el_lag[:,:,:,1])
     params.rhs_diff_el_lag .= @views (params.rhs_diffξ_el_lag .+ params.rhs_diffη_el_lag)
 end
 

@@ -61,7 +61,7 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     else
         for iout = 1:size(sol.t[:],1)
             title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-            plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR; iout=iout, nvar=nvar)
+            plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR,inputs; iout=iout, nvar=nvar)
         end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
@@ -101,7 +101,7 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
     if inputs[:lplot_surf3d]
         plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1, smoothing_factor=inputs[:smoothing_factor])
     else
-        plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR;)
+        plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR, inputs;)
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
 end
