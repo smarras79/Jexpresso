@@ -78,10 +78,13 @@ inputs = mod_inputs_user_inputs!(user_input_file)
 #--------------------------------------------------------
 user_defined_output_dir = inputs[:output_dir]
 if user_defined_output_dir == "none"
-    OUTPUT_DIR = string(case_name_dir, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS/"))
+    OUTPUT_DIR = joinpath(case_name_dir, string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")))
     inputs[:output_dir] = OUTPUT_DIR
 else
-    OUTPUT_DIR = string(user_defined_output_dir, "/", parsed_equations, "/", parsed_equations_case_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS/"))
+    #OUTPUT_DIR = string(user_defined_output_dir, "/", parsed_equations, "/", parsed_equations_case_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS/"))
+
+    OUTPUT_DIR = joinpath(user_defined_output_dir, parsed_equations, parsed_equations_case_name, string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")))
+    
 end
 if !isdir(OUTPUT_DIR)
     mkpath(OUTPUT_DIR)
