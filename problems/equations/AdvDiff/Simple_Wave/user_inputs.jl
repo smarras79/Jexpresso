@@ -6,7 +6,7 @@ function user_inputs()
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
         :ode_solver          => SSPRK33(),
-        :tend                 => 0.001,#100.0,
+        :tend                 => 100.0,
         :Δt                   => 0.001,
         :ndiagnostics_outputs => 100, #these are steps, not seconds
         :output_dir          => "./",
@@ -19,7 +19,7 @@ function user_inputs()
         :nop_laguerre        => 40,
         :lexact_integration  => false,
         :lsource             => true,
-        #:llaguerre_1d        => true,
+        :llaguerre_1d_right  => true,
         :laguerre_beta       => 1.0,
         :yfac_laguerre       => 0.25,
         #:lperiodic_1d        => true, #false by default
@@ -45,7 +45,7 @@ function user_inputs()
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
         :xmin          =>   0.0,
-        :xmax          =>   69.7,
+        :xmax          =>   60,
         :nelx          =>   40,
     ) #Dict
     #---------------------------------------------------------------------------

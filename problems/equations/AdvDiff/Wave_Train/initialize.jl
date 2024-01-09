@@ -11,7 +11,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     # defines neqs, which is used to allocate all necessary equation-dependent arrays
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("h,u")
+    qvars = ("h","u")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
     #---------------------------------------------------------------------------------
     
@@ -27,7 +27,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             
     end
 
-    varnames = ["h,u"]
+    varnames = ["h","u"]
     write_output(NSD_1D(), q.qn, mesh, OUTPUT_DIR, inputs, varnames, PNG())
     
     @info " Initialize fields for 1D adv diff ........................ DONE "

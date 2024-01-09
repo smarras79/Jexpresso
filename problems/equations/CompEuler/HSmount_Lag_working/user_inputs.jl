@@ -3,10 +3,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 500.0, #2π,
+        :tend                 => 30000.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 100,
+        :output_dir           => "./output/",
         :case                 => "rtb",
         #:CL                   => NCL(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
@@ -16,9 +17,10 @@ function user_inputs()
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
         :nop_laguerre        => 14,
-        :yfac_laguerre       => 500.0,
+        :yfac_laguerre       => 300.0,
         :luser_bc            => true,
         :lsource             => true,
+        :lperiodic_laguerre  => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -56,8 +58,8 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.2,
-        :mu_y                => 0.2,
+        :mu_x                => 0.25,
+        :mu_y                => 0.25,
         :filter_type         => "erf",  ##default is erf, use either "erf" for Boyd-Vandeven,"exp" for Warburton Exponential filter, or "quad" for Fischer quadratic filter
         #---------------------------------------------------------------------------
         # Plotting parameters
