@@ -121,7 +121,8 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, P
             uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
             uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]
             uprimitive[i,j,3] = u[m3]/uprimitive[i,j,1]
-            uprimitive[i,j,4] = (u[m4] + uprimitive[i,j,1]*uauxe[m1,4])/uprimitive[i,j,1] # CHECK THIS FOR ENE- δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+            #uprimitive[i,j,4] = (u[m4] + uprimitive[i,j,1]*uauxe[m1,4])/uprimitive[i,j,1] # CHECK THIS FOR ENE- δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+            uprimitive[i,j,4] = (u[m4] + uauxe[m1,4])/uprimitive[i,j,1] - uauxe[m1,4]/uauxe[m1,1]#(u[m4] + uauxe[m1,4])/uprimitive[i,j,1]
 
             #Tracers
             if(neqs > 4)
@@ -133,7 +134,7 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, P
             end
             
             #Pressure:
-            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
+            #uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
             
         end
         
@@ -213,6 +214,7 @@ function rhs!(du, u, params, time)
         build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
         #n@info time, params.mesh.x[params.mesh.npoin_linear], u[params.mesh.npoin_linear], maximum(params.RHS[params.mesh.npoin_linear,1]), maximum(params.RHS_lag[params.mesh.npoin_linear,1])
         #@info time, params.mesh.x[params.mesh.npoin-params.mesh.ngr], u[params.mesh.npoin-params.mesh.ngr], maximum(params.RHS[params.mesh.npoin-params.mesh.ngr,1])
+        #@info params.RHS[656,3],params.RHS_lag[656,3], params.RHS[16705,3],params.RHS_lag[16705,3]
         params.RHS .= @views(params.RHS .+ params.RHS_lag)
     end
     #@btime RHStoDU!($du, $@view(params.RHS[:,:]), $params.neqs, $params.mesh.npoin)
