@@ -186,3 +186,4 @@ For non-periodic 2D tests, the output can also be written to VTK files by settin
 
 ## Contacts
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
+
