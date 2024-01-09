@@ -1,3 +1,16 @@
+# Documentation
+
+```@meta
+CurrentModule = Jexpresso
+DocTestSetup = quote
+    using Jexpresso
+end
+```
+
+```@autodocs
+Modules = [Jexpresso]
+```
+
 # Jexpresso.jl
 
 Documentation of `Jexpresso.jl`.
