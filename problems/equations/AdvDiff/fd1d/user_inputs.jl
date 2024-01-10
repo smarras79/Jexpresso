@@ -15,7 +15,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :AD                  => FD(),  # abstractDiscretization: default is ContGal()
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 4,     # Polynomial order
+        :nop                 => 1,     # Polynomial order
         :lexact_integration  => false,
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
