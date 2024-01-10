@@ -3,9 +3,12 @@ include("custom_bcs.jl")
 function apply_boundary_conditions!(u, uaux, t,qe,
                                     mesh, metrics, basis,
                                     RHS, rhs_el, ubdy,
-                                    ω, neqs, inputs, SD::NSD_1D)
+                                    ω, neqs, inputs, AD, SD::NSD_1D)
     if inputs[:lperiodic_1d]
-        nothing
+        apply_periodicity!(u, uaux, t,qe,
+                            mesh, metrics, basis,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, AD, SD)
     else
         build_custom_bcs!(SD, t, mesh, metrics, ω,
                           ubdy, uaux, u, qe,
@@ -17,7 +20,7 @@ end
 function apply_boundary_conditions!(u, uaux, t,qe,
                                     mesh, metrics, basis,
                                     RHS, rhs_el, ubdy,
-                                    ω, neqs, inputs, SD::NSD_2D)
+                                    ω, neqs, inputs, AD, SD::NSD_2D)
 
     build_custom_bcs!(SD, t, mesh, metrics, ω,
                       ubdy, uaux, u, qe,
@@ -29,14 +32,34 @@ end
 function apply_periodicity!(u, uaux, t,qe,
                             mesh, metrics, basis,
                             RHS, rhs_el, ubdy,
-                            ω, neqs, inputs, SD::NSD_1D)
-    nothing
+                            ω, neqs, inputs, AD::FD, SD::NSD_1D)
+
+    #this only works for a scalar equation.
+    #adjust for systems.
+    u[mesh.npoin_linear] = u[1]
 end
+
 
 function apply_periodicity!(u, uaux, t,qe,
                             mesh, metrics, basis,
                             RHS, rhs_el, ubdy,
-                            ω, neqs, inputs, SD::NSD_2D)
+                            ω, neqs, inputs, AD::ContGal, SD::NSD_1D)
+    nothing
+end
+
+
+function apply_periodicity!(u, uaux, t,qe,
+                            mesh, metrics, basis,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, AD::FD, SD::NSD_2D)
+    error(" BCs.jl: FD not implemented for NSD_2D yet! ")
+end
+
+
+function apply_periodicity!(u, uaux, t,qe,
+                            mesh, metrics, basis,
+                            RHS, rhs_el, ubdy,
+                            ω, neqs, inputs, AD::ContGal, SD::NSD_2D)
     nothing
 end
 

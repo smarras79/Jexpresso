@@ -144,6 +144,7 @@ function sem_setup(inputs::Dict)
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         else
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
+
             ω1 = ω
             ω = ω1
             #--------------------------------------------------------
@@ -160,6 +161,6 @@ function sem_setup(inputs::Dict)
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
-
+    
     return (; QT, PT, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end
