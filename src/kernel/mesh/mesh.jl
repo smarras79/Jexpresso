@@ -2192,26 +2192,28 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = iel
         mesh.conn[iel, 2] = iel + 1
+
+        mesh.connijk[iel, 1] = iel
+        mesh.connijk[iel, mesh.ngl] = iel + 1
     end
     
     #Add high-order nodes
     add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes)
     mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, 1, mesh.ngr, 1)
     mesh.nelem_semi_inf = 1
-    @info mesh.ngr
     if (inputs[:llaguerre_1d])
-      x = zeros(Float64,mesh.npoin+mesh.ngr-1)      
-      x[1:mesh.npoin] .= mesh.x[1:mesh.npoin] 
-      gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
-     mesh.connijk_lag[1,1,1] = mesh.npoin_linear 
-     for i=2:mesh.ngr
-         ip = mesh.npoin+i-1
-         mesh.connijk_lag[1,i,1] = ip
-         x[ip] = mesh.xmax + inputs[:yfac_laguerre]*gr.ξ[i]
-      end    
-      mesh.npoin_original = mesh.npoin
-      mesh.npoin = mesh.npoin + mesh.ngr-1
-      mesh.x = x
+        x = zeros(Float64,mesh.npoin+mesh.ngr-1)      
+        x[1:mesh.npoin] .= mesh.x[1:mesh.npoin] 
+        gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
+        mesh.connijk_lag[1,1,1] = mesh.npoin_linear 
+        for i=2:mesh.ngr
+            ip = mesh.npoin+i-1
+            mesh.connijk_lag[1,i,1] = ip
+            x[ip] = mesh.xmax + inputs[:yfac_laguerre]*gr.ξ[i]
+        end    
+        mesh.npoin_original = mesh.npoin
+        mesh.npoin = mesh.npoin + mesh.ngr-1
+        mesh.x = x
     end 
     #plot_1d_grid(mesh)
     resize!(mesh.y, (mesh.npoin))
