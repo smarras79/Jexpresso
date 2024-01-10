@@ -2153,6 +2153,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
     mesh.npoin = mesh.npx
 
+    @info mesh.npoin
     mesh.x[1] = mesh.xmin
     for i = 2:mesh.npx
         mesh.x[i] = mesh.x[i-1] + Δx
@@ -2182,7 +2183,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     
     
     # Resize (using resize! from ElasticArrays) as needed
-    resize!(mesh.x, (mesh.npoin))    
+    resize!(mesh.x, (mesh.npoin))
     mesh.npoin_el = ngl
 
     #allocate mesh.conn and reshape it

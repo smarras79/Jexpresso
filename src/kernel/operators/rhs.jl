@@ -261,7 +261,7 @@ function _build_rhs!(RHS, u, params, time)
     apply_boundary_conditions!(u, params.uaux, time, params.qe,
                                params.mesh, params.metrics, params.basis,
                                params.RHS, params.rhs_el, params.ubdy,
-                               params.ω, neqs, params.inputs, SD)
+                               params.ω, neqs, params.inputs, AD, SD)
     
     inviscid_rhs_el!(u, params, lsource, SD)
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, AD)

@@ -9,7 +9,7 @@ function driver(inputs::Dict,      #input parameters from src/user_input.jl
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
     check_length(qp.qn[1,:], qp.neqs+1, "drivers --> initialize.jl")
-        
+    
     solution = time_loop!(sem.QT,
                           sem.PT,
                           inputs[:SOL_VARS_TYPE],
