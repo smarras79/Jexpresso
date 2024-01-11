@@ -56,7 +56,7 @@ user_flux_file       = string(case_name_dir, "/user_flux.jl")
 user_source_file     = string(case_name_dir, "/user_source.jl")
 user_bc_file         = string(case_name_dir, "/user_bc.jl")
 user_initialize_file = string(case_name_dir, "/initialize.jl")
-
+user_lhs_file        = string(case_name_dir, "/user_lhs.jl")
 include(driver_file)
 
 include(user_input_file)
@@ -73,6 +73,9 @@ inputs = Dict{}()
 
 inputs = mod_inputs_user_inputs!(user_input_file)
 
+if (inputs[:llinsolve])
+    include(user_lhs_file)
+end
 #--------------------------------------------------------
 #Create output directory if it doesn't exist:
 #--------------------------------------------------------

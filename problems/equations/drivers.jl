@@ -38,14 +38,16 @@ function driver(DT::ContGal,       #Space discretization type
        Minv = diagm(sem.matrix.Minv)
        L_temp = Minv * sem.matrix.L
        sem.matrix.L .= L_temp 
-       apply_boundary_conditions_lin_solve!(sem.matrix.L,RHS,sem.mesh,inputs,sem.mesh.SD)             
-
-       for ip = 1:sem.mesh.npoin
-           sem.matrix.L[ip,ip] += 10
+       if (inputs[:ldss_laplace])
+        apply_boundary_conditions_lin_solve!(sem.matrix.L,RHS,sem.mesh,inputs,sem.mesh.SD)             
+        LHS = build_lhs(sem.matrix.L,sem.mesh)
        end
+       #=for ip = 1:sem.mesh.npoin
+           sem.matrix.L[ip,ip] += 10
+       end=#
        
  
-       @time solution = solveAx(-sem.matrix.L, RHS, inputs[:ode_solver]) 
+       @time solution = solveAx(-LHS, RHS, inputs[:ode_solver]) 
 
        write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=qp.neqs)
    
