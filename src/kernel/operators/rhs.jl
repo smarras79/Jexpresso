@@ -265,7 +265,7 @@ function _build_rhs!(RHS, u, params, time)
     
     inviscid_rhs_el!(u, params, lsource, SD)
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, AD)
-    
+    #@info params.RHS[:,1]
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -313,7 +313,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
             end
         end
         
-        _expansion_inviscid!(params, iel, params.CL, params.QT, SD, params.AD)
+        _expansion_inviscid!(u, params, iel, params.CL, params.QT, SD, params.AD)
         
     end
 end
@@ -346,7 +346,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
             end
         end
 
-        _expansion_inviscid!(params, iel, params.CL, params.QT, SD, params.AD)
+        _expansion_inviscid!(u, params, iel, params.CL, params.QT, SD, params.AD)
         
     end
 end
@@ -366,19 +366,22 @@ function viscous_rhs_el!(u, params, SD::NSD_2D)
     params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el)
 end
 
-function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD)
-
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD)
+    
     for ieq = 1:params.neqs
         for i = 1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,1]
-            params.RHS[ip,ieq] = 0.0
+            if (ip < params.mesh.npoin)
+                #params.RHS[ip,ieq] = params.visc_coeff[ip]*(u[ip+1] - 2*u[ip] + u[ip-1])/(params.mesh.Δx[ip])^2 + 0.1*(u[ip+1] - u[ip])/(params.mesh.Δx[ip])
+                params.RHS[ip,ieq] = 0.5*(u[ip+1] - u[ip])/(params.mesh.Δx[ip])
+            end
         end
     end
-    
     nothing
 end
 
-function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
     
     for ieq = 1:params.neqs
         for i=1:params.mesh.ngl
@@ -392,9 +395,9 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::Co
 end
 
 
-function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
 
     for ieq=1:params.neqs
         for j=1:params.mesh.ngl
@@ -430,9 +433,9 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::Co
     end
 end
 
-function _expansion_inviscid!(params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
     
     N = params.mesh.ngl
     Q = N + 1
@@ -476,9 +479,9 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::Cont
     end
 end
 
-function _expansion_inviscid!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
+function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::ContGal)
     
     for ieq=1:params.neqs
         for j=1:params.mesh.ngl
@@ -533,9 +536,9 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::C
 end
 
 
-function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
+function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::ContGal)
+function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::ContGal)
 
     N = params.mesh.ngl
     Q = N + 1

@@ -178,9 +178,8 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-        fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin],
-                                         colormap = :viridis)
-
+        fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin], colormap = :viridis)
+        
         minq = minimum(q[idx+1:ivar*npoin])
         maxq = maximum(q[idx+1:ivar*npoin])
         
@@ -188,15 +187,15 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
         Ly = abs(maximum(mesh.y) - minimum(mesh.y))
         ax.aspect = Lx/Ly; colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
         
-        Colorbar(fig[1,2], colormap = :viridis,  limits = (minq, maxq))        
-        save(string(fout_name), fig) #, resolution = (600, 600))
+        Colorbar(fig[1,2], colormap = :viridis) #,  limits = (minq, maxq))
+        save(string(fout_name), fig) #, resolution = (600, 600))        
         fig
     end
 end
 function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
 function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
 
-function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-1)
+function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-3)
 
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     ymin = minimum(mesh.y); ymax = maximum(mesh.y); 
@@ -217,9 +216,9 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
 
         #figure:
         fig = Figure(resolution=(1200, 400))
-        axs = [Axis3(fig[1, i]; aspect=(1, 1, 1)) for i = 1:1]
+        axs = [Axis3(fig[1, i]; aspect=(1, 1, 1), azimuth=-π/2, elevation=π/2) for i = 1:1]
         
-        hm = Makie.surface!(axs[1], xg, yg, zspl) # legend=:false, xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
+        hm = Makie.surface!(axs[1], xg, yg, zspl) # xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
         #Colorbar(fig[1, 1], hm, height=Relative(0.5))
         
         save(string(fout_name), fig)
