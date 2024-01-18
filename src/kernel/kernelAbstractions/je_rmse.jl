@@ -1,4 +1,4 @@
-using Metal
+using CUDA
 using KernelAbstractions
 using BenchmarkTools
 
@@ -127,24 +127,23 @@ dC = KernelAbstractions.zeros(backend, eltype(A), 1)
 
 @info "CPU"
 k= ka_rmse_kernel(backend)
-@btime k(dC, dA, dB; ndrange=size(A))
+k(dC, dA, dB; ndrange=size(A))
 #sqrt(Array(dC)[] / length(A))
      
+@info "GPU 1"
 
-backend = MetalBackend()
+backend = CUDABackend()
 dA = KernelAbstractions.allocate(backend, eltype(A), size(A))
 KernelAbstractions.copyto!(backend, dA, A)
 dB = KernelAbstractions.allocate(backend, eltype(B), size(B))
 KernelAbstractions.copyto!(backend, dB, B)
 dC = KernelAbstractions.zeros(backend, eltype(A), 1)
 
-@info "GPU 1"
 k = ka_rmse_kernel(backend)
 #@benchmark k(dC, dA, dB; ndrange=size(A))
 
-@info "GPU 2"
 k = ka_rmse_kernel_optimal1(backend)
-@benchmark k(dC, dA, dB; ndrange=size(A))
+k(dC, dA, dB; ndrange=size(A))
 #@info "adsiopasd"
 #=
 k = ka_rmse_kernel_optimal2(backend)
