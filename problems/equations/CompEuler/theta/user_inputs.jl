@@ -6,7 +6,7 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.4,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 1.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
@@ -47,8 +47,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "png",
-        :lplot_surf3d        => true,
+        :outformat           => "vtk",
+        #:lplot_surf3d        => true,
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
