@@ -1,4 +1,4 @@
-using CUDA
+using Metal
 using KernelAbstractions
 using BenchmarkTools
 
@@ -13,13 +13,12 @@ end
 @kernel function ka_rmse_kernel_optimal1(C, A, B)
 
     #This is similar to above, but it uses `stride` to minimize @atomic operations   
-    s = @groupsize()[1]
+    s = Int32(@groupsize()[1])
+    n = div(length(A),s)
     ig = @index(Group, Linear)
     il = @index(Local, Linear)
-    i=ig*s + il
-    stride = s
-    
-    # grid-stride loop
+    i=(ig-1)*s + il
+    stride = s*n
     while i <= length(A)
         a = A[i]
         b = B[i]
@@ -29,19 +28,20 @@ end
     end
     
 end
-#=
+
 @kernel function ka_rmse_kernel_optimal2(C, A, B)
     #i = (blockIdx().x-1) * blockDim().x + threadIdx().x
     #stride = gridDim().x * blockDim().x
-    s = groupsize()
-    ig = @index(Group)
-    il = @index(Local)
-    i = ig *s + il
-    stride = s
 
+    s = Int32(@groupsize()[1])
+    n = div(length(A),s)
+    ig = @index(Group, Linear)
+    il = @index(Local, Linear)
+    i=(ig-1)*s + il
+    stride = s*n
 
     # grid-stride loop
-    val = zero(T)
+    val = zero(Float32)
     while i <= length(A)
         a = A[i]
         b = B[i]
@@ -51,7 +51,7 @@ end
     end
     KernelAbstractions.@atomic C[] += val            # <-- changed
 end
-
+#=
 @kernel function ka_rmse_kernel_optimal3(C, A, B)
     #i = (blockIdx().x-1) * blockDim().x + threadIdx().x
     #stride = gridDim().x * blockDim().x
@@ -80,7 +80,7 @@ end
 
     # perform a parallel reduction
     d = 1
-    while d < threads
+	while d < threads
         sync_threads()
         index = 2 * d * (thread-1) + 1
         if index <= threads
@@ -114,8 +114,9 @@ end
 end
 =#
 
-A = rand(Float32, 512, 512)
-B = rand(Float32, 512, 512)
+N=512
+A = rand(Float32, N, N)
+B = rand(Float32, N, N)
 
 backend = CPU()
 dA = KernelAbstractions.allocate(backend, eltype(A), size(A))
@@ -127,12 +128,15 @@ dC = KernelAbstractions.zeros(backend, eltype(A), 1)
 
 @info "CPU"
 k= ka_rmse_kernel(backend)
-k(dC, dA, dB; ndrange=size(A))
+@btime k(dC, dA, dB; ndrange=size(A))
 #sqrt(Array(dC)[] / length(A))
-     
+KernelAbstractions.synchronize(backend)     
+#@info dC
+#dC .= 0.0
 @info "GPU 1"
 
-backend = CUDABackend()
+backend = MetalBackend()
+#backend = CPU()
 dA = KernelAbstractions.allocate(backend, eltype(A), size(A))
 KernelAbstractions.copyto!(backend, dA, A)
 dB = KernelAbstractions.allocate(backend, eltype(B), size(B))
@@ -140,15 +144,25 @@ KernelAbstractions.copyto!(backend, dB, B)
 dC = KernelAbstractions.zeros(backend, eltype(A), 1)
 
 k = ka_rmse_kernel(backend)
-#@benchmark k(dC, dA, dB; ndrange=size(A))
+@btime k(dC, dA, dB; ndrange=size(A))
+KernelAbstractions.synchronize(backend)
 
+#@info dC
+#dC .= Float32(0.0)
+
+@info "GPU 2"
 k = ka_rmse_kernel_optimal1(backend)
-k(dC, dA, dB; ndrange=size(A))
-#@info "adsiopasd"
-#=
+@btime k(dC, dA, dB; ndrange=size(A),workgroupsize = 512)
+KernelAbstractions.synchronize(backend)
+#@info dC
+#dC .= Float32(0.0)
+
+@info "GPU 3"
 k = ka_rmse_kernel_optimal2(backend)
 @btime k(dC, dA, dB; ndrange=size(A))
-
+#@info dC
+#dC .= Float32(0.0)
+#=
 k = ka_rmse_kernel_optimal3(backend)
 @btime k(dC, dA, dB; ndrange=size(A))
 #sqrt(Array(dC)[] / length(A))
