@@ -22,7 +22,6 @@ function u2uaux!(uaux, u, neqs, npoin)
         idx = (i-1)*npoin
         uaux[:,i] = view(u, idx+1:i*npoin)
     end
-    
 end
 
 
@@ -212,7 +211,7 @@ function rhs!(du, u, params, time)
     if (params.laguerre) 
         #@btime build_rhs_laguerre!($@view(params.RHS_lag[:,:]), $u, $params, $time)
         build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
-        #n@info time, params.mesh.x[params.mesh.npoin_linear], u[params.mesh.npoin_linear], maximum(params.RHS[params.mesh.npoin_linear,1]), maximum(params.RHS_lag[params.mesh.npoin_linear,1])
+        #@info time, params.mesh.x[params.mesh.npoin_linear], u[params.mesh.npoin_linear], maximum(params.RHS[params.mesh.npoin_linear,1]), maximum(params.RHS_lag[params.mesh.npoin_linear,1])
         #@info time, params.mesh.x[params.mesh.npoin-params.mesh.ngr], u[params.mesh.npoin-params.mesh.ngr], maximum(params.RHS[params.mesh.npoin-params.mesh.ngr,1])
         #@info params.RHS[656,3],params.RHS_lag[656,3], params.RHS[16705,3],params.RHS_lag[16705,3]
         params.RHS .= @views(params.RHS .+ params.RHS_lag)
@@ -326,7 +325,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
                        @view(params.uaux[ip,:]),
                        @view(params.qe[ip,:]),         #pref
                        params.mesh,
-                       params.CL, params.SOL_VARS_TYPE;
+                       params.CL, params.SOL_VARS_TYPE, ip;
                        neqs=params.neqs)
             
             if lsource

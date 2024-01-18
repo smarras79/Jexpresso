@@ -132,19 +132,14 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     nelem   = params.mesh.nelem
     npoin   = params.mesh.npoin
     lsource = params.inputs[:lsource]
-    
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
     resetRHSToZero_inviscid_laguerre!(params) 
     
     #filter!(u, params, SD)
-     
     inviscid_rhs_el_laguerre!(u, params, lsource, SD)
     DSS_rhs_laguerre!(@view(params.RHS_lag[:,:]), @view(params.rhs_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
-    #@info params.rhs_el_lag[1,1,2,2], params.mesh.connijk_lag[1,1,2]
-    #@info params.rhs_el_lag[20,5,2,2], params.mesh.connijk_lag[20,5,2]
-    #@info params.RHS_lag[6481,2]
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -158,13 +153,10 @@ function _build_rhs_laguerre!(RHS, u, params, time)
         
         params.RHS_lag[:,:] .= @view(params.RHS_lag[:,:]) .+ @view(params.RHS_visc_lag[:,:])
     end
-    #@info params.RHS_lag[6481,2]
-    
  
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS_lag[:,ieq]), params.vaux, params.Minv, neqs, npoin)
     end
-    #@info params.RHS_lag[6481,2]
     #For conservaton apply B.C. to RHS after DSS and not to rhs_el:
     #apply_boundary_conditions!(u, params.uaux, time,
                                #params.mesh, params.metrics, params.basis,
@@ -232,14 +224,13 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_2D)
         for j=1:params.mesh.ngr, i=1:params.mesh.ngl
             ip = params.mesh.connijk_lag[iel,i,j]
             #=if (abs(params.mesh.x[ip])>4990) 
-              #@info params.mesh.x[ip], params.mesh.y[ip]
-              params.uaux[ip,2] = 0.0 
+              #params.uaux[ip,2] = 0.0 
             end=#
             #if (abs(params.mesh.y[ip]) == ymax) params.uaux[ip,3] = 0.0 end 
             user_flux!(@view(params.F_lag[i,j,:]), @view(params.G_lag[i,j,:]), SD,
                        @view(params.uaux[ip,:]), 
                        @view(params.qe[ip,:]),         #pref
-                       params.mesh, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs)
+                       params.mesh, params.CL, params.SOL_VARS_TYPE, ip; neqs=params.neqs)
             
             if lsource
                 user_source!(@view(params.S_lag[i,j,:]),
@@ -266,7 +257,6 @@ function viscous_rhs_el_laguerre!(u, params, SD::NSD_2D)
         
     end
     
-    #@info maximum(params.rhs_diffξ_el_lag[:,:,:,1]),maximum(params.rhs_diffη_el_lag[:,:,:,1])
     params.rhs_diff_el_lag .= @views (params.rhs_diffξ_el_lag .+ params.rhs_diffη_el_lag)
 end
 
@@ -295,6 +285,9 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2
             for i=1:params.mesh.ngl
                 
                 ωJac = ω1[i]*ω2[j]*params.metrics_lag.Je[iel,i,j]
+                ip = params.mesh.connijk_lag[iel,i,j]
+                x = params.mesh.x[ip]
+                y = params.mesh.y[ip]
                 
                 dFdξ = 0.0
                 dFdη = 0.0
@@ -314,13 +307,19 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2
                 dξdy_ij = params.metrics_lag.dξdy[iel,i,j]
                 dηdx_ij = params.metrics_lag.dηdx[iel,i,j]
                 dηdy_ij = params.metrics_lag.dηdy[iel,i,j]
-                 ip = params.mesh.connijk_lag[iel,i,j]
                  
                 dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-
+                dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
+                dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij
                 dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
                 
+                ip = params.mesh.connijk_lag[iel,i,j]
+                x = params.mesh.x[ip]
+                y = params.mesh.y[ip]
 		auxi = ωJac*((dFdx + dGdy) - params.S_lag[i,j,ieq])
+                if (x <= 0.0 && x> -0.01 && y <6.0 && y> 4.0)
+                  #@info x,y, auxi, params.uaux[ip], params.F_lag[i,j,ieq],dFdη,dFdx,dGdy
+                end
                 params.rhs_el_lag[iel,i,j,ieq] -= auxi
             end
         end

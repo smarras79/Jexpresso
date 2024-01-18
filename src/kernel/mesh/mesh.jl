@@ -80,7 +80,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
     connijk_lag ::Array{Int64,3} = zeros(Int64, 0, 0, 0)
-    
+    normals_lag ::Array{Float64,2} = zeros(Float64, 0 ,0)
     #if nsd == 1
     #    connijk::Array{Int64,1} = zeros(Int64, 0, 0)
     #elseif nsd == 2
@@ -482,12 +482,15 @@ if mesh.nsd == 2
         factorx = inputs[:xfac_laguerre]#0.1
         factory = inputs[:yfac_laguerre]#0.025
         mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, n_semi_inf, mesh.ngl, mesh.ngr)
+        mesh.normals_lag ::Array{Float64,2} = zeros(Float64, n_semi_inf, 2)
         bdy_normals = zeros(n_semi_inf, 2)
         bdy_tangents = zeros(n_semi_inf, 2)
         e_iter = 1
         iter = mesh.npoin + 1
-        x_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
-        y_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
+        #x_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+2*(mesh.ngr-1))
+        #y_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+2*(mesh.ngr-1))
+        x_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl)*(mesh.ngr-1))#+2*(mesh.ngr-1))
+        y_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl)*(mesh.ngr-1))#+2*(mesh.ngr-1))
         x_new[1:mesh.npoin] .= mesh.x[:]
         y_new[1:mesh.npoin] .= mesh.y[:]
         for iedge = 1:size(mesh.bdy_edge_type,1)
@@ -600,10 +603,13 @@ if mesh.nsd == 2
         #@info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
         mesh.npoin_original = mesh.npoin
         mesh.npoin = iter -1
-        mesh.x = x_new
-        mesh.y = y_new
+        mesh.x = zeros(Float64,mesh.npoin)
+        mesh.y = zeros(Float64,mesh.npoin)
+        mesh.x .= x_new[1:mesh.npoin]
+        mesh.y .= y_new[1:mesh.npoin]
         mesh.z = zeros(mesh.npoin)
         mesh.nelem_semi_inf = n_semi_inf
+        mesh.normals_lag .= bdy_normals
     end
     #=for iedge_bdy = 1:mesh.nedges_bdy
         @printf(" bdy edge %d of type %s ∈ elem %d with nodes\n", iedge_bdy, mesh.bdy_edge_type[iedge_bdy], mesh.bdy_edge_in_elem[iedge_bdy])
