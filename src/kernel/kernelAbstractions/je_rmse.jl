@@ -12,11 +12,13 @@ end
 
 @kernel function ka_rmse_kernel_optimal1(C, A, B)
 
-    #This is similar to above, but it uses `stride` to minimize @atomic operations
+    #This is similar to above, but it uses `stride` to minimize @atomic operations   
+    s = @groupsize()[1]
+    ig = @index(Group, Linear)
+    il = @index(Local, Linear)
+    i=ig*s + il
+    stride = s
     
-    i = (blockIdx().x-1) * blockDim().x + threadIdx().x
-    stride = gridDim().x * blockDim().x
-
     # grid-stride loop
     while i <= length(A)
         a = A[i]
@@ -25,11 +27,18 @@ end
 
         i += stride
     end
+    
 end
-
+#=
 @kernel function ka_rmse_kernel_optimal2(C, A, B)
-    i = (blockIdx().x-1) * blockDim().x + threadIdx().x
-    stride = gridDim().x * blockDim().x
+    #i = (blockIdx().x-1) * blockDim().x + threadIdx().x
+    #stride = gridDim().x * blockDim().x
+    s = groupsize()
+    ig = @index(Group)
+    il = @index(Local)
+    i = ig *s + il
+    stride = s
+
 
     # grid-stride loop
     val = zero(T)
@@ -44,9 +53,15 @@ end
 end
 
 @kernel function ka_rmse_kernel_optimal3(C, A, B)
-    i = (blockIdx().x-1) * blockDim().x + threadIdx().x
-    stride = gridDim().x * blockDim().x
+    #i = (blockIdx().x-1) * blockDim().x + threadIdx().x
+    #stride = gridDim().x * blockDim().x
+    s = groupsize()
+    ig = @index(Group)
+    il = @index(Local)
+    i = ig *s + il
+    stride = s
 
+    
     # grid-stride loop to process elements on a single thread
     val = zero(T)
     while i <= length(A)
@@ -85,7 +100,7 @@ end
         KernelAbstractions.@atomic C[] += val
     end
 end
-
+=#
 #=let kernel = @kernel launch=false rmse_kernel(C, A, B)
     # we need to inform the occupancy API about the shared memory usage!
     shmem(threads) = threads * sizeof(T)
@@ -99,8 +114,8 @@ end
 end
 =#
 
-A = rand(Float32, 2048, 2048)
-B = rand(Float32, 2048, 2048)
+A = rand(Float32, 512, 512)
+B = rand(Float32, 512, 512)
 
 backend = CPU()
 dA = KernelAbstractions.allocate(backend, eltype(A), size(A))
@@ -110,6 +125,7 @@ KernelAbstractions.copyto!(backend, dB, B)
 dC = KernelAbstractions.zeros(backend, eltype(A), 1)
 @show typeof(dC)
 
+@info "CPU"
 k= ka_rmse_kernel(backend)
 @btime k(dC, dA, dB; ndrange=size(A))
 #sqrt(Array(dC)[] / length(A))
@@ -122,15 +138,19 @@ dB = KernelAbstractions.allocate(backend, eltype(B), size(B))
 KernelAbstractions.copyto!(backend, dB, B)
 dC = KernelAbstractions.zeros(backend, eltype(A), 1)
 
+@info "GPU 1"
 k = ka_rmse_kernel(backend)
-@btime k(dC, dA, dB; ndrange=size(A))
+#@benchmark k(dC, dA, dB; ndrange=size(A))
 
+@info "GPU 2"
 k = ka_rmse_kernel_optimal1(backend)
-@btime k(dC, dA, dB; ndrange=size(A))
-
+@benchmark k(dC, dA, dB; ndrange=size(A))
+#@info "adsiopasd"
+#=
 k = ka_rmse_kernel_optimal2(backend)
 @btime k(dC, dA, dB; ndrange=size(A))
 
 k = ka_rmse_kernel_optimal3(backend)
 @btime k(dC, dA, dB; ndrange=size(A))
 #sqrt(Array(dC)[] / length(A))
+=#
