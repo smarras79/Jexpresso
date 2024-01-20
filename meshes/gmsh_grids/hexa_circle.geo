@@ -1,5 +1,5 @@
-pitch = 10.0;
-circle_r = 5;
+pitch = 10000.0;
+circle_r = pitch/2;
 bottom_left_circle = pitch/2;
 
 Point(1) = {0, 0, 0};

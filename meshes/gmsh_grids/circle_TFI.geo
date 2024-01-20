@@ -107,4 +107,5 @@ Coherence;
 //
 Physical Point("boundary",  1) = {2, 7, 3, 8};
 Physical Curve("free_slip", 2) = {8, 9, 10, 11};
-Physical Surface("domain") = {1};
+Physical Surface("domain") = {1};//+
+Show "*";
