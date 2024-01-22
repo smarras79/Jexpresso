@@ -40,7 +40,7 @@ function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
     fig
 end
 
-function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar; iout=1, nvar=1, PT=nothing)
+function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs; iout=1, nvar=1, PT=nothing)
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
@@ -89,7 +89,7 @@ end
 end=#
 
 
-function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, PT=nothing)
+function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, varnames; iout=1, nvar=1, PT=nothing)
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
@@ -99,7 +99,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
     qe   = range(0,0,npoin)
 
     #outvar = ["ρ", "u", "e"]
-    outvar = ["ρ", "u", "p"]
+    outvar = varnames
     if PT === CompEuler()
         #ρ
         qout[1:npoin] .= @view q[1:npoin]
@@ -192,8 +192,8 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
         fig
     end
 end
-function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
-function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
+function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; nvar=1) nothing end
+function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; nvar=1) nothing end
 
 function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-3)
 
