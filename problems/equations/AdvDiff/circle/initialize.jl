@@ -14,7 +14,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     qvars = ("q")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
     #---------------------------------------------------------------------------------
-    xc = -0.25
+    xc = -0.5
     yc = 0.0
     s = 32.0
     for ip = 1:mesh.npoin

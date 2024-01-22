@@ -6,6 +6,9 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     
     u =  mesh.y[ip]
     v = -mesh.x[ip]
+
+    #u = 0.1
+    #v = 0.1
     
     qu  = u*q[1]
     qv  = v*q[1]
