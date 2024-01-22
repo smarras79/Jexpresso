@@ -303,7 +303,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
                        @view(params.qe[ip,:]),         #pref
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs)
+                       neqs=params.neqs, ip=ip)
             
             if lsource
                 user_source!(@view(params.S[i,1,:]),
@@ -336,7 +336,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
                        @view(params.qe[ip,:]),         #pref
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs)
+                       neqs=params.neqs, ip=ip)
             
             if lsource
                 user_source!(@view(params.S[i,j,:]),

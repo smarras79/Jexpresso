@@ -28,6 +28,28 @@ function mod_inputs_user_inputs!(user_input_file)
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
+
+    ##1D plotting inputs for paper
+
+    if(!haskey(inputs, :llinsolve))
+      inputs[:llinsolve] = false
+    end
+
+    if(!haskey(inputs, :plot_vlines))
+      inputs[:plot_vlines] = "empty"
+    end
+
+    if(!haskey(inputs, :plot_hlines))
+      inputs[:plot_hlines] = "empty"
+    end
+    
+    if(!haskey(inputs, :plot_axis))
+      inputs[:plot_axis] = "empty"
+    end
+   
+    if(!haskey(inputs, :plot_overlap))
+      inputs[:plot_overlap] = false
+    end
     
     if(!haskey(inputs, :lperiodic_1d))
       inputs[:lperiodic_1d] = false
