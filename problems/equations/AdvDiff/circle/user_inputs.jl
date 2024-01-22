@@ -3,10 +3,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 0.1,
+        :tend                 => 0.5,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 0.0025,
-        :ndiagnostics_outputs => 2,
+        :ndiagnostics_outputs => 10,
         :lsource              => false,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -16,15 +16,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1),
-        :μ                    => (0.1), #kinematic viscosity constant for θ equation
+        :μ                    => (0.01), #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic_transport.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_free_slip.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic_transport.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_free_slip.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
