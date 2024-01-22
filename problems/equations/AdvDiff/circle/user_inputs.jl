@@ -1,4 +1,4 @@
-function user_inputs()AAA
+function user_inputs()
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
