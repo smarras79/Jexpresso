@@ -2,9 +2,11 @@ $MeshFormat
 4.1 0 8
 $EndMeshFormat
 $PhysicalNames
-2
+4
 0 1 "boundary"
-1 2 "free_slip"
+1 2 "periodic1"
+1 3 "periodic2"
+2 4 "domain"
 $EndPhysicalNames
 $Entities
 4 4 1 0
@@ -13,9 +15,9 @@ $Entities
 3 1 1 0.2 1 1 
 4 -1 1 0.2 1 1 
 1 -1 -1 0.2 1 -1 0.2 1 2 2 1 -2 
-2 1 -1 0.2 1 1 0.2 1 2 2 2 -3 
+2 1 -1 0.2 1 1 0.2 1 3 2 2 -3 
 3 -1 1 0.2 1 1 0.2 1 2 2 3 -4 
-4 -1 -1 0.2 -1 1 0.2 1 2 2 4 -1 
+4 -1 -1 0.2 -1 1 0.2 1 3 2 4 -1 
 12 -1 -1 0.2 1 1 0.2 0 4 4 1 2 3 
 $EndEntities
 $Nodes
