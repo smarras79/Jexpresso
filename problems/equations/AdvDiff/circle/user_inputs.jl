@@ -1,11 +1,11 @@
-function user_inputs()
+function user_inputs()AAA
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :tend                 => 0.1,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :Δt                   => 0.025,
+        :Δt                   => 0.0025,
         :ndiagnostics_outputs => 2,
         :lsource              => false,
         #---------------------------------------------------------------------------
@@ -23,8 +23,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic_transport.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic_transport.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_free_slip.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
