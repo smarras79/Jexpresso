@@ -23,9 +23,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic_transport.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh", #this is with NOTHING in user_bc
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_free_slip.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/multiblock_TFI.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
