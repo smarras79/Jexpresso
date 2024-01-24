@@ -28,80 +28,35 @@ Line(10) = {2, 6};
 Line(11) = {3, 7};
 Line(12) = {4, 8};
 
-//+
-Curve Loop(1) = {1, 2, 3, 4};
-Plane Surface(1) = {1};
-//Transfinite Line {1} = 10 Using Progression 1.;
-//Transfinite Line {3} = 10 Using Progression 1.;
-//Transfinite Line {2} = 10;
-//Transfinite Line {4} = 10;
-//Transfinite Surface {1} = {1, 2, 3, 4};
+Transfinite Line {1,2,3,4, 5,6,7,8,9,10,11,12} = 10 Using Progression 1.0;
 
 //+
-Curve Loop(2) = {-1, 9, 5, -10};
-Plane Surface(2) = {2};
-//Transfinite Line {1} = 10 Using Progression 1.;
-//Transfinite Line {5} = 10 Using Progression 1.;
-//Transfinite Line {9} = 10;
-//Transfinite Line {10} = 10;
-//Transfinite Surface {2} = {1, 5, 9, 10};
-
+Curve Loop(13) = {4, 1, 2, 3};
+Plane Surface(14) = {13};
 
 //+
-Curve Loop(3) = {-2, 10, 6, -11};
-Plane Surface(3) = {3};
-//Transfinite Line {5} = 10 Using Progression 1.;
-//Transfinite Line {7} = 10 Using Progression 1.;
-//Transfinite Line {2} = 10;
-//Transfinite Line {8} = 10;
-//Transfinite Surface {3} = {5, 7, 2, 8};
-
-
+Curve Loop(15) = {-1, 9, 5, -10};
+Plane Surface(16) = {15};
 
 //+
-Curve Loop(4) = {-3, 11, 7, -12};
-Plane Surface(4) = {4};
-Transfinite Line {11} = 10Using Progression 1.;
-//Transfinite Line {7} = 10Using Progression 1.;
-//Transfinite Line {3} = 10;
-//Transfinite Line {12} = 10;
-//Transfinite Surface {4} = {3, 7, 12, 11};
+Curve Loop(17) = {-2, 10, 6, -11};
+Plane Surface(18) = {17};
 
 //+
-Curve Loop(5) = {-4, 12, 8, -9};
-Plane Surface(5) = {5};
-//Transfinite Line {8} = 10 Using Progression 1.;
-//Transfinite Line {4} = 10;
-//Transfinite Line {10} = 10;
-//Transfinite Surface {3} = {3,6,4,2};
-//Transfinite Surface {5} = {4, 12, 8, 9};
+Curve Loop(19) = {-3, 11, 7, -12};
+Plane Surface(20) = {19};
 
+//+
+Curve Loop(21) = {-4, 12, 8, -9};
+Plane Surface(22) = {21};
 
-Transfinite Line {1} = 10 Using Progression 1.;
-Transfinite Line {2} = 10;
-Transfinite Line {3} = 10;
-Transfinite Line {4} = 10;
-
-Transfinite Line {5} = 10 Using Progression 1.;
-Transfinite Line {6} = 10;
-Transfinite Line {7} = 10;
-Transfinite Line {8} = 10;
-
-Transfinite Line {9} = 10 Using Progression 1.;
-Transfinite Line {10} = 10;
-Transfinite Line {11} = 10;
-Transfinite Line {12} = 10;
-
-Transfinite Surface (13) = {1};
-Transfinite Surface (14) = {2};
-Transfinite Surface (15) = {3};
-Transfinite Surface (16) = {4};
-Transfinite Surface (17) = {5};
-
-Recombine Surface {13, 14, 15, 16, 17};
+Transfinite Surface {14,16,18,20,22};
+Recombine Surface {14,16,18,20,22};
 Coherence;
 
-//Physical Point("nothing",  1) = {2, 7, 3, 8};
-//Physical Curve("nothing", 2) = {8, 9, 10, 11};
-//Physical Surface("domain") = {1};//+
+//Physical Surface("domain") = {1};
+Physical Point("nothing",  1) = {5, 6, 7, 8}; //Point numbers
+Physical Curve("nothing", 2) = {5, 6, 7, 8}; //Line numbers
+
+//+
 Show "*";
