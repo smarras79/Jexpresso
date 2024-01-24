@@ -18,7 +18,7 @@ function periodicity_restructure!(mesh,inputs)
                 end
             end
         else
-            per1 = [0.0, 0.0]
+            per1 = [0.0, 1.0]
         end
         if ("periodic2" in mesh.bdy_edge_type)
             finder = false
@@ -34,7 +34,7 @@ function periodicity_restructure!(mesh,inputs)
                 end
             end 
         else
-            per2 = [0.0, 0.0]
+            per2 = [1.0, 0.0]
         end     
         xx = zeros(size(mesh.x,1),1)
         yy = zeros(size(mesh.y,1),1)
@@ -42,60 +42,63 @@ function periodicity_restructure!(mesh,inputs)
         xx .= mesh.x
         yy .= mesh.y
         poin_bdy .=mesh.poin_in_bdy_edge
-        #=interval = [2,3,4]
+        interval = [2,3,4]
         for iedge_bdy =1:size(mesh.bdy_edge_type,1)
-        if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" || mesh.bdy_edge_type[iedge_bdy] == "periodic2")
-        iel = mesh.bdy_edge_in_elem[iedge_bdy]
-        for k=1:mesh.ngl
-        ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
-        if (ip in interval)
-        ip_kill=ip
-        ip_dest=1
-        for e=1:mesh.nelem
-        for ii=1:mesh.ngl
-        for jj=1:mesh.ngl
-        if (mesh.connijk[iel,ii,jj] == ip_kill)
-        mesh.connijk[iel,ii,jj] = ip_dest
-        end
-        end
-        end
-        end
-        for i=ip_kill:mesh.npoin-1
-        mesh.x[i] = mesh.x[i+1]
-        mesh.y[i] = mesh.y[i+1]
-        end
-        mesh.npoin = mesh.npoin-1
-        for iedge =1:size(mesh.poin_in_bdy_edge,1)
-        for kk=1:mesh.ngl
-        val = mesh.poin_in_bdy_edge[iedge,kk]
-        if (val > ip_kill)
-        mesh.poin_in_bdy_edge[iedge,kk] = val - 1
-        end
-        if (val == ip_kill)
-        mesh.poin_in_bdy_edge[iedge,kk] = ip_dest
-        end
-        end
-        end
+          if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" || mesh.bdy_edge_type[iedge_bdy] == "periodic2")
+            iel = mesh.bdy_edge_in_elem[iedge_bdy]
+            for k=1:mesh.ngl
+              ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
+              if (ip in interval)
+                ip_kill=ip
+                ip_dest=1
+                for e=1:mesh.nelem
+                  for ii=1:mesh.ngl
+                    for jj=1:mesh.ngl
+                      if (mesh.connijk[iel,ii,jj] == ip_kill)
+                        mesh.connijk[iel,ii,jj] = ip_dest
+                      end
+                    end
+                  end
+                end
+                for i=ip_kill:mesh.npoin-1
+                  mesh.x[i] = mesh.x[i+1]
+                  mesh.y[i] = mesh.y[i+1]
+                end
+                mesh.npoin = mesh.npoin-1
+                for iedge =1:size(mesh.poin_in_bdy_edge,1)
+                  for kk=1:mesh.ngl
+                    val = mesh.poin_in_bdy_edge[iedge,kk]
+                    if (val > ip_kill)
+                      mesh.poin_in_bdy_edge[iedge,kk] = val - 1
+                    end
+                    if (val == ip_kill)
+                      mesh.poin_in_bdy_edge[iedge,kk] = ip_dest
+                    end
+                  end
+                end
 
-        for e=1:mesh.nelem
-        for ii=1:mesh.ngl
-        for jj=1:mesh.ngl
-        ipp = mesh.connijk[e,ii,jj]
-        if (ipp > ip_kill)
-        mesh.connijk[e,ii,jj] -= 1
-        end
-        end
-        end
-        end
-        for i=1:size(interval,1)
-        if (interval[i] >= ip_kill)
-        interval[i] -= 1
-        end
-        end
-        end   
-        end
-        end
-        end=# 
+                for e=1:mesh.nelem
+                  for ii=1:mesh.ngl
+                    for jj=1:mesh.ngl
+                      ipp = mesh.connijk[e,ii,jj]
+                      if (ipp > ip_kill)
+                        mesh.connijk[e,ii,jj] -= 1
+                      end
+                    end
+                  end
+                end
+                for i=1:size(interval,1)
+                  if (interval[i] > ip_kill)
+                    interval[i] -= 1
+                  end
+                  if (interval[i] == ip_kill)
+                    interval[i] = 0
+                  end 
+                end
+              end   
+            end
+          end
+        end 
         # New periodicity interface
         for iedge_bdy =1:size(mesh.bdy_edge_type,1)
             if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" || mesh.bdy_edge_type[iedge_bdy] == "periodic2")
@@ -155,7 +158,7 @@ function periodicity_restructure!(mesh,inputs)
                                 #check colinearity with periodicity vectors
                                 #@info "looking for match", vec,per,vec_bdy,vec_per,determine_colinearity(vec,per), determine_colinearity(vec_per,vec_bdy)
 
-                                if (determine_colinearity(vec,per) && determine_colinearity(vec_per,vec_bdy))
+                                if (determine_colinearity(vec,per) && determine_colinearity(vec_per,vec_bdy) && ip_true != ip_true1)
                                     m1=1
                                     l1=1
                                     for ii=1:mesh.ngl
@@ -166,13 +169,21 @@ function periodicity_restructure!(mesh,inputs)
                                             end
                                         end
                                     end
-                                    if (ip_true < ip_true1)
+                                    #=if (ip_true < ip_true1)
                                         ip_dest = ip_true
                                         ip_kill = ip_true1
                                     elseif (ip_true >= ip_true1)
                                         ip_dest = ip_true1
                                         ip_kill = ip_true
-                                    end
+                                    end=#
+                                    if (mesh.x[ip_true]*abs(mesh.y[ip_true]) < mesh.x[ip_true1]*abs(mesh.y[ip_true1]) ||mesh.y[ip_true]*abs(mesh.x[ip_true]) < mesh.y[ip_true1]*abs(mesh.x[ip_true1]) )
+                                        ip_dest = ip_true
+                                        ip_kill = ip_true1
+                                    else
+                                        ip_dest = ip_true1
+                                        ip_kill = ip_true
+                                    end 
+                                    @info ip_kill, ip_dest, mesh.x[ip_kill],mesh.x[ip_dest],mesh.y[ip_kill],mesh.y[ip_dest]
                                     mesh.connijk[iel_per,l1,m1] = ip_dest
                                     mesh.connijk[iel,l,m] = ip_dest
                                     mesh.poin_in_bdy_edge[iedge_per,k_per] = ip_dest
@@ -203,6 +214,9 @@ function periodicity_restructure!(mesh,inputs)
                                                     ipp = mesh.connijk[e,ii,jj]
                                                     if (ipp > ip_kill)
                                                         mesh.connijk[e,ii,jj] -= 1
+                                                    end
+                                                    if (ipp == ip_kill)
+                                                        mesh.connijk[e,ii,jj] = ip_dest
                                                     end
                                                 end
                                             end
