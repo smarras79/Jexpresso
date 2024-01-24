@@ -4,11 +4,11 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
                     mesh::St_mesh,
                     ::CL, ::TOTAL; neqs=1, ip=1)
     
-    u =  mesh.y[ip]
-    v = -mesh.x[ip]
+    #u =  mesh.y[ip]
+    #v = -mesh.x[ip]
 
-    #u = 0.1
-    #v = 0.1
+    u = 1.0
+    v = 1.0
     
     qu  = u*q[1]
     qv  = v*q[1]
