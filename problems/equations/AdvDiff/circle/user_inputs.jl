@@ -16,17 +16,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1),
         :μ                    => (0.0025), #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/multiblock_TFI.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic_transport.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_free_slip.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
