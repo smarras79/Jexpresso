@@ -57,6 +57,3 @@ Coherence;
 //Physical Surface("domain") = {1};
 Physical Point("nothing",  1) = {5, 6, 7, 8}; //Point numbers
 Physical Curve("nothing", 2) = {5, 6, 7, 8}; //Line numbers
-
-//+
-Show "*";
