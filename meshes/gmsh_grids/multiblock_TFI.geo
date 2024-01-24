@@ -54,6 +54,7 @@ Transfinite Surface {14,16,18,20,22};
 Recombine Surface {14,16,18,20,22};
 Coherence;
 
+Physical Point("boundary",   1) = {5, 6, 7, 8};
+Physical Curve("periodic1",  2) = {7, 5};
+Physical Curve("periodic2",  3) = {8, 6};
 Physical Surface("domain") = {14,16,18,20,22};
-Physical Point("nothing",  1) = {5, 6, 7, 8}; //Point numbers
-Physical Curve("nothing", 2) = {5, 6, 7, 8}; //Line numbers
