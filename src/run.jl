@@ -71,7 +71,8 @@ include(user_initialize_file)
 mod_inputs_print_welcome()
 inputs = Dict{}()
 
-inputs = mod_inputs_user_inputs!(user_input_file)
+inputs = user_inputs()
+mod_inputs_user_inputs!(inputs)
 
 #--------------------------------------------------------
 #Create output directory if it doesn't exist:
