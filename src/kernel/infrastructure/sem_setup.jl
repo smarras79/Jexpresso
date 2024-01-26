@@ -96,8 +96,8 @@ function sem_setup(inputs::Dict)
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end
-            metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat)
-            metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat)
+            metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat; backend = inputs[:backend])
+            metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
             metrics = (metrics1, metrics2)
             
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
@@ -117,7 +117,7 @@ function sem_setup(inputs::Dict)
                 warp_mesh!(mesh,inputs)
             end
             @info " metrics"
-            @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
+            @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
             
             @info " periodicity_restructure!"
             @time periodicity_restructure!(mesh,inputs)
@@ -138,8 +138,8 @@ function sem_setup(inputs::Dict)
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-            metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat)
-            metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat)
+            metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat;backend = inputs[:backend])
+            metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat;backend = inputs[:backend])
             metrics = (metrics1, metrics2) 
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         else
@@ -150,7 +150,7 @@ function sem_setup(inputs::Dict)
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-            metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
+            metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
 
             if (inputs[:lperiodic_1d])
                 periodicity_restructure!(mesh,inputs)

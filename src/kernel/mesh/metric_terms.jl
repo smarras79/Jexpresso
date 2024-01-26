@@ -1,30 +1,32 @@
-Base.@kwdef mutable struct St_metrics{TFloat}
+using KernelAbstractions
+
+Base.@kwdef mutable struct St_metrics{TFloat,backend}
 
     
     
-    dxdξ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dxdη::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dxdζ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dxdξ::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dxdη::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dxdζ::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
     
-    dydξ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dydη::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dydζ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dydξ::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dydη::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dydζ::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
 
-    dzdξ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dzdη::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dzdζ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dzdξ::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dzdη::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dzdζ::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
     
-    dξdx::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dξdy::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dξdz::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dξdx::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dξdy::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dξdz::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
     
-    dηdx::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dηdy::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dηdz::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dηdx::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dηdy::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dηdz::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
 
-    dζdx::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dζdy::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dζdz::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dζdx::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dζdy::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dζdz::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
     #
     # Contravariant arrays
     #
@@ -33,20 +35,20 @@ Base.@kwdef mutable struct St_metrics{TFloat}
     #
     # Element jacobian determinant
     #
-    nx::Array{TFloat, 2} = zeros(TFloat, 0, 0)
-    ny::Array{TFloat, 2} = zeros(TFloat, 0, 0)
-    nz::Array{TFloat, 2} = zeros(TFloat, 0, 0)
-    Je::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    Jef::Array{TFloat,2} = zeros(TFloat, 0, 0)
+    nx::Array{TFloat, 2} = KernelAbstractions.zeros(backend,TFloat, 0, 0)
+    ny::Array{TFloat, 2} = KernelAbstractions.zeros(backend,TFloat, 0, 0)
+    nz::Array{TFloat, 2} = KernelAbstractions.zeros(backend,TFloat, 0, 0)
+    Je::Array{TFloat, 3} = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    Jef::Array{TFloat,2} = KernelAbstractions.zeros(backend,TFloat, 0, 0)
 end
 
-function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)
+function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
     
-    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem, Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
-                            dξdx = zeros(T, mesh.nelem, Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
-                            Je   = zeros(T, mesh.nelem, Q+1, 1),
-                            nx   = zeros(T, mesh.nedges_bdy, 1))
-
+    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
+                            dξdx = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
+                            Je   = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, 1),
+                            nx   = KernelAbstractions.zeros(backend, T, mesh.nedges_bdy, 1))
+    @show typeof(metrics.Je)
     for iel = 1:mesh.nelem
         for i = 1:N+1
             for k = 1:Q+1
@@ -60,12 +62,12 @@ function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     return metrics
 end
 
-function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, inputs,T)
+function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, inputs,T; backend = CPU())
    
-    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem_semi_inf, Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
-                            dξdx = zeros(T, mesh.nelem_semi_inf, Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
-                            Je   = zeros(T, mesh.nelem_semi_inf, Q+1, 1),
-                            nx   = zeros(T, mesh.nedges_bdy, 1))
+    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, mesh.nelem_semi_inf, Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
+                            dξdx = KernelAbstractions.zeros(backend, T, mesh.nelem_semi_inf, Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
+                            Je   = KernelAbstractions.zeros(backend, T, mesh.nelem_semi_inf, Q+1, 1),
+                            nx   = KernelAbstractions.zeros(backend, T, mesh.nedges_bdy, 1))
 
     dψ = basis.dψ
     for iel = 1:mesh.nelem_semi_inf
@@ -83,20 +85,20 @@ function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, ba
     return metrics
 end
 
-function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)
+function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
     
-    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem, Q+1, Q+1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dxdη = zeros(T, mesh.nelem, Q+1, Q+1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dydξ = zeros(T, mesh.nelem, Q+1, Q+1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dydη = zeros(T, mesh.nelem, Q+1, Q+1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dξdx = zeros(T, mesh.nelem, Q+1, Q+1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dηdx = zeros(T, mesh.nelem, Q+1, Q+1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dξdy = zeros(T, mesh.nelem, Q+1, Q+1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
-                            dηdy = zeros(T, mesh.nelem, Q+1, Q+1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
-                            Je   = zeros(T, mesh.nelem, Q+1, Q+1),
-                            Jef  = zeros(T, mesh.nedges_bdy, Q+1),
-                            nx   = zeros(T, mesh.nedges_bdy, Q+1),
-                            ny   = zeros(T, mesh.nedges_bdy, Q+1)) #   Je[1:Nq, 1:Nq, 1:nelem]
+    metrics = St_metrics{T,backend}(dxdξ = zeros(T, mesh.nelem, Q+1, Q+1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dxdη = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, Q+1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                            dydξ = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, Q+1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dydη = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, Q+1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
+                            dξdx = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, Q+1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dηdx = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, Q+1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dξdy = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, Q+1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                            dηdy = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, Q+1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
+                            Je   = KernelAbstractions.zeros(backend, T, mesh.nelem, Q+1, Q+1),
+                            Jef  = KernelAbstractions.zeros(backend, T, mesh.nedges_bdy, Q+1),
+                            nx   = KernelAbstractions.zeros(backend, T, mesh.nedges_bdy, Q+1),
+                            ny   = KernelAbstractions.zeros(backend, T, mesh.nedges_bdy, Q+1)) #   Je[1:Nq, 1:Nq, 1:nelem]
     
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
@@ -200,19 +202,19 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     return metrics
 end
 
-function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange ,N, Q, NGR, QGR, ξ, ω1, ω2, T)
+function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange ,N, Q, NGR, QGR, ξ, ω1, ω2, T; backend = CPU())
     
-    metrics = St_metrics{T}(dxdξ = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dxdη = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dydξ = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dydη = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
+    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dxdη = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                            dydξ = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dydη = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
 
-                            dξdx = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dηdx = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dξdy = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
-                            dηdy = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
-                            Jef  = zeros(T, mesh.nedges_bdy, Q+1),
-                            Je   = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr))
+                            dξdx = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dηdx = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dξdy = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                            dηdy = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
+                            Jef  = KernelAbstractions.zeros(backend, T, mesh.nedges_bdy, Q+1),
+                            Je   = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr))
     ψ  = basis.ψ
     dψ = basis.dψ
     ψ1  = basisGR.ψ
