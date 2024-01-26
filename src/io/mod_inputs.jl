@@ -1,5 +1,7 @@
 using Crayons.Box
 using PrettyTables
+using Metal
+using KernelAbstractions
 
 #macro datatype(str); :($(Symbol(str))); end
 
@@ -29,6 +31,10 @@ function mod_inputs_user_inputs!(user_input_file)
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
+    if(!haskey(inputs, :backend))
+      inputs[:backend] = CPU()
+    end
+
     if(!haskey(inputs, :lperiodic_1d))
       inputs[:lperiodic_1d] = false
     end
