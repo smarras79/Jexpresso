@@ -72,10 +72,6 @@ function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energ
     end
 end
 
-function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
-    nothing
-end
-
 function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::PERT, SD::NSD_2D)
 
     if typeof(PT) == CompEuler

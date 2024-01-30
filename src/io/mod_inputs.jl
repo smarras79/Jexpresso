@@ -3,25 +3,13 @@ using PrettyTables
 using Metal
 using KernelAbstractions
 
-#macro datatype(str); :($(Symbol(str))); end
-
-#function mod_inputs_user_inputs!(equations_dir::String, parsed_equations, parsed_equations_case_name, )
-
-function mod_inputs_user_inputs!(user_input_file)
+function mod_inputs_user_inputs!(inputs)
 
     error_flag::Int8 = 0
     
-    #
-    # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
-    # was defined within this same function via the include(input_dir) above.
-    # 
-    include(user_input_file)
-    inputs = @Base.invokelatest(user_inputs())
-
     #Store parsed arguments xxx into inputs[:xxx]
     _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
     
-    #
     print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")))
     pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
     print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")))
