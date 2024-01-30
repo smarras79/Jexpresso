@@ -184,15 +184,11 @@ This section contains instructions to run all of the test cases presented in
 
 ```
 @article{tissaoui2024,
-  doi = {},
-  url = {},
-  year = {2020},
-  volume = {},
-  number = {},
-  pages = {},
-  author = {Yassine Tissaoui and James F. Kelly and Simone Marras}
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
   title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions},
-  journal = {arXiv},
+  url = {https://arxiv.org/abs/2401.05624},
+  year = {2024},
+  journal = {arXiv:2401.05624 [math.NA]},
 }
 ```
 
