@@ -199,7 +199,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     	xmin = 1000000000.0
         ymax = -1000000000.0
         for e=1:mesh.nelem
-            <<<<<<< HEAD
             for i=1:mesh.ngl
                 for j=1:mesh.ngl
                     ip = mesh.connijk[e,i,j]
@@ -207,15 +206,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                     xmin = min(xmin,mesh.x[ip])
                 end
             end
-            =======
-                for i=1:mesh.ngl
-                    for j=1:mesh.ngl
-                        ip = mesh.connijk[e,i,j]
-                        ymax = max(ymax,mesh.y[ip])
-                        xmin = min(xmin,mesh.x[ip])
-                    end
-        	end
-            >>>>>>> master
         end
 	xmax = -xmin
 	nedges = size(mesh.bdy_edge_type,1)

@@ -241,7 +241,7 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
           save(string(fout_name), fig) #, resolution = (600, 600))
           fig
         end
-
+        
     end
 end
 function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; nvar=1) nothing end
