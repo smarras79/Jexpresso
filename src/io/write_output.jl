@@ -36,7 +36,7 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
             marker = markers[imarker]
             title = string("sol.u at time ", sol.t[iout])
             plot_results!(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
-            #plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+            
         end
     else
         fig = Figure(resolution = (1200,800),fontsize=22)
@@ -48,12 +48,9 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
-
-
 function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     nothing
 end
-
 
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
 
@@ -101,7 +98,7 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
 end
 
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
-
+    
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
     title = @sprintf "Solution to ∇⋅∇(q) = f"
     if inputs[:lplot_surf3d]
@@ -145,8 +142,11 @@ function write_hdf5(SD::NSD_2D, mesh::St_mesh, q::Array, qe::Array, title::Strin
         idx = (ivar - 1)*mesh.npoin
         h5write(fout_name, "q",  q[idx+1:ivar*mesh.npoin]);
         h5write(fout_name, "qe", qe[1:mesh.npoin, ivar]);
+
     end
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
 end
+
 function read_hdf5(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     
     q  = zeros(Float64, npoin, nvar+1)
@@ -199,6 +199,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     	xmin = 1000000000.0
         ymax = -1000000000.0
         for e=1:mesh.nelem
+            <<<<<<< HEAD
             for i=1:mesh.ngl
                 for j=1:mesh.ngl
                     ip = mesh.connijk[e,i,j]
@@ -206,6 +207,15 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                     xmin = min(xmin,mesh.x[ip])
                 end
             end
+            =======
+                for i=1:mesh.ngl
+                    for j=1:mesh.ngl
+                        ip = mesh.connijk[e,i,j]
+                        ymax = max(ymax,mesh.y[ip])
+                        xmin = min(xmin,mesh.x[ip])
+                    end
+        	end
+            >>>>>>> master
         end
 	xmax = -xmin
 	nedges = size(mesh.bdy_edge_type,1)
@@ -214,7 +224,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
 	q_new = zeros(new_size*4)
         q_exact1 = zeros(new_size,5)
         q_exact1[1:mesh.npoin,:] .= qexact[1:mesh.npoin,:] 
-
+        
         for ieq = 1:nvars
 	    ivar = new_size*(ieq-1)
             ivar1 = mesh.npoin*(ieq-1)
@@ -224,6 +234,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
 
         iter = 1
     	for iedge = 1:nedges
+
     	    if (mesh.bdy_edge_type[iedge] == "periodic1")
 		e = mesh.bdy_edge_in_elem[iedge]
 		for k=1:mesh.ngl
@@ -315,6 +326,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
 		end
 	    end
 	    npoin +=iter -1
+
 	end
         q = q_new
 	qexact = q_exact1

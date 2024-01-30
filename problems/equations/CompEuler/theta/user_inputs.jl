@@ -25,7 +25,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1, 2, 3, 4),
-        :μ                   => (0.0, 30.0, 30.0, 60.0), #horizontal viscosity constant for momentum
+        :μ                   => (0.0, 20.0, 20.0, 20.0), #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

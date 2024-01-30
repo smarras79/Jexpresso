@@ -8,18 +8,18 @@ function user_inputs()
         :ode_solver          => SSPRK33(),
         :tend                 => 5000.0,
         :Δt                   => 0.1,
-        :ndiagnostics_outputs => 100, #these are steps, not seconds
-        :output_dir          => "./",
+        :ndiagnostics_outputs => 101, #these are steps, not seconds
+        :output_dir          => "./output/",
         :SOL_VARS_TYPE        => PERT(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
-        :nop_laguerre        => 15,
+        :nop_laguerre        => 50,
         :lexact_integration  => false,
         :lsource             => true,
-        :llaguerre_1d        => true,
+        :llaguerre_1d_right  => true,
         :laguerre_beta       => 1.0,
         :yfac_laguerre       => 100.0,
         #:lperiodic_1d        => true, #false by default
@@ -41,12 +41,14 @@ function user_inputs()
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
         :outformat     => "png", #choice: "png", "ascii" (default is ascii)
+        :plot_vlines   => [5000.0],
+        :plot_axis     => [-0.03,0.03,-0.03,0.03],
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
         :xmin          =>   0.0,
         :xmax          =>   5000.0,
-        :nelx          =>   300,
+        :nelx          =>   300,#300,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter

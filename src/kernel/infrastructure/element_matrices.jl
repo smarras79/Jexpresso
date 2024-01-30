@@ -79,6 +79,38 @@ function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
     
 end
 
+function build_differentiation_matrix_Laguerre!(De, SD::NSD_2D, QT, ψ, ψ1, dψ, dψ1, ω, ω1, mesh, metrics, N, Q, T)
+
+
+    for iel=1:mesh.nelem_semi_inf
+
+        for l = 1:mesh.ngr
+            for k = 1:mesh.ngl
+
+                ωkl  = ω[k]*ω1[l]
+                Jkle = metrics.Je[iel, k, l]
+
+                for j = 1:mesh.ngr
+                    for i = 1:mesh.ngl
+                        J = i + (j - 1)*(mesh.ngl)
+                        ψJK = ψ[i,k]*ψ1[j,l]
+                        for n = 1:mesh.ngr
+                            for m = 1:mesh.ngl
+                                I = m + (n - 1)*(mesh.ngl)
+                                dψIK_dx = dψ[i,k]*ψ1[j,l]*metrics.dξdx[iel,k,l] + ψ[i,k]*dψ1[j,l]*metrics.dηdx[iel,k,l]
+                                dψIK_dy = dψ[i,k]*ψ1[j,l]*metrics.dξdy[iel,k,l] + ψ[i,k]*dψ1[j,l]*metrics.dηdy[iel,k,l]
+				De[I,J,iel] += ωkl*Jkle*ψJK*(dψIK_dx+dψIK_dy) #Sparse
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", Me)
+
+end
+
 
 function build_differentiation_matrix(SD::NSD_2D, ψ, dψdξ, ω, mesh, N, Q, T)
     nothing
@@ -205,7 +237,7 @@ function build_laplace_matrix(SD::NSD_1D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     return L
 end
 #
-function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
+#=function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     Le = zeros((N+1)^2, (N+1)^2, mesh.nelem)
     for iel = 1:mesh.nelem
@@ -239,7 +271,62 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     #show(stdout, "text/plain", L)
     
     return -Le
+end=#
+
+function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
+   
+    Le = zeros((N+1),(N+1))
+    
+    for i=1:N+1
+        for j=1:N+1
+            for k=1:Q+1
+                sum = ω[k]*dψ[i,k]*dψ[j,k]
+                Le[i,j] = Le[i,j] + sum
+            end
+        end
+    end 
+ 
+    #@info size(L)
+    #show(stdout, "text/plain", L)
+  
+    return Le
 end
+
+#=function build_laplace_matrix_laguerre(SD::NSD_2D, ψ, dψ, ψ1, dψ1, ω, ω1, mesh, metrics, N, Q, T)
+
+    Le = zeros(mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
+    for iel = 1:mesh.nelem_semi_inf
+        for l = 1:mesh.ngr
+            for k = 1:Q+1
+
+                for j = 1:mesh.ngr
+                    for i = 1:N+1
+                        J = i + (j - 1)*(N + 1)
+
+                        dψJK_dx = dψ[i,k]*ψ1[j,l]*metrics.dξdx[iel,k,l] + ψ[i,k]*dψ1[j,l]*metrics.dηdx[iel,k,l]
+                        dψJK_dy = dψ[i,k]*ψ1[j,l]*metrics.dξdy[iel,k,l] + ψ[i,k]*dψ1[j,l]*metrics.dηdy[iel,k,l]
+
+                        for n = 1:mesh.ngr
+                            for m = 1:N+1
+                                I = m + (n - 1)*(N + 1)
+
+                                dψIK_dx = dψ[m,k]*ψ1[n,l]*metrics.dξdx[iel,k,l] + ψ[m,k]*dψ1[n,l]*metrics.dηdx[iel,k,l]
+                                dψIK_dy = dψ[m,k]*ψ1[n,l]*metrics.dξdy[iel,k,l] + ψ[m,k]*dψ1[n,l]*metrics.dηdy[iel,k,l]
+
+                                Le[I,J, iel] += ω[k]*ω1[l]*(dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    #@info size(L)
+    #show(stdout, "text/plain", L)
+
+    return -Le
+end=#
 
 #
 # DSS
@@ -401,6 +488,46 @@ function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, ::NSD_2D)
         end
     end    
     #show(stdout, "text/plain", L)
+end
+
+function DSS_laplace_Laguerre!(L, SD::NSD_2D, Lel::AbstractArray, Lel_lag::AbstractArray, ω, ω_lag, mesh, metrics, metrics_lag, N, T; llump=false)
+
+    for iel=1:mesh.nelem
+
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                ip = mesh.connijk[iel,i,j]
+                for k =1:mesh.ngl
+                    jp = mesh.connijk[iel,k,j]
+                    L[ip,jp] += metrics.dξdx[iel,i,k]*Lel[i,k]*ω[j]*metrics.dydη[iel,i,k]
+                end
+               
+                for l = 1:mesh.ngl
+                    jp = mesh.connijk[iel,i,l]
+                    L[ip,jp] += metrics.dηdy[iel,i,l]*Lel[j,l]*ω[i]*metrics.dxdξ[iel,i,l]
+                end
+            end
+        end 
+    end
+
+    for iel=1:mesh.nelem_semi_inf
+
+        for i=1:mesh.ngr
+            for j=1:mesh.ngl
+                ip = mesh.connijk_lag[iel,j,i]
+                for k =1:mesh.ngr
+                    jp = mesh.connijk_lag[iel,j,k]
+                    L[ip,jp] += metrics_lag.dηdx[iel,j,k]*Lel_lag[i,k]*ω[j]*metrics.dydη[iel,j,j]
+                end
+                ### this only works for a standard grid fix this in the future 
+                for l = 1:mesh.ngl
+                    jp = mesh.connijk_lag[iel,l,i]
+                    L[ip,jp] += metrics.dηdy[iel,j,l]*Lel[j,l]*ω_lag[i]*metrics_lag.dxdη[iel,l,i]
+                end
+            end
+        end
+    end
+
 end
 
 
@@ -592,9 +719,9 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
 
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false
-
-    lbuild_differentiation_matrix = false
-    lbuild_laplace_matrix = false
+    
+    if (ldss_differentiation) lbuild_differentiation_matrix = true end
+    if (ldss_laplace) lbuild_laplace_matrix = true end
 
     if typeof(SD) == NSD_1D
         Me = zeros(TFloat, (N+1)^2, mesh.nelem)
@@ -626,10 +753,17 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
    # @info maximum(M),minimum(M),maximum(Minv),minimum(Minv)
     Le = zeros(TFloat, 1, 1)
     L  = zeros(TFloat, 1,1)
+    Le_Lag = zeros(TFloat, 1,1)
     if lbuild_laplace_matrix
-        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
+        L = zeros(mesh.npoin,mesh.npoin)
+        Le = build_laplace_matrix(SD, basis[1].ψ, basis[1].dψ, ω[1], mesh, metrics[1], N, Q, TFloat)
+        #Le_lag = build_laplace_matrix_laguerre(SD, basis[1].ψ, basis[1].dψ, basis[2].ψ, basis[2].dψ , ω[1], ω[2], mesh, metrics[2], N, Q, TFloat)
+        Le_lag = build_laplace_matrix(SD, basis[2].ψ, basis[2].dψ, ω[2], mesh, metrics[2], mesh.ngr-1, mesh.ngr-1, TFloat)
+        L = zeros(mesh.npoin,mesh.npoin)
+        #@info Le_lag
         if ldss_laplace
-            L  = DSS_generic_matrix(SD, Le, mesh, TFloat)
+            #DSS_laplace_Laguerre!(L, SD, Le, Le_lag, mesh, N, TFloat; llump=inputs[:llump])
+            DSS_laplace_Laguerre!(L, SD, Le, Le_lag, ω[1], ω[2], mesh, metrics[1], metrics[2], N, TFloat; llump=inputs[:llump])
         end
     end
 
