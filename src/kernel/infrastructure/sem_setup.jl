@@ -129,7 +129,7 @@ function sem_setup(inputs::Dict)
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         end
     else
-        @info "grid size data" "xmax, xmin", maximum(mesh.x), minimum(mesh.x) 
+        
         if(inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
 
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
