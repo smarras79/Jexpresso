@@ -529,32 +529,32 @@ function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, 
 end
 
 function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
-                        ldss_laplace=false, ldss_differentiation=false)
+        ldss_laplace=false, ldss_differentiation=false, backend = CPU())
 
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false
 
     if typeof(SD) == NSD_1D
-        Me = zeros(TFloat, (N+1)^2, mesh.nelem)
+        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, Int64(mesh.nelem))
     elseif typeof(SD) == NSD_2D
-        Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
+        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, (N+1)^2, Int64(mesh.nelem))
     elseif typeof(SD) == NSD_3D
-        Me = zeros(TFloat, (N+1)^2, (N+1)^2, (N+1)^2, mesh.nelem)
+        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, (N+1)^2, (N+1)^2, Int64(mesh.nelem))
     end
     build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
     
     if (QT == Exact() && inputs[:llump] == false)
-        M    = zeros(TFloat, mesh.npoin, mesh.npoin)
-        Minv = zeros(TFloat, mesh.npoin, mesh.npoin)
+        M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+        Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
     else
-        M    = zeros(TFloat, mesh.npoin)
-        Minv = zeros(TFloat, mesh.npoin)
+        M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+        Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     end
     DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
     mass_inverse!(Minv, M, QT)
     
-    Le = zeros(TFloat, 1, 1)
-    L  = zeros(TFloat, 1,1)
+    Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
+    L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
     if lbuild_laplace_matrix
         Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
         if ldss_laplace
@@ -562,8 +562,8 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    De = zeros(TFloat, 1, 1)
-    D  = zeros(TFloat, 1,1)
+    De = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+    D  = KernelAbstractions.zeros(backend, TFloat, 1,1)
     if lbuild_differentiation_matrix
         De = build_differentiation_matrix(SD, basis.ψ, basis.dψ, ω, mesh,  N, Q, TFloat)
         if ldss_differentiation
@@ -588,7 +588,7 @@ function matrix_wrapper_laguerre(::FD, SD, QT, basis, ω, mesh, metrics, N, Q, T
     return 0
 end
 
-function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false)
+function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false, backend = CPU())
 
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false
@@ -597,23 +597,23 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     lbuild_laplace_matrix = false
 
     if typeof(SD) == NSD_1D
-        Me = zeros(TFloat, (N+1)^2, mesh.nelem)
+        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, mesh.nelem)
     elseif typeof(SD) == NSD_2D
-        Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
+        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
     end
     
     build_mass_matrix!(Me, SD, QT, basis[1].ψ, ω[1], mesh, metrics[1], N, Q, TFloat)
     if typeof(SD) == NSD_1D
-      M_lag = zeros(TFloat, mesh.ngr*mesh.ngr, mesh.nelem_semi_inf)
+      M_lag = KernelAbstractions.zeros(backend, TFloat, mesh.ngr*mesh.ngr, mesh.nelem_semi_inf)
     elseif typeof(SD) == NSD_2D
-      M_lag = zeros(TFloat, mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
+      M_lag = KernelAbstractions.zeros(backend, TFloat, mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
     end
     if (QT == Exact() && inputs[:llump] == false)
-        M    = zeros(TFloat, mesh.npoin, mesh.npoin)
-        Minv = zeros(TFloat, mesh.npoin, mesh.npoin)
+        M    = KernelAbstractions.zeros(backend, TFloat, mesh.npoin, mesh.npoin)
+        Minv = KernelAbstractions.zeros(backend, TFloat, mesh.npoin, mesh.npoin)
     else
-        M    = zeros(TFloat, mesh.npoin)
-        Minv = zeros(TFloat, mesh.npoin)
+        M    = KernelAbstractions.zeros(backend, TFloat, mesh.npoin)
+        Minv = KernelAbstractions.zeros(backend, TFloat, mesh.npoin)
     end
     if typeof(SD) == NSD_1D
         build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[2].ψ, ω[2], mesh, metrics[2], N, Q, TFloat)
@@ -624,8 +624,8 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
     mass_inverse!(Minv, M, QT)
    # @info maximum(M),minimum(M),maximum(Minv),minimum(Minv)
-    Le = zeros(TFloat, 1, 1)
-    L  = zeros(TFloat, 1,1)
+    Le = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+    L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
     if lbuild_laplace_matrix
         Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
         if ldss_laplace
@@ -633,8 +633,8 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
     end
 
-    De = zeros(TFloat, 1, 1)
-    D  = zeros(TFloat, 1,1)
+    De = KernelAbstractions.zeros(backend, TFloat, 1, 1)
+    D  = KernelAbstractions.zeros(backend, TFloat, 1,1)
     if lbuild_differentiation_matrix
         De = build_differentiation_matrix(SD, basis.ψ, basis.dψ, ω, mesh,  N, Q, TFloat)
         if ldss_differentiation
@@ -646,5 +646,5 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
 end
 
 function mass_inverse!(Minv, M::AbstractVector, QT)
-    Minv .= 1.0./M
+    Minv .= TFloat(1.0)./M
 end

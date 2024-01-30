@@ -18,19 +18,19 @@ const VERTEX_NODES = UInt64(1)
 const EDGE_NODES   = UInt64(2)
 const FACE_NODES   = UInt64(4)
 
-Base.@kwdef mutable struct St_mesh{TInt, TFloat}
+Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
-    x::Array{Float64, 1} = zeros(2)
-    y::Array{Float64, 1} = zeros(2)
-    z::Array{Float64, 1} = zeros(2)
+    x::Array{TFloat, 1} = KernelAbstractions.zeros(backend, TFloat, 2)
+    y::Array{TFloat, 1} = KernelAbstractions.zeros(backend, TFloat, 2)
+    z::Array{TFloat, 1} = KernelAbstractions.zeros(backend, TFloat, 2)
 
-    x_ho::Array{Float64, 1} = zeros(2)
-    y_ho::Array{Float64, 1} = zeros(2)
-    z_ho::Array{Float64, 1} = zeros(2)
+    x_ho::Array{TFloat, 1} = KernelAbstractions.zeros(backend, TFloat, 2)
+    y_ho::Array{TFloat, 1} = KernelAbstractions.zeros(backend, TFloat, 2)
+    z_ho::Array{TFloat, 1} = KernelAbstractions.zeros(backend, TFloat, 2)
 
-    Δx::Union{Array{TFloat}, Missing} = zeros(2)
-    Δy::Union{Array{TFloat}, Missing} = zeros(2)
-    Δz::Union{Array{TFloat}, Missing} = zeros(2)
+    Δx::Union{Array{TFloat}, Missing} = KernelAbstractions.zeros(backend, TFloat, 2)
+    Δy::Union{Array{TFloat}, Missing} = KernelAbstractions.zeros(backend, TFloat, 2)
+    Δz::Union{Array{TFloat}, Missing} = KernelAbstractions.zeros(backend, TFloat, 2)
     
     xmin::Union{TFloat, Missing} = -1.0;
     xmax::Union{TFloat, Missing} = +1.0;
@@ -79,34 +79,33 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
-    connijk_lag ::Array{Int64,3} = zeros(Int64, 0, 0, 0)
+    connijk_lag ::Array{TInt,3} = KernelAbstractions.zeros(backend,TInt, 0, 0, 0)
     
     #if nsd == 1
     #    connijk::Array{Int64,1} = zeros(Int64, 0, 0)
     #elseif nsd == 2
-        connijk::Array{Int64,3} = zeros(Int64, 0, 0, 0)
+        connijk::Array{TInt,3} =  KernelAbstractions.zeros(backend,TInt, 0, 0, 0)
     #elseif nsd == 3
     #    connijk::Array{Int64,4} = zeros(Int64, 0, 0, 0, 0)
     #end
-    conn::Array{Int64,2}  = zeros(Int64, 0, 0)
-    conn_unique_edges = Array{Int64}(undef,  1, 2)
-    conn_unique_faces = Array{Int64}(undef,  1, 4)
-    poin_in_edge      = Array{Int64}(undef, 0, 0)
-    conn_edge_el      = Array{Int64}(undef, 0, 0, 0)
-    poin_in_face      = Array{Int64}(undef, 0, 0, 0)
-    conn_face_el      = Array{Int64}(undef, 0, 0, 0)
-    face_in_elem      = Array{Int64}(undef, 0, 0, 0)
+    conn::Array{TInt,2}  = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    conn_unique_edges = Array{TInt}(undef,  1, 2)
+    conn_unique_faces = Array{TInt}(undef,  1, 4)
+    poin_in_edge      = Array{TInt}(undef, 0, 0)
+    conn_edge_el      = Array{TInt}(undef, 0, 0, 0)
+    poin_in_face      = Array{TInt}(undef, 0, 0, 0)
+    conn_face_el      = Array{TInt}(undef, 0, 0, 0)
+    face_in_elem      = Array{TInt}(undef, 0, 0, 0)
 
     #Auxiliary arrays for boundary conditions
-    bdy_edge_comp     = Array{Int64}(undef, 1)
     
-    bdy_edge_in_elem::Array{Int64,1} = zeros(Int64, 0)
-    poin_in_bdy_edge::Array{Int64,2} = zeros(Int64, 0, 0)
-    bdy_face_in_elem::Array{Int64,1} = zeros(Int64, 0)
-    poin_in_bdy_face::Array{Int64,2} = zeros(Int64, 0, 0)
+    bdy_edge_in_elem::Array{TInt,1} =  KernelAbstractions.zeros(backend, TInt, 0)
+    poin_in_bdy_edge::Array{TInt,2} =  KernelAbstractions.zeros(backend, TInt, 0, 0)
+    bdy_face_in_elem::Array{TInt,1} =  KernelAbstractions.zeros(backend, TInt, 0)
+    poin_in_bdy_face::Array{TInt,2} =  KernelAbstractions.zeros(backend, TInt, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
-    bdy_edge_type_id::Array{Int64,1} = zeros(Int64, 0)
+    bdy_edge_type_id::Array{TInt,1} =  KernelAbstractions.zeros(backend, TInt, 0)
     
 
     
@@ -115,6 +114,8 @@ end
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 
+    # determine backend
+    backend = inputs[:backend]
     #
     # Read GMSH grid from file
     #
@@ -216,26 +217,25 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     #
     # Resize as needed
     #
-    mesh.x::Array{Float64, 1} = zeros(mesh.npoin)
-    mesh.y::Array{Float64, 1} = zeros(mesh.npoin)
-    mesh.z::Array{Float64, 1} = zeros(mesh.npoin)
+    mesh.x::Array{TFloat, 1} = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+    mesh.y::Array{TFloat, 1} = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+    mesh.z::Array{TFloat, 1} = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     
-    mesh.conn_edge_el::Array{Int64,3} = zeros(Int64, 2, mesh.NEDGES_EL, mesh.nelem)    
-    mesh.conn_face_el::Array{Int64,3} = zeros(Int64,  4, mesh.NFACES_EL, mesh.nelem)  
-    mesh.bdy_edge_in_elem::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)  
-    mesh.bdy_edge_comp::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)
-    mesh.poin_in_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges, mesh.ngl)
-    mesh.poin_in_bdy_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges_bdy, mesh.ngl)
-    mesh.poin_in_face::Array{Int64,3} = zeros(Int64,  mesh.nfaces, mesh.ngl, mesh.ngl)
-    mesh.edge_type     = Array{Union{Nothing, String}}(nothing, mesh.nedges)
-    mesh.bdy_edge_type                    = Array{Union{Nothing, String}}(nothing, mesh.nedges_bdy)
-    mesh.bdy_edge_type_id::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)  
+    mesh.conn_edge_el::Array{TInt,3} = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
+    mesh.conn_face_el::Array{TInt,3} = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
+    mesh.bdy_edge_in_elem::Array{TInt,1} = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
+    mesh.poin_in_edge::Array{TInt,2} = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
+    mesh.poin_in_bdy_edge::Array{TInt,2} = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
+    mesh.poin_in_face::Array{TInt,3} = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
+    mesh.edge_type     = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
+    mesh.bdy_edge_type                    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
+    mesh.bdy_edge_type_id::Array{TInt,1} = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
     
     if mesh.nsd > 2
-        mesh.poin_in_bdy_face::Array{Int64,3} = zeros( mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
+        mesh.poin_in_bdy_face::Array{TInt,3} = zeros( mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
-    mesh.conn::Array{Int64,2} = zeros(Int64, mesh.nelem, mesh.npoin_el)
+    mesh.conn::Array{TInt,2} = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
     
     #
     # Connectivity matrices
@@ -251,7 +251,7 @@ if (mesh.nsd == 1)
     nothing
 elseif (mesh.nsd == 2)
     
-    mesh.connijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl)
+    mesh.connijk::Array{TInt,3} = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl))
     
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]
@@ -310,7 +310,7 @@ elseif (mesh.nsd == 2)
 
 elseif (mesh.nsd == 3)
     
-    mesh.connijk::Array{Int64,1} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
+    mesh.connijk::Array{TInt,1} = KernelAbstractions.zeros(backend, TInt, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
 
     for iel = 1:mesh.nelem
         #CGNS numbering:
@@ -371,7 +371,7 @@ end
 # Add high-order points to edges, faces, and elements (volumes)
 #
 # initialize LGL struct and buyild Gauss-Lobatto-xxx points
-lgl = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)
+lgl = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, backend)
 
 println(" # POPULATE GRID with SPECTRAL NODES ............................ ")
 #
@@ -465,15 +465,6 @@ if mesh.nsd == 2
             if issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, :, :])
                 mesh.bdy_edge_in_elem[iedge_bdy] = iel
             end
-            if (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, 1, :]))
-                mesh.bdy_edge_comp[iedge_bdy] = 1
-            elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel,:, 1]))
-                mesh.bdy_edge_comp[iedge_bdy] = 2
-            elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, mesh.ngl, :]))
-                mesh.bdy_edge_comp[iedge_bdy] = 3
-            elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, :, mesh.ngl]))
-                mesh.bdy_edge_comp[iedge_bdy] = 4
-            end
         end
     end
     # build mesh data structs for Laguerre semi-infinite elements
@@ -481,7 +472,7 @@ if mesh.nsd == 2
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta]) 
         factorx = inputs[:xfac_laguerre]#0.1
         factory = inputs[:yfac_laguerre]#0.025
-        mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, n_semi_inf, mesh.ngl, mesh.ngr)
+        mesh.connijk_lag ::Array{TInt,3} = KernelAbstractions.zeros(backend, TInt, n_semi_inf, mesh.ngl, mesh.ngr)
         bdy_normals = zeros(n_semi_inf, 2)
         bdy_tangents = zeros(n_semi_inf, 2)
         e_iter = 1
@@ -594,7 +585,7 @@ if mesh.nsd == 2
         mesh.npoin = iter -1
         mesh.x = x_new
         mesh.y = y_new
-        mesh.z = zeros(mesh.npoin)
+        mesh.z = KernelAbstractions.zeros(backend, TFloat, mesh.npoin)
         mesh.nelem_semi_inf = n_semi_inf 
     end
     #=for iedge_bdy = 1:mesh.nedges_bdy
@@ -616,9 +607,9 @@ end
 #
 # Free memory of obsolete arrays
     #
-    mesh.x_ho::Array{Float64, 1} = zeros(1)
-    mesh.y_ho::Array{Float64, 1} = zeros(1)
-    mesh.z_ho::Array{Float64, 1} = zeros(1)
+    mesh.x_ho::Array{TFloat, 1} = zeros(1)
+    mesh.y_ho::Array{TFloat, 1} = zeros(1)
+    mesh.z_ho::Array{TFloat, 1} = zeros(1)
     #resize!(mesh.x_ho, 1)
     #resize!(mesh.y_ho, 1)
     #resize!(mesh.z_ho, 1)
@@ -829,16 +820,16 @@ end #populate_face_el
 
 function  add_high_order_nodes!(mesh::St_mesh) end
 
-function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_nodes)
+function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     
     if (mesh.nop < 2) return end
     
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ ")
     println(" # ...")
     
-    lgl = basis_structs_ξ_ω!(interpolation_nodes, mesh.nop)
+    lgl = basis_structs_ξ_ω!(interpolation_nodes, mesh.nop, backend)
     
-    x1, x2 = Float64(0.0), Float64(0.0)    
+    x1, x2 = TFloat(0.0), TFloat(0.0)    
     ξ::typeof(lgl.ξ[1]) = 0.0
 
     ngl                      = mesh.nop + 1
@@ -851,7 +842,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
     resize!(mesh.x, (mesh.npoin))
     
-    mesh.connijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.ngl, 1)
+    mesh.connijk::Array{TInt,3} = zeros(TInt, mesh.nelem, mesh.ngl, 1)
 
     #
     # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
@@ -892,8 +883,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES")
     println(" # ...")
     
-    x1, y1 = Float64(0.0), Float64(0.0)
-    x2, y2 = Float64(0.0), Float64(0.0)
+    x1, y1 = TFloat(0.0), TFloat(0.0)
+    x2, y2 = TFloat(0.0), TFloat(0.0)
     
     ξ::typeof(lgl.ξ[1]) = 0.0
 
@@ -914,7 +905,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
         resize!(mesh.y_ho, (mesh.npoin))
     end
     
-    #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
+    #poin_in_edge::Array{TInt, 2}  = zeros(mesh.nedges, mesh.ngl)
     #open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
@@ -1045,8 +1036,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES")
     println(" # ...")
     
-    x1, y1, z1 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x2, y2, z2 = Float64(0.0), Float64(0.0), Float64(0.0)
+    x1, y1, z1 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x2, y2, z2 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
     
     ξ::typeof(lgl.ξ[1]) = 0.0
 
@@ -1070,7 +1061,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
         resize!(mesh.z_ho, (mesh.npoin))
     end
     
-    #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
+    #poin_in_edge::Array{TInt, 2}  = zeros(mesh.nedges, mesh.ngl)
     #open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
@@ -1414,10 +1405,10 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES")
     println(" # ...")
     
-    x1, y1 = Float64(0.0), Float64(0.0)
-    x2, y2 = Float64(0.0), Float64(0.0)
-    x3, y3 = Float64(0.0), Float64(0.0)
-    x4, y4 = Float64(0.0), Float64(0.0)
+    x1, y1 = TFloat(0.0), TFloat(0.0)
+    x2, y2 = TFloat(0.0), TFloat(0.0)
+    x3, y3 = TFloat(0.0), TFloat(0.0)
+    x4, y4 = TFloat(0.0), TFloat(0.0)
     
     ξ::typeof(lgl.ξ[1]) = 0.0
     ζ::typeof(lgl.ξ[1]) = 0.0
@@ -1595,10 +1586,10 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
     
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES")
     
-    x1, y1, z1 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x2, y2, z2 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x3, y3, z3 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x4, y4, z4 = Float64(0.0), Float64(0.0), Float64(0.0)
+    x1, y1, z1 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x2, y2, z2 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x3, y3, z3 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x4, y4, z4 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
     
     ξ::typeof(lgl.ξ[1]) = 0.0
     ζ::typeof(lgl.ξ[1]) = 0.0
@@ -1970,14 +1961,14 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
     println(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES")
     println(" # ...")
     
-    x1, y1, z1 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x2, y2, z2 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x3, y3, z3 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x4, y4, z4 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x5, y5, z5 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x6, y6, z6 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x7, y7, z7 = Float64(0.0), Float64(0.0), Float64(0.0)
-    x8, y8, z8 = Float64(0.0), Float64(0.0), Float64(0.0)
+    x1, y1, z1 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x2, y2, z2 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x3, y3, z3 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x4, y4, z4 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x5, y5, z5 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x6, y6, z6 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x7, y7, z7 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
+    x8, y8, z8 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
     
     ξ::typeof(lgl.ξ[1]) = 0.0
     η::typeof(lgl.ξ[1]) = 0.0
@@ -1992,7 +1983,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
     el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
     el_faces_internal_nodes  = mesh.NFACES_EL*(ngl-2)*(ngl-2)
     el_vol_internal_nodes    = (ngl-2)*(ngl-2)*(ngl-2)
-    conn_vol_poin::Array{Int64, 4}  = zeros(mesh.ngl, mesh.ngl, mesh.ngl,mesh.nelem)
+    conn_vol_poin::Array{TInt, 4}  = zeros(mesh.ngl, mesh.ngl, mesh.ngl,mesh.nelem)
     #Increase number of grid points from linear count to titak high-order points
     mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + tot_vol_internal_nodes
     
@@ -2135,7 +2126,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
 
 end
 
-function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
+function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
 
     if (mesh.nsd > 1)
         @error(" USE GMSH to build a higher-dimensional grid!")
@@ -2185,10 +2176,10 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     # Resize (using resize! from ElasticArrays) as needed
     resize!(mesh.x, (mesh.npoin))
     mesh.npoin_el = ngl
-
+    @info typeof(mesh.nelem), typeof(mesh.npoin_el)
     #allocate mesh.conn and reshape it
-    mesh.conn::Array{Int64, 2}   = zeros(mesh.nelem, mesh.npoin_el)
-    mesh.connijk::Array{Int64,3} = zeros(mesh.nelem, mesh.ngl, 1)
+    mesh.conn::Array{TInt, 2}   = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
+    mesh.connijk::Array{TInt,3} = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1)
     
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = iel
@@ -2199,11 +2190,11 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     end
     
     #Add high-order nodes
-    add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes)
-    mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, 1, mesh.ngr, 1)
+    add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes, backend)
+    mesh.connijk_lag ::Array{TInt,3} = KernelAbstractions.zeros(backend,TInt, 1, Int64(mesh.ngr), 1)
     mesh.nelem_semi_inf = 1
     if (inputs[:llaguerre_1d])
-        x = zeros(Float64,mesh.npoin+mesh.ngr-1)      
+        x = zeros(TFloat,mesh.npoin+mesh.ngr-1)      
         x[1:mesh.npoin] .= mesh.x[1:mesh.npoin] 
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
         mesh.connijk_lag[1,1,1] = mesh.npoin_linear 
@@ -2224,15 +2215,15 @@ end
 
 
 function mod_mesh_mesh_driver(inputs::Dict)
-    
+    @info TInt, TFloat 
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
         
         println(" # Read gmsh grid and populate with high-order points ")
         
         # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-        mesh = St_mesh{TInt,TFloat}(nsd=Int64(inputs[:nsd]),
-                                    nop=Int64(inputs[:nop]),
-                                    ngr=Int64(inputs[:nop_laguerre]+1),
+        mesh = St_mesh{TInt,TFloat, inputs[:backend]}(nsd=TInt(inputs[:nsd]),
+                                    nop=TInt(inputs[:nop]),
+                                    ngr=TInt(inputs[:nop_laguerre]+1),
                                     SD=NSD_1D())
         
         # Read gmsh grid using the GridapGmsh reader
@@ -2248,37 +2239,37 @@ function mod_mesh_mesh_driver(inputs::Dict)
             
             if (inputs[:nsd]==1)
                 println(" # ... build 1D grid ")
-                mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
-                                            npx  = Int64(inputs[:npx]),
-                                            xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
-                                            nop=Int64(inputs[:nop]),
-                                            connijk = zeros(Int64,  inputs[:nelx], inputs[:nop]+1, 1),
-                                            ngr=Int64(inputs[:nop_laguerre]+1),
+                mesh = St_mesh{TInt,TFloat, inputs[:backend]}(x = zeros(TInt(inputs[:npx])),
+                                            npx  = TInt(inputs[:npx]),
+                                            xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
+                                            nop=TInt(inputs[:nop]),
+                                            connijk = zeros(TInt,  inputs[:nelx], inputs[:nop]+1, 1),
+                                            ngr=TInt(inputs[:nop_laguerre]+1),
                                             SD=NSD_1D())
                 
             elseif (inputs[:nsd]==2)
                 println(" # ... build 2D grid ")
-                mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
-                                            z = zeros(Int64(inputs[:npz])),
-                                            npx  = Int64(inputs[:npx]),
-                                            npz  = Int64(inputs[:npz]), 
-                                            xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
-                                            zmin = Float64(inputs[:zmin]), zmax = Float64(inputs[:zmax]),
-                                            nop=Int64(inputs[:nop]),
+                mesh = St_mesh{TInt,TFloat, inputs[:backend]}(x = zeros(TInt(inputs[:npx])),
+                                            z = zeros(TInt(inputs[:npz])),
+                                            npx  = TInt(inputs[:npx]),
+                                            npz  = TInt(inputs[:npz]), 
+                                            xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
+                                            zmin = TFloat(inputs[:zmin]), zmax = TFloat(inputs[:zmax]),
+                                            nop=TInt(inputs[:nop]),
                                             SD=NSD_2D())
                 
             elseif (inputs[:nsd]==3)
                 println(" # ... build 3D grid ")
-                mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
-                                            y = zeros(Int64(inputs[:npy])),
-                                            z = zeros(Int64(inputs[:npz])),
-                                            npx  = Int64(inputs[:npx]),
-                                            npy  = Int64(inputs[:npy]),
-                                            npz  = Int64(inputs[:npz]), 
-                                            xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
-                                            ymin = Float64(inputs[:ymin]), ymax = Float64(inputs[:ymax]),
-                                            zmin = Float64(inputs[:zmin]), zmax = Float64(inputs[:zmax]),
-                                            nop=Int64(inputs[:nop]),
+                mesh = St_mesh{TInt,TFloat, inputs[:backend]}(x = zeros(TInt(inputs[:npx])),
+                                            y = zeros(TInt(inputs[:npy])),
+                                            z = zeros(TInt(inputs[:npz])),
+                                            npx  = TInt(inputs[:npx]),
+                                            npy  = TInt(inputs[:npy]),
+                                            npz  = TInt(inputs[:npz]), 
+                                            xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
+                                            ymin = TFloat(inputs[:ymin]), ymax = TFloat(inputs[:ymax]),
+                                            zmin = TFloat(inputs[:zmin]), zmax = TFloat(inputs[:zmax]),
+                                            nop=TInt(inputs[:nop]),
                                             SD=NSD_3D())
             else
                 @error( " INPUT ERROR: nsd must be an integer in [1, 2, 3] ")
@@ -2293,13 +2284,13 @@ function mod_mesh_mesh_driver(inputs::Dict)
             println(" # ...... DEFINE NSD in your input dictionary if you want a different grid!")
             mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
                                         npx  = Int64(inputs[:npx]),
-                                        xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
+                                        xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
                                         nop=Int64(inputs[:nop]),
                                         ngr=Int64(inputs[:nop_laguerre]+1),
                                         SD=NSD_1D())
         end
         
-        mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes])
+        mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], inputs[:backend])
         
         #Write structured grid to VTK
         #vtkfile = vtk_grid("mySTRUCTURED_GRID", mesh.x, mesh.y, mesh.z) # 3-D
@@ -2357,7 +2348,7 @@ function compute_element_size_driver(mesh::St_mesh, SD, T)
         Δlocal[ie] = compute_element_size(ie, mesh::St_mesh, SD, T)
     end
     Δelem      = minimum(Δlocal)
-    Δeffective = Float64(Δelem/mesh.nop)
+    Δeffective = TFloat(Δelem/mesh.nop)
     @info Δelem
     @info Δeffective
     
@@ -2371,7 +2362,7 @@ function compute_element_size(ie, mesh::St_mesh, SD::NSD_2D, T)
     #local arrays
     ngl = mesh.ngl    
     x = y = zeros(T, 4)
-    inode = zeros(Int64, 4)
+    inode = zeros(TInt, 4)
     
     inode[1] = mesh.connijk[ie, 1,   ngl]
     inode[2] = mesh.connijk[ie, 1,     1]
