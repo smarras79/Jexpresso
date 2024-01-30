@@ -33,9 +33,10 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
 using UnicodePlots
 using Printf
 
-const TInt   = Int64
-const TFloat = Float64
-
+#const TInt   = Int64
+#const TFloat = Float64
+TInt = Int64
+TFloat = Float64
 using DocStringExtensions
 
 include(joinpath( "..", "problems", "equations", "AbstractEquations.jl"))

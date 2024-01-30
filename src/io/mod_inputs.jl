@@ -34,7 +34,12 @@ function mod_inputs_user_inputs!(user_input_file)
     if(!haskey(inputs, :backend))
       inputs[:backend] = CPU()
     end
-
+   
+    if(inputs[:backend] == MetalBackend())
+        global TInt = Int32
+        global TFloat = Float32
+    end
+    @info TInt, TFloat
     if(!haskey(inputs, :lperiodic_1d))
       inputs[:lperiodic_1d] = false
     end
