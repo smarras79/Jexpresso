@@ -193,8 +193,9 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     end
     poin_bdy = zeros(size(mesh.bdy_edge_type,1),mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_edge
-    qe_temp = zeros(mesh.npoin,5)
-    qe_temp .= qexact
+    qe_temp = similar(qexact)
+    #qe_temp = zeros(mesh.npoin,5)
+    #qe_temp .= qexact
     if ("periodic1" in mesh.bdy_edge_type)
     	xmin = 1000000000.0
         ymax = -1000000000.0
@@ -371,7 +372,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
             #ρ
             qout[1:npoin] .= q[1:npoin]
             
-            if (case == "rtb" || case == "mountain") && nvars == 4
+            if (case == "rtb" || case == "mountain") && nvars >= 4
                 
                 #u = ρu/ρ
                 ivar = 2
@@ -382,8 +383,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                 ivar = 3
                 idx = (ivar - 1)*npoin
                 qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./q[1:npoin]
-
-                
+                                
                 if (size(qexact, 1) === npoin)
 
                     if inputs[:loutput_pert] == true
@@ -415,7 +415,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                 idx = (ivar - 1)*npoin
                 qout[idx+1:ivar*npoin] .= (q[idx+1:ivar*npoin] .+ qexact[1:npoin,ivar])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,ivar]./qexact[1:npoin,1]
                 
-                if (case == "rtb" || case == "mountain") && nvars == 4
+                if (case == "rtb" || case == "mountain") && nvars >= 4
                     
                     if (size(qexact, 1) === npoin)
                         
@@ -437,7 +437,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
             idx = (ivar - 1)*npoin
             qout[idx+1:ivar*npoin] .= (q[idx+1:ivar*npoin])
 
-            if case === "rtb" && nvars == 4
+            if case === "rtb" && nvars >= 4
                 
                 if (inputs[:loutput_pert] == true && size(qexact, 1) === npoin)
                     outvars = ("dρ", "u", "v", "dθ")
