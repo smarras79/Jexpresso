@@ -36,7 +36,7 @@ function sem_setup(inputs::Dict)
         mesh.y .= (mesh.y .+ inputs[:ydisp])
     end
     mesh.ymax = maximum(mesh.y)
-    #@info "xmax, ymax", maximum(mesh.x), maximum(mesh.y)    
+    
     #warp_mesh!(mesh,inputs)    
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
@@ -75,7 +75,8 @@ function sem_setup(inputs::Dict)
     # ψ     = basis.ψ[N+1, Q+1]
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
-    if (mesh.nsd > 1) 
+    if (mesh.nsd > 1)
+        @info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
         if ("Laguerre" in mesh.bdy_edge_type[:])
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
             ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta], inputs[:backend])
@@ -92,15 +93,17 @@ function sem_setup(inputs::Dict)
                 #fy_lag = init_filter(mesh.ngr-1,ξ3,inputs[:mu_y],mesh,inputs)
                 fy_lag = init_filter(mesh.ngr-1,ξ2,inputs[:mu_y],mesh,inputs)
             end
-            @time periodicity_restructure!(mesh,inputs)
+            #@time periodicity_restructure!(mesh,inputs)
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end
             metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat; backend = inputs[:backend])
             metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
             metrics = (metrics1, metrics2)
+            @time periodicity_restructure!(mesh,inputs)
             
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            
         else
             
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
@@ -125,8 +128,9 @@ function sem_setup(inputs::Dict)
             #warp_mesh!(mesh,inputs)
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
         end
-    else 
-        if(inputs[:llaguerre_1d])
+    else
+        
+        if(inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
 
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
             ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])

@@ -1,11 +1,11 @@
-function user_inputs()A
+function user_inputs()
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 900.0,
+        :tend                 => 400.0,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :Δt                   => 0.1,
+        :Δt                   => 0.05,
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         :lsource              => true, 
@@ -28,7 +28,7 @@ function user_inputs()A
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_dc_100m.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_dc.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ function user_inputs()A
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        #:lfilter             => true,
         :mu_x                => 0.01,
         :mu_y                => 0.01,
         :filter_type         => "erf",
