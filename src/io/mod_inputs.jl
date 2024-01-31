@@ -1,25 +1,13 @@
 using Crayons.Box
 using PrettyTables
 
-#macro datatype(str); :($(Symbol(str))); end
-
-#function mod_inputs_user_inputs!(equations_dir::String, parsed_equations, parsed_equations_case_name, )
-
-function mod_inputs_user_inputs!(user_input_file)
+function mod_inputs_user_inputs!(inputs)
 
     error_flag::Int8 = 0
     
-    #
-    # Notice: we need `@Base.invokelatest` to call user_inputs() because user_inputs()
-    # was defined within this same function via the include(input_dir) above.
-    # 
-    include(user_input_file)
-    inputs = @Base.invokelatest(user_inputs())
-
     #Store parsed arguments xxx into inputs[:xxx]
     _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
     
-    #
     print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")))
     pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
     print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")))
@@ -29,71 +17,109 @@ function mod_inputs_user_inputs!(user_input_file)
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
+    ##1D plotting inputs for paper
+
+    if(!haskey(inputs, :llinsolve))
+      inputs[:llinsolve] = false
+    end
+
+    if(!haskey(inputs, :plot_vlines))
+      inputs[:plot_vlines] = "empty"
+    end
+
+    if(!haskey(inputs, :plot_hlines))
+      inputs[:plot_hlines] = "empty"
+    end
+    
+    if(!haskey(inputs, :plot_axis))
+      inputs[:plot_axis] = "empty"
+    end
+   
+    if(!haskey(inputs, :plot_overlap))
+      inputs[:plot_overlap] = false
+    end
+
     if(!haskey(inputs, :lperiodic_1d))
       inputs[:lperiodic_1d] = false
     end
     
-    if(!haskey(inputs,:llaguerre_1d))
-      inputs[:llaguerre_1d] = false
+    if(!haskey(inputs, :llaguerre_bc))
+      inputs[:llaguerre_bc] = false
+    end
+
+    if(!haskey(inputs, :laguerre_tag))
+      inputs[:laguerre_tag] = "none"
+    end
+
+    if(!haskey(inputs, :lperiodic_laguerre))
+      inputs[:lperiodic_laguerre] = false
+    end
+
+    if(!haskey(inputs,:llaguerre_1d_right))
+      inputs[:llaguerre_1d_right] = false
+    end
+
+    if(!haskey(inputs,:llaguerre_1d_left))
+      inputs[:llaguerre_1d_left] = false
     end
 
     if(!haskey(inputs,:laguerre_beta))
       inputs[:laguerre_beta] = 1.0
     end
     
-    if(!haskey(inputs, :nop_laguerre))
+    if(!haskey(inputs,:nop_laguerre))
         inputs[:nop_laguerre] = 18
     end
     
-    if(!haskey(inputs, :xfac_laguerre))
+    if(!haskey(inputs,:xfac_laguerre))
         inputs[:xfac_laguerre] = 1.0
     end
 
-    if(!haskey(inputs, :yfac_laguerre))
+    if(!haskey(inputs,:yfac_laguerre))
         inputs[:yfac_laguerre] = 1.0
     end
      
-    if(!haskey(inputs, :lfilter))
+    if(!haskey(inputs,:lfilter))
         inputs[:lfilter] = false
     end
 
-    if(!haskey(inputs, :mu_x))
+    if(!haskey(inputs,:mu_x))
         inputs[:mu_x] = 0.0
     end
 
-    if(!haskey(inputs, :mu_y))
+    if(!haskey(inputs,:mu_y))
         inputs[:mu_y] = 0.0
     end
 
-    if(!haskey(inputs, :lwarp))
+    if(!haskey(inputs,:lwarp))
         inputs[:lwarp] = false
     end
 
-    if(!haskey(inputs, :mount_type))
+    if(!haskey(inputs,:mount_type))
         inputs[:lagnesi] = "agnesi"
     end
 
-    if(!haskey(inputs, :a_mount))
+    if(!haskey(inputs,:a_mount))
         inputs[:a_mount] = 10000.0
     end
 
-    if(!haskey(inputs, :h_mount))
+    if(!haskey(inputs,:h_mount))
         inputs[:h_mount] = 1.0
     end
     
-    if(!haskey(inputs, :c_mount))
+    if(!haskey(inputs,:c_mount))
         inputs[:c_mount] = 0.0
     end
 
-    if(!haskey(inputs, :luser_bc))
+    if(!haskey(inputs,:luser_bc))
         inputs[:luser_bc] = true
     end
     
-    if(!haskey(inputs, :xscale))
+    if(!haskey(inputs,:xscale))
         inputs[:xscale] = 1.0
     end
 
-    if(!haskey(inputs, :yscale))
+    if(!haskey(inputs,:yscale))
         inputs[:yscale] = 1.0
     end
     
@@ -407,6 +433,11 @@ function mod_inputs_user_inputs!(user_input_file)
         inputs[:equations] = Elliptic()
         inputs[:ldss_laplace] = true
         inputs[:ldss_differentiation] = false     
+    elseif (lowercase(parsed_equations) == "helmholtz" ||
+        lowercase(parsed_equations) == "diffusion")
+        inputs[:equations] = Helmholtz()
+        inputs[:ldss_laplace] = true
+        inputs[:ldss_differentiation] = false
     else
         
         #inputs[:neqs] = 1 #default
@@ -415,7 +446,7 @@ function mod_inputs_user_inputs!(user_input_file)
                 jexpresso  user_inputs.jl: equations ", the inputs[:equations] " that you chose is not coded!
                 Chose among:
                          - "CompEuler"
-                         - "AdvDiff"/"AD"/"Adv"
+                         - "AdvDiff"
               """
         
         @error s
@@ -443,6 +474,14 @@ function mod_inputs_user_inputs!(user_input_file)
         inputs[:CL] = CL()
     end
 
+    if(!haskey(inputs, :AD))
+        inputs[:AD] = ContGal()
+    else
+        if inputs[:AD] != ContGal() && inputs[:AD] != FD()
+            @mystop(" :AD can only be either ContGal() or FD() at the moment.")
+        end
+    end
+    
     if(!haskey(inputs, :SOL_VARS_TYPE))
         inputs[:SOL_VARS_TYPE] = TOTAL() #vs PERT()
     end

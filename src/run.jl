@@ -71,7 +71,8 @@ include(user_initialize_file)
 mod_inputs_print_welcome()
 inputs = Dict{}()
 
-inputs = mod_inputs_user_inputs!(user_input_file)
+inputs = user_inputs()
+mod_inputs_user_inputs!(inputs)
 
 #--------------------------------------------------------
 #Create output directory if it doesn't exist:
@@ -96,8 +97,7 @@ end
 run(`$cp $user_input_file $OUTPUT_DIR`) 
 
 
-driver(ContGal(),   # Space discretization type    
-       inputs, # input parameters from src/user_input.jl
+driver(inputs, # input parameters from src/user_input.jl
        OUTPUT_DIR,
        TFloat)
 

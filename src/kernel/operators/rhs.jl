@@ -56,6 +56,8 @@ function resetRHSToZero_viscous!(params)
     fill!(params.RHS_visc,     zero(params.T))
 end
 
+
+
 function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
     nothing
 end
@@ -121,7 +123,8 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, P
             uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
             uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]
             uprimitive[i,j,3] = u[m3]/uprimitive[i,j,1]
-            uprimitive[i,j,4] = (u[m4] + uprimitive[i,j,1]*uauxe[m1,4])/uprimitive[i,j,1] # CHECK THIS FOR ENE- δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+            #uprimitive[i,j,4] = (u[m4] + uprimitive[i,j,1]*uauxe[m1,4])/uprimitive[i,j,1] # CHECK THIS FOR ENE- δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+            uprimitive[i,j,4] = (u[m4] + uauxe[m1,4])/uprimitive[i,j,1] - uauxe[m1,4]/uauxe[m1,1]#(u[m4] + uauxe[m1,4])/uprimitive[i,j,1]
 
             #Tracers
             if(neqs > 4)
@@ -133,7 +136,7 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, P
             end
             
             #Pressure:
-            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
+            #uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
             
         end
         
@@ -203,19 +206,187 @@ function uToPrimitives!(neqs, uprimitive, u, uprimitivee, mesh, δtotal_energy, 
     
 end
 
+###JKJ#J#J#J#J#J#J
+#=function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
+    nothing
+end
+
+
+function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
+    
+    γ = 1.4
+    γm1 = 0.4
+    for i=1:mesh.ngl
+        
+        m1 = mesh.connijk[iel,i,1]
+        m2 = m1 + mesh.npoin
+        m3 = m2 + mesh.npoin
+        
+        x  = mesh.x[m1]           
+        A = 1.0 + 2.2*(x - 1.5)^2
+        
+        uprimitive[i,1,1] = u[m1]/A #ρ
+        uprimitive[i,1,2] = u[m2]/u[m1] #u
+        uprimitive[i,1,3] = γm1*(u[m3]/u[m1] - 0.5*γ*uprimitive[i,j,1]*uprimitive[i,j,1]) #T
+
+        #Pressure:
+        uprimitive[i,1,end] = uprimitive[i,1,1]*uprimitive[i,1,3] #ρ*T
+           
+    end
+end
+
+function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::TOTAL, SD::NSD_2D)
+
+    if typeof(PT) == CompEuler
+        
+        PhysConst = PhysicalConst{Float64}()
+        
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            
+            m1 = mesh.connijk[iel,i,j]
+            m2 = m1 + mesh.npoin
+            m3 = m2 + mesh.npoin
+            m4 = m3 + mesh.npoin
+            
+            uprimitive[i,j,1] = u[m1]
+            uprimitive[i,j,2] = u[m2]/u[m1]
+            uprimitive[i,j,3] = u[m3]/u[m1]
+            uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+            #Tracers
+            if(neqs > 4)
+                mieq = m4
+                for ieq = 5:neqs
+                    mieq = mieq + mesh.npoin
+                    uprimitive[i,j,ieq] = u[mieq]
+                end
+            end
+            #Pressure:
+            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
+            
+        end
+        
+    elseif typeof(PT) == AdvDiff
+        
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            
+            mieq = mesh.connijk[iel,i,j]
+            uprimitive[i,j,1] = u[mieq]
+            
+            for ieq = 2:neqs
+                mieq = mieq + mesh.npoin
+                uprimitive[i,j,ieq] = u[mieq]
+            end
+            
+        end
+    end
+end
+
+function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::PERT, SD::NSD_2D)
+    
+    if typeof(PT) == CompEuler
+        PhysConst = PhysicalConst{Float64}()
+        
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            
+            m1 = mesh.connijk[iel,i,j]
+            m2 = m1 + mesh.npoin
+            m3 = m2 + mesh.npoin
+            m4 = m3 + mesh.npoin
+
+            uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
+            uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]
+            uprimitive[i,j,3] = u[m3]/uprimitive[i,j,1]
+            #uprimitive[i,j,4] = (u[m4] + uprimitive[i,j,1]*uauxe[m1,4])/uprimitive[i,j,1] # CHECK THIS FOR ENE- δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
+            uprimitive[i,j,4] = (u[m4] + uauxe[m1,4])/uprimitive[i,j,1] - uauxe[m1,4]/uauxe[m1,1]#(u[m4] + uauxe[m1,4])/uprimitive[i,j,1]
+
+            #Tracers
+            if(neqs > 4)
+                mieq = m4
+                for ieq = 5:neqs
+                    mieq = mieq + mesh.npoin
+                    uprimitive[i,j,ieq] = u[mieq] + uauxe[mieq,1]
+                end
+            end
+            
+            #Pressure:
+            #uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
+            
+        end
+        
+    elseif typeof(PT) == AdvDiff
+        
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            
+            mieq = mesh.connijk[iel,i,j]
+            uprimitive[i,j,1] = u[mieq]
+            
+            for ieq = 2:neqs
+                mieq = mieq + mesh.npoin
+                uprimitive[i,j,ieq] = u[mieq]
+            end
+            
+        end
+    end
+    
+end
+
+
+function uToPrimitives!(neqs, uprimitive, u, uprimitivee, mesh, δtotal_energy, iel, PT, ::NCL, ::AbstractPert, SD::NSD_2D)
+
+    if typeof(PT) == CompEuler
+        PhysConst = PhysicalConst{Float64}()
+        
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            
+            m1 = mesh.connijk[iel,i,j]
+            m2 = m1 + mesh.npoin
+            m3 = m2 + mesh.npoin
+            m4 = m3 + mesh.npoin
+
+            uprimitive[i,j,1] = u[m1]
+            uprimitive[i,j,2] = u[m2]
+            uprimitive[i,j,3] = u[m3]
+            uprimitive[i,j,4] = u[m4]
+
+            #Tracers
+            if(neqs > 4)
+                mieq = 4
+                for ieq = 5:neqs
+                    mieq = mieq + mesh.npoin
+                    uprimitive[i,j,ieq] = u[mieq]                
+                end
+            end
+            
+            #Pressure:
+            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
+            
+        end
+        
+    elseif typeof(PT) == AdvDiff
+        
+        for j=1:mesh.ngl, i=1:mesh.ngl
+            
+            mieq = mesh.connijk[iel,i,j]
+            uprimitive[i,j,1] = u[mieq]
+            
+            for ieq = 2:neqs
+                mieq = mieq + mesh.npoin
+                uprimitive[i,j,ieq] = u[mieq]
+            end
+            
+        end
+    end
+    
+end=#
+
 
 function rhs!(du, u, params, time)
-
-    #@btime build_rhs!($@view(params.RHS[:,:]), $u, $params, $time)
+    
     build_rhs!(@view(params.RHS[:,:]), u, params, time)
     if (params.laguerre) 
-        #@btime build_rhs_laguerre!($@view(params.RHS_lag[:,:]), $u, $params, $time)
         build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
-        #n@info time, params.mesh.x[params.mesh.npoin_linear], u[params.mesh.npoin_linear], maximum(params.RHS[params.mesh.npoin_linear,1]), maximum(params.RHS_lag[params.mesh.npoin_linear,1])
-        #@info time, params.mesh.x[params.mesh.npoin-params.mesh.ngr], u[params.mesh.npoin-params.mesh.ngr], maximum(params.RHS[params.mesh.npoin-params.mesh.ngr,1])
         params.RHS .= @views(params.RHS .+ params.RHS_lag)
     end
-    #@btime RHStoDU!($du, $@view(params.RHS[:,:]), $params.neqs, $params.mesh.npoin)
     RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     
 end
@@ -226,6 +397,7 @@ function _build_rhs!(RHS, u, params, time)
     SD      = params.SD
     QT      = params.QT
     CL      = params.CL
+    AD      = params.AD
     neqs    = params.neqs
     ngl     = params.mesh.ngl
     nelem   = params.mesh.nelem
@@ -246,10 +418,11 @@ function _build_rhs!(RHS, u, params, time)
     apply_boundary_conditions!(u, params.uaux, time, params.qe,
                                params.mesh, params.metrics, params.basis,
                                params.RHS, params.rhs_el, params.ubdy,
-                               params.ω, neqs, params.inputs, SD)
+                               params.ω, neqs, params.inputs, AD, SD)
     
     inviscid_rhs_el!(u, params, lsource, SD)
-    DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
+    DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, AD)
+    #@info params.RHS[:,1]
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -259,19 +432,14 @@ function _build_rhs!(RHS, u, params, time)
         
         viscous_rhs_el!(u, params, SD)
         
-        DSS_rhs!(@view(params.RHS_visc[:,:]), @view(params.rhs_diff_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD)
+        DSS_rhs!(@view(params.RHS_visc[:,:]), @view(params.rhs_diff_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, AD)
         
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-    #@info "pre div"
-    #@info time, params.mesh.x[params.mesh.npoin_linear], u[params.mesh.npoin_linear], maximum(params.RHS[params.mesh.npoin_linear,1]), maximum(params.RHS_lag[params.mesh.npoin_linear,1])
-    #@info time, params.mesh.x[params.mesh.npoin-params.mesh.ngr], u[params.mesh.npoin-params.mesh.ngr], maximum(params.RHS[params.mesh.npoin-params.mesh.ngr,1]) 
     for ieq=1:neqs
-        divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin)
+        divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
     end
-    #@info "post div"
-    #@info time, params.mesh.x[params.mesh.npoin_linear], u[params.mesh.npoin_linear], maximum(params.RHS[params.mesh.npoin_linear,1]), maximum(params.RHS_lag[params.mesh.npoin_linear,1])
-    #@info time, params.mesh.x[params.mesh.npoin-params.mesh.ngr], u[params.mesh.npoin-params.mesh.ngr], maximum(params.RHS[params.mesh.npoin-params.mesh.ngr,1])
+    
 end
 
 function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
@@ -292,7 +460,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
                        @view(params.qe[ip,:]),         #pref
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs)
+                       neqs=params.neqs, ip=ip)
             
             if lsource
                 user_source!(@view(params.S[i,1,:]),
@@ -302,7 +470,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
             end
         end
         
-        _expansion_inviscid!(params, iel, params.CL, params.QT, SD)
+        _expansion_inviscid!(u, params, iel, params.CL, params.QT, SD, params.AD)
         
     end
 end
@@ -313,11 +481,11 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
     xmax = params.xmax
     xmin = params.xmin
     ymax = params.ymax    
-    for iel=1:params.mesh.nelem
+    for iel = 1:params.mesh.nelem
 
         uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
-        for j=1:params.mesh.ngl, i=1:params.mesh.ngl
+        for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,j]
             
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
@@ -325,7 +493,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
                        @view(params.qe[ip,:]),         #pref
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs)
+                       neqs=params.neqs, ip=ip)
             
             if lsource
                 user_source!(@view(params.S[i,j,:]),
@@ -334,8 +502,8 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
-        
-        _expansion_inviscid!(params, iel, params.CL, params.QT, SD)
+
+        _expansion_inviscid!(u, params, iel, params.CL, params.QT, SD, params.AD)
         
     end
 end
@@ -347,7 +515,7 @@ function viscous_rhs_el!(u, params, SD::NSD_2D)
         uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for ieq in params.ivisc_equations
-            _expansion_visc!(@view(params.rhs_diffξ_el[iel,:,:,ieq]), @view(params.rhs_diffη_el[iel,:,:,ieq]), @view(params.uprimitive[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.mesh, params.basis, params.metrics, params.inputs, iel, ieq, params.QT, SD)
+            _expansion_visc!(@view(params.rhs_diffξ_el[iel,:,:,ieq]), @view(params.rhs_diffη_el[iel,:,:,ieq]), @view(params.uprimitive[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.mesh, params.basis, params.metrics, params.inputs, iel, ieq, params.QT, SD, params.AD)
         end
         
     end
@@ -355,7 +523,22 @@ function viscous_rhs_el!(u, params, SD::NSD_2D)
     params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el)
 end
 
-function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D)
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD)
+    
+    for ieq = 1:params.neqs
+        for i = 1:params.mesh.ngl
+            ip = params.mesh.connijk[iel,i,1]
+            if (ip < params.mesh.npoin)
+                #params.RHS[ip,ieq] = params.visc_coeff[ip]*(u[ip+1] - 2*u[ip] + u[ip-1])/(params.mesh.Δx[ip])^2 + 0.1*(u[ip+1] - u[ip])/(params.mesh.Δx[ip])
+                params.RHS[ip,ieq] = 0.5*(u[ip+1] - u[ip])/(params.mesh.Δx[ip])
+            end
+        end
+    end
+    nothing
+end
+
+
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
     
     for ieq = 1:params.neqs
         for i=1:params.mesh.ngl
@@ -363,13 +546,15 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_1D)
             for k = 1:params.mesh.ngl
                 dFdξ += params.basis.dψ[k,i]*params.F[k,1,ieq]
             end
-            params.rhs_el[iel,i,1,ieq] -= params.ω[i]*dFdξ  - params.ω[i]*params.S[i,1,ieq]
+            params.rhs_el[iel,i,1,ieq] -= params.ω[i]*dFdξ - params.ω[i]*params.S[i,1,ieq]
         end
     end
 end
 
 
-function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_2D)
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
+
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
 
     for ieq=1:params.neqs
         for j=1:params.mesh.ngl
@@ -405,7 +590,9 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Inexact, SD::NSD_2D)
     end
 end
 
-function _expansion_inviscid!(params, iel, ::CL, QT::Exact, SD::NSD_2D)
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
+
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
     
     N = params.mesh.ngl
     Q = N + 1
@@ -449,7 +636,9 @@ function _expansion_inviscid!(params, iel, ::CL, QT::Exact, SD::NSD_2D)
     end
 end
 
-function _expansion_inviscid!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D)
+function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
+
+function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::ContGal)
     
     for ieq=1:params.neqs
         for j=1:params.mesh.ngl
@@ -503,7 +692,10 @@ function _expansion_inviscid!(params, iel, ::NCL, QT::Inexact, SD::NSD_2D)
     end        
 end
 
-function _expansion_inviscid!(params, iel, ::NCL, QT::Exact, SD::NSD_2D)
+
+function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
+
+function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::ContGal)
 
     N = params.mesh.ngl
     Q = N + 1
@@ -595,31 +787,36 @@ end
 
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
-                          mesh, basis, metrics, inputs, iel, ieq, QT::Inexact, SD::NSD_2D)
+                          mesh, basis, metrics, inputs, iel, ieq, QT::Inexact, SD::NSD_2D, ::FD)
+    nothing
+end
+
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
+                          mesh, basis, metrics, inputs, iel, ieq, QT::Inexact, SD::NSD_2D, ::ContGal)
     
     for l = 1:mesh.ngl
         for k = 1:mesh.ngl
             ωJac = ω[k]*ω[l]*metrics.Je[iel,k,l]
             
-            dudξ = 0.0
-            dudη = 0.0
+            dqdξ = 0.0
+            dqdη = 0.0
             @turbo for ii = 1:mesh.ngl
-                dudξ += basis.dψ[ii,k]*uprimitiveieq[ii,l]
-                dudη += basis.dψ[ii,l]*uprimitiveieq[k,ii]
+                dqdξ += basis.dψ[ii,k]*uprimitiveieq[ii,l]
+                dqdη += basis.dψ[ii,l]*uprimitiveieq[k,ii]
             end
             dξdx_kl = metrics.dξdx[iel,k,l]
             dξdy_kl = metrics.dξdy[iel,k,l]
             dηdx_kl = metrics.dηdx[iel,k,l]
             dηdy_kl = metrics.dηdy[iel,k,l]
             
-            auxi = dudξ*dξdx_kl + dudη*dηdx_kl
-            dudx = visc_coeffieq*auxi
+            auxi = dqdξ*dξdx_kl + dqdη*dηdx_kl
+            dqdx = visc_coeffieq*auxi
             
-            auxi = dudξ*dξdy_kl + dudη*dηdy_kl
-            dudy = visc_coeffieq*auxi
+            auxi = dqdξ*dξdy_kl + dqdη*dηdy_kl
+            dqdy = visc_coeffieq*auxi
             
-            ∇ξ∇u_kl = (dξdx_kl*dudx + dξdy_kl*dudy)*ωJac
-            ∇η∇u_kl = (dηdx_kl*dudx + dηdy_kl*dudy)*ωJac     
+            ∇ξ∇u_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
+            ∇η∇u_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
             
             @turbo for i = 1:mesh.ngl
                 dhdξ_ik = basis.dψ[i,k]
@@ -632,7 +829,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
     end  
 end
 
-function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Exact, SD::NSD_2D)
+function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Exact, SD::NSD_2D, ::FD)
+    nothing
+end
+
+function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Exact, SD::NSD_2D, ::ContGal)
     
     N = params.mesh.ngl
     Q = N + 1
@@ -641,7 +842,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
         for k=1:Q
             ωJac = params.ω[k]*params.ω[l]*params.metrics.Je[iel,k,l]
             
-            dudξ = 0.0; dudη = 0.0
+            dqdξ = 0.0; dqdη = 0.0
             ρkl = 0.0; ukl = 0.0; vkl = 0.0; Skl = 0.0
             for n=1:N
                 for m=1:N
@@ -651,8 +852,8 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
                     dψmk_ψnl = params.basis.dψ[m,k]* params.basis.ψ[n,l]
                     ψmk_dψnl = params.basis.ψ[m,k]*params.basis.dψ[n,l]
                     
-                    dudξ += dψmk_ψnl*params.uprimitiveieq[m,n]
-                    dudη += ψmk_dψnl*params.uprimitiveieq[m,n]
+                    dqdξ += dψmk_ψnl*params.uprimitiveieq[m,n]
+                    dqdη += ψmk_dψnl*params.uprimitiveieq[m,n]
                     ukl  +=  ψmk*ψnl*params.uprimitiveieq[m,n]
                     
                 end
@@ -663,14 +864,14 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
             dηdx_kl = params.metrics.dηdx[iel,k,l]
             dηdy_kl = params.metrics.dηdy[iel,k,l]
             
-            dudx = dudξ*dξdx_kl + dudη*dηdx_kl
-            dudx = dudx*visc_coeff[2]
+            dqdx = dqdξ*dξdx_kl + dqdη*dηdx_kl
+            dqdx = dqdx*visc_coeff[2]
 
-            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
-            dudy = dudy*visc_coeff[2]
+            dqdy = dqdξ*dξdy_kl + dqdη*dηdy_kl
+            dqdy = dqdy*visc_coeff[2]
             
-            ∇ξ∇u_kl = (dξdx_kl*dudx + dξdy_kl*dudy)*ωJac
-            ∇η∇u_kl = (dηdx_kl*dudx + dηdy_kl*dudy)*ωJac     
+            ∇ξ∇u_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
+            ∇η∇u_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
             
             ###### W I P ######
             for j=1:N

@@ -7,7 +7,7 @@ function user_inputs()
         :Δt                   => 0.0005,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 10,
-        :output_dir          => "./",
+        :output_dir          => "./output/",
         :case                 => "rtb",
         #:CL                   => NCL(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
@@ -26,7 +26,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1),
-        :μ                    => (0.1), #kinematic viscosity constant for θ equation
+        :μ                    => (0.1), 
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ function user_inputs()
         #--------------------------------------------------------------------------- 
         :xscale              => 10.0,
         :yscale              => 10.0,
-        :xdisp               => 0.0,
+        :xdisp               => 1.0,
         :ydisp               => 1.0,
         #---------------------------------------------------------------------------
         # Mountain parameters
@@ -65,6 +65,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "PNG",
         :loutput_pert        => true,  #this is only implemented for VTK for now
+        :plot_hlines        => [10.0],
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

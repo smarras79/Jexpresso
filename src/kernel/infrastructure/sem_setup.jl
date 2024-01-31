@@ -8,6 +8,7 @@ function sem_setup(inputs::Dict)
     Nξ = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:equations]
+    AD    = inputs[:AD]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -35,7 +36,7 @@ function sem_setup(inputs::Dict)
         mesh.y .= (mesh.y .+ inputs[:ydisp])
     end
     mesh.ymax = maximum(mesh.y)
-    @info "xmax, ymax", maximum(mesh.x), maximum(mesh.y)    
+    
     #warp_mesh!(mesh,inputs)    
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
@@ -74,7 +75,8 @@ function sem_setup(inputs::Dict)
     # ψ     = basis.ψ[N+1, Q+1]
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
-    if (mesh.nsd > 1) 
+    if (mesh.nsd > 1)
+        @info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
         if ("Laguerre" in mesh.bdy_edge_type[:])
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
             ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
@@ -91,15 +93,17 @@ function sem_setup(inputs::Dict)
                 #fy_lag = init_filter(mesh.ngr-1,ξ3,inputs[:mu_y],mesh,inputs)
                 fy_lag = init_filter(mesh.ngr-1,ξ2,inputs[:mu_y],mesh,inputs)
             end
-            @time periodicity_restructure!(mesh,inputs)
+            #@time periodicity_restructure!(mesh,inputs)
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end
             metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat)
             metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat)
             metrics = (metrics1, metrics2)
+          
+            @time periodicity_restructure!(mesh,inputs)
+            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
             
-            matrix = matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         else
             
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
@@ -122,10 +126,11 @@ function sem_setup(inputs::Dict)
             @time periodicity_restructure!(mesh,inputs)
             
             #warp_mesh!(mesh,inputs)
-            matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         end
-    else 
-        if(inputs[:llaguerre_1d])
+    else
+        
+        if(inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
 
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
             ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
@@ -135,30 +140,31 @@ function sem_setup(inputs::Dict)
             ω1 = ω
             ω = (ω1,ω2)
             #--------------------------------------------------------
-           # Build metric terms
-           #--------------------------------------------------------
-           metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat)
-           metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat)
-           metrics = (metrics1, metrics2) 
-           matrix = matrix_wrapper_laguerre(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+            # Build metric terms
+            #--------------------------------------------------------
+            metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat)
+            metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat)
+            metrics = (metrics1, metrics2) 
+            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
         else
-           basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
+            basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
+
             ω1 = ω
             ω = ω1
             #--------------------------------------------------------
-           # Build metric terms
-           #--------------------------------------------------------
-           metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
+            # Build metric terms
+            #--------------------------------------------------------
+            metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
 
-           if (inputs[:lperiodic_1d])
-              periodicity_restructure!(mesh,inputs)
-           end
-           matrix = matrix_wrapper(SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
-       end
+            if (inputs[:lperiodic_1d])
+                periodicity_restructure!(mesh,inputs)
+            end
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
+        end
     end
-#--------------------------------------------------------
-# Build matrices
-#--------------------------------------------------------
-
-return (; QT, PT, mesh, metrics, basis, ω, matrix,fx,fy,fy_lag)
+    #--------------------------------------------------------
+    # Build matrices
+    #--------------------------------------------------------
+    
+    return (; QT, PT, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end
