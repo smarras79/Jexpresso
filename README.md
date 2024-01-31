@@ -5,6 +5,20 @@
 # JEXPRESSO
 A research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements**. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
 
+If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
+
+Please cite Jexpresso using:
+
+```
+@article{tissaoui2024,
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions},
+  url = {https://arxiv.org/abs/2401.05624},
+  year = {2024},
+  journal = {arXiv:2401.05624 [math.NA]},
+}
+```
+
 # Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
 
@@ -178,6 +192,110 @@ The code is designed to create any system of conservsation laws. See CompEuler/c
 Details will be given in the documentation (still WIP). Write us if you need help.
 
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
+
+## Laguerre semi-infinite element test suite
+This section contains instructions to run all of the test cases presented in
+
+```
+@article{tissaoui2024,
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions},
+  url = {https://arxiv.org/abs/2401.05624},
+  year = {2024},
+  journal = {arXiv:2401.05624 [math.NA]},
+}
+```
+
+Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
+
+The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+julia> push!(empty!(ARGS), "CompEuler", "wave1d_lag");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/wave_v_4.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 2: 1D wave train for linearized shallow water equations
+
+The problem is defined in [`problems/equations/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/Wave_Train_final.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+A second version of this tests generate images with the solutions at different times overlapped.
+
+This version is defined in [`problems/equations/AdvDiff/Wave_Train_Overlapping_Plot`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train_Overlapping_Plot) and by default output will be written to `output/AdvDiff/Wave_Train_Overlapping_Plot`. To run this version of the problem execute the following from the Julia command line:
+
+```bash
+julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train_Overlapping_Plot");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/Wave_Train_overlap.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 3: 2D advection-diffusion equation
+
+The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+julia> push!(empty!(ARGS), "AdvDiff", "2D_laguerre");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/ad2d-4s-line.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 4: 2D Helmholtz equation
+
+The problem is defined in [`problems/equations/Helmholtz/case1`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1) and by default output will be written to `output/Helmholtz/case1`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+julia> push!(empty!(ARGS), "Helmholtz", "case1");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/Helmholtz_from_jexpresso-line.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 5: Rising thermal bubble
+
+The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+julia> push!(empty!(ARGS), "CompEuler", "theta_laguerre");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/48.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 6: Hydrostatic linear mountain waves
+
+The problem is defined in [`problems/equations/CompEuler/HSmount_Lag_working`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag_working) and by default output will be written to `output/CompEuler/HSmount_Lag_working`. To solve this problem run the following commands from the Julia command line:
+
+```bash      
+julia> push!(empty!(ARGS), "CompEuler", "HSmount_Lag_working");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/wvelo.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
 
 ## Plotting
 Files can be written to VTK (recommended) or png. For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
