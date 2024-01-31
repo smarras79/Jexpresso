@@ -40,7 +40,7 @@ function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
     fig
 end
 
-function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar; iout=1, nvar=1, PT=nothing)
+function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, PT=nothing)
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
@@ -49,13 +49,37 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
  
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
-        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
+        #=fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
                                           markersize = 10, markercolor="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "x")
-                                          )
+                                          )=#
         
-        #ylims!(ax, -0.05, 1.0)
+        #ylims!(ax, -0.55, 0.55)
+        CairoMakie.activate!(type = "eps")
+        fig = Figure(resolution = (600,400),fontsize=22)
+        ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
+        CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin];markersize = 10, markercolor="Blue")
+        vlines = inputs[:plot_vlines]
+        hlines = inputs[:plot_hlines]
+        axis = inputs[:plot_axis]
+        if !(vlines == "empty")
+            for i=1:size(vlines,1) 
+                #vlines!(ax, [-2.5,2.5], color = :red)
+                vlines!(ax,vlines[i], color = :red)
+            end
+        end
+        if !(hlines == "empty")
+            for i=1:size(hlines,1)
+                #vlines!(ax, [-2.5,2.5], color = :red)
+                hlines!(ax,hlines[i], color = :red)
+            end
+        end
+        if !(axis == "empty")
+           idx = (ivar-1)*2
+           ylims!(ax, axis[1+idx], axis[2+idx])
+        end
+        #ylims!(ax, -0.05, 0.55)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
         save(string(fout_name), fig; resolution = (600, 400))
         fig
@@ -63,33 +87,41 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
 end
 
 
-#=function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar; iout=1, nvar=1, fig=Figure(),color ="Blue",p=[],PT=nothing)
+function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, fig=Figure(),color ="Blue",p=[],marker = :circle, PT=nothing)
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
     npoin = floor(Int64, size(q, 1)/nvar)
     #qout = copy(q)
-    ax = Axis(fig[1,1])      
+    #ax = Axis(fig[1,1])      
     
-    for ivar=1:nvar
+    for ivar=1:1
         idx = (ivar - 1)*npoin
-        #fig, ax, plt = 
-        push!(p,CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
+        #fig, ax, plt =
+        CairoMakie.activate!(type = "eps")
+        if !(p==[]) 
+          #=push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*mesh.npoin+mesh.npoin_original]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
                                           markersize = 10, markercolor=color,
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery")#,  axis = (; title = string(outvar[ivar]), xlabel = "x")
-                                          ))
-       
+                                          ))=#
+          ax = Axis(fig[1, 1], title="", xlabel="")
+          hidedecorations!(ax)
+          push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, markercolor=color))
+        else
+          ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
+          push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, markercolor=color))
+        end
         p[end].color = color
-        ylims!(ax, -0.05, 1.0)
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")  
+        ylims!(ax, -0.03, 0.03)
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".eps")  
         save(string(fout_name), fig; resolution = (600, 400))
         fig
     end
-end=#
+end
 
 
-function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, PT=nothing)
+function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, varnames; iout=1, nvar=1, PT=nothing)
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
@@ -99,7 +131,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
     qe   = range(0,0,npoin)
 
     #outvar = ["ρ", "u", "e"]
-    outvar = ["ρ", "u", "p"]
+    outvar = varnames
     if PT === CompEuler()
         #ρ
         qout[1:npoin] .= @view q[1:npoin]
@@ -162,7 +194,7 @@ function plot_initial(SD::NSD_2D, x::Array, q::Array, ivar, OUTPUT_DIR::String)
     nothing
 end
 
-function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
+function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1)
 
 """
     This function uses the amazing package Mackie to plot arbitrarily gridded
@@ -182,18 +214,38 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
         
         minq = minimum(q[idx+1:ivar*npoin])
         maxq = maximum(q[idx+1:ivar*npoin])
+
+        if (maxq > minq) 
+          Lx = abs(maximum(mesh.x) - minimum(mesh.x))
+          Ly = abs(maximum(mesh.y) - minimum(mesh.y))
+          vlines = inputs[:plot_vlines]
+          hlines = inputs[:plot_hlines]
+          if !(vlines == "empty")
+              for i=1:size(vlines,1)
+                  vlines!(ax,vlines[i], color = :red, linestyle = :dash)
+              end
+          end
+          if !(hlines == "empty")
+              for i=1:size(hlines,1)
+                  hlines!(ax,hlines[i], color = :red, linstyle = :dash)
+              end
+          end
+          
+          if (Ly > Lx)
+            ax.aspect = Lx/Ly; colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
+          else
+            #ax.aspect = Lx/Ly; #colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
+          end      
+
+          Colorbar(fig[1,2], colormap = :viridis,  limits = (minq, maxq))        
+          save(string(fout_name), fig) #, resolution = (600, 600))
+          fig
+        end
         
-        Lx = abs(maximum(mesh.x) - minimum(mesh.x))
-        Ly = abs(maximum(mesh.y) - minimum(mesh.y))
-        ax.aspect = Lx/Ly; colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
-        
-        Colorbar(fig[1,2], colormap = :viridis) #,  limits = (minq, maxq))
-        save(string(fout_name), fig) #, resolution = (600, 600))        
-        fig
     end
 end
-function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
-function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; nvar=1) nothing end
+function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; nvar=1) nothing end
+function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; nvar=1) nothing end
 
 function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-3)
 

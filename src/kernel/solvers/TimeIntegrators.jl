@@ -89,7 +89,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
         b_lag = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngr), qp.neqs)
         B_lag = KernelAbstractions.zeros(backend, T, Int64(mesh.npoin), qp.neqs)
     end
-    if (inputs[:llaguerre_1d])
+    if (inputs[:llaguerre_1d_right]||inputs[:llaguerre_1d_left])
         uaux_el_lag      = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Int64(mesh.ngr), Int64(mesh.ngl), qp.neqs)
         rhs_el_lag       = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Int64(mesh.ngr), Int64(mesh.ngl), qp.neqs)
         rhs_diff_el_lag  = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Int64(mesh.ngr), Int64(mesh.ngl), qp.neqs)
@@ -122,7 +122,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
     visc_coeff = inputs[:μ]#(inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
     ivisc_equations = inputs[:ivisc_equations]   
  
-    if ("Laguerre" in mesh.bdy_edge_type || inputs[:llaguerre_1d])
+    if ("Laguerre" in mesh.bdy_edge_type || inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
  
         params = (T, F, G, S,
                   uaux, uaux_el, vaux,
