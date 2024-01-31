@@ -5,6 +5,20 @@
 # JEXPRESSO
 A research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements**. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
 
+If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
+
+Please cite Jexpresso using:
+
+```
+@article{tissaoui2024,
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions},
+  url = {https://arxiv.org/abs/2401.05624},
+  year = {2024},
+  journal = {arXiv:2401.05624 [math.NA]},
+}
+```
+
 # Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
 
