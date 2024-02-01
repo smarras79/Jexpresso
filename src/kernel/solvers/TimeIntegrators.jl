@@ -118,7 +118,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
     end
     
     deps  = zeros(1,1)
-    tspan = (inputs[:tinit], inputs[:tend])    
+    tspan = (TFloat(inputs[:tinit]), TFloat(inputs[:tend]))    
     visc_coeff = inputs[:μ]#(inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
     ivisc_equations = inputs[:ivisc_equations]   
  
@@ -189,7 +189,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
 
    
     @time solution = solve(prob,
-                           inputs[:ode_solver], dt=inputs[:Δt],
+                           inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                            save_everystep = false,
                            adaptive=inputs[:ode_adaptive_solver],
                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
