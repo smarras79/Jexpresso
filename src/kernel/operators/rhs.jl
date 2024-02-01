@@ -382,13 +382,27 @@ end=#
 
 function rhs!(du, u, params, time)
     
-    build_rhs!(@view(params.RHS[:,:]), u, params, time)
-    if (params.laguerre) 
-        build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
-        params.RHS .= @views(params.RHS .+ params.RHS_lag)
+    backend = params.inputs[:backend]
+    if (backend == CPU())
+        build_rhs!(@view(params.RHS[:,:]), u, params, time)
+        if (params.laguerre) 
+            build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
+            params.RHS .= @views(params.RHS .+ params.RHS_lag)
+        end
+        RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+    else
+        connijk = KernelAbstractions.allocate(backend, Int32, Int64(params.mesh.nelem), Int64(params.mesh.ngl), 1)
+        KernelAbstractions.copyto!(backend, connijk, params.mesh.connijk)
+        dψ = KernelAbstractions.allocate(backend, Float32, Int64(params.mesh.ngl), Int64(params.mesh.ngl))
+        KernelAbstractions.copyto!(backend, dψ, params.basis.dψ)
+        ω = KernelAbstractions.allocate(backend, Float32, Int64(params.mesh.ngl))
+        KernelAbstractions.copyto!(backend, ω, params.ω)
+        k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngl)))
+        #@info typeof(params.RHS), typeof(u),typeof(connijk),typeof(dψ), typeof(params.M), typeof(ω)
+        k(params.RHS, u, connijk , dψ, ω, params.M, params.mesh.ngl; ndrange = params.mesh.nelem*params.mesh.ngl,workgroupsize = params.mesh.ngl)
+        RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+        ### Kernel runs and we can move forward in time, fix plotting issue for solution analysis
     end
-    RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
-    
 end
 
 function _build_rhs!(RHS, u, params, time)

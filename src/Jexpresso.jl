@@ -67,6 +67,8 @@ include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
+include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
+
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 
 include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
