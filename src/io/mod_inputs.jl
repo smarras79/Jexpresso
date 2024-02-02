@@ -1,7 +1,5 @@
 using Crayons.Box
 using PrettyTables
-using Metal
-using KernelAbstractions
 
 function mod_inputs_user_inputs!(inputs)
 

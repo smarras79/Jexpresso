@@ -1,4 +1,3 @@
-using KernelAbstractions
 
 Base.@kwdef mutable struct St_metrics{TFloat,backend}
 
