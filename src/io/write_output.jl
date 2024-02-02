@@ -35,14 +35,25 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
             imarker = mod(iout,size(markers,1))+1
             marker = markers[imarker]
             title = string("sol.u at time ", sol.t[iout])
-            plot_results!(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
-            
+            if (inputs[:backend] == CPU())
+                plot_results!(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
+            else
+                uout = KernelAbstractions.allocate(CPU(),Float32, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(CPU(), uout, sol.u[iout][:])
+                plot_results!(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
+            end
         end
     else
         fig = Figure(resolution = (1200,800),fontsize=22)
         for iout = 1:size(sol.t[:], 1)
             title = string("sol.u at time ", sol.t[iout])
-            plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+            if (inputs[:backend] == CPU())
+                plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+            else
+                uout = KernelAbstractions.allocate(CPU(),Float32, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(CPU(), uout, sol.u[iout][:])
+                plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+            end
         end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )

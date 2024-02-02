@@ -6,6 +6,8 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
+using Metal
+using KernelAbstractions
 using Revise
 using BenchmarkTools
 using Dates

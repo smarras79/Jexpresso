@@ -1,5 +1,3 @@
-using Metal
-using KernelAbstractions
 @kernel function _build_rhs_gpu_v0!(RHS, u, connijk, dψ, ω, M, ngl)
     s = Int32(@groupsize()[1])
     #n = div(@ndrange()[1],s)#div(length(A),s)
