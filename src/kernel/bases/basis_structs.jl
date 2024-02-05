@@ -64,9 +64,9 @@ mutable struct St_Chebyshev{TFloat} <:AbstractIntegrationPointAndWeights
     chebyshev ::TFloat
 end
 
-mutable struct St_lgl{TFloat} <:AbstractIntegrationPointAndWeights
-    ξ::Array{TFloat}
-    ω::Array{TFloat}
+Base.@kwdef mutable struct St_lgl{TFloat,backend} <:AbstractIntegrationPointAndWeights
+    ξ = KernelAbstractions.zeros(backend, TFloat, 0)
+    ω = KernelAbstractions.zeros(backend, TFloat, 0)
 end
 
 mutable struct St_lg{TFloat} <:AbstractIntegrationPointAndWeights
@@ -91,8 +91,8 @@ end
 
 
 Base.@kwdef mutable struct St_Lagrange{TFloat, backend} <:AbstractInterpolationBasis
-    ψ::Array{TFloat, 2}  = KernelAbstractions.zeros(backend, TFloat, mesh.ngl, mesh.ngl)
-    dψ::Array{TFloat, 2} = KernelAbstractions.zeros(backend, TFloat, mesh.ngl, mesh.ngl)    
+    ψ  = KernelAbstractions.zeros(backend, TFloat, 0, 0)#mesh.ngl, mesh.ngl)
+    dψ = KernelAbstractions.zeros(backend, TFloat, 0, 0)#mesh.ngl, mesh.ngl)    
 end
 
 mutable struct St_ScaledLaguerre{TFloat} <:AbstractInterpolationBasis
@@ -116,7 +116,7 @@ function basis_structs_ξ_ω!(ξωtype::LGL, nop, backend)
     #
     # Note: `nop` means `nq` when building the quadrature points in sem_setup.jl
     #
-    lgl = St_lgl{TFloat}(KernelAbstractions.zeros(backend, TFloat, nop+1),
+    lgl = St_lgl{TFloat, backend}(KernelAbstractions.zeros(backend, TFloat, nop+1),
                          KernelAbstractions.zeros(backend, TFloat, nop+1))
     
     build_Integration_points!(lgl, nop, backend)
