@@ -84,7 +84,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     #if nsd == 1
     #    connijk::Array{Int64,1} = zeros(Int64, 0, 0)
     #elseif nsd == 2
-    connijk::Array{TInt,3} =  KernelAbstractions.zeros(backend,TInt, 0, 0, 0)
+    connijk =  KernelAbstractions.zeros(backend,TInt, 0, 0, 0)
     #elseif nsd == 3
     #    connijk::Array{Int64,4} = zeros(Int64, 0, 0, 0, 0)
     #end
@@ -840,7 +840,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
     resize!(mesh.x, (mesh.npoin))
     
-    mesh.connijk::Array{TInt,3} = zeros(TInt, mesh.nelem, mesh.ngl, 1)
+    mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1)
 
     #
     # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
@@ -2174,11 +2174,11 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     # Resize (using resize! from ElasticArrays) as needed
     resize!(mesh.x, (mesh.npoin))
     mesh.npoin_el = ngl
-    @info typeof(mesh.nelem), typeof(mesh.npoin_el)
+    @info typeof(mesh.connijk)
     #allocate mesh.conn and reshape it
     mesh.conn::Array{TInt, 2}   = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
-    mesh.connijk::Array{TInt,3} = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1)
-    
+    mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1)
+    @info typeof(mesh.connijk) 
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = iel
         mesh.conn[iel, 2] = iel + 1
@@ -2255,17 +2255,17 @@ function mod_mesh_mesh_driver(inputs::Dict)
             
             if (inputs[:nsd]==1)
                 println(" # ... build 1D grid ")
-                mesh = St_mesh{TInt,TFloat, inputs[:backend]}(x = zeros(TInt(inputs[:npx])),
+                mesh = St_mesh{TInt,TFloat, inputs[:backend]}(x = KernelAbstractions.zeros(inputs[:backend],TFloat,Int64(inputs[:npx])),
                                             npx  = TInt(inputs[:npx]),
                                             xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
                                             nop=TInt(inputs[:nop]),
-                                            connijk = zeros(TInt,  inputs[:nelx], inputs[:nop]+1, 1),
+                                            connijk = KernelAbstractions.zeros(inputs[:backend], TInt,  Int64(inputs[:nelx]), Int64(inputs[:nop]+1), 1),
                                             ngr=TInt(inputs[:nop_laguerre]+1),
                                             SD=NSD_1D())
                 
             elseif (inputs[:nsd]==2)
                 println(" # ... build 2D grid ")
-                mesh = St_mesh{TInt,TFloat, inputs[:backend]}(x = zeros(TInt(inputs[:npx])),
+                mesh = St_mesh{TInt,TFloat, inputs[:backend]}(x =  KernelAbstractions.zeros(inputs[:backend],TFloat,Int64(inputs[:npx])),
                                             z = zeros(TInt(inputs[:npz])),
                                             npx  = TInt(inputs[:npx]),
                                             npz  = TInt(inputs[:npz]), 
@@ -2276,7 +2276,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
                 
             elseif (inputs[:nsd]==3)
                 println(" # ... build 3D grid ")
-                mesh = St_mesh{TInt,TFloat, inputs[:backend]}(x = zeros(TInt(inputs[:npx])),
+                mesh = St_mesh{TInt,TFloat, inputs[:backend]}(x = KernelAbstractions.zeros(inputs[:backend],TFloat, Int64(inputs[:npx])),
                                             y = zeros(TInt(inputs[:npy])),
                                             z = zeros(TInt(inputs[:npz])),
                                             npx  = TInt(inputs[:npx]),
@@ -2298,14 +2298,14 @@ function mod_mesh_mesh_driver(inputs::Dict)
             #
             println(" # ... build DEFAULT 1D grid")
             println(" # ...... DEFINE NSD in your input dictionary if you want a different grid!")
-            mesh = St_mesh{TInt,TFloat}(x = zeros(Int64(inputs[:npx])),
+            mesh = St_mesh{TInt,TFloat, inputs[:backend]}(x = KernelAbstractions.zeros(inputs[:backend],TFloat,Int64(inputs[:npx])),
                                         npx  = Int64(inputs[:npx]),
                                         xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
                                         nop=Int64(inputs[:nop]),
                                         ngr=Int64(inputs[:nop_laguerre]+1),
                                         SD=NSD_1D())
         end
-        
+        @info typeof(mesh.connijk) 
         mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], inputs[:backend])
         
         #Write structured grid to VTK
