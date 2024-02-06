@@ -524,16 +524,48 @@ function viscous_rhs_el!(u, params, SD::NSD_2D)
 end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD)
-    
-    for ieq = 1:params.neqs
-        for i = 1:params.mesh.ngl
-            ip = params.mesh.connijk[iel,i,1]
-            if (ip < params.mesh.npoin)
-                #params.RHS[ip,ieq] = params.visc_coeff[ip]*(u[ip+1] - 2*u[ip] + u[ip-1])/(params.mesh.Δx[ip])^2 + 0.1*(u[ip+1] - u[ip])/(params.mesh.Δx[ip])
-                params.RHS[ip,ieq] = 0.5*(u[ip+1] - u[ip])/(params.mesh.Δx[ip])
-            end
+
+#=    for ieq = 1:params.neqs
+#         idx = (ieq-1)*params.mesh.npoin
+         for i = 1:params.mesh.ngl
+             ip = params.mesh.connijk[iel,i,1]
+             if (ip < params.mesh.npoin)
+                 #params.RHS[ip,ieq] = (u[ip+1+idx] - u[ip+idx])/(params.mesh.Δx[ip])
+
+                 params.RHS[ip,1] = (u[ip+1+params.mesh.npoin] - u[ip+params.mesh.npoin])/(params.mesh.Δx[ip])
+                 params.RHS[ip,2] = (u[ip+1] - u[ip])/(params.mesh.Δx[ip])
+             end
+         end
+    #     end=#
+
+    #params.RHS[ip,ieq] = params.visc_coeff[ip]*(u[ip+1] - 2*u[ip] + u[ip-1])/(params.mesh.Δx[ip])^2 + 0.1*(u[ip+1] - u[ip])/(params.mesh.Δx[ip])
+    # params.RHS[ip,ieq] = 0.5*(u[ip+1+idx] - u[ip+idx])/(params.mesh.Δx[ip])
+
+    for i = 1:params.mesh.ngl
+        ip  = params.mesh.connijk[iel,i,1]
+        ip2 = ip + params.mesh.npoin
+        if (ip < params.mesh.npoin && ip2 < 2*params.mesh.npoin)
+            
+            params.RHS[ip,2] = (u[ip+1] - u[ip])/(params.mesh.Δx[ip])
+            params.RHS[ip,1] = (u[ip2+1] - u[ip2])/(params.mesh.Δx[ip])
         end
     end
+
+  #=  
+    for i = 1:params.mesh.ngl
+        ip  = params.mesh.connijk[iel,i,1]
+        ip2 = ip + params.mesh.npoin
+        if (ip < params.mesh.npoin)
+            
+            params.RHS[ip,1] = (u[ip+1] - u[ip])/(params.mesh.Δx[ip])
+        end
+        
+        if (ip2 < 2*params.mesh.npoin)
+            params.RHS[ip,] = (u[ip2+1] - u[ip2])/(params.mesh.Δx[ip])
+        end
+        
+    end=#
+    
     nothing
 end
 

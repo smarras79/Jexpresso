@@ -25,7 +25,7 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     
     if (inputs[:plot_overlap])
-        fig = Figure(resolution = (1200,800),fontsize=22)
+        fig = Figure(size = (1200,800),fontsize=22)
         colors = ["Blue","Red","Green","Yellow","Black","Purple","Orange"]
         markers = [:circle, :rect, :diamond,:hexagon,:cross,:xcross,:utriangle,:dtriangle,:pentagon,:star4,:star8]
         p = []
@@ -39,7 +39,7 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
             
         end
     else
-        fig = Figure(resolution = (1200,800),fontsize=22)
+        fig = Figure(size = (1200,800),fontsize=22)
         for iout = 1:size(sol.t[:], 1)
             title = string("sol.u at time ", sol.t[iout])
             plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
