@@ -1,4 +1,4 @@
-function periodicity_restructure!(mesh,inputs)
+function periodicity_restructure!(mesh,inputs,backend)
     #per1 = inputs[:per1dd]
     #per2 = inputs[:per2]
     #determine boundary vectors
@@ -105,9 +105,9 @@ function periodicity_restructure!(mesh,inputs)
         else
             per2 = [1.0, 0.0]
         end     
-        xx = zeros(size(mesh.x,1),1)
-        yy = zeros(size(mesh.y,1),1)
-        poin_bdy=zeros(Int64,size(mesh.poin_in_bdy_edge))
+        xx = KernelAbstractions.zeros(CPU(), TFloat, size(mesh.x,1),1)
+        yy = KernelAbstractions.zeros(CPU(), TFloat, size(mesh.y,1),1)
+        poin_bdy=KernelAbstractions.zeros(CPU(), TInt,size(mesh.poin_in_bdy_edge))
         xx .= mesh.x
         yy .= mesh.y
         poin_bdy .=mesh.poin_in_bdy_edge
@@ -171,7 +171,6 @@ function periodicity_restructure!(mesh,inputs)
         # New periodicity interface
         for iedge_bdy =1:size(mesh.bdy_edge_type,1)
             if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" || mesh.bdy_edge_type[iedge_bdy] == "periodic2")
-                comp = mesh.bdy_edge_comp[iedge_bdy]
                 iel = mesh.bdy_edge_in_elem[iedge_bdy]
                 for k =1:mesh.ngl
                     ip = poin_bdy[iedge_bdy, k]
@@ -207,7 +206,6 @@ function periodicity_restructure!(mesh,inputs)
                     # find corresponding periodic edge point
                     for iedge_per = iedge_bdy+1:size(mesh.bdy_edge_type,1)
                         if (mesh.bdy_edge_type[iedge_per] == mesh.bdy_edge_type[iedge_bdy])
-                            comp_per = mesh.bdy_edge_comp[iedge_per]
                             iel_per = mesh.bdy_edge_in_elem[iedge_per]
                             for k_per=1:mesh.ngl
                                 ip_per = poin_bdy[iedge_per,k_per]
@@ -253,7 +251,7 @@ function periodicity_restructure!(mesh,inputs)
                                         ip_dest = ip_true1
                                         ip_kill = ip_true
                                     end 
-                                    @info ip_kill, ip_dest, mesh.x[ip_kill],mesh.x[ip_dest],mesh.y[ip_kill],mesh.y[ip_dest]
+                                    #@info ip_kill, ip_dest, mesh.x[ip_kill],mesh.x[ip_dest],mesh.y[ip_kill],mesh.y[ip_dest]
                                     mesh.connijk[iel_per,l1,m1] = ip_dest
                                     mesh.connijk[iel,l,m] = ip_dest
                                     mesh.poin_in_bdy_edge[iedge_per,k_per] = ip_dest
