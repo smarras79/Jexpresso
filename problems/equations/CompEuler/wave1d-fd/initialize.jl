@@ -25,7 +25,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
 
             ex = -(x - 1)^2/σ2
             q.qn[ip,1] = 2^ex
-            q.qn[ip,2] = 2^ex
+            q.qn[ip,2] = 0.0
 
             #Store initial background state for plotting and analysis of pertuebations
             q.qe[ip,1] = 0.0

@@ -412,10 +412,10 @@ function _build_rhs!(RHS, u, params, time)
          reset_laguerre_filters!(params)
     end
     if (params.inputs[:lfilter])
-        filter!(u, params, time, SD,params.SOL_VARS_TYPE)
+        filter!(u, params, time, SD, params.SOL_VARS_TYPE)
     end
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    apply_boundary_conditions!(u, params.uaux, time, params.qe,
+    apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
                                params.mesh, params.metrics, params.basis,
                                params.RHS, params.rhs_el, params.ubdy,
                                params.ω, neqs, params.inputs, AD, SD)
@@ -450,14 +450,14 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
     ymax = params.ymax    
     for iel=1:params.mesh.nelem
 
-        uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
+        uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
         
         for i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,1]
             
             user_flux!(@view(params.F[i,1,:]), @view(params.G[i,1,:]), SD,
                        @view(params.uaux[ip,:]),
-                       @view(params.qe[ip,:]),         #pref
+                       @view(params.qp.qe[ip,:]),         #pref
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
                        neqs=params.neqs, ip=ip)
@@ -465,7 +465,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
             if lsource
                 user_source!(@view(params.S[i,1,:]),
                              @view(params.uaux[ip,:]),
-                             @view(params.qe[ip,:]),          #ρref 
+                             @view(params.qp.qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
@@ -483,14 +483,14 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
     ymax = params.ymax    
     for iel = 1:params.mesh.nelem
 
-        uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
+        uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,j]
             
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
-                       @view(params.qe[ip,:]),         #pref
+                       @view(params.qp.qe[ip,:]),         #pref
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
                        neqs=params.neqs, ip=ip)
@@ -498,7 +498,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
-                             @view(params.qe[ip,:]),          #ρref 
+                             @view(params.qp.qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
@@ -512,7 +512,7 @@ function viscous_rhs_el!(u, params, SD::NSD_2D)
     
     for iel=1:params.mesh.nelem
         
-        uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
+        uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for ieq in params.ivisc_equations
             _expansion_visc!(@view(params.rhs_diffξ_el[iel,:,:,ieq]), @view(params.rhs_diffη_el[iel,:,:,ieq]), @view(params.uprimitive[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.mesh, params.basis, params.metrics, params.inputs, iel, ieq, params.QT, SD, params.AD)

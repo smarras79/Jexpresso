@@ -71,8 +71,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             initial[ip,2] = ρ
             initial[ip,3] = u
             initial[ip,4] = T
-            
-            
+                        
             q.qn[ip,1] = ρ*A
             q.qn[ip,2] = ρ*A*u
             q.qn[ip,3] = ρ*(e/γm1 + 0.5*γ*u*u)*A
