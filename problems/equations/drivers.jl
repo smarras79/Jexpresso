@@ -6,6 +6,10 @@ function driver(inputs::Dict,      #input parameters from src/user_input.jl
 
     sem = sem_setup(inputs)
    
+    if (inputs[:backend] != CPU())
+        convert_mesh_arrays!(sem.mesh, inputs[:backend])
+    end
+
     if !(inputs[:llinsolve])   
   
         qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)

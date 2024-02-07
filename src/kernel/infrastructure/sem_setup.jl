@@ -100,7 +100,7 @@ function sem_setup(inputs::Dict)
             metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat; backend = inputs[:backend])
             metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
             metrics = (metrics1, metrics2)
-            @time periodicity_restructure!(mesh,inputs)
+            @time periodicity_restructure!(mesh,inputs,inputs[:backend])
             
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
             
@@ -123,7 +123,7 @@ function sem_setup(inputs::Dict)
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
             
             @info " periodicity_restructure!"
-            @time periodicity_restructure!(mesh,inputs)
+            @time periodicity_restructure!(mesh,inputs, inputs[:backend])
             
             #warp_mesh!(mesh,inputs)
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
@@ -157,11 +157,12 @@ function sem_setup(inputs::Dict)
             metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
 
             if (inputs[:lperiodic_1d])
-                periodicity_restructure!(mesh,inputs)
+                periodicity_restructure!(mesh,inputs,inputs[:backend])
             end
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
         end
     end
+
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------

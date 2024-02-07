@@ -65,6 +65,8 @@ include(joinpath( "kernel", "infrastructure", "sem_setup.jl"))
 
 include(joinpath( "kernel", "infrastructure", "Kopriva_functions.jl"))
 
+include(joinpath( "kernel", "infrastructure", "convert_to_gpu.jl"))
+
 include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))

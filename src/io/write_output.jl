@@ -75,7 +75,13 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     else
         for iout = 1:size(sol.t[:],1)
             title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-            plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+            if (inputs[:backend] == CPU())
+                plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+            else
+                u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(CPU(),u, sol.u[iout][:])
+                plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+            end
         end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
@@ -550,7 +556,7 @@ function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, O
     #Reference values only (definied in initial conditions)
     fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
     
-    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*0.0, cells)
+    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
 
     for ivar = 1:length(outvarsref)
         vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
