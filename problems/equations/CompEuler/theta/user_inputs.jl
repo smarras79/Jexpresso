@@ -6,7 +6,7 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.4,
         :tinit                => 0.0,
-        :tend                 => 1000,
+        :tend                 => 300,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
@@ -14,7 +14,7 @@ function user_inputs()
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         :lsource              => true, 
-        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+        :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -23,9 +23,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1, 2, 3, 4),
-        :μ                   => (0.0, 20.0, 20.0, 20.0), #horizontal viscosity constant for momentum
+        :μ                   => (0.0, 20.0, 20.0, 60.0), #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -36,9 +36,9 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         #:lfilter             => true,
-        #:mu_x                => 0.01,
-        #:mu_y                => 0.01,
-        #:filter_type         => "erf",
+        :mu_x                => 0.01,
+        :mu_y                => 0.01,
+        :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
