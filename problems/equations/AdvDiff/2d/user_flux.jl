@@ -48,3 +48,10 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     F[1] = qu
     G[1] = qv
 end
+
+function user_flux!(F,G,q)
+    
+    F=q
+    G=q
+
+end

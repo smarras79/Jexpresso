@@ -80,6 +80,7 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
             else
                 u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
                 KernelAbstractions.copyto!(CPU(),u, sol.u[iout][:])
+                convert_mesh_arrays_to_cpu!(mesh)
                 plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
             end
         end
