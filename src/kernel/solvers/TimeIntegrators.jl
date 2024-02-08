@@ -10,7 +10,7 @@ function time_loop!(inputs, params, u)
 
     output_range = floor((inputs[:tend] - inputs[:tinit])/inputs[:ndiagnostics_outputs])
 
-    if typeof(params.mesh.SD) == NSD_2D
+  #=  if typeof(params.mesh.SD) == NSD_2D
         if(inputs[:lexact_integration])
             N = params.mesh.ngl
             Q = N + 1
@@ -20,7 +20,7 @@ function time_loop!(inputs, params, u)
         end
         println(" # Initial Mass  :   ", mass_ini)
         energy_ini = 0.0
-    end
+    end=#
     
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=inputs[:Δt],
