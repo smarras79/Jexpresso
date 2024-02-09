@@ -131,7 +131,7 @@ I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia 1.9.3
+To install and run the code assume Julia 1.10
 
 ## Setup with CPUs
 
