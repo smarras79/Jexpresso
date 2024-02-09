@@ -33,14 +33,16 @@ end
     DIM = @uniform @groupsize()[1]
     ### define and populate flux array as shared memory then make sure blocks are synchronized
     F = @localmem eltype(RHS) (DIM+1,DIM+1)
-    F[i_x,i_y] = Float32(1.0)*u[ip] #user_flux(u[ip])
+    #F[i_x,i_y] = Float32(1.0)*u[ip] #user_flux(u[ip])
     G = @localmem eltype(RHS) (DIM+1,DIM+1)
-    G[i_x,i_y] = Float32(1.0)*u[ip]
-    #flux = [Float32(1.0),Float32(1.0)]
-    #flux .= user_flux(u[ip])
+    #G[i_x,i_y] = Float32(1.0)*u[ip]
     #F[i_x,i_y] = flux[1]
     #G[i_x,i_y] = flux[2]
     #user_flux!(F[i_x,i_y],G[i_x,i_y],u[ip])
+    #F[i_x,i_y], G[i_x,i_y] = user_flux(u[ip])
+    flux = user_flux(u[ip])
+    F[i_x,i_y] = flux[1]
+    G[i_x,i_y] = flux[2]
     @synchronize()
     ### do numerical integration
     dFdξ = zero(Float32)
