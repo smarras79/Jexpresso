@@ -433,7 +433,7 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh, params.metrics, params.basis,
                                params.RHS, params.rhs_el, params.ubdy,
                                params.ω, neqs, params.inputs, AD, SD)
-    
+    #@info typeof(params.metrics.Je),typeof(params.rhs_el), typeof(params.basis.ψ)
     inviscid_rhs_el!(u, params, lsource, SD)
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, AD)
     #@info params.RHS[:,1]
@@ -510,7 +510,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
                        neqs=params.neqs, ip=ip)
             
             if lsource
-                user_source!(@view(params.S[i,j,:]),
+                @time user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
@@ -569,7 +569,7 @@ end
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
-
+    
     for ieq=1:params.neqs
         for j=1:params.mesh.ngl
             for i=1:params.mesh.ngl
