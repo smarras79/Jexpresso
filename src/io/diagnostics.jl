@@ -32,8 +32,8 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω, neqs, ::Inexact,::TOTA
                 ρ    = uaux[ip,1]
                 mass += ρ*ωJac
             end
-         end
-       for iel=1:mesh.nelem_semi_inf
+        end
+        for iel=1:mesh.nelem_semi_inf
 
             for j=1:mesh.ngr, i=1:mesh.ngl
                 ip = mesh.connijk_lag[iel,i,j]
@@ -53,47 +53,47 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω, neqs, ::Inexact,::TOTA
                 ρ    = uaux[ip,1]
                 mass += ρ*ωJac        
             end
-         end
+        end
     end
     return mass
-
 end
-function compute_mass!(uaux, u, uauxe, mesh, metrics, ω,neqs,::Inexact,::PERT)
-   if ("Laguerre" in mesh.bdy_edge_type)
-       u2uaux!(uaux, u, neqs, mesh.npoin)
-       mass = 0.0
-       ω1 = ω[1]
-       ω2 = ω[2]
-       for iel=1:mesh.nelem
 
-           for j=1:mesh.ngl, i=1:mesh.ngl
-               ip = mesh.connijk[iel,i,j]
-               ωJac = ω1[i]*ω1[j]*metrics[1].Je[iel,i,j]
-               ρ    = uaux[ip,1] + uauxe[ip,1]
-               mass += ρ*ωJac
-           end
-       end
-       for iel=1:mesh.nelem_semi_inf
+function compute_mass!(uaux, u, uauxe, mesh, metrics, ω,neqs, ::Inexact, ::PERT)
+    mass = 0.0
+    if ("Laguerre" in mesh.bdy_edge_type)
+        #= u2uaux!(uaux, u, neqs, mesh.npoin)
+        
+        ω1 = ω[1]
+        ω2 = ω[2]
+        for iel=1:mesh.nelem
+        
+        for j=1:mesh.ngl, i=1:mesh.ngl
+        ip = mesh.connijk[iel,i,j]
+        ωJac = ω1[i]*ω1[j]*metrics[1].Je[iel,i,j]
+        ρ    = uaux[ip,1] + uauxe[ip,1]
+        mass += ρ*ωJac
+        end
+        end
+        for iel=1:mesh.nelem_semi_inf
 
-           for j=1:mesh.ngr, i=1:mesh.ngl
-               ip = mesh.connijk_lag[iel,i,j]
-               ωJac = ω1[i]*ω2[j]*metrics[2].Je[iel,i,j]
-               ρ    = uaux[ip,1] + uauxe[ip,1]
-               mass += ρ*ωJac
-           end
-       end
-   else
-       u2uaux!(uaux, u, neqs, mesh.npoin)
-       mass = 0.0	
-       for iel=1:mesh.nelem
+        for j=1:mesh.ngr, i=1:mesh.ngl
+        ip = mesh.connijk_lag[iel,i,j]
+        ωJac = ω1[i]*ω2[j]*metrics[2].Je[iel,i,j]
+        ρ    = uaux[ip,1] + uauxe[ip,1]
+        mass += ρ*ωJac
+        end
+        end=#
+    else
+        u2uaux!(uaux, u, neqs, mesh.npoin)
+        for iel=1:mesh.nelem
 
-           for j=1:mesh.ngl, i=1:mesh.ngl
-               ip = mesh.connijk[iel,i,j]
-               ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
-               ρ    = uaux[ip,1] + uauxe[ip,1]
-               mass += ρ*ωJac        
-           end
-       end
+            for j=1:mesh.ngl, i=1:mesh.ngl
+                ip = mesh.connijk[iel,i,j]
+                ωJac = ω[i]*ω[j]*metrics.Je[iel,i,j]
+                ρ    = uaux[ip,1] + uauxe[ip,1]
+                mass += ρ*ωJac        
+            end
+        end
     end
     return mass
 
@@ -106,14 +106,14 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω,neqs,::Exact,Q,ψ)
     mass = 0.0	
     for iel=1:mesh.nelem
     	for l=1:Q, k=1:Q
-	     ωJac = ω[k]*ω[l]*metrics.Je[iel,k,l]
-          for j=1:mesh.ngl, i=1:mesh.ngl
-              ip = mesh.connijk[iel,i,j]
-              ρ  = uaux[ip,1]
-             mass += ρ*ωJac*ψ[i,k]*ψ[j,l]        
+	    ωJac = ω[k]*ω[l]*metrics.Je[iel,k,l]
+            for j=1:mesh.ngl, i=1:mesh.ngl
+                ip = mesh.connijk[iel,i,j]
+                ρ  = uaux[ip,1]
+                mass += ρ*ωJac*ψ[i,k]*ψ[j,l]        
+            end
         end
-      end
-     end
+    end
     return mass
 
 end
@@ -197,25 +197,25 @@ function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs,QT::Exact,Q,ψ)
     
     energy = 0.0	
     for iel=1:mesh.nelem
-       for l=1:Q, k=1:Q
-	  ωJac = ω[k]*ω[l]*metrics.Je[iel,k,l] 
+        for l=1:Q, k=1:Q
+	    ωJac = ω[k]*ω[l]*metrics.Je[iel,k,l] 
 
-          for j=1:mesh.ngl, i=1:mesh.ngl
-              ip = mesh.connijk[iel,i,j]
-    	      ρ    = uaux[ip,1]
-              u    = uaux[ip,2]/ρ
-              v    = uaux[ip,3]/ρ
-              θ   = uaux[ip,4]/ρ		
-              P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-	      exner = (P/PhysConst.pref)^(1/PhysConst.cpoverR)
-              T =  θ*exner  
-              z = mesh.z[ip]                                        #Only valid for flow in a box
-	      ke = 0.5*ρ*(u*u + v*v)
-              ie = ρ*PhysConst.cv*T
-              pe = ρ*PhysConst.g*z 
-              te = ke + ie + pe
-              energy += te* ωJac*ψ[i,k]*ψ[j,l]      
-           end	   
+            for j=1:mesh.ngl, i=1:mesh.ngl
+                ip = mesh.connijk[iel,i,j]
+    	        ρ    = uaux[ip,1]
+                u    = uaux[ip,2]/ρ
+                v    = uaux[ip,3]/ρ
+                θ   = uaux[ip,4]/ρ		
+                P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+	        exner = (P/PhysConst.pref)^(1/PhysConst.cpoverR)
+                T =  θ*exner  
+                z = mesh.z[ip]                                        #Only valid for flow in a box
+	        ke = 0.5*ρ*(u*u + v*v)
+                ie = ρ*PhysConst.cv*T
+                pe = ρ*PhysConst.g*z 
+                te = ke + ie + pe
+                energy += te* ωJac*ψ[i,k]*ψ[j,l]      
+            end	   
 	end	
     end
     return energy
