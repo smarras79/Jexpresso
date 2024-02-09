@@ -88,22 +88,22 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     #elseif nsd == 3
     #    connijk::Array{Int64,4} = zeros(Int64, 0, 0, 0, 0)
     #end
-    conn::Array{Int64,2}  = zeros(Int64, 0, 0)
-    conn_unique_edges = Array{Int64}(undef,  1, 2)
-    conn_unique_faces = Array{Int64}(undef,  1, 4)
-    poin_in_edge      = Array{Int64}(undef, 0, 0)
-    conn_edge_el      = Array{Int64}(undef, 0, 0, 0)
-    poin_in_face      = Array{Int64}(undef, 0, 0, 0)
-    conn_face_el      = Array{Int64}(undef, 0, 0, 0)
-    face_in_elem      = Array{Int64}(undef, 0, 0, 0)
+    conn::Array{Int64,2} = zeros(Int64, 0, 0)
+    conn_unique_edges    = Array{Int64}(undef,  1, 2)
+    conn_unique_faces    = Array{Int64}(undef,  1, 4)
+    poin_in_edge         = Array{Int64}(undef, 0, 0)
+    conn_edge_el         = Array{Int64}(undef, 0, 0, 0)
+    poin_in_face         = Array{Int64}(undef, 0, 0, 0)
+    conn_face_el         = Array{Int64}(undef, 0, 0, 0)
+    face_in_elem         = Array{Int64}(undef, 0, 0, 0)
 
     #Auxiliary arrays for boundary conditions
     bdy_edge_comp     = Array{Int64}(undef, 1)
     
-    bdy_edge_in_elem::Array{Int64,1} = zeros(Int64, 0)
+    bdy_edge_in_elem::Array{Int64,2} = zeros(Int64, 0, 0)
     poin_in_bdy_edge::Array{Int64,2} = zeros(Int64, 0, 0)
-    bdy_face_in_elem::Array{Int64,1} = zeros(Int64, 0)
-    poin_in_bdy_face::Array{Int64,2} = zeros(Int64, 0, 0)
+    bdy_face_in_elem::Array{Int64,2} = zeros(Int64, 0, 0)
+    poin_in_bdy_face::Array{Int64,3} = zeros(Int64, 0, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type_id::Array{Int64,1} = zeros(Int64, 0)
@@ -220,19 +220,23 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.y::Array{Float64, 1} = zeros(mesh.npoin)
     mesh.z::Array{Float64, 1} = zeros(mesh.npoin)
     
-    mesh.conn_edge_el::Array{Int64,3} = zeros(Int64, 2, mesh.NEDGES_EL, mesh.nelem)    
-    mesh.conn_face_el::Array{Int64,3} = zeros(Int64,  4, mesh.NFACES_EL, mesh.nelem)  
+    mesh.conn_edge_el::Array{Int64,3}     = zeros(Int64, 2, mesh.NEDGES_EL, mesh.nelem)    
+    mesh.conn_face_el::Array{Int64,3}     = zeros(Int64,  4, mesh.NFACES_EL, mesh.nelem)  
     mesh.bdy_edge_in_elem::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)  
-    mesh.bdy_edge_comp::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)
-    mesh.poin_in_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges, mesh.ngl)
+    mesh.bdy_edge_comp::Array{Int64,1}    = zeros(Int64,  mesh.nedges_bdy)
+    mesh.poin_in_edge::Array{Int64,2}     = zeros(Int64,  mesh.nedges, mesh.ngl)
     mesh.poin_in_bdy_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges_bdy, mesh.ngl)
-    mesh.poin_in_face::Array{Int64,3} = zeros(Int64,  mesh.nfaces, mesh.ngl, mesh.ngl)
-    mesh.edge_type     = Array{Union{Nothing, String}}(nothing, mesh.nedges)
+    @info "A"
+    mesh.poin_in_face::Array{Int64,3}     = zeros(Int64,  mesh.nfaces, mesh.ngl, mesh.ngl)
+    @info "B"
+    mesh.edge_type                        = Array{Union{Nothing, String}}(nothing, mesh.nedges)
     mesh.bdy_edge_type                    = Array{Union{Nothing, String}}(nothing, mesh.nedges_bdy)
     mesh.bdy_edge_type_id::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)  
     
-    if mesh.nsd > 2
-        mesh.poin_in_bdy_face::Array{Int64,3} = zeros( mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
+    if mesh.nsd == 3
+        @info "C"
+        mesh.poin_in_bdy_face::Array{Int64,3} = zeros(Int64, mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
+        @info "D"
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
     mesh.conn::Array{Int64,2} = zeros(Int64, mesh.nelem, mesh.npoin_el)
@@ -366,7 +370,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         #end #f
     end
 
-
+@mystop("mesh.jl L371")
     #
     # Add high-order points to edges, faces, and elements (volumes)
     #

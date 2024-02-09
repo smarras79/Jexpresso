@@ -1,13 +1,13 @@
-nelemx = 10;
-nelemy = 10;
-nelemz = 10;
+nelemx = 2;
+nelemy = 2;
+nelemz = 2;
 
-xmin = -100000;
-xmax =	100000;
-ymin = -100000;
-ymax =  100000;
-zmin =       0;
-zmax =   24000;
+xmin = -10000;
+xmax =	10000;
+ymin = -0;
+ymax =  10000;
+zmin = -10000;
+zmax =  10000;
 gridsize = (xmax-xmin) / nelemx;
 
 Point(1) = {xmin, ymin, zmin, gridsize};
@@ -20,25 +20,23 @@ Line(2) = {2, 3};
 Line(3) = {3, 4};
 Line(4) = {4, 1};
 
-
 npx = nelemx + 1;
 npy = nelemy + 1;
 npz = nelemz + 1;
 
 //Horizontal sides
-Transfinite Line {1, 3} = npx; //Ceil((xmax-xmin)/gridsize) Using Progression 1;
+//Transfinite Line {1, 3} = npx; //Ceil((xmax-xmin)/gridsize) Using Progression 1;
 //Vertical sides
-Transfinite Line {4, -2} = npz Using Progression 1.0;
+//Transfinite Line {4, -2} = npz Using Progression 1.0;
 
+Line Loop(5) = {4, 1, 2, 3};
+Plane Surface(6) = {5};
 
-Line Loop(11) = {4, 1, 2, 3};
-Plane Surface(12) = {11};
-
-Transfinite Surface {12};
-Recombine Surface {12};
+Transfinite Surface {6};
+Recombine Surface {6};
 
 surfaceVector = Extrude {0,(ymax-ymin),0} {
-  Surface{12};
+  Surface{6};
   Layers{nelemy};
   Recombine;
 };
@@ -52,13 +50,13 @@ surfaceVector = Extrude {0,(ymax-ymin),0} {
      [4] - top surface (belonging to 3rd line in "Line Loop (6)")
      [5] - left surface (belonging to 4th line in "Line Loop (6)")
     */
-    Physical Surface("front") = {12};
-    Physical Volume("internal") = {1};
-    Physical Surface("bottom") = {25};
-    Physical Surface("top") = {33};
-    Physical Surface("left") = {21};
-    Physical Surface("right") = {29};
-    Physical Surface("back") = {34}; // from Plane Surface (6) ...
+Physical Surface("top") = surfaceVector[0];
+Physical Volume("internal") = surfaceVector[1];
+Physical Surface("left") = surfaceVector[2];
+Physical Surface("back") = surfaceVector[3];
+Physical Surface("right") = surfaceVector[4];
+Physical Surface("front") = surfaceVector[5];
+Physical Surface("bottom") = {6};
   //+
 Show "*";
 //+
