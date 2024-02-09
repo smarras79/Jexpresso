@@ -37,7 +37,6 @@ function apply_periodicity!(u, uaux, t,qe,
     #this only works for a scalar equation.
     #adjust for systems.
     u[mesh.npoin_linear] = u[1]
-    u[mesh.npoin+mesh.npoin_linear] = u[1+mesh.npoin]
 end
 
 

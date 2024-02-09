@@ -22,8 +22,8 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => false,
-        :ivisc_equations      => 1,
-        :μ                   => 0.1, #horizontal viscosity constant for momentumx
+        :νx                   => 0.01, #kinematic viscosity constant
+        :νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

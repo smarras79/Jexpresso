@@ -2,7 +2,6 @@ include("../mesh/restructure_for_periodicity.jl")
 include("../mesh/warping.jl")
 
 function sem_setup(inputs::Dict)
-    
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
     fy_lag = zeros(Float64,1,1)
@@ -10,8 +9,6 @@ function sem_setup(inputs::Dict)
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:equations]
     AD    = inputs[:AD]
-    CL    = inputs[:CL]
-    SOL_VARS_TYPE = inputs[:SOL_VARS_TYPE]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -23,8 +20,7 @@ function sem_setup(inputs::Dict)
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-
-#========SM
+    
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ inputs[:xdisp]) .*inputs[:xscale]*0.5
     elseif (inputs[:xscale] != 1.0)
@@ -104,7 +100,7 @@ function sem_setup(inputs::Dict)
             metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat)
             metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat)
             metrics = (metrics1, metrics2)
-            
+          
             @time periodicity_restructure!(mesh,inputs)
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
             
@@ -170,9 +166,5 @@ function sem_setup(inputs::Dict)
     # Build matrices
     #--------------------------------------------------------
     
-    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
-
-========SM
-=#
-
+    return (; QT, PT, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end

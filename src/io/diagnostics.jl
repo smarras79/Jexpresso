@@ -19,11 +19,9 @@ end
 
 
 function compute_mass!(uaux, u, uauxe, mesh, metrics, ω, neqs, ::Inexact,::TOTAL)
-
-    mass = 0.0
-    
     if ("Laguerre" in mesh.bdy_edge_type)
-        #=u2uaux!(uaux, u, neqs, mesh.npoin)
+        u2uaux!(uaux, u, neqs, mesh.npoin)
+        mass = 0.0
         ω1 = ω[1]
         ω2 = ω[2]
         for iel=1:mesh.nelem
@@ -43,9 +41,10 @@ function compute_mass!(uaux, u, uauxe, mesh, metrics, ω, neqs, ::Inexact,::TOTA
                 ρ    = uaux[ip,1]
                 mass += ρ*ωJac
             end
-        end=#
+        end
     else
         u2uaux!(uaux, u, neqs, mesh.npoin)
+        mass = 0.0	
         for iel=1:mesh.nelem
 
             for j=1:mesh.ngl, i=1:mesh.ngl

@@ -66,10 +66,10 @@ function filter!(u, params, SD::NSD_2D,::TOTAL)
     end
   end
   
-  DSS_rhs!(@view(params.B[:,:]), @view(params.b[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
+  DSS_rhs!(@view(params.B[:,:]), @view(params.b[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD)
   
   for ieq=1:params.neqs
-        divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
+        divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
   end
   
   for e=1:params.mesh.nelem
@@ -152,7 +152,7 @@ function filter!(u, params, t, SD::NSD_2D,::PERT)
     end
   end
 
-  DSS_rhs!(@view(params.B[:,:]), @view(params.b[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
+  DSS_rhs!(@view(params.B[:,:]), @view(params.b[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD)
 
   if (params.laguerre)
     for e=1:params.mesh.nelem_semi_inf
@@ -209,7 +209,7 @@ function filter!(u, params, t, SD::NSD_2D,::PERT)
       end
     end
 
-    DSS_rhs_laguerre!(@view(params.B_lag[:,:]), @view(params.b_lag[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, AD)
+    DSS_rhs_laguerre!(@view(params.B_lag[:,:]), @view(params.b_lag[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD)
     for ip=1:params.mesh.npoin
       #if !(ip in params.mesh.poin_in_bdy_edge)
         params.B[ip,:] .= params.B[ip,:] .+ params.B_lag[ip,:]
@@ -226,7 +226,7 @@ function filter!(u, params, t, SD::NSD_2D,::PERT)
   #@info params.B[3247,:]
 
   for ieq=1:params.neqs
-      divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
+       divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
   end
   #@info "after div"
   #@info params.B[3247,:]
