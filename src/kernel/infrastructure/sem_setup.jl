@@ -23,7 +23,8 @@ function sem_setup(inputs::Dict)
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    
+
+#========SM
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ inputs[:xdisp]) .*inputs[:xscale]*0.5
     elseif (inputs[:xscale] != 1.0)
@@ -170,4 +171,8 @@ function sem_setup(inputs::Dict)
     #--------------------------------------------------------
     
     return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
+
+========SM
+=#
+
 end

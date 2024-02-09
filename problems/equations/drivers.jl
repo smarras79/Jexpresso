@@ -5,9 +5,9 @@ function driver(inputs::Dict,      #input parameters from src/user_input.jl
                 TFloat) 
 
     sem = sem_setup(inputs)
-
+#=
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
-
+    
     params, u =  params_setup(sem,
                               qp,
                               inputs,
@@ -51,6 +51,5 @@ function driver(inputs::Dict,      #input parameters from src/user_input.jl
         write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=params.qp.neqs)
         
     end
-
-    
+    =#
 end
