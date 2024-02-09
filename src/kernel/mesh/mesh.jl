@@ -79,23 +79,17 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
-    connijk_lag ::Array{Int64,3} = zeros(Int64, 0, 0, 0)
+    connijk_lag ::Array{Int64,4} = zeros(Int64, 0, 0, 0, 0)
+    connijk::Array{Int64,4}      = zeros(Int64, 0, 0, 0, 0)
     
-    #if nsd == 1
-    #    connijk::Array{Int64,1} = zeros(Int64, 0, 0)
-    #elseif nsd == 2
-    connijk::Array{Int64,3} = zeros(Int64, 0, 0, 0)
-    #elseif nsd == 3
-    #    connijk::Array{Int64,4} = zeros(Int64, 0, 0, 0, 0)
-    #end
-    conn::Array{Int64,2}  = zeros(Int64, 0, 0)
-    conn_unique_edges = Array{Int64}(undef,  1, 2)
-    conn_unique_faces = Array{Int64}(undef,  1, 4)
-    poin_in_edge      = Array{Int64}(undef, 0, 0)
-    conn_edge_el      = Array{Int64}(undef, 0, 0, 0)
-    poin_in_face      = Array{Int64}(undef, 0, 0, 0)
-    conn_face_el      = Array{Int64}(undef, 0, 0, 0)
-    face_in_elem      = Array{Int64}(undef, 0, 0, 0)
+    conn::Array{Int64,2} = zeros(Int64, 0, 0)
+    conn_unique_edges    = Array{Int64}(undef,  1, 2)
+    conn_unique_faces    = Array{Int64}(undef,  1, 4)
+    poin_in_edge         = Array{Int64}(undef, 0, 0)
+    conn_edge_el         = Array{Int64}(undef, 0, 0, 0)
+    poin_in_face         = Array{Int64}(undef, 0, 0, 0)
+    conn_face_el         = Array{Int64}(undef, 0, 0, 0)
+    face_in_elem         = Array{Int64}(undef, 0, 0, 0)
 
     #Auxiliary arrays for boundary conditions
     bdy_edge_comp     = Array{Int64}(undef, 1)
@@ -103,12 +97,10 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     bdy_edge_in_elem::Array{Int64,1} = zeros(Int64, 0)
     poin_in_bdy_edge::Array{Int64,2} = zeros(Int64, 0, 0)
     bdy_face_in_elem::Array{Int64,1} = zeros(Int64, 0)
-    poin_in_bdy_face::Array{Int64,2} = zeros(Int64, 0, 0)
+    poin_in_bdy_face::Array{Int64,3} = zeros(Int64, 0, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type_id::Array{Int64,1} = zeros(Int64, 0)
-    
-
     
     SD::AbstractSpaceDimensions
 end
@@ -234,7 +226,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     if mesh.nsd > 2
         mesh.poin_in_bdy_face::Array{Int64,3} = zeros(Int64, mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
     end
-    mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
+    mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
     mesh.conn::Array{Int64,2} = zeros(Int64, mesh.nelem, mesh.npoin_el)
     
     #
@@ -251,7 +243,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         nothing
     elseif (mesh.nsd == 2)
         
-        mesh.connijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl)
+        mesh.connijk::Array{Int64,4} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, 1)
         
         for iel = 1:mesh.nelem
             mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]
@@ -309,8 +301,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         #end #f
 
     elseif (mesh.nsd == 3)
-        
-        mesh.connijk::Array{Int64,1} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
+                
+        mesh.connijk::Array{Int64,4} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
 
         for iel = 1:mesh.nelem
             #CGNS numbering:
@@ -481,7 +473,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta]) 
             factorx = inputs[:xfac_laguerre]#0.1
             factory = inputs[:yfac_laguerre]#0.025
-            mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, n_semi_inf, mesh.ngl, mesh.ngr)
+            mesh.connijk_lag ::Array{Int64,4} = zeros(Int64, n_semi_inf, mesh.ngl, mesh.ngr, 1)
             bdy_normals = zeros(n_semi_inf, 2)
             bdy_tangents = zeros(n_semi_inf, 2)
             e_iter = 1
@@ -859,7 +851,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
     resize!(mesh.x, (mesh.npoin))
     
-    mesh.connijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.ngl, 1)
+    mesh.connijk::Array{Int64, 4} = zeros(Int64, mesh.nelem, mesh.ngl, 1, 1)
 
     #
     # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
@@ -1220,7 +1212,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
         iedge_g = edge_ids[iedge_el]
         ip1 = mesh.conn_unique_edges[iedge_g][1]
         ip2 = mesh.conn_unique_edges[iedge_g][2]
-        if (mesh.conn[ie,2] == ip1)
+        if (mesh.conn[iel,2] == ip1)
             starter = 2
             ender = ngl-1
             stepper =1
@@ -2196,7 +2188,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
 
     #allocate mesh.conn and reshape it
     mesh.conn::Array{Int64, 2}   = zeros(mesh.nelem, mesh.npoin_el)
-    mesh.connijk::Array{Int64,3} = zeros(mesh.nelem, mesh.ngl, 1)
+    mesh.connijk::Array{Int64,4} = zeros(mesh.nelem, mesh.ngl, 1, 1)
     
     for iel = 1:mesh.nelem
         mesh.conn[iel, 1] = iel
@@ -2213,7 +2205,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     if (inputs[:llaguerre_1d_right]) mesh.nelem_semi_inf +=1 end 
     if (inputs[:llaguerre_1d_left]) mesh.nelem_semi_inf +=1 end
     if (mesh.nelem_semi_inf == 0) mesh.nelem_semi_inf = 1 end  
-    mesh.connijk_lag ::Array{Int64,3} = zeros(Int64, mesh.nelem_semi_inf, mesh.ngr, 1)
+    mesh.connijk_lag ::Array{Int64,4} = zeros(mesh.nelem_semi_inf, mesh.ngr, 1, 1)
     mesh.npoin_original = mesh.npoin
     if (inputs[:llaguerre_1d_right])
         x = zeros(Float64,mesh.npoin+mesh.ngr-1)      
@@ -2278,7 +2270,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                             npx  = Int64(inputs[:npx]),
                                             xmin = Float64(inputs[:xmin]), xmax = Float64(inputs[:xmax]),
                                             nop=Int64(inputs[:nop]),
-                                            connijk = zeros(Int64,  inputs[:nelx], inputs[:nop]+1, 1),
+                                            connijk = zeros(Int64,  inputs[:nelx], inputs[:nop]+1, 1, 1),
                                             ngr=Int64(inputs[:nop_laguerre]+1),
                                             SD=NSD_1D())
                 
