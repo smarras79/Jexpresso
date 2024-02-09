@@ -36,7 +36,7 @@ function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
     
     fout_name = string(OUTPUT_DIR, "/INIT-", ivar, ".png")
     @info fout_name
-    save(string(fout_name), fig; size = (600, 400))
+    save(string(fout_name), fig; resolution = (600, 400))
     fig
 end
 
@@ -57,7 +57,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
         
         #ylims!(ax, -0.55, 0.55)
         CairoMakie.activate!(type = "eps")
-        fig = Figure(size = (600,400),fontsize=22)
+        fig = Figure(resolution = (600,400),fontsize=22)
         ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
         CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin];markersize = 10, markercolor="Blue")
         vlines = inputs[:plot_vlines]
@@ -81,7 +81,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
         end
         #ylims!(ax, -0.05, 0.55)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
-        save(string(fout_name), fig; size = (600, 400))
+        save(string(fout_name), fig; resolution = (600, 400))
         fig
     end
 end
@@ -115,7 +115,7 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
         p[end].color = color
         ylims!(ax, -0.03, 0.03)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".eps")  
-        save(string(fout_name), fig; size = (600, 400))
+        save(string(fout_name), fig; resolution = (600, 400))
         fig
     end
 end
@@ -176,7 +176,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
 
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
-        save(string(fout_name), fig; size = (600, 400))
+        save(string(fout_name), fig; resolution = (600, 400))
         fig
     end
 end
@@ -238,7 +238,7 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
           end      
 
           Colorbar(fig[1,2], colormap = :viridis,  limits = (minq, maxq))        
-          save(string(fout_name), fig) #, size = (600, 600))
+          save(string(fout_name), fig) #, resolution = (600, 600))
           fig
         end
         
@@ -267,7 +267,7 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         #End spline2d
 
         #figure:
-        fig = Figure(size=(1200, 400))
+        fig = Figure(resolution=(1200, 400))
         axs = [Axis3(fig[1, i]; aspect=(1, 1, 1), azimuth=-π/2, elevation=π/2) for i = 1:1]
         
         hm = Makie.surface!(axs[1], xg, yg, zspl) # xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
