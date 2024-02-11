@@ -27,13 +27,20 @@ function params_setup(sem,
     rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
     rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
     rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
     RHS          = zeros(T, sem.mesh.npoin, qp.neqs)
     RHS_visc     = zeros(T, sem.mesh.npoin, qp.neqs)
     vaux         = zeros(T, sem.mesh.npoin) #generic auxiliary array for general use
     
+    if typeof(sem.AD) == FD
+        F            = zeros(T, sem.mesh.npoin, qp.neqs)
+        G            = zeros(T, sem.mesh.npoin, qp.neqs)
+        S            = zeros(T, sem.mesh.npoin, qp.neqs)
+    else
+        F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+    end
+        
     #The following are currently used by B.C.
     gradu      = zeros(T, 2, 1, 1) #zeros(2,sem.mesh.npoin,nvars)
     ubdy       = zeros(qp.neqs)

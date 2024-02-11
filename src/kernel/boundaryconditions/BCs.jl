@@ -36,8 +36,13 @@ function apply_periodicity!(u, uaux, t,qe,
 
     #this only works for a scalar equation.
     #adjust for systems.
-    u[mesh.npoin_linear] = u[1]
-    u[mesh.npoin+mesh.npoin_linear] = u[1+mesh.npoin]
+    for ieq = 1:neqs
+        idxL = (ieq-1)*mesh.npoin_linear
+        idxR = (ieq-1)*mesh.npoin
+    
+        u[mesh.npoin_linear+idxL] = u[1+idxR]
+        #u[mesh.npoin+mesh.npoin_linear] = u[1+mesh.npoin]
+    end
 end
 
 

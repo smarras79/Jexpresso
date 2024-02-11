@@ -6,7 +6,7 @@ function user_inputs()
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
         :ode_solver          => SSPRK33(),
-        :tend                 => 1.0,
+        :tend                 => 3.0,
         :Δt                   => 1.0e-3,
         :ndiagnostics_outputs => 10, #these are steps, not seconds
         :output_dir          => "./",
