@@ -1,4 +1,10 @@
-function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, qe::SubArray{Float64},::TOTAL)
+function user_bc_dirichlet!(q::SubArray{Float64},
+                            x::AbstractFloat,
+                            t::AbstractFloat,
+                            tag::String,
+                            qbdy::AbstractArray,                            
+                            qe::SubArray{Float64},
+                            ::TOTAL)
     
     U1in = 0.0
     U2in = 0.0
@@ -10,8 +16,10 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractF
     
     ip2 = 2 #this is the 2nd point of the linear grid
     ip3 = 3 #this is the 3rd point of the linear grid
-    ipN = npoin_linear #last geometric point of the 1D mesh. The H-O node count starts from this one in the first element.
-
+    #ipN = length(q[:,1]) #last geometric point of the 1D mesh. The H-O node count starts from this one in the first element.
+    ipN = 11 #last geometric point of the 1D mesh. The H-O node count starts from this one in the first element.
+    
+    
     xin = 0.0
     Ain = 1.0 + 2.2*(xin - 1.5)^2
     xout = 3.0
@@ -20,14 +28,19 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractF
     Tin = 1.0
     ρin = 1.0
     pin = ρin*Tin
+    mass_flow = 0.59
+    uin = mass_flow/(ρin*Ain)
+    
     γ = 1.4
     γm1 = 0.4
     
+    lshock = false #Notice, only try shock if you have some artificial diffusion implemented
+    
     if (tag == "left")
-        U1in = Ain
         
+        U1in = Ain*ρin
         #U2in = 2*q[ip2,2] - q[ip3,2]
-        U2in = 2*q[ipN+1,2] - q[ipN+2,2] #0.585
+        U2in = q[1,2]
         uin  = U2in/U1in
         U3in = U1in*(Tin/γm1 + 0.5*γ*uin*uin)
         
@@ -40,14 +53,22 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractF
     end
 
     if (tag == "right")
-        pout = 0.6784
-            
-        #U1out = 2*q[ipN,1] - q[ipN-1,1]
-        #U2out = 2*q[ipN,2] - q[ipN-1,2]
-        #U3out = 2*q[ipN,3] - q[ipN-1,3]
+        pout = 0.6784        
+        
+        U1out = 2*q[ipN-1,1] - q[ipN-2,1]
+        U2out = 2*q[ipN-1,2] - q[ipN-2,2]
+        U3out = 2*q[ipN-1,3] - q[ipN-2,3]
 
-        #uout = U2out/U1out
-        #U3out = pout*Aout/γm1 + 0.5*γ*U2out*uout
+        
+        if lshock
+
+            U1out = q[ipN,1]
+            U2out = q[ipN,2]
+            uout = U2out/U1out
+            
+            U3out = pout*Aout/γm1 + 0.5*γ*U2out*uout
+            
+        end
         
         #qbdy[1] = U1out
         #qbdy[2] = U2out

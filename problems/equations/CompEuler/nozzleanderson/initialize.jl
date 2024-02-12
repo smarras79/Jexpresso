@@ -22,13 +22,14 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     ρ = 0.0
     T = 0.0
 
-    lshock = false
-
+    lshock = false #Notice, only try shock if you have some artificial diffusion implemented
+        
     Ai = zeros(mesh.npoin)
 
     initial = zeros(mesh.npoin, 10)
     
     mass_flow = 0.59
+    
     for iel_g = 1:mesh.nelem
         for i=1:mesh.ngl
             
@@ -39,7 +40,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             initial[ip,1] = A
             initial[ip,5] = x
             if lshock
-                if (x >= 0.0 && x < 0.5)
+                if (x >= 0.0 && x <= 0.5)
                     ρ = 1.0
                     T = 1.0
                 elseif (x >= 0.5 && x < 1.5)
