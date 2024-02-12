@@ -454,16 +454,25 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D, ::FD)
         
         user_flux!(@view(params.F[ip,:]), @view(params.G[ip,:]), SD,
                    @view(params.uaux[ip,:]),
-                   @view(params.qp.qe[ip,:]),         #pref
+                   @view(params.qp.qe[ip,:]),       #pref
                    params.mesh,
-                   params.CL, params.SOL_VARS_TYPE;
+                   params.CL,
+                   params.SOL_VARS_TYPE;
                    neqs=params.neqs, ip=ip)
         
         if lsource
             user_source!(@view(params.S[ip,:]),
                          @view(params.uaux[ip,:]),
-                         @view(params.qp.qe[ip,:]),          #ρref 
-                         params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
+                         @view(params.qp.qe[ip,:]), #ρref 
+                         params.mesh.npoin,
+                         params.CL,
+                         params.SOL_VARS_TYPE;
+                         neqs=params.neqs,
+                         x=params.mesh.x[ip],
+                         y=params.mesh.y[ip],
+                         xmax=xmax,
+                         xmin=xmin,
+                         ymax=ymax)
         end
     end
         
@@ -555,7 +564,15 @@ end
 
 
 function _expansion_inviscid_new!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD)
-    nothing
+    
+    for ieq = 1:params.neqs
+        for ip=1:params.mesh.npoin
+            if (ip > 1 && ip < params.mesh.npoin)
+                 params.RHS[ip,ieq] = 0.5*(params.F[ip+1,ieq] - params.F[ip-1,ieq])/(params.mesh.Δx[ip]) + params.S[ip,ieq]
+             end
+         end
+    end
+    
 end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD)
@@ -563,7 +580,7 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD:
     for ieq = 1:params.neqs
         for ip=1:params.mesh.npoin
             if (ip < params.mesh.npoin)
-                 params.RHS[ip,ieq] = (params.F[ip+1,ieq] - params.F[ip,ieq])/(params.mesh.Δx[ip]) + params.S[ip,ieq]
+                 params.RHS[ip,ieq] = (params.F[ip+1,ieq] - params.F[ip,ieq])/(params.mesh.Δx[ip]) #+ params.S[ip,ieq]
              end
          end
     end

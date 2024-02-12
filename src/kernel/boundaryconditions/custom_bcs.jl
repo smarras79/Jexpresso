@@ -19,9 +19,9 @@ function neumann(q, gradq, x, t, inputs::Dict)
     return rhs
 end
 
-function dirichlet!(q, qbdy, x, y, t, nx, ny, tag,qe,SOL)
+function dirichlet!(q, qbdy, x, y, t, nx, ny, tag, qe, SOL)
 
-   user_bc_dirichlet!(q, x, y, t, tag, qbdy, nx, ny,qe,SOL)
+   user_bc_dirichlet!(q, x, y, t, tag, qbdy, nx, ny, qe, SOL)
 end
 
 function dirichlet!(q, gradq, x, t, mesh, metrics, tag, qbdy, inputs::Dict)

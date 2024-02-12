@@ -3,9 +3,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 0.05,
-        :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :Δt                   => 0.00001,
+        :tend                 => 0.1,
+        :ode_solver           => ABM54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
+        :Δt                   => 0.000005,
         :ndiagnostics_outputs => 20,
         :case                 => "rtb",
         :lsource              => true, 
@@ -32,7 +32,7 @@ function user_inputs()
         :xmin => 0.0,
         :xmax => 3.0,
         :nelx => 100,
-        :lperiodic_1d => true,
+        :lperiodic_1d => false,
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
