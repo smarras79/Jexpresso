@@ -63,6 +63,10 @@ function params_setup(sem,
     
     #The following are only built and active if Laguerre boundaries are to be used
     if ( "Laguerre" in sem.mesh.bdy_edge_type)
+
+        inputs[:llaguerre_1d_right] = false
+        inputs[:llaguerre_1d_left]  = false
+        
         uaux_el_lag      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
         rhs_el_lag       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
         rhs_diff_el_lag  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)

@@ -2156,7 +2156,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     mesh.nelem        = mesh.npx - 1
     
     Δx::TFloat=0.0
-    resize!(mesh.Δx, mesh.nelem)
+    resize!(mesh.Δx, mesh.nelem+1)
     
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
     mesh.npoin = mesh.npx
@@ -2167,6 +2167,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
         mesh.x[i] = mesh.x[i-1] + Δx
         mesh.Δx[i-1] = Δx #Constant for the sake of simplicity in 1D problems. This may change later
     end
+    mesh.Δx[mesh.npoin] = mesh.Δx[mesh.npoin-1]
     mesh.NNODES_EL  = 2
     
     println(" # 1D NATIVE LINEAR GRID PROPERTIES")
