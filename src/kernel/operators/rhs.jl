@@ -563,7 +563,7 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD:
     for ieq = 1:params.neqs
         for ip=1:params.mesh.npoin
             if (ip < params.mesh.npoin)
-                 params.RHS[ip,ieq] = 0.5*(params.F[ip+1,ieq] - params.F[ip,ieq])/(params.mesh.Δx[ip]) + params.S[ip,ieq]
+                 params.RHS[ip,ieq] = (params.F[ip+1,ieq] - params.F[ip,ieq])/(params.mesh.Δx[ip]) + params.S[ip,ieq]
              end
          end
     end
