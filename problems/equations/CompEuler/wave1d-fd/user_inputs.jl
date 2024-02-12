@@ -5,9 +5,9 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :ode_solver          => SSPRK33(),
+        :ode_solver          => ABM54(),
         :tend                 => 3.0,
-        :Δt                   => 1.0e-3,
+        :Δt                   => 1.0e-4,
         :ndiagnostics_outputs => 10, #these are steps, not seconds
         :output_dir          => "./",
         #---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :xmin          =>   0.0,
         :xmax          =>   5.0,
-        :nelx          =>   50,
+        :nelx          =>   200,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter

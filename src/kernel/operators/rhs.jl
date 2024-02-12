@@ -449,30 +449,26 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D, ::FD)
     xmax = params.xmax
     xmin = params.xmin
     ymax = params.ymax    
-    for iel=1:params.mesh.nelem
-
-        uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
+          
+    for ip=1:params.mesh.npoin
         
-        for ip=1:params.mesh.npoin
-                        
-            user_flux!(@view(params.F[ip,:]), @view(params.G[ip,:]), SD,
-                       @view(params.uaux[ip,:]),
-                       @view(params.qp.qe[ip,:]),         #pref
-                       params.mesh,
-                       params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip)
-            
-            if lsource
-                user_source!(@view(params.S[ip,:]),
-                             @view(params.uaux[ip,:]),
-                             @view(params.qp.qe[ip,:]),          #ρref 
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
-            end
+        user_flux!(@view(params.F[ip,:]), @view(params.G[ip,:]), SD,
+                   @view(params.uaux[ip,:]),
+                   @view(params.qp.qe[ip,:]),         #pref
+                   params.mesh,
+                   params.CL, params.SOL_VARS_TYPE;
+                   neqs=params.neqs, ip=ip)
+        
+        if lsource
+            user_source!(@view(params.S[ip,:]),
+                         @view(params.uaux[ip,:]),
+                         @view(params.qp.qe[ip,:]),          #ρref 
+                         params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
         end
-        
-        _expansion_inviscid!(u, params, iel, params.CL, params.QT, SD, params.AD)
-        
     end
+        
+    _expansion_inviscid!(u, params, 0, params.CL, params.QT, SD, params.AD)
+    
 end
 
 
@@ -565,47 +561,13 @@ end
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD)
 
     for ieq = 1:params.neqs
-         idx = (ieq-1)*params.mesh.npoin
-         for i = 1:params.mesh.ngl
-             ip = params.mesh.connijk[iel,i,1]
-             
-             if (ip < params.mesh.npoin)
-                 params.RHS[ip,ieq] = (u[ip+1+idx] - u[ip+idx])/(params.mesh.Δx[ip])
-
-                # params.RHS[ip,1] = (u[ip+1+params.mesh.npoin] - u[ip+params.mesh.npoin])/(params.mesh.Δx[ip])
-                # params.RHS[ip,2] = (u[ip+1] - u[ip])/(params.mesh.Δx[ip])
+        for ip=1:params.mesh.npoin
+            if (ip < params.mesh.npoin)
+                 params.RHS[ip,ieq] = 0.5*(params.F[ip+1,ieq] - params.F[ip,ieq])/(params.mesh.Δx[ip]) + params.S[ip,ieq]
              end
          end
     end
-
-    #params.RHS[ip,ieq] = params.visc_coeff[ip]*(u[ip+1] - 2*u[ip] + u[ip-1])/(params.mesh.Δx[ip])^2 + 0.1*(u[ip+1] - u[ip])/(params.mesh.Δx[ip])
-    # params.RHS[ip,ieq] = 0.5*(u[ip+1+idx] - u[ip+idx])/(params.mesh.Δx[ip])
-#=
-    for i = 1:params.mesh.ngl
-        ip  = params.mesh.connijk[iel,i,1]
-        ip2 = ip + params.mesh.npoin
-        if (ip < params.mesh.npoin && ip2 < 2*params.mesh.npoin)
-            
-            params.RHS[ip,2] = (u[ip+1] - u[ip])/(params.mesh.Δx[ip])
-            params.RHS[ip,1] = (u[ip2+1] - u[ip2])/(params.mesh.Δx[ip])
-        end
-    end
-=#  #=  
-    for i = 1:params.mesh.ngl
-        ip  = params.mesh.connijk[iel,i,1]
-        ip2 = ip + params.mesh.npoin
-        if (ip < params.mesh.npoin)
-            
-            params.RHS[ip,1] = (u[ip+1] - u[ip])/(params.mesh.Δx[ip])
-        end
-        
-        if (ip2 < 2*params.mesh.npoin)
-            params.RHS[ip,] = (u[ip2+1] - u[ip2])/(params.mesh.Δx[ip])
-        end
-        
-    end=#
     
-    nothing
 end
 
 
