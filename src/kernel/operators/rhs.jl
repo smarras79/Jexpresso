@@ -495,7 +495,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
     xmax = params.xmax
     xmin = params.xmin
     ymax = params.ymax    
-    for iel = 1:params.mesh.nelem
+    @time for iel = 1:params.mesh.nelem
 
         uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
@@ -510,7 +510,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_2D)
                        neqs=params.neqs, ip=ip)
             
             if lsource
-                @time user_source!(@view(params.S[i,j,:]),
+                user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
