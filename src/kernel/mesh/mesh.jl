@@ -227,387 +227,388 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         mesh.poin_in_bdy_face::Array{Int64,3} = zeros(Int64, mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
     end
     mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
-    mesh.conn::Array{Int64,2} = zeros(Int64, mesh.nelem, mesh.npoin_el)
+mesh.conn::Array{Int64,2} = zeros(Int64, mesh.nelem, mesh.npoin_el)
+
+#
+# Connectivity matrices
+#
+mesh.cell_node_ids     = model.grid.cell_node_ids
+mesh.conn_unique_faces = get_face_nodes(model, FACE_flg) #faces --> 4 nodes
+mesh.conn_unique_edges = get_face_nodes(model, EDGE_flg) #edges --> 2 nodes
+
+mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
+mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
+
+if (mesh.nsd == 1)
+    nothing
+elseif (mesh.nsd == 2)
+    
+    mesh.connijk::Array{Int64,4} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, 1)
+    
+    for iel = 1:mesh.nelem
+        mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]
+        mesh.conn[iel, 2] = mesh.cell_node_ids[iel][2]
+        mesh.conn[iel, 3] = mesh.cell_node_ids[iel][4]
+        mesh.conn[iel, 4] = mesh.cell_node_ids[iel][3]
+
+        #
+        # 3-----4
+        # |     |
+        # |     |
+        # 1-----2
+        #
+        mesh.connijk[iel, 1,      1] = mesh.cell_node_ids[iel][2]
+        mesh.connijk[iel, 1,    ngl] = mesh.cell_node_ids[iel][1]
+        mesh.connijk[iel, ngl,  ngl] = mesh.cell_node_ids[iel][3]
+        mesh.connijk[iel, ngl,    1] = mesh.cell_node_ids[iel][4]
+        
+        #=
+        # 4-----3
+        # |     |
+        # |     |
+        # 1-----2
+        #
+        mesh.connijk[iel, 1,  1]    = mesh.cell_node_ids[iel][1]
+        mesh.connijk[iel, 1, ngl]   = mesh.cell_node_ids[iel][2]
+        mesh.connijk[iel, ngl, ngl] = mesh.cell_node_ids[iel][4]
+        mesh.connijk[iel, ngl, 1]   = mesh.cell_node_ids[iel][3]
+        =#
+        
+        #@printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[iel, 1, 1], mesh.connijk[iel, ngl, 1] , mesh.connijk[iel, 1,ngl], mesh.connijk[iel, ngl, ngl] )
+        
+    end
+    #
+    # Fill in elements dictionary needed by NodeOrdering.jl
+    #
+    elements = Dict(
+        kk => mesh.conn[kk, 1:4]
+        for kk = 1:mesh.nelem)
+    element_types = Dict(
+        kk => :Quad4
+        for kk = 1:mesh.nelem)
     
     #
-    # Connectivity matrices
+    # Rewrite coordinates in RCM order:
     #
-    mesh.cell_node_ids     = model.grid.cell_node_ids
-    mesh.conn_unique_faces = get_face_nodes(model, FACE_flg) #faces --> 4 nodes
-    mesh.conn_unique_edges = get_face_nodes(model, EDGE_flg) #edges --> 2 nodes
-
-    mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
-    mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
-
-    if (mesh.nsd == 1)
-        nothing
-    elseif (mesh.nsd == 2)
+    #open("./COORDS_LO.dat", "w") do f
+    for ip = 1:mesh.npoin_linear
         
-        mesh.connijk::Array{Int64,4} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, 1)
+        mesh.x[ip] = model.grid.node_coordinates[ip][1]
+        mesh.y[ip] = model.grid.node_coordinates[ip][2]
         
-        for iel = 1:mesh.nelem
-            mesh.conn[iel, 1] = mesh.cell_node_ids[iel][1]
-            mesh.conn[iel, 2] = mesh.cell_node_ids[iel][2]
-            mesh.conn[iel, 3] = mesh.cell_node_ids[iel][4]
-            mesh.conn[iel, 4] = mesh.cell_node_ids[iel][3]
+        #@printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
+    end
+    #end #f
 
-            #
-            # 3-----4
-            # |     |
-            # |     |
-            # 1-----2
-            #
-            mesh.connijk[iel, 1,      1] = mesh.cell_node_ids[iel][2]
-            mesh.connijk[iel, 1,    ngl] = mesh.cell_node_ids[iel][1]
-            mesh.connijk[iel, ngl,  ngl] = mesh.cell_node_ids[iel][3]
-            mesh.connijk[iel, ngl,    1] = mesh.cell_node_ids[iel][4]
-            
-            #=
-            # 4-----3
-            # |     |
-            # |     |
-            # 1-----2
-            #
-            mesh.connijk[iel, 1,  1]    = mesh.cell_node_ids[iel][1]
-            mesh.connijk[iel, 1, ngl]   = mesh.cell_node_ids[iel][2]
-            mesh.connijk[iel, ngl, ngl] = mesh.cell_node_ids[iel][4]
-            mesh.connijk[iel, ngl, 1]   = mesh.cell_node_ids[iel][3]
-            =#
-            
-            #@printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[iel, 1, 1], mesh.connijk[iel, ngl, 1] , mesh.connijk[iel, 1,ngl], mesh.connijk[iel, ngl, ngl] )
-            
+elseif (mesh.nsd == 3)
+    
+    mesh.connijk::Array{Int64,4} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
+
+    for iel = 1:mesh.nelem
+        #CGNS numbering:
+        mesh.conn[iel, 1] = mesh.cell_node_ids[iel][2] #9
+        mesh.conn[iel, 2] = mesh.cell_node_ids[iel][6] #11
+        mesh.conn[iel, 3] = mesh.cell_node_ids[iel][8] #5
+        mesh.conn[iel, 4] = mesh.cell_node_ids[iel][4] #1
+        mesh.conn[iel, 5] = mesh.cell_node_ids[iel][1] #10
+        mesh.conn[iel, 6] = mesh.cell_node_ids[iel][5] #12
+        mesh.conn[iel, 7] = mesh.cell_node_ids[iel][7] #8
+        mesh.conn[iel, 8] = mesh.cell_node_ids[iel][3] #4
+        
+        mesh.connijk[iel, 1, 1, 1] = mesh.cell_node_ids[iel][2] #9 
+        mesh.connijk[iel, 1, ngl, 1] = mesh.cell_node_ids[iel][4] #1
+        mesh.connijk[iel, 1, 1, ngl] = mesh.cell_node_ids[iel][1] #10
+        mesh.connijk[iel, ngl, 1, 1] = mesh.cell_node_ids[iel][6] #11
+        mesh.connijk[iel, ngl, ngl, 1] = mesh.cell_node_ids[iel][8] #5
+        mesh.connijk[iel, 1, ngl, ngl] =  mesh.cell_node_ids[iel][3] #4
+        mesh.connijk[iel, ngl, 1, ngl] = mesh.cell_node_ids[iel][5] #12
+        mesh.connijk[iel, ngl, ngl, ngl] = mesh.cell_node_ids[iel][7] #8
+    end
+    #
+    # Fill in elements dictionary needed by NodeOrdering.jl
+    #
+    elements = Dict(
+        kk => mesh.conn[kk, 1:8]
+        for kk = 1:mesh.nelem)
+    element_types = Dict(
+        kk => :Hexa8
+        for kk = 1:mesh.nelem)
+    
+    #
+    #Use NodeNumbering.jl
+    #
+    #adjacency = create_adjacency_graph(elements, element_types)
+    #degrees = node_degrees(adjacency)
+    #neworder = RCM(adjacency, degrees, tot_linear_poin, tot_linear_poin)
+    #finalorder = renumbering(neworder)
+    #RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
+    #newmatrix = adjacency_visualization(RCM_adjacency)
+    #display(UnicodePlots.heatmap(newmatrix))
+    
+    
+    #
+    # Rewrite coordinates in RCM order:
+    #
+    open("./COORDS_LO.dat", "w") do f
+    for ip = 1:mesh.npoin_linear
+        mesh.x[ip] = model.grid.node_coordinates[ip][1]
+        mesh.y[ip] = model.grid.node_coordinates[ip][2]
+        mesh.z[ip] = model.grid.node_coordinates[ip][3]
+        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+    end
+    end #f
+end
+
+
+#
+# Add high-order points to edges, faces, and elements (volumes)
+#
+# initialize LGL struct and buyild Gauss-Lobatto-xxx points
+lgl = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)
+
+println(" # POPULATE GRID with SPECTRAL NODES ............................ ")
+#
+# Edges
+#
+populate_conn_edge_el!(mesh, mesh.SD)
+add_high_order_nodes_edges!(mesh, lgl, mesh.SD)
+
+#
+# Faces
+#
+populate_conn_face_el!(mesh, mesh.SD)
+add_high_order_nodes_faces!(mesh, lgl, mesh.SD)
+
+#
+# Volume
+#
+# NOTICE: in 2D we consider only edges. faces are the elements.
+#         
+add_high_order_nodes_volumes!(mesh, lgl, mesh.SD)
+
+mesh.xmax = maximum(mesh.x)
+mesh.xmin = minimum(mesh.x)
+mesh.ymax = maximum(mesh.y)
+mesh.ymin = minimum(mesh.y)
+mesh.zmax = maximum(mesh.z)
+mesh.zmin = minimum(mesh.z)
+
+for ip = mesh.npoin_linear+1:mesh.npoin
+    mesh.x[ip] = mesh.x_ho[ip]
+    mesh.y[ip] = mesh.y_ho[ip]
+    mesh.z[ip] = 0.0
+    if (mesh.nsd > 2)
+        mesh.z[ip] = mesh.z_ho[ip]
+    end
+end
+
+mesh.xmax = maximum(mesh.x)
+mesh.xmin = minimum(mesh.x)
+mesh.ymax = maximum(mesh.y)
+mesh.ymin = minimum(mesh.y)
+
+#----------------------------------------------------------------------
+# Extract boundary edges and faces nodes:
+#----------------------------------------------------------------------
+#
+# Bdy edges
+#
+if mesh.nsd == 2
+    isboundary_edge = compute_isboundary_face(topology, EDGE_flg)
+    #
+    # Get labels contained in the current GMSH grid:
+    #
+    n_semi_inf = 0
+    labels = get_face_labeling(model)
+    for ilabel in labels.tag_to_name
+        edges_to_tag  = get_face_tag_index(labels,ilabel,EDGE_flg)
+        idx_edges_inflow = findall( x -> x == 1, edges_to_tag)
+        #    
+        # Tag the boundary edge with its type as defined in the user-provided GMSH file:
+        #
+        for idx in idx_edges_inflow
+            mesh.edge_type[idx] = ilabel
         end
-        #
-        # Fill in elements dictionary needed by NodeOrdering.jl
-        #
-        elements = Dict(
-            kk => mesh.conn[kk, 1:4]
-            for kk = 1:mesh.nelem)
-        element_types = Dict(
-            kk => :Quad4
-            for kk = 1:mesh.nelem)
-        
-        #
-        # Rewrite coordinates in RCM order:
-        #
-        #open("./COORDS_LO.dat", "w") do f
-        for ip = 1:mesh.npoin_linear
-            
-            mesh.x[ip] = model.grid.node_coordinates[ip][1]
-            mesh.y[ip] = model.grid.node_coordinates[ip][2]
-            
-            #@printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
-        end
-        #end #f
+    end
+    iedge_bdy = 1
+    for iedge = 1:mesh.nedges #total nedges
+        if isboundary_edge[iedge] == true
+            for igl = 1:mesh.ngl
+                mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
+                mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
 
-    elseif (mesh.nsd == 3)
+                #= if SubString(mesh.edge_type[iedge] == "free_slip"
+                mesh.bdy_edge_type_id[iedge_bdy] = 1
+                elseif mesh.edge_type[iedge] == "no_slip"
+                mesh.bdy_edge_type_id[iedge_bdy] = 2
+                else
+                mesh.bdy_edge_type_id[iedge_bdy] = 0
+                end=#
                 
-        mesh.connijk::Array{Int64,4} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
-
-        for iel = 1:mesh.nelem
-            #CGNS numbering:
-            mesh.conn[iel, 1] = mesh.cell_node_ids[iel][2] #9
-            mesh.conn[iel, 2] = mesh.cell_node_ids[iel][6] #11
-            mesh.conn[iel, 3] = mesh.cell_node_ids[iel][8] #5
-            mesh.conn[iel, 4] = mesh.cell_node_ids[iel][4] #1
-            mesh.conn[iel, 5] = mesh.cell_node_ids[iel][1] #10
-            mesh.conn[iel, 6] = mesh.cell_node_ids[iel][5] #12
-            mesh.conn[iel, 7] = mesh.cell_node_ids[iel][7] #8
-            mesh.conn[iel, 8] = mesh.cell_node_ids[iel][3] #4
-            mesh.connijk[iel, 1,1,1] = mesh.cell_node_ids[iel][2] #9 
-            mesh.connijk[iel, 1,ngl,1] = mesh.cell_node_ids[iel][4] #1
-            mesh.connijk[iel, 1,1,ngl] = mesh.cell_node_ids[iel][1] #10
-            mesh.connijk[iel, ngl,1,1] = mesh.cell_node_ids[iel][6] #11
-            mesh.connijk[iel, ngl,ngl,1] = mesh.cell_node_ids[iel][8] #5
-            mesh.connijk[iel, 1,ngl,ngl] =  mesh.cell_node_ids[iel][3] #4
-            mesh.connijk[iel, ngl,1,ngl] = mesh.cell_node_ids[iel][5] #12
-            mesh.connijk[iel, ngl,ngl,ngl] = mesh.cell_node_ids[iel][7] #8
-        end
-        #
-        # Fill in elements dictionary needed by NodeOrdering.jl
-        #
-        elements = Dict(
-            kk => mesh.conn[kk, 1:8]
-            for kk = 1:mesh.nelem)
-        element_types = Dict(
-            kk => :Hexa8
-            for kk = 1:mesh.nelem)
-        
-        #
-        #Use NodeNumbering.jl
-        #
-        #adjacency = create_adjacency_graph(elements, element_types)
-        #degrees = node_degrees(adjacency)
-        #neworder = RCM(adjacency, degrees, tot_linear_poin, tot_linear_poin)
-        #finalorder = renumbering(neworder)
-        #RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
-        #newmatrix = adjacency_visualization(RCM_adjacency)
-        #display(UnicodePlots.heatmap(newmatrix))
-        
-        
-        #
-        # Rewrite coordinates in RCM order:
-        #
-        #open("./COORDS_LO.dat", "w") do f
-        for ip = 1:mesh.npoin_linear
-            mesh.x[ip] = model.grid.node_coordinates[ip][1]
-            mesh.y[ip] = model.grid.node_coordinates[ip][2]
-            mesh.z[ip] = model.grid.node_coordinates[ip][3]
-            #        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-        end
-        #end #f
-    end
-
-
-    #
-    # Add high-order points to edges, faces, and elements (volumes)
-    #
-    # initialize LGL struct and buyild Gauss-Lobatto-xxx points
-    lgl = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)
-
-    println(" # POPULATE GRID with SPECTRAL NODES ............................ ")
-    #
-    # Edges
-    #
-    populate_conn_edge_el!(mesh, mesh.SD)
-    add_high_order_nodes_edges!(mesh, lgl, mesh.SD)
-
-    #
-    # Faces
-    #
-    populate_conn_face_el!(mesh, mesh.SD)
-    add_high_order_nodes_faces!(mesh, lgl, mesh.SD)
-
-    #
-    # Volume
-    #
-    # NOTICE: in 2D we consider only edges. faces are the elements.
-    #         
-    add_high_order_nodes_volumes!(mesh, lgl, mesh.SD)
-
-    mesh.xmax = maximum(mesh.x)
-    mesh.xmin = minimum(mesh.x)
-    mesh.ymax = maximum(mesh.y)
-    mesh.ymin = minimum(mesh.y)
-    mesh.zmax = maximum(mesh.z)
-    mesh.zmin = minimum(mesh.z)
-    
-    for ip = mesh.npoin_linear+1:mesh.npoin
-        mesh.x[ip] = mesh.x_ho[ip]
-        mesh.y[ip] = mesh.y_ho[ip]
-        mesh.z[ip] = 0.0
-        if (mesh.nsd > 2)
-            mesh.z[ip] = mesh.z_ho[ip]
+                #@info iedge, mesh.edge_type[iedge]
+            end
+            if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
+                n_semi_inf += 1
+            end
+            iedge_bdy += 1
         end
     end
-
-    mesh.xmax = maximum(mesh.x)
-    mesh.xmin = minimum(mesh.x)
-    mesh.ymax = maximum(mesh.y)
-    mesh.ymin = minimum(mesh.y)
-
-    #----------------------------------------------------------------------
-    # Extract boundary edges and faces nodes:
-    #----------------------------------------------------------------------
-    #
-    # Bdy edges
-    #
-    if mesh.nsd == 2
-        isboundary_edge = compute_isboundary_face(topology, EDGE_flg)
-        #
-        # Get labels contained in the current GMSH grid:
-        #
-        n_semi_inf = 0
-        labels = get_face_labeling(model)
-        for ilabel in labels.tag_to_name
-            edges_to_tag  = get_face_tag_index(labels,ilabel,EDGE_flg)
-            idx_edges_inflow = findall( x -> x == 1, edges_to_tag)
-            #    
-            # Tag the boundary edge with its type as defined in the user-provided GMSH file:
-            #
-            for idx in idx_edges_inflow
-                mesh.edge_type[idx] = ilabel
+    for iel = 1:mesh.nelem
+        for iedge_bdy = 1:mesh.nedges_bdy
+            if issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, :, :])
+                mesh.bdy_edge_in_elem[iedge_bdy] = iel
+            end
+            if (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, 1, :]))
+                mesh.bdy_edge_comp[iedge_bdy] = 1
+            elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel,:, 1]))
+                mesh.bdy_edge_comp[iedge_bdy] = 2
+            elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, mesh.ngl, :]))
+                mesh.bdy_edge_comp[iedge_bdy] = 3
+            elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, :, mesh.ngl]))
+                mesh.bdy_edge_comp[iedge_bdy] = 4
             end
         end
-        iedge_bdy = 1
-        for iedge = 1:mesh.nedges #total nedges
-            if isboundary_edge[iedge] == true
-                for igl = 1:mesh.ngl
-                    mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
-                    mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
-
-                    #= if SubString(mesh.edge_type[iedge] == "free_slip"
-                    mesh.bdy_edge_type_id[iedge_bdy] = 1
-                    elseif mesh.edge_type[iedge] == "no_slip"
-                    mesh.bdy_edge_type_id[iedge_bdy] = 2
-                    else
-                    mesh.bdy_edge_type_id[iedge_bdy] = 0
-                    end=#
-                    
-                    #@info iedge, mesh.edge_type[iedge]
+    end
+    # build mesh data structs for Laguerre semi-infinite elements
+    if ("Laguerre" in mesh.bdy_edge_type)
+        gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta]) 
+        factorx = inputs[:xfac_laguerre]#0.1
+        factory = inputs[:yfac_laguerre]#0.025
+        mesh.connijk_lag ::Array{Int64,4} = zeros(Int64, n_semi_inf, mesh.ngl, mesh.ngr, 1)
+        bdy_normals = zeros(n_semi_inf, 2)
+        bdy_tangents = zeros(n_semi_inf, 2)
+        e_iter = 1
+        iter = mesh.npoin + 1
+        x_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
+        y_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
+        x_new[1:mesh.npoin] .= mesh.x[:]
+        y_new[1:mesh.npoin] .= mesh.y[:]
+        for iedge = 1:size(mesh.bdy_edge_type,1)
+            if (mesh.bdy_edge_type[iedge] == "Laguerre") 
+                iel = mesh.bdy_edge_in_elem[iedge]
+                #find tangent and normal vectors to the boundary
+                ip = mesh.poin_in_bdy_edge[iedge,1]
+                ip1 = mesh.poin_in_bdy_edge[iedge,2]
+                #tangent vector 
+                x = mesh.x[ip]
+                x1 = mesh.x[ip1]
+                y = mesh.y[ip]
+                y1 = mesh.y[ip1]
+                tan = [x-x1, y-y1]
+                # deduce normal vector components
+                if (tan[2] > 1e-7)
+                    x2 = 1.0
+                    y2 = -x2*tan[1]/tan[2]
+                else
+                    y2 = 1.0
+                    x2 = -y2*tan[2]/tan[1]
                 end
-                if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
-                    n_semi_inf += 1
-                end
-                iedge_bdy += 1
-            end
-        end
-        for iel = 1:mesh.nelem
-            for iedge_bdy = 1:mesh.nedges_bdy
-                if issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, :, :])
-                    mesh.bdy_edge_in_elem[iedge_bdy] = iel
-                end
-                if (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, 1, :]))
-                    mesh.bdy_edge_comp[iedge_bdy] = 1
-                elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel,:, 1]))
-                    mesh.bdy_edge_comp[iedge_bdy] = 2
-                elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, mesh.ngl, :]))
-                    mesh.bdy_edge_comp[iedge_bdy] = 3
-                elseif (issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, :, mesh.ngl]))
-                    mesh.bdy_edge_comp[iedge_bdy] = 4
-                end
-            end
-        end
-        # build mesh data structs for Laguerre semi-infinite elements
-        if ("Laguerre" in mesh.bdy_edge_type)
-            gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta]) 
-            factorx = inputs[:xfac_laguerre]#0.1
-            factory = inputs[:yfac_laguerre]#0.025
-            mesh.connijk_lag ::Array{Int64,4} = zeros(Int64, n_semi_inf, mesh.ngl, mesh.ngr, 1)
-            bdy_normals = zeros(n_semi_inf, 2)
-            bdy_tangents = zeros(n_semi_inf, 2)
-            e_iter = 1
-            iter = mesh.npoin + 1
-            x_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
-            y_new = zeros(mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
-            x_new[1:mesh.npoin] .= mesh.x[:]
-            y_new[1:mesh.npoin] .= mesh.y[:]
-            for iedge = 1:size(mesh.bdy_edge_type,1)
-                if (mesh.bdy_edge_type[iedge] == "Laguerre") 
-                    iel = mesh.bdy_edge_in_elem[iedge]
-                    #find tangent and normal vectors to the boundary
-                    ip = mesh.poin_in_bdy_edge[iedge,1]
-                    ip1 = mesh.poin_in_bdy_edge[iedge,2]
-                    #tangent vector 
-                    x = mesh.x[ip]
-                    x1 = mesh.x[ip1]
-                    y = mesh.y[ip]
-                    y1 = mesh.y[ip1]
-                    tan = [x-x1, y-y1]
-                    # deduce normal vector components
-                    if (tan[2] > 1e-7)
-                        x2 = 1.0
-                        y2 = -x2*tan[1]/tan[2]
-                    else
-                        y2 = 1.0
-                        x2 = -y2*tan[2]/tan[1]
-                    end
-                    nor = [x2,y2]
-                    # generate unit versions of tangent and normal vectors
-                    modu = sqrt(tan[1]^2+tan[2]^2)
-                    tan = tan * (1/modu)
-                    modu = sqrt(nor[1]^2+nor[2]^2)
-                    nor = nor * (1/modu)
-                    #make sure normal is outward facing
-                    l = 1
-                    m = 1
-                    l1 = 1
-                    m1 = 1
-                    for ii=1:mesh.ngl
-                        for jj=1:mesh.ngl
-                            if (mesh.connijk[iel,ii,jj] == ip)
-                                l=ii
-                                m=jj
-                            end
-                            if (mesh.connijk[iel,ii,jj] == ip1)
-                                l1 = ii
-                                m1 = jj
-                            end
+                nor = [x2,y2]
+                # generate unit versions of tangent and normal vectors
+                modu = sqrt(tan[1]^2+tan[2]^2)
+                tan = tan * (1/modu)
+                modu = sqrt(nor[1]^2+nor[2]^2)
+                nor = nor * (1/modu)
+                #make sure normal is outward facing
+                l = 1
+                m = 1
+                l1 = 1
+                m1 = 1
+                for ii=1:mesh.ngl
+                    for jj=1:mesh.ngl
+                        if (mesh.connijk[iel,ii,jj] == ip)
+                            l=ii
+                            m=jj
+                        end
+                        if (mesh.connijk[iel,ii,jj] == ip1)
+                            l1 = ii
+                            m1 = jj
                         end
                     end
-                    if (l == l1)
-                        ip2 = mesh.connijk[iel,3,m]
-                    else
-                        ip2 = mesh.connijk[iel,l,3]
-                    end
-                    v = [mesh.x[ip2]-x, mesh.y[ip2]-y]
-                    if (dot(v,nor) > 0.0)
-                        nor .= -nor
-                    end
-                    bdy_normals[e_iter,:] .= nor
-                    bdy_tangents[e_iter,:] .= tan
-                    for i=1:mesh.ngl
-                        ip = mesh.poin_in_bdy_edge[iedge,i]
-                        mesh.connijk_lag[e_iter,i,1] = ip
-                        for j=2:mesh.ngr
-			    if (inputs[:xscale]==1.0)
-                                x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
-                            else
-                                x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx/(inputs[:xscale] * 0.5)
-			    end
-                            if (inputs[:yscale] == 1.0)
-			        y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
-			    else 
-                                y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory/(inputs[:yscale] * 0.5)
-                            end
-			    matched = 0
-                            if (i == mesh.ngl || i == 1)
-                                iter_end = 0
-                                while (matched == 0 && iter_end == 0)
-                                    for e_check = 1:n_semi_inf
-                                        for i_check =1:mesh.ngl
-                                            for j_check =1:mesh.ngr
-                                                ip_check = mesh.connijk_lag[e_check,i_check,j_check]
-                                                if (ip_check != 0.0 && e_check != e_iter)
-                                                    if (AlmostEqual(x_temp,x_new[ip_check]) && AlmostEqual(y_temp,y_new[ip_check]))
-                                                        mesh.connijk_lag[e_iter,i,j] = ip_check
-                                                        matched = 1
-                                                    end
+                end
+                if (l == l1)
+                    ip2 = mesh.connijk[iel,3,m]
+                else
+                    ip2 = mesh.connijk[iel,l,3]
+                end
+                v = [mesh.x[ip2]-x, mesh.y[ip2]-y]
+                if (dot(v,nor) > 0.0)
+                    nor .= -nor
+                end
+                bdy_normals[e_iter,:] .= nor
+                bdy_tangents[e_iter,:] .= tan
+                for i=1:mesh.ngl
+                    ip = mesh.poin_in_bdy_edge[iedge,i]
+                    mesh.connijk_lag[e_iter,i,1] = ip
+                    for j=2:mesh.ngr
+			if (inputs[:xscale]==1.0)
+                            x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
+                        else
+                            x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx/(inputs[:xscale] * 0.5)
+			end
+                        if (inputs[:yscale] == 1.0)
+			    y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+			else 
+                            y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory/(inputs[:yscale] * 0.5)
+                        end
+			matched = 0
+                        if (i == mesh.ngl || i == 1)
+                            iter_end = 0
+                            while (matched == 0 && iter_end == 0)
+                                for e_check = 1:n_semi_inf
+                                    for i_check =1:mesh.ngl
+                                        for j_check =1:mesh.ngr
+                                            ip_check = mesh.connijk_lag[e_check,i_check,j_check]
+                                            if (ip_check != 0.0 && e_check != e_iter)
+                                                if (AlmostEqual(x_temp,x_new[ip_check]) && AlmostEqual(y_temp,y_new[ip_check]))
+                                                    mesh.connijk_lag[e_iter,i,j] = ip_check
+                                                    matched = 1
                                                 end
                                             end
-                                        end 
-                                    end
-                                    iter_end = 1
-                                end    
-                            else
-                                x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
-                                y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
-                                mesh.connijk_lag[e_iter,i,j] = iter
-                                iter += 1
-                                matched = 1
-                            end
-                            if (matched == 0)
-                                x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
-                                y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
-                                mesh.connijk_lag[e_iter,i,j] = iter
-                                iter += 1 
-                            end
-                            
-                            #@info nor[1],nor[2],x_new[iter],y_new[iter], mesh.x[ip],mesh.y[ip]
+                                        end
+                                    end 
+                                end
+                                iter_end = 1
+                            end    
+                        else
+                            x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
+                            y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                            mesh.connijk_lag[e_iter,i,j] = iter
+                            iter += 1
+                            matched = 1
                         end
+                        if (matched == 0)
+                            x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
+                            y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                            mesh.connijk_lag[e_iter,i,j] = iter
+                            iter += 1 
+                        end
+                        
+                        #@info nor[1],nor[2],x_new[iter],y_new[iter], mesh.x[ip],mesh.y[ip]
                     end
-                    e_iter += 1
                 end
+                e_iter += 1
             end
-            #@info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
-            mesh.npoin_original = mesh.npoin
-            mesh.npoin = iter -1
-            mesh.x = x_new
-            mesh.y = y_new
-            mesh.z = zeros(mesh.npoin)
-            mesh.nelem_semi_inf = n_semi_inf
         end
-        #=for iedge_bdy = 1:mesh.nedges_bdy
-        @printf(" bdy edge %d of type %s ∈ elem %d with nodes\n", iedge_bdy, mesh.bdy_edge_type[iedge_bdy], mesh.bdy_edge_in_elem[iedge_bdy])
-        for igl = 1:mesh.ngl
-        @printf(" %d",  mesh.poin_in_bdy_edge[iedge_bdy, igl])
-        end
-        @printf("\n")
-        end=#
-        
-    elseif mesh.nsd > 2
-        nothing
-    end
+#@info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
+mesh.npoin_original = mesh.npoin
+mesh.npoin = iter -1
+mesh.x = x_new
+mesh.y = y_new
+mesh.z = zeros(mesh.npoin)
+mesh.nelem_semi_inf = n_semi_inf
+end
+#=for iedge_bdy = 1:mesh.nedges_bdy
+@printf(" bdy edge %d of type %s ∈ elem %d with nodes\n", iedge_bdy, mesh.bdy_edge_type[iedge_bdy], mesh.bdy_edge_in_elem[iedge_bdy])
+for igl = 1:mesh.ngl
+@printf(" %d",  mesh.poin_in_bdy_edge[iedge_bdy, igl])
+end
+@printf("\n")
+end=#
+
+elseif mesh.nsd > 2
+nothing
+end
 
 #----------------------------------------------------------------------
 # END Extract boundary edges and faces nodes
@@ -627,12 +628,12 @@ GC.gc()
 # END Free memory of obsolete arrays
 #
 
-#open("./COORDS_GLOBAL.dat", "w") do f
-#for ip = 1:mesh.npoin
+open("./COORDS_GLOBAL.dat", "w") do f
+for ip = 1:mesh.npoin
 #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-#@printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-#end
-#end #f
+@printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+end
+end #f
 
 #show(stdout, "text/plain", mesh.conn')
 println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
@@ -901,7 +902,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
     tot_linear_poin          = mesh.npoin_linear
     tot_edges_internal_nodes = mesh.nedges*(ngl-2)
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)*(ngl-2)
-
     el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
     
     #Increase number of grid points from linear count to total high-order points
@@ -1278,132 +1278,132 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             ender = 2
             stepper =-1
         end
-        for l = starter:stepper:ender
-            ip = mesh.poin_in_edge[iedge_g, l]
-            mesh.conn[iel,2^mesh.nsd + iconn] = ip #OK
-            iconn = iconn + 1
-            #   mesh.connijk[iel,1,l] = ip
-        end
-        iedge_el = 7
-        iedge_g = edge_ids[iedge_el]
-        ip1 = mesh.conn_unique_edges[iedge_g][1]
-        ip2 = mesh.conn_unique_edges[iedge_g][2]
-        if (mesh.conn[iel,6] == ip1)
-            starter = 2
-            ender = ngl-1
-            stepper =1
-        else
-            starter = ngl-1
-            ender = 2
-            stepper =-1
-        end
-        for l = starter:stepper:ender
-            ip = mesh.poin_in_edge[iedge_g, l]
-            mesh.conn[iel,2^mesh.nsd + iconn] = ip #OK
-            iconn = iconn + 1
-            #   mesh.connijk[iel,1,l] = ip
-        end
-        iedge_el = 11
-        iedge_g = edge_ids[iedge_el]
-        ip1 = mesh.conn_unique_edges[iedge_g][1]
-        ip2 = mesh.conn_unique_edges[iedge_g][2]
-        if (mesh.conn[iel,7] == ip1)
-            starter = 2
-            ender = ngl-1
-            stepper =1
-        else
-            starter = ngl-1
-            ender = 2
-            stepper =-1
-        end
-        for l = starter:stepper:ender
-            ip = mesh.poin_in_edge[iedge_g, l]
-            mesh.conn[iel,2^mesh.nsd + iconn] = ip #OK
-            iconn = iconn + 1
-            #   mesh.connijk[iel,1,l] = ip
-        end
-        iedge_el = 5
-        iedge_g = edge_ids[iedge_el]
-        ip1 = mesh.conn_unique_edges[iedge_g][1]
-        ip2 = mesh.conn_unique_edges[iedge_g][2]
-        if (mesh.conn[iel,4] == ip1)
-            starter = 2
-            ender = ngl-1
-            stepper =1
-        else
-            starter = ngl-1
-            ender = 2
-            stepper =-1
-        end
-        for l = starter:stepper:ender
-            ip = mesh.poin_in_edge[iedge_g, l]
-            mesh.conn[iel,2^mesh.nsd + iconn] = ip #OK
-            iconn = iconn + 1
-            #   mesh.connijk[iel,1,l] = ip
-        end
-        iter=1
-        for l=2:ngl-1 
-            mesh.connijk[iel,l,1,1] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        for m=2:ngl-1
-            mesh.connijk[iel,ngl,m,1] = mesh.conn[iel,8+iter]
-            iter+=1
-        end 
-        for l=ngl-1:-1:2
-            mesh.connijk[iel,l,ngl,1] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        for m=ngl-1:-1:2
-            mesh.connijk[iel,1,m,1] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        for n=2:ngl-1
-            mesh.connijk[iel,1,1,n] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        for n=2:ngl-1
-            mesh.connijk[iel,ngl,1,n] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        for n=2:ngl-1
-            mesh.connijk[iel,ngl,ngl,n] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        for n=2:ngl-1
-            mesh.connijk[iel,1,ngl,n] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        for l=2:ngl-1
-            mesh.connijk[iel,l,1,ngl] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        for m=2:ngl-1
-            mesh.connijk[iel,ngl,m,ngl] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        for l=ngl-1:-1:2
-            mesh.connijk[iel,l,ngl,ngl] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        for m=ngl-1:-1:2
-            mesh.connijk[iel,1,m,ngl] = mesh.conn[iel,8+iter]
-            iter+=1
-        end
-        #= for iedge_el = 1:length(edge_ids)
-        iedge_g = edge_ids[iedge_el]
-        for l = 2:ngl-1
-        ip = mesh.poin_in_edge[iedge_g, l]
-        mesh.conn[iel,2^mesh.nsd + iconn] = ip #OK
-        iconn = iconn + 1
-        end
-        end=#
-    end
-    #show(stdout, "text/plain", mesh.conn')
-    #error("now")
+for l = starter:stepper:ender
+    ip = mesh.poin_in_edge[iedge_g, l]
+    mesh.conn[iel,2^mesh.nsd + iconn] = ip #OK
+    iconn = iconn + 1
+    #   mesh.connijk[iel,1,l] = ip
+end
+iedge_el = 7
+iedge_g = edge_ids[iedge_el]
+ip1 = mesh.conn_unique_edges[iedge_g][1]
+ip2 = mesh.conn_unique_edges[iedge_g][2]
+if (mesh.conn[iel,6] == ip1)
+    starter = 2
+    ender = ngl-1
+    stepper =1
+else
+    starter = ngl-1
+    ender = 2
+    stepper =-1
+end
+for l = starter:stepper:ender
+    ip = mesh.poin_in_edge[iedge_g, l]
+    mesh.conn[iel,2^mesh.nsd + iconn] = ip #OK
+    iconn = iconn + 1
+    #   mesh.connijk[iel,1,l] = ip
+end
+iedge_el = 11
+iedge_g = edge_ids[iedge_el]
+ip1 = mesh.conn_unique_edges[iedge_g][1]
+ip2 = mesh.conn_unique_edges[iedge_g][2]
+if (mesh.conn[iel,7] == ip1)
+    starter = 2
+    ender = ngl-1
+    stepper =1
+else
+    starter = ngl-1
+    ender = 2
+    stepper =-1
+end
+for l = starter:stepper:ender
+    ip = mesh.poin_in_edge[iedge_g, l]
+    mesh.conn[iel,2^mesh.nsd + iconn] = ip #OK
+    iconn = iconn + 1
+    #   mesh.connijk[iel,1,l] = ip
+end
+iedge_el = 5
+iedge_g = edge_ids[iedge_el]
+ip1 = mesh.conn_unique_edges[iedge_g][1]
+ip2 = mesh.conn_unique_edges[iedge_g][2]
+if (mesh.conn[iel,4] == ip1)
+    starter = 2
+    ender = ngl-1
+    stepper =1
+else
+    starter = ngl-1
+    ender = 2
+    stepper =-1
+end
+for l = starter:stepper:ender
+    ip = mesh.poin_in_edge[iedge_g, l]
+    mesh.conn[iel,2^mesh.nsd + iconn] = ip #OK
+    iconn = iconn + 1
+    #   mesh.connijk[iel,1,l] = ip
+end
+iter=1
+for l=2:ngl-1 
+    mesh.connijk[iel,l,1,1] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+for m=2:ngl-1
+    mesh.connijk[iel,ngl,m,1] = mesh.conn[iel,8+iter]
+    iter+=1
+end 
+for l=ngl-1:-1:2
+    mesh.connijk[iel,l,ngl,1] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+for m=ngl-1:-1:2
+    mesh.connijk[iel,1,m,1] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+for n=2:ngl-1
+    mesh.connijk[iel,1,1,n] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+for n=2:ngl-1
+    mesh.connijk[iel,ngl,1,n] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+for n=2:ngl-1
+    mesh.connijk[iel,ngl,ngl,n] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+for n=2:ngl-1
+    mesh.connijk[iel,1,ngl,n] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+for l=2:ngl-1
+    mesh.connijk[iel,l,1,ngl] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+for m=2:ngl-1
+    mesh.connijk[iel,ngl,m,ngl] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+for l=ngl-1:-1:2
+    mesh.connijk[iel,l,ngl,ngl] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+for m=ngl-1:-1:2
+    mesh.connijk[iel,1,m,ngl] = mesh.conn[iel,8+iter]
+    iter+=1
+end
+end
+#show(stdout, "text/plain", mesh.conn')
+#@mystop("now")
 
-    println(" #AAA POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
-    return 
+for iel=1:mesh.nelem
+    for i=1:ngl,j=1:ngl,k=1:ngl
+        if (mesh.connijk[iel,i,j,k] == 0)
+            @info  iel, i, j, k
+        end
+    end
+end
+@mystop
+println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
+return 
 end
 
 
@@ -1533,36 +1533,9 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
             starter = starter+1
             ender = ender-1 
         end 
-        #=for l = 2:ngl-1
-        for m = 2:ngl-1
-        ip = mesh.poin_in_face[iface_g, l, m]
-        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn] = ip
-        iconn = iconn + 1
-        end
-        end=#
+      
     end
-    #   show(stdout, "text/plain", mesh.conn')
-    ## OLD NUMBERING
-    #=for iel = 1:mesh.nelem
-    iter =1
-    for m=2:ngl-1
-    mesh.connijk[iel,1,m] = mesh.conn[iel,4+iter]
-    iter = iter+1
-    end
-    for m=2:ngl-1
-    mesh.connijk[iel,m,ngl] = mesh.conn[iel,4+iter]
-    iter = iter+1
-    end
-    for m=ngl-1:-1:2
-    mesh.connijk[iel,ngl,m] = mesh.conn[iel,4+iter]
-    iter = iter+1
-    end
-    for m=ngl-1:-1:2
-    mesh.connijk[iel,m,1] = mesh.conn[iel,4+iter]
-    iter = iter+1
-    end
-    end=# 
-    ## NEW NUMBERING 
+    
     for iel = 1:mesh.nelem
         iter =1
         for m=ngl-1:-1:2
@@ -1585,6 +1558,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
     for iel =1:mesh.nelem
         #      show(stdout, "text/plain", mesh.connijk[iel,:,:]')
     end
+
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
 
 end
@@ -1812,150 +1786,150 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
             starter = starter+1
             ender = ender-1
         end
-        iconn = iconn+iconn_face-1
-        iconn_face = 1 
-        iterate = 1
-        starter = 2
-        ender = ngl-1
-        iface_el = 4
-        iface_g = face_ids[iface_el]
-        while (iconn_face <= (ngl-2)^2)
-            l=ender
-            for m=ender:-1:starter
-                ip = mesh.poin_in_face[iface_g, l, m]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel, m,ngl,ngl-l+1] = ip
-            end
-            if (iconn_face > (ngl-2)^2) break end
-            m=starter
-            for l=ender-1:-1:starter
-                ip = mesh.poin_in_face[iface_g, l, m]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel, m,ngl,ngl-l+1] = ip
-            end
-            if (iconn_face > (ngl-2)^2) break end
-            l=starter
-            for m=starter+1:ender
-                ip = mesh.poin_in_face[iface_g, l, m]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel, m,ngl,ngl-l+1] = ip
-            end
-            if (iconn_face > (ngl-2)^2) break end
-            m=ender
-            for l=starter+1:ender-1
-                ip = mesh.poin_in_face[iface_g, l, m]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn+iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel, m,ngl,ngl-l+1] = ip
-            end
-            starter = starter+1
-            ender = ender-1
-        end
-        iconn = iconn+iconn_face-1
-        iconn_face = 1 
-        iterate = 1
-        starter = 2
-        ender = ngl-1
-        iface_el = 1
-        iface_g = face_ids[iface_el]
-        while (iconn_face <= (ngl-2)^2)
-            l=ender
-            for m=ender:-1:starter
-                ip = mesh.poin_in_face[iface_g, l, m]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel, 1,m,ngl-l+1] = ip
-            end
-            if (iconn_face > (ngl-2)^2) break end
-            m=starter
-            for l=ender-1:-1:starter
-                ip = mesh.poin_in_face[iface_g, l, m]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel, 1,m,ngl-l+1] = ip
-            end
-            if (iconn_face > (ngl-2)^2) break end
-            l=starter
-            for m=starter+1:ender
-                ip = mesh.poin_in_face[iface_g, l, m]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel, 1,m,ngl-l+1] = ip
-            end
-            if (iconn_face > (ngl-2)^2) break end
-            m=ender
-            for l=starter+1:ender-1
-                ip = mesh.poin_in_face[iface_g, l, m]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn+iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel, 1,m,ngl-l+1] = ip
-            end
-            starter = starter+1
-            ender = ender-1
-        end
-        iconn = iconn+iconn_face-1
-        iconn_face = 1 
-        iterate = 1
-        starter = 2
-        ender = ngl-1
-        iface_el = 5
-        iface_g = face_ids[iface_el]
-        while (iconn_face <= (ngl-2)^2)
-            m=starter
-            for l=starter:ender
-                ip = mesh.poin_in_face[iface_g, m, l]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel,l,m,ngl] = ip
-            end
-            if (iconn_face > (ngl-2)^2) break end
-            l=ender
-            for m=starter+1:ender
-                ip = mesh.poin_in_face[iface_g, m, l]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel,l,m,ngl] = ip
-            end
-            if (iconn_face > (ngl-2)^2) break end
-            m=ender
-            for l=ender-1:-1:starter
-                ip = mesh.poin_in_face[iface_g, m, l]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel,l,m,ngl] = ip
-            end
-            if (iconn_face > (ngl-2)^2) break end
-            l=starter
-            for m=ender-1:-1:starter+1
-                ip = mesh.poin_in_face[iface_g, m, l]
-                mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn+iconn_face] = ip
-                iconn_face = iconn_face + 1
-                mesh.connijk[iel,l,m,ngl] = ip
-            end
-            starter = starter+1
-            ender = ender-1
-        end
-        #=istart=2^mesh.nsd + el_edges_internal_nodes
-        iter =1 
-        iconn_face =1
-        starter = 2
-        ender = ngl-1 =#
-        #=for iface_el = 1:length(face_ids)
-        iface_g = face_ids[iface_el]
-        for l = 2:ngl-1
-        for m = 2:ngl-1
+iconn = iconn+iconn_face-1
+iconn_face = 1 
+iterate = 1
+starter = 2
+ender = ngl-1
+iface_el = 4
+iface_g = face_ids[iface_el]
+while (iconn_face <= (ngl-2)^2)
+    l=ender
+    for m=ender:-1:starter
         ip = mesh.poin_in_face[iface_g, l, m]
-        mesh.conn[ie, 8 + el_edges_internal_nodes + iconn] = ip
-        iconn = iconn + 1
-        end
-        end
-        end=#
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel, m,ngl,ngl-l+1] = ip
     end
-    #show(stdout, "text/plain", mesh.conn')
-    println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
+    if (iconn_face > (ngl-2)^2) break end
+    m=starter
+    for l=ender-1:-1:starter
+        ip = mesh.poin_in_face[iface_g, l, m]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel, m,ngl,ngl-l+1] = ip
+    end
+    if (iconn_face > (ngl-2)^2) break end
+    l=starter
+    for m=starter+1:ender
+        ip = mesh.poin_in_face[iface_g, l, m]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel, m,ngl,ngl-l+1] = ip
+    end
+    if (iconn_face > (ngl-2)^2) break end
+    m=ender
+    for l=starter+1:ender-1
+        ip = mesh.poin_in_face[iface_g, l, m]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn+iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel, m,ngl,ngl-l+1] = ip
+    end
+    starter = starter+1
+    ender = ender-1
+end
+iconn = iconn+iconn_face-1
+iconn_face = 1 
+iterate = 1
+starter = 2
+ender = ngl-1
+iface_el = 1
+iface_g = face_ids[iface_el]
+while (iconn_face <= (ngl-2)^2)
+    l=ender
+    for m=ender:-1:starter
+        ip = mesh.poin_in_face[iface_g, l, m]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel, 1,m,ngl-l+1] = ip
+    end
+    if (iconn_face > (ngl-2)^2) break end
+    m=starter
+    for l=ender-1:-1:starter
+        ip = mesh.poin_in_face[iface_g, l, m]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel, 1,m,ngl-l+1] = ip
+    end
+    if (iconn_face > (ngl-2)^2) break end
+    l=starter
+    for m=starter+1:ender
+        ip = mesh.poin_in_face[iface_g, l, m]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel, 1,m,ngl-l+1] = ip
+    end
+    if (iconn_face > (ngl-2)^2) break end
+    m=ender
+    for l=starter+1:ender-1
+        ip = mesh.poin_in_face[iface_g, l, m]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn+iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel, 1,m,ngl-l+1] = ip
+    end
+    starter = starter+1
+    ender = ender-1
+end
+iconn = iconn+iconn_face-1
+iconn_face = 1 
+iterate = 1
+starter = 2
+ender = ngl-1
+iface_el = 5
+iface_g = face_ids[iface_el]
+while (iconn_face <= (ngl-2)^2)
+    m=starter
+    for l=starter:ender
+        ip = mesh.poin_in_face[iface_g, m, l]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel,l,m,ngl] = ip
+    end
+    if (iconn_face > (ngl-2)^2) break end
+    l=ender
+    for m=starter+1:ender
+        ip = mesh.poin_in_face[iface_g, m, l]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel,l,m,ngl] = ip
+    end
+    if (iconn_face > (ngl-2)^2) break end
+    m=ender
+    for l=ender-1:-1:starter
+        ip = mesh.poin_in_face[iface_g, m, l]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn + iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel,l,m,ngl] = ip
+    end
+    if (iconn_face > (ngl-2)^2) break end
+    l=starter
+    for m=ender-1:-1:starter+1
+        ip = mesh.poin_in_face[iface_g, m, l]
+        mesh.conn[iel, 2^mesh.nsd + el_edges_internal_nodes + iconn+iconn_face] = ip
+        iconn_face = iconn_face + 1
+        mesh.connijk[iel,l,m,ngl] = ip
+    end
+    starter = starter+1
+    ender = ender-1
+end
+#=istart=2^mesh.nsd + el_edges_internal_nodes
+iter =1 
+iconn_face =1
+starter = 2
+ender = ngl-1 =#
+#=for iface_el = 1:length(face_ids)
+iface_g = face_ids[iface_el]
+for l = 2:ngl-1
+for m = 2:ngl-1
+ip = mesh.poin_in_face[iface_g, l, m]
+mesh.conn[ie, 8 + el_edges_internal_nodes + iconn] = ip
+iconn = iconn + 1
+end
+end
+end=#
+end
+#show(stdout, "text/plain", mesh.conn')
+println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
 
 end
 
@@ -2126,12 +2100,12 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
     end
 
 
-    #show(stdout, "text/plain", mesh.conn')
-    #for iel = 1:mesh.nelem
-    #    show(stdout, "text/plain", mesh.connijk[iel,:,:,:])
-    #end
+#show(stdout, "text/plain", mesh.conn')
+#for iel = 1:mesh.nelem
+#    show(stdout, "text/plain", mesh.connijk[iel,:,:,:])
+#end
 
-    println(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES DONE")
+println(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES DONE")
 
 end
 

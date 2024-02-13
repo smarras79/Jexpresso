@@ -1,30 +1,28 @@
 Base.@kwdef mutable struct St_metrics{TFloat}
+    
+    dxdξ::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dxdη::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dxdζ::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    
+    dydξ::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dydη::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dydζ::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
 
+    dzdξ::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dzdη::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dzdζ::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
     
+    dξdx::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dξdy::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dξdz::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
     
-    dxdξ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dxdη::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dxdζ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    
-    dydξ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dydη::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dydζ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dηdx::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dηdy::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dηdz::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
 
-    dzdξ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dzdη::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dzdζ::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    
-    dξdx::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dξdy::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dξdz::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    
-    dηdx::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dηdy::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dηdz::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-
-    dζdx::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dζdy::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    dζdz::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
+    dζdx::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dζdy::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    dζdz::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
     #
     # Contravariant arrays
     #
@@ -36,8 +34,8 @@ Base.@kwdef mutable struct St_metrics{TFloat}
     nx::Array{TFloat, 2} = zeros(TFloat, 0, 0)
     ny::Array{TFloat, 2} = zeros(TFloat, 0, 0)
     nz::Array{TFloat, 2} = zeros(TFloat, 0, 0)
-    Je::Array{TFloat, 3} = zeros(TFloat, 0, 0, 0)
-    Jef::Array{TFloat,2} = zeros(TFloat, 0, 0)
+    Je::Array{TFloat, 4} = zeros(TFloat, 0, 0, 0, 0)
+    Jef::Array{TFloat,3} = zeros(TFloat, 0, 0, 0)
 end
 
 function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)
@@ -50,7 +48,7 @@ function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     for iel = 1:mesh.nelem
         for i = 1:N+1
             for k = 1:Q+1
-                metrics.dxdξ[iel, k,1]  = mesh.Δx[iel]/2
+                metrics.dxdξ[iel, k, 1]  = mesh.Δx[iel]/2
                 metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
                 metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
             end
@@ -90,16 +88,16 @@ end
 
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)
     
-    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem, Q+1, Q+1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dxdη = zeros(T, mesh.nelem, Q+1, Q+1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dydξ = zeros(T, mesh.nelem, Q+1, Q+1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dydη = zeros(T, mesh.nelem, Q+1, Q+1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dξdx = zeros(T, mesh.nelem, Q+1, Q+1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dηdx = zeros(T, mesh.nelem, Q+1, Q+1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dξdy = zeros(T, mesh.nelem, Q+1, Q+1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
-                            dηdy = zeros(T, mesh.nelem, Q+1, Q+1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
-                            Je   = zeros(T, mesh.nelem, Q+1, Q+1),
-                            Jef  = zeros(T, mesh.nedges_bdy, Q+1),
+    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem, Q+1, Q+1, 1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dxdη = zeros(T, mesh.nelem, Q+1, Q+1, 1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                            dydξ = zeros(T, mesh.nelem, Q+1, Q+1, 1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dydη = zeros(T, mesh.nelem, Q+1, Q+1, 1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
+                            dξdx = zeros(T, mesh.nelem, Q+1, Q+1, 1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dηdx = zeros(T, mesh.nelem, Q+1, Q+1, 1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dξdy = zeros(T, mesh.nelem, Q+1, Q+1, 1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                            dηdy = zeros(T, mesh.nelem, Q+1, Q+1, 1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
+                            Je   = zeros(T, mesh.nelem, Q+1, Q+1, 1),
+                            Jef  = zeros(T, mesh.nedges_bdy, Q+1, 1),
                             nx   = zeros(T, mesh.nedges_bdy, Q+1),
                             ny   = zeros(T, mesh.nedges_bdy, Q+1)) #   Je[1:Nq, 1:Nq, 1:nelem]
     
@@ -207,17 +205,17 @@ end
 
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange ,N, Q, NGR, QGR, ξ, ω1, ω2, T)
     
-    metrics = St_metrics{T}(dxdξ = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dxdη = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dydξ = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dydη = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
+    metrics = St_metrics{T}(dxdξ = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dxdη = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                            dydξ = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dydη = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
 
-                            dξdx = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dηdx = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dξdy = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
-                            dηdy = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
-                            Jef  = zeros(T, mesh.nedges_bdy, Q+1),
-                            Je   = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr))
+                            dξdx = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dηdx = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dξdy = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                            dηdy = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
+                            Jef  = zeros(T, mesh.nedges_bdy, Q+1, 1),
+                            Je   = zeros(mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1))
     ψ  = basis.ψ
     dψ = basis.dψ
     ψ1  = basisGR.ψ
@@ -270,21 +268,22 @@ end
 
 function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)
     
-    metrics = St_metrics{T}(dxdξ = zeros(mesh.nelem, Q+1, Q+1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dxdη = zeros(mesh.nelem, Q+1, Q+1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dydξ = zeros(mesh.nelem, Q+1, Q+1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dydη = zeros(mesh.nelem, Q+1, Q+1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
+    metrics = St_metrics{T}(dxdξ = zeros(mesh.nelem, Q+1, Q+1, 1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dxdη = zeros(mesh.nelem, Q+1, Q+1, 1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                            dydξ = zeros(mesh.nelem, Q+1, Q+1, 1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dydη = zeros(mesh.nelem, Q+1, Q+1, 1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
 
-                            dξdx = zeros(mesh.nelem, Q+1, Q+1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dηdx = zeros(mesh.nelem, Q+1, Q+1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dξdy = zeros(mesh.nelem, Q+1, Q+1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
-                            dηdy = zeros(mesh.nelem, Q+1, Q+1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
+                            dξdx = zeros(mesh.nelem, Q+1, Q+1, 1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dηdx = zeros(mesh.nelem, Q+1, Q+1, 1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dξdy = zeros(mesh.nelem, Q+1, Q+1, 1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                            dηdy = zeros(mesh.nelem, Q+1, Q+1, 1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
 
                             vⁱ = zeros(3, Q+1, Q+1, mesh.nelem), #contravariant unit vectors
-                            Jef  = zeros(mesh.nedges_bdy, Q+1),
+                            Jef  = zeros(mesh.nedges_bdy, Q+1, 1),
                             nx   = zeros(mesh.nedges_bdy, Q+1),
                             ny   = zeros(mesh.nedges_bdy, Q+1),
-                            Je   = zeros(mesh.nelem, Q+1, Q+1)) #   Je[1:Nq, 1:Nq, 1:nelem]
+                            Je   = zeros(mesh.nelem, Q+1, Q+1, 1)
+                            ) #   Je[1:Nq, 1:Nq, 1:nelem]
 
     ψ  = basis.ψ
     dψ = basis.dψ
@@ -297,7 +296,7 @@ function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagr
                     for i = 1:N+1
 
                         ip = mesh.connijk[iel,i,j]
-
+                        
                         xij = mesh.x[ip]
                         yij = mesh.y[ip]
                         
@@ -377,7 +376,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                              dξdz = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ξdz[2, 1:Nq, 1:Nq, 1:nelem]
                              dηdz = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ηdz[2, 1:Nq, 1:Nq, 1:nelem]
                              dζdz = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
-                             Jef  = zeros(size(mesh.nfaces_bdy, 1), Q+1, Q+1),
+                             Jef  = zeros(mesh.nfaces_bdy, Q+1, Q+1),
                              Je   = zeros(mesh.nelem, Q+1, Q+1, Q+1))  #   Je[1:Nq, 1:Nq, 1:nelem]
     ψ  = basis.ψ
     dψ = basis.dψ
@@ -392,7 +391,9 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                             for i = 1:N+1
 
                                 ip = mesh.connijk[iel,i,j,k]
-
+ if (ip == 0)
+     @info ip iel, i, j, k
+ end
                                 xijk = mesh.x[ip]
                                 yijk = mesh.y[ip]
                                 zijk = mesh.z[ip]
@@ -517,7 +518,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                              dξdz = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ξdz[2, 1:Nq, 1:Nq, 1:nelem]
                              dηdz = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ηdz[2, 1:Nq, 1:Nq, 1:nelem]
                              dζdz = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
-                             Jef  = zeros(Q+1, Q+1, size(mesh.bound_elem,1)),
+                             Jef  = zeros(mesh.nfaces_bdy, Q+1, Q+1),
                              Je   = zeros(mesh.nelem, Q+1, Q+1, Q+1))  #   Je[1:Nq, 1:Nq, 1:nelem]
     
     if (dir == "x")
