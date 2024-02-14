@@ -109,7 +109,9 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             for i = 1:N+1
                 ip = mesh.connijk[iel,i,j]
                 
-                xij = mesh.x[ip]; yij = mesh.y[ip]
+                xij = mesh.x[ip]
+                yij = mesh.y[ip]
+                
                 for l = 1:Q+1
                     for k = 1:Q+1
                         
@@ -378,37 +380,55 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                              dζdz = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
                              Jef  = zeros(mesh.nfaces_bdy, Q+1, Q+1),
                              Je   = zeros(mesh.nelem, Q+1, Q+1, Q+1))  #   Je[1:Nq, 1:Nq, 1:nelem]
-    ψ  = basis.ψ
-    dψ = basis.dψ
-
+   
+    ψ  = @view(basis.ψ[:,:])
+    dψ = @view(basis.dψ[:,:])
+    
+    for iel=1:mesh.nelem
+        @printf(" %d:\n", iel)
+        for k=1:mesh.ngl
+            for j=1:mesh.ngl
+                for i=1:mesh.ngl
+                    if  mesh.connijk[iel, i,j,k] == 0
+                         @printf("ZERORRORRO")
+                        @info iel, i j k
+                        @printf(" %d",  mesh.connijk[iel, i,j,k])
+                    else
+                        @printf("ALL GOOD")
+                    end
+                end
+            end
+        end
+        @printf(" \n")
+    end
+    
     @info " metric terms WIP"
     for iel = 1:mesh.nelem
-        for n = 1:Q+1
-            for m = 1:Q+1
-                for l = 1:Q+1
-                    for k = 1:N+1
-                        for j = 1:N+1
-                            for i = 1:N+1
+        for k = 1:N+1
+            for j = 1:N+1
+                for i = 1:N+1
 
-                                ip = mesh.connijk[iel,i,j,k]
- if (ip == 0)
-     @info ip iel, i, j, k
- end
-                                xijk = mesh.x[ip]
-                                yijk = mesh.y[ip]
-                                zijk = mesh.z[ip]
+                    ip = mesh.connijk[iel,i,j,k]
+                    
+                    xijk = mesh.x[ip]
+                    yijk = mesh.y[ip]
+                    zijk = mesh.z[ip]
+                    
+                    for n = 1:Q+1
+                        for m = 1:Q+1
+                            for l = 1:Q+1
+                                
+                                metrics.dxdξ[iel, l, m, n] += dψ[i,l]* ψ[j,m]* ψ[k,n]*xijk
+                                metrics.dxdη[iel, l, m, n] +=  ψ[i,l]*dψ[j,m]* ψ[k,n]*xijk
+                                metrics.dxdζ[iel, l, m, n] +=  ψ[i,l]* ψ[j,m]*dψ[k,n]*xijk
 
-                                metrics.dxdξ[iel, l, m, n] = metrics.dxdξ[iel, l, m, n] + dψ[i,l]*ψ[j,m]*ψ[k,n]*xijk
-                                metrics.dxdη[iel, l, m, n] = metrics.dxdη[iel, l, m, n] + ψ[i,l]*dψ[j,m]*ψ[k,n]*xijk
-                                metrics.dxdζ[iel, l, m, n] = metrics.dxdζ[iel, l, m, n] + ψ[i,l]*ψ[j,m]*dψ[k,n]*xijk
+                                metrics.dydξ[iel, l, m, n] += dψ[i,l]* ψ[j,m]* ψ[k,n]*yijk
+                                metrics.dydη[iel, l, m, n] +=  ψ[i,l]*dψ[j,m]* ψ[k,n]*yijk
+                                metrics.dydζ[iel, l, m, n] +=  ψ[i,l]* ψ[j,m]*dψ[k,n]*yijk
 
-                                metrics.dydξ[iel, l, m, n] = metrics.dydξ[iel, l, m, n] + dψ[i,l]*ψ[j,m]*ψ[k,n]*yijk
-                                metrics.dydη[iel, l, m, n] = metrics.dydη[iel, l, m, n] + ψ[i,l]*dψ[j,m]*ψ[k,n]*yijk
-                                metrics.dydζ[iel, l, m, n] = metrics.dydζ[iel, l, m, n] + ψ[i,l]*ψ[j,m]*dψ[k,n]*yijk
-
-                                metrics.dzdξ[iel, l, m, n] = metrics.dzdξ[iel, l, m, n] + dψ[i,l]*ψ[j,m]*ψ[k,n]*zijk
-                                metrics.dzdη[iel, l, m, n] = metrics.dzdη[iel, l, m, n] + ψ[i,l]*dψ[j,m]*ψ[k,n]*zijk
-                                metrics.dzdζ[iel, l, m, n] = metrics.dzdζ[iel, l, m, n] + ψ[i,l]*ψ[j,m]*dψ[k,n]*zijk
+                                metrics.dzdξ[iel, l, m, n] += dψ[i,l]* ψ[j,m]* ψ[k,n]*zijk
+                                metrics.dzdη[iel, l, m, n] +=  ψ[i,l]*dψ[j,m]* ψ[k,n]*zijk
+                                metrics.dzdζ[iel, l, m, n] +=  ψ[i,l]* ψ[j,m]*dψ[k,n]*zijk
                                 #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
                             end
                         end
@@ -438,7 +458,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                  end
             end
         end
-        show(stdout, "text/plain", metrics.Je[iel,:,:,:])
+        #show(stdout, "text/plain", metrics.Je[iel,:,:,:])
     end
     for iface = 1:size(mesh.xmin_faces,2) 
         for l = 1:Q+1
