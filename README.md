@@ -6,7 +6,7 @@
 | **Contacts**  |
 | ![](https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-401641)
 | ![](https://img.shields.io/badge/Yassine%20Tissaoui_-mailto%3Ayt277%40njit.edu-a7aed6)
-| ![](https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-e69138)
+| ![](https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-938dbb)
 | ![](https://img.shields.io/badge/Yassine%20Tissaoui_-mailto%3Ayt277%40njit.edu-8e7cc3)
 
 
