@@ -383,26 +383,8 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
    
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
-    
-    for iel=1:mesh.nelem
-        @printf(" %d:\n", iel)
-        for k=1:mesh.ngl
-            for j=1:mesh.ngl
-                for i=1:mesh.ngl
-                    if  mesh.connijk[iel, i,j,k] == 0
-                         @printf("ZERORRORRO")
-                        @info iel, i j k
-                        @printf(" %d",  mesh.connijk[iel, i,j,k])
-                    else
-                        @printf("ALL GOOD")
-                    end
-                end
-            end
-        end
-        @printf(" \n")
-    end
-    
-    @info " metric terms WIP"
+        
+    @info " 3D metric terms WIP"
     for iel = 1:mesh.nelem
         for k = 1:N+1
             for j = 1:N+1
@@ -441,7 +423,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         for l = 1:Q+1
             for m = 1:Q+1
                 for n =1:Q+1
-                    metrics.Je[iel, l, m, n] = metrics.dxdξ[iel, l, m, n]*(metrics.dydη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])
+                    metrics.Je[iel, l, m, n]  = metrics.dxdξ[iel, l, m, n]*(metrics.dydη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])
                     metrics.Je[iel, l, m, n] += metrics.dydξ[iel, l, m, n]*(metrics.dxdζ[iel, l, m, n]*metrics.dzdη[iel, l, m, n] - metrics.dxdη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n])
                     metrics.Je[iel, l, m, n] += metrics.dzdξ[iel, l, m, n]*(metrics.dxdη[iel, l, m, n]*metrics.dydζ[iel, l, m, n] - metrics.dxdζ[iel, l, m, n]*metrics.dydη[iel, l, m, n])
                     
@@ -460,7 +442,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         end
         #show(stdout, "text/plain", metrics.Je[iel,:,:,:])
     end
-    for iface = 1:size(mesh.xmin_faces,2) 
+  #=  for iface = 1:size(mesh.xmin_faces,2) 
         for l = 1:Q+1
             for m = 1:Q+1
                 iel = mesh.xmin_facetoelem[iface]
@@ -512,7 +494,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 metrics.Jef[iface+disp, l, m] = metrics.dxdξ[iel, l, m, Q+1]*metrics.dydη[iel, l, m, Q+1] - metrics.dydξ[iel, l, m, Q+1]*metrics.dxdη[iel, l, m, Q+1]
             end
         end
-    end
+    end=#
      
     #show(stdout, "text/plain", metrics.Je)    
     return metrics

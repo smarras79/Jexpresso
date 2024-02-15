@@ -1,13 +1,13 @@
 nelemx = 10;
 nelemy = 10;
-nelemz = 10;
+nelemz = 1;
 
-xmin = -100000;
-xmax =	100000;
-ymin = -100000;
-ymax =  100000;
-zmin =       0;
-zmax =   24000;
+xmin = -10000;
+xmax =	10000;
+ymin = -10000;
+ymax =  10000;
+zmin =      0;
+zmax =   2000;
 gridsize = (xmax-xmin) / nelemx;
 
 Point(1) = {xmin, ymin, zmin, gridsize};
@@ -52,13 +52,13 @@ surfaceVector = Extrude {0,(ymax-ymin),0} {
      [4] - top surface (belonging to 3rd line in "Line Loop (6)")
      [5] - left surface (belonging to 4th line in "Line Loop (6)")
     */
-    Physical Surface("front") = {12};
+    Physical Surface("bottom") = {12};
     Physical Volume("internal") = {1};
-    Physical Surface("bottom") = {25};
-    Physical Surface("top") = {33};
+    Physical Surface("back") = {25};
+    Physical Surface("front") = {33};
     Physical Surface("left") = {21};
     Physical Surface("right") = {29};
-    Physical Surface("back") = {34}; // from Plane Surface (6) ...
+    Physical Surface("top") = {34}; // from Plane Surface (6) ...
   //+
 Show "*";
 //+
