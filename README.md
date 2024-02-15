@@ -1,4 +1,4 @@
-# <img src="https://github.com/smarras79/Jexpresso/blob/un/ci/assets/logo-extended.png" width="500" title="JEXPRESSO logo">
+# <img src="https://github.com/smarras79/Jexpresso/blob/un/ci/assets/logo.png" width="500" title="JEXPRESSO logo">
 
 | **Documentation** |
 |:------------ |
