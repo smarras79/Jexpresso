@@ -16,7 +16,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_1D,
     #F[1] = q[2]
     #F[2] = q[2]*u + p*A/γ
     #F[3] = q[3]*u + p*A*u
-
+    
     U22oU1 = q[2]*q[2]/q[1]    
     F[1] = q[2]
     F[2] = U22oU1 + (γm1/γ)*(q[3] - 0.5*γ*U22oU1)

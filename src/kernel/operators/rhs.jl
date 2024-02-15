@@ -439,7 +439,9 @@ function _build_rhs!(RHS, u, params, time)
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
     end
-    
+    #@info params.RHS[2,2], params.mesh.x[2]
+    #@info params.RHS[4,2], params.mesh.x[4]
+
 end
 
 
@@ -508,7 +510,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D, ::ContGal)
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
-        
+         
         _expansion_inviscid!(u, params, iel, params.CL, params.QT, SD, params.AD)
         
     end
@@ -568,9 +570,10 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD:
     for ieq = 1:params.neqs
         for ip=1:params.mesh.npoin
             if (ip > 1 && ip < params.mesh.npoin)
-                params.RHS[ip,ieq] = 0.5*(params.F[ip+1,ieq] - params.F[ip-1,ieq])/(params.mesh.Δx[ip]) + params.S[ip,ieq]
+                params.RHS[ip,ieq] = -0.5*(params.F[ip+1,ieq] - params.F[ip-1,ieq])/(params.mesh.Δx[ip]) + params.S[ip,ieq]
+                #params.RHS[ip,ieq] = 0.5*(params.F[ip+1,ieq] - params.F[ip-1,ieq])/(params.mesh.Δx[ip]) - params.S[ip,ieq]
                 #params.RHS[ip,ieq] = (params.F[ip,ieq] - params.F[ip-1,ieq])/(params.mesh.Δx[ip]) + params.S[ip,ieq]
-             end
+            end
          end
     end
     
@@ -593,6 +596,7 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD:
     
     for ieq = 1:params.neqs
         for i=1:params.mesh.ngl
+            ip = params.mesh.connijk[iel,i,1]
             dFdξ = 0.0
             for k = 1:params.mesh.ngl
                 dFdξ += params.basis.dψ[k,i]*params.F[k,1,ieq]

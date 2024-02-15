@@ -57,10 +57,10 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
                 if (x >= 0.0 && x <= 0.5)
                     ρ = 1.0
                     T = 1.0
-                elseif (x > 0.5 && x <= 1.5)
+                elseif (x >= 0.5 && x <= 1.5)
                     ρ = 1.0 - 0.366*(x - 0.5)
                     T = 1.0 - 0.167*(x - 0.5)
-                elseif (x > 1.5 && x <= 3.5)
+                elseif (x >= 1.5 && x <= 3.5)
                     ρ = 0.634 - 0.3879*(x - 1.5)
                     T = 0.833 - 0.3507*(x - 1.5)
                 end
