@@ -144,16 +144,19 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, mesh, metrics, 
                 
                 ωkl  = ω[k]*ω[l]
                 Jkle = metrics.Je[iel, k, l]
+                ωJ   = ωkl*Jkle
                 
                 for j = 1:N+1
                     for i = 1:N+1
                         I = i + (j - 1)*(N + 1)
-                        ψJK = ψ[i,k]*ψ[j,l]
+                        ψikjl = ψ[i,k]*ψ[j,l]
+                        
                         for n = 1:N+1
                             for m = 1:N+1
                                 J = m + (n - 1)*(N + 1)
-                                ψIK = ψ[m,k]*ψ[n,l]
-                                Me[I,J,iel] += ωkl*Jkle*ψIK*ψJK #Sparse
+                                ψmknl = ψ[m,k]*ψ[n,l]
+                                
+                                Me[I,J,iel] += ωJ * ψikjl * ψmknl #Sparse
                             end
                         end
                     end
@@ -161,7 +164,50 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, mesh, metrics, 
             end
         end
     end
-  
+    
+end
+
+function build_mass_matrix!(Me, SD::NSD_3D, QT::Inexact, ψ, ω, mesh, metrics, N, Q, T)
+    
+    MN = N + 1
+    QN = Q + 1
+    for iel=1:mesh.nelem
+        
+        for o = 1:Q+1
+            for n = 1:Q+1
+                for m = 1:Q+1
+                    
+                    ωmno  = ω[m]*ω[n]*ω[o]
+                    Jmnoe = metrics.Je[iel, m, n, o]
+                    ωJ    = ωmno*Jmnoe
+
+                    for k = 1:N+1
+                        for j = 1:N+1
+                            for i = 1:N+1
+                                
+                                I = i + (j - 1)*(N + 1) + (k - 1)*(N + 1)*(N + 1)
+                                
+                                ψijk = ψ[i,m]*ψ[j,n]*ψ[k,o]
+
+                                for r = 1:N+1
+                                    for q = 1:N+1
+                                        for p = 1:N+1
+
+                                            J = p + (q - 1)*(N + 1) + (r - 1)*(N + 1)*(N + 1)
+
+                                            ψpqr = ψ[p,m]*ψ[q,n]*ψ[r,o]
+                                            Me[I, J, iel] += ωJ * ψijk * ψpqr #Sparse
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+    end
 end
 
 function build_mass_matrix_Laguerre!(Me, SD::NSD_1D, QT, ψ, ω, mesh, metrics, N, Q, T)
@@ -236,45 +282,10 @@ function build_laplace_matrix(SD::NSD_1D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     return L
 end
-#
-#=function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
-    
-    Le = zeros((N+1)^2, (N+1)^2, mesh.nelem)
-    for iel = 1:mesh.nelem
-        for l = 1:Q+1
-            for k = 1:Q+1
-                
-                for j = 1:N+1
-                    for i = 1:N+1
-                        J = i + (j - 1)*(N + 1)
-                        
-                        dψJK_dx = dψ[i,k]*ψ[j,l]*metrics.dξdx[iel,k,l] + ψ[i,k]*dψ[j,l]*metrics.dηdx[iel,k,l]
-                        dψJK_dy = dψ[i,k]*ψ[j,l]*metrics.dξdy[iel,k,l] + ψ[i,k]*dψ[j,l]*metrics.dηdy[iel,k,l]
-                        
-                        for n = 1:N+1
-                            for m = 1:N+1
-                                I = m + (n - 1)*(N + 1)
-                                
-                                dψIK_dx = dψ[m,k]*ψ[n,l]*metrics.dξdx[iel,k,l] + ψ[m,k]*dψ[n,l]*metrics.dηdx[iel,k,l]
-                                dψIK_dy = dψ[m,k]*ψ[n,l]*metrics.dξdy[iel,k,l] + ψ[m,k]*dψ[n,l]*metrics.dηdy[iel,k,l]
-                                
-                                Le[I,J, iel] += ω[k]*ω[l]*(dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    #@info size(L)
-    #show(stdout, "text/plain", L)
-    
-    return -Le
-end=#
+
 
 function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
-   
+    
     Le = zeros((N+1),(N+1))
     
     for i=1:N+1
@@ -285,48 +296,12 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
             end
         end
     end 
- 
+    
     #@info size(L)
     #show(stdout, "text/plain", L)
-  
+    
     return Le
 end
-
-#=function build_laplace_matrix_laguerre(SD::NSD_2D, ψ, dψ, ψ1, dψ1, ω, ω1, mesh, metrics, N, Q, T)
-
-    Le = zeros(mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
-    for iel = 1:mesh.nelem_semi_inf
-        for l = 1:mesh.ngr
-            for k = 1:Q+1
-
-                for j = 1:mesh.ngr
-                    for i = 1:N+1
-                        J = i + (j - 1)*(N + 1)
-
-                        dψJK_dx = dψ[i,k]*ψ1[j,l]*metrics.dξdx[iel,k,l] + ψ[i,k]*dψ1[j,l]*metrics.dηdx[iel,k,l]
-                        dψJK_dy = dψ[i,k]*ψ1[j,l]*metrics.dξdy[iel,k,l] + ψ[i,k]*dψ1[j,l]*metrics.dηdy[iel,k,l]
-
-                        for n = 1:mesh.ngr
-                            for m = 1:N+1
-                                I = m + (n - 1)*(N + 1)
-
-                                dψIK_dx = dψ[m,k]*ψ1[n,l]*metrics.dξdx[iel,k,l] + ψ[m,k]*dψ1[n,l]*metrics.dηdx[iel,k,l]
-                                dψIK_dy = dψ[m,k]*ψ1[n,l]*metrics.dξdy[iel,k,l] + ψ[m,k]*dψ1[n,l]*metrics.dηdy[iel,k,l]
-
-                                Le[I,J, iel] += ω[k]*ω1[l]*(dψIK_dx*dψJK_dx + dψIK_dy*dψJK_dy)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    #@info size(L)
-    #show(stdout, "text/plain", L)
-
-    return -Le
-end=#
 
 #
 # DSS
@@ -349,7 +324,7 @@ function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractA
                 end
             end    
         end
-       
+        
     else
         
         for iel=1:nelem    
@@ -460,7 +435,8 @@ function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstrac
                     for m = 1:N+1
                         I = m + (n - 1)*(N + 1)
                         IP = conn[iel,m,n]
-                        M[IP] = M[IP] + Mel[I,J,iel] #if inexact
+                        
+                        M[IP] += Mel[I,J,iel] #if inexact
                     end
                 end
             end
@@ -468,6 +444,32 @@ function DSS_mass!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::Abstrac
     end
 end
 
+function DSS_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
+    
+    for iel=1:nelem
+        
+        for k = 1:N+1
+            for j = 1:N+1
+                for i = 1:N+1
+                    J = i + (j - 1)*(N + 1) + (k - 1)*(N + 1)*(N + 1)
+                    JP = conn[iel,i,j,k]
+
+                    for o = 1:N+1
+                        for n = 1:N+1
+                            for m = 1:N+1
+                                I = m + (n - 1)*(N + 1) + (o - 1)*(N + 1)*(N + 1)
+                                IP = conn[iel,m,n,o]
+                                
+                                M[IP] += Mel[I,J,iel] #if inexact
+                            end
+                        end
+                    end
+                end    
+            end
+        end     
+    end
+    
+end
 
 function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, ::NSD_2D)
     
@@ -501,7 +503,7 @@ function DSS_laplace_Laguerre!(L, SD::NSD_2D, Lel::AbstractArray, Lel_lag::Abstr
                     jp = mesh.connijk[iel,k,j]
                     L[ip,jp] += metrics.dξdx[iel,i,k]*Lel[i,k]*ω[j]*metrics.dydη[iel,i,k]
                 end
-               
+                
                 for l = 1:mesh.ngl
                     jp = mesh.connijk[iel,i,l]
                     L[ip,jp] += metrics.dηdy[iel,i,l]*Lel[j,l]*ω[i]*metrics.dxdξ[iel,i,l]
@@ -569,30 +571,30 @@ end
 
 function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
 
-  for ieq = 1:neqs
-    for iel = 1:mesh.nelem_semi_inf
-        for i = 1:mesh.ngr
-            I = mesh.connijk_lag[iel,i,1]
+    for ieq = 1:neqs
+        for iel = 1:mesh.nelem_semi_inf
+            for i = 1:mesh.ngr
+                I = mesh.connijk_lag[iel,i,1]
 
-            RHS[I,ieq] += rhs_el[iel,i,1,ieq]
+                RHS[I,ieq] += rhs_el[iel,i,1,ieq]
+            end
         end
     end
-  end
 end
 
 function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
 
-  for ieq = 1:neqs
-    for iel = 1:mesh.nelem_semi_inf
-        for j = 1:mesh.ngr
-            for i = 1:mesh.ngl
-                I = mesh.connijk_lag[iel,i,j]
-                
-                 RHS[I,ieq] += rhs_el[iel,i,j,ieq]
+    for ieq = 1:neqs
+        for iel = 1:mesh.nelem_semi_inf
+            for j = 1:mesh.ngr
+                for i = 1:mesh.ngl
+                    I = mesh.connijk_lag[iel,i,j]
+                    
+                    RHS[I,ieq] += rhs_el[iel,i,j,ieq]
+                end
             end
         end
     end
-  end
 end
 
 
@@ -666,7 +668,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     elseif typeof(SD) == NSD_2D
         Me = zeros(TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
     elseif typeof(SD) == NSD_3D
-        Me = zeros(TFloat, (N+1)^2, (N+1)^2, (N+1)^2, mesh.nelem)
+        Me = zeros(TFloat, (N+1)^3, (N+1)^3, mesh.nelem)
     end
     build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
     
@@ -731,9 +733,9 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     
     build_mass_matrix!(Me, SD, QT, basis[1].ψ, ω[1], mesh, metrics[1], N, Q, TFloat)
     if typeof(SD) == NSD_1D
-      M_lag = zeros(TFloat, mesh.ngr*mesh.ngr, mesh.nelem_semi_inf)
+        M_lag = zeros(TFloat, mesh.ngr*mesh.ngr, mesh.nelem_semi_inf)
     elseif typeof(SD) == NSD_2D
-      M_lag = zeros(TFloat, mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
+        M_lag = zeros(TFloat, mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
     end
     if (QT == Exact() && inputs[:llump] == false)
         M    = zeros(TFloat, mesh.npoin, mesh.npoin)
@@ -747,22 +749,19 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     elseif typeof(SD) == NSD_2D
         build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[1].ψ, basis[2].ψ, ω[1], ω[2], mesh, metrics[2], N, Q, TFloat)
     end
-    #@info maximum(Me), minimum(Me), maximum(M_lag),minimum(M_lag) 
     DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
+
     mass_inverse!(Minv, M, QT)
-   # @info maximum(M),minimum(M),maximum(Minv),minimum(Minv)
     Le = zeros(TFloat, 1, 1)
     L  = zeros(TFloat, 1,1)
     Le_Lag = zeros(TFloat, 1,1)
     if lbuild_laplace_matrix
         L = zeros(mesh.npoin,mesh.npoin)
         Le = build_laplace_matrix(SD, basis[1].ψ, basis[1].dψ, ω[1], mesh, metrics[1], N, Q, TFloat)
-        #Le_lag = build_laplace_matrix_laguerre(SD, basis[1].ψ, basis[1].dψ, basis[2].ψ, basis[2].dψ , ω[1], ω[2], mesh, metrics[2], N, Q, TFloat)
         Le_lag = build_laplace_matrix(SD, basis[2].ψ, basis[2].dψ, ω[2], mesh, metrics[2], mesh.ngr-1, mesh.ngr-1, TFloat)
         L = zeros(mesh.npoin,mesh.npoin)
-        #@info Le_lag
+        
         if ldss_laplace
-            #DSS_laplace_Laguerre!(L, SD, Le, Le_lag, mesh, N, TFloat; llump=inputs[:llump])
             DSS_laplace_Laguerre!(L, SD, Le, Le_lag, ω[1], ω[2], mesh, metrics[1], metrics[2], N, TFloat; llump=inputs[:llump])
         end
     end
