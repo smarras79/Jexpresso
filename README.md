@@ -4,7 +4,7 @@
 |**Build Status** |
 | [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg)](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml)
 | **Contacts**  |
-| ![](https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-orange)
+| ![](https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-violet)
 | ![](https://img.shields.io/badge/Yassine%20Tissaoui_-mailto%3Ayt277%40njit.edu-orange)
 
 
