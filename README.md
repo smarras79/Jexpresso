@@ -2,13 +2,15 @@
 |:------------ |
 | [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
 
+
 |**Build Status** |
-| [![Build Status](https://github.com/smarras79/Jexpresso/workflows/CI/badge.svg?branch=master)](https://github.com/smarras79/Jexpresso/actions?query=workflow%3ACI) 
+|:------------ |
+| [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg)](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml)
 
 | **Contacts**  |
 |:------------ |
--https://img.shields.io/badge/Simone_Marras_:-mailto_:_smarras@njit.edu-orange
--https://img.shields.io/badge/Yassine_Tissaoui_:-mailto_:_yt277@njit.edu-orange
+https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-orange
+https://img.shields.io/badge/Yassine%20Tissaoui_-mailto%3Ayt277%40njit.edu-orange
 
 
 # JEXPRESSO
