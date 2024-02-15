@@ -1,3 +1,5 @@
+# <img src="https://github.com/smarras79/Jexpresso/blob/un/ci/assets/logo.png" width="250" title="JEXPRESSO logo">
+
 | **Documentation** |
 |:------------ |
 | [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
