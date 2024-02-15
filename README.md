@@ -7,7 +7,7 @@
 | ![](https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-8e7cc3)
 | ![](https://img.shields.io/badge/Yassine%20Tissaoui_-mailto%3Ayt277%40njit.edu-8e7cc3)
 | **Citation** |
-| [![DOI](https://arXiv.theoj.org/papers/10.21105/joss.02520/status.svg)](https://doi.org/10.48550/arXiv.2401.05624) |
+| [![DOI](https://img.shields.io/badge/article-arXiv:2401.05624-green)](https://doi.org/10.48550/arXiv.2401.05624) |
 
 # JEXPRESSO
 A research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements**. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
