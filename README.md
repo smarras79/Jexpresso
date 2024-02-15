@@ -1,16 +1,11 @@
 | **Documentation** |
 |:------------ |
 | [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
-
-
 |**Build Status** |
-|:------------ |
 | [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg)](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml)
-
 | **Contacts**  |
-|:------------ |
-https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-orange
-https://img.shields.io/badge/Yassine%20Tissaoui_-mailto%3Ayt277%40njit.edu-orange
+| [![](https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-orange)]
+| [![](https://img.shields.io/badge/Yassine%20Tissaoui_-mailto%3Ayt277%40njit.edu-orange)]
 
 
 # JEXPRESSO
