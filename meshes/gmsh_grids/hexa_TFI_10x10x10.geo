@@ -4,7 +4,7 @@ nelemz = 1;
 
 xmin = -10000;
 xmax =	10000;
-ymin = -10000;
+ymin =      0;
 ymax =  10000;
 zmin =      0;
 zmax =   2000;
