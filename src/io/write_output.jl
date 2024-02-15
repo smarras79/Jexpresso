@@ -177,7 +177,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
         cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
     else
         subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 3, 4]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
     end
     isel = 1
     npoin = mesh.npoin
@@ -549,15 +549,9 @@ end
 
 function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
 
-    #nothing
-    if (mesh.nelem_semi_inf > 0)
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
-    else
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
-    end
-    
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
+    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+        
     isel = 1
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl-1
@@ -582,7 +576,7 @@ function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, O
                     subelem[isel, 7] = ip7
                     subelem[isel, 8] = ip8
                     
-                    cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
                     
                     isel = isel + 1
                 end

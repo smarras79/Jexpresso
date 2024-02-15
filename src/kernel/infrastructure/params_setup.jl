@@ -22,25 +22,50 @@ function params_setup(sem,
     #-----------------------------------------------------------------
     u            = zeros(T, sem.mesh.npoin*qp.neqs)
     uaux         = zeros(T, sem.mesh.npoin, qp.neqs)
-    uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    RHS          = zeros(T, sem.mesh.npoin, qp.neqs)
-    RHS_visc     = zeros(T, sem.mesh.npoin, qp.neqs)
-    vaux         = zeros(T, sem.mesh.npoin) #generic auxiliary array for general use
+
+    if sem.mesh.nsd == 1
+        uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, 1, 1, qp.neqs)
+        rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, 1, 1, qp.neqs)
+        rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, 1, 1, qp.neqs)
+        rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, 1, 1, qp.neqs)
+        rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, 1, 1, qp.neqs)
+        F            = zeros(T, sem.mesh.ngl, 1, 1, qp.neqs)
+        G            = zeros(T, sem.mesh.ngl, 1, 1, qp.neqs)
+        S            = zeros(T, sem.mesh.ngl, 1, 1, qp.neqs)
+        uprimitive   = zeros(T, sem.mesh.ngl, 1, 1, qp.neqs+1)
+    elseif  sem.mesh.nsd == 2
+        uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
+        rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
+        rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
+        rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
+        rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
+        F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
+        G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
+        S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
+        uprimitive   = zeros(T, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs+1)
+    elseif  sem.mesh.nsd == 3
+        uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        uprimitive   = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs+1)
+    end
+        
+    RHS      = zeros(T, sem.mesh.npoin, qp.neqs)
+    RHS_visc = zeros(T, sem.mesh.npoin, qp.neqs)
+    vaux     = zeros(T, sem.mesh.npoin) #generic auxiliary array for general use
     
     #The following are currently used by B.C.
-    gradu      = zeros(T, 2, 1, 1) #zeros(2,sem.mesh.npoin,nvars)
-    ubdy       = zeros(qp.neqs)
-    bdy_flux   = zeros(qp.neqs,1)    
-    uprimitive = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs+1)
+    gradu    = zeros(T, 2, 1, 1) #zeros(2,sem.mesh.npoin,nvars)
+    ubdy     = zeros(qp.neqs)
+    bdy_flux = zeros(qp.neqs,1)    
+   
     #filter arrays
-    q_t = zeros(Float64,qp.neqs,sem.mesh.ngl,sem.mesh.ngl)
+    q_t  = zeros(Float64,qp.neqs,sem.mesh.ngl,sem.mesh.ngl)
     q_ti = zeros(Float64,sem.mesh.ngl,sem.mesh.ngl)
     fy_t = transpose(sem.fy)
     fy_t_lag = transpose(sem.fy_lag)

@@ -63,7 +63,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
             u = 0.0
             v = 0.0
-
+            w = 0.0
+            
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[ip,1] = ρ - ρref
                 q.qn[ip,2] = ρ*u - ρref*u
