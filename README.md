@@ -6,8 +6,8 @@
 | **Contacts**  |
 | ![](https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-violet)
 | ![](https://img.shields.io/badge/Yassine%20Tissaoui_-mailto%3Ayt277%40njit.edu-purple)
-| ![](https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-#f1c232)
-| ![](https://img.shields.io/badge/Yassine%20Tissaoui_-mailto%3Ayt277%40njit.edu-#d9ead3)
+| ![](https://img.shields.io/badge/Simone%20Marras_-mailto%3Asmarras%40njit.edu-f1c232)
+| ![](https://img.shields.io/badge/Yassine%20Tissaoui_-mailto%3Ayt277%40njit.edu-d9ead3)
 
 
 # JEXPRESSO
