@@ -2,6 +2,15 @@
 |:------------ |
 | [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
 
+|**Build Status** |
+| [![Build Status](https://github.com/smarras79/Jexpresso/workflows/CI/badge.svg?branch=master)](https://github.com/smarras79/Jexpresso/actions?query=workflow%3ACI) 
+
+| **Contacts**  |
+|:------------ |
+-https://img.shields.io/badge/Simone_Marras_:-mailto_:_smarras@njit.edu-orange
+-https://img.shields.io/badge/Yassine_Tissaoui_:-mailto_:_yt277@njit.edu-orange
+
+
 # JEXPRESSO
 A research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements**. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
 
