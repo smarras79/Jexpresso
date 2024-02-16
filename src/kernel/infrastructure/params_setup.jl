@@ -8,7 +8,7 @@ function params_setup(sem,
     # ODE: solvers come from DifferentialEquations.j;
     #
     # Initialize
-    println(" # Solving ODE ................................")
+    println(" # Build arrays and params ................................ ")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
     
     #-----------------------------------------------------------------
@@ -24,25 +24,25 @@ function params_setup(sem,
     uaux         = zeros(T, sem.mesh.npoin, qp.neqs)
 
     if sem.mesh.nsd == 1
-        uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, 1, 1, qp.neqs)
-        rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, 1, 1, qp.neqs)
-        rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, 1, 1, qp.neqs)
-        rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, 1, 1, qp.neqs)
-        rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, 1, 1, qp.neqs)
-        F            = zeros(T, sem.mesh.ngl, 1, 1, qp.neqs)
-        G            = zeros(T, sem.mesh.ngl, 1, 1, qp.neqs)
-        S            = zeros(T, sem.mesh.ngl, 1, 1, qp.neqs)
-        uprimitive   = zeros(T, sem.mesh.ngl, 1, 1, qp.neqs+1)
+        uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
+        rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
+        rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
+        rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
+        rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
+        F            = zeros(T, sem.mesh.ngl, qp.neqs)
+        G            = zeros(T, sem.mesh.ngl, qp.neqs)
+        S            = zeros(T, sem.mesh.ngl, qp.neqs)
+        uprimitive   = zeros(T, sem.mesh.ngl, qp.neqs+1)
     elseif  sem.mesh.nsd == 2
-        uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
-        rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
-        rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
-        rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
-        rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
-        F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
-        G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
-        S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs)
-        uprimitive   = zeros(T, sem.mesh.ngl, sem.mesh.ngl, 1, qp.neqs+1)
+        uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        uprimitive   = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs+1)
     elseif  sem.mesh.nsd == 3
         uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
@@ -54,7 +54,7 @@ function params_setup(sem,
         S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         uprimitive   = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs+1)
     end
-        
+    
     RHS      = zeros(T, sem.mesh.npoin, qp.neqs)
     RHS_visc = zeros(T, sem.mesh.npoin, qp.neqs)
     vaux     = zeros(T, sem.mesh.npoin) #generic auxiliary array for general use
@@ -175,7 +175,10 @@ function params_setup(sem,
                   Δt, deps, xmax, xmin, ymax, ymin,
                   qp, sem.fx, sem.fy, fy_t,laguerre=false)
     end 
-    
+
+
+    println(" # Build arrays and params ................................ DONE")
+
     return params, u
     
 end

@@ -608,13 +608,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             mesh.z = zeros(mesh.npoin)
             mesh.nelem_semi_inf = n_semi_inf
         end
-        #=for iedge_bdy = 1:mesh.nedges_bdy
-        @printf(" bdy edge %d of type %s ∈ elem %d with nodes\n", iedge_bdy, mesh.bdy_edge_type[iedge_bdy], mesh.bdy_edge_in_elem[iedge_bdy])
-        for igl = 1:mesh.ngl
-        @printf(" %d",  mesh.poin_in_bdy_edge[iedge_bdy, igl])
-        end
-        @printf("\n")
-        end=#
 
     elseif mesh.nsd > 2
         nothing
