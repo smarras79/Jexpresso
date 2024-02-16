@@ -1,14 +1,16 @@
 using BenchmarkTools
-
+include("quantumIntegrator.jl");
 
 function time_loop!(inputs, params, u)
 
     println(" # Solving ODE  ................................ ")
     
-    prob = ODEProblem(rhs!,
+    quantumIntegrator(u, params, inputs)
+
+    #=prob = ODEProblem(rhs!,
                       u,
                       params.tspan,
-                      params);
+                      params); =#
     
     #=  if typeof(params.mesh.SD) == NSD_2D
     if(inputs[:lexact_integration])
@@ -22,11 +24,12 @@ function time_loop!(inputs, params, u)
     energy_ini = 0.0
     end=#
     
+    #=
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=inputs[:Δt],
                            save_everystep = false,
                            adaptive=inputs[:ode_adaptive_solver],
-                           saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
+                           saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs])); =#
     
     println(" # Solving ODE  ................................ DONE")
     
