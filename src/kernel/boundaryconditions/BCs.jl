@@ -259,38 +259,35 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
 end
 
 
-function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
+function build_custom_bcs!(::NSD_3D, t, mesh, metrics, ω,
                            qbdy, uaux, u, qe,
                            RHS, rhs_el,
                            neqs, dirichlet!, neumann, inputs)
     #
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
-    for iedge = 1:mesh.nedges_bdy 
-        iel  = mesh.bdy_edge_in_elem[iedge]
-        
-        if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2" && mesh.bdy_edge_type != "Laguerre"
-            
-            #tag = mesh.bdy_edge_type[iedge]
-            for k=1:mesh.ngl
-                ip = mesh.poin_in_bdy_edge[iedge,k]
-                nx = metrics.nx[iedge,k]
-                ny = metrics.ny[iedge,k]
-                fill!(qbdy, 4325789.0)
+    for ip = 1:mesh.npoin
 
-                user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], mesh.y[ip], mesh.z[ip], t, mesh.bdy_edge_type[iedge], qbdy, nx, ny, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-                
-                for ieq =1:neqs
-                    if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                        uaux[ip,ieq] = qbdy[ieq]
-                        RHS[ip, ieq] = 0.0
-                    end
-                end
+        fill!(qbdy, 4325789.0)
+
+        user_bc_dirichlet!(@view(uaux[ip,:]),
+                           mesh.x[ip], mesh.y[ip], mesh.z[ip],
+                           t, 0, qbdy,
+                           1, 1, 1,
+                           mesh.xmin, mesh.xmax,
+                           mesh.ymin, mesh.ymax,
+                           mesh.zmin, mesh.zmax,
+                           @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
+        
+        for ieq =1:neqs
+            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                uaux[ip,ieq] = qbdy[ieq]
+                RHS[ip, ieq] = 0.0
             end
         end
     end
     
     #Map back to u after applying b.c.
     uaux2u!(u, uaux, neqs, mesh.npoin)
-       
+    
 end

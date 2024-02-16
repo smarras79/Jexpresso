@@ -2,16 +2,16 @@ include("../mesh/restructure_for_periodicity.jl")
 include("../mesh/warping.jl")
 
 function sem_setup(inputs::Dict)
-
-    fx     = zeros(Float64,1,1)
-    fy     = zeros(Float64,1,1)
+    
+    fx = zeros(Float64,1,1)
+    fy = zeros(Float64,1,1)
     fy_lag = zeros(Float64,1,1)
-    
-    Nξ     = inputs[:nop]
-    PT     = inputs[:equations]
-    AD     = inputs[:AD]
-    
-    lexact_integration = inputs[:lexact_integration]
+    Nξ = inputs[:nop]
+    lexact_integration = inputs[:lexact_integration]    
+    PT    = inputs[:equations]
+    AD    = inputs[:AD]
+    CL    = inputs[:CL]
+    SOL_VARS_TYPE = inputs[:SOL_VARS_TYPE]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -93,6 +93,7 @@ function sem_setup(inputs::Dict)
                 ξ3,ω3 = ξω3.ξ, ξω3.ω
                 fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
                 fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
+                #fy_lag = init_filter(mesh.ngr-1,ξ3,inputs[:mu_y],mesh,inputs)
                 fy_lag = init_filter(mesh.ngr-1,ξ2,inputs[:mu_y],mesh,inputs)
             end
             #@time periodicity_restructure!(mesh,inputs)
@@ -102,7 +103,7 @@ function sem_setup(inputs::Dict)
             metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat)
             metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat)
             metrics = (metrics1, metrics2)
-          
+            
             @time periodicity_restructure!(mesh,inputs)
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation])
             
@@ -124,6 +125,7 @@ function sem_setup(inputs::Dict)
             @info " metrics"
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat)
             
+            @info " periodicity_restructure!"
             @time periodicity_restructure!(mesh,inputs)
             
             #warp_mesh!(mesh,inputs)
@@ -167,5 +169,5 @@ function sem_setup(inputs::Dict)
     # Build matrices
     #--------------------------------------------------------
     
-    return (; QT, PT, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
+    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end

@@ -58,6 +58,8 @@ include(joinpath( "kernel", "mesh", "metric_terms.jl"))
 
 include(joinpath( "kernel", "infrastructure", "element_matrices.jl"))
 
+include(joinpath( "kernel", "infrastructure", "params_setup.jl"))
+
 include(joinpath( "kernel", "infrastructure", "sem_setup.jl"))
 
 include(joinpath( "kernel", "infrastructure", "Kopriva_functions.jl"))
