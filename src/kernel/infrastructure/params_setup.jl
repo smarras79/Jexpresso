@@ -31,6 +31,7 @@ function params_setup(sem,
         rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
         F            = zeros(T, sem.mesh.ngl, qp.neqs)
         G            = zeros(T, sem.mesh.ngl, qp.neqs)
+        H            = zeros(T, 0)
         S            = zeros(T, sem.mesh.ngl, qp.neqs)
         uprimitive   = zeros(T, sem.mesh.ngl, qp.neqs+1)
     elseif  sem.mesh.nsd == 2
@@ -41,6 +42,7 @@ function params_setup(sem,
         rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        H            = zeros(T, 0)
         S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         uprimitive   = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs+1)
     elseif  sem.mesh.nsd == 3
@@ -51,6 +53,7 @@ function params_setup(sem,
         rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        H            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         uprimitive   = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs+1)
     end
@@ -88,6 +91,7 @@ function params_setup(sem,
         rhs_diffη_el_lag = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
         F_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
         G_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+        H_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
         S_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
         RHS_lag          = zeros(T, sem.mesh.npoin, qp.neqs)
         RHS_visc_lag     = zeros(T, sem.mesh.npoin, qp.neqs)
@@ -106,6 +110,7 @@ function params_setup(sem,
         rhs_diffη_el_lag = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
         F_lag            = zeros(T, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
         G_lag            = zeros(T, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
+        H_lag            = zeros(T, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
         S_lag            = zeros(T, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
         RHS_lag          = zeros(T, sem.mesh.npoin, qp.neqs)
         RHS_visc_lag     = zeros(T, sem.mesh.npoin, qp.neqs)
@@ -134,7 +139,7 @@ function params_setup(sem,
     
     if ("Laguerre" in sem.mesh.bdy_edge_type || inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         
-        params = (T, F, G, S,
+        params = (T, F, G, H, S,
                   uaux, uaux_el, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,
@@ -158,7 +163,7 @@ function params_setup(sem,
                   Δt, deps, xmax, xmin, ymax, ymin,
                   qp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
     else
-        params = (T, F, G, S,
+        params = (T, F, G, H, S,
                   uaux, uaux_el, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,

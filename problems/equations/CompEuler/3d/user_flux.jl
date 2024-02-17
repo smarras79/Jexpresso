@@ -1,4 +1,4 @@
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
+function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Float64},
                     q::SubArray{Float64},
                     qe::SubArray{Float64},
                     mesh::St_mesh,
@@ -9,24 +9,36 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     ρ  = q[1]
     ρu = q[2]
     ρv = q[3]
-    ρθ = q[4]
+    ρw = q[4]
+    ρθ = q[5]
+    
     θ  = ρθ/ρ
     u  = ρu/ρ
     v  = ρv/ρ
+    w  = ρw/ρ
     Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
     
     F[1] = ρu
     F[2] = ρu*u .+ Pressure
     F[3] = ρv*u
-    F[4] = ρθ*u
+    F[4] = ρw*u
+    F[5] = ρθ*u
 
     G[1] = ρv
     G[2] = ρu*v
     G[3] = ρv*v .+ Pressure
-    G[4] = ρθ*v
+    G[4] = ρw*v
+    G[5] = ρθ*v
+    
+    H[1] = ρw
+    H[2] = ρu*w
+    H[3] = ρv*w
+    H[4] = ρw*w .+ Pressure
+    H[5] = ρθ*w
+    
 end
 
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
+function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Float64},
                     q::SubArray{Float64},
                     qe::SubArray{Float64},
                     mesh::St_mesh,
@@ -37,47 +49,32 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     ρ  = q[1] + qe[1]
     ρu = q[2]
     ρv = q[3]
-    ρθ = q[4] + qe[4]
+    ρw = q[3]
+    ρθ = q[5] + qe[5]
     
     θ  = ρθ/ρ
     u  = ρu/ρ
     v  = ρv/ρ
-    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-    Press = Press - qe[end]
-    
+    w  = ρw/ρ
+    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Pressure = Pressure - qe[end]
+
     F[1] = ρu
-    F[2] = ρu*u + Press
+    F[2] = ρu*u .+ Pressure
     F[3] = ρv*u
-    F[4] = ρθ*u
-    
+    F[4] = ρw*u
+    F[5] = ρθ*u
+
     G[1] = ρv
     G[2] = ρu*v
-    G[3] = ρv*v + Press
-    G[4] = ρθ*v
-end
-
-
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
-                    q::SubArray{Float64},
-                    qe::SubArray{Float64},
-                    mesh::St_mesh,
-                    ::NCL, ::AbstractPert; neqs=4, ip=1)
+    G[3] = ρv*v .+ Pressure
+    G[4] = ρw*v
+    G[5] = ρθ*v
     
-    PhysConst = PhysicalConst{Float64}()
-                
-    ρ = q[1]
-    u = q[2]
-    v = q[3]
-    θ = q[4]
+    H[1] = ρw
+    H[2] = ρu*w
+    H[3] = ρv*w
+    H[4] = ρw*w .+ Pressure
+    H[5] = ρθ*w
     
-    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-    F[1] = ρ*u
-    F[2] = u
-    F[3] = v
-    F[4] = θ
-    
-    G[1] = ρ*v
-    G[2] = u
-    G[3] = v
-    G[4] = θ
 end

@@ -396,7 +396,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_3D)
         for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,j,k]
             
-            user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), SD,
+            user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
                        @view(params.uaux[ip,:]),
                        @view(params.qp.qe[ip,:]),         #pref
                        params.mesh,
@@ -407,7 +407,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_3D)
                 user_source!(@view(params.S[i,j,k,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qp.qe[ip,:]),          #ρref 
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs)
             end
         end
 
@@ -542,7 +542,11 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_3D, AD:
                         
                         dGdξ += params.basis.dψ[m,i]*params.G[m,j,k,ieq]
                         dGdη += params.basis.dψ[m,j]*params.G[i,m,k,ieq]
-                        dGdηζ += params.basis.dψ[m,j]*params.G[i,j,m,ieq]
+                        dGdζ += params.basis.dψ[m,k]*params.G[i,j,m,ieq]
+                        
+                        dHdξ += params.basis.dψ[m,i]*params.H[m,j,k,ieq]
+                        dHdη += params.basis.dψ[m,j]*params.H[i,m,k,ieq]
+                        dHdζ += params.basis.dψ[m,k]*params.H[i,j,m,ieq]
                     end
                     dξdx_ij = params.metrics.dξdx[iel,i,j,k]
                     dξdy_ij = params.metrics.dξdy[iel,i,j,k]
@@ -568,7 +572,7 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_3D, AD:
                     dGdz = dGdξ*dξdz_ij + dGdη*dηdz_ij + dGdζ*dζdz_ij
                     dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
                     
-                    auxi = ωJac*((dFdx + dGdy) - params.S[i,j,k,ieq])
+                    auxi = ωJac*((dFdx + dGdy + dHdy) - params.S[i,j,k,ieq])
                     params.rhs_el[iel,i,j,k,ieq] -= auxi
                 end
             end
