@@ -569,6 +569,25 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
     #show(stdout, "text/plain", V)
 end
 
+
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_3D, ::ContGal)
+
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for k = 1:ngl
+                for j = 1:ngl
+                    for i = 1:ngl
+                        I = mesh.connijk[iel,i,j,k]
+                        RHS[I,ieq] += rhs_el[iel,i,j,k,ieq]
+                    end
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", V)
+end
+
+
 function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
 
     for ieq = 1:neqs
