@@ -386,9 +386,7 @@ end
 function inviscid_rhs_el!(u, params, lsource, SD::NSD_3D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    xmax = params.xmax
-    xmin = params.xmin
-    ymax = params.ymax    
+    
     for iel = 1:params.mesh.nelem
 
         uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
@@ -572,7 +570,7 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_3D, AD:
                     dGdz = dGdξ*dξdz_ij + dGdη*dηdz_ij + dGdζ*dζdz_ij
                     dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
                     
-                    auxi = ωJac*((dFdx + dGdy + dHdy) - params.S[i,j,k,ieq])
+                    auxi = ωJac*((dFdx + dGdy + dHdz) - params.S[i,j,k,ieq])
                     params.rhs_el[iel,i,j,k,ieq] -= auxi
                 end
             end

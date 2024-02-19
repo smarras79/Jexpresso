@@ -14,8 +14,8 @@ function user_source!(S::SubArray{Float64},
     
     S[1] = 0.0
     S[2] = 0.0
-    S[3] = 0.0
-    S[4] = -ρ*PhysConst.g
+    S[3] = 0.0 #Y is the vertical direction in 3D
+    S[4] = 0.0
     S[5] = 0.0
    
 end

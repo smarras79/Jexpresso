@@ -79,7 +79,7 @@ function sem_setup(inputs::Dict)
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     if (mesh.nsd > 1)
-        @info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
+        #@info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
         if ("Laguerre" in mesh.bdy_edge_type[:])
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat)
             ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
