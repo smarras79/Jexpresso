@@ -9,6 +9,10 @@ function build_rhs!(RHS, u, params, time)
     
 end
 
+#export _expansion_inviscid!
+export _build_rhs!
+
+
 function RHStoDU!(du, RHS, neqs, npoin)
     for i=1:neqs
         idx = (i-1)*npoin
@@ -391,11 +395,6 @@ function rhs!(du, u, params, time)
     
 end
 
-
-#_build_rhs!
-
-export _build_rhs!
-
 """
     _build_rhs!(RHS, u, params, time)
 
@@ -602,6 +601,12 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
 
+#=
+"""
+    _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
+"""
+=#
+
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
     
     N = params.mesh.ngl
@@ -645,6 +650,7 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::C
         end
     end
 end
+
 
 function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
