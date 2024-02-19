@@ -432,7 +432,7 @@ end
 
 
 function viscous_rhs_el!(u, params, SD::NSD_3D)
-    
+    #=
     for iel=1:params.mesh.nelem
         
         uToPrimitives!(params.neqs, params.uprimitive, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
@@ -444,6 +444,7 @@ function viscous_rhs_el!(u, params, SD::NSD_3D)
     end
     
     params.rhs_diff_el .= @views (params.rhs_diffξ_el .+ params.rhs_diffη_el)
+    =#
 end
 
 
