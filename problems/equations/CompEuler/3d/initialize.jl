@@ -22,6 +22,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         #
         q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
         PhysConst = PhysicalConst{Float64}()
+        
         for ip=1:mesh.npoin
             ρ  = q.qn[ip,1]
             ρθ = q.qn[ip,5]
@@ -90,9 +91,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
                 #Store initial background state for plotting and analysis of pertuebations
                 q.qe[ip,1] = ρref
-                q.qe[ip,2] = u
-                q.qe[ip,3] = v
-                q.qe[ip,4] = w
+                q.qe[ip,2] = ρref*u
+                q.qe[ip,3] = ρref*v
+                q.qe[ip,4] = ρref*w
                 q.qe[ip,5] = ρref*θref
                 q.qe[ip,end] = pref
             end
@@ -120,10 +121,10 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         end
     end
     
-    outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")    
+    outvarsref = ("rho_ref", "uρ_ref", "vρ_ref", "wρ_ref", "theta_ref", "p_ref")    
     write_vtk_ref(SD, mesh, q.qn.-q.qe, "initial_state", inputs[:output_dir]; nvar=length(q.qn[1,:]), outvarsref=outvarsref)
 
-    outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")    
+    outvarsref = ("rho_ref", "uρ_ref", "vρ_ref", "wρ_ref", "theta_ref", "p_ref")    
     write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
     
     @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
