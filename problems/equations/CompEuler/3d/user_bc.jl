@@ -8,10 +8,24 @@ function user_bc_dirichlet!(q::SubArray{Float64},
                             zmin, zmax,
                             qe::SubArray{Float64}, ::TOTAL)
 
-    δ = 1.0e-4
-    if z > zmin && z < zmax
+    e = 1.0e-4
+    
+    xmine = xmin + e
+    xmaxe = xmax - e
+    ymine = ymin + e
+    ymaxe = ymax - e
+    zmine = zmin + e
+    zmaxe = zmax - e
+
+    if x < xmine || x > xmaxe 
         qbdy[2] = 0.0
+    end
+    
+    if y < ymine || y > ymaxe 
         qbdy[3] = 0.0
+    end
+
+    if z < zmine || z > zmaxe 
         qbdy[4] = 0.0
     end
     
