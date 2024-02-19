@@ -1,8 +1,8 @@
 nelemx = 10;
-nelemy =  5;
-nelemz =  5;
+nelemy = 10;
+nelemz = 10;
 
-xmin = -10000;
+xmin =  0;
 xmax =	10000;
 ymin =      0;
 ymax =  10000;
