@@ -8,7 +8,7 @@ end
 ```
 
 ```@docs
-missinginput
+     @missinginput
 ```
 
 # Jexpresso.jl
