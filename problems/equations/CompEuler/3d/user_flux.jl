@@ -20,19 +20,19 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Floa
     
     F[1] = ρu
     F[2] = ρu*u .+ Pressure
-    F[3] = ρv*u
-    F[4] = ρw*u
+    F[3] = ρu*v
+    F[4] = ρu*w
     F[5] = ρθ*u
 
     G[1] = ρv
-    G[2] = ρu*v
+    G[2] = ρv*u
     G[3] = ρv*v .+ Pressure
-    G[4] = ρw*v
+    G[4] = ρv*w
     G[5] = ρθ*v
     
     H[1] = ρw
-    H[2] = ρu*w
-    H[3] = ρv*w
+    H[2] = ρw*u
+    H[3] = ρw*v
     H[4] = ρw*w .+ Pressure
     H[5] = ρθ*w
     

@@ -1,6 +1,6 @@
 nelemx = 10;
-nelemy = 10;
-nelemz = 5;
+nelemy =  5;
+nelemz =  5;
 
 xmin = -10000;
 xmax =	10000;
