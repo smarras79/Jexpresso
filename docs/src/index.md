@@ -7,8 +7,8 @@ DocTestSetup = quote
 end
 ```
 
-```@autodocs
-Modules = [Jexpresso]
+```@docs
+missinginput
 ```
 
 # Jexpresso.jl

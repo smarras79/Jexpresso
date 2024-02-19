@@ -84,8 +84,6 @@ include(joinpath( "auxiliary", "checks.jl"))
 
 include("./run.jl")
 
-using .rhs: _build_rhs!
-export _build_rhs!
 
 
 end

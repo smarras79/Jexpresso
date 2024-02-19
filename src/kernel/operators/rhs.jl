@@ -391,13 +391,16 @@ function rhs!(du, u, params, time)
     
 end
 
+
 #_build_rhs!
+
 export _build_rhs!
 
 """
+    _build_rhs!(RHS, u, params, time)
+
 add text here for documenter
 """
-
 function _build_rhs!(RHS, u, params, time)
 
     T       = Float64
