@@ -450,8 +450,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
                 iedge_bdy += 1
             end
         end
-        @info typeof(mesh.connijk),typeof(mesh.poin_in_bdy_edge), typeof(mesh.bdy_edge_in_elem)
-        @time for iel = 1:mesh.nelem
+        for iel = 1:mesh.nelem
             for iedge_bdy = 1:mesh.nedges_bdy
                 if issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, :, :])
                     mesh.bdy_edge_in_elem[iedge_bdy] = iel
@@ -2234,7 +2233,6 @@ end
 
 
 function mod_mesh_mesh_driver(inputs::Dict)
-    @info TInt, TFloat 
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
         
         println(" # Read gmsh grid and populate with high-order points ")
@@ -2308,7 +2306,6 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                         ngr=Int64(inputs[:nop_laguerre]+1),
                                         SD=NSD_1D())
         end
-        @info typeof(mesh.connijk) 
         mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], CPU())
         
         #Write structured grid to VTK

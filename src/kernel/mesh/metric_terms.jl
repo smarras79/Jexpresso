@@ -2,7 +2,6 @@
 Base.@kwdef mutable struct St_metrics{TFloat,backend}
 
     
-    
     dxdξ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
     dxdη = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
     dxdζ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
@@ -47,7 +46,6 @@ function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                                     dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
                                     Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1),
                                     nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), 1))
-    @show typeof(metrics.Je)
     for iel = 1:mesh.nelem
         for i = 1:N+1
             for k = 1:Q+1
@@ -106,7 +104,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
-    if (backend == CPU())    
+    #=if (backend == CPU())
         for iel = 1:mesh.nelem
             for j = 1:N+1
                 for i = 1:N+1
@@ -152,7 +150,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             end
         #show(stdout, "text/plain", metrics.Je[iel, :,:])
         end
-    else
+    else=#
         x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         y = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         connijk = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem),N+1,N+1)
@@ -160,13 +158,15 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         KernelAbstractions.copyto!(backend, y, mesh.y)
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         k = build_2D_gpu_metrics!(backend,(N+1,N+1))
+        @info typeof(metrics.dxdξ), typeof(metrics.dydξ)
         k(metrics.dxdξ,metrics.dξdy,metrics.dydξ,metrics.dydη, ψ, dψ, x, y, connijk, Q; ndrange = (mesh.nelem*(N+1),mesh.ngl), workgroupsize = (N+1,N+1))
         metrics.Je .= metrics.dxdξ.*metrics.dydη .- metrics.dydξ .* metrics.dxdη
         metrics.dξdx .= metrics.dydη ./ metrics.Je
         metrics.dξdy .= -metrics.dxdη ./ metrics.Je
         metrics.dηdx .= -metrics.dydξ ./ metrics.Je
         metrics.dηdy .= metrics.dxdξ ./ metrics.Je
-    end
+    #end
+    #@info metrics.Je
     ##### CHECK BELOW WITH YASSINE WHETHER THIS
     ##### SHOULD BE done on the quadrature or grid points
     nbdy_edges = size(mesh.poin_in_bdy_edge,1)
