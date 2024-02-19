@@ -17,7 +17,7 @@ function user_bc_dirichlet!(q::SubArray{Float64},
     zmine = zmin + e
     zmaxe = zmax - e
 
-    if x < xmine || x > xmaxe 
+    if x < xmine || x > xmaxe
         qbdy[2] = 0.0
     end
     
