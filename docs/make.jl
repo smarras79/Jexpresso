@@ -8,6 +8,8 @@ makedocs(
     format=Documenter.HTML(),
     pages = Any[
         "Home" => "index.md",
+        "Jexpresso" => "Jexpresso.md",
+        "_build_rhs!" => "Build rhs.md",
     ],
  )
 
