@@ -105,9 +105,9 @@ function periodicity_restructure!(mesh,inputs,backend)
         else
             per2 = [1.0, 0.0]
         end     
-        xx = KernelAbstractions.zeros(CPU(), TFloat, size(mesh.x,1),1)
-        yy = KernelAbstractions.zeros(CPU(), TFloat, size(mesh.y,1),1)
-        poin_bdy=KernelAbstractions.zeros(CPU(), TInt,size(mesh.poin_in_bdy_edge))
+        xx = zeros(TFloat, size(mesh.x,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.x,1),1)
+        yy = zeros(TFloat, size(mesh.y,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.y,1),1)
+        poin_bdy= zeros(TInt, size(mesh.poin_in_bdy_edge))#KernelAbstractions.zeros(CPU(), TInt,size(mesh.poin_in_bdy_edge))
         xx .= mesh.x
         yy .= mesh.y
         poin_bdy .=mesh.poin_in_bdy_edge

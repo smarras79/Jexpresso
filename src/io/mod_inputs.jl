@@ -24,6 +24,7 @@ function mod_inputs_user_inputs!(inputs)
     if(inputs[:backend] == MetalBackend())
         global TInt = Int32
         global TFloat = Float32
+        global cpu = false
     end
     ##1D plotting inputs for paper
 

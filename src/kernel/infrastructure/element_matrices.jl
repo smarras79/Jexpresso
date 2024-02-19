@@ -584,7 +584,7 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
     for ieq = 1:neqs
         for iel = 1:nelem
             for i = 1:ngl
-                I = mesh.connijk[iel,i,1]
+                I = Ref{Int64}(mesh.connijk[iel,i,1])
                 RHS[I,ieq] += rhs_el[iel,i,1,ieq]
             end
         end
@@ -592,13 +592,15 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
     
 end
 
-function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
+function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
 
     for ieq = 1:neqs
         for iel = 1:nelem
             for j = 1:ngl
                 for i = 1:ngl
-                    I = mesh.connijk[iel,i,j]
+                    #I = Ref{Int64}(mesh.connijk[iel,i,j])
+                    #RHS[I[],ieq] += Ref{Float64}(rhs_el[iel,i,j,ieq])[]
+                    I = connijk[iel,i,j]
                     RHS[I,ieq] += rhs_el[iel,i,j,ieq]
                 end
             end

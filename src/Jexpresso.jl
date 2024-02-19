@@ -39,6 +39,7 @@ using Printf
 #const TFloat = Float64
 TInt = Int64
 TFloat = Float64
+cpu = true
 using DocStringExtensions
 
 include(joinpath( "..", "problems", "equations", "AbstractEquations.jl"))
