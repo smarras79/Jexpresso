@@ -14,7 +14,6 @@ function user_inputs()
         :ndiagnostics_outputs => 20,
         :case                 => "rtb",
         :lsource              => true, 
-        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -23,14 +22,14 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1, 2, 3, 4, 5),
         :μ                   => (0.0, 20.0, 20.0, 20.0, 60.0), #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2x2.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
