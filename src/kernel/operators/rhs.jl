@@ -446,7 +446,7 @@ end
 
 
 function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D, ::FD)
-    
+    # this needs to be called from quantum solver (analong of f0rc.jl)
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmax = params.xmax
     xmin = params.xmin

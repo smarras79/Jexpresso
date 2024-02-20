@@ -1,12 +1,13 @@
 include("CalcBCmSW.jl"); 
 include("CalcBCpSW.jl"); 
 include("Calcf0.jl");
+#include("../../operators/rhs.jl");
 
 using Polynomials
 
 function fOrc(t, Start, TCoeffs, d, 
     rmaxp1, Tot_Int_Pts, Gamma, Del_x, A, 
-      Shock_Flag, Exit_Pressure)
+      Shock_Flag, Exit_Pressure, params)
 #FORC evaluates ODE driver function f at l^{s}_[i](t) at interior grd-pts
 #
 #   fOrc evaluates the ODE driver function at l^{s}_[i](t) at the knot time
@@ -105,11 +106,24 @@ function fOrc(t, Start, TCoeffs, d,
         U[m,Tot_X_Pts] = U_Bvals[m,2]
     end
 
+    u = zeros(Float64, Int(d*Tot_X_Pts))
+    for ip=1:Tot_X_Pts
+        for ieq=0:d-1
+            u[Tot_X_Pts*ieq + ip] = U[ieq+1, ip]
+        end
+    end
 
+    inviscid_rhs_el!( u, params, params.inputs[:lsource], NSD_1D(), params.inputs[:AD])
 
-# evaluate f using Calcf0
+    rhs = zeros(Float64, d, Tot_Int_Pts)
+    for i=1:Tot_Int_Pts
+        for j=1:d
+            rhs[j, i] = params.RHS[i+1, j]
+        end
+    end
+    #f_Loc = rhs
+    # evaluate f using Calcf0
+    #f_Loc = Calcf0(d, Tot_X_Pts, Tot_Int_Pts, Gamma, Del_x, U, A, params)
 
-    f_Loc = Calcf0(d, Tot_X_Pts, Tot_Int_Pts, Gamma, Del_x, U, A)
-
-return f_Loc
+return rhs
 end

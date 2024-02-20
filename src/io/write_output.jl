@@ -9,14 +9,14 @@ include("./plotting/jeplots.jl")
 # ∂q/∂t = RHS -> q(x,t)
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # PNG
-function write_output(SD::NSD_1D, q::Array, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG)
+function write_output(SD::NSD_1D, q::Matrix, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG)
 
     #Reference values only (definied in initial conditions)
     
     nvar = length(varnames)
     for ivar = 1:nvar
-        #plot_results!(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames; iout=1, nvar=nvar, PT=nothing)
-        plot_results(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
+        #plot_results(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
+        plot_results(SD, mesh, q[ivar,1:mesh.npoin], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
     end
 end
 

@@ -1,12 +1,16 @@
 using BenchmarkTools
 include("quantumIntegrator.jl");
 
+
 function time_loop!(inputs, params, u)
 
     println(" # Solving ODE  ................................ ")
     
-    quantumIntegrator(u, params, inputs)
-
+    solution = quantumIntegrator(u, params, inputs)
+    @info size(solution)
+    #write_output(params.SD, solution, params.mesh, inputs[:output_dir], inputs, ["u1", "u2", "u3"], inputs[:outformat])
+    plot_results(params.SD, params.mesh, solution, "output", inputs[:output_dir], ["u1", "u2", "u3"], inputs; iout=1, nvar=3, PT=nothing)
+    @mystop
     #=prob = ODEProblem(rhs!,
                       u,
                       params.tspan,

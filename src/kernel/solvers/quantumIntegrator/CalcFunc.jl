@@ -31,7 +31,7 @@ function CalcFunc( F, J, Del_x, d, Tot_Int_Pts )
     
     for i = 1:Tot_Int_Pts
         gridLabel = i + 1
-        
+        ###### finite difference equation
         global ff_vals[1,i] = Fac1*( F[1,gridLabel + 1] - F[1,gridLabel - 1])
         global ff_vals[2,i] = Fac1*( (F[2,gridLabel+1] - F[2,gridLabel-1]) - J[i] )
         global ff_vals[3,i] = Fac1*( F[3,gridLabel + 1] - F[3,gridLabel - 1] )

@@ -93,6 +93,17 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
         end
     end
 
+    C = 0.5
+    Del_x = (mesh.xmax - mesh.xmin)/(mesh.npoin-1)
+    Loc_TSteps = zeros(1,(mesh.npoin - 2))
+    #@info Del_x
+    for i = 2:(mesh.npoin - 1)
+        Loc_TSteps[i - 1] = (C*Del_x)/(sqrt(initial[i, 4]) + q.qn[i, 2]/q.qn[i, 1])
+    end
+    inputs[:Δt] = minimum(Loc_TSteps)
+    #@info inputs[:Δt]
+    #@mystop
+
     initial[sortperm(initial[:, 5]), :]
     
     open("INITIAL.txt", "w") do io

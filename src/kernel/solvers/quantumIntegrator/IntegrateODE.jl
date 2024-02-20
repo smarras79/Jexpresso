@@ -6,7 +6,7 @@ include("./Calc_FlowVarResults.jl");
 
 using Statistics;
 
-function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts, Shock_Flag, Exit_Pressure, ithroat, a, delta1, rho, InitVal, A, t, U2_in, ff0_throat_in, ff1_throat_in, ff2_throat_in, Mach_E, Mrho_E, Press_E, Temp_E, Vel_E, In_Mass_Flow)
+function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts, Shock_Flag, Exit_Pressure, ithroat, a, delta1, rho, InitVal, A, t, U2_in, ff0_throat_in, ff1_throat_in, ff2_throat_in, Mach_E, Mrho_E, Press_E, Temp_E, Vel_E, In_Mass_Flow, params)
   #INTEGRATEODE numerically integrates ODE for 1D Navier-Stokes flow()
   #   IntegrateODE numerically integrates the set of ordinary differential
   #       equations for 1D Navier-Stokes flow using Kacewicz' quantum
@@ -216,7 +216,7 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
     #               g_ij over subinterval i for each interior grid-point
     #
     ###### integrate eqn. 19 in reveiw. Uses QAEA ######
-    gInt = IntegrateGij(StoreLz, StoreTimes4i, Start, d, r, N, delta1, hbar, rho, Tot_Int_Pts, A, Gamma, Del_x, Shock_Flag, i, Exit_Pressure)
+    gInt = IntegrateGij(StoreLz, StoreTimes4i, Start, d, r, N, delta1, hbar, rho, Tot_Int_Pts, A, Gamma, Del_x, Shock_Flag, i, Exit_Pressure, params)
 
     # add gInt for subint i to InitVal to get InitVal for 
     #   subinterval i + 1 at each interior grid-point
@@ -274,63 +274,63 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
       # calculate mean mass flow rate at final time; define array to store
 
-      MeanU2 = mean(U2[:, Int(n)+1])
+      # MeanU2 = mean(U2[:, Int(n)+1])
 
       AvU2 = zeros(1, Tot_X_Pts)
 
       # calculate mean and standard deviation of relative errors & store
 
-      MeanRelTempErr = mean(Rel_TempErr)
-      MeanRelMachErr = mean(Rel_MachErr)
-      MeanRelMrhoErr = mean(Rel_MrhoErr)
-      MeanRelPressErr = mean(Rel_PressErr)
+      # MeanRelTempErr = mean(Rel_TempErr)
+      # MeanRelMachErr = mean(Rel_MachErr)
+      # MeanRelMrhoErr = mean(Rel_MrhoErr)
+      # MeanRelPressErr = mean(Rel_PressErr)
 
-      SDevRelTempErr = std(Rel_TempErr)
-      SDevRelMachErr = std(Rel_MachErr)
-      SDevRelMrhoErr = std(Rel_MrhoErr)
-      SDevRelPressErr = std(Rel_PressErr)
+      # SDevRelTempErr = std(Rel_TempErr)
+      # SDevRelMachErr = std(Rel_MachErr)
+      # SDevRelMrhoErr = std(Rel_MrhoErr)
+      # SDevRelPressErr = std(Rel_PressErr)
 
-      AvRelTempErr = zeros(1, Tot_X_Pts)
-      AvRelMachErr = zeros(1, Tot_X_Pts)
-      AvRelMrhoErr = zeros(1, Tot_X_Pts)
-      AvRelPressErr = zeros(1, Tot_X_Pts)
+      # AvRelTempErr = zeros(1, Tot_X_Pts)
+      # AvRelMachErr = zeros(1, Tot_X_Pts)
+      # AvRelMrhoErr = zeros(1, Tot_X_Pts)
+      # AvRelPressErr = zeros(1, Tot_X_Pts)
 
-      AvPlusSDevRelTempErr = zeros(1, Tot_X_Pts)
-      AvPlusSDevRelMachErr = zeros(1, Tot_X_Pts)
-      AvPlusSDevRelMrhoErr = zeros(1, Tot_X_Pts)
-      AvPlusSDevRelPressErr = zeros(1, Tot_X_Pts)
+      # AvPlusSDevRelTempErr = zeros(1, Tot_X_Pts)
+      # AvPlusSDevRelMachErr = zeros(1, Tot_X_Pts)
+      # AvPlusSDevRelMrhoErr = zeros(1, Tot_X_Pts)
+      # AvPlusSDevRelPressErr = zeros(1, Tot_X_Pts)
 
-      AvMinusSDevRelTempErr = zeros(1, Tot_X_Pts)
-      AvMinusSDevRelMachErr = zeros(1, Tot_X_Pts)
-      AvMinusSDevRelMrhoErr = zeros(1, Tot_X_Pts)
-      AvMinusSDevRelPressErr = zeros(1, Tot_X_Pts)
+      # AvMinusSDevRelTempErr = zeros(1, Tot_X_Pts)
+      # AvMinusSDevRelMachErr = zeros(1, Tot_X_Pts)
+      # AvMinusSDevRelMrhoErr = zeros(1, Tot_X_Pts)
+      # AvMinusSDevRelPressErr = zeros(1, Tot_X_Pts)
 
-      for col = 1:Tot_X_Pts
-        AvU2[col] = MeanU2
+      # for col = 1:Tot_X_Pts
+      #   AvU2[col] = MeanU2
 
-        AvRelTempErr[col] = MeanRelTempErr
-        AvRelMachErr[col] = MeanRelMachErr
-        AvRelMrhoErr[col] = MeanRelMrhoErr
-        AvRelPressErr[col] = MeanRelPressErr
+      #   AvRelTempErr[col] = MeanRelTempErr
+      #   AvRelMachErr[col] = MeanRelMachErr
+      #   AvRelMrhoErr[col] = MeanRelMrhoErr
+      #   AvRelPressErr[col] = MeanRelPressErr
 
-        AvPlusSDevRelTempErr[col] = MeanRelTempErr +
-                                    SDevRelTempErr
-        AvPlusSDevRelMachErr[col] = MeanRelMachErr +
-                                    SDevRelMachErr
-        AvPlusSDevRelMrhoErr[col] = MeanRelMrhoErr +
-                                    SDevRelMrhoErr
-        AvPlusSDevRelPressErr[col] = MeanRelPressErr +
-                                     SDevRelPressErr
+      #   AvPlusSDevRelTempErr[col] = MeanRelTempErr +
+      #                               SDevRelTempErr
+      #   AvPlusSDevRelMachErr[col] = MeanRelMachErr +
+      #                               SDevRelMachErr
+      #   AvPlusSDevRelMrhoErr[col] = MeanRelMrhoErr +
+      #                               SDevRelMrhoErr
+      #   AvPlusSDevRelPressErr[col] = MeanRelPressErr +
+      #                                SDevRelPressErr
 
-        AvMinusSDevRelTempErr[col] = MeanRelTempErr -
-                                     SDevRelTempErr
-        AvMinusSDevRelMachErr[col] = MeanRelMachErr -
-                                     SDevRelMachErr
-        AvMinusSDevRelMrhoErr[col] = MeanRelMrhoErr -
-                                     SDevRelMrhoErr
-        AvMinusSDevRelPressErr[col] = MeanRelPressErr -
-                                      SDevRelPressErr
-      end
+      #   AvMinusSDevRelTempErr[col] = MeanRelTempErr -
+      #                                SDevRelTempErr
+      #   AvMinusSDevRelMachErr[col] = MeanRelMachErr -
+      #                                SDevRelMachErr
+      #   AvMinusSDevRelMrhoErr[col] = MeanRelMrhoErr -
+      #                                SDevRelMrhoErr
+      #   AvMinusSDevRelPressErr[col] = MeanRelPressErr -
+      #                                 SDevRelPressErr
+      # end
 
     end
 
@@ -360,7 +360,6 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
       print("  Final result for steady state U values are:")
     end
     @info InitVal
-    readline();
 
     nextStartTime = n^(k - 1) * hbar * i
 
@@ -370,10 +369,10 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
   return U2, Mach_D, Mrho_D, Press_D, Temp_D, Vel_D, Rel_MachErr,
     Rel_MrhoErr, Rel_PressErr, Rel_TempErr, Rel_VelErr,
-    AvRelTempErr, AvPlusSDevRelTempErr, AvMinusSDevRelTempErr,
+    #= AvRelTempErr, AvPlusSDevRelTempErr, AvMinusSDevRelTempErr,
     AvRelMachErr, AvPlusSDevRelMachErr, AvMinusSDevRelMachErr,
     AvRelMrhoErr, AvPlusSDevRelMrhoErr, AvMinusSDevRelMrhoErr,
     AvRelPressErr, AvPlusSDevRelPressErr, AvMinusSDevRelPressErr,
-    AvU2,
-    ff0_throat, ff1_throat, ff2_throat
+    AvU2,=#
+    ff0_throat, ff1_throat, ff2_throat, InitVal
 end

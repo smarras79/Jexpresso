@@ -2,7 +2,8 @@ include("CalcFlux.jl");
 include("CalcSource.jl"); 
 include("CalcFunc.jl");
 
-function Calcf0( d, Tot_X_Pts, Tot_Int_Pts, Gamma, Del_x, U, A )
+### equivalent of jexpresso _expansion_inviscid
+function Calcf0( d, Tot_X_Pts, Tot_Int_Pts, Gamma, Del_x, U, A, params )
     #CALCF0 evaluates ODE driver function f(U) at flow variables U 
     #   Calcf0 evaluates ODE driver function f(U) at the primary flow variable
     #           U at start of subsubinterval j at each interior grid-point.
@@ -40,6 +41,7 @@ function Calcf0( d, Tot_X_Pts, Tot_Int_Pts, Gamma, Del_x, U, A )
     #   grid-points at start of subsubinterval j. f0 is d x Tot_Int_Pts array
     
     ###### evaluate driver function values at grid pts ######
+        ### calc func handles the rhs ###
        f0 = CalcFunc(F, J, Del_x, d, Tot_Int_Pts)
    
    return f0;

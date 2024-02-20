@@ -2,7 +2,7 @@ include("fOrc.jl");
 
 function FuncOrc(t, TCoeffs, d, rmaxp1, N, 
     rho, Tot_Int_Pts, A, Gamma, 
-      Del_x, Shock_Flag, Exit_Pressure)
+      Del_x, Shock_Flag, Exit_Pressure, params)
 #FUNCORC evaluates g_ij[u] at N knot times in subsubinterval j
 #
 #   FuncOrc evaluates g_ij[u] at N knot times for subsubinterval j
@@ -37,7 +37,7 @@ q = r + rho;        # exponent of hbar in Gij formula;
 # f stores d components of ODE driver function f at each interior 
 #    grid-point & N knot times for subsubinterval j
 
-f = zeros(d, Tot_Int_Pts, Int(N));   
+#f = zeros(d, Tot_Int_Pts, Int(N));   
 Gij = zeros(d, Tot_Int_Pts, Int(N));
 
 # evaluate f at N knot times for subsubinterval j & each interior
@@ -46,15 +46,15 @@ Gij = zeros(d, Tot_Int_Pts, Int(N));
 
 for k = 1: N
   ###### evaluate driver function at the interior grid points (f) ######
-    f[ :, :, Int(k)] = fOrc(t[Int(k)], t[1], TCoeffs, d, 
+    Gij[ :, :, Int(k)] = fOrc(t[Int(k)], t[1], TCoeffs, d, 
                             rmaxp1,Tot_Int_Pts,Gamma,Del_x,A,
-                              Shock_Flag, Exit_Pressure)
+                              Shock_Flag, Exit_Pressure, params)
 end
 
 # assign values of Gij at N knot times t for subsubinterval j & each 
 #       interior grid-point
 
-Gij .= f
+#Gij .= f
 
 return Gij
 end

@@ -6,7 +6,7 @@ function IntegrateGij(StoreLz, StoreTimes4i, Start,
   d, r, N, delta1, hbar, rho,
   Tot_Int_Pts, A, Gamma,
   Del_x, Shock_Flag, i,
-  Exit_Pressure)
+  Exit_Pressure, params)
   #INTEGRATEGIJ integrates g_ij over subinterval i at each interior grd-pt
   #   
   #   IntegrateGij integrates g_ij[l^{s}_[i](t)] over subinterval i at each
@@ -89,7 +89,7 @@ function IntegrateGij(StoreLz, StoreTimes4i, Start,
     ###### set values of gij at interior grid pts ######
     Gij .= FuncOrc(t[:], StoreLz[:, :, :, Int(j)], d, rmaxp1, N,
       rho, Tot_Int_Pts, A, Gamma,
-      Del_x, Shock_Flag, Exit_Pressure)
+      Del_x, Shock_Flag, Exit_Pressure, params)
     # GijVals stores values of Gij [viz. driver function f] at N knot times
     #   for sub-subinterval j for a given component k of Gij & interior
     #   grid-point ll

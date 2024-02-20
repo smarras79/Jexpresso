@@ -42,7 +42,7 @@ end
 
 function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, PT=nothing)
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
-    qmin = minimum(q);      qmax = maximum(q);
+    #qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
     npoin = floor(Int64, size(q, 1)/nvar)
     #qout = copy(q)
@@ -75,10 +75,10 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
                 hlines!(ax,hlines[i], color = :red)
             end
         end
-        if !(axis == "empty")
+        #=if !(axis == "empty")
            idx = (ivar-1)*2
-           ylims!(ax, axis[1+idx], axis[2+idx])
-        end
+           #ylims!(ax, axis[1+idx], axis[2+idx])
+        end=#
         #ylims!(ax, -0.05, 0.55)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
         save(string(fout_name), fig; size = (600, 400))
