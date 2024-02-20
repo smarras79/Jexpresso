@@ -17,7 +17,7 @@ function quantumIntegrator(u, params, inputs)
     d = 3#params.mesh.neqs
     r = 2
     n = 8#Int(n)
-    N = 32#Int(N)
+    N = 64#Int(N)
     @info n, N
     k = Int(k)
     Gamma = 1.4
@@ -47,7 +47,7 @@ function quantumIntegrator(u, params, inputs)
     U2_in = zeros(Float64, Tot_X_Pts, n+1) #initial mass flow rate in col. 1, all other cols are 0
     U2_in[1, :] .= In_Mass_Flow
     #InitVal, Delta_t, In_Mass_Flow_Noisy = SetInCond(shock_flag, In_Mass_Flow, gamma, x, Del_x, A, d, Mrho_E, Temp_E, ICMFlowErrScale, ICrhoErrScale, ICtempErrScale)
-    b =  100*Delta_t#inputs[:Δt]
+    b =  0.0001#1400*Delta_t#inputs[:Δt]
     t, hbar = IPrtn(a, b, n, N)
     ff0_throat_in = zeros(Float64, d, n)
     ff1_throat_in = zeros(Float64, d, n)

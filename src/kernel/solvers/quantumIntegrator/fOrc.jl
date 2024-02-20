@@ -89,31 +89,34 @@ function fOrc(t, Start, TCoeffs, d,
 
 # assign U at boundary points using flow boundary conditions
 
-    if (Shock_Flag .== 0)
-        U_Bvals = CalcBCmSW(U,A,Gamma,d,Tot_X_Pts)
-        #@info U_Bvals
-        #readline();
-    elseif (Shock_Flag .== 1)
-        U_Bvals = CalcBCpSW(U,A,Gamma,d,Tot_X_Pts,Exit_Pressure)
-        #@info U_Bvals
-        #readline();
-    else
-        disp(["Unknown Shock_Flag value: " int2str(Shock_Flag)])
-    end
+    # from here
+    # if (Shock_Flag .== 0)
+    #     U_Bvals = CalcBCmSW(U,A,Gamma,d,Tot_X_Pts)
+    #     #@info U_Bvals
+    #     #readline();
+    # elseif (Shock_Flag .== 1)
+    #     U_Bvals = CalcBCpSW(U,A,Gamma,d,Tot_X_Pts,Exit_Pressure)
+    #     #@info U_Bvals
+    #     #readline();
+    # else
+    #     disp(["Unknown Shock_Flag value: " int2str(Shock_Flag)])
+    # end
 
-    for m = 1:d
-        U[m,1] = U_Bvals[m,1]
-        U[m,Tot_X_Pts] = U_Bvals[m,2]
-    end
-
+    # for m = 1:d
+    #     U[m,1] = U_Bvals[m,1]
+    #     U[m,Tot_X_Pts] = U_Bvals[m,2]
+    # end
+    # # to here, replace with jexpresso bc's
     u = zeros(Float64, Int(d*Tot_X_Pts))
-    for ip=1:Tot_X_Pts
-        for ieq=0:d-1
-            u[Tot_X_Pts*ieq + ip] = U[ieq+1, ip]
-        end
-    end
+    # for ip=1:Tot_X_Pts
+    #     for ieq=0:d-1
+    #         u[Tot_X_Pts*ieq + ip] = U[ieq+1, ip]
+    #     end
+    # end
 
-    inviscid_rhs_el!( u, params, params.inputs[:lsource], NSD_1D(), params.inputs[:AD])
+    # replace with call to _build_rhs
+    #inviscid_rhs_el!( u, params, params.inputs[:lsource], NSD_1D(), params.inputs[:AD])
+    build_rhs!(params.RHS, u, params, 0)
 
     rhs = zeros(Float64, d, Tot_Int_Pts)
     for i=1:Tot_Int_Pts
