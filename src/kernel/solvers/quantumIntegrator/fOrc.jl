@@ -107,16 +107,21 @@ function fOrc(t, Start, TCoeffs, d,
     #     U[m,Tot_X_Pts] = U_Bvals[m,2]
     # end
     # # to here, replace with jexpresso bc's
-    u = zeros(Float64, Int(d*Tot_X_Pts))
-    # for ip=1:Tot_X_Pts
-    #     for ieq=0:d-1
-    #         u[Tot_X_Pts*ieq + ip] = U[ieq+1, ip]
-    #     end
-    # end
+    u = zeros(Float64, params.mesh.npoin*d)
+    for ip=1:Tot_X_Pts
+        for ieq=0:d-1
+            u[Tot_X_Pts*ieq + ip] = U[ieq+1, ip]
+        end
+    end
 
     # replace with call to _build_rhs
     #inviscid_rhs_el!( u, params, params.inputs[:lsource], NSD_1D(), params.inputs[:AD])
-    build_rhs!(params.RHS, u, params, 0)
+    build_rhs!(params.RHS, u, params, 0.0)
+
+    # for m=1:d
+    #     U[m,1] = params.uaux[1,m]
+    #     U[m,Tot_X_Pts] = params.uaux[Tot_X_Pts, m]
+    # end
 
     rhs = zeros(Float64, d, Tot_Int_Pts)
     for i=1:Tot_Int_Pts
@@ -124,6 +129,9 @@ function fOrc(t, Start, TCoeffs, d,
             rhs[j, i] = params.RHS[i+1, j]
         end
     end
+    #@info rhs
+
+    
     #f_Loc = rhs
     # evaluate f using Calcf0
     #f_Loc = Calcf0(d, Tot_X_Pts, Tot_Int_Pts, Gamma, Del_x, U, A, params)

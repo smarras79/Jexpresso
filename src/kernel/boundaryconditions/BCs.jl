@@ -159,7 +159,8 @@ function build_custom_bcs!(::NSD_1D, t, mesh, metrics, ω,
     ip = 1
     fill!(qbdy, 4325789.0)
     #user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], t, "left", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-    user_bc_dirichlet!(@view(uaux[:,:]), mesh.x[ip], t, "left", qbdy, @view(qe[:,:]),inputs[:SOL_VARS_TYPE])
+    user_bc_dirichlet!(@view(uaux[:,:]), mesh.x[ip], t, "left", qbdy, @view(qe[:,:]),
+    inputs[:SOL_VARS_TYPE])
     for ieq =1:neqs
         if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
             uaux[ip,ieq] = qbdy[ieq]
@@ -170,7 +171,8 @@ function build_custom_bcs!(::NSD_1D, t, mesh, metrics, ω,
     ip=mesh.npoin_linear
     fill!(qbdy, 4325789.0)
     #user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], t, "right", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-    user_bc_dirichlet!(@view(uaux[:,:]), mesh.x[ip], t, "right", qbdy, @view(qe[:,:]),inputs[:SOL_VARS_TYPE])
+    user_bc_dirichlet!(@view(uaux[:,:]), mesh.x[ip], t, "right", qbdy, @view(qe[:,:]),
+    inputs[:SOL_VARS_TYPE])
     for ieq =1:neqs
         if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
             uaux[ip,ieq] = qbdy[ieq]

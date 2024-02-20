@@ -22,6 +22,7 @@ function params_setup(sem,
     #-----------------------------------------------------------------
     u            = zeros(T, sem.mesh.npoin*qp.neqs)
     uaux         = zeros(T, sem.mesh.npoin, qp.neqs)
+    uauxqm         = zeros(T, qp.neqs, sem.mesh.npoin)
     uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
     rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
     rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
@@ -121,7 +122,7 @@ function params_setup(sem,
     if ("Laguerre" in sem.mesh.bdy_edge_type || inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         
         params = (T, F, G, S,
-                  uaux, uaux_el, vaux,
+                  uaux, uauxqm, uaux_el, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,
                   rhs_diffξ_el, rhs_diffη_el,
@@ -145,7 +146,7 @@ function params_setup(sem,
                   qp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
     else
         params = (T, F, G, S,
-                  uaux, uaux_el, vaux,
+                  uaux, uauxqm, uaux_el, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,
                   rhs_diffξ_el, rhs_diffη_el,
