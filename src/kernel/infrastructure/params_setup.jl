@@ -29,6 +29,7 @@ function params_setup(sem,
         rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
         rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
         rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
+        rhs_diffζ_el = zeros(T, 0)
         F            = zeros(T, sem.mesh.ngl, qp.neqs)
         G            = zeros(T, sem.mesh.ngl, qp.neqs)
         H            = zeros(T, 0)
@@ -40,6 +41,7 @@ function params_setup(sem,
         rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        rhs_diffζ_el = zeros(T, 0)
         F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         H            = zeros(T, 0)
@@ -51,6 +53,7 @@ function params_setup(sem,
         rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_diffη_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
+        rhs_diffζ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         F            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         G            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         H            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
@@ -143,7 +146,7 @@ function params_setup(sem,
                   uaux, uaux_el, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,
-                  rhs_diffξ_el, rhs_diffη_el,
+                  rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
                   uprimitive,
                   q_t, q_ti, fqf, b, B,
                   q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag,
@@ -167,7 +170,7 @@ function params_setup(sem,
                   uaux, uaux_el, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,
-                  rhs_diffξ_el, rhs_diffη_el,
+                  rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
                   uprimitive,
                   q_t, q_ti, fqf, b, B,
                   RHS, RHS_visc,
