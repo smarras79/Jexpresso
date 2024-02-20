@@ -867,7 +867,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
         ip2 = iel_g + 1
         
         mesh.conn[iel_g, 1], mesh.conn[iel_g, ngl] = ip1, ip2
-        mesh.connijk[iel_g, 1, 1], mesh.connijk[iel_g, ngl, 1] = ip1, ip2
+        mesh.connijk[iel_g, 1, 1, 1], mesh.connijk[iel_g, ngl, 1, 1] = ip1, ip2
         x1, x2 = mesh.x[ip1], mesh.x[ip2]
         
         iconn = 1
@@ -877,7 +877,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
             
             mesh.conn[iel_g, l] = ip #OK
-            mesh.connijk[iel_g, l, 1] = ip #OK
+            mesh.connijk[iel_g, l, 1, 1] = ip #OK
             iconn = iconn + 1
             
             ip = ip + 1
