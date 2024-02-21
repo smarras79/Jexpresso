@@ -5,7 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                 => 1.0,
         :ode_solver           => ABM54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :Δt                   => 0.001,
+        :Δt                   => 0.0005,
         :ndiagnostics_outputs => 20,
         :case                 => "rtb",
         :lsource              => true,
@@ -14,10 +14,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        #:lexact_integration  => true,
-        #:llump               => true,
         :interpolation_nodes =>"lgl",
-        :nop                 => 1,
+        :nop                 => 4,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -31,7 +29,7 @@ function user_inputs()
         #:lread_gmsh => false, #If false, a 1D problem will be enforced
         :xmin => 0.0,
         :xmax => 3.0,
-        :nelx => 120,
+        :nelx => 30,
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
