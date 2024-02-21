@@ -6,17 +6,17 @@ using Parameters
     Rair::T =  287.0 #J/kg.K
     cp::T   = 1005.0 #J/kg.K
     cv::T   =  718.0 #J/kg.K
-    γair::T = cp/cv
-    γ::T    = cp/cv
+    γair::T = T(cp/cv)
+    γ::T    = T(cp/cv)
     Pr::T   = 0.7
     Prnum::T= 0.1
     pref::T = 100000.0 #Pa
     
-    Rovercv = Rair/cv
-    cpoverR = cp/Rair
-    cpovercv= cp/cv
-    cvovercp= cv/cp
-    C0::T   = (Rair^γ)/pref^(γ-1.0) #Rovercv
+    Rovercv::T = T(Rair/cv)
+    cpoverR::T = T(cp/Rair)
+    cpovercv::T = T(cp/cv)
+    cvovercp::T = T(cv/cp)
+    C0::T   = T((Rair^γ)/pref^(γ-1.0)) #Rovercv
     
     #Gravity
     g::T = 9.80616 #m/s²

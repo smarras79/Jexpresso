@@ -61,3 +61,15 @@ function user_source!(S::SubArray{Float64},
     S[4] = 0.0
     
 end
+
+function user_source!(q,x,y)
+
+    PhysConst = PhysicalConst{Float32}()
+
+    #
+    # S(q(x)) = -ρg
+    #
+    ρ  = q[1]
+
+    return 0.0, 0.0, -ρ*PhysConst.g, 0.0
+end

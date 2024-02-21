@@ -396,9 +396,10 @@ function rhs!(du, u, params, time)
             k(params.RHS, u, params.mesh.connijk , params.basis.dψ, params.ω, params.M, params.mesh.ngl; ndrange = params.mesh.nelem*params.mesh.ngl,workgroupsize = params.mesh.ngl)
             RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
         elseif (params.SD == NSD_2D())
-            
+            #PhysConst = PhysicalConst{TFloat}()
+            u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
             k = _build_rhs_gpu_2D_v0!(backend,(Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-            k(params.RHS, u, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je, params.basis.dψ, params.ω, params.M, params.mesh.ngl; ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
+            k(params.RHS, params.uaux, params.mesh.x, params.mesh.y, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je, params.basis.dψ, params.ω, params.M, params.mesh.ngl, TInt(params.neqs); ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
             RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
         end
     end
