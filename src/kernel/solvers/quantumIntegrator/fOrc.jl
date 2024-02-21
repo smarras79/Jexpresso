@@ -6,50 +6,50 @@ include("Calcf0.jl");
 using Polynomials
 
 function fOrc(t, Start, TCoeffs, d, 
-    rmaxp1, Tot_Int_Pts, Gamma, Del_x, A, 
-      Shock_Flag, Exit_Pressure, params)
-#FORC evaluates ODE driver function f at l^{s}_[i](t) at interior grd-pts
-#
-#   fOrc evaluates the ODE driver function at l^{s}_[i](t) at the knot time
-#       t in subsubinterval j for each interior grid-point. ODE driver 
-#       function f is for 1D inviscid; compressible flow through a nozzle.
-#
-#   INPUTS: t = knot time value
-#           Start = starting time for subsubinterval j
-#           TCoeffs = d x rmaxp1 x Tot_Int_Pts array with Taylor 
-#                       Polynomial coefficients for l^{s}_[i](t) in 
-#                       subsubinterval j at each interior grid-point
-#           d = number of components of f & l^{s}_[i](t)
-#           rmaxp1 = number of terms/coefficients in a Taylor polynomial
-#           Tot_Int_Pts = number of interior grid-points
-#           Gamma = ratio of specific heats
-#           Del_x = distance between grid-points
-#           A = 1 x Tot_X_Pts array storing nozzle area at all grid-points
-#           Shock_Flag = 0 [1] if shock wave absent [present]
-#           Exit_Pressure = pressure at nozzle exit()
-#
-#   OUTPUT:
-#           f_Loc = d x Tot_Int_Pts array storing d components of ODE 
-#                   driver function f(U) at each interior grid-point at  
-#                   current value of primary flow variable U
-#
-#   Support functions: CalcBCmSW; CalcBCpSW; Calcf0
+              rmaxp1, Tot_Int_Pts, Gamma, Del_x, A, 
+              Shock_Flag, Exit_Pressure, params)
+    #FORC evaluates ODE driver function f at l^{s}_[i](t) at interior grd-pts
+    #
+    #   fOrc evaluates the ODE driver function at l^{s}_[i](t) at the knot time
+    #       t in subsubinterval j for each interior grid-point. ODE driver 
+    #       function f is for 1D inviscid; compressible flow through a nozzle.
+    #
+    #   INPUTS: t = knot time value
+    #           Start = starting time for subsubinterval j
+    #           TCoeffs = d x rmaxp1 x Tot_Int_Pts array with Taylor 
+    #                       Polynomial coefficients for l^{s}_[i](t) in 
+    #                       subsubinterval j at each interior grid-point
+    #           d = number of components of f & l^{s}_[i](t)
+    #           rmaxp1 = number of terms/coefficients in a Taylor polynomial
+    #           Tot_Int_Pts = number of interior grid-points
+    #           Gamma = ratio of specific heats
+    #           Del_x = distance between grid-points
+    #           A = 1 x Tot_X_Pts array storing nozzle area at all grid-points
+    #           Shock_Flag = 0 [1] if shock wave absent [present]
+    #           Exit_Pressure = pressure at nozzle exit()
+    #
+    #   OUTPUT:
+    #           f_Loc = d x Tot_Int_Pts array storing d components of ODE 
+    #                   driver function f(U) at each interior grid-point at  
+    #                   current value of primary flow variable U
+    #
+    #   Support functions: CalcBCmSW; CalcBCpSW; Calcf0
 
-# initialize parameter & array
+    # initialize parameter & array
 
     Tot_X_Pts = Tot_Int_Pts + 2; # number of grid-points
     #@info t Start
     delt = t - Start; #added +1 for bounds error, might have to change   # elapsed time from start of subsubinterval j
     lt = zeros(d,Tot_Int_Pts);   # stores l^{s}_[i](t) at each interior 
-              #     grid-point
+    #     grid-point
 
     PolyArr = zeros(1, rmaxp1);  # initialize to zero array storing Taylor 
-           #    polynomial coefficients for l[t[j-1], i] 
-           #    for given component & interior grid-point
-          
+    #    polynomial coefficients for l[t[j-1], i] 
+    #    for given component & interior grid-point
+    
     U = zeros(d, Tot_X_Pts);  # array to store primary flow variables
 
-# evaluate l^{s}_[i](t) at each interior grid-point, one component at time
+    # evaluate l^{s}_[i](t) at each interior grid-point, one component at time
 
     for ll = 1:Tot_Int_Pts    
         for m = 1: d           
@@ -87,7 +87,7 @@ function fOrc(t, Start, TCoeffs, d,
         end
     end
 
-# assign U at boundary points using flow boundary conditions
+    # assign U at boundary points using flow boundary conditions
 
     # from here
     # if (Shock_Flag .== 0)
@@ -115,7 +115,6 @@ function fOrc(t, Start, TCoeffs, d,
     end
 
     # replace with call to _build_rhs
-    #inviscid_rhs_el!( u, params, params.inputs[:lsource], NSD_1D(), params.inputs[:AD])
     build_rhs!(params.RHS, u, params, 0.0)
 
     # for m=1:d
@@ -136,5 +135,5 @@ function fOrc(t, Start, TCoeffs, d,
     # evaluate f using Calcf0
     #f_Loc = Calcf0(d, Tot_X_Pts, Tot_Int_Pts, Gamma, Del_x, U, A, params)
 
-return rhs
+    return rhs
 end

@@ -4,7 +4,7 @@ function user_bc_dirichlet!(q::SubArray{Float64},
                             tag::String,
                             qbdy::AbstractArray,                            
                             qe::SubArray{Float64},
-                            ::TOTAL)
+                            ::TOTAL, ::FD)
     
     U1in = 0.0
     U2in = 0.0

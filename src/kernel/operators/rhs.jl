@@ -229,17 +229,17 @@ function _build_rhs!(RHS, u, params, time)
     nelem   = params.mesh.nelem
     npoin   = params.mesh.npoin
     lsource = params.inputs[:lsource]
-        
+    
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
-    ## resetRHSToZero_inviscid!(params) 
-    ## if (params.laguerre && params.inputs[:lfilter])
-    ##      reset_laguerre_filters!(params)
-    ## end
-    ## if (params.inputs[:lfilter])
-    ##     filter!(u, params, time, SD, params.SOL_VARS_TYPE)
-    ## end
+    resetRHSToZero_inviscid!(params) 
+    if (params.laguerre && params.inputs[:lfilter])
+        reset_laguerre_filters!(params)
+    end
+    if (params.inputs[:lfilter])
+        filter!(u, params, time, SD, params.SOL_VARS_TYPE)
+    end
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
@@ -248,8 +248,8 @@ function _build_rhs!(RHS, u, params, time)
                                params.ω, neqs, params.inputs, AD, SD)
     
     inviscid_rhs_el!(u, params, lsource, SD, AD)
-    ##DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, AD)
-    #@info params.RHS[:,1]
+    DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, AD)
+    
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -263,22 +263,20 @@ function _build_rhs!(RHS, u, params, time)
         
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-    ## for ieq=1:neqs
-    ##     divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
-    ## end
-    #@info params.RHS[2,2], params.mesh.x[2]
-    #@info params.RHS[4,2], params.mesh.x[4]
-
+    for ieq=1:neqs
+        divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
+    end
+    
 end
 
 
 function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D, ::FD)
-    # this needs to be called from quantum solver (analong of f0rc.jl)
+    
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmax = params.xmax
     xmin = params.xmin
     ymax = params.ymax    
-          
+    
     for ip=1:params.mesh.npoin
         
         user_flux!(@view(params.F[ip,:]), @view(params.G[ip,:]), SD,
@@ -304,7 +302,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D, ::FD)
                          ymax=ymax)
         end
     end
-        
+    
     _expansion_inviscid!(u, params, 0, params.CL, params.QT, SD, params.AD)
     
 end

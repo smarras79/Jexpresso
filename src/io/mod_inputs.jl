@@ -18,7 +18,6 @@ function mod_inputs_user_inputs!(inputs)
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
     ##1D plotting inputs for paper
-
     if(!haskey(inputs, :llinsolve))
       inputs[:llinsolve] = false
     end
@@ -134,6 +133,12 @@ function mod_inputs_user_inputs!(inputs)
     if(!haskey(inputs, :filter_type))
         inputs[:filter_type] = "erf"
     end
+
+    
+    if(!haskey(inputs, :lquantum))
+      inputs[:lquantum] = false
+    end
+    
     #
     # Plotting parameters:
     #
