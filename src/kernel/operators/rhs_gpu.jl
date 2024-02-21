@@ -20,7 +20,7 @@
     KernelAbstractions.@atomic RHS[ip] -= ω[il]*dFdxi/ M[ip]
 end
 
-@kernel function _build_rhs_gpu_2D_v0!(RHS, u, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, M, ngl)
+@kernel function _build_rhs_gpu_2D_v0!(RHS, u, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, M, ngl, neq)
     s = Int32(@groupsize()[1])
     #n = div(@ndrange()[1],s)#div(length(A),s)
     ie = @index(Group, Linear)
@@ -33,40 +33,42 @@ end
     DIM = @uniform @groupsize()[1]
     ### define and populate flux array as shared memory then make sure blocks are synchronized
     F = @localmem eltype(RHS) (DIM+1,DIM+1)
-    #F[i_x,i_y] = Float32(1.0)*u[ip] #user_flux(u[ip])
     G = @localmem eltype(RHS) (DIM+1,DIM+1)
-    #G[i_x,i_y] = Float32(1.0)*u[ip]
-    #F[i_x,i_y] = flux[1]
-    #G[i_x,i_y] = flux[2]
-    #user_flux!(F[i_x,i_y],G[i_x,i_y],u[ip])
-    #F[i_x,i_y], G[i_x,i_y] = user_flux(u[ip])
-    flux = user_flux(u[ip])
-    F[i_x,i_y] = flux[1]
-    G[i_x,i_y] = flux[2]
+    S = @localmem eltype(RHS) (DIM+1,DIM+1)
+
+    flux = user_flux(@view(u[ip,1:neq]))
+    
+    #source = user_source(u[ip,:],x[ip],y[ip])
     @synchronize()
     ### do numerical integration
-    dFdξ = zero(Float32)
-    dFdη = zero(Float32)
-    dGdξ = zero(Float32)
-    dGdη = zero(Float32)
+    for ieq =1:neq
+        F[i_x,i_y] = flux[ieq]
+        G[i_x,i_y] = flux[neq+ieq]
+        #S[i_x,i_y] = source[ieq]
+        @synchronize()
+        dFdξ = zero(Float32)
+        dFdη = zero(Float32)
+        dGdξ = zero(Float32)
+        dGdη = zero(Float32)
 
-    for k=1:ngl
-        dFdξ += dψ[k,i_x]*F[k,i_y]
-        dFdη += dψ[k,i_y]*F[i_x,k]
-        dGdξ += dψ[k,i_x]*G[k,i_y]
-        dGdη += dψ[k,i_y]*G[i_x,k]
-    end
+        for k=1:ngl
+            dFdξ += dψ[k,i_x]*F[k,i_y]
+            dFdη += dψ[k,i_y]*F[i_x,k]
+            dGdξ += dψ[k,i_x]*G[k,i_y]
+            dGdη += dψ[k,i_y]*G[i_x,k]
+        end
 
-    dξdx_ij = dξdx[ie,i_x,i_y]
-    dξdy_ij = dξdy[ie,i_x,i_y]
-    dηdx_ij = dηdx[ie,i_x,i_y]
-    dηdy_ij = dηdy[ie,i_x,i_y]
+        dξdx_ij = dξdx[ie,i_x,i_y]
+        dξdy_ij = dξdy[ie,i_x,i_y]
+        dηdx_ij = dηdx[ie,i_x,i_y]
+        dηdy_ij = dηdy[ie,i_x,i_y]
 
-    dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-    dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+        dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
+        dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
 
     ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
-    KernelAbstractions.@atomic RHS[ip] -= ω[i_x]*ω[i_y]*Je[ie,i_x,i_y]*(dFdx + dGdy)/ M[ip]
+    KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*Je[ie,i_x,i_y]*((dFdx + dGdy))/M[ip]#- S[i_x,i_y])/ M[ip]
+    end
 end
 
 #=backend = MetalBackend()

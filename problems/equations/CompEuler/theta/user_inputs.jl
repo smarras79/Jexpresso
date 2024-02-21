@@ -15,7 +15,7 @@ function user_inputs()
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         :lsource              => true, 
-        #:backend              => MetalBackend(),
+        :backend              => MetalBackend(),
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

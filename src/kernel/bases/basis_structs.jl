@@ -392,12 +392,13 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
     ωP ::TFloat=0.0
     
     Δ  ::TFloat=0.0
-    
+    ξ = zeros(TFloat,nop+1)
+    ω = zeros(TFloat,nop+1)
     println( " # Compute LGL nodes ........................")
     
     for j=1:nop+1
-	lgl.ξ[j] = 0.0;
-	lgl.ω[j] = 1.0;
+	ξ[j] = 0.0;
+	ω[j] = 1.0;
     end
     
     if (nop == 1)
@@ -406,25 +407,25 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
 	ξ1           =  1.0
 	ω1           =   ω0
         
-	lgl.ξ[1]     =   ξ0
-	lgl.ξ[nop+1] =   ξ1
-	lgl.ω[1]     =   ω0
-	lgl.ω[nop+1] =   ω1
+	ξ[1]     =   ξ0
+	ξ[nop+1] =   ξ1
+	ω[1]     =   ω0
+	ω[nop+1] =   ω1
     else 
 	ξ0            = -1.0
 	ω0            =  TFloat(2.0/(nop*(nop + 1)))
 	ξP            =  1.0
 	ωP            =   ω0
         
-	lgl.ξ[1]      =   ξ0
-	lgl.ξ[nop+1]  =   ξP
-	lgl.ω[1]      =   ω0
-	lgl.ω[nop+1]  =   ωP
+	ξ[1]      =   ξ0
+	ξ[nop+1]  =   ξP
+	ω[1]      =   ω0
+	ω[nop+1]  =   ωP
 	
         for jj = 2:floor(Int,(nop + 1)/2) 
 	    j = jj - 1
 	    ξj = -cos((j + 0.25)*π/nop - 3.0/(8.0*nop*π*(j + 0.25)))
-	    lgl.ξ[jj] = ξj;
+	    ξ[jj] = ξj;
             
             for k = 0:NITER
 	        LegendreAndDerivativeAndQ!(Legendre, nop, ξj)
@@ -436,24 +437,31 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
                 end
 	    end
             LegendreAndDerivativeAndQ!(Legendre, nop, ξj)
-	    lgl.ξ[jj]      =  ξj
-	    lgl.ξ[nop+1-j] = -ξj
+	    ξ[jj]      =  ξj
+	    ξ[nop+1-j] = -ξj
 	    xj2            =  ξj*ξj
 	    L2             = Legendre.legendre*Legendre.legendre
-	    lgl.ω[jj]      = 2.0/(nop*(nop + 1.0)*L2)
-	    lgl.ω[nop+1-j] = lgl.ω[jj]
+	    ω[jj]      = 2.0/(nop*(nop + 1.0)*L2)
+	    ω[nop+1-j] = lgl.ω[jj]
             
         end
     end
     
     if (mod(nop,2) == 0)
 	LegendreAndDerivativeAndQ!(Legendre, nop, 0.0);
-	lgl.ξ[TInt(nop/2)+1] = 0.0;
+	ξ[TInt(nop/2)+1] = 0.0;
 	
 	L2           = Legendre.legendre*Legendre.legendre;
-	lgl.ω[TInt(nop/2)+1] = 2.0/(nop*(nop + 1.0)*L2);
+	ω[TInt(nop/2)+1] = 2.0/(nop*(nop + 1.0)*L2);
     end
 
+    if (backend == CPU())
+        lgl.ξ .= ξ
+        lgl.ω .= ω
+    else
+        KernelAbstractions.copyto!(backend,lgl.ξ,ξ)
+        KernelAbstractions.copyto!(backend,lgl.ω,ω)
+    end
     for j=1:nop+1       
         println( " # ξ, ω =: ", " ", lgl.ξ[j], " " , lgl.ω[j])
     end
