@@ -364,6 +364,24 @@ function mod_inputs_user_inputs!(inputs)
     end
 
     #
+    # AD: abstract discretization
+    #
+    if(!haskey(inputs, :AD))
+        inputs[:AD] = ContGal()
+    else
+        if inputs[:AD] == FD() && inputs[:nop] > 1
+            
+            inputs[:nelx] = inputs[:nelx]*inputs[:nop]
+            
+            inputs[:nop] = 1
+            @warn(" WARNING on NOP: wehen using AD => FD(), then nop=1 is set.")
+        end
+        if inputs[:AD] != ContGal() && inputs[:AD] != FD()
+            @mystop(" :AD can only be either ContGal() or FD() at the moment.")
+        end
+    end
+    
+    #
     # Correct quantities based on a hierarchy of input variables
     #
     # Define default npx,y,z for native grid given
@@ -479,14 +497,6 @@ function mod_inputs_user_inputs!(inputs)
         inputs[:CL] = CL()
     end
 
-    if(!haskey(inputs, :AD))
-        inputs[:AD] = ContGal()
-    else
-        if inputs[:AD] != ContGal() && inputs[:AD] != FD()
-            @mystop(" :AD can only be either ContGal() or FD() at the moment.")
-        end
-    end
-    
     if(!haskey(inputs, :SOL_VARS_TYPE))
         inputs[:SOL_VARS_TYPE] = TOTAL() #vs PERT()
     end

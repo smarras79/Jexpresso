@@ -77,7 +77,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             q.qn[ip,2] = ρ*A*u
             q.qn[ip,3] = ρ*(e/γm1 + 0.5*γ*u*u)*A
             q.qn[ip,end] = p
-
+            
             initial[ip,6] = q.qn[ip,1]
             initial[ip,7] = q.qn[ip,2]
             initial[ip,8] = q.qn[ip,3]
@@ -92,23 +92,21 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             qout[ip,end] = ρ*T
         end
     end
-
+    
     C = 0.5
     Del_x = (mesh.xmax - mesh.xmin)/(mesh.npoin-1)
     Loc_TSteps = zeros(1,(mesh.npoin - 2))
-    #@info Del_x
+
     for i = 2:(mesh.npoin - 1)
         Loc_TSteps[i - 1] = (C*Del_x)/(sqrt(initial[i, 4]) + q.qn[i, 2]/q.qn[i, 1])
     end
-    inputs[:Δt] = minimum(Loc_TSteps)
-    #@info inputs[:Δt]
-    #@mystop
-
+    inputs[:Δt] = minimum(Loc_TSteps)*0.25
+    
     initial[sortperm(initial[:, 5]), :]
     
-    open("INITIAL.txt", "w") do io
-        writedlm(io, round.([initial[:,5] initial[:,1] initial[:,2] initial[:,3] initial[:,4] initial[:,6] initial[:,7] initial[:,8]], digits=3))
-    end
+    #open("INITIAL.txt", "w") do io
+    #    writedlm(io, round.([initial[:,5] initial[:,1] initial[:,2] initial[:,3] initial[:,4] initial[:,6] initial[:,7] initial[:,8]], digits=3))
+    #end
     
     varsout = ("ρ", "u", "e", "p")
     if (isempty(inputs[:outvars]) == false)

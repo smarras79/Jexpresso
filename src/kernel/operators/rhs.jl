@@ -332,7 +332,8 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D, ::ContGal)
                 user_source!(@view(params.S[i,1,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qp.qe[ip,:]),          #ρref 
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
+                             neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
          
