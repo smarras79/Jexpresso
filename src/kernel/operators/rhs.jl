@@ -9,7 +9,7 @@ function build_rhs!(RHS, u, params, time)
     
 end
 
-#export _expansion_inviscid!
+# export _expansion_inviscid!
 export _build_rhs!
 
 
@@ -602,11 +602,26 @@ end
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
 
 #=
+# Assume CL should be either CL() or NCL() but is not defined
+if !isdefined(Main, :CL)
+    abstract type ConservationLaw end
+    struct CL <: ConservationLaw end
+    println("CL and NCL have been defined for documentation purposes.")
+end
+
+# Check and define NSD_2D only if it's not already defined
+if !isdefined(Main, Symbol("NSD_2D"))
+    abstract type AbstractSpaceDimensions end
+    struct NSD_2D <: AbstractSpaceDimensions end
+    const NSD_2D_instance = NSD_2D() # Create an instance for usage in functions
+    println("NSD_2D was not defined. It has been defined now for documentation purposes.")
+end
+
 """
     _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
+add text
 """
 =#
-
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
     
     N = params.mesh.ngl

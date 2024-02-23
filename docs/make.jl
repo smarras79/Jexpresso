@@ -10,6 +10,8 @@ makedocs(
         "Home" => "index.md",
         "Jexpresso" => "Jexpresso.md",
         "_build_rhs!" => "Build rhs.md",
+        "_expansion_inviscid!" => "Expansion inviscid.md",
+        "Performance Comparison" => "Performance Comparison.md",
     ],
  )
 
