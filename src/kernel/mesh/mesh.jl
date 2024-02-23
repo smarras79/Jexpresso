@@ -326,13 +326,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 
             @printf(" %d %d %d %d %d %d %d %d \n",
                     mesh.connijk[iel, 1, 1, 1],
-                    mesh.connijk[iel, 1, ngl, 1],
-                    mesh.connijk[iel, 1, 1, ngl],
                     mesh.connijk[iel, ngl, 1, 1],
-                    mesh.connijk[iel, ngl, ngl, 1],
-                    mesh.connijk[iel, 1, ngl, ngl],
                     mesh.connijk[iel, ngl, 1, ngl],
-                    mesh.connijk[iel, ngl, ngl, ngl])
+                    mesh.connijk[iel, 1, ngl 1],
+                    mesh.connijk[iel, 1, ngl, 1],
+                    mesh.connijk[iel, ngl, ngl, 1],
+                    mesh.connijk[iel, ngl, 1, ngl],
+                    mesh.connijk[iel, 1, ngl 1])
+
         end
         @mystop
         #
