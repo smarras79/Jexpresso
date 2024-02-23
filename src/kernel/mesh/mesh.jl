@@ -324,7 +324,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             mesh.connijk[iel, ngl, 1, ngl] = mesh.cell_node_ids[iel][5] #12
             mesh.connijk[iel, ngl, ngl, ngl] = mesh.cell_node_ids[iel][7] #8
 
-            @printf(f, " %d %d %d %d %d %d %d %d \n",
+            @printf(" %d %d %d %d %d %d %d %d \n",
                     mesh.connijk[iel, 1, 1, 1],
                     mesh.connijk[iel, 1, ngl, 1],
                     mesh.connijk[iel, 1, 1, ngl],
