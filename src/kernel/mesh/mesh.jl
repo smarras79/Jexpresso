@@ -305,37 +305,41 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         mesh.connijk::Array{Int64,4} = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
 
         for iel = 1:mesh.nelem
-            #CGNS numbering:
-            mesh.conn[iel, 1] = mesh.cell_node_ids[iel][2] #9
-            mesh.conn[iel, 2] = mesh.cell_node_ids[iel][6] #11
-            mesh.conn[iel, 3] = mesh.cell_node_ids[iel][8] #5
-            mesh.conn[iel, 4] = mesh.cell_node_ids[iel][4] #1
-            mesh.conn[iel, 5] = mesh.cell_node_ids[iel][1] #10
-            mesh.conn[iel, 6] = mesh.cell_node_ids[iel][5] #12
-            mesh.conn[iel, 7] = mesh.cell_node_ids[iel][7] #8
-            mesh.conn[iel, 8] = mesh.cell_node_ids[iel][3] #4
+            #CGNS numbering: OK
+            mesh.conn[iel, 1] = mesh.cell_node_ids[iel][2]
+            mesh.conn[iel, 2] = mesh.cell_node_ids[iel][1]
+            mesh.conn[iel, 3] = mesh.cell_node_ids[iel][5]
+            mesh.conn[iel, 4] = mesh.cell_node_ids[iel][6]
+            mesh.conn[iel, 5] = mesh.cell_node_ids[iel][4]
+            mesh.conn[iel, 6] = mesh.cell_node_ids[iel][3]
+            mesh.conn[iel, 7] = mesh.cell_node_ids[iel][7]
+            mesh.conn[iel, 8] = mesh.cell_node_ids[iel][8]
+
+            #OK
+            mesh.connijk[iel, 1, 1, 1] = mesh.cell_node_ids[iel][2]
+            mesh.connijk[iel, ngl, 1, 1] = mesh.cell_node_ids[iel][1]
+            mesh.connijk[iel, ngl, ngl, 1] = mesh.cell_node_ids[iel][5]
+            mesh.connijk[iel, 1, ngl, 1] = mesh.cell_node_ids[iel][6]
+            mesh.connijk[iel, 1, 1, ngl] = mesh.cell_node_ids[iel][4]
+            mesh.connijk[iel, ngl, 1, ngl] = mesh.cell_node_ids[iel][3]
+            mesh.connijk[iel, ngl, ngl, ngl] = mesh.cell_node_ids[iel][7]
+            mesh.connijk[iel, 1, ngl, ngl] = mesh.cell_node_ids[iel][8]
+
+            #@printf(" %d %d %d %d %d %d %d %d \n",
+            #        mesh.conn[iel, 1],  mesh.conn[iel, 2],  mesh.conn[iel, 3],  mesh.conn[iel, 4],
+            #        mesh.conn[iel, 5],  mesh.conn[iel, 6],  mesh.conn[iel, 7],  mesh.conn[iel, 8])
             
-            mesh.connijk[iel, 1, 1, 1] = mesh.cell_node_ids[iel][2] #9 
-            mesh.connijk[iel, 1, ngl, 1] = mesh.cell_node_ids[iel][4] #1
-            mesh.connijk[iel, 1, 1, ngl] = mesh.cell_node_ids[iel][1] #10
-            mesh.connijk[iel, ngl, 1, 1] = mesh.cell_node_ids[iel][6] #11
-            mesh.connijk[iel, ngl, ngl, 1] = mesh.cell_node_ids[iel][8] #5
-            mesh.connijk[iel, 1, ngl, ngl] =  mesh.cell_node_ids[iel][3] #4
-            mesh.connijk[iel, ngl, 1, ngl] = mesh.cell_node_ids[iel][5] #12
-            mesh.connijk[iel, ngl, ngl, ngl] = mesh.cell_node_ids[iel][7] #8
-
-            @printf(" %d %d %d %d %d %d %d %d \n",
-                    mesh.connijk[iel, 1, 1, 1],
-                    mesh.connijk[iel, ngl, 1, 1],
-                    mesh.connijk[iel, ngl, 1, ngl],
-                    mesh.connijk[iel, 1, ngl 1],
-                    mesh.connijk[iel, 1, ngl, 1],
-                    mesh.connijk[iel, ngl, ngl, 1],
-                    mesh.connijk[iel, ngl, 1, ngl],
-                    mesh.connijk[iel, 1, ngl 1])
-
+            #@printf(" %d %d %d %d %d %d %d %d \n",
+            #        mesh.connijk[iel, 1, 1, 1],
+            #        mesh.connijk[iel, ngl, 1, 1],
+            #        mesh.connijk[iel, ngl, ngl, 1],
+            #        mesh.connijk[iel, 1, ngl, 1],
+            #        mesh.connijk[iel, 1, 1, ngl],
+            #        mesh.connijk[iel, ngl, 1, ngl],
+            #        mesh.connijk[iel, ngl, ngl, ngl],
+            #        mesh.connijk[iel, 1, ngl, ngl])
         end
-        @mystop
+        
         #
         # Fill in elements dictionary needed by NodeOrdering.jl
         #
@@ -707,14 +711,14 @@ function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_3D)
         # CGNS numbering
         #
         ip1 = mesh.cell_node_ids[iel][2]
-        ip2 = mesh.cell_node_ids[iel][6]
-        ip3 = mesh.cell_node_ids[iel][8]
-        ip4 = mesh.cell_node_ids[iel][4]
-        ip5 = mesh.cell_node_ids[iel][1]
-        ip6 = mesh.cell_node_ids[iel][5]
+        ip2 = mesh.cell_node_ids[iel][1]
+        ip3 = mesh.cell_node_ids[iel][5]
+        ip4 = mesh.cell_node_ids[iel][6]
+        ip5 = mesh.cell_node_ids[iel][4]
+        ip6 = mesh.cell_node_ids[iel][3]
         ip7 = mesh.cell_node_ids[iel][7]
-        ip8 = mesh.cell_node_ids[iel][3]
-        
+        ip8 = mesh.cell_node_ids[iel][8]
+                
 	# Edges bottom face:
 	iedg_el = 1
         mesh.conn_edge_el[1, iedg_el, iel] = ip1
@@ -790,15 +794,16 @@ function populate_conn_face_el!(mesh::St_mesh, SD::NSD_3D)
         #
         # CGNS numbering
         #
-        ip1 = mesh.cell_node_ids[iel][2]
-        ip2 = mesh.cell_node_ids[iel][6]
-        ip3 = mesh.cell_node_ids[iel][8]
-        ip4 = mesh.cell_node_ids[iel][4]
-        ip5 = mesh.cell_node_ids[iel][1]
-        ip6 = mesh.cell_node_ids[iel][5]
-        ip7 = mesh.cell_node_ids[iel][7]
-        ip8 = mesh.cell_node_ids[iel][3]
         
+        ip1 = mesh.cell_node_ids[iel][2]
+        ip2 = mesh.cell_node_ids[iel][1]
+        ip3 = mesh.cell_node_ids[iel][5]
+        ip4 = mesh.cell_node_ids[iel][6]
+        ip5 = mesh.cell_node_ids[iel][4]
+        ip6 = mesh.cell_node_ids[iel][3]
+        ip7 = mesh.cell_node_ids[iel][7]
+        ip8 = mesh.cell_node_ids[iel][8]
+                
         #
         # Local faces node connectivity:
         # i.e. what nodes belong to a given local face in iel:
@@ -1409,14 +1414,14 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
     #show(stdout, "text/plain", mesh.conn')
     #@mystop("now")
 
-    #=for iel=1:mesh.nelem
+for iel=1:mesh.nelem
     for i=1:ngl,j=1:ngl,k=1:ngl
-    if (mesh.connijk[iel,i,j,k] == 0)
-    @info  iel, i, j, k
+        if (mesh.connijk[iel,i,j,k] == 0)
+            @info  iel, i, j, k
+        end
     end
-    end
-    end=#
-
+end
+@mystop
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
     return 
 end
