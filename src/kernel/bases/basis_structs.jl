@@ -442,7 +442,7 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
 	    xj2            =  ξj*ξj
 	    L2             = Legendre.legendre*Legendre.legendre
 	    ω[jj]      = 2.0/(nop*(nop + 1.0)*L2)
-	    ω[nop+1-j] = lgl.ω[jj]
+	    ω[nop+1-j] = ω[jj]
             
         end
     end

@@ -12,7 +12,7 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :ndiagnostics_outputs => 2,
+        :ndiagnostics_outputs => 6,
         :case                 => "rtb",
         :lsource              => true, 
         :backend              => MetalBackend(),
@@ -27,7 +27,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1, 2, 3, 4),
-        :μ                   => (0.0, 20.0, 20.0, 20.0), #horizontal viscosity constant for momentum
+        :μ                   => (0.0, 50.0, 50.0, 50.0), #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

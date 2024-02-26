@@ -69,7 +69,9 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
     xmin = minimum(mesh.x)
     ymax = maximum(mesh.y)
     ymin = minimum(mesh.y)
-    
+    flux_gpu = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem),Int64(mesh.ngl), Int64(mesh.ngl), 2*qp.neqs)
+    source_gpu = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem),Int64(mesh.ngl), Int64(mesh.ngl), qp.neqs)
+    qbdy_gpu = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), Int64(mesh.ngl), qp.neqs)
     #The following are only built and active if Laguerre boundaries are to be used
     if ( "Laguerre" in mesh.bdy_edge_type)
         uaux_el_lag      = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngr), qp.neqs)
@@ -119,7 +121,14 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
     
     deps  = zeros(1,1)
     tspan = (TFloat(inputs[:tinit]), TFloat(inputs[:tend]))    
-    visc_coeff = inputs[:μ]#(inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
+    if (backend == CPU())
+        visc_coeff = inputs[:μ]#(inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
+    else
+        coeffs = zeros(TFloat,qp.neqs)
+        coeffs .= inputs[:μ]
+        visc_coeff = KernelAbstractions.allocate(backend,TFloat,qp.neqs)
+        KernelAbstractions.copyto!(backend,visc_coeff,coeffs)
+    end
     ivisc_equations = inputs[:ivisc_equations]   
  
     if ("Laguerre" in mesh.bdy_edge_type || inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
@@ -145,6 +154,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
 		  basis=basis[1], basis_lag = basis[2], ω = ω[1], ω_lag = ω[2], mesh, metrics = metrics[1], metrics_lag = metrics[2], 
                   inputs, visc_coeff, ivisc_equations,
                   M, Minv,
+                  flux_gpu, source_gpu, qbdy_gpu,
                   Δt, deps, xmax, xmin, ymax, ymin,
                   qp.qe, qp.qnm1, qp.qnm2, qp.μ,fx,fy, fy_t, fy_lag, fy_t_lag, laguerre=true)
     else
@@ -162,6 +172,7 @@ function time_loop!(QT,            #Quadrature type: Inexact() vs Exaxt()
                   basis, ω, mesh, metrics,
                   inputs, visc_coeff, ivisc_equations,
                   M, Minv,
+                  flux_gpu, source_gpu, qbdy_gpu,
                   Δt, deps, xmax, xmin, ymax, ymin,
                   qp.qe, qp.qnm1, qp.qnm2, qp.μ,fx,fy,fy_t,laguerre=false)
     end 

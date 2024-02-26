@@ -713,7 +713,6 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     if (backend == CPU() || SD == NSD_1D())
         build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
     else
-        @info typeof(Me),typeof(metrics.Je)
         k= build_mass_matrix_2d_gpu!(backend,(N+1,N+1))
         k(Me, basis.ψ, ω, metrics.Je, N, Q;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl))
     end

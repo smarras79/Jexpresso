@@ -108,8 +108,16 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
     for iout = 1:size(sol.t[:],1)
-        title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-        write_vtk(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
+        if (inputs[:backend] == CPU())
+            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            write_vtk(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
+        else
+            u = KernelAbstractions.allocate(CPU(),TFloat,nvar*mesh.npoin)
+            KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
+            convert_mesh_arrays_to_cpu!(mesh)
+            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            write_vtk(SD, mesh, u, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
+        end
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
     
@@ -401,8 +409,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                 ivar = 3
                 idx = (ivar - 1)*npoin
                 qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./q[1:npoin]
-                                
-                if (size(qexact, 1) === npoin)
+                if (size(qexact, 1) == npoin)
 
                     if inputs[:loutput_pert] == true
                         
@@ -487,7 +494,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
 
     #Solution:
     fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")    
-    vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*0.0, cells)
+    vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*TFloat(0.0), cells)
     for ivar = 1:nvar
         idx = (ivar - 1)*npoin
         vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
