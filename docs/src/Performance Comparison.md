@@ -1,4 +1,4 @@
-# Performance Comparison of Jexpresso vs NUMA
+# Performance Comparison of Jexpresso vs legacy Fortran code
 
 This document compares the performance of Jexpresso against a legacy Fortran code for numerical weather prediction, focusing on wall clock times for a rising-thermal-bubble test.
 
