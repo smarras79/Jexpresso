@@ -1,10 +1,10 @@
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
-                    q::SubArray{Float64},
-                    qe::SubArray{Float64},
+function user_flux!(F::SubArray{TFloat}, G::SubArray{TFloat}, SD::NSD_2D,
+                    q::SubArray{TFloat},
+                    qe::SubArray{TFloat},
                     mesh::St_mesh,
                     ::CL, ::TOTAL; neqs=4, ip=1)
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
     
     ρ  = q[1]
     ρu = q[2]
@@ -82,19 +82,15 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     G[4] = θ
 end
 
-function user_flux(q)
+function user_flux(q,PhysConst)
 
-    ρ  = Float32(1.0)#q[1]
-    ρu = Float32(1.0)#q[2]
-    ρv = Float32(1.0)#q[3]
-    ρθ = Float32(1.0)#q[4]
-    θ  = Float32(1.0)#ρθ/ρ
-    u  = Float32(1.0)#ρu/ρ
-    v  = Float32(1.0)#ρv/ρ
-    #Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-    Pressure =Float32(1.0)
-    F2 = ρu*u + Pressure
-    #return Float32(ρu), Float32(1.0)#, Float32(ρv*u), Float32(ρθ*u), Float32(ρv),Float32(ρu*v),Float32(ρv*v + Pressure),Float32(ρθ*v)
-    #return Float32(0.0)
-    return ρ*Float32(0.5), Float32(0.0)
+    ρ  = q[1]
+    ρu = q[2]
+    ρv = q[3]
+    ρθ = q[4]
+    θ  = ρθ/ρ
+    u  = ρu/ρ
+    v  = ρv/ρ
+    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    return Float32(ρu), Float32(ρu*u + Pressure), Float32(ρv*u), Float32(ρθ*u), Float32(ρv),Float32(ρu*v),Float32(ρv*v + Pressure),Float32(ρθ*v)
 end

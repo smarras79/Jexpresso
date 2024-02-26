@@ -20,6 +20,10 @@ function convert_mesh_arrays!(mesh, backend)
     mesh.connijk = KernelAbstractions.allocate(backend, TInt, mesh.nelem, mesh.ngl, mesh.ngl)
     mesh.connijk .= aux
 
+    aux = KernelAbstractions.allocate(backend, TInt, mesh.nedges_bdy, mesh.ngl)
+    KernelAbstractions.copyto!(backend, aux, mesh.poin_in_bdy_edge)
+    mesh.poin_in_bdy_edge = KernelAbstractions.allocate(backend, TInt, mesh.nedges_bdy, mesh.ngl)
+    mesh.poin_in_bdy_edge .= aux
 end
 
 function convert_mesh_arrays_to_cpu!(mesh)
@@ -43,5 +47,10 @@ function convert_mesh_arrays_to_cpu!(mesh)
     KernelAbstractions.copyto!(CPU(), aux, mesh.connijk)
     mesh.connijk = KernelAbstractions.allocate(CPU(), TInt, mesh.nelem, mesh.ngl, mesh.ngl)
     mesh.connijk .= aux
+
+    aux = KernelAbstractions.allocate(CPU(), TInt, mesh.nedges_bdy, mesh.ngl)
+    KernelAbstractions.copyto!(CPU(), aux, mesh.poin_in_bdy_edge)
+    mesh.poin_in_bdy_edge = KernelAbstractions.allocate(CPU(), TInt, mesh.nedges_bdy, mesh.ngl)
+    mesh.poin_in_bdy_edge .= aux
 end
 
