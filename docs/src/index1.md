@@ -13,7 +13,7 @@ end
 
 # Jexpresso.jl
 
-Documentation of `Jexpresso.jl`.
+Documentation of [Jexpresso](@ref).
 
 !!! note
 

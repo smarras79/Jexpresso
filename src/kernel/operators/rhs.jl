@@ -9,7 +9,7 @@ function build_rhs!(RHS, u, params, time)
     
 end
 
-# export _expansion_inviscid!
+#export _expansion_inviscid!
 export _build_rhs!
 
 
@@ -210,179 +210,6 @@ function uToPrimitives!(neqs, uprimitive, u, uprimitivee, mesh, δtotal_energy, 
     
 end
 
-###JKJ#J#J#J#J#J#J
-#=function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
-    nothing
-end
-
-
-function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
-    
-    γ = 1.4
-    γm1 = 0.4
-    for i=1:mesh.ngl
-        
-        m1 = mesh.connijk[iel,i,1]
-        m2 = m1 + mesh.npoin
-        m3 = m2 + mesh.npoin
-        
-        x  = mesh.x[m1]           
-        A = 1.0 + 2.2*(x - 1.5)^2
-        
-        uprimitive[i,1,1] = u[m1]/A #ρ
-        uprimitive[i,1,2] = u[m2]/u[m1] #u
-        uprimitive[i,1,3] = γm1*(u[m3]/u[m1] - 0.5*γ*uprimitive[i,j,1]*uprimitive[i,j,1]) #T
-
-        #Pressure:
-        uprimitive[i,1,end] = uprimitive[i,1,1]*uprimitive[i,1,3] #ρ*T
-           
-    end
-end
-
-function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::TOTAL, SD::NSD_2D)
-
-    if typeof(PT) == CompEuler
-        
-        PhysConst = PhysicalConst{Float64}()
-        
-        for j=1:mesh.ngl, i=1:mesh.ngl
-            
-            m1 = mesh.connijk[iel,i,j]
-            m2 = m1 + mesh.npoin
-            m3 = m2 + mesh.npoin
-            m4 = m3 + mesh.npoin
-            
-            uprimitive[i,j,1] = u[m1]
-            uprimitive[i,j,2] = u[m2]/u[m1]
-            uprimitive[i,j,3] = u[m3]/u[m1]
-            uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
-            #Tracers
-            if(neqs > 4)
-                mieq = m4
-                for ieq = 5:neqs
-                    mieq = mieq + mesh.npoin
-                    uprimitive[i,j,ieq] = u[mieq]
-                end
-            end
-            #Pressure:
-            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
-            
-        end
-        
-    elseif typeof(PT) == AdvDiff
-        
-        for j=1:mesh.ngl, i=1:mesh.ngl
-            
-            mieq = mesh.connijk[iel,i,j]
-            uprimitive[i,j,1] = u[mieq]
-            
-            for ieq = 2:neqs
-                mieq = mieq + mesh.npoin
-                uprimitive[i,j,ieq] = u[mieq]
-            end
-            
-        end
-    end
-end
-
-function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::PERT, SD::NSD_2D)
-    
-    if typeof(PT) == CompEuler
-        PhysConst = PhysicalConst{Float64}()
-        
-        for j=1:mesh.ngl, i=1:mesh.ngl
-            
-            m1 = mesh.connijk[iel,i,j]
-            m2 = m1 + mesh.npoin
-            m3 = m2 + mesh.npoin
-            m4 = m3 + mesh.npoin
-
-            uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
-            uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]
-            uprimitive[i,j,3] = u[m3]/uprimitive[i,j,1]
-            #uprimitive[i,j,4] = (u[m4] + uprimitive[i,j,1]*uauxe[m1,4])/uprimitive[i,j,1] # CHECK THIS FOR ENE- δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
-            uprimitive[i,j,4] = (u[m4] + uauxe[m1,4])/uprimitive[i,j,1] - uauxe[m1,4]/uauxe[m1,1]#(u[m4] + uauxe[m1,4])/uprimitive[i,j,1]
-
-            #Tracers
-            if(neqs > 4)
-                mieq = m4
-                for ieq = 5:neqs
-                    mieq = mieq + mesh.npoin
-                    uprimitive[i,j,ieq] = u[mieq] + uauxe[mieq,1]
-                end
-            end
-            
-            #Pressure:
-            #uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
-            
-        end
-        
-    elseif typeof(PT) == AdvDiff
-        
-        for j=1:mesh.ngl, i=1:mesh.ngl
-            
-            mieq = mesh.connijk[iel,i,j]
-            uprimitive[i,j,1] = u[mieq]
-            
-            for ieq = 2:neqs
-                mieq = mieq + mesh.npoin
-                uprimitive[i,j,ieq] = u[mieq]
-            end
-            
-        end
-    end
-    
-end
-
-
-function uToPrimitives!(neqs, uprimitive, u, uprimitivee, mesh, δtotal_energy, iel, PT, ::NCL, ::AbstractPert, SD::NSD_2D)
-
-    if typeof(PT) == CompEuler
-        PhysConst = PhysicalConst{Float64}()
-        
-        for j=1:mesh.ngl, i=1:mesh.ngl
-            
-            m1 = mesh.connijk[iel,i,j]
-            m2 = m1 + mesh.npoin
-            m3 = m2 + mesh.npoin
-            m4 = m3 + mesh.npoin
-
-            uprimitive[i,j,1] = u[m1]
-            uprimitive[i,j,2] = u[m2]
-            uprimitive[i,j,3] = u[m3]
-            uprimitive[i,j,4] = u[m4]
-
-            #Tracers
-            if(neqs > 4)
-                mieq = 4
-                for ieq = 5:neqs
-                    mieq = mieq + mesh.npoin
-                    uprimitive[i,j,ieq] = u[mieq]                
-                end
-            end
-            
-            #Pressure:
-            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
-            
-        end
-        
-    elseif typeof(PT) == AdvDiff
-        
-        for j=1:mesh.ngl, i=1:mesh.ngl
-            
-            mieq = mesh.connijk[iel,i,j]
-            uprimitive[i,j,1] = u[mieq]
-            
-            for ieq = 2:neqs
-                mieq = mieq + mesh.npoin
-                uprimitive[i,j,ieq] = u[mieq]
-            end
-            
-        end
-    end
-    
-end=#
-
 
 function rhs!(du, u, params, time)
     
@@ -398,7 +225,20 @@ end
 """
     _build_rhs!(RHS, u, params, time)
 
-add text here for documenter
+Add text here for the documenter.
+
+# Parameters
+    - `RHS`: Description of `RHS`.
+    - `u`: Description of `u`.
+    - `params`: Description of `params`.
+    - `time`: Description of `time`.
+# Usage
+```julia
+# Example usage of `_build_rhs!`
+_build_rhs!(RHS, u, params, time)
+add here the text for examples
+```
+
 """
 function _build_rhs!(RHS, u, params, time)
 
@@ -601,27 +441,22 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
 
-#=
-# Assume CL should be either CL() or NCL() but is not defined
-if !isdefined(Main, :CL)
-    abstract type ConservationLaw end
-    struct CL <: ConservationLaw end
-    println("CL and NCL have been defined for documentation purposes.")
-end
 
-# Check and define NSD_2D only if it's not already defined
-if !isdefined(Main, Symbol("NSD_2D"))
-    abstract type AbstractSpaceDimensions end
-    struct NSD_2D <: AbstractSpaceDimensions end
-    const NSD_2D_instance = NSD_2D() # Create an instance for usage in functions
-    println("NSD_2D was not defined. It has been defined now for documentation purposes.")
-end
+#=
+
+unfortunatelly running the @docs function of the documenter for _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
+returns errors for the CL and NSD_2D.
+the documentation for this function is directly written in the Expansion inviscid.md file.
+the following is how the docs for the documenter should have looked if it worked normally 
 
 """
     _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
-add text
+    
+add text for the documenter
+
 """
 =#
+
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
     
     N = params.mesh.ngl
