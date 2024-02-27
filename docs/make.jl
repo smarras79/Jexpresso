@@ -7,7 +7,7 @@ makedocs(
     modules=[Jexpresso],
     format=Documenter.HTML(),
     pages = Any[
-        "Index" => "Index.md",
+        "Index" => "index.md",
         "Jexpresso" => "Jexpresso.md",
         "`_build_rhs!`" => "Build rhs.md",
         "`_expansion_inviscid!`" => "Expansion inviscid.md",
