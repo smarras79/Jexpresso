@@ -306,7 +306,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     elseif (mesh.nsd == 3)
         
         mesh.connijk::Array{Int64,4}       = zeros(Int64, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
-        mesh.conn_edgesijk::Array{Int64,3} = zeros(Int64, mesh.nelem, mesh.NEDGES_EL)
+        mesh.conn_edgesijk::Array{Int64,2} = zeros(Int64, mesh.nelem, mesh.NEDGES_EL)
             
         for iel = 1:mesh.nelem
             #CGNS numbering: OK
@@ -346,7 +346,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             #        mesh.connijk[iel, ngl, ngl, ngl],
             #        mesh.connijk[iel, 1, ngl, ngl])
         end
-         @mystop
+        #@mystop
             
         #
         # Fill in elements dictionary needed by NodeOrdering.jl
@@ -718,14 +718,14 @@ function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_3D)
         #
         # CGNS numbering
         #
-        ip1 = mesh.connijk[iel, ngl, 1, 1]
-        ip2 = mesh.connijk[iel, ngl, ngl, 1]
-        ip3 = mesh.connijk[iel, 1, ngl, 1]
+        ip1 = mesh.connijk[iel, mesh.ngl, 1, 1]
+        ip2 = mesh.connijk[iel, mesh.ngl, mesh.ngl, 1]
+        ip3 = mesh.connijk[iel, 1, mesh.ngl, 1]
         ip4 = mesh.connijk[iel, 1, 1, 1]
-        ip5 = mesh.connijk[iel, ngl, 1, ngl]
-        ip6 = mesh.connijk[iel, ngl, ngl, ngl]
-        ip7 = mesh.connijk[iel, 1, ngl, ngl]
-        ip8 = mesh.connijk[iel, 1, 1, ngl]
+        ip5 = mesh.connijk[iel, mesh.ngl, 1, mesh.ngl]
+        ip6 = mesh.connijk[iel, mesh.ngl, mesh.ngl, mesh.ngl]
+        ip7 = mesh.connijk[iel, 1, mesh.ngl, mesh.ngl]
+        ip8 = mesh.connijk[iel, 1, 1, mesh.ngl]
                         
 	# Edges bottom face:
 	iedg_el = 1
@@ -802,14 +802,14 @@ function populate_conn_face_el!(mesh::St_mesh, SD::NSD_3D)
         #
         # CGNS numbering
         #
-        ip1 = mesh.connijk[iel, ngl, 1, 1]
-        ip2 = mesh.connijk[iel, ngl, ngl, 1]
-        ip3 = mesh.connijk[iel, 1, ngl, 1]
+        ip1 = mesh.connijk[iel, mesh.ngl, 1, 1]
+        ip2 = mesh.connijk[iel, mesh.ngl, mesh.ngl, 1]
+        ip3 = mesh.connijk[iel, 1, mesh.ngl, 1]
         ip4 = mesh.connijk[iel, 1, 1, 1]
-        ip5 = mesh.connijk[iel, ngl, 1, ngl]
-        ip6 = mesh.connijk[iel, ngl, ngl, ngl]
-        ip7 = mesh.connijk[iel, 1, ngl, ngl]
-        ip8 = mesh.connijk[iel, 1, 1, ngl]
+        ip5 = mesh.connijk[iel, mesh.ngl, 1, mesh.ngl]
+        ip6 = mesh.connijk[iel, mesh.ngl, mesh.ngl, mesh.ngl]
+        ip7 = mesh.connijk[iel, 1, mesh.ngl, mesh.ngl]
+        ip8 = mesh.connijk[iel, 1, 1, mesh.ngl]
         
         #
         # Local faces node connectivity:
@@ -2338,7 +2338,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
     else
         error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
     end
-    
+    @mystop("temporary stop at L 2341 mesh.jl")
     return mesh
     
 end
