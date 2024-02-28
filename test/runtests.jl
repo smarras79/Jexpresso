@@ -1,6 +1,5 @@
 using Test
 using Jexpresso
-using Pkg
 
 # Define a function to run a test case
 function run_example(problem_name::String, case_name::String)
