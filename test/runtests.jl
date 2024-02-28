@@ -28,7 +28,7 @@ end
         ("CompEuler", "wave1d_lag"),
         ("AdvDiff", "Wave_Train"),
         ("AdvDiff", "Wave_Train_Overlapping_Plot"),
-        ("AdvDiff", "2D_Laguerre"),
+        ("AdvDiff", "2d_Laguerre"),
         ("Helmholtz", "case1"),
         ("CompEuler", "theta_laguerre"),
         ("CompEuler", "HSmount_Lag_working")
