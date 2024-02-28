@@ -22,16 +22,37 @@ end
 @testset "JEXPRESSO Examples" begin
     # List of (problem_name, case_name) tuples
     examples = [
-        ("CompEuler", "thetaTracers"),
+        ("CompEuler", "2d"),
         ("CompEuler", "dc"),
+        ("CompEuler", "dc-mount"),
+        ("CompEuler", "HSmount"),
+        ("CompEuler", "HSmount_Lag_working"),
+        ("CompEuler", "HSmount_standard"),
+        ("CompEuler", "mountain"),
+        ("CompEuler", "NHSmount_Lag_working"),
+        ("CompEuler", "NHSmount_standard"),
+        ("CompEuler", "NLHSmount"),
+        ("CompEuler", "nozzleanderson"),
+        ("CompEuler", "ScharMount"),
+        ("CompEuler", "ScharMount_Lag"),
+        ("CompEuler", "theta"),
+        ("CompEuler", "theta_laguerre"),
+        ("CompEuler", "theta_pert"),
+        ("CompEuler", "thetaNC"),
+        ("CompEuler", "thetaTracers"),
         ("CompEuler", "wave1d"),
         ("CompEuler", "wave1d_lag"),
-        ("AdvDiff", "Wave_Train"),
-        ("AdvDiff", "Wave_Train_Overlapping_Plot"),
+        ("AdvDiff", "2d"),
         ("AdvDiff", "2d_Laguerre"),
+        ("AdvDiff", "2D_Wave_Train"),
+        ("AdvDiff", "case1"),
+        ("AdvDiff", "circle"),
+        ("AdvDiff", "fd1d"),
+        ("AdvDiff", "Simple_Wave"),
+        ("AdvDiff", "Wave_Train_Overlapping_Plot"),
+        ("AdvDiff", "Wave_Train"),
         ("Helmholtz", "case1"),
-        ("CompEuler", "theta_laguerre"),
-        ("CompEuler", "HSmount_Lag_working")
+        #("Elliptic", "case1"),
     ]
 
     for (problem_name, case_name) in examples
