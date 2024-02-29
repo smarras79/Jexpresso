@@ -1,9 +1,8 @@
 using Test
 using Jexpresso
 
-# Define a function to run a test case
 function run_example(problem_name::String, case_name::String)
-    ENV["JEXPRESSO_HOME"] = joinpath(@__DIR__, "..")  # Update with the actual path
+    ENV["JEXPRESSO_HOME"] = joinpath(@__DIR__, "..") 
     example_dir = joinpath(ENV["JEXPRESSO_HOME"], "problems", "equations", problem_name, case_name)
     @testset "$problem_name - $case_name" begin
         cd(example_dir)
