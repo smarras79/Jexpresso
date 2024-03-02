@@ -76,7 +76,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     #low and high order connectivity tables
     cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(1))
-    cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
+    cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))    
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
     connijk_lag ::Array{Int64,4}  = zeros(Int64, 0, 0, 0, 0)
@@ -92,6 +92,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     poin_in_face               = Array{Int64}(undef, 0, 0, 0)
     conn_face_el               = Array{Int64}(undef, 0, 0, 0)
     face_in_elem               = Array{Int64}(undef, 0, 0, 0)
+
+    edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
+
 
     #Auxiliary arrays for boundary conditions
     bdy_edge_comp     = Array{Int64}(undef, 1)
@@ -220,6 +223,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.bdy_edge_comp::Array{Int64,1} = zeros(Int64,  mesh.nedges_bdy)
     mesh.poin_in_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges, mesh.ngl)
     mesh.poin_in_bdy_edge::Array{Int64,2} = zeros(Int64,  mesh.nedges_bdy, mesh.ngl)
+
+    
     mesh.poin_in_face::Array{Int64,3} = zeros(Int64,  mesh.nfaces, mesh.ngl, mesh.ngl)
     mesh.edge_type     = Array{Union{Nothing, String}}(nothing, mesh.nedges)
     mesh.bdy_edge_type                    = Array{Union{Nothing, String}}(nothing, mesh.nedges_bdy)
@@ -240,6 +245,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 
     mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
+    mesh.edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
 
 
     if (mesh.nsd == 1)
@@ -330,24 +336,26 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             mesh.connijk[iel, 1, ngl, ngl]   = mesh.cell_node_ids[iel][8]
 
             #Edges:
-            mesh.conn_edgesijk[iel, 1] = mesh.cell_edge_ids[iel][1]
-           
+            #mesh.conn_edgesijk[iel, 1] = mesh.cell_edge_ids[iel][1]
+
+            @info "edge 1 of elem iel corresponds to global edge number: " iel mesh.cell_edge_ids[iel][8]
+            
             #@printf(" %d %d %d %d %d %d %d %d \n",
             #        mesh.conn[iel, 1],  mesh.conn[iel, 2],  mesh.conn[iel, 3],  mesh.conn[iel, 4],
             #        mesh.conn[iel, 5],  mesh.conn[iel, 6],  mesh.conn[iel, 7],  mesh.conn[iel, 8])
             
-            #@printf(" %d %d %d %d %d %d %d %d \n",
-            #        mesh.connijk[iel, 1, 1, 1],
-            #        mesh.connijk[iel, ngl, 1, 1],
-            #        mesh.connijk[iel, ngl, ngl, 1],
-            #        mesh.connijk[iel, 1, ngl, 1],
-            #        mesh.connijk[iel, 1, 1, ngl],
-            #        mesh.connijk[iel, ngl, 1, ngl],
-            #        mesh.connijk[iel, ngl, ngl, ngl],
-            #        mesh.connijk[iel, 1, ngl, ngl])
+            #=@printf(" %d %d %d %d %d %d %d %d \n",
+                    mesh.connijk[iel, 1, 1, 1],
+                    mesh.connijk[iel, ngl, 1, 1],
+                    mesh.connijk[iel, ngl, ngl, 1],
+                    mesh.connijk[iel, 1, ngl, 1],
+                    mesh.connijk[iel, 1, 1, ngl],
+                    mesh.connijk[iel, ngl, 1, ngl],
+                    mesh.connijk[iel, ngl, ngl, ngl],
+                    mesh.connijk[iel, 1, ngl, ngl])
+            =#
         end
-        #@mystop
-            
+        
         #
         # Fill in elements dictionary needed by NodeOrdering.jl
         #
@@ -714,60 +722,154 @@ end #populate_edge_el!
 
 function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_3D)
     
+   
+    cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here
     for iel = 1:mesh.nelem
         #
         # CGNS numbering
         #
-        ip1 = mesh.connijk[iel, mesh.ngl, 1, 1]
-        ip2 = mesh.connijk[iel, mesh.ngl, mesh.ngl, 1]
-        ip3 = mesh.connijk[iel, 1, mesh.ngl, 1]
-        ip4 = mesh.connijk[iel, 1, 1, 1]
-        ip5 = mesh.connijk[iel, mesh.ngl, 1, mesh.ngl]
-        ip6 = mesh.connijk[iel, mesh.ngl, mesh.ngl, mesh.ngl]
-        ip7 = mesh.connijk[iel, 1, mesh.ngl, mesh.ngl]
-        ip8 = mesh.connijk[iel, 1, 1, mesh.ngl]
-                        
-	# Edges bottom face:
-	iedg_el = 1
-        mesh.conn_edge_el[1, iedg_el, iel] = ip1
-	mesh.conn_edge_el[2, iedg_el, iel] = ip2
-	iedg_el = 2
-	mesh.conn_edge_el[1, iedg_el, iel] = ip2
-	mesh.conn_edge_el[2, iedg_el, iel] = ip3
-	iedg_el = 3
-	mesh.conn_edge_el[1, iedg_el, iel] = ip3
-	mesh.conn_edge_el[2, iedg_el, iel] = ip4
-	iedg_el = 4
-	mesh.conn_edge_el[1, iedg_el, iel] = ip4
-	mesh.conn_edge_el[2, iedg_el, iel] = ip1
-
-	#Vertical edges
-	iedg_el = 5
-	mesh.conn_edge_el[1, iedg_el, iel] = ip1
-	mesh.conn_edge_el[2, iedg_el, iel] = ip5
-	iedg_el = 6
-	mesh.conn_edge_el[1, iedg_el, iel] = ip2
-	mesh.conn_edge_el[2, iedg_el, iel] = ip6
-	iedg_el = 7
-	mesh.conn_edge_el[1, iedg_el, iel] = ip3
-	mesh.conn_edge_el[2, iedg_el, iel] = ip7
-	iedg_el = 8
-	mesh.conn_edge_el[1, iedg_el, iel] = ip4
-	mesh.conn_edge_el[2, iedg_el, iel] = ip8
+        ip1 = mesh.connijk[iel, 1, 1, 1]
+        ip2 = mesh.connijk[iel, mesh.ngl, 1, 1]
+        ip3 = mesh.connijk[iel, mesh.ngl, mesh.ngl, 1]
+        ip4 = mesh.connijk[iel, 1, mesh.ngl, 1]
+        ip5 = mesh.connijk[iel, 1, 1, mesh.ngl]
+        ip6 = mesh.connijk[iel, mesh.ngl, 1, mesh.ngl]
+        ip7 = mesh.connijk[iel, mesh.ngl, mesh.ngl, mesh.ngl]
+        ip8 = mesh.connijk[iel, 1, mesh.ngl, mesh.ngl]
         
+        edge_ids = getindex!(cache_edge_ids, mesh.cell_edge_ids, iel)
+        
+	# Edges bottom face:
+	iedge_el = 1
+        mesh.conn_edge_el[1, iedge_el, iel] = ip1
+	mesh.conn_edge_el[2, iedge_el, iel] = ip2        
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+         
+        @printf(" XXX iedge_g=%d -> (ip1, ip2) = (%d %d) \n", iedge_g, 
+                mesh.conn_unique_edges[iedge_g][1],  mesh.conn_unique_edges[iedge_g][2])
+        
+	iedge_el = 2
+	mesh.conn_edge_el[1, iedge_el, iel] = ip2
+	mesh.conn_edge_el[2, iedge_el, iel] = ip3
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+        
+        @printf(" XXX iedge_g=%d -> (ip1, ip2) = (%d %d) \n", iedge_g,
+                 mesh.conn_unique_edges[iedge_g][1],  mesh.conn_unique_edges[iedge_g][2])
+        
+	iedge_el = 3
+	mesh.conn_edge_el[1, iedge_el, iel] = ip3
+	mesh.conn_edge_el[2, iedge_el, iel] = ip4
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+        
+        iedge_el = 4
+	mesh.conn_edge_el[1, iedge_el, iel] = ip4
+	mesh.conn_edge_el[2, iedge_el, iel] = ip1
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+
+        
+        
+	#Vertical edges
+	iedge_el = 5
+	mesh.conn_edge_el[1, iedge_el, iel] = ip1
+	mesh.conn_edge_el[2, iedge_el, iel] = ip5
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+       
+        iedge_el = 6
+	mesh.conn_edge_el[1, iedge_el, iel] = ip2
+	mesh.conn_edge_el[2, iedge_el, iel] = ip6
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+       
+        iedge_el = 7
+	mesh.conn_edge_el[1, iedge_el, iel] = ip3
+	mesh.conn_edge_el[2, iedge_el, iel] = ip7
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+       
+        iedge_el = 8
+	mesh.conn_edge_el[1, iedge_el, iel] = ip4
+	mesh.conn_edge_el[2, iedge_el, iel] = ip8
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+       
         #Edges top face
-	iedg_el = 9
-	mesh.conn_edge_el[1, iedg_el, iel] = ip5
-	mesh.conn_edge_el[2, iedg_el, iel] = ip6
-	iedg_el = 10
-	mesh.conn_edge_el[1, iedg_el, iel] = ip6
-	mesh.conn_edge_el[2, iedg_el, iel] = ip7
-	iedg_el = 11
-	mesh.conn_edge_el[1, iedg_el, iel] = ip7
-	mesh.conn_edge_el[2, iedg_el, iel] = ip8
-	iedg_el = 12
-	mesh.conn_edge_el[1, iedg_el, iel] = ip8
-	mesh.conn_edge_el[2, iedg_el, iel] = ip5
+	iedge_el = 9
+	mesh.conn_edge_el[1, iedge_el, iel] = ip5
+	mesh.conn_edge_el[2, iedge_el, iel] = ip6
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+        
+        iedge_el = 10
+	mesh.conn_edge_el[1, iedge_el, iel] = ip6
+	mesh.conn_edge_el[2, iedge_el, iel] = ip7
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+        
+        iedge_el = 11
+	mesh.conn_edge_el[1, iedge_el, iel] = ip7
+	mesh.conn_edge_el[2, iedge_el, iel] = ip8
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+        
+        iedge_el = 12
+	mesh.conn_edge_el[1, iedge_el, iel] = ip8
+	mesh.conn_edge_el[2, iedge_el, iel] = ip5
+        iedge_g = edge_ids[iedge_el]
+        if mesh.edge_g_color[iedge_g] == 0
+            mesh.edge_g_color[iedge_g] = 1
+            mesh.conn_unique_edges[iedge_g][1] = mesh.conn_edge_el[1, iedge_el, iel]
+            mesh.conn_unique_edges[iedge_g][2] = mesh.conn_edge_el[2, iedge_el, iel]
+        end
+       
     end
     
 end #populate_edge_el!
@@ -1097,8 +1199,10 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
         resize!(mesh.z_ho, (mesh.npoin))
     end
 
-    #CGNS numbering
-    
+    #
+    # CGNS numbering
+    #
+    edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
     open("./COORDS_HO_edges.dat", "w") do f
         #
@@ -1106,39 +1210,53 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
         #
         ip = tot_linear_poin + 1
         for iedge_g = 1:mesh.nedges
-            
+        #cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here
+        #for iel = 1:mesh.nelem
+        #    edge_ids = getindex!(cache_edge_ids, mesh.cell_edge_ids, iel)
+        #    @printf(" IEL = %d\n", iel)
+        #    for iedge_el = 1:mesh.NEDGES_EL
+        #        iedge_g = edge_ids[iedge_el]
+        #        @printf(" iedge_el = %d\n ", iedge_el)
+        #        if edge_g_color[iedge_g] == 0
+        #            edge_g_color[iedge_g] = 1
+
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
-            
+            #ip1 = mesh.conn_edge_el[1, iedge_el, iel]
+            #ip2 = mesh.conn_edge_el[2, iedge_el, iel]
             mesh.poin_in_edge[iedge_g,        1] = ip1
             mesh.poin_in_edge[iedge_g, mesh.ngl] = ip2
-            
-            x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
-            x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
-            
-            #@printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
-            for l=2:ngl-1
-                ξ = lgl.ξ[l];
-                
-                mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-	        mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
-	        mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
-                
-                mesh.poin_in_edge[iedge_g, l] = ip
-                
-                #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-                @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
-                ip = ip + 1
-            end
+                    
+                    x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
+                    x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
+                    
+                    @printf(" iedge_g=%d -> (ip1, ip2) = (%d %d) \n", iedge_g, ip1, ip2)
+                    for l=2:ngl-1
+                        ξ = lgl.ξ[l];
+                        
+                        mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
+	                mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
+	                mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
+                        
+                        mesh.poin_in_edge[iedge_g, l] = ip
+                        
+                        #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
+                        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                        ip = ip + 1
+                    end
         end
-    end #do f
+    end 
+    #    end
+    #end
     #show(stdout, "text/plain", mesh.poin_in_edge)
     #@info "-----3D edges"
+    
+    @mystop
     
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes, ∀ elem]\n")
     #
-    cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here  
+    cache_edge_ids       = array_cache(mesh.cell_edge_ids) # allocation here
     for iel = 1:mesh.nelem
         edge_ids = getindex!(cache_edge_ids, mesh.cell_edge_ids, iel)
         iconn = 1
