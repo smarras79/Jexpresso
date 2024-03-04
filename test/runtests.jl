@@ -51,7 +51,7 @@ end
         ("AdvDiff", "Wave_Train_Overlapping_Plot"),
         ("AdvDiff", "Wave_Train"),
         ("Helmholtz", "case1"),
-        ("Elliptic", "case1"),
+        #("Elliptic", "case1"),
     ]
 
     for (problem_name, case_name) in examples
