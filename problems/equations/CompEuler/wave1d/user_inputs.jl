@@ -28,14 +28,10 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => false, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh", 
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        :outformat     => "png", #choice: "png", "ascii" (default is ascii)
+        :outformat     => "hdf5", #choice: "png", "ascii" (default is ascii)
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------

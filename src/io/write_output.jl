@@ -25,7 +25,7 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     
     if (inputs[:plot_overlap])
-        fig = Figure(resolution = (1200,800),fontsize=22)
+        fig = Figure(size = (1200,800),fontsize=22)
         colors = ["Blue","Red","Green","Yellow","Black","Purple","Orange"]
         markers = [:circle, :rect, :diamond,:hexagon,:cross,:xcross,:utriangle,:dtriangle,:pentagon,:star4,:star8]
         p = []
@@ -39,17 +39,13 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
             
         end
     else
-        fig = Figure(resolution = (1200,800),fontsize=22)
+        fig = Figure(size = (1200,800),fontsize=22)
         for iout = 1:size(sol.t[:], 1)
             title = string("sol.u at time ", sol.t[iout])
             plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
         end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
-end
-
-function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
-    nothing
 end
 
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
@@ -114,7 +110,7 @@ end
 # HDF5 writer/reader
 #------------
 
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(sol.t[:],1)
@@ -134,7 +130,7 @@ function read_output(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, outform
 end
 
 
-function write_hdf5(SD::NSD_2D, mesh::St_mesh, q::Array, qe::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
+function write_hdf5(SD, mesh::St_mesh, q::Array, qe::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
     
     #Write one HDF5 file per variable
     for ivar = 1:nvar
@@ -144,10 +140,9 @@ function write_hdf5(SD::NSD_2D, mesh::St_mesh, q::Array, qe::Array, title::Strin
         h5write(fout_name, "qe", qe[1:mesh.npoin, ivar]);
 
     end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
 end
 
-function read_hdf5(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, nvar)
+function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     
     q  = zeros(Float64, npoin, nvar+1)
     qe = zeros(Float64, npoin, nvar+1)
