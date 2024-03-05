@@ -94,7 +94,6 @@ end
 #--------------------------------------------------------
 #Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
-#=
 run(`$cp $user_input_file $OUTPUT_DIR`) 
 
 
@@ -104,4 +103,3 @@ driver(inputs, # input parameters from src/user_input.jl
 
 # Export pprof profile and open interactive profiling web interface.
 #pprof()
-=#
