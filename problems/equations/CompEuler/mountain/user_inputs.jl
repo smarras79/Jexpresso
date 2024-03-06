@@ -28,14 +28,14 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB10x30_10kmX30km.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB27x27.msh", #for nop=3
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB10x30_10kmX30km.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB27x27.msh", #for nop=3
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB40x40.msh", #for nop=2
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB80x80.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "hdf5",
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

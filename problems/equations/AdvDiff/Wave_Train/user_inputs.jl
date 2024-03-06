@@ -40,7 +40,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        :outformat     => "png", #choice: "png", "ascii" (default is ascii)
+        :outformat           => "hdf5",
+        :output_dir          => "./output/", #choice: "png", "ascii" (default is ascii)
         :plot_vlines   => [5000.0],
         :plot_axis     => [-0.03,0.03,-0.03,0.03],
         #---------------------------------------------------------------------------

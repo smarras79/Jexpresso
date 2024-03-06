@@ -60,7 +60,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "hdf5",
+        :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
