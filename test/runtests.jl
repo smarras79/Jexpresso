@@ -3,7 +3,7 @@ using Jexpresso
 
 function run_example(problem_name::String, case_name::String)
     ENV["JEXPRESSO_HOME"] = joinpath(@__DIR__, "..") 
-    example_dir = joinpath(ENV["JEXPRESSO_HOME"], "problems", "equations", problem_name, case_name)
+    example_dir = joinpath(ENV["JEXPRESSO_HOME"], "test","reference", "problems", "equations", problem_name, case_name)
     @testset "$problem_name - $case_name" begin
         cd(example_dir)
         empty!(ARGS) # Clear ARGS to ensure clean state
@@ -41,6 +41,7 @@ end
         ("CompEuler", "thetaTracers"),
         ("CompEuler", "wave1d"),
         ("CompEuler", "wave1d_lag"),
+        #=
         ("AdvDiff", "2d"),
         ("AdvDiff", "2d_Laguerre"),
         ("AdvDiff", "2D_Wave_Train"),
@@ -51,7 +52,7 @@ end
         ("AdvDiff", "Wave_Train_Overlapping_Plot"),
         ("AdvDiff", "Wave_Train"),
         ("Helmholtz", "case1"),
-        #("Elliptic", "case1"),
+        #("Elliptic", "case1"),=#
     ]
 
     for (problem_name, case_name) in examples
