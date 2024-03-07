@@ -9,7 +9,7 @@ function user_inputs()
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         #:CL                   => NCL(),
-        :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

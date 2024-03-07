@@ -8,7 +8,8 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     
     PhysConst = PhysicalConst{Float64}()
     
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, ::Any , TFloat; neqs=4) ###
+    qvars = ("ρ", "ρu", "ρv", "ρθ")
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl,qvars, TFloat; neqs=4)
     
     if (inputs[:case] === "rtb")
 

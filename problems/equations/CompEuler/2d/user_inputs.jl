@@ -8,6 +8,7 @@ function user_inputs()
         :Δt                   => 0.2,
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
+        :equationSet          => NCL(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
