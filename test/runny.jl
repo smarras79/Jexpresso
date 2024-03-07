@@ -1,13 +1,13 @@
 using Test
 using Jexpresso
 
-function run_example(problem_name::String, case_name::String)
+function run_example(parsed_equations::String, parsed_equations_case_name::String)
     ENV["JEXPRESSO_HOME"] = joinpath(@__DIR__, "..") 
-    example_dir = joinpath(ENV["JEXPRESSO_HOME"], "test","reference", "problems", "equations", problem_name, case_name)
-    @testset "$problem_name - $case_name" begin
+    example_dir = joinpath(ENV["JEXPRESSO_HOME"], "test","reference", "problems", "equations", parsed_equations, parsed_equations_case_name)
+    @testset "$parsed_equations - $parsed_equations_case_name" begin
         cd(example_dir)
         empty!(ARGS) # Clear ARGS to ensure clean state
-        push!(ARGS, problem_name, case_name)
+        push!(ARGS, parsed_equations, parsed_equations_case_name)
         include(joinpath(ENV["JEXPRESSO_HOME"], "src", "Jexpresso.jl"))
     end
 end
