@@ -3,7 +3,7 @@ using Jexpresso
 
 function run_example(problem_name::String, case_name::String)
     ENV["JEXPRESSO_HOME"] = joinpath(@__DIR__, "..") 
-    example_dir = joinpath(ENV["JEXPRESSO_HOME"], "test","reference", "problems", "equations", problem_name, case_name)
+    example_dir = joinpath(ENV["JEXPRESSO_HOME"], "test","reference", "problems", "equations", problem_name, case_name) #to be changed like in runny to exlude the theta example for running out of place
     @testset "$problem_name - $case_name" begin
         cd(example_dir)
         empty!(ARGS) # Clear ARGS to ensure clean state
@@ -12,7 +12,7 @@ function run_example(problem_name::String, case_name::String)
             include(joinpath(ENV["JEXPRESSO_HOME"], "src", "Jexpresso.jl"))
             @test true # Passes if no errors occur during execution
         catch e
-            println("Error occurred: ", e) # Print out the error message
+            println("Error occurred: ", error_message[1:min(30, end)]) # Print out the first 30 characters of the error message
             @test false # Fails if an error occurs
         end
     end
