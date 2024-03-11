@@ -1,4 +1,4 @@
- #=
+ 
   name: CI
 
   on:
@@ -44,4 +44,3 @@
         - uses: codecov/codecov-action@v3
           with:
             file: lcov.info          
-=#
