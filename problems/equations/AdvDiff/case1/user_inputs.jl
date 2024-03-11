@@ -34,7 +34,7 @@ function user_inputs()
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
-        #---------------------------------------------------------------------------
+        #---------------------------------------------------------------------------        
         :outformat           => "hdf5",
         :output_dir          => "./output/", #choice: "png", "ascii" (default is ascii)
         #---------------------------------------------------------------------------

@@ -35,7 +35,6 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "hdf5",
         :output_dir          => "./output/",
-        #:output_dir          => "/Users/simone/Desktop",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
