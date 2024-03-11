@@ -12,6 +12,7 @@ function run_example(problem_name::String, case_name::String)
             include(joinpath(ENV["JEXPRESSO_HOME"], "src", "Jexpresso.jl"))
             @test true # Passes if no errors occur during execution
         catch e
+            println("Error occurred: ", e) # Print out the error message
             @test false # Fails if an error occurs
         end
     end
