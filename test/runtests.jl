@@ -41,7 +41,6 @@ end
         ("CompEuler", "thetaTracers"),
         ("CompEuler", "wave1d"),
         ("CompEuler", "wave1d_lag"),
-        #=
         ("AdvDiff", "2d"),
         ("AdvDiff", "2d_Laguerre"),
         ("AdvDiff", "2D_Wave_Train"),
