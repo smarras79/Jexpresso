@@ -3,17 +3,17 @@ using Jexpresso
 
 function run_example(problem_name::String, case_name::String)
     ENV["JEXPRESSO_HOME"] = joinpath(@__DIR__, "..") 
-    example_dir = joinpath(ENV["JEXPRESSO_HOME"], "test","reference", "problems", "equations", problem_name, case_name) #to be changed like in runny to exlude the theta example for running out of place
-    @testset "$problem_name - $case_name" begin
+    example_dir = joinpath(ENV["JEXPRESSO_HOME"], "test","reference", "problems", "equations",  parsed_equations, parsed_equations_case_name)
+    @testset "$parsed_equations - $parsed_equations_case_name" begin
         cd(example_dir)
         empty!(ARGS) # Clear ARGS to ensure clean state
-        push!(ARGS, problem_name, case_name)
+        push!(ARGS, parsed_equations, parsed_equations_case_name)
         try
             include(joinpath(ENV["JEXPRESSO_HOME"], "src", "Jexpresso.jl"))
             @test true # Passes if no errors occur during execution
         catch e
             error_message = string(e) # Convert error to string
-            println("Error occurred: ", error_message[1:min(150, end)]) # Print out the first 30 characters of the error message
+            println("Error occurred: ", error_message[1:min(250, end)]) # Print out the first 30 characters of the error message
             @test false # Fails if an error occurs
         end
     end
@@ -53,7 +53,7 @@ end
         ("AdvDiff", "Wave_Train_Overlapping_Plot"),
         ("AdvDiff", "Wave_Train"),
         ("Helmholtz", "case1"),
-        #("Elliptic", "case1"),=#
+        #("Elliptic", "case1"),
     ]
 
     for (problem_name, case_name) in examples
