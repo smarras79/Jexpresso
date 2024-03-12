@@ -1,7 +1,7 @@
 using Test
 using Jexpresso
 
-function run_example(problem_name::String, case_name::String)
+function run_example(parsed_equations::String, parsed_equations_case_name::String)
     ENV["JEXPRESSO_HOME"] = joinpath(@__DIR__, "..") 
     example_dir = joinpath(ENV["JEXPRESSO_HOME"], "test","reference", "problems", "equations",  parsed_equations, parsed_equations_case_name)
     @testset "$parsed_equations - $parsed_equations_case_name" begin
