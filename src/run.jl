@@ -50,7 +50,6 @@ parsed_equations           = string(parsed_args["eqs"])
 parsed_equations_case_name = string(parsed_args["eqs_case"])
 
 
-#changed the run directory to the test problems one. just for CI making
 driver_file          = string(dirname(@__DIR__()), "/problems/equations/drivers.jl")
 case_name_dir        = string(dirname(@__DIR__()), "/problems/equations", "/", parsed_equations, "/", parsed_equations_case_name)
 user_input_file      = string(case_name_dir, "/user_inputs.jl")
