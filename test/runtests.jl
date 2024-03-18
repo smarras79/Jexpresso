@@ -29,8 +29,7 @@ end
         # working
         ("CompEuler", "theta"),
         ("AdvDiff", "2d_Laguerre"),
-        
-        #=("CompEuler", "dc"),
+        ("CompEuler", "dc"),
         ("CompEuler", "nozzleanderson"),
         ("CompEuler", "theta_laguerre"),
         ("CompEuler", "thetaTracers"),
@@ -41,7 +40,6 @@ end
         ("AdvDiff", "fd1d"),
         ("AdvDiff", "Simple_Wave"),
         ("AdvDiff", "Wave_Train"),
-         =#
         
         #= not working
         ("CompEuler", "2d"),
