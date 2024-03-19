@@ -108,8 +108,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat}
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type_id::Array{Int64,1} = zeros(Int64, 0)
     
-
-    
     SD::AbstractSpaceDimensions
 end
 
@@ -118,9 +116,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     #
     # Read GMSH grid from file
     #
-    model         = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-    topology      = get_grid_topology(model)
-    mesh.nsd      = num_cell_dims(model)
+    model           = GmshDiscreteModel(inputs[:gmsh_filename], renumber=false)
+    topology        = get_grid_topology(model)
+    mesh.nsd        = num_cell_dims(model)
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
     
     POIN_flg = 0
@@ -155,7 +153,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         mesh.EDGE_NODES = 2
         mesh.FACE_NODES = 0
     else
-        error( " WRONG NSD: This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
+        error( " WRONG NSD: we only handle 1, 2, or 3 dimensions!")
     end
     
     #dump(topology)
