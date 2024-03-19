@@ -118,7 +118,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     #
     # Read GMSH grid from file
     #
-    model         = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+    model         = GmshDiscreteModel(inputs[:gmsh_filename], renumber=false)
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
