@@ -56,7 +56,7 @@ end
         ("CompEuler", "theta_pert"),
         ("CompEuler", "thetaNC"),
         ("AdvDiff", "2d"),
-        ("AdvDiff", "circle"),       
+        ("AdvDiff", "circle"),  # OUTDATED     
         ("Elliptic", "case1"),
         ("AdvDiff", "Wave_Train_Overlapping_Plot"),
         ("Helmholtz", "case1"),=#
