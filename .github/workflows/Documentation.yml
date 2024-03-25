@@ -2,7 +2,7 @@ name: Documentation
 on:
   push:
     branches:
-      - un/ci
+      - un/mergedmasterCI
     tags: '*'
   pull_request:
 jobs:

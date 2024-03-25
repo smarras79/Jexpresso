@@ -1,5 +1,4 @@
 using Test
-using HDF5
 using Jexpresso
 
 
@@ -15,7 +14,7 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
             @test true # Passes if no errors occur during execution
         catch e
             error_message = string(e) # Convert error to string
-            println("Error occurred: ", error_message[1:min(150, end)]) # Print out the first xxx characters of the error message(last try 150 needs more to be readable  but it gets overwritten anyway in the github logs)
+            println("Error occurred: ", error_message[1:min(1000, end)]) # Print out the first xxx characters of the error message(last try 150 needs more to be readable  but it gets overwritten anyway in the github logs)
             @test false # Fails if an error occurs
         end
     end
@@ -40,8 +39,10 @@ end
         ("AdvDiff", "fd1d"),
         ("AdvDiff", "Simple_Wave"),
         ("AdvDiff", "Wave_Train"),
+        ("AdvDiff", "Wave_Train_Overlapping_Plot"),
         
         #= not working
+        ("AdvDiff", "2d"),
         ("CompEuler", "2d"),
         ("CompEuler", "dc-mount"),
         ("CompEuler", "HSmount"),
@@ -55,7 +56,7 @@ end
         ("CompEuler", "ScharMount_Lag"),      
         ("CompEuler", "theta_pert"),
         ("CompEuler", "thetaNC"),
-        ("AdvDiff", "2d"),
+        
         ("AdvDiff", "circle"),  # OUTDATED     
         ("Elliptic", "case1"),
         ("AdvDiff", "Wave_Train_Overlapping_Plot"),
