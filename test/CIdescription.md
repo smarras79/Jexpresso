@@ -4,7 +4,7 @@
 
     1. **Importing Dependencies**: At the beginning of the file, there are `using` statements for `Test`, `HDF5`, and `Jexpresso`. 
         This means the test file relies on these three packages. 
-        `Test` is used for writing the test cases, `HDF5` is used for handling output data files within the tests or examples, and `Jexpresso` is the main package being tested.
+        `Test` is used for writing the test cases and `Jexpresso` is the main package being tested.
 
     2. **`run_example`**: 
         This function takes two arguments: `parsed_equations` and `parsed_equations_case_name`, which are the names for specific test cases or example scenarios within the Jexpresso framework. 
