@@ -2,7 +2,7 @@
     It uses Julia's built-in `Test` module to define and execute test sets for "Jexpresso". 
     Here’s a breakdown of how it is structured and how it contributes to the CI process:
 
-    1. **Importing Dependencies**: At the beginning of the file, there are `using` statements for `Test`, `HDF5`, and `Jexpresso`. 
+    1. **Importing Dependencies**: At the beginning of the file, there are `using` statements for `Test` and `Jexpresso`. 
         This means the test file relies on these three packages. 
         `Test` is used for writing the test cases and `Jexpresso` is the main package being tested.
 
