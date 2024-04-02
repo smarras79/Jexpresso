@@ -6,7 +6,7 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.2,
         :tinit                => 0.0,
-        :tend                 => 100,
+        :tend                 => 300,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
@@ -18,7 +18,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 3,      # Polynomial order
+        :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -29,8 +29,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_1x1x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
