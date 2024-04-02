@@ -299,15 +299,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         #
         # Rewrite coordinates in RCM order:
         #
-        open("./COORDS_LO.dat", "w") do f
+        #open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 
                 mesh.x[ip] = model.grid.node_coordinates[ip][1]
                 mesh.y[ip] = model.grid.node_coordinates[ip][2]
                 
-                @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
+        #        @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
             end
-        end #f
+        #end #f
 
     elseif (mesh.nsd == 3)
         
@@ -337,9 +337,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 
             #Edges:
             #mesh.conn_edgesijk[iel, 1] = mesh.cell_edge_ids[iel][1]
-
-            @info "edge 1 of elem iel corresponds to global edge number: " iel mesh.cell_edge_ids[iel][8]
-            
             #@printf(" %d %d %d %d %d %d %d %d \n",
             #        mesh.conn[iel, 1],  mesh.conn[iel, 2],  mesh.conn[iel, 3],  mesh.conn[iel, 4],
             #        mesh.conn[iel, 5],  mesh.conn[iel, 6],  mesh.conn[iel, 7],  mesh.conn[iel, 8])
@@ -381,14 +378,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         #
         # Rewrite coordinates in RCM order:
         #
-        open("./COORDS_LO.dat", "w") do f
+        #open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 mesh.x[ip] = model.grid.node_coordinates[ip][1]
                 mesh.y[ip] = model.grid.node_coordinates[ip][2]
                 mesh.z[ip] = model.grid.node_coordinates[ip][3]
-                @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+        #        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
             end
-        end #f
+        #end #f
     end
 
 
@@ -663,12 +660,13 @@ GC.gc()
 # END Free memory of obsolete arrays
 #
 
-open("./COORDS_GLOBAL.dat", "w") do f
+#=open("./COORDS_GLOBAL.dat", "w") do f
     for ip = 1:mesh.npoin
         #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
         @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
     end
 end #f
+=#
 
 #show(stdout, "text/plain", mesh.conn')
 println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
@@ -726,7 +724,6 @@ function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_3D)
     
     cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here
     for iel = 1:mesh.nelem
-        @printf(" IEL %d\n", iel)
         #
         # CGNS numbering
         #
@@ -741,143 +738,6 @@ function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_3D)
         
         edge_ids = getindex!(cache_edge_ids, mesh.cell_edge_ids, iel)
         
-	# Edges bottom face:
-	#=iedge_el = 1
-        mesh.conn_edge_el[1, iedge_el, iel] = ip1
-	mesh.conn_edge_el[2, iedge_el, iel] = ip2        
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-         
-        @printf(" XXX iedge_g=%d -> (ip1, ip2) = (%d %d) \n", iedge_g, 
-                mesh.conn_edge_el[1,iedge_el, iel], mesh.conn_edge_el[2,iedge_el, iel])
-        @printf(" XXXip1 x y z = %f %f %f\n", mesh.x[ip1], mesh.y[ip1], mesh.z[ip1])
-        @printf(" XXXip2 x y z = %f %f %f\n", mesh.x[ip2], mesh.y[ip2], mesh.z[ip2])
-        
-	iedge_el = 2
-	mesh.conn_edge_el[1, iedge_el, iel] = ip2
-	mesh.conn_edge_el[2, iedge_el, iel] = ip3
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-        
-        @printf(" XXX iedge_g=%d -> (ip2, ip3) = (%d %d) \n", iedge_g, 
-                mesh.conn_unique_edges1[iedge_g,1],  mesh.conn_unique_edges1[iedge_g,2])      
-        @printf(" XXXip2 x y z = %f %f %f\n", mesh.x[ip2], mesh.y[ip2], mesh.z[ip2])
-        @printf(" XXXip3 x y z = %f %f %f\n", mesh.x[ip3], mesh.y[ip3], mesh.z[ip3])
-        
-        
-	iedge_el = 3
-	mesh.conn_edge_el[1, iedge_el, iel] = ip3
-	mesh.conn_edge_el[2, iedge_el, iel] = ip4
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-        
-        iedge_el = 4
-	mesh.conn_edge_el[1, iedge_el, iel] = ip4
-	mesh.conn_edge_el[2, iedge_el, iel] = ip1
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-
-        
-        
-	#Vertical edges
-	iedge_el = 5
-	mesh.conn_edge_el[1, iedge_el, iel] = ip1
-	mesh.conn_edge_el[2, iedge_el, iel] = ip5
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-       
-        iedge_el = 6
-	mesh.conn_edge_el[1, iedge_el, iel] = ip2
-	mesh.conn_edge_el[2, iedge_el, iel] = ip6
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-       
-        iedge_el = 7
-	mesh.conn_edge_el[1, iedge_el, iel] = ip3
-	mesh.conn_edge_el[2, iedge_el, iel] = ip7
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-       
-        iedge_el = 8
-	mesh.conn_edge_el[1, iedge_el, iel] = ip4
-	mesh.conn_edge_el[2, iedge_el, iel] = ip8
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-       
-        #Edges top face
-	iedge_el = 9
-	mesh.conn_edge_el[1, iedge_el, iel] = ip5
-	mesh.conn_edge_el[2, iedge_el, iel] = ip6
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-        
-        iedge_el = 10
-	mesh.conn_edge_el[1, iedge_el, iel] = ip6
-	mesh.conn_edge_el[2, iedge_el, iel] = ip7
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-        
-        iedge_el = 11
-	mesh.conn_edge_el[1, iedge_el, iel] = ip7
-	mesh.conn_edge_el[2, iedge_el, iel] = ip8
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-        end
-        
-        iedge_el = 12
-	mesh.conn_edge_el[1, iedge_el, iel] = ip8
-	mesh.conn_edge_el[2, iedge_el, iel] = ip5
-        iedge_g = edge_ids[iedge_el]
-        if mesh.edge_g_color[iedge_g] == 0
-            mesh.edge_g_color[iedge_g] = 1
-            mesh.conn_unique_edges1[iedge_g,1] = mesh.conn_edge_el[1, iedge_el, iel]
-            mesh.conn_unique_edges1[iedge_g,2] = mesh.conn_edge_el[2, iedge_el, iel]
-            @printf(" NOW iedge_g=%d -> (ip1, ip2) = (%d %d) \n", iedge_g, mesh.conn_unique_edges1[iedge_g,1], mesh.conn_unique_edges1[iedge_g,2])
-        end
-       =#
     end
 
 end #populate_edge_el!
@@ -1052,7 +912,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
     end
     
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    open("./COORDS_HO_edges.dat", "w") do f
+    #open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
         #
@@ -1078,11 +938,11 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D)
                 mesh.poin_in_edge[iedge_g, l] = ip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-                @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
+    #            @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                 ip = ip + 1
             end
         end
-    end #do f
+    #end #do f
     #show(stdout, "text/plain", poin_in_edge)
     #@info "-----2D edges"
     
@@ -1215,7 +1075,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
     #
     edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    open("./COORDS_HO_edges.dat", "w") do f
+    #open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
         #
@@ -1234,7 +1094,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
             
-            @printf(" iedge_g=%d -> (ip1, ip2) = (%d %d) \n", iedge_g, ip1, ip2)
+            #@printf(" iedge_g=%d -> (ip1, ip2) = (%d %d) \n", iedge_g, ip1, ip2)
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
                 
@@ -1245,12 +1105,12 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D)
                 mesh.poin_in_edge[iedge_g, l] = ip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-                @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
-                @printf( " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+    #            @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                #@printf( " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip = ip + 1
             end
         end
-    end
+    #end #end f
     #show(stdout, "text/plain", mesh.poin_in_edge)
     #@info "-----3D edges"
         
@@ -1531,7 +1391,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
         resize!(mesh.y_ho, (mesh.npoin))
     end
 
-    open("./COORDS_HO_faces.dat", "w") do f
+    #open("./COORDS_HO_faces.dat", "w") do f
         #
         # First pass:
         #
@@ -1575,13 +1435,13 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
                     mesh.connijk[iel, m, ngl-l+1] = ip
                     #OLD ORDERING
                     #mesh.connijk[iel, m, l] = ip
-                    @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
+      #              @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                     
 	            ip = ip + 1
                 end
             end
         end
-    end #do f
+    #end #do f
 
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
@@ -1691,7 +1551,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
         resize!(mesh.z_ho, (mesh.npoin))
     end
     
-    open("./COORDS_HO_faces.dat", "w") do f
+    #open("./COORDS_HO_faces.dat", "w") do f
         #
         # First pass:
         #
@@ -1720,10 +1580,10 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
                 for m=2:ngl-1
                     ζ = lgl.ξ[m];
                     
-	                mesh.x_ho[ip] =  (x1*(1 - ξ)*(1 - ζ)*0.25
-                                    + x2*(1 + ξ)*(1 - ζ)*0.25
-		                            + x3*(1 + ξ)*(1 + ζ)*0.25			
-		                            + x4*(1 - ξ)*(1 + ζ)*0.25)
+	            mesh.x_ho[ip] =  (x1*(1 - ξ)*(1 - ζ)*0.25
+                                      + x2*(1 + ξ)*(1 - ζ)*0.25
+		                      + x3*(1 + ξ)*(1 + ζ)*0.25			
+		                      + x4*(1 - ξ)*(1 + ζ)*0.25)
                     
                     mesh.y_ho[ip] =  (y1*(1 - ξ)*(1 - ζ)*0.25
                                     + y2*(1 + ξ)*(1 - ζ)*0.25
@@ -1737,7 +1597,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
 
                     mesh.poin_in_face[iface_g, l, m] = ip
                     
-                    @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+   #                 @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
 
                     # mesh.connijk[iel, m, ngl-l+1] = ip #<==== need to build this 
                     
@@ -1745,7 +1605,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
                 end
             end
         end
-    end #do f
+    #end #do f
 
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
@@ -2073,7 +1933,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
         resize!(mesh.z_ho, (mesh.npoin))
     end
     
-    open("./COORDS_HO_vol.dat", "w") do f
+    #open("./COORDS_HO_vol.dat", "w") do f
         ip  = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + 1
         for iel = 1:mesh.nelem
 
@@ -2139,16 +1999,16 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
                         #mesh.conn[iel, 8 + el_edges_internal_nodes + el_faces_internal_nodes + iconn] = ip
                         conn_vol_poin[l,m,n,iel] = ip
                         mesh.connijk[iel,n,l,m] = ip
-                        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+    #                    @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
 
                         ip = ip + 1
                         iconn = iconn + 1
                     end
                 end
-            end 
+            end
         end
-    end # do f 
-    open("./CONNIJK.dat", "w") do f
+    #end # do f 
+    #open("./CONNIJK.dat", "w") do f
         for iel =1:mesh.nelem
             iconn =1
             for n=2:ngl-1
@@ -2191,16 +2051,16 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D)
                     ender = ender-1
                 end
             end
-            for i = 1:1:ngl
-                for j = 1:1:ngl
-                    for k = 1:1:ngl
-                        ip = mesh.connijk[iel,i,j,k]
-                        @printf(f, " %d %d %d %d %d\n", iel, i, j, k, ip)
-                    end
-                end
-            end
+            #for i = 1:1:ngl
+            #    for j = 1:1:ngl
+            #        for k = 1:1:ngl
+            #            ip = mesh.connijk[iel,i,j,k]
+            #            @printf(f, " %d %d %d %d %d\n", iel, i, j, k, ip)
+            #        end
+            #    end
+            #end
         end
-    end # do f
+    #end # do f
 
 
     #show(stdout, "text/plain", mesh.conn')
@@ -2230,7 +2090,6 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes)
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
     mesh.npoin = mesh.npx
 
-    @info mesh.npoin
     mesh.x[1] = mesh.xmin
     for i = 2:mesh.npx
         mesh.x[i] = mesh.x[i-1] + Δx

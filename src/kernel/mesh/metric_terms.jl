@@ -384,7 +384,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
         
-    @info " 3D metric terms WIP"
+    @info " 3D metric terms"
     for iel = 1:mesh.nelem
         for k = 1:N+1
             for j = 1:N+1
