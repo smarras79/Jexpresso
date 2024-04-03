@@ -621,7 +621,12 @@ function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, 
     nothing
 end
 
-#function divide_by_mass_matrix!(RHS::AbstractArray, RHSaux, Minv, neqs, npoin, ::Exact, ::ContGal)
+
+
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::FD)
+    nothing
+end
+
 function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, ::ContGal)
     
     RHSaux .= RHS
@@ -633,11 +638,6 @@ function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, 
         RHS[ip] = a
     end
     
-end
-
-
-function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::FD)
-    nothing
 end
 
 function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::ContGal)
