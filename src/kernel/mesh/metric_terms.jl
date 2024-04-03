@@ -104,6 +104,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
     
+    @info " 2D metric terms"
     for iel = 1:mesh.nelem
         for j = 1:N+1
             for i = 1:N+1
