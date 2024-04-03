@@ -5,7 +5,7 @@
 # JEXPRESSO
 A research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements**. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
 
-Suggested Julia version: 1.10
+Suggested Julia version: 1.10.0
 
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
 
@@ -131,7 +131,7 @@ I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia 1.10
+To install and run the code assume Julia 1.10.0
 
 ## Setup with CPUs
 
