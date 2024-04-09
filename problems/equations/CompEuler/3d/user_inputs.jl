@@ -6,7 +6,7 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.2,
         :tinit                => 0.0,
-        :tend                 => 300,
+        :tend                 => 1000,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
@@ -22,7 +22,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1, 2, 3, 4, 5),
         :μ                   => (0.0, 20.0, 20.0, 20.0, 60.0), #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------

@@ -49,13 +49,20 @@ function reset_laguerre_filters!(params)
     fill!(params.B_lag,      zero(params.T))
 end
 
-function resetRHSToZero_viscous!(params)
+function resetRHSToZero_viscous!(params, SD::NSD_2D)
     fill!(params.rhs_diff_el,  zero(params.T))
     fill!(params.rhs_diffξ_el, zero(params.T))
     fill!(params.rhs_diffη_el, zero(params.T))
     fill!(params.RHS_visc,     zero(params.T))
 end
 
+function resetRHSToZero_viscous!(params, SD::NSD_3D)
+    fill!(params.rhs_diff_el,  zero(params.T))
+    fill!(params.rhs_diffξ_el, zero(params.T))
+    fill!(params.rhs_diffη_el, zero(params.T))
+    fill!(params.rhs_diffζ_el, zero(params.T))
+    fill!(params.RHS_visc,     zero(params.T))
+end
 
 
 function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
@@ -301,7 +308,7 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------
     if (params.inputs[:lvisc] == true)
         
-        resetRHSToZero_viscous!(params)
+        resetRHSToZero_viscous!(params, SD)
         
         viscous_rhs_el!(u, params, SD)
         
