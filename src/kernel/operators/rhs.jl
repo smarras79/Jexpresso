@@ -396,7 +396,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_3D)
     for iel = 1:params.mesh.nelem
 
         #uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
-
+        
         for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,j,k]
             
@@ -422,7 +422,7 @@ end
 
 
 function viscous_rhs_el!(u, params, SD::NSD_2D)
-    
+
     for iel=1:params.mesh.nelem        
         uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
@@ -823,58 +823,67 @@ end
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
 
     for ieq=1:params.neqs
-        for m = 1:params.mesh.ngl
-            for l = 1:params.mesh.ngl
-                for k = 1:params.mesh.ngl
-                    ωJac = params.ω[k]*params.ω[l]*params.ω[m]*params.metrics.Je[iel,k,l,m]
+        for k=1:params.mesh.ngl
+            for j=1:params.mesh.ngl
+                for i=1:params.mesh.ngl
+                    ωJac = params.ω[i]*params.ω[j]*params.ω[k]*params.metrics.Je[iel,i,j,k]
                     
-                    dqdξ = 0.0
-                    dqdη = 0.0
-                    dqdζ = 0.0
-                    @turbo for ii = 1:params.mesh.ngl
-                        dqdξ += params.basis.dψ[ii,k]*params.uprimitive[ii,l,m,ieq]
-                        dqdη += params.basis.dψ[ii,l]*params.uprimitive[k,ii,m,ieq]
-                        dqdζ += params.basis.dψ[ii,m]*params.uprimitive[k,l,ii,ieq]
-                    end
-                    dξdx_klm = params.metrics.dξdx[iel,k,l,m]
-                    dξdy_klm = params.metrics.dξdy[iel,k,l,m]
-                    dξdz_klm = params.metrics.dξdz[iel,k,l,m]
+                    dFdξ = 0.0
+                    dFdη = 0.0
+                    dFdζ = 0.0
                     
-                    dηdx_klm = params.metrics.dηdx[iel,k,l,m]
-                    dηdy_klm = params.metrics.dηdy[iel,k,l,m]
-                    dηdz_klm = params.metrics.dηdz[iel,k,l,m]
-                    
-                    dζdx_klm = params.metrics.dζdx[iel,k,l,m]
-                    dζdy_klm = params.metrics.dζdy[iel,k,l,m]
-                    dζdz_klm = params.metrics.dζdz[iel,k,l,m]
-                    
-                    auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
-                    dqdx = params.visc_coeff[ieq]*auxi
-                    
-                    auxi = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
-                    dqdy = params.visc_coeff[ieq]*auxi
-                    
-                    auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
-                    dqdz = params.visc_coeff[ieq]*auxi
-                    
-                    ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
-                    ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
-                    ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
-                    
-                    @turbo for i = 1:params.mesh.ngl
-                        dhdξ_ik = params.basis.dψ[i,k]
-                        dhdη_il = params.basis.dψ[i,l]
-                        dhdζ_im = params.basis.dψ[i,m]
+                    dGdξ = 0.0
+                    dGdη = 0.0
+                    dGdζ = 0.0
+
+                    dHdξ = 0.0
+                    dHdη = 0.0
+                    dHdζ = 0.0
+                    @turbo for m = 1:params.mesh.ngl
+                        dFdξ += params.basis.dψ[m,i]*params.F[m,j,k,ieq]
+                        dFdη += params.basis.dψ[m,j]*params.F[i,m,k,ieq]
+                        dFdζ += params.basis.dψ[m,k]*params.F[i,j,m,ieq]
                         
-                        params.rhs_diffξ_el[iel,i,l,m,ieq] -= dhdξ_ik * ∇ξ∇u_klm
-                        params.rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η∇u_klm
-                        params.rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ∇u_klm
+                        dGdξ += params.basis.dψ[m,i]*params.G[m,j,k,ieq]
+                        dGdη += params.basis.dψ[m,j]*params.G[i,m,k,ieq]
+                        dGdζ += params.basis.dψ[m,k]*params.G[i,j,m,ieq]
+                        
+                        dHdξ += params.basis.dψ[m,i]*params.H[m,j,k,ieq]
+                        dHdη += params.basis.dψ[m,j]*params.H[i,m,k,ieq]
+                        dHdζ += params.basis.dψ[m,k]*params.H[i,j,m,ieq]
                     end
+                    dξdx_ij = params.metrics.dξdx[iel,i,j,k]
+                    dξdy_ij = params.metrics.dξdy[iel,i,j,k]
+                    dξdz_ij = params.metrics.dξdz[iel,i,j,k]
+                    
+                    dηdx_ij = params.metrics.dηdx[iel,i,j,k]
+                    dηdy_ij = params.metrics.dηdy[iel,i,j,k]
+                    dηdz_ij = params.metrics.dηdz[iel,i,j,k]
+
+                    dζdx_ij = params.metrics.dζdx[iel,i,j,k]
+                    dζdy_ij = params.metrics.dζdy[iel,i,j,k]
+                    dζdz_ij = params.metrics.dζdz[iel,i,j,k]
+                    
+                    dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij + dFdζ*dζdx_ij
+                    dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij + dGdζ*dζdx_ij
+                    dHdx = dHdξ*dξdx_ij + dHdη*dηdx_ij + dHdζ*dζdx_ij
+
+                    dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij + dFdζ*dζdy_ij
+                    dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij + dGdζ*dζdy_ij
+                    dHdy = dHdξ*dξdy_ij + dHdη*dηdy_ij + dHdζ*dζdy_ij
+                    
+                    dFdz = dFdξ*dξdz_ij + dFdη*dηdz_ij + dFdζ*dζdz_ij
+                    dGdz = dGdξ*dξdz_ij + dGdη*dηdz_ij + dGdζ*dζdz_ij
+                    dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
+                    
+                    auxi = ωJac*((dFdx + dGdy + dHdz) - params.S[i,j,k,ieq])
+                    params.rhs_el[iel,i,j,k,ieq] -= auxi
                 end
             end
         end
     end
 end
+
 
 function _expansion_visc!(u, params, iel, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
     
