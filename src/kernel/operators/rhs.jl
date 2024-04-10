@@ -436,18 +436,6 @@ end
 
 function viscous_rhs_el!(u, params, SD::NSD_3D)
     
-   #= for iel=1:params.mesh.nelem
-        
-        uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
-
-        for ieq in params.ivisc_equations
-            _expansion_visc!(@view(params.rhs_diffξ_el[iel,:,:,:,ieq]),
-                             @view(params.rhs_diffη_el[iel,:,:,:,ieq]),
-                             @view(params.rhs_diffζ_el[iel,:,:,:,ieq]),
-                             @view(params.uprimitive[:,:,:,ieq]), params.visc_coeff[ieq], params.ω, params.mesh, params.basis, params.metrics, params.inputs, iel, ieq, params.QT, SD, params.AD)
-    end
-    
-    end=#
     for iel=1:params.mesh.nelem        
         uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
