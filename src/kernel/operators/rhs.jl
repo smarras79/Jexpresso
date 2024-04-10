@@ -302,7 +302,7 @@ function _build_rhs!(RHS, u, params, time)
     
     inviscid_rhs_el!(u, params, lsource, SD)
     DSS_rhs!(@view(params.RHS[:,:]), @view(params.rhs_el[:,:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, AD)
-    #@info params.RHS[:,1]
+    
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -831,6 +831,62 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
     end  
 end
 
+
+function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
+
+    for ieq=1:params.neqs
+        for m = 1:params.mesh.ngl
+            for l = 1:params.mesh.ngl
+                for k = 1:params.mesh.ngl
+                    ωJac = params.ω[k]*params.ω[l]*params.ω[m]*params.metrics.Je[iel,k,l,m]
+                    
+                    dqdξ = 0.0
+                    dqdη = 0.0
+                    dqdζ = 0.0
+                    @turbo for ii = 1:params.mesh.ngl
+                        dqdξ += params.basis.dψ[ii,k]*params.uprimitiveieq[ii,l,m,ieq]
+                        dqdη += params.basis.dψ[ii,l]*params.uprimitiveieq[k,ii,m,ieq]
+                        dqdζ += params.basis.dψ[ii,m]*params.uprimitiveieq[k,l,ii,ieq]
+                    end
+                    dξdx_klm = params.metrics.dξdx[iel,k,l,m]
+                    dξdy_klm = params.metrics.dξdy[iel,k,l,m]
+                    dξdz_klm = params.metrics.dξdz[iel,k,l,m]
+                    
+                    dηdx_klm = params.metrics.dηdx[iel,k,l,m]
+                    dηdy_klm = params.metrics.dηdy[iel,k,l,m]
+                    dηdz_klm = params.metrics.dηdz[iel,k,l,m]
+                    
+                    dζdx_klm = params.metrics.dζdx[iel,k,l,m]
+                    dζdy_klm = params.metrics.dζdy[iel,k,l,m]
+                    dζdz_klm = params.metrics.dζdz[iel,k,l,m]
+                    
+                    auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
+                    dqdx = params.visc_coeff[ieq]*auxi
+                    
+                    auxi = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
+                    dqdy = params.visc_coeff[ieq]*auxi
+                    
+                    auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
+                    dqdz = params.visc_coeff[ieq]*auxi
+                    
+                    ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
+                    ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
+                    ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
+                    
+                    @turbo for i = 1:mesh.ngl
+                        dhdξ_ik = params.basis.dψ[i,k]
+                        dhdη_il = params.basis.dψ[i,l]
+                        dhdζ_im = params.basis.dψ[i,m]
+                        
+                        params.rhs_diffξ_el[i,l,m,ieq] -= dhdξ_ik * ∇ξ∇u_klm
+                        params.rhs_diffη_el[k,i,m,ieq] -= dhdη_il * ∇η∇u_klm
+                        params.rhs_diffζ_el[k,l,i,ieq] -= dhdζ_im * ∇ζ∇u_klm
+                    end
+                end
+            end
+        end
+    end
+end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
                           mesh, basis, metrics, inputs, iel, ieq, QT::Inexact, SD::NSD_3D, ::ContGal)
