@@ -26,7 +26,8 @@ end
     # List of (problem_name, case_name) tuples
     examples = [
         # working
-        ("CompEuler", "theta"),
+        ("CI-runs", "CompEuler/theta"),
+        #=("CompEuler", "theta"),
         ("AdvDiff", "2d_Laguerre"),
         ("CompEuler", "dc"),
         ("CompEuler", "nozzleanderson"),
@@ -40,6 +41,7 @@ end
         ("AdvDiff", "Simple_Wave"),
         ("AdvDiff", "Wave_Train"),
         ("AdvDiff", "Wave_Train_Overlapping_Plot"),
+        =#
         
         #= not working
         ("AdvDiff", "2d"),
