@@ -79,14 +79,17 @@ mod_inputs_user_inputs!(inputs)
 #Create output directory if it doesn't exist:
 #--------------------------------------------------------
 user_defined_output_dir = inputs[:output_dir]
+
+if inputs[:loverwrite_output]
+    outstring = string("output")
+else        
+    outstring = string("output-",  Dates.format(now(), "dduyyyy-HHMMSS"))
+end
 if user_defined_output_dir == "none"
-    OUTPUT_DIR = joinpath(case_name_dir, string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")))
+    OUTPUT_DIR = joinpath(case_name_dir, outstring)
     inputs[:output_dir] = OUTPUT_DIR
 else
-    #OUTPUT_DIR = string(user_defined_output_dir, "/", parsed_equations, "/", parsed_equations_case_name, "/output-",  Dates.format(now(), "dduyyyy-HHMMSS/"))
-
-    OUTPUT_DIR = joinpath(user_defined_output_dir, parsed_equations, parsed_equations_case_name, string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")))
-    
+    OUTPUT_DIR = joinpath(user_defined_output_dir, parsed_equations, parsed_equations_case_name, outstring)
 end
 if !isdir(OUTPUT_DIR)
     mkpath(OUTPUT_DIR)
@@ -95,7 +98,10 @@ end
 #--------------------------------------------------------
 #Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
-#run(`$cp $user_input_file $OUTPUT_DIR`)  #this doesn't 
+if Sys.iswindows() == false
+    run(`$cp $user_input_file $OUTPUT_DIR`)
+end
+
 
 driver(inputs, # input parameters from src/user_input.jl
        OUTPUT_DIR,
