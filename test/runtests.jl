@@ -4,7 +4,7 @@ using HDF5
 
 # Ensure JEXPRESSO_HOME is set
 if !haskey(ENV, "JEXPRESSO_HOME")
-    ENV["JEXPRESSO_HOME"] = joinpath(@__DIR__, "..")  # Default path if not set
+    ENV["JEXPRESSO_HOME"] = dirname(@__DIR__()) #joinpath(@__DIR__, "..")  # Default path if not set
 end
 
 function find_first_hdf5_file(directory::String)
@@ -34,6 +34,8 @@ function compare_results(generated_data, expected_data)
 end
 
 function run_example(parsed_equations::String, parsed_equations_case_name::String)
+    ENV["JEXPRESSO_HOME"] = dirname(@__DIR__())
+    
     example_dir = joinpath(ENV["JEXPRESSO_HOME"],  "problems","equations", "CI-runs", parsed_equations, parsed_equations_case_name)
     expected_output_dir = joinpath(ENV["JEXPRESSO_HOME"], "test", "CI-ref", parsed_equations, parsed_equations_case_name)
     expected_output_file = find_first_hdf5_file(expected_output_dir)
@@ -51,7 +53,7 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
         push!(ARGS, parsed_equations, parsed_equations_case_name)
         try
             include(joinpath(ENV["JEXPRESSO_HOME"], "src", "Jexpresso.jl"))
-            generated_file = find_first_hdf5_file(joinpath(ENV["JEXPRESSO_HOME"], "output","CompEuler","theta","output"))
+            generated_file = find_first_hdf5_file(joinpath(ENV["JEXPRESSO_HOME"], "output","CI-runs","CompEuler","theta","output"))
 
             generated_data = Dict()
             h5open(generated_file, "r") do file
@@ -110,8 +112,8 @@ end
         ("AdvDiff", "Wave_Train_Overlapping_Plot"),
         ("Helmholtz", "case1"),=#
     ]
-    results_dir = ENV["JEXPRESSO_HOME"]
-
+    results_dir = dirname(@__DIR__())
+    
     for (problem_name, case_name) in examples
         run_example(problem_name, case_name)
     end
