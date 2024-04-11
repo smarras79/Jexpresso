@@ -441,6 +441,9 @@ function mod_inputs_user_inputs!(inputs)
         inputs[:ldss_laplace] = true
         inputs[:ldss_differentiation] = false
     else
+        inputs[:equations] = CompEuler()
+        inputs[:ldss_laplace] = false
+        inputs[:ldss_differentiation] = false
         
         #inputs[:neqs] = 1 #default
         
@@ -450,8 +453,6 @@ function mod_inputs_user_inputs!(inputs)
                          - "CompEuler"
                          - "AdvDiff"
               """
-        
-        @error s
     end
 
     if(!haskey(inputs, :energy_equation))
