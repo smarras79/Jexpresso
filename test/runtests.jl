@@ -1,5 +1,5 @@
 using Test
-using Jexpresso
+#using Jexpresso
 using HDF5
 
 # Ensure JEXPRESSO_HOME is set
