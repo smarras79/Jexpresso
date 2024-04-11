@@ -4,10 +4,10 @@
   on:
     pull_request:
       branches:
-        - un/mergedmasterCI
+        - master
     push:
       branches:
-        - un/mergedmasterCI 
+        - master
       tags:
         - '*'  
 
