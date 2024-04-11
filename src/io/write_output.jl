@@ -1,7 +1,9 @@
 using LinearSolve
 using SnoopCompile
 using WriteVTK
-import SciMLBase
+using HDF5
+
+#import SciMLBase
 
 include("./plotting/jeplots.jl")
 
@@ -115,8 +117,9 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(sol.t[:],1)
     title = @sprintf "Final solution at t=%6.4f" sol.t[iout]
+
     write_hdf5(SD, mesh, sol.u[iout][:], qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
-    #end
+    
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
     
 end
@@ -136,8 +139,11 @@ function write_hdf5(SD, mesh::St_mesh, q::Array, qe::Array, title::String, OUTPU
     for ivar = 1:nvar
         fout_name = string(OUTPUT_DIR, "/var_", ivar, ".h5")
         idx = (ivar - 1)*mesh.npoin
-        h5write(fout_name, "q",  q[idx+1:ivar*mesh.npoin]);
-        h5write(fout_name, "qe", qe[1:mesh.npoin, ivar]);
+        
+        h5open(fout_name, "w") do fid        
+            write(fid, "q",  q[idx+1:ivar*mesh.npoin]);
+            write(fid, "qe", qe[1:mesh.npoin, ivar]);
+        end
 
     end
 end
