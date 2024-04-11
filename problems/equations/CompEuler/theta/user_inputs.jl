@@ -14,6 +14,7 @@ function user_inputs()
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         :lsource              => true, 
+        :SOL_VARS_TYPE        => TOTAL(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
