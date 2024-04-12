@@ -31,7 +31,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_circle.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
+        :gmsh_filename       => "./../meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -44,7 +44,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "hdf5",
         :loverwrite_output   => true,
-        :output_dir          => "./output/CI-runs/",
+        :output_dir          => "./../output/CI-runs/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
