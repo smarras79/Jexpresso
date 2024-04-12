@@ -1,21 +1,24 @@
 using Test
-#using Jexpresso
 using HDF5
 
 # Ensure JEXPRESSO_HOME is set
 if !haskey(ENV, "JEXPRESSO_HOME")
-    ENV["JEXPRESSO_HOME"] = dirname(@__DIR__()) #joinpath(@__DIR__, "..")  # Default path if not set
+    ENV["JEXPRESSO_HOME"] = dirname(dirname(@__DIR__())) # Default path if not set, adjusted to two directories up
 end
 
-function find_first_hdf5_file(directory::String)
+
+
+function find_hdf5_files(directory::String)
     files = readdir(directory, join=true)  # List all files with full paths
-    for file in files
-        if occursin(r"\.h5$", file)  # Regex to check if the filename ends with .h5
-            return file
-        end
+    h5_files = filter(f -> occursin(r"\.h5$", f), files)
+    if isempty(h5_files)
+        error("No HDF5 files found in the directory: $directory")
     end
-    error("No HDF5 file found in the directory: $directory")
+    return h5_files
 end
+
+
+
 
 function compare_results(generated_data, expected_data)
     is_equal = true
@@ -33,42 +36,67 @@ function compare_results(generated_data, expected_data)
     return is_equal
 end
 
+
+
 function run_example(parsed_equations::String, parsed_equations_case_name::String)
-    ENV["JEXPRESSO_HOME"] = dirname(@__DIR__())
+    # Store the initial directory
+    initial_dir = pwd()
     
-    example_dir = joinpath(ENV["JEXPRESSO_HOME"],  "problems","equations", "CI-runs", parsed_equations, parsed_equations_case_name)
-    expected_output_dir = joinpath(ENV["JEXPRESSO_HOME"], "test", "CI-ref", parsed_equations, parsed_equations_case_name)
-    expected_output_file = find_first_hdf5_file(expected_output_dir)
-    
-    expected_data = Dict()
-    h5open(expected_output_file, "r") do file
-        for name in keys(file)
-            expected_data[name] = read(file[name])
+    try
+        ENV["JEXPRESSO_HOME"] = dirname(dirname(@__DIR__()))
+        ENV["CI_ENV"] = "true"  # Signal that we are running in the CI environment
+        
+        example_dir = joinpath(ENV["JEXPRESSO_HOME"],"JExpresso" , "problems", "equations", "CI-runs", parsed_equations, parsed_equations_case_name)
+        
+        
+        test_dir = joinpath(ENV["JEXPRESSO_HOME"],"JExpresso" , "test", "CI-ref", parsed_equations, parsed_equations_case_name)
+        test_files = find_hdf5_files(test_dir)
+
+        @testset "$parsed_equations - $parsed_equations_case_name" begin
+            cd(example_dir)
+            empty!(ARGS)  # Clear ARGS to ensure clean state
+            push!(ARGS, parsed_equations, parsed_equations_case_name)
+            try
+                include(joinpath(ENV["JEXPRESSO_HOME"],"JExpresso" , "src", "Jexpresso.jl"))
+            catch e
+                error_message = string(e)
+                println("Error occurred: ", error_message[1:min(1000, end)])
+                @test false
+            end
         end
-    end
 
-    @testset "$parsed_equations - $parsed_equations_case_name" begin
-        cd(example_dir)
-        empty!(ARGS)  # Clear ARGS to ensure clean state
-        push!(ARGS, parsed_equations, parsed_equations_case_name)
-        try
-            include(joinpath(ENV["JEXPRESSO_HOME"], "src", "Jexpresso.jl"))
-            generated_file = find_first_hdf5_file(joinpath(ENV["JEXPRESSO_HOME"], "output","CI-runs","CompEuler","theta","output"))
+        generated_files = find_hdf5_files(joinpath(ENV["JEXPRESSO_HOME"], "JExpresso" , "problems", "equations", "CI-runs",parsed_equations, parsed_equations_case_name,"output", "CI-runs", parsed_equations, parsed_equations_case_name,"output"))
 
+        for i in 1:length(generated_files)
+            generated_file = generated_files[i]
+            test_file = test_files[i]  # Assuming the corresponding test file has the same index
+    
+            test_data = Dict()
+            h5open(test_file, "r") do file
+                for name in keys(file)
+                    test_data[name] = read(file[name])
+                end
+            end
+    
             generated_data = Dict()
             h5open(generated_file, "r") do file
                 for name in keys(file)
                     generated_data[name] = read(file[name])
                 end
-            end
+            end 
 
-            @test compare_results(generated_data, expected_data)
-        catch e
-            error_message = string(e)
-            println("Error occurred: ", error_message[1:min(1000, end)])
-            @test false
+            @testset "Comparison for reliability check: $(basename(generated_file))" begin
+                @test compare_results(test_data, generated_data)
+            end
         end
+
+    finally
+        # Ensure we navigate back to the initial directory
+        cd(initial_dir)
+    
+
     end
+
 end
 
 # Run test sets for each example
@@ -112,8 +140,7 @@ end
         ("AdvDiff", "Wave_Train_Overlapping_Plot"),
         ("Helmholtz", "case1"),=#
     ]
-    results_dir = dirname(@__DIR__())
-    
+
     for (problem_name, case_name) in examples
         run_example(problem_name, case_name)
     end
