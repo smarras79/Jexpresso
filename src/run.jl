@@ -55,10 +55,10 @@ driver_file          = string(dirname(@__DIR__()), "/problems/equations/drivers.
 # Check if running under CI environment and set directory accordingly
 if get(ENV, "CI_ENV", "false") == "true"
     case_name_dir = string(dirname(@__DIR__()), "/problems/equations/CI-runs", "/", parsed_equations, "/", parsed_equations_case_name)
-else
-    case_name_dir = string(dirname(@__DIR__()), "/problems/equations", "/", parsed_equations, "/", parsed_equations_case_name)
+#else
+    #case_name_dir = string(dirname(@__DIR__()), "/problems/equations", "/", parsed_equations, "/", parsed_equations_case_name)
 end
-
+println("sono qui",case_name_dir)
 user_input_file      = string(case_name_dir, "/user_inputs.jl")
 user_flux_file       = string(case_name_dir, "/user_flux.jl")
 user_source_file     = string(case_name_dir, "/user_source.jl")
