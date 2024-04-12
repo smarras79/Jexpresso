@@ -3,8 +3,10 @@ include("custom_bcs.jl")
 function apply_boundary_conditions!(u, uaux, t,qe,
                                     mesh, metrics, basis,
                                     RHS, rhs_el, ubdy,
-                                    ω, neqs, inputs, AD, SD::NSD_1D)
-    if inputs[:lperiodic_1d]
+                                    ω, neqs, inputs, AD, SD)
+
+
+    if inputs[:lperiodic_1d] && typeof(SD) == NSD_1D
         apply_periodicity!(u, uaux, t,qe,
                             mesh, metrics, basis,
                             RHS, rhs_el, ubdy,
@@ -12,21 +14,9 @@ function apply_boundary_conditions!(u, uaux, t,qe,
     else
         build_custom_bcs!(SD, t, mesh, metrics, ω,
                           ubdy, uaux, u, qe,
-                          @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
+                          @view(RHS[:,:]), @view(rhs_el[:,:,:,:,:]),
                           neqs, dirichlet!, neumann, inputs)
     end
-end
-
-function apply_boundary_conditions!(u, uaux, t,qe,
-                                    mesh, metrics, basis,
-                                    RHS, rhs_el, ubdy,
-                                    ω, neqs, inputs, AD, SD::NSD_2D)
-
-    build_custom_bcs!(SD, t, mesh, metrics, ω,
-                      ubdy, uaux, u, qe,
-                      @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
-                      neqs, dirichlet!, neumann, inputs)
-    
 end
 
 function apply_periodicity!(u, uaux, t,qe,
@@ -266,4 +256,38 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
     #Map back to u after applying b.c.
     uaux2u!(u, uaux, neqs, mesh.npoin)
        
+end
+
+
+function build_custom_bcs!(::NSD_3D, t, mesh, metrics, ω,
+                           qbdy, uaux, u, qe,
+                           RHS, rhs_el,
+                           neqs, dirichlet!, neumann, inputs)
+    #
+    # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
+    #          That
+    for ip = 1:mesh.npoin
+
+        fill!(qbdy, 4325789.0)
+
+        user_bc_dirichlet!(@view(uaux[ip,:]),
+                           mesh.x[ip], mesh.y[ip], mesh.z[ip],
+                           t, 0, qbdy,
+                           1, 1, 1,
+                           mesh.xmin, mesh.xmax,
+                           mesh.ymin, mesh.ymax,
+                           mesh.zmin, mesh.zmax,
+                           @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
+        
+        for ieq =1:neqs
+            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                uaux[ip,ieq] = qbdy[ieq]
+                RHS[ip, ieq] = 0.0
+            end
+        end
+    end
+    
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, mesh.npoin)
+    
 end

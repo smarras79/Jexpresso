@@ -148,6 +148,14 @@ end
     @inbounds uaux[ip,ieq] = u[idx]
 end
 
+@kernel function RHStodu_gpu!(RHS,du,npoin,neq)
+    id = @index(Global, NTuple)
+    @inbounds ip = id[1]
+    @inbounds ieq = id[2]
+    idx = (ieq-1)*npoin + ip
+    @inbounds du[idx] = RHS[ip,ieq]
+end
+
 function uToPrimitives_gpu(u)
 
     return Float32(u[1]), Float32(u[2]/u[1]), Float32(u[3]/u[1]), Float32(u[4]/u[1])

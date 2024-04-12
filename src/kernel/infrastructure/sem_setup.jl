@@ -2,6 +2,7 @@ include("../mesh/restructure_for_periodicity.jl")
 include("../mesh/warping.jl")
 
 function sem_setup(inputs::Dict)
+    
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
     fy_lag = zeros(Float64,1,1)
@@ -9,6 +10,8 @@ function sem_setup(inputs::Dict)
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:equations]
     AD    = inputs[:AD]
+    CL    = inputs[:CL]
+    SOL_VARS_TYPE = inputs[:SOL_VARS_TYPE]
     
     #--------------------------------------------------------
     # Create/read mesh
@@ -76,7 +79,7 @@ function sem_setup(inputs::Dict)
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     if (mesh.nsd > 1)
-        @info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
+        #@info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
         if ("Laguerre" in mesh.bdy_edge_type[:])
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
             ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta], inputs[:backend])
@@ -167,5 +170,5 @@ function sem_setup(inputs::Dict)
     # Build matrices
     #--------------------------------------------------------
     
-    return (; QT, PT, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
+    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end
