@@ -463,7 +463,7 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
         KernelAbstractions.copyto!(backend,lgl.ω,ω)
     end
     for j=1:nop+1       
-        println( " # ξ, ω =: ", " ", lgl.ξ[j], " " , lgl.ω[j])
+        println( " # ξ, ω =: ", " ", ξ[j], " " , ω[j])
     end
     
     println(" # Compute LGL nodes ........................ DONE")
@@ -594,40 +594,53 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat, backend)
     Q = size(ξq,1) - 1
     
     #Initialize arrays
+    L_1 = zeros(TFloat, N+1, Q+1)
+    dLdx_1 = zeros(TFloat, N+1, Q+1)
     L    = KernelAbstractions.zeros(backend, TFloat, N+1, Q+1)
     dLdx = KernelAbstractions.zeros(backend, TFloat, N+1, Q+1)
-    
+    ξq_1 = zeros(TFloat,Q+1)
+    ξ_1 = zeros(TFloat,N+1)
+    KernelAbstractions.copyto!(CPU(),ξq_1,ξq)
+    KernelAbstractions.copyto!(CPU(),ξ_1,ξ)
+
     for l=1:Q+1
-        xl = ξq[l]
+        xl = ξq_1[l]
 
         #Construct Basis
         for i=1:N+1
             
-            xi        = ξ[i]
-            L[i,l]    = 1.0
-            dLdx[i,l] = 0.0
+            xi        = ξ_1[i]
+            L_1[i,l]    = 1.0
+            dLdx_1[i,l] = 0.0
             for j=1:N+1
-                xj = ξ[j]
+                xj = ξ_1[j]
 
                 #L
                 if (j != i)
-                    L[i,l] = L[i,l]*(xl - xj)/(xi - xj)
+                    L_1[i,l] = L_1[i,l]*(xl - xj)/(xi - xj)
                 end
                 
                 ddL=1
                 if (j != i)
                     for k=1:N+1
-                        xk = ξ[k]
+                        xk = ξ_1[k]
                         
                         #dL/dx
                         if (k !=i && k !=j)
                             ddL = ddL*(xl - xk)/(xi - xk)
                         end
                     end
-                    dLdx[i, l] = dLdx[i, l] + ddL/(xi - xj)
+                    dLdx_1[i, l] = dLdx_1[i, l] + ddL/(xi - xj)
                 end
             end
         end
+    end
+    if (backend == CPU())
+        L .= L_1
+        dLdx .= dLdx_1
+    else
+        KernelAbstractions.copyto!(backend,L,L_1)
+        KernelAbstractions.copyto!(backend,dLdx,dLdx_1)
     end
 
     return (L, dLdx)

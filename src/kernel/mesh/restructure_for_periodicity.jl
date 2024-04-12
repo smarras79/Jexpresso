@@ -3,6 +3,7 @@ function periodicity_restructure!(mesh,inputs,backend)
     #per2 = inputs[:per2]
     #determine boundary vectors
     if (mesh.nsd == 2)
+        
 	if (inputs[:lperiodic_laguerre] && "Laguerre" in mesh.bdy_edge_type)
             xmin = minimum(mesh.x)
             xmax = maximum(mesh.x)
@@ -309,6 +310,8 @@ function periodicity_restructure!(mesh,inputs,backend)
                 end
             end
         end
+    elseif (mesh.nsd == 3)
+        nothing
     else
         #
         # 1D periodicity
@@ -331,4 +334,5 @@ function periodicity_restructure!(mesh,inputs,backend)
             mesh.npoin = mesh.npoin-1
         end
     end
+    @info " periodicity_restructure!"
 end

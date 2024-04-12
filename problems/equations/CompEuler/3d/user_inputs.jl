@@ -1,22 +1,19 @@
 function user_inputs()
-    
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.1,
+        :Δt                   => 0.2,
         :tinit                => 0.0,
-        :tend                 => 500.0,
+        :tend                 => 300,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :ndiagnostics_outputs => 6,
+        :ndiagnostics_outputs => 20,
         :case                 => "rtb",
         :lsource              => true, 
-        :backend              => MetalBackend(),
-        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -25,15 +22,16 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => (1, 2, 3, 4),
-        :μ                   => (0.0, 20.0, 20.0, 60.0), #horizontal viscosity constant for momentum
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        :ivisc_equations      => (1, 2, 3, 4, 5),
+        :μ                   => (0.0, 20.0, 20.0, 20.0, 60.0), #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_circle.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
