@@ -1,6 +1,7 @@
 module CompEulerthetaTests
 
-include(joinpath(pwd(), "test", "solnCompare.jl"))
+project_root = dirname(Base.current_project())
+include(joinpath(project_root, "test", "solnCompare.jl"))
 
 using .solnCompare
 using Test

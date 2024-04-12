@@ -39,13 +39,13 @@ end
 
 function run_example(parsed_equations::String, parsed_equations_case_name::String)
     # Store the initial directory
-    initial_dir = pwd()
+    project_root = dirname(Base.current_project())
     try
 
         @testset "$parsed_equations - $parsed_equations_case_name" begin
             push!(empty!(ARGS), parsed_equations, parsed_equations_case_name)
             try
-                include(joinpath(initial_dir , "src", "Jexpresso.jl"))
+                include(joinpath(project_root , "src", "Jexpresso.jl"))
             catch e
                 error_message = string(e)
                 println("Error occurred: ", error_message[1:min(1000, end)])
@@ -53,8 +53,8 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
             end
         end
 
-        ref_dir = joinpath(initial_dir, "test", "CI-ref", parsed_equations, parsed_equations_case_name)
-        output_dir = joinpath(initial_dir,"output", "CI-runs", parsed_equations, parsed_equations_case_name,"output")
+        ref_dir = joinpath(project_root, "test", "CI-ref", parsed_equations, parsed_equations_case_name)
+        output_dir = joinpath(project_root,"output", "CI-runs", parsed_equations, parsed_equations_case_name,"output")
         ref_files = find_hdf5_files(ref_dir)
         generated_files = find_hdf5_files(output_dir)
 
@@ -80,7 +80,7 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
 
     finally
         # Ensure we navigate back to the initial directory
-        cd(initial_dir)
+        cd(project_root)
     end
 end
 
