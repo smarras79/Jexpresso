@@ -36,7 +36,11 @@ function parse_commandline()
         help = "case name in equations directory"
         default = "theta"
         required = false
-        
+
+        "CI_MODE"
+        help = "CI_MODE: true or false"
+        default = "false"
+        required = false
     end
 
     return parse_args(s)
@@ -48,12 +52,13 @@ end
 parsed_args                = parse_commandline()
 parsed_equations           = string(parsed_args["eqs"])
 parsed_equations_case_name = string(parsed_args["eqs_case"])
-
+parsed_CI_mode             = string(parsed_args["CI_MODE"])
+  
 
 driver_file          = string(dirname(@__DIR__()), "/problems/equations/drivers.jl")
 
 # Check if running under CI environment and set directory accordingly
-if get(ENV, "CI_ENV", "false") == "true"
+if parsed_CI_mode == "true"
     case_name_dir = string(dirname(@__DIR__()), "/problems/equations/CI-runs", "/", parsed_equations, "/", parsed_equations_case_name)
 else
     case_name_dir = string(dirname(@__DIR__()), "/problems/equations", "/", parsed_equations, "/", parsed_equations_case_name)

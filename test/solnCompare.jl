@@ -41,9 +41,9 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
     # Store the initial directory
     project_root = dirname(Base.current_project())
     try
-
+        CI_MODE = "true"
         @testset "$parsed_equations - $parsed_equations_case_name" begin
-            push!(empty!(ARGS), parsed_equations, parsed_equations_case_name)
+            push!(empty!(ARGS), parsed_equations, parsed_equations_case_name, CI_MODE)
             try
                 include(joinpath(project_root , "src", "Jexpresso.jl"))
             catch e
