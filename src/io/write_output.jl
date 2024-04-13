@@ -1,7 +1,9 @@
 using LinearSolve
 using SnoopCompile
 using WriteVTK
-import SciMLBase
+using HDF5
+
+#import SciMLBase
 
 include("./plotting/jeplots.jl")
 
@@ -46,10 +48,6 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
         end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
-end
-
-function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
-    nothing
 end
 
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
@@ -114,13 +112,14 @@ end
 # HDF5 writer/reader
 #------------
 
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(sol.t[:],1)
     title = @sprintf "Final solution at t=%6.4f" sol.t[iout]
+
     write_hdf5(SD, mesh, sol.u[iout][:], qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
-    #end
+    
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
     
 end
@@ -134,20 +133,22 @@ function read_output(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, outform
 end
 
 
-function write_hdf5(SD::NSD_2D, mesh::St_mesh, q::Array, qe::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
+function write_hdf5(SD, mesh::St_mesh, q::Array, qe::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
     
     #Write one HDF5 file per variable
     for ivar = 1:nvar
         fout_name = string(OUTPUT_DIR, "/var_", ivar, ".h5")
         idx = (ivar - 1)*mesh.npoin
-        h5write(fout_name, "q",  q[idx+1:ivar*mesh.npoin]);
-        h5write(fout_name, "qe", qe[1:mesh.npoin, ivar]);
+        
+        h5open(fout_name, "w") do fid        
+            write(fid, "q",  q[idx+1:ivar*mesh.npoin]);
+            write(fid, "qe", qe[1:mesh.npoin, ivar]);
+        end
 
     end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
 end
 
-function read_hdf5(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, nvar)
+function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     
     q  = zeros(Float64, npoin, nvar+1)
     qe = zeros(Float64, npoin, nvar+1)
