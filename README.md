@@ -1,6 +1,16 @@
+# <img src="https://github.com/smarras79/Jexpresso/blob/hw/CImaster/assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
+the logo settings should be changed once it get pushed to the master
+
 | **Documentation** |
 |:------------ |
 | [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
+|**Build Status** |
+| [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg)](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml)
+| **Contacts**  |
+| [![Simone Marras](https://img.shields.io/badge/Simone%20Marras-smarras%40njit.edu-8e7cc3)](mailto:smarras@njit.edu) |
+| [![Yassine Tissaoui](https://img.shields.io/badge/Yassine%20Tissaoui-yt277%40njit.edu-8e7cc3)](mailto:yt277@njit.edu) |
+| **Citation** |
+| [![DOI](https://img.shields.io/badge/article-arXiv:2401.05624-green)](https://doi.org/10.48550/arXiv.2401.05624) |
 
 # JEXPRESSO
 A research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements**. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
@@ -307,4 +317,4 @@ modify ./src/io/plotting/jplots.jl accordinly.
 For non-periodic 2D tests, the output can also be written to VTK files by setting the value "vtk" for the usier_input key :outformat
 
 ## Contacts
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu), [Hang Wang](mailto:hang.wang@njit.edu)
