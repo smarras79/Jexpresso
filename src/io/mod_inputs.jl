@@ -482,6 +482,10 @@ function mod_inputs_user_inputs!(inputs)
         end
     end
     
+    if(!haskey(inputs, :loverwrite_output))
+        inputs[:loverwrite_output] = false
+    end
+
     if(!haskey(inputs, :SOL_VARS_TYPE))
         inputs[:SOL_VARS_TYPE] = TOTAL() #vs PERT()
     end
