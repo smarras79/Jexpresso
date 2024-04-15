@@ -1,5 +1,4 @@
 # <img src="https://github.com/smarras79/Jexpresso/blob/hw/CImaster/assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
-the logo settings should be changed once it get pushed to the master
 
 | **Documentation** |
 |:------------ |
