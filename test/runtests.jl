@@ -57,7 +57,7 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
             empty!(ARGS)  # Clear ARGS to ensure clean state
             push!(ARGS, parsed_equations, parsed_equations_case_name)
             try
-                include(joinpath(ENV["JEXPRESSO_HOME"], "src", "Jexpresso.jl"))
+                include(joinpath(ENV["JEXPRESSO_HOME"], "Jexpresso","src", "Jexpresso.jl"))
             catch e
                 error_message = string(e)
                 println("Error occurred: ", error_message[1:min(1000, end)])
