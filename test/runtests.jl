@@ -49,7 +49,7 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
         example_dir = joinpath(ENV["JEXPRESSO_HOME"], "problems", "equations", "CI-runs", parsed_equations, parsed_equations_case_name)
         
         
-        test_dir = joinpath(ENV["JEXPRESSO_HOME"], "test", "CI-ref", parsed_equations, parsed_equations_case_name)
+        test_dir = joinpath(ENV["JEXPRESSO_HOME"], "Jexpresso","test", "CI-ref", parsed_equations, parsed_equations_case_name)
         test_files = find_hdf5_files(test_dir)
 
         @testset "$parsed_equations - $parsed_equations_case_name" begin
