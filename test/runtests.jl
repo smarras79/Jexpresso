@@ -46,7 +46,7 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
         ENV["JEXPRESSO_HOME"] = dirname(dirname(@__DIR__()))
         ENV["CI_ENV"] = "true"  # Signal that we are running in the CI environment
 
-        example_dir = joinpath(ENV["JEXPRESSO_HOME"], "problems", "equations", "CI-runs", parsed_equations, parsed_equations_case_name)
+        example_dir = joinpath(ENV["JEXPRESSO_HOME"],"Jexpresso", "problems", "equations", "CI-runs", parsed_equations, parsed_equations_case_name)
         
         
         test_dir = joinpath(ENV["JEXPRESSO_HOME"], "Jexpresso","test", "CI-ref", parsed_equations, parsed_equations_case_name)
@@ -65,7 +65,7 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
             end
         end
 
-        generated_files = find_hdf5_files(joinpath(ENV["JEXPRESSO_HOME"],  "problems", "equations", "CI-runs",parsed_equations, parsed_equations_case_name,"output", "CI-runs", parsed_equations, parsed_equations_case_name,"output"))
+        generated_files = find_hdf5_files(joinpath(ENV["JEXPRESSO_HOME"], "Jexpresso", "problems", "equations", "CI-runs",parsed_equations, parsed_equations_case_name,"output", "CI-runs", parsed_equations, parsed_equations_case_name,"output"))
 
         for i in 1:length(generated_files)
             generated_file = generated_files[i]
