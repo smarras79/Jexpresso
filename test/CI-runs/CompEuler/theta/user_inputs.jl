@@ -6,7 +6,7 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.4,
         :tinit                => 0.0,
-        :tend                 => 300,
+        :tend                 => 1000,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
@@ -30,7 +30,6 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_circle.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
@@ -44,8 +43,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "hdf5",
         :loverwrite_output   => true,
-        :output_dir          => "./test/CI-runs",
-        #:output_dir          => "./CI-runs", #this is in github
+        #:output_dir          => "./test/CI-runs",
+        :output_dir          => "./CI-runs", #this is in github
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
