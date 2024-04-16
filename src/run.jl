@@ -59,7 +59,7 @@ driver_file          = string(dirname(@__DIR__()), "/problems/equations/drivers.
 
 # Check if running under CI environment and set directory accordingly
 if parsed_CI_mode == "true"
-    case_name_dir = string(dirname(@__DIR__()), "/problems/equations/CI-runs", "/", parsed_equations, "/", parsed_equations_case_name)
+    case_name_dir = string(dirname(@__DIR__()), "/test/CI-runs", "/", parsed_equations, "/", parsed_equations_case_name)
 else
     case_name_dir = string(dirname(@__DIR__()), "/problems/equations", "/", parsed_equations, "/", parsed_equations_case_name)
 end
