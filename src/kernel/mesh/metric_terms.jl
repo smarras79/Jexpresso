@@ -40,9 +40,9 @@ end
 
 function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)
     
-    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem, Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
-                            dξdx = zeros(T, mesh.nelem, Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
-                            Je   = zeros(T, mesh.nelem, Q+1, 1),
+    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem, Q+1, 1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
+                            dξdx = zeros(T, mesh.nelem, Q+1, 1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
+                            Je   = zeros(T, mesh.nelem, Q+1, 1, 1),
                             nx   = zeros(T, mesh.nedges_bdy, 1))
 
     for iel = 1:mesh.nelem
@@ -60,9 +60,9 @@ end
 
 function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, inputs,T)
    
-    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem_semi_inf, Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
-                            dξdx = zeros(T, mesh.nelem_semi_inf, Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
-                            Je   = zeros(T, mesh.nelem_semi_inf, Q+1, 1),
+    metrics = St_metrics{T}(dxdξ = zeros(T, mesh.nelem_semi_inf, Q+1, 1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
+                            dξdx = zeros(T, mesh.nelem_semi_inf, Q+1, 1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
+                            Je   = zeros(T, mesh.nelem_semi_inf, Q+1, 1, 1),
                             nx   = zeros(T, mesh.nedges_bdy, 1))
 
     dψ = basis.dψ
