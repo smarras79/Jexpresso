@@ -547,7 +547,7 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
         for iel = 1:nelem
             for i = 1:ngl
                 I = mesh.connijk[iel,i,1]
-                RHS[I,ieq] += rhs_el[iel,i,1,ieq]
+                RHS[I,ieq] += rhs_el[iel,i,ieq]
             end
         end
     end
@@ -595,7 +595,7 @@ function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::Cont
             for i = 1:mesh.ngr
                 I = mesh.connijk_lag[iel,i,1]
 
-                RHS[I,ieq] += rhs_el[iel,i,1,ieq]
+                RHS[I,ieq] += rhs_el[iel,i,ieq]
             end
         end
     end

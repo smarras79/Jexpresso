@@ -271,18 +271,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             mesh.connijk[iel, ngl,  ngl] = mesh.cell_node_ids[iel][3]
             mesh.connijk[iel, ngl,    1] = mesh.cell_node_ids[iel][4]
             
-            #=
-            # 4-----3
-            # |     |
-            # |     |
-            # 1-----2
-            #
-            mesh.connijk[iel, 1,  1]    = mesh.cell_node_ids[iel][1]
-            mesh.connijk[iel, 1, ngl]   = mesh.cell_node_ids[iel][2]
-            mesh.connijk[iel, ngl, ngl] = mesh.cell_node_ids[iel][4]
-            mesh.connijk[iel, ngl, 1]   = mesh.cell_node_ids[iel][3]
-            =#
-            
             #@printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[iel, 1, 1], mesh.connijk[iel, ngl, 1] , mesh.connijk[iel, 1,ngl], mesh.connijk[iel, ngl, ngl] )
             
         end
@@ -334,23 +322,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             mesh.connijk[iel, ngl, 1, ngl]   = mesh.cell_node_ids[iel][3]
             mesh.connijk[iel, ngl, ngl, ngl] = mesh.cell_node_ids[iel][7]
             mesh.connijk[iel, 1, ngl, ngl]   = mesh.cell_node_ids[iel][8]
-
-            #Edges:
-            #mesh.conn_edgesijk[iel, 1] = mesh.cell_edge_ids[iel][1]
-            #@printf(" %d %d %d %d %d %d %d %d \n",
-            #        mesh.conn[iel, 1],  mesh.conn[iel, 2],  mesh.conn[iel, 3],  mesh.conn[iel, 4],
-            #        mesh.conn[iel, 5],  mesh.conn[iel, 6],  mesh.conn[iel, 7],  mesh.conn[iel, 8])
             
-            #=@printf(" %d %d %d %d %d %d %d %d \n",
-                    mesh.connijk[iel, 1, 1, 1],
-                    mesh.connijk[iel, ngl, 1, 1],
-                    mesh.connijk[iel, ngl, ngl, 1],
-                    mesh.connijk[iel, 1, ngl, 1],
-                    mesh.connijk[iel, 1, 1, ngl],
-                    mesh.connijk[iel, ngl, 1, ngl],
-                    mesh.connijk[iel, ngl, ngl, ngl],
-                    mesh.connijk[iel, 1, ngl, ngl])
-            =#
         end
         
         #
@@ -432,20 +404,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         mesh.zmax = maximum(mesh.z)
         mesh.zmin = minimum(mesh.z)
     end
-
     
-    #=for iel=1:mesh.nelem
-        @printf(" %d:\n", iel)
-        for k=1:mesh.ngl
-            for j=1:mesh.ngl
-                for i=1:mesh.ngl
-                    @printf(" %d",  mesh.connijk[iel, i,j,k])
-                end
-            end
-        end
-        @printf(" \n")
-    end=#
-        
     #----------------------------------------------------------------------
     # Extract boundary edges and faces nodes:
     #----------------------------------------------------------------------
@@ -475,16 +434,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
                 for igl = 1:mesh.ngl
                     mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
                     mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
-
-                    #= if SubString(mesh.edge_type[iedge] == "free_slip"
-                    mesh.bdy_edge_type_id[iedge_bdy] = 1
-                    elseif mesh.edge_type[iedge] == "no_slip"
-                    mesh.bdy_edge_type_id[iedge_bdy] = 2
-                    else
-                    mesh.bdy_edge_type_id[iedge_bdy] = 0
-                    end=#
-                    
-                    #@info iedge, mesh.edge_type[iedge]
                 end
                 if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
                     n_semi_inf += 1
