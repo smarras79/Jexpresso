@@ -193,13 +193,13 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
     ymax = params.ymax   
     for iel=1:params.mesh.nelem_semi_inf
 
-        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
+        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for i=1:params.mesh.ngr
             ip = params.mesh.connijk_lag[iel,i,1]
             user_flux!(@view(params.F_lag[i,1,:]), @view(params.G_lag[i,1,:]), SD,
                        @view(params.uaux[ip,:]),
-                       @view(params.qe[ip,:]),         #pref
+                       @view(params.qp.qe[ip,:]),         #pref
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
                        neqs=params.neqs)
@@ -207,7 +207,7 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
             if lsource
                 user_source!(@view(params.S_lag[i,1,:]),
                              @view(params.uaux[ip,:]),
-                             @view(params.qe[ip,:]),          #ρref
+                             @view(params.qp.qe[ip,:]),          #ρref
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
@@ -226,7 +226,7 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_2D)
     ymax = params.ymax
     for iel=1:params.mesh.nelem_semi_inf
         
-        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)       
+        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.pq.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)       
  
         for j=1:params.mesh.ngr, i=1:params.mesh.ngl
             ip = params.mesh.connijk_lag[iel,i,j]
@@ -237,13 +237,13 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_2D)
             #if (abs(params.mesh.y[ip]) == ymax) params.uaux[ip,3] = 0.0 end 
             user_flux!(@view(params.F_lag[i,j,:]), @view(params.G_lag[i,j,:]), SD,
                        @view(params.uaux[ip,:]), 
-                       @view(params.qe[ip,:]),         #pref
+                       @view(params.qp.qe[ip,:]),         #pref
                        params.mesh, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs)
             
             if lsource
                 user_source!(@view(params.S_lag[i,j,:]),
                              @view(params.uaux[ip,:]),
-                             @view(params.qe[ip,:]),          #ρref 
+                             @view(params.qp.qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax = xmax, xmin=xmin,ymax=ymax)
             end
         end
@@ -256,7 +256,7 @@ function viscous_rhs_el_laguerre!(u, params, SD::NSD_2D)
     
     for iel=1:params.mesh.nelem_semi_inf
         
-        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
+        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for ieq in params.ivisc_equations    
               _expansion_visc_laguerre!(@view(params.rhs_diffξ_el_lag[iel,:,:,ieq]), @view(params.rhs_diffη_el_lag[iel,:,:,ieq]), @view(params.uprimitive_lag[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.ω_lag, params.mesh, params.basis, params.basis_lag, params.metrics, params.metrics_lag, params.inputs, iel, ieq, params.QT, SD, params.AD)
