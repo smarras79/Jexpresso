@@ -90,23 +90,27 @@ function params_setup(sem,
         #
         # 2D & 3D dd if statement like aboe
         #
-        uaux_el_lag      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-        rhs_el_lag       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-        rhs_diff_el_lag  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-        rhs_diffξ_el_lag = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-        rhs_diffη_el_lag = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-        F_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-        G_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-        H_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-        S_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-        RHS_lag          = zeros(T, sem.mesh.npoin, qp.neqs)
-        RHS_visc_lag     = zeros(T, sem.mesh.npoin, qp.neqs)
-        uprimitive_lag = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs+1)
-        q_t_lag = zeros(Float64,qp.neqs,sem.mesh.ngl,sem.mesh.ngr)
-        q_ti_lag = zeros(Float64,sem.mesh.ngl,sem.mesh.ngr)
-        fqf_lag = zeros(Float64,qp.neqs,sem.mesh.ngl,sem.mesh.ngr)
-        b_lag = zeros(sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-        B_lag = zeros(Float64, sem.mesh.npoin, qp.neqs)
+        if  sem.mesh.nsd == 2
+            uaux_el_lag      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+            rhs_el_lag       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+            rhs_diff_el_lag  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+            rhs_diffξ_el_lag = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+            rhs_diffη_el_lag = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+            F_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+            G_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+            H_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+            S_lag            = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+            RHS_lag          = zeros(T, sem.mesh.npoin, qp.neqs)
+            RHS_visc_lag     = zeros(T, sem.mesh.npoin, qp.neqs)
+            uprimitive_lag = zeros(T, sem.mesh.ngl, sem.mesh.ngr, qp.neqs+1)
+            q_t_lag = zeros(Float64,qp.neqs,sem.mesh.ngl,sem.mesh.ngr)
+            q_ti_lag = zeros(Float64,sem.mesh.ngl,sem.mesh.ngr)
+            fqf_lag = zeros(Float64,qp.neqs,sem.mesh.ngl,sem.mesh.ngr)
+            b_lag = zeros(sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+            B_lag = zeros(Float64, sem.mesh.npoin, qp.neqs)
+        elseif  sem.mesh.nsd == 3
+          error(" src/kernel/infrastructore/params_setup.jl: 3D Laguerre arrays not coded yet!")
+        end
     end
     if (inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         #
