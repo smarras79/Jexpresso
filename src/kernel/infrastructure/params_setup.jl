@@ -87,6 +87,9 @@ function params_setup(sem,
     
     #The following are only built and active if Laguerre boundaries are to be used
     if ( "Laguerre" in sem.mesh.bdy_edge_type)
+        #
+        # 2D & 3D dd if statement like aboe
+        #
         uaux_el_lag      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
         rhs_el_lag       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
         rhs_diff_el_lag  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
@@ -105,23 +108,26 @@ function params_setup(sem,
         b_lag = zeros(sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
         B_lag = zeros(Float64, sem.mesh.npoin, qp.neqs)
     end
-    if (inputs[:llaguerre_1d_right]||inputs[:llaguerre_1d_left])
-        uaux_el_lag      = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
-        rhs_el_lag       = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
-        rhs_diff_el_lag  = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
-        rhs_diffξ_el_lag = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
-        rhs_diffη_el_lag = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
-        F_lag            = zeros(T, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
+    if (inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
+        #
+        # 1D
+        #
+        uaux_el_lag      = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, qp.neqs)
+        rhs_el_lag       = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, qp.neqs)
+        rhs_diff_el_lag  = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, qp.neqs)
+        rhs_diffξ_el_lag = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, qp.neqs)
+        rhs_diffη_el_lag = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, qp.neqs)
+        F_lag            = zeros(T, sem.mesh.ngr, qp.neqs)
         G_lag            = zeros(T, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
         H_lag            = zeros(T, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
         S_lag            = zeros(T, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
         RHS_lag          = zeros(T, sem.mesh.npoin, qp.neqs)
         RHS_visc_lag     = zeros(T, sem.mesh.npoin, qp.neqs)
-        uprimitive_lag = zeros(T, sem.mesh.ngr, sem.mesh.ngl, qp.neqs+1)
-        q_t_lag = zeros(Float64,qp.neqs,sem.mesh.ngr,sem.mesh.ngl)
-        q_ti_lag = zeros(Float64,sem.mesh.ngr,sem.mesh.ngl)
-        fqf_lag = zeros(Float64,qp.neqs,sem.mesh.ngr,sem.mesh.ngl)
-        b_lag = zeros(sem.mesh.nelem, sem.mesh.ngr, sem.mesh.ngl, qp.neqs)
+        uprimitive_lag = zeros(T, sem.mesh.ngr, qp.neqs+1)
+        q_t_lag = zeros(Float64, qp.neqs, sem.mesh.ngr)
+        q_ti_lag = zeros(Float64, sem.mesh.ngr)
+        fqf_lag = zeros(Float64, qp.neqs, sem.mesh.ngr)
+        b_lag = zeros(sem.mesh.nelem, sem.mesh.ngr, qp.neqs)
         B_lag = zeros(Float64, sem.mesh.npoin, qp.neqs)
     end
 
