@@ -13,7 +13,7 @@
 | [![DOI](https://img.shields.io/badge/article-arXiv:2401.05624-green)](https://doi.org/10.48550/arXiv.2401.05624) |
 
 # JEXPRESSO
-A research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements**. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
+A research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
 
 Suggested Julia version: 1.10.0
 
@@ -131,6 +131,46 @@ v_{xx} + v_{zz}\\
 c1_{xx} + c1_{zz}\\
 ...\\
 cN_{xx} + cN_{zz}
+\end{bmatrix}.$$
+
+6. 3D Euler equations of compressible flows with gravity
+
+$${\bf q}=\begin{bmatrix}
+\rho \\
+\rho u\\
+\rho v\\
+\rho w\\
+\rho \theta\\
+\end{bmatrix}\quad {\bf F}1=\begin{bmatrix}
+\rho u\\
+\rho u^2 + p\\
+\rho u v\\
+\rho u w\\
+\rho u \theta\\
+\end{bmatrix}\quad {\bf F}2=\begin{bmatrix}
+\rho v\\
+\rho v u\\
+\rho v^2 + p\\
+\rho v w\\
+\rho v \theta\\
+\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
+\rho w\\
+\rho w u\\
+\rho w v\\
+\rho w^2 + p\\
+\rho w \theta\\
+\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
+0\\
+0\\
+0\\
+-\rho g\\
+0\\
+\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
+0\\
+u_{xx} + u_{yy} + u_{zz}\\
+v_{xx} + v_{yy} + v_{zz}\\
+w_{xx} + w_{yy} + w_{zz}\\
+\theta_{xx} + \theta_{yy} + \theta_{zz}\\
 \end{bmatrix}.$$
 
 
