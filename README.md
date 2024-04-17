@@ -214,8 +214,18 @@ julia> include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
 
+Example 2: to solve the 3D Euler equations with buyoancy defined in `problems/equations/CompEuler/3d` you would do the following:
+```bash
+julia> push!(empty!(ARGS), "CompEuler", "3d");
+julia> include("./src/Jexpresso.jl")
+```
 
-Example 2: to solve the 2D Euler equations leading to a density current defined in `problems/equations/CompEuler/dc` you would do the following:
+<img src="assets/rtb3d.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
+
+Example 3: to solve the 2D Euler equations leading to a density current defined in `problems/equations/CompEuler/dc` you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "dc");
 julia> include("./src/Jexpresso.jl")
@@ -225,7 +235,7 @@ julia> include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Example 3: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
+Example 4: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "wave1d");
 julia> include("./src/Jexpresso.jl")
