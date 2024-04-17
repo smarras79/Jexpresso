@@ -157,32 +157,11 @@ function _build_rhs_laguerre!(RHS, u, params, time)
         
         params.RHS_lag[:,:] .= @view(params.RHS_lag[:,:]) .+ @view(params.RHS_visc_lag[:,:])
     end
-    #@info params.RHS_lag[6481,2]
     
- 
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS_lag[:,ieq]), params.vaux, params.Minv, neqs, npoin, params.AD)
     end
-    #@info params.RHS_lag[6481,2]
-    #For conservaton apply B.C. to RHS after DSS and not to rhs_el:
-    #apply_boundary_conditions!(u, params.uaux, time,
-                               #params.mesh, params.metrics, params.basis,
-                               #params.RHS, params.rhs_el, params.ubdy,
-                               #params.ω, neqs, params.inputs, SD)
-   
-    #=for e= 1:params.mesh.nelem_semi_inf
-       for j=1:params.mesh.ngr
-          for i=1:params.mesh.ngl
-             ip = params.mesh.connijk_lag[e,i,j]
-             x = params.mesh.x[ip]
-             if (abs(x) > 119500.0)#if ( y <10.0 || y > 29990.0)
-               params.RHS_lag[ip,2] = 0.0
-               params.RHS_lag[ip,3] = 0.0
-             end
-           end
-        end
-     end=#
- 
+    
 end
 
 function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
@@ -197,7 +176,7 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
 
         for i=1:params.mesh.ngr
             ip = params.mesh.connijk_lag[iel,i,1]
-            user_flux!(@view(params.F_lag[i,1,:]), @view(params.G_lag[i,1,:]), SD,
+            user_flux!(@view(params.F_lag[i,:]), @view(params.G_lag[i,:]), SD,
                        @view(params.uaux[ip,:]),
                        @view(params.qp.qe[ip,:]),         #pref
                        params.mesh,
@@ -205,7 +184,7 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
                        neqs=params.neqs)
 
             if lsource
-                user_source!(@view(params.S_lag[i,1,:]),
+                user_source!(@view(params.S_lag[i,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qp.qe[ip,:]),          #ρref
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
@@ -279,9 +258,9 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_1
         for i=1:params.mesh.ngr
             dFdξ = 0.0
             for k = 1:params.mesh.ngr
-                dFdξ += params.basis_lag.dψ[k,i]*params.F_lag[k,1,ieq]
+                dFdξ += params.basis_lag.dψ[k,i]*params.F_lag[k,ieq]
             end
-            params.rhs_el_lag[iel,i,1,ieq] -= dFdξ*params.metrics_lag.Je[iel,i,1]*params.metrics_lag.dξdx[iel,i,1]*params.ω_lag[i]  - params.ω_lag[i]*params.S_lag[i,1,ieq]
+            params.rhs_el_lag[iel,i,ieq] -= dFdξ*params.metrics_lag.Je[iel,i]*params.metrics_lag.dξdx[iel,i]*params.ω_lag[i]  - params.ω_lag[i]*params.S_lag[i,ieq]
         end
     end
 end
