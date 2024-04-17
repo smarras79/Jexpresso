@@ -4,10 +4,10 @@
   on:
     pull_request:
       branches:
-        - master
+        - sm/3d
     push:
       branches:
-        - master
+        - sm/3d
       tags:
         - '*'  
 

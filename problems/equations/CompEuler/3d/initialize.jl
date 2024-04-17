@@ -2,7 +2,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     """
 
             """
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+    @info " Initialize fields for 3D CompEuler with θ equation ........................ "
     
     #---------------------------------------------------------------------------------
     # Solution variables:
