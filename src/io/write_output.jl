@@ -84,16 +84,17 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") ) 
 end
 
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
     for iout = 1:size(sol.t[:],1)
-        title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+        title = @sprintf "Final solution at t=%6.4f" sol.t[iout]
         write_vtk(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
     
 end
+
 
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     
@@ -486,6 +487,110 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     end
 end
 
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+
+    outvars = varnames
+    nvars = length(outvars)
+    
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
+    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+    
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                for k = 1:mesh.ngl-1
+                    ip1 = mesh.connijk[iel,i,j,k]
+                    ip2 = mesh.connijk[iel,i+1,j,k]
+                    ip3 = mesh.connijk[iel,i+1,j+1,k]
+                    ip4 = mesh.connijk[iel,i,j+1,k]
+                    
+                    ip5 = mesh.connijk[iel,i,j,k+1]
+                    ip6 = mesh.connijk[iel,i+1,j,k+1]
+                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
+                    ip8 = mesh.connijk[iel,i,j+1,k+1]
+
+                    subelem[isel, 1] = ip1
+                    subelem[isel, 2] = ip2
+                    subelem[isel, 3] = ip3
+                    subelem[isel, 4] = ip4
+                    subelem[isel, 5] = ip5
+                    subelem[isel, 6] = ip6
+                    subelem[isel, 7] = ip7
+                    subelem[isel, 8] = ip8
+                    
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+                    
+                    isel = isel + 1
+                end
+            end
+        end
+    end
+
+     
+    #npoin = mesh.npoin
+    qout = copy(q)
+
+    if (inputs[:CL] == CL())
+
+        if (inputs[:SOL_VARS_TYPE] == TOTAL())
+            
+            #ρ
+            qout[1:mesh.npoin] .= q[1:mesh.npoin]
+            
+            if (case == "rtb" || case == "mountain") && nvars >= 4
+                
+                #u = ρu/ρ
+                ivar = 2
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+
+                #v = ρv/ρ
+                ivar = 3
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                
+                #w = ρw/ρ
+                ivar = 4
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                
+                if (size(qexact, 1) === mesh.npoin)
+
+                    if inputs[:loutput_pert] == true
+                        
+                        #ρ'
+                        qout[1:mesh.npoin] .= q[1:mesh.npoin] .- qexact[1:mesh.npoin,1]
+                        
+                        #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
+                        ivar = 5
+                        idx = (ivar - 1)*mesh.npoin
+                        qout[idx+1:5*mesh.npoin] .= q[idx+1:5*mesh.npoin]./q[1:mesh.npoin] .- qexact[1:mesh.npoin,5]./qexact[1:mesh.npoin,1]
+                    else
+                        
+                        ivar = 5
+                        idx = (ivar - 1)*mesh.npoin
+                        qout[idx+1:5*mesh.npoin] .= q[idx+1:5*mesh.npoin]./q[1:mesh.npoin]
+
+                    end
+                end
+            end
+        end
+    end
+
+    #Solution:
+    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")    
+    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells)
+    for ivar = 1:nvars
+        idx = (ivar - 1)*mesh.npoin
+        vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*mesh.npoin])
+    end
+    outfiles = vtk_save(vtkfile)
+    
+end
+
+
+
 function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
 
     #nothing
@@ -549,5 +654,50 @@ function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, O
 end
 
 
-function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar))) nothing end
+function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
 
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
+    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+        
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                for k = 1:mesh.ngl-1
+                    ip1 = mesh.connijk[iel,i,j,k]
+                    ip2 = mesh.connijk[iel,i+1,j,k]
+                    ip3 = mesh.connijk[iel,i+1,j+1,k]
+                    ip4 = mesh.connijk[iel,i,j+1,k]
+                    
+                    ip5 = mesh.connijk[iel,i,j,k+1]
+                    ip6 = mesh.connijk[iel,i+1,j,k+1]
+                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
+                    ip8 = mesh.connijk[iel,i,j+1,k+1]
+
+                    subelem[isel, 1] = ip1
+                    subelem[isel, 2] = ip2
+                    subelem[isel, 3] = ip3
+                    subelem[isel, 4] = ip4
+                    subelem[isel, 5] = ip5
+                    subelem[isel, 6] = ip6
+                    subelem[isel, 7] = ip7
+                    subelem[isel, 8] = ip8
+                    
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+                    
+                    isel = isel + 1
+                end
+            end
+        end
+    end
+    
+    #Reference values only (definied in initial conditions)
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
+    
+    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells)
+
+    for ivar = 1:length(outvarsref)
+        vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+    end
+    outfiles = vtk_save(vtkfile)
+end
