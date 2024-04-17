@@ -165,9 +165,6 @@ $${\bf q}=\begin{bmatrix}
 0\\
 -\rho g\\
 0\\
-0\\
-...\\
-0
 \end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
 0\\
 u_{xx} + u_{yy} + u_{zz}\\
