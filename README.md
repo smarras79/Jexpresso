@@ -1,10 +1,10 @@
 # <img src="https://github.com/smarras79/Jexpresso/blob/sm/3d/assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
-
+###### [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg)](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml)
 | **Documentation** |
 |:------------ |
 | [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
 |**Build Status** |
-| [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg)](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml)
+[![Build Status](https://github.com/smarras79/Jexpresso/workflows/CI/badge.svg?branch=sm/3d)](https://github.com/smarras79/Jexpresso/actions?query=workflow%3ACI)
 | **Contacts**  |
 | [![Simone Marras](https://img.shields.io/badge/Simone%20Marras-smarras%40njit.edu-8e7cc3)](mailto:smarras@njit.edu) |
 | [![Yassine Tissaoui](https://img.shields.io/badge/Yassine%20Tissaoui-yt277%40njit.edu-8e7cc3)](mailto:yt277@njit.edu) |
