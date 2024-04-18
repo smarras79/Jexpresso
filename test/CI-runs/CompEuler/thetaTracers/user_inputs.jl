@@ -30,7 +30,6 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "hdf5",
         :loverwrite_output   => true,
-        #:output_dir          => "./test/CI-runs",
         :output_dir          => "./CI-runs",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
