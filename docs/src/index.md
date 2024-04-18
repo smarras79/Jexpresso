@@ -7,9 +7,9 @@ DocTestSetup = quote
 end
 ```
 
-```@autodocs
-Modules = [Jexpresso]
-```
+#```@autodocs
+#Modules = [Jexpresso]
+#```
 
 # Jexpresso.jl
 

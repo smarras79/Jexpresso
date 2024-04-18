@@ -1,6 +1,7 @@
 push!(LOAD_PATH,"../src/")
 
-using Documenter, Jexpresso
+using Documenter
+#using Jexpresso
 
 makedocs(
     sitename="Jexpresso.jl",
