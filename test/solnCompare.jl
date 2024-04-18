@@ -81,8 +81,9 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
         end
 
     finally
+        nothing
         # Ensure we navigate back to the initial directory
-        cd(project_root)
+#        cd(project_root)
     end
 end
 
