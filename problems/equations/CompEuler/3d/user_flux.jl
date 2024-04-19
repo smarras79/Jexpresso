@@ -49,7 +49,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Floa
     ρ  = q[1] + qe[1]
     ρu = q[2]
     ρv = q[3]
-    ρw = q[3]
+    ρw = q[4]
     ρθ = q[5] + qe[5]
     
     θ  = ρθ/ρ
@@ -77,4 +77,19 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Floa
     H[4] = ρw*w .+ Pressure
     H[5] = ρθ*w
     
+end
+
+function user_flux(q,PhysConst)
+
+    ρ  = q[1]
+    ρu = q[2]
+    ρv = q[3]
+    ρw = q[4]
+    ρθ = q[5]
+    θ  = ρθ/ρ
+    u  = ρu/ρ
+    v  = ρv/ρ
+    w  = ρw/ρ
+    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    return Float32(ρu), Float32(ρu*u + Pressure), Float32(ρv*u), Float32(ρw*u), Float32(ρθ*u), Float32(ρv),Float32(ρu*v),Float32(ρv*v + Pressure),Float32(ρw*v), Float32(ρθ*v), Float32(ρw), Float32(ρu*w), Float32(ρv*w),Float32(ρw*w + Pressure), Float32(ρθ*w)
 end

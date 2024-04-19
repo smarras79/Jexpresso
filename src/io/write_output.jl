@@ -121,7 +121,11 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
         else
             u = KernelAbstractions.allocate(CPU(),TFloat,nvar*mesh.npoin)
             KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
-            convert_mesh_arrays_to_cpu!(mesh)
+            if (mesh.SD == NSD_2D())
+                convert_mesh_arrays_to_cpu!(mesh)
+            elseif (mesh.SD == NSD_3D())
+                convert_mesh_arrays_to_cpu_3D!(mesh)
+            end
             title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
             write_vtk(SD, mesh, u, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
         end
@@ -521,7 +525,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
 end
 
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
-
     outvars = varnames
     nvars = length(outvars)
     
@@ -565,14 +568,11 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     qout = copy(q)
 
     if (inputs[:CL] == CL())
-
         if (inputs[:SOL_VARS_TYPE] == TOTAL())
-            
             #ρ
             qout[1:mesh.npoin] .= q[1:mesh.npoin]
             
             if (case == "rtb" || case == "mountain") && nvars >= 4
-                
                 #u = ρu/ρ
                 ivar = 2
                 idx = (ivar - 1)*mesh.npoin
@@ -588,10 +588,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                 idx = (ivar - 1)*mesh.npoin
                 qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
                 
-                if (size(qexact, 1) === mesh.npoin)
+                if (size(qexact, 1) == mesh.npoin)
 
                     if inputs[:loutput_pert] == true
-                        
                         #ρ'
                         qout[1:mesh.npoin] .= q[1:mesh.npoin] .- qexact[1:mesh.npoin,1]
                         
@@ -600,7 +599,6 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                         idx = (ivar - 1)*mesh.npoin
                         qout[idx+1:5*mesh.npoin] .= q[idx+1:5*mesh.npoin]./q[1:mesh.npoin] .- qexact[1:mesh.npoin,5]./qexact[1:mesh.npoin,1]
                     else
-                        
                         ivar = 5
                         idx = (ivar - 1)*mesh.npoin
                         qout[idx+1:5*mesh.npoin] .= q[idx+1:5*mesh.npoin]./q[1:mesh.npoin]

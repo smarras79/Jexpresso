@@ -103,7 +103,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     bdy_face_in_elem  =  KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_face  =  KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
+    face_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
+    bdy_face_type = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type_id  =  KernelAbstractions.zeros(backend, TInt, 0)
     
     SD::AbstractSpaceDimensions
@@ -231,6 +233,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     
     if mesh.nsd > 2
         mesh.poin_in_bdy_face = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nfaces_bdy), Int64(mesh.ngl), Int64(mesh.ngl))
+        mesh.face_type = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces))
+        mesh.bdy_face_type = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces_bdy))
+        mesh.bdy_face_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces_bdy))
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
     mesh.conn = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
@@ -619,7 +624,49 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         end
 
     elseif mesh.nsd > 2
-        nothing
+        isboundary_face = compute_isboundary_face(topology, FACE_flg)
+        #
+        # Get labels contained in the current GMSH grid:
+        #
+        labels = get_face_labeling(model)
+        for ilabel in labels.tag_to_name
+            faces_to_tag  = get_face_tag_index(labels,ilabel,FACE_flg)
+            idx_faces_inflow = findall( x -> x == 1, faces_to_tag)
+            #    
+            # Tag the boundary edge with its type as defined in the user-provided GMSH file:
+            #
+            for idx in idx_faces_inflow
+                mesh.face_type[idx] = ilabel
+            end
+        end
+        iface_bdy = 1
+        for iface = 1:mesh.nfaces #total nedges
+            if isboundary_face[iface] == true
+                for igl = 1:mesh.ngl
+                    for jgl = 1:mesh.ngl
+                        mesh.poin_in_bdy_face[iface_bdy, igl,jgl] = mesh.poin_in_face[iface, igl,jgl]
+                        mesh.bdy_face_type[iface_bdy] = mesh.face_type[iface]
+                        #@info "face point number", mesh.poin_in_face[iface,igl,jgl],iface,igl,jgl
+                    end
+                end
+                iface_bdy += 1
+            end
+        end
+        for iel = 1:mesh.nelem
+            for iface_bdy = 1:mesh.nfaces_bdy
+                if issubset(mesh.poin_in_bdy_face[iface_bdy, :,:], mesh.connijk[iel, :, :, :])
+                    mesh.bdy_face_in_elem[iface_bdy] = iel
+                end
+            end
+        end
+        #=for iface =1:mesh.nfaces_bdy
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    ip = mesh.poin_in_bdy_face[iface,i,j]
+                    @info "bdy points coords", mesh.x[ip],mesh.y[ip],mesh.z[ip]
+                end
+            end
+        end=#
     end
 
 #----------------------------------------------------------------------
@@ -1547,14 +1594,39 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
 
             mesh.poin_in_face[iface_g, 1, 1]     = ip1
             mesh.poin_in_face[iface_g, ngl, 1]   = ip2
-            mesh.poin_in_face[iface_g, ngl, ngl] = ip4
-            mesh.poin_in_face[iface_g, 1, ngl]   = ip3
+            mesh.poin_in_face[iface_g, ngl, ngl] = ip3#ip4
+            mesh.poin_in_face[iface_g, 1, ngl]   = ip4#ip3
             
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
             x3, y3, z3 = mesh.x[ip3], mesh.y[ip3], mesh.z[ip3]
             x4, y4, z4 = mesh.x[ip4], mesh.y[ip4], mesh.z[ip4]
             
+            ###find edges belonging to this face and populate edges on poin_in_face array
+            for iedge = 1:mesh.nedges
+                ipe1 = mesh.conn_unique_edges[iedge][1]
+                ipe2 = mesh.conn_unique_edges[iedge][2]
+                if (ipe1 == ip1 && ipe2 == ip2) || (ipe1 == ip2 && ipe2 == ip1)
+                    for i=2:mesh.ngl-1
+                        mesh.poin_in_face[iface_g,i,1] = mesh.poin_in_edge[iedge,i]
+                    end
+                elseif (ipe1 == ip2 && ipe2 == ip3) || (ipe1 == ip3 && ipe2 == ip2)
+                    for i=2:mesh.ngl-1
+                        mesh.poin_in_face[iface_g,mesh.ngl,i] = mesh.poin_in_edge[iedge,i]
+                    end
+                elseif (ipe1 == ip3 && ipe2 == ip4) || (ipe1 == ip4 && ipe2 == ip3)
+                    for i=2:mesh.ngl-1
+                        mesh.poin_in_face[iface_g,i,mesh.ngl] = mesh.poin_in_edge[iedge,i]
+                    end
+                elseif (ipe1 == ip4 && ipe2 == ip1) || (ipe1 == ip1 && ipe2 == ip4)
+                    for i=2:mesh.ngl-1
+                        mesh.poin_in_face[iface_g,1,i] = mesh.poin_in_edge[iedge,i]
+                    end
+                end
+            end
+
+
+
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
                 

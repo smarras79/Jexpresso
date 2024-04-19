@@ -15,9 +15,13 @@ function driver(inputs::Dict,      #input parameters from src/user_input.jl
                               TFloat)
 
     if (inputs[:backend] != CPU())
-        convert_mesh_arrays!(sem.mesh, inputs[:backend])
+        if (sem.mesh.SD == NSD_2D())
+            convert_mesh_arrays!(sem.mesh, inputs[:backend])
+        elseif (sem.mesh.SD == NSD_3D())
+            convert_mesh_arrays_3D!(sem.mesh, inputs[:backend])    
+        end
     end
-
+    
     if !(inputs[:llinsolve])   
         
         check_length(params.qp.qn[1,:], params.qp.neqs+1, "drivers --> initialize.jl")
