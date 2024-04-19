@@ -65,11 +65,11 @@ function params_setup(sem,
         H            = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(qp.neqs))
         S            = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(qp.neqs))
         uprimitive   = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(qp.neqs)+1)
-        flux_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), 2*qp.neqs)
+        flux_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), 3*qp.neqs)
         source_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), qp.neqs)
-        qbdy_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nedges_bdy), Int64(sem.mesh.ngl), qp.neqs)
+        qbdy_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nfaces_bdy), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), qp.neqs)
     end
-    
+    @info sem.mesh.nfaces_bdy 
     RHS      = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin), Int64(qp.neqs))
     RHS_visc = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin), Int64(qp.neqs))
     vaux     = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin)) #generic auxiliary array for general use

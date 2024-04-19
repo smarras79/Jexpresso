@@ -232,6 +232,33 @@ end
     end
 end
 
+@kernel function build_mass_matrix_3d_gpu!(Me, ψ, ω, Je, N, Q)
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    i_x = il[1]
+    i_y = il[2]
+    i_z = il[3]
+    I = i_x + (i_y - 1)*(N+1) + (i_z - 1)*(N+1)*(N+1)
+    for o=1:Q+1
+        for n=1:Q+1
+            for m=1:Q+1 
+                ωmno = ω[m]*ω[n]*ω[o]
+                Jmnoe = Je[ie,m,n,o]
+                ψJK = ψ[i_x,m]*ψ[i_y,n]*ψ[i_z,o]
+                for r=1:N+1
+                    for q=1:N+1
+                        for p=1:N+1
+                            J = p + (q-1)*(N+1) + (r-1)*(N+1)*(N+1)
+                            ψIK = ψ[p,m]*ψ[q,n]*ψ[r,o]
+                            Me[I,J,ie] += ωmno*Jmnoe*ψIK*ψJK
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 
 function build_mass_matrix_Laguerre!(Me, SD::NSD_1D, QT, ψ, ω, mesh, metrics, N, Q, T)
 
@@ -511,6 +538,26 @@ end
     end
 end
 
+@kernel function DSS_Mass_gpu_3D!(M, Mel, conn, nelem, npoin, N)
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    i_x = il[1]
+    i_y = il[2]
+    i_z = il[3]
+    J = i_x + (i_y - 1)*(N+1) + (i_z - 1)*(N+1)*(N+1)
+    JP = conn[ie,i_x,i_y,i_z]
+
+    for n = 1:N+1
+        for m = 1:N+1
+            for k = 1:N+1
+                I = k + (m-1)*(N+1) + (n-1)*(N+1)*(N+1)
+                IP = conn[ie,k,m,n]
+                KernelAbstractions.@atomic M[IP] += Mel[I,J,ie]
+            end
+        end
+    end
+end
+
 function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, ::NSD_2D)
     
     for iel=1:mesh.nelem
@@ -734,9 +781,12 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     end
     if (backend == CPU() || SD == NSD_1D())
         build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh, metrics, N, Q, TFloat)
-    else
+    elseif (SD == NSD_2D())
         k= build_mass_matrix_2d_gpu!(backend,(N+1,N+1))
         k(Me, basis.ψ, ω, metrics.Je, N, Q;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl))
+    elseif (SD == NSD_3D())
+        k= build_mass_matrix_3d_gpu!(backend,(N+1,N+1,N+1))
+        k(Me, basis.ψ, ω, metrics.Je, N, Q;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
     end
     if (QT == Exact() && inputs[:llump] == false)
         M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
@@ -747,14 +797,18 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     end
     if (backend == CPU() || SD == NSD_1D())
         DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
-    else
+    elseif (SD == NSD_2D())
         k = DSS_Mass_gpu_2D!(backend,(N+1,N+1))
         connijk = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem), N+1, N+1)
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         k(M,Me,connijk,mesh.nelem, mesh.npoin, N;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl))
+    elseif (SD == NSD_3D())
+        k = DSS_Mass_gpu_3D!(backend,(N+1,N+1,N+1))
+        connijk = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem), N+1, N+1,N+1)
+        KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
+        k(M,Me,connijk,mesh.nelem, mesh.npoin, N;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
     end
     mass_inverse!(Minv, M, QT)
-    
     Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
     if lbuild_laplace_matrix
