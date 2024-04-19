@@ -1,15 +1,23 @@
 push!(LOAD_PATH,"../src/")
 
-using Documenter, Jexpresso
+using Documenter
+#using Jexpresso
+
+pages = [
+  "Home" => "index.md",
+]
 
 makedocs(
-    sitename="Jexpresso.jl",
-    modules=[Jexpresso],
-    format=Documenter.HTML(),
-    pages = Any[
-        "Home" => "index.md",
-    ],
- )
+  sitename = "Jexpresso.jl",
+  format = Documenter.HTML(
+    size_threshold=nothing
+  ),
+  modules = [Jexpresso],
+  pages = pages,
+  doctest = false,
+  warnonly = [:cross_references,:missing_docs],
+  checkdocs = :exports,
+)
 
 deploydocs(;
            repo="github.com/smarras79/Jexpresso.jl",

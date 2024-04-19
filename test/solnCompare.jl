@@ -53,7 +53,7 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
             end
         end
         
-        ref_dir = joinpath(project_root, "test", "CI-ref", parsed_equations, parsed_equations_case_name)
+        ref_dir = joinpath(project_root, "test", "CI-ref", parsed_equations, parsed_equations_case_name, "output")
         output_dir = joinpath(project_root,"test", "CI-runs", parsed_equations, parsed_equations_case_name,"output")
         if !isdir(output_dir) mkpath(output_dir) end
         

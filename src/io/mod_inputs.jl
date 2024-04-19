@@ -291,6 +291,9 @@ function mod_inputs_user_inputs!(inputs)
     if(!haskey(inputs, :loutput_pert))
         inputs[:loutput_pert] = false
     end
+    if(!haskey(inputs, :lwrite_initial))
+        inputs[:lwrite_initial] = false
+    end
 
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
