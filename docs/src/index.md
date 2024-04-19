@@ -1,5 +1,3 @@
-# Documentation
-
 ```@meta
 CurrentModule = Jexpresso
 DocTestSetup = quote
@@ -18,7 +16,27 @@ Documentation of `Jexpresso.jl`.
 !!! note
 
      This documentation is and will always be WIP!
-          A research software for the numerical solution of a system of an arbitrary number of conservation laws using continuous spectral elements. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
+          
+## Introduction
+
+Jexpresso is a research software for the numerical solution of a system of arbitrary conservation laws in 1D, 2D, 3D using, first and foremost, continuous spectral elements. Nevertheless, the code is built so that any other numerical method can be added. For example, the copde already contains a 1D finite difference implementation.
+
+Jexpresso is written in [Julia programming language](https://julialang.org/) and was thought to be modular and allow any user to add any equations in any dimensions without knowing anything about numerical methods. 
+
+## Do I need to know Julia to use Jexpresso? Yes and no. It depends how much you are interested in adding your own equation set in the code rather than using it as a black box. 
+
+The following are useful resources about Julia:
+* Julia webpage [docs.julialang.org](https://docs.julialang.org/)
+* Official list of learning resources [julialang.org/learning](https://julialang.org/learning/)
+
+
+## Manual
+
+```@contents
+Pages = [
+  "Jexpresso.md",
+  ]
+```
 
 # Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve

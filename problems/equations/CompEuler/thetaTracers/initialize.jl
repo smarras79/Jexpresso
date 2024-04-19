@@ -124,13 +124,15 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
     #
     # Write reference to VTK:
-    #
-    outvarsref = Array{Union{Nothing, String}}(nothing, q.neqs)
-    for i = 1:length(outvarsref)
-        outvarsref[i] = string(qvars[i], "_ref")
+    #  
+    if (inputs[:lwrite_initial] == true)
+        outvarsref = Array{Union{Nothing, String}}(nothing, q.neqs)
+        for i = 1:length(outvarsref)
+            outvarsref[i] = string(qvars[i], "_ref")
+        end
+        write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
     end
-    write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-
+    
     @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
     
     return q
