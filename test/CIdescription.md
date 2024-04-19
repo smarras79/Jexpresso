@@ -13,15 +13,15 @@ Follow these simple steps:
        4. Replace :output_dir in test/CI-runs/PROBLEM_NAME//YOUR_TEST_DIR_NAME/user_inputs.jl
            - :output_dir => "./CI-runs",
        
-       6. Open test/runtests.jl and add the following line if necessary:
+       5. Open test/runtests.jl and add the following line if necessary:
            @time @testset "PROBLEM_NAME" begin include("CI-runs/PROBLEM_NAME/runtests.jl") end
            Replace PROBLEM_NAME with the one that contains YOUR_TEST_DIR_NAME. 
            Notice that you do not need to add this new line if YOUR_TEST_DIR_NAME
 	   is contained in any of the lines that are already there.
         
-        7. cp test/CI-runs/CompEuler/thetaTracers/Tests.jl test/CI-runs/PROBLEM_NAME/YOUR_TEST_DIR_NAME/
+        6. cp test/CI-runs/CompEuler/thetaTracers/Tests.jl test/CI-runs/PROBLEM_NAME/YOUR_TEST_DIR_NAME/
         
-        8. edit test/CI-runs/CompEuler/thetaTracers/Tests.jl and replace 
+        7. edit test/CI-runs/CompEuler/thetaTracers/Tests.jl and replace 
            @testset "JEXPRESSO Examples" begin run_example("CompEuler", "thetaTracers") end
            with
            @testset "JEXPRESSO Examples" begin run_example("PROBLEM_NAME", "YOUR_TEST_DIR_NAME") end
