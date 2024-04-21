@@ -1,14 +1,3 @@
-```@meta
-CurrentModule = Jexpresso
-DocTestSetup = quote
-    using Jexpresso
-end
-```
-
-```@autodocs
-Modules = [Jexpresso]
-```
-
 # Jexpresso.jl
 
 Documentation of `Jexpresso.jl`.
@@ -23,22 +12,15 @@ Jexpresso is a research software for the numerical solution of a system of arbit
 
 Jexpresso is written in [Julia programming language](https://julialang.org/) and was thought to be modular and allow any user to add any equations in any dimensions without knowing anything about numerical methods. 
 
-## Do I need to know Julia to use Jexpresso? Yes and no. It depends how much you are interested in adding your own equation set in the code rather than using it as a black box. 
+## Do I need to know Julia to use Jexpresso?
+Yes and no. It depends how much you are interested in adding your own equation set in the code rather than using it as a black box. 
 
 The following are useful resources about Julia:
 * Julia webpage [docs.julialang.org](https://docs.julialang.org/)
 * Official list of learning resources [julialang.org/learning](https://julialang.org/learning/)
 
 
-## Manual
-
-```@contents
-Pages = [
-  "Jexpresso.md",
-  ]
-```
-
-# Equations:
+## Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
 
 $$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2{\bf q} + {\bf S}({\bf q}) + ~{\rm b.c.}$$
@@ -49,7 +31,6 @@ and are taken to be zero vectors of the appropriate size when not explicitly sta
 The Julia package [DifferentialEquations.jl](https://docs.sciml.ai/DiffEqDocs/stable/) is used for time discretization and stepping.
 
 In order, we provide tests and results for the following equations:
-
 
 1. 1D wave equation:
    
@@ -171,6 +152,19 @@ julia> include("./src/Jexpresso.jl")
 
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
+
+## Tutorials
+
+The following tutorials will introduce you to the functionality of
+Jexpresso.jl.
+
+```@contents
+Pages = [
+    "tutorials/theta.md",
+    "tutorials/theta.md",
+    ]
+Depth = 2
+```
 
 Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
