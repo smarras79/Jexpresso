@@ -1,6 +1,6 @@
-push!(LOAD_PATH,"../src/")
+#push!(LOAD_PATH,"../src/")
 
-using Documenter, PrettyTables, Latexify #, Jexpresso
+using Documenter, Jexpresso, PrettyTables, Latexify
 
 cp("./docs/Manifest.toml", "./docs/src/assets/Manifest.toml", force = true)
 cp("./docs/Project.toml", "./docs/src/assets/Project.toml", force = true)
