@@ -1,4 +1,4 @@
 pages = ["index.md",
-         "Features" => "features/performance.md",
+         "Performance" => "features/performance.md",
          "Tutorials" => "tutorials/theta.md"
          ]
