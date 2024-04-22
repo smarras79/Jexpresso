@@ -1,5 +1,4 @@
 pages = ["index.md",
-         "getting_started.md",
-         "Features" => "performance.md",
-         "Tutorials" => "theta.md"
+         "Features" => "features/performance.md",
+         "Tutorials" => "tutorials/theta.md"
          ]
