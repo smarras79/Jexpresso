@@ -128,14 +128,54 @@ cN_{xx} + cN_{zz}
 The equation of state for a perfect gas is used to close the system.
 
 
+6. 3D Euler equations of compressible flows with gravity
+
+$${\bf q}=\begin{bmatrix}
+\rho \\
+\rho u\\
+\rho v\\
+\rho w\\
+\rho \theta\\
+\end{bmatrix}\quad {\bf F}1=\begin{bmatrix}
+\rho u\\
+\rho u^2 + p\\
+\rho u v\\
+\rho u w\\
+\rho u \theta\\
+\end{bmatrix}\quad {\bf F}2=\begin{bmatrix}
+\rho v\\
+\rho v u\\
+\rho v^2 + p\\
+\rho v w\\
+\rho v \theta\\
+\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
+\rho w\\
+\rho w u\\
+\rho w v\\
+\rho w^2 + p\\
+\rho w \theta\\
+\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
+0\\
+0\\
+0\\
+-\rho g\\
+0\\
+\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
+0\\
+u_{xx} + u_{yy} + u_{zz}\\
+v_{xx} + v_{yy} + v_{zz}\\
+w_{xx} + w_{yy} + w_{zz}\\
+\theta_{xx} + \theta_{yy} + \theta_{zz}\\
+\end{bmatrix}.$$
+
+
 If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
 
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia 1.9.3
+To install and run the code assume Julia 1.10.0
 
 ## Setup with CPUs
 
@@ -165,6 +205,7 @@ Jexpresso.jl.
 
 ```@contents
 Pages = [
+    "features/performance.md",
     "tutorials/theta.md",
     "tutorials/theta.md",
     ]

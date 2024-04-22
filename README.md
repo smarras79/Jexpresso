@@ -176,7 +176,6 @@ w_{xx} + w_{yy} + w_{zz}\\
 
 If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
 
 
 # Some notes on using JEXPRESSO
