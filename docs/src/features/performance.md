@@ -39,8 +39,8 @@ Timing was measured using Julia 1.9.3 on a Macbook Air M1 2020, with macOS Big S
 
 | Time integrator           | max $\Delta t$ (s)        | Effective resolution (m)  | Order	         | ${\color{red}{Jexpresso}}$ (s)   | ${\color{blue}{F90}}$ (s)|
 | :-------------------------| :-------------------------| :-------------------------| :-------------------------| :-------------------------| :------------------------|
-| SSPRK53        	    | 0.3                       | "                         | "    			| 9.00  		    | 10.53  		       |
-| SSPRK33		    | 0.2      		        | $$125\times 125$$         | 4   		        | 9.75			    | 9.2028		       |
+| SSPRK53        	    | 0.3                       | $$125\times 125$$         | 4    			| 9.00  		    | 10.53  		       |
+| SSPRK33		    | 0.2      		        | "                         | "   		        | 9.75			    | 9.2028		       |
 | SSPRK54     	     	    | 0.4                       | "                         | "    			| 10.47 		    |       NA 		       |
 | DP5 (Dormand-Prince RK54) | 0.6                       | "                         | "   			| 19.80 		    | 	    NA 		       |
 | SSPRK73                   | 0.4                       | "                         | "    		 	| 12.95 		    | 	    NA  	       |
