@@ -633,8 +633,8 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
     for ieq = 1:neqs
         for iel = 1:nelem
             for i = 1:ngl
-                I = Ref{Int64}(mesh.connijk[iel,i,1])
-                RHS[I,ieq] += rhs_el[iel,i,1,ieq]
+                I = mesh.connijk[iel,i,1]
+                RHS[I,ieq] += rhs_el[iel,i,ieq]
             end
         end
     end
@@ -676,7 +676,6 @@ function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_3D, ::ContGal)
     #show(stdout, "text/plain", V)
 end
 
-
 function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
 
     for ieq = 1:neqs
@@ -684,7 +683,7 @@ function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::Cont
             for i = 1:mesh.ngr
                 I = mesh.connijk_lag[iel,i,1]
 
-                RHS[I,ieq] += rhs_el[iel,i,1,ieq]
+                RHS[I,ieq] += rhs_el[iel,i,ieq]
             end
         end
     end
@@ -710,7 +709,12 @@ function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, 
     nothing
 end
 
-#function divide_by_mass_matrix!(RHS::AbstractArray, RHSaux, Minv, neqs, npoin, ::Exact, ::ContGal)
+
+
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::FD)
+    nothing
+end
+
 function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, ::ContGal)
     
     RHSaux .= RHS
@@ -722,11 +726,6 @@ function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, 
         RHS[ip] = a
     end
     
-end
-
-
-function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::FD)
-    nothing
 end
 
 function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::ContGal)

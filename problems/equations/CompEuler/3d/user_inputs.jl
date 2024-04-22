@@ -30,6 +30,9 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
@@ -42,7 +45,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :lplot_surf3d        => true,
+#        :lplot_surf3d        => true,
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

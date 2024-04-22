@@ -1,16 +1,16 @@
 using LinearSolve
 using SnoopCompile
 using WriteVTK
-import SciMLBase
+using HDF5
+
+#import SciMLBase
 
 include("./plotting/jeplots.jl")
 
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # ∂q/∂t = RHS -> q(x,t)
 #----------------------------------------------------------------------------------------------------------------------------------------------
-#
 # PNG
-#
 function write_output(SD::NSD_1D, q::Array, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG)
 
     #Reference values only (definied in initial conditions)
@@ -61,10 +61,6 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
-function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
-    nothing
-end
-
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
 
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
@@ -90,9 +86,7 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
 
-#
 # ASCII
-#
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::ASCII; nvar=1, PT=nothing)
     
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
@@ -108,9 +102,6 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") ) 
 end
 
-#
-# VTK
-#
 function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
@@ -134,9 +125,7 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
     
 end
 
-#
-# PNG
-#
+
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
@@ -153,13 +142,15 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
+
+function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(sol.t[:],1)
     title = @sprintf "Final solution at t=%6.4f" sol.t[iout]
+
     write_hdf5(SD, mesh, sol.u[iout][:], qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
-    #end
+    
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
     
 end
@@ -173,20 +164,22 @@ function read_output(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, outform
 end
 
 
-function write_hdf5(SD::NSD_2D, mesh::St_mesh, q::Array, qe::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
+function write_hdf5(SD, mesh::St_mesh, q::Array, qe::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
     
     #Write one HDF5 file per variable
     for ivar = 1:nvar
         fout_name = string(OUTPUT_DIR, "/var_", ivar, ".h5")
         idx = (ivar - 1)*mesh.npoin
-        h5write(fout_name, "q",  q[idx+1:ivar*mesh.npoin]);
-        h5write(fout_name, "qe", qe[1:mesh.npoin, ivar]);
+        
+        h5open(fout_name, "w") do fid        
+            write(fid, "q",  q[idx+1:ivar*mesh.npoin]);
+            write(fid, "qe", qe[1:mesh.npoin, ivar]);
+        end
 
     end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
 end
 
-function read_hdf5(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, nvar)
+function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     
     q  = zeros(Float64, npoin, nvar+1)
     qe = zeros(Float64, npoin, nvar+1)
@@ -216,7 +209,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
         cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
     else
         subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 3, 4]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
     end
     isel = 1
     npoin = mesh.npoin
@@ -381,8 +374,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
             end
         end
     end
-
-    #Add semi-infiite portion if it exists
+    
     for iel = 1:mesh.nelem_semi_inf
         for i = 1:mesh.ngl-1
             for j = 1:mesh.ngr-1
@@ -498,8 +490,8 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
         end
     end
     
-    if nvars > 4
-        for ivar = 5:nvars
+    if nvar > 4
+        for ivar = 5:nvar
             idx = (ivar - 1)*npoin
             qout[idx+1:ivar*npoin] .= q[idx+1:ivar*npoin]
         end
@@ -621,6 +613,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
 end
 
 
+
 function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
 
     #nothing
@@ -682,6 +675,7 @@ function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, O
     end
     outfiles = vtk_save(vtkfile)
 end
+
 
 function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
 

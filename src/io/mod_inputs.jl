@@ -155,6 +155,8 @@ function mod_inputs_user_inputs!(inputs)
             inputs[:outformat] = ASCII()
         elseif lowercase(inputs[:outformat]) == "vtk"
             inputs[:outformat] = VTK()
+        elseif lowercase(inputs[:outformat]) == "hdf5" || lowercase(inputs[:outformat]) == "h5"
+            inputs[:outformat] = HDF5()
         end
     end
 
@@ -297,6 +299,9 @@ function mod_inputs_user_inputs!(inputs)
     end
     if(!haskey(inputs, :loutput_pert))
         inputs[:loutput_pert] = false
+    end
+    if(!haskey(inputs, :lwrite_initial))
+        inputs[:lwrite_initial] = false
     end
 
     #Grid entries:
@@ -491,6 +496,10 @@ function mod_inputs_user_inputs!(inputs)
         end
     end
     
+    if(!haskey(inputs, :loverwrite_output))
+        inputs[:loverwrite_output] = false
+    end
+
     if(!haskey(inputs, :SOL_VARS_TYPE))
         inputs[:SOL_VARS_TYPE] = TOTAL() #vs PERT()
     end
