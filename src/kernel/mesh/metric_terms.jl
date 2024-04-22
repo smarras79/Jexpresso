@@ -40,9 +40,9 @@ end
 
 function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
     
-    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
-                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
-                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1),
+    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
+                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
+                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1, 1),
                                     nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), 1))
     for iel = 1:mesh.nelem
         for i = 1:N+1
@@ -59,9 +59,9 @@ end
 
 function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, inputs,T; backend = CPU())
    
-    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
-                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
-                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1),
+    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
+                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
+                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1, 1),
                                     nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), 1))
 
     dψ = basis.dψ
@@ -107,18 +107,13 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             for j = 1:N+1
                 for i = 1:N+1
                     ip = mesh.connijk[iel,i,j]
+    
+    @info " 2D metric terms"
+    for iel = 1:mesh.nelem
+        for j = 1:N+1
+            for i = 1:N+1
+                ip = mesh.connijk[iel,i,j]
                 
-<<<<<<< HEAD
-                    xij = mesh.x[ip]; yij = mesh.y[ip]
-                    for l = 1:Q+1
-                        for k = 1:Q+1
-=======
-                xij = mesh.x[ip]
-                yij = mesh.y[ip]
-                
-                for l = 1:Q+1
-                    for k = 1:Q+1
->>>>>>> ea24160d168b637ddc9b0229958462df110d9b33
                         
                             metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ[j,l] * xij
                             metrics.dxdη[iel, k, l] += ψ[i,k]*dψ[j,l] * xij
