@@ -148,7 +148,7 @@ $${\bf q}=\begin{bmatrix}
 \rho v^2 + p\\
 \rho v w\\
 \rho v \theta\\
-\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}3=\begin{bmatrix}
 \rho w\\
 \rho w u\\
 \rho w v\\
