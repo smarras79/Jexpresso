@@ -4,7 +4,7 @@ function user_flux!(F::SubArray{TFloat}, G::SubArray{TFloat}, SD::NSD_2D,
                     mesh::St_mesh,
                     ::CL, ::TOTAL; neqs=4, ip=1)
 
-    PhysConst = PhysicalConst{TFloat}()
+    PhysConst = PhysicalConst{Float64}()
     
     ρ  = q[1]
     ρu = q[2]

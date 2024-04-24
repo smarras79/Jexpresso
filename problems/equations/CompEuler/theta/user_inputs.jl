@@ -5,7 +5,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.1,
+        :Δt                   => 0.4,
         :tinit                => 0.0,
         :tend                 => 500.0,
         #:tinit                => 100.0,
@@ -15,7 +15,7 @@ function user_inputs()
         :ndiagnostics_outputs => 6,
         :case                 => "rtb",
         :lsource              => true, 
-        :backend              => MetalBackend(),
+        #:backend              => MetalBackend(),
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -27,7 +27,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1, 2, 3, 4),
-        :μ                   => (0.0, 20.0, 20.0, 60.0), #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 20.0, 20.0, 60.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

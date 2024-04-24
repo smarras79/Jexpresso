@@ -14,7 +14,7 @@ function user_inputs()
         :ndiagnostics_outputs => 10,
         :case                 => "rtb",
         :lsource              => true, 
-        :backend              => MetalBackend(),
+        #:backend              => MetalBackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -25,7 +25,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1, 2, 3, 4, 5),
-        :μ                   => (0.0, 20.0, 20.0, 20.0, 60.0), #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 20.0, 20.0, 20.0, 60.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
