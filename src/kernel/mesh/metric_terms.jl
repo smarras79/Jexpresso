@@ -102,18 +102,15 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
-    #=if (backend == CPU())
+    if (backend == CPU())
         for iel = 1:mesh.nelem
             for j = 1:N+1
                 for i = 1:N+1
                     ip = mesh.connijk[iel,i,j]
-    
-    @info " 2D metric terms"
-    for iel = 1:mesh.nelem
-        for j = 1:N+1
-            for i = 1:N+1
-                ip = mesh.connijk[iel,i,j]
-                
+                    xij = mesh.x[ip]
+                    yij = mesh.y[ip]
+                    for l=1:Q+1
+                        for k=1:Q+1
                         
                             metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ[j,l] * xij
                             metrics.dxdη[iel, k, l] += ψ[i,k]*dψ[j,l] * xij
@@ -151,7 +148,28 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             end
         #show(stdout, "text/plain", metrics.Je[iel, :,:])
         end
-    else=#
+        nbdy_edges = size(mesh.poin_in_bdy_edge,1)
+        for iedge =1:nbdy_edges
+            for k=1:N+1
+                ip = mesh.poin_in_bdy_edge[iedge,k]
+                if (k < N+1)
+                    ip1 = mesh.poin_in_bdy_edge[iedge,k+1]
+                else
+                    ip1 = mesh.poin_in_bdy_edge[iedge,k-1]
+                end
+                x1 = mesh.x[ip]
+                x2 = mesh.x[ip1]
+                y1 = mesh.y[ip]
+                y2 = mesh.y[ip1]
+                mag = sqrt((x1-x2)^2+(y1-y2)^2)
+                metrics.Jef[iedge, k] = mag/2
+                comp1 = (x1-x2)/mag
+                comp2 = (y1-y2)/mag
+                metrics.nx[iedge, k] = comp2
+                metrics.ny[iedge, k] = -comp1
+            end
+        end
+    else
         x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         y = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         connijk = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem),N+1,N+1)
@@ -166,36 +184,12 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         metrics.dξdy .= -metrics.dxdη ./ metrics.Je
         metrics.dηdx .= -metrics.dydξ ./ metrics.Je
         metrics.dηdy .= metrics.dxdξ ./ metrics.Je
-    #end
-    #@info metrics.Je
-    ##### CHECK BELOW WITH YASSINE WHETHER THIS
-    ##### SHOULD BE done on the quadrature or grid points
-    nbdy_edges = size(mesh.poin_in_bdy_edge,1)
-    poin_in_bdy_edge = KernelAbstractions.allocate(backend, TInt, Int64(nbdy_edges), N+1)
-    KernelAbstractions.copyto!(backend, poin_in_bdy_edge,mesh.poin_in_bdy_edge)
-    k = build_2D_gpu_bdy_metrics!(backend)
-    k(metrics.Jef, metrics.nx, metrics.ny, x, y, poin_in_bdy_edge, N; ndrange = (nbdy_edges*(N+1)), workgroupsize = (N+1))
-    #=for iedge =1:nbdy_edges
-        for k=1:N+1
-            ip = mesh.poin_in_bdy_edge[iedge,k]
-            if (k < N+1)
-              ip1 = mesh.poin_in_bdy_edge[iedge,k+1]
-            else
-              ip1 = mesh.poin_in_bdy_edge[iedge,k-1]
-            end
-            x1 = mesh.x[ip]
-            x2 = mesh.x[ip1]
-            y1 = mesh.y[ip]
-            y2 = mesh.y[ip1]
-            mag = sqrt((x1-x2)^2+(y1-y2)^2)
-            metrics.Jef[iedge, k] = mag/2
-            comp1 = (x1-x2)/mag
-            comp2 = (y1-y2)/mag
-            metrics.nx[iedge, k] = comp2
-            metrics.ny[iedge, k] = -comp1
-        end
-    end=#
-
+        nbdy_edges = size(mesh.poin_in_bdy_edge,1)
+        poin_in_bdy_edge = KernelAbstractions.allocate(backend, TInt, Int64(nbdy_edges), N+1)
+        KernelAbstractions.copyto!(backend, poin_in_bdy_edge,mesh.poin_in_bdy_edge)
+        k = build_2D_gpu_bdy_metrics!(backend)
+        k(metrics.Jef, metrics.nx, metrics.ny, x, y, poin_in_bdy_edge, N; ndrange = (nbdy_edges*(N+1)), workgroupsize = (N+1))
+    end
     return metrics
 end
 
