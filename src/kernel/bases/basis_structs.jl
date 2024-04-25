@@ -647,22 +647,22 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat, backend)
 end
 
 function ScaledLaguerreAndDerivative!(nop,SL::St_Laguerre,beta, backend)
-  Laguerre = KernelAbstractions.zeros(backend, TFloat,nop+1)
+  Laguerre = zeros(Float128,nop+1)
   if (nop == 0)
      Laguerre[1] = 1.0
   elseif (nop == 1)
      Laguerre[1] = 1.0
      Laguerre[2] = -1.0
   else
-    Lkm2 = KernelAbstractions.zeros(backend, TFloat,nop+1,1);
+    Lkm2 = zeros(Float128,nop+1,1);
     Lkm2[nop+1] = 1;
-    Lkm1 = KernelAbstractions.zeros(backend, TFloat,nop+1,1);
+    Lkm1 = zeros(Float128,nop+1,1);
     Lkm1[nop] = -1;
     Lkm1[nop+1] = 1;
 
     for k=2:nop
 
-        Laguerre = KernelAbstractions.zeros(backend, TFloat,nop+1);
+        Laguerre = zeros(Float128,nop+1);
 
         for e=nop-k+1:nop
             Laguerre[e] = (2*k-1)*Lkm1[e] - beta*Lkm1[e+1] + (1-k)*Lkm2[e];
@@ -685,22 +685,22 @@ function ScaledLaguerreAndDerivative!(nop,SL::St_Laguerre,beta, backend)
 end
 
 function LaguerreAndDerivative!(nop,SL::St_Laguerre, backend)
-  Laguerre = KernelAbstractions.zeros(backend, TFloat,nop+1)
+  Laguerre = zeros(Float128, nop+1)
   if (nop == 0)
      Laguerre[1] = 1.0
   elseif (nop == 1)
      Laguerre[1] = 1.0
      Laguerre[2] = -1.0
   else
-    Lkm2 = KernelAbstractions.zeros(backend, nop+1,1);
+    Lkm2 = zeros(nop+1,1);
     Lkm2[nop+1] = 1;
-    Lkm1 = KernelAbstractions.zeros(backend, nop+1,1);
+    Lkm1 = zeros(nop+1,1);
     Lkm1[nop] = -1;
     Lkm1[nop+1] = 1;
 
     for k=2:nop
         
-        Laguerre = KernelAbstractions.zeros(backend, TFloat,nop+1);
+        Laguerre = zeros(Float128, nop+1);
 
         for e=nop-k+1:nop
             Laguerre[e] = (2*k-1)*Lkm1[e] - Lkm1[e+1] + (1-k)*Lkm2[e];
@@ -722,10 +722,10 @@ end
 
 function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, nop,beta, backend)
     Pp1 = nop+1
-    n = zeros(TFloat,nop+1)
-    bn = zeros(TFloat,nop)
-    an = zeros(TFloat,nop+1)
-    filler = zeros(TFloat,nop+1)
+    n = zeros(Float128,nop+1)
+    bn = zeros(Float128,nop)
+    an = zeros(Float128,nop+1)
+    filler = zeros(Float128,nop+1)
     for i = 0:nop
        n[i+1] = i
        an[i+1] = (2 * n[i+1] + 1)/beta
@@ -734,10 +734,10 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
        bn[i] = i/beta
     end
     an[nop+1] = nop/beta
-    J = zeros(TFloat,nop+1,nop+1)
+    J = zeros(Float128,nop+1,nop+1)
     J .= diagm(an) .+ Bidiagonal(filler,bn,:U) .+ Bidiagonal(filler,bn,:L)
     xi = eigen(J)
-    gr.ξ .= TFloat.(xi.values)
+    gr.ξ .= Float128.(xi.values)
     ngr = length(gr.ξ)
     thresh = 1e-8
     x0 = 0.0
@@ -747,12 +747,12 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
       diff1 = 1.0
       stuck = 1.0
       while(diff1 > thresh)
-          ScaledLaguerreAndDerivative!(nop+1,Laguerre,beta)
+          ScaledLaguerreAndDerivative!(nop+1, Laguerre, beta, backend)
           L1 = Laguerre.Laguerre
           L3 = Laguerre.dLaguerre
           L4 = Laguerre.d2Laguerre
           L5 = Laguerre.d3Laguerre
-          ScaledLaguerreAndDerivative!(nop,Laguerre,beta)
+          ScaledLaguerreAndDerivative!(nop, Laguerre, beta, backend)
           L2 = Laguerre.Laguerre
           #x1 = x0 - L1(x0)/L3(x0)#+ (L1(x0) - L2(x0))/L2(x0)
           #x1 = x0 -  L3(x0)/L4(x0) 
@@ -782,15 +782,17 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     #  @info Laguerre.dLaguerre(gr.ξ[k]), gr.ξ[k]
     #end
  
-    ScaledLaguerreAndDerivative!(nop,Laguerre,beta)
+    ScaledLaguerreAndDerivative!(nop,Laguerre,beta,backend)
     Lkx = zeros(nop+1,1)
     for i=1:nop+1
-      Lkx[i] = scaled_laguerre(gr.ξ[i],nop,beta)
+      Lkx[i] = scaled_laguerre(gr.ξ[i],nop,beta,backend)
       #Lkx[i] = Laguerre.Laguerre(gr.ξ[i])
       gr.ω[i] = 1/(beta*Pp1*Lkx[i]^2)
       #gr.ω[i] = exp(gr.ξ[i]*beta)/(beta*Pp1*Lkx[i]^2)
     
     end
+    @info gr.ξ
+    @info gr.ω
     #gr.ω[1] = 1-sum(gr.ω[2:nop+1])
     #@info gr.ω
     #if(scale)
@@ -813,7 +815,7 @@ function LagrangeLaguerreBasis(ξ, ξq, beta, TFloat, backend)
             xj = ξ[j]
             if(i != j)
                 psi[i,j] = 0.0
-                dpsi[j,i] = scaled_laguerre(xi,Np1,beta)/(scaled_laguerre(xj,Np1,beta)*(xi -xj));
+                dpsi[j,i] = scaled_laguerre(xi,Np1,beta,backend)/(scaled_laguerre(xj,Np1,beta,backend)*(xi -xj));
             end
         end
     end
@@ -822,9 +824,9 @@ function LagrangeLaguerreBasis(ξ, ξq, beta, TFloat, backend)
 end
 
 
-function scaled_laguerre(x,n,beta)
+function scaled_laguerre(x,n,beta,backend)
     Laguerre = St_Laguerre(Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)))
-    ScaledLaguerreAndDerivative!(n,Laguerre,beta)
+    ScaledLaguerreAndDerivative!(n,Laguerre,beta,backend)
     #Lkx = Laguerre.Laguerre(x)
     Lkx = Real(Laguerre.Laguerre(x))
     y = exp(-(beta*x)/2)*Lkx#exp(-x)*Lkx

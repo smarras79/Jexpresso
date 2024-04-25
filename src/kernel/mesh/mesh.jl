@@ -454,7 +454,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         end
         # build mesh data structs for Laguerre semi-infinite elements
         if ("Laguerre" in mesh.bdy_edge_type)
-            gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta]) 
+            gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend) 
             factorx = inputs[:xfac_laguerre]#0.1
             factory = inputs[:yfac_laguerre]#0.025
             mesh.connijk_lag = KernelAbstractions.zeros(backend, TInt, Int64(n_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr),1)
@@ -462,6 +462,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             bdy_tangents = zeros(n_semi_inf, 2)
             e_iter = 1
             iter = mesh.npoin + 1
+            @info gr
             x_new = KernelAbstractions.zeros(backend, TFloat, mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
             y_new = KernelAbstractions.zeros(backend, TFloat, mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
             x_new[1:mesh.npoin] .= mesh.x[:]

@@ -206,7 +206,7 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
     if(inputs[:llaguerre_bc])
         for e=1:nelem_semi_inf
             for i=1:ngl
-                ip = connijk_lag[e,i,mesh.ngr]
+                ip = connijk_lag[e,i,ngr]
                 ny_l = 1.0
                 nx_l = 0.0
                 fill!(qbdy, 4325789.0)
@@ -237,7 +237,7 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                     RHS[ip, ieq] = 0.0
                 end
             end
-            ip = mesh.connijk_lag[nelem_semi_inf,ngl,k]
+            ip = connijk_lag[nelem_semi_inf,ngl,k]
             ny_l = 0.0
             nx_l = 1.0
             fill!(qbdy, 4325789.0)     

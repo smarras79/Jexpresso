@@ -328,17 +328,17 @@ end
 
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange ,N, Q, NGR, QGR, ξ, ω1, ω2, T; backend = CPU())
     
-    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dxdη = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dydξ = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dydη = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
+    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                                    dxdη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                                    dydξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                                    dydη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
 
-                            dξdx = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dηdx = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dξdy = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
-                            dηdy = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
-                            Jef  = KernelAbstractions.zeros(backend, T, mesh.nedges_bdy, Q+1, 1),
-                            Je   = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr, 1))
+                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                                    dηdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                                    dξdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                                    dηdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
+                                    Jef  = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), Q+1, 1),
+                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1))
     ψ  = basis.ψ
     dψ = basis.dψ
     ψ1  = basisGR.ψ
