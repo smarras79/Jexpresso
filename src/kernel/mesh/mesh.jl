@@ -462,7 +462,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             bdy_tangents = zeros(n_semi_inf, 2)
             e_iter = 1
             iter = mesh.npoin + 1
-            @info gr
             x_new = KernelAbstractions.zeros(backend, TFloat, mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
             y_new = KernelAbstractions.zeros(backend, TFloat, mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
             x_new[1:mesh.npoin] .= mesh.x[:]
@@ -2157,7 +2156,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     if (inputs[:llaguerre_1d_right])
         x = KernelAbstractions.zeros(backend, TFloat, mesh.npoin+mesh.ngr-1)      
         x[1:mesh.npoin] .= mesh.x[1:mesh.npoin] 
-        gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
+        gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend)
         mesh.connijk_lag[1,1,1] = mesh.npoin_linear 
         for i=2:mesh.ngr
             ip = mesh.npoin+i-1
@@ -2171,7 +2170,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         e = min(2,mesh.nelem_semi_inf)
         x = zeros(Float64,mesh.npoin+mesh.ngr-1)
         x[1:mesh.npoin] .= mesh.x[1:mesh.npoin]
-        gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta])
+        gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend)
         mesh.connijk_lag[e,1,1] = 1
         for i=2:mesh.ngr
             ip = mesh.npoin+i-1

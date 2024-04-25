@@ -415,7 +415,7 @@ function _build_rhs!(RHS, u, params, time)
     
 end
 
-function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
+function inviscid_rhs_el!(u, params, connijk, x, y, lsource, SD::NSD_1D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmax = params.xmax
@@ -426,7 +426,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
         uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
         
         for i=1:params.mesh.ngl
-            ip = params.mesh.connijk[iel,i,1]
+            ip = connijk[iel,i,1]
             
             user_flux!(@view(params.F[i,:]), @view(params.G[i,:]), SD,
                        @view(params.uaux[ip,:]),
@@ -439,7 +439,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D)
                 user_source!(@view(params.S[i,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qp.qe[ip,:]),          #ρref 
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
         

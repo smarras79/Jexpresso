@@ -628,12 +628,12 @@ function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::FD)
     nothing
 end
 
-function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
+function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
 
     for ieq = 1:neqs
         for iel = 1:nelem
             for i = 1:ngl
-                I = mesh.connijk[iel,i,1]
+                I = connijk[iel,i,1]
                 RHS[I,ieq] += rhs_el[iel,i,ieq]
             end
         end
@@ -676,12 +676,12 @@ function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_3D, ::ContGal)
     #show(stdout, "text/plain", V)
 end
 
-function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
+function DSS_rhs_laguerre!(RHS, rhs_el, connijk_lag, nelem_semi_inf, ngl, ngr, neqs, ::NSD_1D, ::ContGal)
 
     for ieq = 1:neqs
-        for iel = 1:mesh.nelem_semi_inf
-            for i = 1:mesh.ngr
-                I = mesh.connijk_lag[iel,i,1]
+        for iel = 1:nelem_semi_inf
+            for i = 1:ngr
+                I = connijk_lag[iel,i,1]
 
                 RHS[I,ieq] += rhs_el[iel,i,ieq]
             end
@@ -689,13 +689,13 @@ function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::Cont
     end
 end
 
-function DSS_rhs_laguerre!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
+function DSS_rhs_laguerre!(RHS, rhs_el, connijk_lag, nelem_semi_inf, ngl, ngr, neqs, ::NSD_2D, ::ContGal)
 
     for ieq = 1:neqs
-        for iel = 1:mesh.nelem_semi_inf
-            for j = 1:mesh.ngr
-                for i = 1:mesh.ngl
-                    I = mesh.connijk_lag[iel,i,j]
+        for iel = 1:nelem_semi_inf
+            for j = 1:ngr
+                for i = 1:ngl
+                    I = connijk_lag[iel,i,j]
                     
                     RHS[I,ieq] += rhs_el[iel,i,j,ieq]
                 end
