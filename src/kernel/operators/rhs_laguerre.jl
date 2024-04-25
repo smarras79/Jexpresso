@@ -141,7 +141,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     #filter!(u, params, SD)
      
     inviscid_rhs_el_laguerre!(u, params, params.mesh.connijk_lag, params.mesh.x, params.mesh.y, lsource, SD)
-    DSS_rhs_laguerre!(@view(params.RHS_lag[:,:]), @view(params.rhs_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, params.AD)
+    DSS_rhs_laguerre!(params.RHS_lag, params.rhs_el_lag, params.mesh.connijk_lag, params.mesh.nelem_semi_inf, ngl, params.mesh.ngr, neqs, SD, params.AD)
     #@info params.rhs_el_lag[1,1,2,2], params.mesh.connijk_lag[1,1,2]
     #@info params.rhs_el_lag[20,5,2,2], params.mesh.connijk_lag[20,5,2]
     #@info params.RHS_lag[6481,2]
@@ -153,7 +153,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
         resetRHSToZero_viscous_laguerre!(params)
         
         viscous_rhs_el_laguerre!(u, params, SD)
-        DSS_rhs_laguerre!(@view(params.RHS_visc_lag[:,:]), @view(params.rhs_diff_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, params.AD)
+        DSS_rhs_laguerre!(params.RHS_visc_lag, params.rhs_diff_el_lag, params.mesh.connijk_lag, params.mesh.nelem_semi_inf, ngl, params.mesh.ngr, neqs, SD, params.AD)
         
         params.RHS_lag[:,:] .= @view(params.RHS_lag[:,:]) .+ @view(params.RHS_visc_lag[:,:])
     end
@@ -258,7 +258,7 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_1
 function _expansion_inviscid_laguerre!(u, neqs, ngr, dψ_lag, ω_lag, F_lag, S_lag, Je, dξdx, rhs_el_lag, iel, ::CL, QT::Inexact, SD::NSD_1D, ::ContGal)
 
     for ieq = 1:neqs
-        for i=1:mesh.ngr
+        for i=1:ngr
             dFdξ = 0.0
             for k = 1:ngr
                 dFdξ += dψ_lag[k,i]*F_lag[k,ieq]
