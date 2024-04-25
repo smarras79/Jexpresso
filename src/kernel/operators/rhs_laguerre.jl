@@ -21,23 +21,23 @@ function resetRHSToZero_viscous_laguerre!(params)
     fill!(params.RHS_visc_lag,     zero(params.T))
 end
 
-function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
+function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, connijk_lag, ngl, ngr, npoin, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
    nothing
 end
 
 
-function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::TOTAL, SD::NSD_2D)
+function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, connijk_lag, ngl, ngr, npoin, δtotal_energy, iel, PT, ::CL, ::TOTAL, SD::NSD_2D)
 
     if typeof(PT) == CompEuler
 
         PhysConst = PhysicalConst{Float64}()
 
-        for j=1:mesh.ngr, i=1:mesh.ngl
+        for j=1:ngr, i=1:ngl
 
-            m1 = mesh.connijk_lag[iel,i,j]
-            m2 = m1 + mesh.npoin
-            m3 = m2 + mesh.npoin
-            m4 = m3 + mesh.npoin
+            m1 = connijk_lag[iel,i,j]
+            m2 = m1 + npoin
+            m3 = m2 + npoin
+            m4 = m3 + npoin
 
             uprimitive[i,j,1] = u[m1]
             uprimitive[i,j,2] = u[m2]/u[m1]
@@ -47,7 +47,7 @@ function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energ
             if(neqs > 4)
                 mieq = m4
                 for ieq = 5:neqs
-                    mieq = mieq + mesh.npoin
+                    mieq = mieq + npoin
                     uprimitive[i,j,ieq] = u[mieq]
                 end
             end
@@ -58,13 +58,13 @@ function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energ
 
     elseif typeof(PT) == AdvDiff
 
-        for j=1:mesh.ngr, i=1:mesh.ngl
+        for j=1:ngr, i=1:ngl
 
-            mieq = mesh.connijk_lag[iel,i,j]
+            mieq = connijk_lag[iel,i,j]
             uprimitive[i,j,1] = u[mieq]
 
             for ieq = 2:neqs
-                mieq = mieq + mesh.npoin
+                mieq = mieq + npoin
                 uprimitive[i,j,ieq] = u[mieq]
             end
 
@@ -72,17 +72,17 @@ function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energ
     end
 end
 
-function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::PERT, SD::NSD_2D)
+function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, connijk_lag, ngl, ngr, npoin, δtotal_energy, iel, PT, ::CL, ::PERT, SD::NSD_2D)
 
     if typeof(PT) == CompEuler
         PhysConst = PhysicalConst{Float64}()
 
-        for j=1:mesh.ngr, i=1:mesh.ngl
+        for j=1:ngr, i=1:ngl
 
-            m1 = mesh.connijk_lag[iel,i,j]
-            m2 = m1 + mesh.npoin
-            m3 = m2 + mesh.npoin
-            m4 = m3 + mesh.npoin
+            m1 = connijk_lag[iel,i,j]
+            m2 = m1 + npoin
+            m3 = m2 + npoin
+            m4 = m3 + npoin
 
             uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
             uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]#(u[m2]+uauxe[m1,2])/uauxe[m1,1]#uprimitive[i,j,1]
@@ -94,7 +94,7 @@ function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energ
             if(neqs > 4)
                 mieq = m4
                 for ieq = 5:neqs
-                    mieq = mieq + mesh.npoin
+                    mieq = mieq + npoin
                     uprimitive[i,j,ieq] = u[mieq] + uauxe[mieq,1]
                 end
             end
@@ -105,13 +105,13 @@ function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energ
 
     elseif typeof(PT) == AdvDiff
 
-        for j=1:mesh.ngr, i=1:mesh.ngl
+        for j=1:ngr, i=1:ngl
 
-            mieq = mesh.connijk_lag[iel,i,j]
+            mieq = connijk_lag[iel,i,j]
             uprimitive[i,j,1] = u[mieq]
 
             for ieq = 2:neqs
-                mieq = mieq + mesh.npoin
+                mieq = mieq + npoin
                 uprimitive[i,j,ieq] = u[mieq]
             end
 
@@ -140,7 +140,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     
     #filter!(u, params, SD)
      
-    inviscid_rhs_el_laguerre!(u, params, lsource, SD)
+    inviscid_rhs_el_laguerre!(u, params, params.mesh.connijk_lag, params.mesh.x, params.mesh.y, lsource, SD)
     DSS_rhs_laguerre!(@view(params.RHS_lag[:,:]), @view(params.rhs_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, params.AD)
     #@info params.rhs_el_lag[1,1,2,2], params.mesh.connijk_lag[1,1,2]
     #@info params.rhs_el_lag[20,5,2,2], params.mesh.connijk_lag[20,5,2]
@@ -164,7 +164,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     
 end
 
-function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
+function inviscid_rhs_el_laguerre!(u, params, connijk_lag, x, y, lsource, SD::NSD_1D)
 
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmax = params.xmax
@@ -172,10 +172,10 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
     ymax = params.ymax   
     for iel=1:params.mesh.nelem_semi_inf
 
-        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
+        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, connijk_lag, params.mesh.ngl, params.mesh.ngr, params.mesh.npoin, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for i=1:params.mesh.ngr
-            ip = params.mesh.connijk_lag[iel,i,1]
+            ip = connijk_lag[iel,i,1]
             user_flux!(@view(params.F_lag[i,:]), @view(params.G_lag[i,:]), SD,
                        @view(params.uaux[ip,:]),
                        @view(params.qp.qe[ip,:]),         #pref
@@ -187,17 +187,18 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
                 user_source!(@view(params.S_lag[i,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qp.qe[ip,:]),          #ρref
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
 
-        _expansion_inviscid_laguerre!(params, iel, params.CL, params.QT, SD, params.AD)
+        _expansion_inviscid_laguerre!(u, params.neqs, params.mesh.ngr, params.basis_lag.dψ, params.ω_lag, params.F_lag, params.S_lag,
+        params.metrics_lag.Je, params.metrics_lag.dξdx, params.rhs_el_lag, iel, params.CL, params.QT, SD, params.AD)
 
     end
 end
 
 
-function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_2D)
+function inviscid_rhs_el_laguerre!(u, params, connijk_lag, x, y, lsource, SD::NSD_2D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmax = params.xmax
@@ -205,28 +206,29 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_2D)
     ymax = params.ymax
     for iel=1:params.mesh.nelem_semi_inf
         
-        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)       
+        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, connijk_lag, params.mesh.ngl, params.mesh.ngr, params.mesh.npoin, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)       
  
         for j=1:params.mesh.ngr, i=1:params.mesh.ngl
-            ip = params.mesh.connijk_lag[iel,i,j]
+            ip = connijk_lag[iel,i,j]
             #=if (abs(params.mesh.x[ip])>4990) 
               #@info params.mesh.x[ip], params.mesh.y[ip]
               params.uaux[ip,2] = 0.0 
             end=#
             #if (abs(params.mesh.y[ip]) == ymax) params.uaux[ip,3] = 0.0 end 
             user_flux!(@view(params.F_lag[i,j,:]), @view(params.G_lag[i,j,:]), SD,
-                       @view(params.uaux[ip,:]), 
-                       @view(params.qp.qe[ip,:]),         #pref
+                        @view(params.uaux[ip,:]), 
+                        @view(params.qp.qe[ip,:]),         #pref
                        params.mesh, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs)
             
             if lsource
                 user_source!(@view(params.S_lag[i,j,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qp.qe[ip,:]),          #ρref 
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax = xmax, xmin=xmin,ymax=ymax)
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=x[ip],y=y[ip],xmax = xmax, xmin=xmin,ymax=ymax)
             end
         end
-        _expansion_inviscid_laguerre!(params, iel, params.CL, params.QT, SD, params.AD)
+        _expansion_inviscid_laguerre!(u, params.neqs, params.mesh.ngl, params.mesh.ngr, params.basis.dψ, params.basis_lag.dψ, params.ω, params.ω_lag, params.F_lag, params.G_lag, params.S_lag, 
+        params.metrics_lag.Je, params.metrics_lag.dξdx,params.metrics_lag.dξdy, params.metrics_lag.dηdx, params.metrics_lag.dηdy, params.rhs_el_lag, iel, params.CL, params.QT, SD, params.AD)
     end
     uaux2u!(u, @view(params.uaux[:,:]), params.neqs, params.mesh.npoin)
 end
@@ -235,10 +237,12 @@ function viscous_rhs_el_laguerre!(u, params, SD::NSD_2D)
     
     for iel=1:params.mesh.nelem_semi_inf
         
-        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
+        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, params.mesh.connijk_lag, params.mesh.ngl, params.mesh.ngr, params.mesh.npoin, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for ieq in params.ivisc_equations    
-              _expansion_visc_laguerre!(@view(params.rhs_diffξ_el_lag[iel,:,:,ieq]), @view(params.rhs_diffη_el_lag[iel,:,:,ieq]), @view(params.uprimitive_lag[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.ω_lag, params.mesh, params.basis, params.basis_lag, params.metrics, params.metrics_lag, params.inputs, iel, ieq, params.QT, SD, params.AD)
+              _expansion_visc_laguerre!(params.rhs_diffξ_el_lag, params.rhs_diffη_el_lag, params.uprimitive_lag, params.visc_coeff, params.ω, params.ω_lag, params.mesh.ngl, params.mesh.ngr, 
+            params.basis.ψ, params.basis.dψ, params.basis_lag.ψ, params.basis_lag.dψ, params.metrics_lag.Je, params.metrics_lag.dξdx, params.metrics_lag.dξdy, params.metrics_lag.dηdx, 
+            params.metrics_lag.dηdy, params.inputs, iel, ieq, params.QT, SD, params.AD)
         end
         
     end
@@ -251,59 +255,53 @@ end
 
 function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_1D, ::FD) nothing end
 
-function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_1D, ::ContGal)
+function _expansion_inviscid_laguerre!(u, neqs, ngr, dψ_lag, ω_lag, F_lag, S_lag, Je, dξdx, rhs_el_lag, iel, ::CL, QT::Inexact, SD::NSD_1D, ::ContGal)
 
-    beta = params.inputs[:laguerre_beta]
-    for ieq = 1:params.neqs
-        for i=1:params.mesh.ngr
+    for ieq = 1:neqs
+        for i=1:mesh.ngr
             dFdξ = 0.0
-            for k = 1:params.mesh.ngr
-                dFdξ += params.basis_lag.dψ[k,i]*params.F_lag[k,ieq]
+            for k = 1:ngr
+                dFdξ += dψ_lag[k,i]*F_lag[k,ieq]
             end
-            params.rhs_el_lag[iel,i,ieq] -= dFdξ*params.metrics_lag.Je[iel,i]*params.metrics_lag.dξdx[iel,i]*params.ω_lag[i]  - params.ω_lag[i]*params.S_lag[i,ieq]
+            rhs_el_lag[iel,i,ieq] -= dFdξ*Je[iel,i]*dξdx[iel,i]*ω_lag[i]  - ω_lag[i]*S_lag[i,ieq]
         end
     end
 end
 
 function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2D, ::FD) nothing end
 
-function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2D, ::ContGal)
-    ω1 = params.ω
-    ω2 = params.ω_lag
-    basis1 = params.basis
-    basis2 = params.basis_lag
-    for ieq=1:params.neqs
-        for j=1:params.mesh.ngr
-            for i=1:params.mesh.ngl
+function _expansion_inviscid_laguerre!(u, neqs, ngl, ngr, dψ, dψ_lag, ω, ω_lag, F_lag, G_lag, S_lag, Je, dξdx, dξdy, dηdx, dηdy, rhs_el_lag, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+    for ieq=1:neqs
+        for j=1:ngr
+            for i=1:ngl
                 
-                ωJac = ω1[i]*ω2[j]*params.metrics_lag.Je[iel,i,j]
+                ωJac = ω[i]*ω_lag[j]*Je[iel,i,j]
                 
                 dFdξ = 0.0
                 dFdη = 0.0
                 dGdξ = 0.0
                 dGdη = 0.0
-                @turbo for k = 1:params.mesh.ngl
-                    dFdξ += basis1.dψ[k,i]*params.F_lag[k,j,ieq]
+                @turbo for k = 1:ngl
+                    dFdξ += dψ[k,i]*F_lag[k,j,ieq]
                     
-                    dGdξ += basis1.dψ[k,i]*params.G_lag[k,j,ieq]
+                    dGdξ += dψ[k,i]*G_lag[k,j,ieq]
                 end
-                @turbo for k = 1:params.mesh.ngr
-                    dFdη += basis2.dψ[k,j]*params.F_lag[i,k,ieq]
+                @turbo for k = 1:ngr
+                    dFdη += dψ_lag[k,j]*F_lag[i,k,ieq]
 
-                    dGdη += basis2.dψ[k,j]*params.G_lag[i,k,ieq]
+                    dGdη += dψ_lag[k,j]*G_lag[i,k,ieq]
                 end
-                dξdx_ij = params.metrics_lag.dξdx[iel,i,j]
-                dξdy_ij = params.metrics_lag.dξdy[iel,i,j]
-                dηdx_ij = params.metrics_lag.dηdx[iel,i,j]
-                dηdy_ij = params.metrics_lag.dηdy[iel,i,j]
-                 ip = params.mesh.connijk_lag[iel,i,j]
+                dξdx_ij = dξdx[iel,i,j]
+                dξdy_ij = dξdy[iel,i,j]
+                dηdx_ij = dηdx[iel,i,j]
+                dηdy_ij = dηdy[iel,i,j]
                  
                 dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
 
                 dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
                 
-		auxi = ωJac*((dFdx + dGdy) - params.S_lag[i,j,ieq])
-                params.rhs_el_lag[iel,i,j,ieq] -= auxi
+		auxi = ωJac*((dFdx + dGdy) - S_lag[i,j,ieq])
+                rhs_el_lag[iel,i,j,ieq] -= auxi
             end
         end
     end
@@ -535,50 +533,46 @@ function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq,
 end
 
 function _expansion_visc_laguerre!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq,
-                                   visc_coeffieq, ω, ω_lag, mesh, basis, basis_lag,
-                                   metrics, metrics_lag, inputs, iel, ieq,
+                                   visc_coeffieq, ω, ω_lag, ngl, ngr, ψ, dψ, ψ_lag, dψ_lag,
+                                   Je, dξdx, dξdy, dηdx, dηdy, inputs, iel, ieq,
                                    QT::Inexact, SD::NSD_2D, ::ContGal)
     
-    basis1 = basis
-    basis2 = basis_lag
-    ω1 = ω
-    ω2 = ω_lag 
-    for l = 1:mesh.ngr
-        for k = 1:mesh.ngl
-            ωJac = ω1[k]*ω2[l]*metrics_lag.Je[iel,k,l]
+    for l = 1:ngr
+        for k = 1:ngl
+            ωJac = ω[k]*ω_lag[l]*Je[iel,k,l]
             
             dudξ = 0.0
             dudη = 0.0
-            @turbo for ii = 1:mesh.ngl
-                dudξ += basis1.dψ[ii,k]*uprimitiveieq[ii,l]
+            @turbo for ii = 1:ngl
+                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
             end
-            @turbo for ii = 1:mesh.ngr
-                dudη += basis2.dψ[ii,l]*uprimitiveieq[k,ii]
+            @turbo for ii = 1:ngr
+                dudη += dψ_lag[ii,l]*uprimitiveieq[k,ii,ieq]
             end
             #@info ieq, dudξ, dudη
-            dξdx_kl = metrics_lag.dξdx[iel,k,l]
-            dξdy_kl = metrics_lag.dξdy[iel,k,l]
-            dηdx_kl = metrics_lag.dηdx[iel,k,l]
-            dηdy_kl = metrics_lag.dηdy[iel,k,l]
+            dξdx_kl = dξdx[iel,k,l]
+            dξdy_kl = dξdy[iel,k,l]
+            dηdx_kl = dηdx[iel,k,l]
+            dηdy_kl = dηdy[iel,k,l]
              
             auxi = dudξ*dξdx_kl + dudη*dηdx_kl
-            dudx = visc_coeffieq*auxi
+            dudx = visc_coeffieq[ieq]*auxi
             
             auxi = dudξ*dξdy_kl + dudη*dηdy_kl
-            dudy = visc_coeffieq*auxi
+            dudy = visc_coeffieq[ieq]*auxi
             
             ∇ξ∇u_kl = (dξdx_kl*dudx + dξdy_kl*dudy)*ωJac
             ∇η∇u_kl = (dηdx_kl*dudx + dηdy_kl*dudy)*ωJac     
             
-            @turbo for i = 1:mesh.ngl
-                dhdξ_ik = basis1.dψ[i,k]
+            @turbo for i = 1:ngl
+                dhdξ_ik = dψ[i,k]
                 
-                rhs_diffξ_el[i,l] -= dhdξ_ik * ∇ξ∇u_kl
+                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇u_kl
             end
-            @turbo for i = 1:mesh.ngr
-                dhdη_il = basis2.dψ[i,l]
+            @turbo for i = 1:ngr
+                dhdη_il = dψ_lag[i,l]
 
-                rhs_diffη_el[k,i] -= dhdη_il * ∇η∇u_kl
+                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇u_kl
             end
         end
     end  

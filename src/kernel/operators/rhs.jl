@@ -163,17 +163,17 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, connijk, ngl, npoin, δtotal
     end
 end
 
-function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::PERT, SD::NSD_2D)
+function uToPrimitives!(neqs, uprimitive, u, uauxe, connijk, ngl, npoin, δtotal_energy, iel, PT, ::CL, ::PERT, SD::NSD_2D)
     
     if typeof(PT) == CompEuler
         PhysConst = PhysicalConst{Float64}()
         
-        for j=1:mesh.ngl, i=1:mesh.ngl
+        for j=1:ngl, i=1:ngl
             
-            m1 = mesh.connijk[iel,i,j]
-            m2 = m1 + mesh.npoin
-            m3 = m2 + mesh.npoin
-            m4 = m3 + mesh.npoin
+            m1 = connijk[iel,i,j]
+            m2 = m1 + npoin
+            m3 = m2 + npoin
+            m4 = m3 + npoin
 
             uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
             uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]
@@ -184,7 +184,7 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, P
             if(neqs > 4)
                 mieq = m4
                 for ieq = 5:neqs
-                    mieq = mieq + mesh.npoin
+                    mieq = mieq + npoin
                     uprimitive[i,j,ieq] = u[mieq] + uauxe[mieq,1]
                 end
             end
@@ -196,13 +196,13 @@ function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, P
         
     elseif typeof(PT) == AdvDiff
         
-        for j=1:mesh.ngl, i=1:mesh.ngl
+        for j=1:ngl, i=1:ngl
             
-            mieq = mesh.connijk[iel,i,j]
+            mieq = connijk[iel,i,j]
             uprimitive[i,j,1] = u[mieq]
             
             for ieq = 2:neqs
-                mieq = mieq + mesh.npoin
+                mieq = mieq + npoin
                 uprimitive[i,j,ieq] = u[mieq]
             end
             
