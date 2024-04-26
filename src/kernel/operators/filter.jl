@@ -306,7 +306,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs)
       ξ = xgl[i]
       for j=1:nop+1
         jj = j-1
-        ScaledLaguerreAndDerivative!(jj,Laguerre,1.0)
+        ScaledLaguerreAndDerivative!(jj,Laguerre,1.0,inputs[:backend])
         leg[i,j] = Laguerre.Laguerre(ξ)
       end
     end
