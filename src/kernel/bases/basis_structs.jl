@@ -39,7 +39,7 @@ mutable struct St_Legendre{TFloat}
     dq        :: TFloat
 end
 
-mutable struct St_Laguerre{TFloat}
+mutable struct St_Laguerre{Float128}
    
    """
    struct St_Laguerre{TFloat<:Real}
@@ -180,7 +180,7 @@ function build_Integration_points!(lgl::St_lgl,nop, backend)
 end
 
 function build_Integration_points!(lgr::St_gr,nop,beta, backend)
-    Laguerre = St_Laguerre(Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)))
+    Laguerre = St_Laguerre(Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)))
     build_gr!(Laguerre,lgr,nop,beta, backend)
 end
 
@@ -737,13 +737,13 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     J = zeros(Float128,nop+1,nop+1)
     J .= diagm(an) .+ Bidiagonal(filler,bn,:U) .+ Bidiagonal(filler,bn,:L)
     xi = eigen(J)
-    ξ .= Float128.(xi.values)
+    ξ = Float128.(xi.values)
     ngr = length(gr.ξ)
     thresh = 1e-8
     x0 = 0.0
     x1 = 0.0
     for k=1:ngr
-      x0 = gr.ξ[k]
+      x0 = ξ[k]
       diff1 = 1.0
       stuck = 1.0
       while(diff1 > thresh)
@@ -781,10 +781,9 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     #for k=1:ngr
     #  @info Laguerre.dLaguerre(gr.ξ[k]), gr.ξ[k]
     #end
- 
+    ω = zeros(Float128,ngr) 
     ScaledLaguerreAndDerivative!(nop,Laguerre,beta,backend)
     Lkx = zeros(nop+1,1)
-    ω = zeros(Float128,ngr)
     for i=1:nop+1
       Lkx[i] = scaled_laguerre(ξ[i],nop,beta,backend)
       #Lkx[i] = Laguerre.Laguerre(gr.ξ[i])
@@ -792,8 +791,13 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
       #gr.ω[i] = exp(gr.ξ[i]*beta)/(beta*Pp1*Lkx[i]^2)
     
     end
-    KernelAbstractions.copyto!(backend, TFloat, gr.ξ, ξ)
-    KernelAbstractions.copyto!(backend, TFloat, gr.ω, ω)
+    if (backend == CPU())
+        gr.ξ .= ξ
+        gr.ω .= ω
+    else
+        KernelAbstractions.copyto!(backend, gr.ξ, ξ)
+        KernelAbstractions.copyto!(backend, gr.ω, ω)
+    end
     #gr.ω[1] = 1-sum(gr.ω[2:nop+1])
     #@info gr.ω
     #if(scale)
