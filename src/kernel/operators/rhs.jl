@@ -383,7 +383,7 @@ function _build_rhs!(RHS, u, params, time)
          reset_laguerre_filters!(params)
     end
     if (params.inputs[:lfilter])
-        filter!(u, params, time, SD,params.SOL_VARS_TYPE)
+        @time filter!(u, params, time, SD,params.SOL_VARS_TYPE)
     end
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,

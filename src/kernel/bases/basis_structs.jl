@@ -47,10 +47,10 @@ mutable struct St_Laguerre{TFloat}
         dLaguerre :: TFloat
    end
    """
-   Laguerre  :: Polynomial{TFloat}
-   dLaguerre :: Polynomial{TFloat}
-   d2Laguerre :: Polynomial{TFloat}
-   d3Laguerre :: Polynomial{TFloat}
+   Laguerre  :: Polynomial{Float128}
+   dLaguerre :: Polynomial{Float128}
+   d2Laguerre :: Polynomial{Float128}
+   d3Laguerre :: Polynomial{Float128}
 end
  
 abstract type AbstractIntegrationPointAndWeights end
@@ -737,7 +737,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     J = zeros(Float128,nop+1,nop+1)
     J .= diagm(an) .+ Bidiagonal(filler,bn,:U) .+ Bidiagonal(filler,bn,:L)
     xi = eigen(J)
-    gr.ξ .= Float128.(xi.values)
+    ξ .= Float128.(xi.values)
     ngr = length(gr.ξ)
     thresh = 1e-8
     x0 = 0.0
@@ -773,9 +773,9 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
           end=#
           
       end
-      gr.ξ[k] = x1
+      ξ[k] = x1
     end
-    gr.ξ[1] = 0
+    ξ[1] = 0
     #ScaledLaguerreAndDerivative!(nop+1,Laguerre,beta)
     #gr.ξ[2:ngr] = AMRVW.roots((coeffs(Laguerre.dLaguerre)))
     #for k=1:ngr
@@ -784,13 +784,16 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
  
     ScaledLaguerreAndDerivative!(nop,Laguerre,beta,backend)
     Lkx = zeros(nop+1,1)
+    ω = zeros(Float128,ngr)
     for i=1:nop+1
-      Lkx[i] = scaled_laguerre(gr.ξ[i],nop,beta,backend)
+      Lkx[i] = scaled_laguerre(ξ[i],nop,beta,backend)
       #Lkx[i] = Laguerre.Laguerre(gr.ξ[i])
-      gr.ω[i] = 1/(beta*Pp1*Lkx[i]^2)
+      ω[i] = 1/(beta*Pp1*Lkx[i]^2)
       #gr.ω[i] = exp(gr.ξ[i]*beta)/(beta*Pp1*Lkx[i]^2)
     
     end
+    KernelAbstractions.copyto!(backend, TFloat, gr.ξ, ξ)
+    KernelAbstractions.copyto!(backend, TFloat, gr.ω, ω)
     #gr.ω[1] = 1-sum(gr.ω[2:nop+1])
     #@info gr.ω
     #if(scale)
