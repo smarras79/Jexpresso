@@ -1,7 +1,7 @@
-#function kessler_Nocolumn_Yassine!(rho, t, qv, qc, qr, p, q, z, rainnc, rainncv, dt, nz, qref)
-function kessler_Nocolumn_Yassine!(mp::St_Microphysics, params,
-                                   physConst,
-                                   ρ, t, qv, qc, qr, p, q, z, rainnc, rainncv, dt, nz, qref, mphconst)
+function kessler_nocolumn!(mp::St_Microphysics, params,
+                           physConst,
+                           ρ, t, qv, qc, qr, p, q, z,
+                           rainnc, rainncv, dt, nz, qref, mphconst)
     
     # Constants
     c1     = 0.001
@@ -24,7 +24,8 @@ function kessler_Nocolumn_Yassine!(mp::St_Microphysics, params,
     # Global variables
     nvar  = params.neqs
     npoin = params.mesh.npoin
-    nglx, ngly, nglz = params.mesh.ngl, params.mesh.ngl, params.mesh.ngl
+    ngl   = params.mesh.ngl
+    nop   = params.mesh.nop
 
     # Local variables
     qrprod, ern, gam, rcgs, rcgsi = 0.0, 0.0, 0.0, 0.0, 0.0
@@ -51,9 +52,9 @@ function kessler_Nocolumn_Yassine!(mp::St_Microphysics, params,
 
     # Sedimentation
     for ip = 1:npoin
-        rdzk[ip]  = 1.0 / ((ztop - zbottom) / max(nelz * nopz, 1))
+        rdzk[ip]  = 1.0 / ((ztop - zbottom) / max(nelz * nop, 1))
         prodk[ip] = qr[ip]
-        ρk[ip]  = ρ[ip]
+        ρk[ip]    = ρ[ip]
         qrr       = max(0.0, qr[ip] * 0.001 * ρk[ip])
         vtden[ip] = sqrt(1.123 / ρk[ip])
         vt[ip]    = 36.34 * (qrr^0.1364) * vtden[ip]
