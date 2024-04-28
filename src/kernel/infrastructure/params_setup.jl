@@ -20,11 +20,10 @@ function params_setup(sem,
     # rhs* -> inviscid and viscous ELEMENT rhs
     # RHS* -> inviscid and viscous GLOBAL  rhs
     #-----------------------------------------------------------------
-    u            = zeros(T, sem.mesh.npoin*qp.neqs)
-    uaux         = zeros(T, sem.mesh.npoin, qp.neqs)
+    u    = zeros(T, sem.mesh.npoin*qp.neqs)
+    uaux = zeros(T, sem.mesh.npoin, qp.neqs)
 
     if sem.mesh.nsd == 1
-        uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
         rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
         rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
         rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, qp.neqs)
@@ -36,7 +35,6 @@ function params_setup(sem,
         S            = zeros(T, sem.mesh.ngl, qp.neqs)
         uprimitive   = zeros(T, sem.mesh.ngl, qp.neqs+1)
     elseif  sem.mesh.nsd == 2
-        uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
@@ -48,7 +46,6 @@ function params_setup(sem,
         S            = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         uprimitive   = zeros(T, sem.mesh.ngl, sem.mesh.ngl, qp.neqs+1)
     elseif  sem.mesh.nsd == 3
-        uaux_el      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_el       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_diff_el  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
         rhs_diffξ_el = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
@@ -91,8 +88,7 @@ function params_setup(sem,
         # 2D & 3D dd if statement like aboe
         #
         if  sem.mesh.nsd == 2
-            uaux_el_lag      = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-            rhs_el_lag       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
+             rhs_el_lag       = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
             rhs_diff_el_lag  = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
             rhs_diffξ_el_lag = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
             rhs_diffη_el_lag = zeros(T, sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
@@ -116,7 +112,6 @@ function params_setup(sem,
         #
         # 1D
         #
-        uaux_el_lag      = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, qp.neqs)
         rhs_el_lag       = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, qp.neqs)
         rhs_diff_el_lag  = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, qp.neqs)
         rhs_diffξ_el_lag = zeros(T, sem.mesh.nelem_semi_inf, sem.mesh.ngr, qp.neqs)
@@ -150,12 +145,12 @@ function params_setup(sem,
     Δt = inputs[:Δt]
     tspan = (inputs[:tinit], inputs[:tend])    
     visc_coeff = inputs[:μ]#(inputs[:νρ], inputs[:νx], inputs[:νy], inputs[:κ], inputs[:κ], inputs[:κ], inputs[:κ])
-    ivisc_equations = inputs[:ivisc_equations]   
-    
+    ivisc_equations = inputs[:ivisc_equations]
+
     if ("Laguerre" in sem.mesh.bdy_edge_type || inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         
         params = (T, F, G, H, S,
-                  uaux, uaux_el, vaux,
+                  uaux, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
@@ -164,7 +159,6 @@ function params_setup(sem,
                   q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag,
                   RHS, RHS_visc,
                   F_lag, G_lag, S_lag, 
-                  uaux_el_lag,
                   rhs_el_lag,
                   rhs_diff_el_lag,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
@@ -179,7 +173,7 @@ function params_setup(sem,
                   qp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
     else
         params = (T, F, G, H, S,
-                  uaux, uaux_el, vaux,
+                  uaux, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
@@ -194,8 +188,7 @@ function params_setup(sem,
                   sem.matrix.M, sem.matrix.Minv,tspan,
                   Δt, deps, xmax, xmin, ymax, ymin,
                   qp, sem.fx, sem.fy, fy_t,laguerre=false)
-    end 
-
+    end
 
     println(" # Build arrays and params ................................ DONE")
 

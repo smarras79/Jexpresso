@@ -8,6 +8,13 @@ Base.@kwdef mutable struct St_a{TFloat <: AbstractFloat}
     x::Array{TFloat} = zeros(TFloat, 0)
 end
 
+
+Base.@kwdef mutable struct St_flux{TFloat <: AbstractFloat}
+    F::Array{TFloat} = zeros(TFloat, 0)
+    G::Array{TFloat} = zeros(TFloat, 0)
+end
+
+
 function allocate_operator_arrays(SD::NSD_1D, nelem, ngl, TFloat; neqs=1)
     
     #a = zeros(TFloat, nelem, ngl, neqs)
@@ -33,13 +40,15 @@ end
 
 function allocate_operator_arrays(SD::NSD_3D, nelem, ngl, TFloat; neqs=1)
     
-    #a = zeros(TFloat, nelem, ngl, ngl, neqs)
-    a = St_a{TFloat}(x = zeros(TFloat, nelem, ngl, ngl, ngl))
+    a    = St_a{TFloat}(x = zeros(TFloat, nelem, ngl, ngl, ngl))
+    flux = St_flux{TFloat}(F = zeros(TFloat, nelem, ngl, ngl, ngl),
+                        G = zeros(TFloat, nelem, ngl, ngl, ngl))
+    
     @info ""
     @info " 3D"
     @info size(a.x)
 
-    return a
+    return a, flux
 end
 
 
@@ -49,6 +58,7 @@ function myfun!(params)
             for k=1:params.ngl
                 for l=1:params.ngl
                     params.a.x[i,j,k,l] = 25.0
+                    params.flux.F[i,j,k,l] = 25.0
                 end
             end
         end
@@ -67,37 +77,39 @@ function myfun!(x, nelem, ngl)
     end
 end
 
+function fun_call(myfun!, params)
+    for it=1:100
+        myfun!(params)
+    end 
+end
+
+
+function fun_call(myfun!, x, nelem, ngl)
+    for it=1:100
+        myfun!(x, nelem, ngl)
+    end 
+end
+    
+
 function main()
 
     nelem = 10
     ngl   =  5
-    a = allocate_operator_arrays(NSD_1D(), nelem, ngl, Float64; neqs=1)
-
-    @info ""
-    @info " main 1D"
-    @info size(a.x)
     
-    a = allocate_operator_arrays(NSD_2D(), nelem, ngl, Float64; neqs=1)
-
-    @info ""
-    @info " main 2D"
-    @info size(a.x)
-     
-    a = allocate_operator_arrays(NSD_3D(), nelem, ngl, Float64; neqs=1)
-
+    a, flux = allocate_operator_arrays(NSD_3D(), nelem, ngl, Float64; neqs=1)
+    
     @info ""
     @info " main 3D"
     @info size(a.x)
 
-    params = (a=a, nelem=nelem, ngl=ngl)
-    @info params.nelem
-    
-    @info " 111"
-    @time myfun!(a.x, nelem, ngl)
+    params = (a=a, flux=flux, nelem=nelem, ngl=ngl)
 
-    @info " 222"
-    @time myfun!(params)
+    @info " Passing single arguments"
+    @time fun_call(myfun!, a.x, nelem, ngl)
     
+    @info " Passing tuple"
+    @time fun_call(myfun!, params)
+
     
 end
 
