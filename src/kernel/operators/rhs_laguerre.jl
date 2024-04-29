@@ -1,24 +1,13 @@
-#---------------------------------------------------------------------------
-# Optimized (more coud possibly be done)
-#---------------------------------------------------------------------------
-function build_rhs_laguerre!(RHS, u, params, time)
-    #
-    # build_rhs()! is called by TimeIntegrators.jl -> time_loop!() via ODEProblem(rhs!, u, tspan, params)
-    #
-   _build_rhs_laguerre!(RHS, u, params, time)
-    
-end
-
 function resetRHSToZero_inviscid_laguerre!(params)
-    fill!(params.rhs_el_lag, zero(params.T))   
-    fill!(params.RHS_lag,    zero(params.T))
+    fill!(params.rhs_lag.rhs_el_lag, zero(params.T))   
+    fill!(params.rhs_lag.RHS_lag,    zero(params.T))
 end
 
 function resetRHSToZero_viscous_laguerre!(params)
-    fill!(params.rhs_diff_el_lag,  zero(params.T))
-    fill!(params.rhs_diffξ_el_lag, zero(params.T))
-    fill!(params.rhs_diffη_el_lag, zero(params.T))
-    fill!(params.RHS_visc_lag,     zero(params.T))
+    fill!(params.rhs_lag.rhs_diff_el_lag,  zero(params.T))
+    fill!(params.rhs_lag.rhs_diffξ_el_lag, zero(params.T))
+    fill!(params.rhs_lag.rhs_diffη_el_lag, zero(params.T))
+    fill!(params.rhs_lag.RHS_visc_lag,     zero(params.T))
 end
 
 function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
@@ -121,7 +110,7 @@ function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, mesh, δtotal_energ
 end
 
 
-function _build_rhs_laguerre!(RHS, u, params, time)
+function build_rhs_laguerre!(RHS, u, params, time)
 
     T       = Float64
     SD      = params.SD
@@ -141,10 +130,8 @@ function _build_rhs_laguerre!(RHS, u, params, time)
     #filter!(u, params, SD)
      
     inviscid_rhs_el_laguerre!(u, params, lsource, SD)
-    DSS_rhs_laguerre!(@view(params.RHS_lag[:,:]), @view(params.rhs_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, params.AD)
-    #@info params.rhs_el_lag[1,1,2,2], params.mesh.connijk_lag[1,1,2]
-    #@info params.rhs_el_lag[20,5,2,2], params.mesh.connijk_lag[20,5,2]
-    #@info params.RHS_lag[6481,2]
+    DSS_rhs_laguerre!(@view(params.rhs_lag.RHS_lag[:,:]), @view(params.rhs_lag.rhs_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, params.AD)
+    
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -153,13 +140,13 @@ function _build_rhs_laguerre!(RHS, u, params, time)
         resetRHSToZero_viscous_laguerre!(params)
         
         viscous_rhs_el_laguerre!(u, params, SD)
-        DSS_rhs_laguerre!(@view(params.RHS_visc_lag[:,:]), @view(params.rhs_diff_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, params.AD)
+        DSS_rhs_laguerre!(@view(params.rhs_lag.RHS_visc_lag[:,:]), @view(params.rhs_lag.rhs_diff_el_lag[:,:,:,:]), params.mesh, nelem, ngl, neqs, SD, params.AD)
         
-        params.RHS_lag[:,:] .= @view(params.RHS_lag[:,:]) .+ @view(params.RHS_visc_lag[:,:])
+        params.rhs_lag.RHS_lag[:,:] .= @view(params.rhs_lag.RHS_lag[:,:]) .+ @view(params.rhs_lag.RHS_visc_lag[:,:])
     end
     
     for ieq=1:neqs
-        divide_by_mass_matrix!(@view(params.RHS_lag[:,ieq]), params.vaux, params.Minv, neqs, npoin, params.AD)
+        divide_by_mass_matrix!(@view(params.rhs_lag.RHS_lag[:,ieq]), params.vaux, params.Minv, neqs, npoin, params.AD)
     end
     
 end
@@ -172,11 +159,11 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
     ymax = params.ymax   
     for iel=1:params.mesh.nelem_semi_inf
 
-        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
+        uToPrimitives_laguerre!(params.neqs, params.fluxes_lag.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for i=1:params.mesh.ngr
             ip = params.mesh.connijk_lag[iel,i,1]
-            user_flux!(@view(params.F_lag[i,:]), @view(params.G_lag[i,:]), SD,
+            user_flux!(@view(params.fluxes_lag.F_lag[i,:]), @view(params.fluxes_lag.G_lag[i,:]), SD,
                        @view(params.uaux[ip,:]),
                        @view(params.qp.qe[ip,:]),         #pref
                        params.mesh,
@@ -184,7 +171,7 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_1D)
                        neqs=params.neqs)
 
             if lsource
-                user_source!(@view(params.S_lag[i,:]),
+                user_source!(@view(params.fluxes_lag.S_lag[i,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qp.qe[ip,:]),          #ρref
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
@@ -205,22 +192,18 @@ function inviscid_rhs_el_laguerre!(u, params, lsource, SD::NSD_2D)
     ymax = params.ymax
     for iel=1:params.mesh.nelem_semi_inf
         
-        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)       
+        uToPrimitives_laguerre!(params.neqs, params.fluxes_lag.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)       
  
         for j=1:params.mesh.ngr, i=1:params.mesh.ngl
             ip = params.mesh.connijk_lag[iel,i,j]
-            #=if (abs(params.mesh.x[ip])>4990) 
-              #@info params.mesh.x[ip], params.mesh.y[ip]
-              params.uaux[ip,2] = 0.0 
-            end=#
-            #if (abs(params.mesh.y[ip]) == ymax) params.uaux[ip,3] = 0.0 end 
-            user_flux!(@view(params.F_lag[i,j,:]), @view(params.G_lag[i,j,:]), SD,
+            
+            user_flux!(@view(params.fluxes_lag.F_lag[i,j,:]), @view(params.fluxes_lag.G_lag[i,j,:]), SD,
                        @view(params.uaux[ip,:]), 
                        @view(params.qp.qe[ip,:]),         #pref
                        params.mesh, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs)
             
             if lsource
-                user_source!(@view(params.S_lag[i,j,:]),
+                user_source!(@view(params.fluxes_lag.S_lag[i,j,:]),
                              @view(params.uaux[ip,:]),
                              @view(params.qp.qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=params.mesh.x[ip],y=params.mesh.y[ip],xmax = xmax, xmin=xmin,ymax=ymax)
@@ -235,16 +218,15 @@ function viscous_rhs_el_laguerre!(u, params, SD::NSD_2D)
     
     for iel=1:params.mesh.nelem_semi_inf
         
-        uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
+        uToPrimitives_laguerre!(params.neqs, params.fluxes_lag.uprimitive_lag, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for ieq in params.ivisc_equations    
-              _expansion_visc_laguerre!(@view(params.rhs_diffξ_el_lag[iel,:,:,ieq]), @view(params.rhs_diffη_el_lag[iel,:,:,ieq]), @view(params.uprimitive_lag[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.ω_lag, params.mesh, params.basis, params.basis_lag, params.metrics, params.metrics_lag, params.inputs, iel, ieq, params.QT, SD, params.AD)
+              _expansion_visc_laguerre!(@view(params.rhs_lag.rhs_diffξ_el_lag[iel,:,:,ieq]), @view(params.rhs_lag.rhs_diffη_el_lag[iel,:,:,ieq]), @view(params.fluxes_lag.uprimitive_lag[:,:,ieq]), params.visc_coeff[ieq], params.ω, params.ω_lag, params.mesh, params.basis, params.basis_lag, params.metrics, params.metrics_lag, params.inputs, iel, ieq, params.QT, SD, params.AD)
         end
         
     end
     
-    #@info maximum(params.rhs_diffξ_el_lag[:,:,:,1]),maximum(params.rhs_diffη_el_lag[:,:,:,1])
-    params.rhs_diff_el_lag .= @views (params.rhs_diffξ_el_lag .+ params.rhs_diffη_el_lag)
+    params.rhs_lag.rhs_diff_el_lag .= @views (params.rhs_lag.rhs_diffξ_el_lag .+ params.rhs_lag.rhs_diffη_el_lag)
 end
 
 
@@ -258,9 +240,9 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_1
         for i=1:params.mesh.ngr
             dFdξ = 0.0
             for k = 1:params.mesh.ngr
-                dFdξ += params.basis_lag.dψ[k,i]*params.F_lag[k,ieq]
+                dFdξ += params.basis_lag.dψ[k,i]*params.fluxes_lag.F_lag[k,ieq]
             end
-            params.rhs_el_lag[iel,i,ieq] -= dFdξ*params.metrics_lag.Je[iel,i]*params.metrics_lag.dξdx[iel,i]*params.ω_lag[i]  - params.ω_lag[i]*params.S_lag[i,ieq]
+            params.rhs_lag.rhs_el_lag[iel,i,ieq] -= dFdξ*params.metrics_lag.Je[iel,i]*params.metrics_lag.dξdx[iel,i]*params.ω_lag[i]  - params.ω_lag[i]*params.fluxes_lag.S_lag[i,ieq]
         end
     end
 end
@@ -283,14 +265,14 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2
                 dGdξ = 0.0
                 dGdη = 0.0
                 @turbo for k = 1:params.mesh.ngl
-                    dFdξ += basis1.dψ[k,i]*params.F_lag[k,j,ieq]
+                    dFdξ += basis1.dψ[k,i]*params.fluxes_lag.F_lag[k,j,ieq]
                     
-                    dGdξ += basis1.dψ[k,i]*params.G_lag[k,j,ieq]
+                    dGdξ += basis1.dψ[k,i]*params.fluxes_lag.G_lag[k,j,ieq]
                 end
                 @turbo for k = 1:params.mesh.ngr
-                    dFdη += basis2.dψ[k,j]*params.F_lag[i,k,ieq]
+                    dFdη += basis2.dψ[k,j]*params.fluxes_lag.F_lag[i,k,ieq]
 
-                    dGdη += basis2.dψ[k,j]*params.G_lag[i,k,ieq]
+                    dGdη += basis2.dψ[k,j]*params.fluxes_lag.G_lag[i,k,ieq]
                 end
                 dξdx_ij = params.metrics_lag.dξdx[iel,i,j]
                 dξdy_ij = params.metrics_lag.dξdy[iel,i,j]
@@ -302,8 +284,8 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Inexact, SD::NSD_2
 
                 dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
                 
-		auxi = ωJac*((dFdx + dGdy) - params.S_lag[i,j,ieq])
-                params.rhs_el_lag[iel,i,j,ieq] -= auxi
+		auxi = ωJac*((dFdx + dGdy) - params.fluxes_lag.S_lag[i,j,ieq])
+                params.rhs_lag.rhs_el_lag[iel,i,j,ieq] -= auxi
             end
         end
     end
@@ -332,11 +314,11 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Exact, SD::NSD_2D,
                 dGdη = 0.0
                 for n = 1:N_lag
                     for m = 1:N
-                        dFdξ += basis1.dψ[m,k] * basis2.ψ[n,l]*params.F_lag[m,n,ieq]
-                        dFdη += basis1.ψ[m,k] * basis2.dψ[n,l]*params.F_lag[m,n,ieq]
+                        dFdξ += basis1.dψ[m,k] * basis2.ψ[n,l]*params.fluxes_lag.F_lag[m,n,ieq]
+                        dFdη += basis1.ψ[m,k] * basis2.dψ[n,l]*params.fluxes_lag.F_lag[m,n,ieq]
                         
-                        dGdξ += basis1.dψ[m,k] * basis2.ψ[n,l]*params.G_lag[m,n,ieq]
-                        dGdη += basis1.ψ[m,k] * basis2.dψ[n,l]*params.G_lag[m,n,ieq]
+                        dGdξ += basis1.dψ[m,k] * basis2.ψ[n,l]*params.fluxes_lag.G_lag[m,n,ieq]
+                        dGdη += basis1.ψ[m,k] * basis2.dψ[n,l]*params.fluxes_lag.G_lag[m,n,ieq]
                     end
                 end
                 
@@ -352,8 +334,8 @@ function _expansion_inviscid_laguerre!(params, iel, ::CL, QT::Exact, SD::NSD_2D,
                         dFdy = dFdξ*dξdy_kl + dFdη*dηdy_kl
                         dGdy = dGdξ*dξdy_kl + dGdη*dηdy_kl
                         
-                        auxi = ωJac*basis1.ψ[i,k]*basis2.ψ[j,l]*((dFdx + dGdy) - params.S_lag[i,j,ieq])
-                        params.rhs_el_lag[iel,i,j,ieq] -= auxi
+                        auxi = ωJac*basis1.ψ[i,k]*basis2.ψ[j,l]*((dFdx + dGdy) - params.fluxes_lag.S_lag[i,j,ieq])
+                        params.rhs_lag.rhs_el_lag[iel,i,j,ieq] -= auxi
                     end
                 end
             end
@@ -378,18 +360,18 @@ function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Inexact, SD::NSD_
                 dGdξ = 0.0; dGdη = 0.0
                 dpdξ = 0.0; dpdη = 0.0               
                 for k = 1:params.mesh.ngl
-                    dFdξ += basis1.dψ[k,i]*params.F_lag[k,j,ieq]
+                    dFdξ += basis1.dψ[k,i]*params.fluxes_lag.F_lag[k,j,ieq]
                     
-                    dGdξ += basis1.dψ[k,i]*params.G_lag[k,j,ieq]
+                    dGdξ += basis1.dψ[k,i]*params.fluxes_lag.G_lag[k,j,ieq]
                                         
-                    dpdξ += basis1.dψ[k,i]*params.uprimitive_lag[k,j,params.neqs+1]
+                    dpdξ += basis1.dψ[k,i]*params.fluxes_lag.uprimitive_lag[k,j,params.neqs+1]
                 end
                 for k = 1:params.mesh.ngr
-                    dFdη += basis2.dψ[k,j]*params.F_lag[i,k,ieq]
+                    dFdη += basis2.dψ[k,j]*params.fluxes_lag.F_lag[i,k,ieq]
 
-                    dGdη += basis2.dψ[k,j]*params.G_lag[i,k,ieq]
+                    dGdη += basis2.dψ[k,j]*params.fluxes_lag.G_lag[i,k,ieq]
 
-                    dpdη += basis2.dψ[k,j]*params.uprimitive_lag[i,k,params.neqs+1]
+                    dpdη += basis2.dψ[k,j]*params.fluxes_lag.uprimitive_lag[i,k,params.neqs+1]
                 end
                 dξdx_ij = params.metrics_lag.dξdx[iel,i,j]
                 dξdy_ij = params.metrics_lag.dξdy[iel,i,j]
@@ -405,21 +387,21 @@ function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Inexact, SD::NSD_
                 dpdx = dpdξ*dξdx_ij + dpdη*dηdx_ij            
                 dpdy = dpdξ*dξdy_ij + dpdη*dηdy_ij
 
-                ρij = params.uprimitive_lag[i,j,1]
-                uij = params.uprimitive_lag[i,j,2]
-                vij = params.uprimitive_lag[i,j,3]
+                ρij = params.fluxes_lag.uprimitive_lag[i,j,1]
+                uij = params.fluxes_lag.uprimitive_lag[i,j,2]
+                vij = params.fluxes_lag.uprimitive_lag[i,j,3]
                 
                 if (ieq == 1)
                     auxi = ωJac*(dFdx + dGdy)
                 elseif(ieq == 2)
                     auxi = ωJac*(uij*dFdx + vij*dGdy + dpdx/ρij)
                 elseif(ieq == 3)
-                    auxi = ωJac*(uij*dFdx + vij*dGdy + dpdy/ρij - params.S_lag[i,j,ieq])
+                    auxi = ωJac*(uij*dFdx + vij*dGdy + dpdy/ρij - params.fluxes_lag.S_lag[i,j,ieq])
                 elseif(ieq == 4)
                     auxi = ωJac*(uij*dFdx + vij*dGdy)
                 end
                 
-                params.rhs_el_lag[iel,i,j,ieq] -= auxi
+                params.rhs_lag.rhs_el_lag[iel,i,j,ieq] -= auxi
             end
         end
     end        
@@ -460,28 +442,28 @@ function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Exact, SD::NSD_2D
                     dψmk_ψnl = basis1.dψ[m,k]*basis2.ψ[n,l]
                     ψmk_dψnl = basis1.ψ[m,k]*basis2.dψ[n,l]
                     
-                    dρudξ += dψmk_ψnl*params.F_lag[m,n,1]
-                    dρudη +=  ψmk_dψnl*params.F_lag[m,n,1]
+                    dρudξ += dψmk_ψnl*params.fluxes_lag.F_lag[m,n,1]
+                    dρudη +=  ψmk_dψnl*params.fluxes_lag.F_lag[m,n,1]
                     
-                    dρvdξ += dψmk_ψnl*params.G_lag[m,n,1]
-                    dρvdη +=  ψmk_dψnl*params.G_lag[m,n,1]
+                    dρvdξ += dψmk_ψnl*params.fluxes_lag.G_lag[m,n,1]
+                    dρvdη +=  ψmk_dψnl*params.fluxes_lag.G_lag[m,n,1]
                     
-                    dudξ += dψmk_ψnl*params.uprimitive_lag[m,n,2]
-                    dudη +=  ψmk_dψnl*params.uprimitive_lag[m,n,2]
+                    dudξ += dψmk_ψnl*params.fluxes_lag.uprimitive_lag[m,n,2]
+                    dudη +=  ψmk_dψnl*params.fluxes_lag.uprimitive_lag[m,n,2]
 
-                    dvdξ += dψmk_ψnl*params.uprimitive_lag[m,n,3]
-                    dvdη +=  ψmk_dψnl*params.uprimitive_lag[m,n,3]
+                    dvdξ += dψmk_ψnl*params.fluxes_lag.uprimitive_lag[m,n,3]
+                    dvdη +=  ψmk_dψnl*params.fluxes_lag.uprimitive_lag[m,n,3]
                     
-                    dθdξ += dψmk_ψnl*params.uprimitive_lag[m,n,4]
-                    dθdη +=  ψmk_dψnl*params.uprimitive_lag[m,n,4]
+                    dθdξ += dψmk_ψnl*params.fluxes_lag.uprimitive_lag[m,n,4]
+                    dθdη +=  ψmk_dψnl*params.fluxes_lag.uprimitive_lag[m,n,4]
 
-                    dpdξ += dψmk_ψnl*params.uprimitive_lag[m,n,params.neqs+1]
-                    dpdη +=  ψmk_dψnl*params.uprimitive_lag[m,n,params.neqs+1]
+                    dpdξ += dψmk_ψnl*params.fluxes_lag.uprimitive_lag[m,n,params.neqs+1]
+                    dpdη +=  ψmk_dψnl*params.fluxes_lag.uprimitive_lag[m,n,params.neqs+1]
 
-                    ρkl += ψmk*ψnl*params.uprimitive_lag[m,n,1]
-                    ukl += ψmk*ψnl*params.uprimitive_lag[m,n,2]
-                    vkl += ψmk*ψnl*params.uprimitive_lag[m,n,3]
-                    Skl += ψmk*ψnl*params.S_lag[m,n,3]
+                    ρkl += ψmk*ψnl*params.fluxes_lag.uprimitive_lag[m,n,1]
+                    ukl += ψmk*ψnl*params.fluxes_lag.uprimitive_lag[m,n,2]
+                    vkl += ψmk*ψnl*params.fluxes_lag.uprimitive_lag[m,n,3]
+                    Skl += ψmk*ψnl*params.fluxes_lag.S_lag[m,n,3]
                 end
             end
 
@@ -513,11 +495,11 @@ function _expansion_inviscid_laguerre!(params, iel, ::NCL, QT::Exact, SD::NSD_2D
 
                     ψikψjl = basis1.ψ[i,k]*basis2.ψ[j,l]
                     
-                    params.rhs_el_lag[iel,i,j,1] -= ψikψjl*ωJac*(dρudx + dρvdy)
+                    params.rhs_lag.rhs_el_lag[iel,i,j,1] -= ψikψjl*ωJac*(dρudx + dρvdy)
                     
-                    params.rhs_el_lag[iel,i,j,2] -= ψikψjl*ωJac*(ukl*dudx + vkl*dudy + dpdx/ρkl)
-                    params.rhs_el_lag[iel,i,j,3] -= ψikψjl*ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl - Skl)
-                    params.rhs_el_lag[iel,i,j,4] -= ψikψjl*ωJac*(ukl*dθdx + vkl*dθdy)
+                    params.rhs_lag.rhs_el_lag[iel,i,j,2] -= ψikψjl*ωJac*(ukl*dudx + vkl*dudy + dpdx/ρkl)
+                    params.rhs_lag.rhs_el_lag[iel,i,j,3] -= ψikψjl*ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl - Skl)
+                    params.rhs_lag.rhs_el_lag[iel,i,j,4] -= ψikψjl*ωJac*(ukl*dθdx + vkl*dθdy)
                 end
             end
             

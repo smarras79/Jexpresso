@@ -1,11 +1,13 @@
+using BenchmarkTools
+
 Base.@kwdef mutable struct St_a{TFloat <: AbstractFloat}
-    x::Array{TFloat} = zeros(TFloat, 0)
+    x::Array{TFloat, 4} = zeros(TFloat, 0)
 end
 
 
 function allocate_arrays(nelem, ngl, TFloat; neqs=1)
     
-    a = St_a{TFloat}(x = zeros(nelem, ngl, ngl, ngl))
+    a = St_a{TFloat}(x = zeros(TFloat, nelem, ngl, ngl, ngl))
 
     return a
 end
