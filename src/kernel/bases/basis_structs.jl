@@ -796,7 +796,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
         gr.ω .= ω
     else
         KernelAbstractions.copyto!(backend, gr.ξ, Float32.(ξ))
-        KernelAbstractions.copyto!(backend, gr.ω, Float32.(ξ))
+        KernelAbstractions.copyto!(backend, gr.ω, Float32.(ω))
     end
     #@info gr.ξ
     #@info gr.ω
@@ -812,7 +812,7 @@ function LagrangeLaguerreBasis(ξ, ξq, beta, TFloat, backend)
     N = nbasis -1
     Np1 = N+1
     
-    psi_1 = zeros(TFloat, nbasis, nbasis)
+    psi_1 = ones(TFloat, nbasis, nbasis)
     dpsi_1 = zeros(TFloat, nbasis, nbasis)
     ξq_1 = zeros(TFloat, nbasis)
     ξ_1 = zeros(TFloat, nbasis)
@@ -839,7 +839,6 @@ function LagrangeLaguerreBasis(ξ, ξq, beta, TFloat, backend)
         KernelAbstractions.copyto!(backend,psi,psi_1)
         KernelAbstractions.copyto!(backend,dpsi,dpsi_1)
     end
-
     return (psi,dpsi)
 
 
