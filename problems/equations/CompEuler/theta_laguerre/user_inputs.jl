@@ -12,7 +12,7 @@ function user_inputs()
         # :ndiagnostics_outputs => 6,
         :lsource              => true, 
         #:CL                   => NCL(), #CL() is defaults
-        :backend              => CUDABackend(),
+        #:backend              => MetalBackend(),
         # :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

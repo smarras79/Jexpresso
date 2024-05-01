@@ -290,8 +290,8 @@ end
 
 function build_gr!(Laguerre::St_Laguerre,gr::St_gr,nop,beta, backend)
     size::Int8=nop+1
-    gr.ξ = KernelAbstractions.zeros(backend, TFloat, size)
-    gr.ω = KernelAbstractions.zeros(backend, TFloat, size)
+    gr.ξ = KernelAbstractions.zeros(backend, TFloat, Int64(size))
+    gr.ω = KernelAbstractions.zeros(backend, TFloat, Int64(size))
 
     #LG nodes
     GaussRadauLaguerreNodesAndWeights!(Laguerre,gr,nop,beta, backend)
@@ -798,6 +798,8 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
         KernelAbstractions.copyto!(backend, gr.ξ, Float32.(ξ))
         KernelAbstractions.copyto!(backend, gr.ω, Float32.(ξ))
     end
+    #@info gr.ξ
+    #@info gr.ω
     #gr.ω[1] = 1-sum(gr.ω[2:nop+1])
     #@info gr.ω
     #if(scale)
