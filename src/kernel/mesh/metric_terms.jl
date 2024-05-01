@@ -394,7 +394,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             KernelAbstractions.copyto!(backend, y, mesh.y)
             KernelAbstractions.copyto!(backend, connijk_lag, mesh.connijk_lag)
             k = build_2D_gpu_metrics_lag!(backend)
-            k(metrics.dxdξ, metrics.dxdη, metrics.dydξ, metrics.dydη, ψ, dψ, ψ1, dψ1, x, y, connijk_lag, mesh.ngl, mesh.ngr, inputs[:xfac_laguerre], inputs[:yfac_laguerre];
+            k(metrics.dxdξ, metrics.dxdη, metrics.dydξ, metrics.dydη, ψ, dψ, ψ1, dψ1, x, y, connijk_lag, mesh.ngl, mesh.ngr, TFloat(inputs[:xfac_laguerre]), TFloat(inputs[:yfac_laguerre]);
               ndrange = (mesh.nelem_semi_inf * mesh.ngl, mesh.ngr),
               workgroupsize = (mesh.ngl, mesh.ngr))
             metrics.Je .= metrics.dxdξ.*metrics.dydη .- metrics.dydξ .* metrics.dxdη

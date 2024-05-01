@@ -896,9 +896,9 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     if (ldss_laplace) lbuild_laplace_matrix = true end
 
     if typeof(SD) == NSD_1D
-        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, mesh.nelem)
+        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, Int64(mesh.nelem))
     elseif typeof(SD) == NSD_2D
-        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, (N+1)^2, mesh.nelem)
+        Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, (N+1)^2, Int64(mesh.nelem))
     end
     if (backend == CPU() || SD == NSD_1D())
         build_mass_matrix!(Me, SD, QT, basis[1].ψ, ω[1], mesh, metrics[1], N, Q, TFloat)
@@ -911,16 +911,16 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
 
 
     if typeof(SD) == NSD_1D
-      M_lag = KernelAbstractions.zeros(backend, TFloat, mesh.ngr*mesh.ngr, mesh.nelem_semi_inf)
+        M_lag = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngr*mesh.ngr), Int64(mesh.nelem_semi_inf))
     elseif typeof(SD) == NSD_2D
-      M_lag = KernelAbstractions.zeros(backend, TFloat, mesh.ngl*mesh.ngr, mesh.ngl*mesh.ngr, mesh.nelem_semi_inf)
+        M_lag = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngl*mesh.ngr), Int64(mesh.ngl*mesh.ngr), Int64(mesh.nelem_semi_inf))
     end
     if (QT == Exact() && inputs[:llump] == false)
-        M    = KernelAbstractions.zeros(backend, TFloat, mesh.npoin, mesh.npoin)
-        Minv = KernelAbstractions.zeros(backend, TFloat, mesh.npoin, mesh.npoin)
+        M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+        Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
     else
-        M    = KernelAbstractions.zeros(backend, TFloat, mesh.npoin)
-        Minv = KernelAbstractions.zeros(backend, TFloat, mesh.npoin)
+        M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+        Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     end
     if (backend == CPU())
         if typeof(SD) == NSD_1D
@@ -939,7 +939,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
             k1 = DSS_Mass_gpu_2D!(backend,(N+1,N+1))
             k1(M,Me,connijk,mesh.nelem, mesh.npoin, N;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl))
 
-            connijk_lag = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem_semi_inf), mesh.ngl, mesh.ngr)
+            connijk_lag = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr))
             KernelAbstractions.copyto!(backend, connijk_lag, mesh.connijk_lag)
             k2 = DSS_mass_Laguerre_gpu_2D!(backend)
             k2(M, M_lag, connijk_lag, mesh.ngl, mesh.ngr;ndrange = (mesh.nelem_semi_inf*mesh.ngl,mesh.ngr), workgroupsize = (mesh.ngl,mesh.ngr))
@@ -948,7 +948,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
 
     mass_inverse!(Minv, M, QT)
 
-
+   @info maximum(Minv), maximum(M_lag), maximum(M)
    # @info maximum(M),minimum(M),maximum(Minv),minimum(Minv)
     Le = KernelAbstractions.zeros(backend, TFloat, 1, 1)
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
