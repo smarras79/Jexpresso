@@ -261,7 +261,7 @@ function uToPrimitives!(neqs, uprimitive, u, uprimitivee, mesh, δtotal_energy, 
 end
 
 function rhs!(du, u, params, time)
-    
+    @info time    
     backend = params.inputs[:backend]
     if (backend == CPU())
         build_rhs!(@view(params.RHS[:,:]), u, params, time)
