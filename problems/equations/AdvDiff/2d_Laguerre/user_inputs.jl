@@ -9,6 +9,7 @@ function user_inputs()
         :ndiagnostics_outputs => 10,
         :output_dir          => "./output/",
         :case                 => "rtb",
+        :backend              => CUDABackend(),
         #:CL                   => NCL(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
@@ -16,7 +17,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
-        :nop_laguerre        => 40,     # Laguerre polynomial Order
+        :nop_laguerre        => 16,     # Laguerre polynomial Order
         :xfac_laguerre       => 0.0,
         :yfac_laguerre       => 0.07,
         :luser_bc            => true,

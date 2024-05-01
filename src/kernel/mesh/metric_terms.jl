@@ -344,49 +344,87 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     ψ1  = basisGR.ψ
     dψ1 = basisGR.dψ
     if ("Laguerre" in mesh.bdy_edge_type)
-        for iel=1:mesh.nelem_semi_inf
-            for j=1:mesh.ngr
-                for i =1:mesh.ngl
-                    ip = mesh.connijk_lag[iel,i,j]
-                    xij = mesh.x[ip]
-                    yij = mesh.y[ip]
-                    for l=1:mesh.ngr
-                        for k=1:mesh.ngl
-                            if (inputs[:xfac_laguerre] == 0.0)
-                                metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij 
-                                metrics.dxdη[iel, k, l] +=  ψ[i,k]*inputs[:xfac_laguerre]/mesh.ngr#*dψ1[j,l]*xij
-                                metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
-                                metrics.dydη[iel, k, l] +=  ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
-                            else
-                                metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij
-                                metrics.dxdη[iel, k, l] +=  ψ[i,k]*inputs[:xfac_laguerre]/mesh.ngr#*dψ1[j,l]*xij
-                                metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
-                                metrics.dydη[iel, k, l] +=  ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
-                            end   
+        if (backend == CPU())
+            for iel=1:mesh.nelem_semi_inf
+                for j=1:mesh.ngr
+                    for i =1:mesh.ngl
+                        ip = mesh.connijk_lag[iel,i,j]
+                        xij = mesh.x[ip]
+                        yij = mesh.y[ip]
+                        for l=1:mesh.ngr
+                            for k=1:mesh.ngl
+                                if (inputs[:xfac_laguerre] == 0.0)
+                                    metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij 
+                                    metrics.dxdη[iel, k, l] +=  ψ[i,k]*inputs[:xfac_laguerre]/mesh.ngr#*dψ1[j,l]*xij
+                                    metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
+                                    metrics.dydη[iel, k, l] +=  ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
+                                else
+                                    metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij
+                                    metrics.dxdη[iel, k, l] +=  ψ[i,k]*inputs[:xfac_laguerre]/mesh.ngr#*dψ1[j,l]*xij
+                                    metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
+                                    metrics.dydη[iel, k, l] +=  ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
+                                end   
+                            end
                         end
+                        #@info metrics.dxdξ[iel, k, l],metrics.dxdη[iel, k, l],metrics.dydξ[iel, k, l],metrics.dydη[iel, k, l],xij,yij
                     end
-                    #@info metrics.dxdξ[iel, k, l],metrics.dxdη[iel, k, l],metrics.dydξ[iel, k, l],metrics.dydη[iel, k, l],xij,yij
                 end
-            end
-            for l = 1:mesh.ngr
-                for k = 1:mesh.ngl
-                    ip = mesh.connijk_lag[iel,k,l]
-                    #xij = mesh.x[ip]
-                    #yij = mesh.y[ip]
-                    #@info metrics.dxdξ[iel, k, l],metrics.dydη[iel, k, l], metrics.dydξ[iel, k, l],metrics.dxdη[iel, k, l]
-                    metrics.Je[iel, k, l] = metrics.dxdξ[iel, k, l]*metrics.dydη[iel, k, l] - metrics.dydξ[iel, k, l]*metrics.dxdη[iel, k, l]
-                    metrics.dξdx[iel, k, l] =  metrics.dydη[iel, k, l]/metrics.Je[iel, k, l]
-                    metrics.dξdy[iel, k, l] = -metrics.dxdη[iel, k, l]/metrics.Je[iel, k, l]
-                    metrics.dηdx[iel, k, l] = -metrics.dydξ[iel, k, l]/metrics.Je[iel, k, l]
-                    metrics.dηdy[iel, k, l] =  metrics.dxdξ[iel, k, l]/metrics.Je[iel, k, l]
-       
+                for l = 1:mesh.ngr
+                    for k = 1:mesh.ngl
+                        ip = mesh.connijk_lag[iel,k,l]
+                        #xij = mesh.x[ip]
+                        #yij = mesh.y[ip]
+                        #@info metrics.dxdξ[iel, k, l],metrics.dydη[iel, k, l], metrics.dydξ[iel, k, l],metrics.dxdη[iel, k, l]
+                        metrics.Je[iel, k, l] = metrics.dxdξ[iel, k, l]*metrics.dydη[iel, k, l] - metrics.dydξ[iel, k, l]*metrics.dxdη[iel, k, l]
+                        metrics.dξdx[iel, k, l] =  metrics.dydη[iel, k, l]/metrics.Je[iel, k, l]
+                        metrics.dξdy[iel, k, l] = -metrics.dxdη[iel, k, l]/metrics.Je[iel, k, l]
+                        metrics.dηdx[iel, k, l] = -metrics.dydξ[iel, k, l]/metrics.Je[iel, k, l]
+                        metrics.dηdy[iel, k, l] =  metrics.dxdξ[iel, k, l]/metrics.Je[iel, k, l]
+        
+                    end
                 end
+            #show(stdout, "text/plain", metrics.Je[:,:,iel])
             end
-        #show(stdout, "text/plain", metrics.Je[:,:,iel])
+        else
+            x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
+            y = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
+            connijk_lag = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem_semi_inf),mesh.ngl,mesh.ngr)
+
+            KernelAbstractions.copyto!(backend, x, mesh.x)
+            KernelAbstractions.copyto!(backend, y, mesh.y)
+            KernelAbstractions.copyto!(backend, connijk_lag, mesh.connijk_lag)
+            k = build_2D_gpu_metrics_lag!(backend)
+            k(metrics.dxdξ, metrics.dxdη, metrics.dydξ, metrics.dydη, ψ, dψ, ψ1, dψ1, x, y, connijk_lag, mesh.ngl, mesh.ngr, inputs[:xfac_laguerre], inputs[:yfac_laguerre];
+              ndrange = (mesh.nelem_semi_inf * mesh.ngl, mesh.ngr),
+              workgroupsize = (mesh.ngl, mesh.ngr))
+            metrics.Je .= metrics.dxdξ.*metrics.dydη .- metrics.dydξ .* metrics.dxdη
+            metrics.dξdx .= metrics.dydη ./ metrics.Je
+            metrics.dξdy .= -metrics.dxdη ./ metrics.Je
+            metrics.dηdx .= -metrics.dydξ ./ metrics.Je
+            metrics.dηdy .= metrics.dxdξ ./ metrics.Je
         end
     end
 
     return metrics
+end
+
+@kernel function build_2D_gpu_metrics_lag!(dxdξ, dxdη, dydξ, dydη, ψ, dψ, ψ1, dψ1, x, y, connijk_lag, ngl, ngr, xfac_lag, yfac_lag)
+    s = Int32(@groupsize()[1])
+    iel = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    i = il[1]
+    j = il[2]
+    ip = connijk_lag[iel,i,j]
+    xij = x[ip]
+    yij = y[ip]
+    for l=1:ngr
+        for k=1:ngl
+            KernelAbstractions.@atomic dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij 
+            KernelAbstractions.@atomic dxdη[iel, k, l] +=  ψ[i,k]*xfac_lag/ngr#*dψ1[j,l]*xij
+            KernelAbstractions.@atomic dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
+            KernelAbstractions.@atomic dydη[iel, k, l] +=  ψ[i,k]*yfac_lag/ngr#*dψ1[j,l]*yij
+        end   
+    end
 end
 
 function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)

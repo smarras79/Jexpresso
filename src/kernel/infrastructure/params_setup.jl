@@ -117,6 +117,8 @@ function params_setup(sem,
             fqf_lag = KernelAbstractions.zeros(backend, T,qp.neqs,Int64(sem.mesh.ngl),Int64(sem.mesh.ngr))
             b_lag = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem_semi_inf), Int64(sem.mesh.ngl), Int64(sem.mesh.ngr), qp.neqs)
             B_lag = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin), qp.neqs)
+            flux_lag_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem_semi_inf),Int64(sem.mesh.ngl), Int64(sem.mesh.ngr), 2*qp.neqs)
+            source_lag_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem_semi_inf),Int64(sem.mesh.ngl), Int64(sem.mesh.ngr), qp.neqs)
         elseif  sem.mesh.nsd == 3
           error(" src/kernel/infrastructore/params_setup.jl: 3D Laguerre arrays not coded yet!")
         end
@@ -144,6 +146,8 @@ function params_setup(sem,
         fqf_lag = KernelAbstractions.zeros(backend, T, qp.neqs, Int64(sem.mesh.ngr))
         b_lag = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem_semi_inf), Int64(sem.mesh.ngr), qp.neqs)
         B_lag = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin), qp.neqs)
+        flux_lag_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem_semi_inf), Int64(sem.mesh.ngr), 2*qp.neqs)
+        source_lag_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem_semi_inf), Int64(sem.mesh.ngr), qp.neqs)
     end
 
     #-----------------------------------------------------------------
@@ -178,7 +182,7 @@ function params_setup(sem,
                   uprimitive,
                   flux_gpu, source_gpu, qbdy_gpu,
                   q_t, q_ti, fqf, b, B,
-                  q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag,
+                  q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag, flux_lag_gpu, source_lag_gpu,
                   RHS, RHS_visc,
                   F_lag, G_lag, S_lag, 
                   uaux_el_lag,

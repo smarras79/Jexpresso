@@ -524,17 +524,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
                         ip = mesh.poin_in_bdy_edge[iedge,i]
                         mesh.connijk_lag[e_iter,i,1] = ip
                         for j=2:mesh.ngr
-			    if (inputs[:xscale]==1.0)
+			                if (inputs[:xscale]==1.0)
                                 x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
                             else
                                 x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx/(inputs[:xscale] * 0.5)
-			    end
+			                end
                             if (inputs[:yscale] == 1.0)
-			        y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
-			    else 
+			                    y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+			                else 
                                 y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory/(inputs[:yscale] * 0.5)
                             end
-			    matched = 0
+			                matched = 0
                             if (i == mesh.ngl || i == 1)
                                 iter_end = 0
                                 while (matched == 0 && iter_end == 0)

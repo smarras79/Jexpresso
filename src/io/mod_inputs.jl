@@ -21,7 +21,7 @@ function mod_inputs_user_inputs!(inputs)
       inputs[:backend] = CPU()
     end
    
-    if(inputs[:backend] == MetalBackend())
+    if(inputs[:backend] == MetalBackend() || inputs[:backend] == CUDABackend())
         global TInt = Int32
         global TFloat = Float32
         global cpu = false

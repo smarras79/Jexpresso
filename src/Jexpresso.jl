@@ -7,6 +7,7 @@ If you are interested in contributing, please get in touch.
 module Jexpresso
 
 using Metal
+using CUDA
 using KernelAbstractions
 using Revise
 using BenchmarkTools
@@ -75,6 +76,8 @@ include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
+
+include(joinpath( "kernel", "operators", "rhs_laguerre_gpu.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 

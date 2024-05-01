@@ -69,3 +69,14 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     flux = zeros(size(q,2),1)
     return flux
 end
+
+function user_bc_dirichlet(q,x,y,t,nx,ny,qbdy)
+    qnl = nx*(q[2]) + ny*(q[3])
+    u = q[2] - qnl*nx
+    v = q[3] - qnl*ny
+
+    #return Float32(q[1]), Float32(0.0), Float32(0.0), Float32(q[4])
+    # return Float32(qbdy[1]), Float32(u), Float32(v), Float32(qbdy[4])
+    return Float32(qbdy[1]), Float32(u), Float32(v), Float32(qbdy[4])
+    #return Float32(qbdy[1]), Float32(0.0), Float32(0.0), Float32(qbdy[4])
+end

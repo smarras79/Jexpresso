@@ -84,9 +84,9 @@ mutable struct St_cgl{TFloat} <:AbstractIntegrationPointAndWeights
     ω::Array{TFloat}
 end
 
-mutable struct St_gr{TFloat} <:AbstractIntegrationPointAndWeights
-    ξ::Array{TFloat}
-    ω::Array{TFloat}
+Base.@kwdef mutable struct St_gr{TFloat, backend} <:AbstractIntegrationPointAndWeights
+    ξ = KernelAbstractions.zeros(backend, TFloat, 0)
+    ω = KernelAbstractions.zeros(backend, TFloat, 0)
 end
 
 
@@ -124,9 +124,9 @@ function basis_structs_ξ_ω!(ξωtype::LGL, nop, backend)
     return lgl
 end
 
-function basis_structs_ξ_ω!(ξωtype::LGR, nop,beta, backend)
+function basis_structs_ξ_ω!(ξωtype::LGR, nop, beta, backend)
 
-    lgr = St_gr{TFloat}(KernelAbstractions.zeros(backend, TFloat, nop+1),
+    lgr = St_gr{TFloat, backend}(KernelAbstractions.zeros(backend, TFloat, nop+1),
                          KernelAbstractions.zeros(backend, TFloat, nop+1))
 
     build_Integration_points!(lgr, nop, beta, backend)
@@ -739,7 +739,7 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     xi = eigen(J)
     ξ = Float128.(xi.values)
     ngr = length(gr.ξ)
-    thresh = 1e-8
+    thresh = 1e-5
     x0 = 0.0
     x1 = 0.0
     for k=1:ngr
@@ -747,12 +747,12 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
       diff1 = 1.0
       stuck = 1.0
       while(diff1 > thresh)
-          ScaledLaguerreAndDerivative!(nop+1, Laguerre, beta, backend)
+          ScaledLaguerreAndDerivative!(nop+1,Laguerre,beta,backend)
           L1 = Laguerre.Laguerre
           L3 = Laguerre.dLaguerre
           L4 = Laguerre.d2Laguerre
           L5 = Laguerre.d3Laguerre
-          ScaledLaguerreAndDerivative!(nop, Laguerre, beta, backend)
+          ScaledLaguerreAndDerivative!(nop,Laguerre,beta,backend)
           L2 = Laguerre.Laguerre
           #x1 = x0 - L1(x0)/L3(x0)#+ (L1(x0) - L2(x0))/L2(x0)
           #x1 = x0 -  L3(x0)/L4(x0) 
@@ -795,8 +795,8 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
         gr.ξ .= ξ
         gr.ω .= ω
     else
-        KernelAbstractions.copyto!(backend, gr.ξ, ξ)
-        KernelAbstractions.copyto!(backend, gr.ω, ω)
+        KernelAbstractions.copyto!(backend, gr.ξ, Float32.(ξ))
+        KernelAbstractions.copyto!(backend, gr.ω, Float32.(ξ))
     end
     #gr.ω[1] = 1-sum(gr.ω[2:nop+1])
     #@info gr.ω
@@ -810,28 +810,43 @@ function LagrangeLaguerreBasis(ξ, ξq, beta, TFloat, backend)
     N = nbasis -1
     Np1 = N+1
     
+    psi_1 = zeros(TFloat, nbasis, nbasis)
+    dpsi_1 = zeros(TFloat, nbasis, nbasis)
+    ξq_1 = zeros(TFloat, nbasis)
+    ξ_1 = zeros(TFloat, nbasis)
     psi = KernelAbstractions.ones(backend,TFloat, nbasis,nbasis)
     dpsi = KernelAbstractions.zeros(backend, TFloat, nbasis,nbasis)
-    dpsi[1,1]=-beta*((N +1)./2.0)
-
+    KernelAbstractions.copyto!(CPU(), ξq_1, ξq)
+    KernelAbstractions.copyto!(CPU(), ξ_1, ξ)
+    
+    dpsi_1[1,1]=-beta*((N +1)./2.0)
     for i = 1:nbasis
-        xi = ξq[i]
+        xi = ξq_1[i]
         for j = 1:nbasis
-            xj = ξ[j]
+            xj = ξ_1[j]
             if(i != j)
-                psi[i,j] = 0.0
-                dpsi[j,i] = scaled_laguerre(xi,Np1,beta,backend)/(scaled_laguerre(xj,Np1,beta,backend)*(xi -xj));
+                psi_1[i,j] = 0.0
+                dpsi_1[j,i] = scaled_laguerre(xi,Np1,beta,backend)/(scaled_laguerre(xj,Np1,beta,backend)*(xi -xj));
             end
         end
     end
+    if (backend == CPU())
+        psi .= psi_1
+        dpsi .= dpsi_1
+    else
+        KernelAbstractions.copyto!(backend,psi,psi_1)
+        KernelAbstractions.copyto!(backend,dpsi,dpsi_1)
+    end
+
     return (psi,dpsi)
+
 
 end
 
 
 function scaled_laguerre(x,n,beta,backend)
     Laguerre = St_Laguerre(Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)))
-    ScaledLaguerreAndDerivative!(n,Laguerre,beta,backend)
+    ScaledLaguerreAndDerivative!(n,Laguerre,beta,CPU())
     #Lkx = Laguerre.Laguerre(x)
     Lkx = Real(Laguerre.Laguerre(x))
     y = exp(-(beta*x)/2)*Lkx#exp(-x)*Lkx
