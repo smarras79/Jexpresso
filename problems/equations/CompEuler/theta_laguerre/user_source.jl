@@ -83,3 +83,14 @@ function user_source!(S::SubArray{Float64},
     S[4] = 0.0
     
 end
+
+function user_source(q,x,y,PhysConst)
+
+
+    #
+    # S(q(x)) = -ρg
+    #
+    ρ  = q[1]
+
+    return Float32(0.0), Float32(0.0), Float32(-ρ*PhysConst.g), Float32(0.0)
+end

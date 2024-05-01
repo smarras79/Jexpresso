@@ -283,7 +283,9 @@ end
     @inbounds qbdy[iedge,ik,1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),x[ip],y[ip],t,nx[iedge,ik],ny[iedge,ik],@view(qbdy[iedge,ik,:]))
     for ieq =1:neq
         if !(qbdy[iedge,ik,ieq] == 1234567) && !(qbdy[iedge,ik,ieq] == uaux[ip,ieq])
-            @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
+            # if use the commented line in CUDA, somehow get errors
+            # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
+            @inbounds u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
         end
     end
 end

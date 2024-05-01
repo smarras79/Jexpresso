@@ -5,12 +5,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                 => 1000.0,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
+        :tinit                => 0.0,
         :Δt                   => 0.05,
         :ndiagnostics_outputs => 20,
         :case                 => "rtb",
+        # :ndiagnostics_outputs => 6,
         :lsource              => true, 
         #:CL                   => NCL(), #CL() is defaults
-        :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+        :backend              => CUDABackend(),
+        # :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -50,6 +53,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
+        :loverwrite_output   => true,
         :outformat           => "vtk",
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now

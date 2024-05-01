@@ -300,7 +300,7 @@ function _expansion_inviscid_laguerre!(u, neqs, ngl, ngr, dψ, dψ_lag, ω, ω_l
 
                 dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
                 
-		auxi = ωJac*((dFdx + dGdy) - S_lag[i,j,ieq])
+		        auxi = ωJac*((dFdx + dGdy) - S_lag[i,j,ieq])
                 rhs_el_lag[iel,i,j,ieq] -= auxi
             end
         end
