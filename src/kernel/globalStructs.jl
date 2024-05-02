@@ -2,7 +2,6 @@
 # Solution arrays
 #
 Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dim1}
-    
     qnp1::Array{T,dim1}       # qⁿ⁺¹
     qn::Array{T,dim1}         # qⁿ
     qq::Array{T,dim1}         # qⁿ
@@ -106,7 +105,7 @@ Base.@kwdef mutable struct St_fluxes{T <: AbstractFloat, dim1, dim2}
     G::Array{T,dim1}
     H::Array{T,dim1}
     S::Array{T,dim1}
-    uprimitive::Array{T, dim2} 
+    uprimitive::Array{T, dim2}
     
 end
 function St_fluxes(T::Type, SD::AbstractSpaceDimensions, dim1::Int, dim2::Int, dims1, dims2)
@@ -371,7 +370,7 @@ function allocate_filter_lag(SD::NSD_1D, nelem_semi_inf, npoin, ngl, ngr, T; neq
         dims3 = (1, 1, 1)
         dims4 = (1, 1)
     end
-
+    
     filter_lag = St_filter_lag(T, SD,
                                length(dims1), length(dims2), length(dims3), length(dims4),
                                dims1, dims2, dims3, dims4)
