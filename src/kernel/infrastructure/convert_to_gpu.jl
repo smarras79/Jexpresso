@@ -20,6 +20,13 @@ function convert_mesh_arrays!(mesh, backend)
     mesh.connijk = KernelAbstractions.allocate(backend, TInt, mesh.nelem, mesh.ngl, mesh.ngl)
     mesh.connijk .= aux
 
+    if ("Laguerre" in mesh.bdy_edge_type)
+        aux = KernelAbstractions.allocate(backend, TInt, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr)
+        KernelAbstractions.copyto!(backend, aux, mesh.connijk_lag)
+        mesh.connijk_lag = KernelAbstractions.allocate(backend, TInt, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr)
+        mesh.connijk_lag .= aux
+    end
+
     aux = KernelAbstractions.allocate(backend, TInt, mesh.nedges_bdy, mesh.ngl)
     KernelAbstractions.copyto!(backend, aux, mesh.poin_in_bdy_edge)
     mesh.poin_in_bdy_edge = KernelAbstractions.allocate(backend, TInt, mesh.nedges_bdy, mesh.ngl)
@@ -75,6 +82,13 @@ function convert_mesh_arrays_to_cpu!(mesh)
     KernelAbstractions.copyto!(CPU(), aux, mesh.connijk)
     mesh.connijk = KernelAbstractions.allocate(CPU(), TInt, mesh.nelem, mesh.ngl, mesh.ngl)
     mesh.connijk .= aux
+
+    if ("Laguerre" in mesh.bdy_edge_type)
+        aux = KernelAbstractions.allocate(CPU(), TInt, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr)
+        KernelAbstractions.copyto!(CPU(), aux, mesh.connijk_lag)
+        mesh.connijk_lag = KernelAbstractions.allocate(CPU(), TInt, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr)
+        mesh.connijk_lag .= aux
+    end
 
     aux = KernelAbstractions.allocate(CPU(), TInt, mesh.nedges_bdy, mesh.ngl)
     KernelAbstractions.copyto!(CPU(), aux, mesh.poin_in_bdy_edge)
