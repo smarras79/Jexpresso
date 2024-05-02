@@ -1,16 +1,3 @@
-# Documentation
-
-```@meta
-CurrentModule = Jexpresso
-DocTestSetup = quote
-    using Jexpresso
-end
-```
-
-```@autodocs
-Modules = [Jexpresso]
-```
-
 # Jexpresso.jl
 
 Documentation of `Jexpresso.jl`.
@@ -18,9 +5,22 @@ Documentation of `Jexpresso.jl`.
 !!! note
 
      This documentation is and will always be WIP!
-          A research software for the numerical solution of a system of an arbitrary number of conservation laws using continuous spectral elements. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
+          
+## Introduction
 
-# Equations:
+Jexpresso is a research software for the numerical solution of a system of arbitrary conservation laws in 1D, 2D, 3D using, first and foremost, continuous spectral elements. Nevertheless, the code is built so that any other numerical method can be added. For example, the copde already contains a 1D finite difference implementation.
+
+Jexpresso is written in [Julia programming language](https://julialang.org/) and was thought to be modular and allow any user to add any equations in any dimensions without knowing anything about numerical methods. 
+
+## Do I need to know Julia to use Jexpresso?
+Yes and no. It depends how much you are interested in adding your own equation set in the code rather than using it as a black box. 
+
+The following are useful resources about Julia:
+* Julia webpage [docs.julialang.org](https://docs.julialang.org/)
+* Official list of learning resources [julialang.org/learning](https://julialang.org/learning/)
+
+
+## Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
 
 $$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2{\bf q} + {\bf S}({\bf q}) + ~{\rm b.c.}$$
@@ -31,7 +31,6 @@ and are taken to be zero vectors of the appropriate size when not explicitly sta
 The Julia package [DifferentialEquations.jl](https://docs.sciml.ai/DiffEqDocs/stable/) is used for time discretization and stepping.
 
 In order, we provide tests and results for the following equations:
-
 
 1. 1D wave equation:
    
@@ -121,6 +120,8 @@ c1_{xx} + c1_{zz}\\
 cN_{xx} + cN_{zz}
 \end{bmatrix}.$$
 
+The equation of state for a perfect gas is used to close the system.
+
 
 If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
@@ -151,6 +152,19 @@ julia> include("./src/Jexpresso.jl")
 
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
+
+## Tutorials
+
+The following tutorials will introduce you to the functionality of
+Jexpresso.jl.
+
+```@contents
+Pages = [
+    "tutorials/theta.md",
+    "tutorials/theta.md",
+    ]
+Depth = 2
+```
 
 Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
