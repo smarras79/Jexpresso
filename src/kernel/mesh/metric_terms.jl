@@ -1,31 +1,28 @@
-
 Base.@kwdef mutable struct St_metrics{TFloat,backend}
 
+    dxdξ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dxdη = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dxdζ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
     
-    
-    dxdξ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dxdη = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dxdζ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    
-    dydξ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dydη = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dydζ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dydξ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dydη = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dydζ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
 
-    dzdξ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dzdη = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dzdζ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dzdξ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dzdη = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dzdζ = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
     
-    dξdx = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dξdy = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dξdz = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dξdx = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dξdy = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dξdz = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
     
-    dηdx = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dηdy = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dηdz = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dηdx = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dηdy = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dηdz = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
 
-    dζdx = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dζdy = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    dζdz = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
+    dζdx = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dζdy = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    dζdz = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
     #
     # Contravariant arrays
     #
@@ -37,21 +34,20 @@ Base.@kwdef mutable struct St_metrics{TFloat,backend}
     nx = KernelAbstractions.zeros(backend,TFloat, 0, 0)
     ny = KernelAbstractions.zeros(backend,TFloat, 0, 0)
     nz = KernelAbstractions.zeros(backend,TFloat, 0, 0)
-    Je = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
-    Jef = KernelAbstractions.zeros(backend,TFloat, 0, 0)
+    Je = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0, 0)
+    Jef = KernelAbstractions.zeros(backend,TFloat, 0, 0, 0)
 end
 
 function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
     
-    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
-                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
-                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1),
+    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
+                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
+                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1, 1),
                                     nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), 1))
-    @show typeof(metrics.Je)
     for iel = 1:mesh.nelem
         for i = 1:N+1
             for k = 1:Q+1
-                metrics.dxdξ[iel, k,1]  = mesh.Δx[iel]/2
+                metrics.dxdξ[iel, k, 1]  = mesh.Δx[iel]/2
                 metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
                 metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
             end
@@ -63,9 +59,9 @@ end
 
 function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, inputs,T; backend = CPU())
    
-    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
-                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
-                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1),
+    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1, 1), #∂x/∂ξ[1:Nq, 1:nelem]
+                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
+                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1, 1),
                                     nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), 1))
 
     dψ = basis.dψ
@@ -91,30 +87,30 @@ end
 
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
     
-    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                                    dxdη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
-                                    dydξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                                    dydη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
-                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
-                                    dηdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
-                                    dξdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
-                                    dηdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
-                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1),
-                                    Jef  = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), Q+1),
+    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, 1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                                    dxdη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, 1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                                    dydξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, 1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                                    dydη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, 1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
+                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, 1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                                    dηdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, 1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                                    dξdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, 1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                                    dηdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, 1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
+                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, 1),
+                                    Jef  = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), Q+1, 1),
                                     nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), Q+1),
                                     ny   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), Q+1)) #   Je[1:Nq, 1:Nq, 1:nelem]
     
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
-    if (backend == CPU())    
+    if (backend == CPU())
         for iel = 1:mesh.nelem
             for j = 1:N+1
                 for i = 1:N+1
                     ip = mesh.connijk[iel,i,j]
-                
-                    xij = mesh.x[ip]; yij = mesh.y[ip]
-                    for l = 1:Q+1
-                        for k = 1:Q+1
+                    xij = mesh.x[ip]
+                    yij = mesh.y[ip]
+                    for l=1:Q+1
+                        for k=1:Q+1
                         
                             metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ[j,l] * xij
                             metrics.dxdη[iel, k, l] += ψ[i,k]*dψ[j,l] * xij
@@ -152,6 +148,27 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             end
         #show(stdout, "text/plain", metrics.Je[iel, :,:])
         end
+        nbdy_edges = size(mesh.poin_in_bdy_edge,1)
+        for iedge =1:nbdy_edges
+            for k=1:N+1
+                ip = mesh.poin_in_bdy_edge[iedge,k]
+                if (k < N+1)
+                    ip1 = mesh.poin_in_bdy_edge[iedge,k+1]
+                else
+                    ip1 = mesh.poin_in_bdy_edge[iedge,k-1]
+                end
+                x1 = mesh.x[ip]
+                x2 = mesh.x[ip1]
+                y1 = mesh.y[ip]
+                y2 = mesh.y[ip1]
+                mag = sqrt((x1-x2)^2+(y1-y2)^2)
+                metrics.Jef[iedge, k] = mag/2
+                comp1 = (x1-x2)/mag
+                comp2 = (y1-y2)/mag
+                metrics.nx[iedge, k] = comp2
+                metrics.ny[iedge, k] = -comp1
+            end
+        end
     else
         x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         y = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
@@ -160,37 +177,19 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         KernelAbstractions.copyto!(backend, y, mesh.y)
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         k = build_2D_gpu_metrics!(backend,(N+1,N+1))
-        k(metrics.dxdξ,metrics.dξdy,metrics.dydξ,metrics.dydη, ψ, dψ, x, y, connijk, Q; ndrange = (mesh.nelem*(N+1),mesh.ngl), workgroupsize = (N+1,N+1))
+        @info typeof(metrics.dxdξ), typeof(metrics.dydξ)
+        k(metrics.dxdξ,metrics.dxdη,metrics.dydξ,metrics.dydη, ψ, dψ, x, y, connijk, Q; ndrange = (mesh.nelem*(N+1),mesh.ngl), workgroupsize = (N+1,N+1))
         metrics.Je .= metrics.dxdξ.*metrics.dydη .- metrics.dydξ .* metrics.dxdη
         metrics.dξdx .= metrics.dydη ./ metrics.Je
         metrics.dξdy .= -metrics.dxdη ./ metrics.Je
         metrics.dηdx .= -metrics.dydξ ./ metrics.Je
         metrics.dηdy .= metrics.dxdξ ./ metrics.Je
+        nbdy_edges = size(mesh.poin_in_bdy_edge,1)
+        poin_in_bdy_edge = KernelAbstractions.allocate(backend, TInt, Int64(nbdy_edges), N+1)
+        KernelAbstractions.copyto!(backend, poin_in_bdy_edge,mesh.poin_in_bdy_edge)
+        k = build_2D_gpu_bdy_metrics!(backend)
+        k(metrics.Jef, metrics.nx, metrics.ny, x, y, poin_in_bdy_edge, N; ndrange = (nbdy_edges*(N+1)), workgroupsize = (N+1))
     end
-    ##### CHECK BELOW WITH YASSINE WHETHER THIS
-    ##### SHOULD BE done on the quadrature or grid points
-    nbdy_edges = size(mesh.poin_in_bdy_edge,1)
-    for iedge =1:nbdy_edges
-        for k=1:N+1
-            ip = mesh.poin_in_bdy_edge[iedge,k]
-            if (k < N+1)
-              ip1 = mesh.poin_in_bdy_edge[iedge,k+1]
-            else
-              ip1 = mesh.poin_in_bdy_edge[iedge,k-1]
-            end
-            x1 = mesh.x[ip]
-            x2 = mesh.x[ip1]
-            y1 = mesh.y[ip]
-            y2 = mesh.y[ip1]
-            mag = sqrt((x1-x2)^2+(y1-y2)^2)
-            metrics.Jef[iedge, k] = mag/2
-            comp1 = (x1-x2)/mag
-            comp2 = (y1-y2)/mag
-            metrics.nx[iedge, k] = comp2
-            metrics.ny[iedge, k] = -comp1
-        end
-    end
-
     return metrics
 end
 
@@ -215,86 +214,237 @@ end
     end
 end
 
+@kernel function build_3D_gpu_metrics!(dxdξ, dxdη, dxdζ, dydξ, dydη, dydζ, dzdξ, dzdη, dzdζ, ψ, dψ, x, y, z, connijk, Q)
+    s = Int32(@groupsize()[1])
+    #n = div(@ndrange()[1],s)#div(length(A),s)
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    i_x = il[1]
+    i_y = il[2]
+    i_z = il[3]
+    ip = connijk[ie,i_x,i_y,i_z]
+    xijk = x[ip]
+    yijk = y[ip]
+    zijk = z[ip]
+    for m=1:Q+1
+        for l=1:Q+1
+            for k=1:Q+1
+                KernelAbstractions.@atomic dxdξ[ie, k, l, m] += dψ[i_x,k]*ψ[i_y,l] * ψ[i_z,m] * xijk
+                KernelAbstractions.@atomic dxdη[ie, k, l, m] += ψ[i_x,k]*dψ[i_y,l] * ψ[i_z,m] * xijk
+                KernelAbstractions.@atomic dxdζ[ie, k, l, m] += ψ[i_x,k]*ψ[i_y,l] * dψ[i_z,m] * xijk
+
+                KernelAbstractions.@atomic dydξ[ie, k, l, m] += dψ[i_x,k]*ψ[i_y,l] * ψ[i_z,m] * yijk
+                KernelAbstractions.@atomic dydη[ie, k, l, m] += ψ[i_x,k]*dψ[i_y,l] * ψ[i_z,m] * yijk
+                KernelAbstractions.@atomic dydζ[ie, k, l, m] += ψ[i_x,k]*ψ[i_y,l] * dψ[i_z,m] * yijk
+
+                KernelAbstractions.@atomic dzdξ[ie, k, l, m] += dψ[i_x,k]*ψ[i_y,l] * ψ[i_z,m] * zijk
+                KernelAbstractions.@atomic dzdη[ie, k, l, m] += ψ[i_x,k]*dψ[i_y,l] * ψ[i_z,m] * zijk
+                KernelAbstractions.@atomic dzdζ[ie, k, l, m] += ψ[i_x,k]*ψ[i_y,l] * dψ[i_z,m] * zijk
+            end
+        end
+    end
+end
+
+@kernel function build_2D_gpu_bdy_metrics!(Jef, nx, ny, x, y, poin_in_bdy_edge,N)
+    s = Int32(@groupsize()[1])
+    #n = div(@ndrange()[1],s)#div(length(A),s)
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    iedge = ie
+    k = il[1]
+    ip = poin_in_bdy_edge[iedge,k]
+    if (k < N+1)
+        ip1 = poin_in_bdy_edge[iedge,k+1]
+    else
+        ip1 = poin_in_bdy_edge[iedge,k-1]
+    end
+    x1 = x[ip]
+    x2 = x[ip1]
+    y1 = y[ip]
+    y2 = y[ip1]
+    mag = sqrt((x1-x2)^2+(y1-y2)^2)
+    Jef[iedge, k] = mag/2
+    comp1 = (x1-x2)/mag
+    comp2 = (y1-y2)/mag
+    nx[iedge, k] = comp2
+    ny[iedge, k] = -comp1
+end
+
+@kernel function build_3D_gpu_bdy_metrics!(Jef, nx, ny, nz, x, y, z, poin_in_bdy_face,N)
+    s = Int32(@groupsize()[1])
+    #n = div(@ndrange()[1],s)#div(length(A),s)
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    iface = ie
+    i = il[1]
+    j = il[2]
+    ip = poin_in_bdy_face[iface,i,j]
+    if (i < N+1)
+        ip1 = poin_in_bdy_face[iface,i+1,j]
+    else
+        ip1 = poin_in_bdy_face[iface,i-1,j]
+    end
+    if (j < N+1)
+        ip2 = poin_in_bdy_face[iface,i,j+1]
+    else
+        ip2 = poin_in_bdy_face[iface,i,j-1]
+    end
+    x1 = x[ip]
+    x2 = x[ip1]
+    x3 = x[ip2]
+    y1 = y[ip]
+    y2 = y[ip1]
+    y3 = y[ip2]
+    z1 = z[ip]
+    z2 = z[ip1]
+    z3 = z[ip2]
+    a1 = x1 - x2
+    a2 = y1 - y2
+    a3 = z1 - z2
+    b1 = x1 - x3
+    b2 = y1 - y3
+    b3 = z1 - z3
+    comp1 = a2*b3 - a3*b2 
+    comp2 = a3*b1 - a1*b3
+    comp3 = a1*b2 - a2*b1
+    mag = sqrt(comp1^2 + comp2^2 + comp3^2)
+    if (mag < Float32(1e-6))
+        mag = max(mag,abs(comp1),abs(comp2),abs(comp3),Float32(1e-7))
+    end
+    Jef[iface, i, j] = mag/2
+    nx[iface, i, j] = comp1/mag
+    ny[iface, i, j] = comp2/mag
+    nz[iface, i, j] = comp3/mag
+    if (abs(nx[iface,i,j]) < Float32(1e-2))
+        nx[iface, i,j] = zero(Float32)
+    end
+    if (abs(ny[iface,i,j]) < Float32(1e-2))
+        ny[iface, i,j] = zero(Float32)
+    end
+    if (abs(nz[iface,i,j]) < Float32(1e-2))
+        nz[iface, i,j] = zero(Float32)
+    end
+end
+
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange ,N, Q, NGR, QGR, ξ, ω1, ω2, T; backend = CPU())
     
-    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dxdη = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dydξ = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dydη = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
+    metrics = St_metrics{T,backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                                    dxdη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                                    dydξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                                    dydη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
 
-                            dξdx = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dηdx = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dξdy = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
-                            dηdy = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
-                            Jef  = KernelAbstractions.zeros(backend, T, mesh.nedges_bdy, Q+1),
-                            Je   = KernelAbstractions.zeros(backend, mesh.nelem_semi_inf, mesh.ngl, mesh.ngr))
+                                    dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                                    dηdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                                    dξdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                                    dηdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
+                                    Jef  = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), Q+1, 1),
+                                    Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Int64(mesh.ngl), Int64(mesh.ngr), 1))
     ψ  = basis.ψ
     dψ = basis.dψ
     ψ1  = basisGR.ψ
     dψ1 = basisGR.dψ
     if ("Laguerre" in mesh.bdy_edge_type)
-        for iel=1:mesh.nelem_semi_inf
-            for j=1:mesh.ngr
-                for i =1:mesh.ngl
-                    ip = mesh.connijk_lag[iel,i,j]
-                    xij = mesh.x[ip]
-                    yij = mesh.y[ip]
-                    for l=1:mesh.ngr
-                        for k=1:mesh.ngl
-                            if (inputs[:xfac_laguerre] == 0.0)
-                                metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij 
-                                metrics.dxdη[iel, k, l] +=  ψ[i,k]*inputs[:xfac_laguerre]/mesh.ngr#*dψ1[j,l]*xij
-                                metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
-                                metrics.dydη[iel, k, l] +=  ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
-                            else
-                                metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij
-                                metrics.dxdη[iel, k, l] +=  ψ[i,k]*inputs[:xfac_laguerre]/mesh.ngr#*dψ1[j,l]*xij
-                                metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
-                                metrics.dydη[iel, k, l] +=  ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
-                            end   
+        if (backend == CPU())
+            for iel=1:mesh.nelem_semi_inf
+                for j=1:mesh.ngr
+                    for i =1:mesh.ngl
+                        ip = mesh.connijk_lag[iel,i,j]
+                        xij = mesh.x[ip]
+                        yij = mesh.y[ip]
+                        for l=1:mesh.ngr
+                            for k=1:mesh.ngl
+                                if (inputs[:xfac_laguerre] == 0.0)
+                                    metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij 
+                                    metrics.dxdη[iel, k, l] +=  ψ[i,k]*inputs[:xfac_laguerre]/mesh.ngr#*dψ1[j,l]*xij
+                                    metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
+                                    metrics.dydη[iel, k, l] +=  ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
+                                else
+                                    metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij
+                                    metrics.dxdη[iel, k, l] +=  ψ[i,k]*inputs[:xfac_laguerre]/mesh.ngr#*dψ1[j,l]*xij
+                                    metrics.dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
+                                    metrics.dydη[iel, k, l] +=  ψ[i,k]*inputs[:yfac_laguerre]/mesh.ngr#*dψ1[j,l]*yij
+                                end   
+                            end
                         end
+                        #@info metrics.dxdξ[iel, k, l],metrics.dxdη[iel, k, l],metrics.dydξ[iel, k, l],metrics.dydη[iel, k, l],xij,yij
                     end
-                    #@info metrics.dxdξ[iel, k, l],metrics.dxdη[iel, k, l],metrics.dydξ[iel, k, l],metrics.dydη[iel, k, l],xij,yij
                 end
-            end
-            for l = 1:mesh.ngr
-                for k = 1:mesh.ngl
-                    ip = mesh.connijk_lag[iel,k,l]
-                    #xij = mesh.x[ip]
-                    #yij = mesh.y[ip]
-                    #@info metrics.dxdξ[iel, k, l],metrics.dydη[iel, k, l], metrics.dydξ[iel, k, l],metrics.dxdη[iel, k, l]
-                    metrics.Je[iel, k, l] = metrics.dxdξ[iel, k, l]*metrics.dydη[iel, k, l] - metrics.dydξ[iel, k, l]*metrics.dxdη[iel, k, l]
-                    metrics.dξdx[iel, k, l] =  metrics.dydη[iel, k, l]/metrics.Je[iel, k, l]
-                    metrics.dξdy[iel, k, l] = -metrics.dxdη[iel, k, l]/metrics.Je[iel, k, l]
-                    metrics.dηdx[iel, k, l] = -metrics.dydξ[iel, k, l]/metrics.Je[iel, k, l]
-                    metrics.dηdy[iel, k, l] =  metrics.dxdξ[iel, k, l]/metrics.Je[iel, k, l]
-       
+                for l = 1:mesh.ngr
+                    for k = 1:mesh.ngl
+                        ip = mesh.connijk_lag[iel,k,l]
+                        #xij = mesh.x[ip]
+                        #yij = mesh.y[ip]
+                        #@info metrics.dxdξ[iel, k, l],metrics.dydη[iel, k, l], metrics.dydξ[iel, k, l],metrics.dxdη[iel, k, l]
+                        metrics.Je[iel, k, l] = metrics.dxdξ[iel, k, l]*metrics.dydη[iel, k, l] - metrics.dydξ[iel, k, l]*metrics.dxdη[iel, k, l]
+                        metrics.dξdx[iel, k, l] =  metrics.dydη[iel, k, l]/metrics.Je[iel, k, l]
+                        metrics.dξdy[iel, k, l] = -metrics.dxdη[iel, k, l]/metrics.Je[iel, k, l]
+                        metrics.dηdx[iel, k, l] = -metrics.dydξ[iel, k, l]/metrics.Je[iel, k, l]
+                        metrics.dηdy[iel, k, l] =  metrics.dxdξ[iel, k, l]/metrics.Je[iel, k, l]
+        
+                    end
                 end
+            #show(stdout, "text/plain", metrics.Je[:,:,iel])
             end
-        #show(stdout, "text/plain", metrics.Je[:,:,iel])
+        else
+            x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
+            y = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
+            connijk_lag = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem_semi_inf),mesh.ngl,mesh.ngr)
+
+            KernelAbstractions.copyto!(backend, x, mesh.x)
+            KernelAbstractions.copyto!(backend, y, mesh.y)
+            KernelAbstractions.copyto!(backend, connijk_lag, mesh.connijk_lag)
+            k = build_2D_gpu_metrics_lag!(backend)
+            k(metrics.dxdξ, metrics.dxdη, metrics.dydξ, metrics.dydη, ψ, dψ, ψ1, dψ1, x, y, connijk_lag, mesh.ngl, mesh.ngr, TFloat(inputs[:xfac_laguerre]), TFloat(inputs[:yfac_laguerre]);
+              ndrange = (mesh.nelem_semi_inf * mesh.ngl, mesh.ngr),
+              workgroupsize = (mesh.ngl, mesh.ngr))
+            metrics.Je .= metrics.dxdξ.*metrics.dydη .- metrics.dydξ .* metrics.dxdη
+            metrics.dξdx .= metrics.dydη ./ metrics.Je
+            metrics.dξdy .= -metrics.dxdη ./ metrics.Je
+            metrics.dηdx .= -metrics.dydξ ./ metrics.Je
+            metrics.dηdy .= metrics.dxdξ ./ metrics.Je
         end
     end
 
     return metrics
 end
 
+@kernel function build_2D_gpu_metrics_lag!(dxdξ, dxdη, dydξ, dydη, ψ, dψ, ψ1, dψ1, x, y, connijk_lag, ngl, ngr, xfac_lag, yfac_lag)
+    s = Int32(@groupsize()[1])
+    iel = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    i = il[1]
+    j = il[2]
+    ip = connijk_lag[iel,i,j]
+    xij = x[ip]
+    yij = y[ip]
+    for l=1:ngr
+        for k=1:ngl
+            KernelAbstractions.@atomic dxdξ[iel, k, l] += dψ[i,k]*ψ1[j,l]*xij 
+            KernelAbstractions.@atomic dxdη[iel, k, l] +=  ψ[i,k]*xfac_lag/ngr#*dψ1[j,l]*xij
+            KernelAbstractions.@atomic dydξ[iel, k, l] += dψ[i,k]* ψ1[j,l]*yij
+            KernelAbstractions.@atomic dydη[iel, k, l] +=  ψ[i,k]*yfac_lag/ngr#*dψ1[j,l]*yij
+        end   
+    end
+end
+
 function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)
     
-    metrics = St_metrics{T}(dxdξ = zeros(mesh.nelem, Q+1, Q+1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dxdη = zeros(mesh.nelem, Q+1, Q+1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
-                            dydξ = zeros(mesh.nelem, Q+1, Q+1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
-                            dydη = zeros(mesh.nelem, Q+1, Q+1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
+    metrics = St_metrics{T}(dxdξ = zeros(mesh.nelem, Q+1, Q+1, 1), #∂x/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dxdη = zeros(mesh.nelem, Q+1, Q+1, 1), #∂x/∂η[1:Nq, 1:Nq, 1:nelem]
+                            dydξ = zeros(mesh.nelem, Q+1, Q+1, 1), #∂y/∂ξ[1:Nq, 1:Nq, 1:nelem]
+                            dydη = zeros(mesh.nelem, Q+1, Q+1, 1), #∂y/∂η[1:Nq, 1:Nq, 1:nelem]
 
-                            dξdx = zeros(mesh.nelem, Q+1, Q+1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dηdx = zeros(mesh.nelem, Q+1, Q+1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
-                            dξdy = zeros(mesh.nelem, Q+1, Q+1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
-                            dηdy = zeros(mesh.nelem, Q+1, Q+1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
+                            dξdx = zeros(mesh.nelem, Q+1, Q+1, 1), #∂ξ/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dηdx = zeros(mesh.nelem, Q+1, Q+1, 1), #∂η/∂x[1:Nq, 1:Nq, 1:nelem]
+                            dξdy = zeros(mesh.nelem, Q+1, Q+1, 1), #∂ξ/∂y[1:Nq, 1:Nq, 1:nelem]
+                            dηdy = zeros(mesh.nelem, Q+1, Q+1, 1), #∂η/∂y[1:Nq, 1:Nq, 1:nelem]
 
                             vⁱ = zeros(3, Q+1, Q+1, mesh.nelem), #contravariant unit vectors
-                            Jef  = zeros(mesh.nedges_bdy, Q+1),
+                            Jef  = zeros(mesh.nedges_bdy, Q+1, 1),
                             nx   = zeros(mesh.nedges_bdy, Q+1),
                             ny   = zeros(mesh.nedges_bdy, Q+1),
-                            Je   = zeros(mesh.nelem, Q+1, Q+1)) #   Je[1:Nq, 1:Nq, 1:nelem]
+                            Je   = zeros(mesh.nelem, Q+1, Q+1, 1)
+                            ) #   Je[1:Nq, 1:Nq, 1:nelem]
 
     ψ  = basis.ψ
     dψ = basis.dψ
@@ -307,7 +457,7 @@ function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagr
                     for i = 1:N+1
 
                         ip = mesh.connijk[iel,i,j]
-
+                        
                         xij = mesh.x[ip]
                         yij = mesh.y[ip]
                         
@@ -367,89 +517,126 @@ function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagr
 end
 
 
-function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T)
+function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
 
-     metrics = St_metrics{T}(dxdξ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dxdη = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                             dxdζ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂x/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dydξ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dydη = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                             dydζ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂y/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dzdξ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂z/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dzdη = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂z/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                             dzdζ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂z/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dξdx = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ξdx[2, 1:Nq, 1:Nq, 1:nelem]
-                             dηdx = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ηdx[2, 1:Nq, 1:Nq, 1:nelem]
-                             dζdx = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ζdx[2, 1:Nq, 1:Nq, 1:nelem]
-                             dξdy = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ξdy[2, 1:Nq, 1:Nq, 1:nelem]
-                             dηdy = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ηdy[2, 1:Nq, 1:Nq, 1:nelem]
-                             dζdy = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ζdy[2, 1:Nq, 1:Nq, 1:nelem]
-                             dξdz = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ξdz[2, 1:Nq, 1:Nq, 1:nelem]
-                             dηdz = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ηdz[2, 1:Nq, 1:Nq, 1:nelem]
-                             dζdz = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
-                             Jef  = zeros(size(mesh.bound_elem,1), Q+1, Q+1),
-                             Je   = zeros(Q+1, Q+1, Q+1, mesh.nelem))  #   Je[1:Nq, 1:Nq, 1:nelem]
-    ψ  = basis.ψ
-    dψ = basis.dψ
+    metrics = St_metrics{T, backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dxdη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dxdζ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂x/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dydξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dydη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dydζ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂y/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dzdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂z/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dzdη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂z/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dzdζ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂z/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ξdx[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dηdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ηdx[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dζdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ζdx[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dξdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ξdy[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dηdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ηdy[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dζdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ζdy[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dξdz = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ξdz[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dηdz = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ηdz[2, 1:Nq, 1:Nq, 1:nelem]
+                                      dζdz = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
+                                      Jef  = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
+                                      Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),
+                                      nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
+                                      ny   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
+                                      nz   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1))  #   Je[1:Nq, 1:Nq, 1:nelem]
+   
+    ψ  = @view(basis.ψ[:,:])
+    dψ = @view(basis.dψ[:,:])
+        
+    @info " 3D metric terms"
+    if (backend == CPU())
+        for iel = 1:mesh.nelem
+            for k = 1:N+1
+                for j = 1:N+1
+                    for i = 1:N+1
 
-    @info " metric terms WIP"
-    for iel = 1:mesh.nelem
-        for n = 1:Q+1
-            for m = 1:Q+1
-                for l = 1:Q+1
-                    for k = 1:N+1
-                        for j = 1:N+1
-                            for i = 1:N+1
+                        ip = mesh.connijk[iel,i,j,k]
+                    
+                        xijk = mesh.x[ip]
+                        yijk = mesh.y[ip]
+                        zijk = mesh.z[ip]
+                    
+                        for n = 1:Q+1
+                            for m = 1:Q+1
+                                for l = 1:Q+1
+                                
+                                    metrics.dxdξ[iel, l, m, n] += dψ[i,l]* ψ[j,m]* ψ[k,n]*xijk
+                                    metrics.dxdη[iel, l, m, n] +=  ψ[i,l]*dψ[j,m]* ψ[k,n]*xijk
+                                    metrics.dxdζ[iel, l, m, n] +=  ψ[i,l]* ψ[j,m]*dψ[k,n]*xijk
 
-                                ip = mesh.connijk[iel,i,j,k]
+                                    metrics.dydξ[iel, l, m, n] += dψ[i,l]* ψ[j,m]* ψ[k,n]*yijk
+                                    metrics.dydη[iel, l, m, n] +=  ψ[i,l]*dψ[j,m]* ψ[k,n]*yijk
+                                    metrics.dydζ[iel, l, m, n] +=  ψ[i,l]* ψ[j,m]*dψ[k,n]*yijk
 
-                                xijk = mesh.x[ip]
-                                yijk = mesh.y[ip]
-                                zijk = mesh.z[ip]
-
-                                metrics.dxdξ[iel, l, m, n] = metrics.dxdξ[iel, l, m, n] + dψ[i,l]*ψ[j,m]*ψ[k,n]*xijk
-                                metrics.dxdη[iel, l, m, n] = metrics.dxdη[iel, l, m, n] + ψ[i,l]*dψ[j,m]*ψ[k,n]*xijk
-                                metrics.dxdζ[iel, l, m, n] = metrics.dxdζ[iel, l, m, n] + ψ[i,l]*ψ[j,m]*dψ[k,n]*xijk
-
-                                metrics.dydξ[iel, l, m, n] = metrics.dydξ[iel, l, m, n] + dψ[i,l]*ψ[j,m]*ψ[k,n]*yijk
-                                metrics.dydη[iel, l, m, n] = metrics.dydη[iel, l, m, n] + ψ[i,l]*dψ[j,m]*ψ[k,n]*yijk
-                                metrics.dydζ[iel, l, m, n] = metrics.dydζ[iel, l, m, n] + ψ[i,l]*ψ[j,m]*dψ[k,n]*yijk
-
-                                metrics.dzdξ[iel, l, m, n] = metrics.dzdξ[iel, l, m, n] + dψ[i,l]*ψ[j,m]*ψ[k,n]*zijk
-                                metrics.dzdη[iel, l, m, n] = metrics.dzdη[iel, l, m, n] + ψ[i,l]*dψ[j,m]*ψ[k,n]*zijk
-                                metrics.dzdζ[iel, l, m, n] = metrics.dzdζ[iel, l, m, n] + ψ[i,l]*ψ[j,m]*dψ[k,n]*zijk
+                                    metrics.dzdξ[iel, l, m, n] += dψ[i,l]* ψ[j,m]* ψ[k,n]*zijk
+                                    metrics.dzdη[iel, l, m, n] +=  ψ[i,l]*dψ[j,m]* ψ[k,n]*zijk
+                                    metrics.dzdζ[iel, l, m, n] +=  ψ[i,l]* ψ[j,m]*dψ[k,n]*zijk
                                 #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
+                                end
                             end
                         end
                     end
-                end
                # @printf(" dxdξ=%f, dxdη=%f, dydξ=%f dydη=%f \n",  metrics.dxdξ[iel, k, l],  metrics.dxdη[iel, k, l], metrics.dydξ[iel, k, l],  metrics.dydη[iel, k, l] )
+                end
             end
-        end
 
-        for l = 1:Q+1
-            for m = 1:Q+1
-                for n =1:Q+1
-                    metrics.Je[iel, l, m, n] = metrics.dxdξ[iel, l, m, n]*(metrics.dydη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])
-                    metrics.Je[iel, l, m, n] += metrics.dydξ[iel, l, m, n]*(metrics.dxdζ[iel, l, m, n]*metrics.dzdη[iel, l, m, n] - metrics.dxdη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n])
-                    metrics.Je[iel, l, m, n] += metrics.dzdξ[iel, l, m, n]*(metrics.dxdη[iel, l, m, n]*metrics.dydζ[iel, l, m, n] - metrics.dxdζ[iel, l, m, n]*metrics.dydη[iel, l, m, n])
+            for l = 1:Q+1
+                for m = 1:Q+1
+                    for n =1:Q+1
+                        metrics.Je[iel, l, m, n]  = metrics.dxdξ[iel, l, m, n]*(metrics.dydη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])
+                        metrics.Je[iel, l, m, n] += metrics.dydξ[iel, l, m, n]*(metrics.dxdζ[iel, l, m, n]*metrics.dzdη[iel, l, m, n] - metrics.dxdη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n])
+                        metrics.Je[iel, l, m, n] += metrics.dzdξ[iel, l, m, n]*(metrics.dxdη[iel, l, m, n]*metrics.dydζ[iel, l, m, n] - metrics.dxdζ[iel, l, m, n]*metrics.dydη[iel, l, m, n])
                     
-                    metrics.dξdx[iel, l, m, n] =  (metrics.dydη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                    metrics.dξdy[iel, l, m, n] =  (metrics.dxdζ[iel, l, m, n]*metrics.dzdη[iel, l, m, n] - metrics.dxdη[iel, l, m, n]*metrics.dzdη[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                    metrics.dξdz[iel, l, m, n] =  (metrics.dxdη[iel, l, m, n]*metrics.dydζ[iel, l, m, n] - metrics.dxdζ[iel, l, m, n]*metrics.dydη[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                    metrics.dηdx[iel, l, m, n] =  (metrics.dydζ[iel, l, m, n]*metrics.dzdξ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdζ[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                    metrics.dηdy[iel, l, m, n] =  (metrics.dxdξ[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dxdζ[iel, l, m, n]*metrics.dzdξ[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                    metrics.dηdz[iel, l, m, n] =  (metrics.dxdζ[iel, l, m, n]*metrics.dydξ[iel, l, m, n] - metrics.dxdξ[iel, l, m, n]*metrics.dydζ[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                    metrics.dζdx[iel, l, m, n] =  (metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n] - metrics.dydη[iel, l, m, n]*metrics.dzdξ[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                    metrics.dζdy[iel, l, m, n] =  (metrics.dxdη[iel, l, m, n]*metrics.dzdξ[iel, l, m, n] - metrics.dxdξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                    metrics.dζdz[iel, l, m, n] =  (metrics.dxdξ[iel, l, m, n]*metrics.dydη[iel, l, m, n] - metrics.dxdη[iel, l, m, n]*metrics.dydξ[iel, l, m, n])/metrics.Je[iel, l, m, n] 
+                        metrics.dξdx[iel, l, m, n] =  (metrics.dydη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])/metrics.Je[iel, l, m, n]
+                        metrics.dξdy[iel, l, m, n] =  (metrics.dxdζ[iel, l, m, n]*metrics.dzdη[iel, l, m, n] - metrics.dxdη[iel, l, m, n]*metrics.dzdη[iel, l, m, n])/metrics.Je[iel, l, m, n]
+                        metrics.dξdz[iel, l, m, n] =  (metrics.dxdη[iel, l, m, n]*metrics.dydζ[iel, l, m, n] - metrics.dxdζ[iel, l, m, n]*metrics.dydη[iel, l, m, n])/metrics.Je[iel, l, m, n]
+                        metrics.dηdx[iel, l, m, n] =  (metrics.dydζ[iel, l, m, n]*metrics.dzdξ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdζ[iel, l, m, n])/metrics.Je[iel, l, m, n]
+                        metrics.dηdy[iel, l, m, n] =  (metrics.dxdξ[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dxdζ[iel, l, m, n]*metrics.dzdξ[iel, l, m, n])/metrics.Je[iel, l, m, n]
+                        metrics.dηdz[iel, l, m, n] =  (metrics.dxdζ[iel, l, m, n]*metrics.dydξ[iel, l, m, n] - metrics.dxdξ[iel, l, m, n]*metrics.dydζ[iel, l, m, n])/metrics.Je[iel, l, m, n]
+                        metrics.dζdx[iel, l, m, n] =  (metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n] - metrics.dydη[iel, l, m, n]*metrics.dzdξ[iel, l, m, n])/metrics.Je[iel, l, m, n]
+                        metrics.dζdy[iel, l, m, n] =  (metrics.dxdη[iel, l, m, n]*metrics.dzdξ[iel, l, m, n] - metrics.dxdξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])/metrics.Je[iel, l, m, n]
+                        metrics.dζdz[iel, l, m, n] =  (metrics.dxdξ[iel, l, m, n]*metrics.dydη[iel, l, m, n] - metrics.dxdη[iel, l, m, n]*metrics.dydξ[iel, l, m, n])/metrics.Je[iel, l, m, n] 
                 
-                 end
+                    end
+                end
             end
+
         end
-        show(stdout, "text/plain", metrics.Je[iel,:,:,:])
+    else
+        x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
+        y = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
+        z = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
+        connijk = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem),N+1,N+1,N+1)
+        KernelAbstractions.copyto!(backend, x, mesh.x)
+        KernelAbstractions.copyto!(backend, y, mesh.y)
+        KernelAbstractions.copyto!(backend, z, mesh.z)
+        KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
+        k = build_3D_gpu_metrics!(backend,(N+1,N+1,N+1))
+        @info typeof(metrics.dxdξ), typeof(metrics.dydξ)
+        k(metrics.dxdξ,metrics.dxdη,metrics.dxdζ,metrics.dydξ,metrics.dydη,metrics.dydζ,metrics.dzdξ,metrics.dzdη,metrics.dzdζ, ψ, dψ, x, y, z, connijk, Q; ndrange = (mesh.nelem*(N+1),mesh.ngl,mesh.ngl), workgroupsize = (N+1,N+1,N+1))
+        metrics.Je .= metrics.dxdξ.*(metrics.dydη.*metrics.dzdζ .- metrics.dydξ.*metrics.dzdη)
+        metrics.Je .+= metrics.dydξ.*(metrics.dxdζ.*metrics.dzdη .- metrics.dxdη.*metrics.dzdζ)
+        metrics.Je .+= metrics.dzdξ.*(metrics.dxdη.*metrics.dydζ .- metrics.dxdζ.*metrics.dydη)
+        metrics.dξdx .= (metrics.dydη.*metrics.dzdζ .- metrics.dydξ.*metrics.dzdη) ./ metrics.Je
+        metrics.dξdy .= (metrics.dxdζ.*metrics.dzdη .- metrics.dxdη.*metrics.dzdη) ./ metrics.Je
+        metrics.dξdz .= (metrics.dxdη.*metrics.dydζ .- metrics.dxdζ.*metrics.dydη) ./ metrics.Je
+        metrics.dηdx .= (metrics.dydζ.*metrics.dzdξ .- metrics.dydξ.*metrics.dzdζ) ./ metrics.Je
+        metrics.dηdy .= (metrics.dxdξ.*metrics.dzdζ .- metrics.dxdζ.*metrics.dzdξ) ./ metrics.Je
+        metrics.dηdz .= (metrics.dxdζ.*metrics.dydξ .- metrics.dxdξ.*metrics.dydζ) ./ metrics.Je
+        metrics.dζdx .= (metrics.dydξ.*metrics.dzdη .- metrics.dydη.*metrics.dzdξ) ./ metrics.Je
+        metrics.dζdy .= (metrics.dxdη.*metrics.dzdξ .- metrics.dxdξ.*metrics.dzdη) ./ metrics.Je
+        metrics.dζdz .= (metrics.dxdξ.*metrics.dydη .- metrics.dxdη.*metrics.dydξ) ./ metrics.Je
+        nbdy_faces = size(mesh.poin_in_bdy_face,1)
+        poin_in_bdy_face = KernelAbstractions.allocate(backend, TInt, Int64(nbdy_faces), N+1,N+1)
+        KernelAbstractions.copyto!(backend, poin_in_bdy_face,mesh.poin_in_bdy_face)
+        k = build_3D_gpu_bdy_metrics!(backend)
+        k(metrics.Jef, metrics.nx, metrics.ny, metrics.nz, x, y, z, poin_in_bdy_face, N; ndrange = (nbdy_faces*(N+1),N+1), workgroupsize = (N+1,N+1))
+        #show(stdout, "text/plain", metrics.Je[iel,:,:,:])
     end
-    for iface = 1:size(mesh.xmin_faces,2) 
+  #=  for iface = 1:size(mesh.xmin_faces,2) 
         for l = 1:Q+1
             for m = 1:Q+1
                 iel = mesh.xmin_facetoelem[iface]
@@ -501,7 +688,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 metrics.Jef[iface+disp, l, m] = metrics.dxdξ[iel, l, m, Q+1]*metrics.dydη[iel, l, m, Q+1] - metrics.dydξ[iel, l, m, Q+1]*metrics.dxdη[iel, l, m, Q+1]
             end
         end
-    end
+    end=#
      
     #show(stdout, "text/plain", metrics.Je)    
     return metrics
@@ -509,26 +696,26 @@ end
 
 function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange,N, Q, NGR, QGR, ξ, T;dir="x",side ="min")
 
-     metrics = St_metrics{T}(dxdξ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dxdη = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                             dxdζ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂x/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dydξ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dydη = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                             dydζ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂y/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dzdξ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂z/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dzdη = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂z/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                             dzdζ = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂z/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                             dξdx = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ξdx[2, 1:Nq, 1:Nq, 1:nelem]
-                             dηdx = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ηdx[2, 1:Nq, 1:Nq, 1:nelem]
-                             dζdx = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ζdx[2, 1:Nq, 1:Nq, 1:nelem]
-                             dξdy = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ξdy[2, 1:Nq, 1:Nq, 1:nelem]
-                             dηdy = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ηdy[2, 1:Nq, 1:Nq, 1:nelem]
-                             dζdy = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ζdy[2, 1:Nq, 1:Nq, 1:nelem]
-                             dξdz = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ξdz[2, 1:Nq, 1:Nq, 1:nelem]
-                             dηdz = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ηdz[2, 1:Nq, 1:Nq, 1:nelem]
-                             dζdz = zeros(Q+1, Q+1, Q+1, mesh.nelem),  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
-                             Jef  = zeros(Q+1, Q+1, size(mesh.bound_elem,1)),
-                             Je   = zeros(Q+1, Q+1, Q+1, mesh.nelem))  #   Je[1:Nq, 1:Nq, 1:nelem]
+     metrics = St_metrics{T}(dxdξ = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dxdη = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                             dxdζ = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂x/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dydξ = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dydη = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                             dydζ = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂y/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dzdξ = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂z/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dzdη = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂z/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                             dzdζ = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂z/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                             dξdx = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ξdx[2, 1:Nq, 1:Nq, 1:nelem]
+                             dηdx = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ηdx[2, 1:Nq, 1:Nq, 1:nelem]
+                             dζdx = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ζdx[2, 1:Nq, 1:Nq, 1:nelem]
+                             dξdy = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ξdy[2, 1:Nq, 1:Nq, 1:nelem]
+                             dηdy = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ηdy[2, 1:Nq, 1:Nq, 1:nelem]
+                             dζdy = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ζdy[2, 1:Nq, 1:Nq, 1:nelem]
+                             dξdz = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ξdz[2, 1:Nq, 1:Nq, 1:nelem]
+                             dηdz = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ηdz[2, 1:Nq, 1:Nq, 1:nelem]
+                             dζdz = zeros(mesh.nelem, Q+1, Q+1, Q+1),  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
+                             Jef  = zeros(mesh.nfaces_bdy, Q+1, Q+1),
+                             Je   = zeros(mesh.nelem, Q+1, Q+1, Q+1))  #   Je[1:Nq, 1:Nq, 1:nelem]
     
     if (dir == "x")
       ψ1  = basisGR.ψ

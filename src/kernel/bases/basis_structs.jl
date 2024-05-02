@@ -39,7 +39,7 @@ mutable struct St_Legendre{TFloat}
     dq        :: TFloat
 end
 
-mutable struct St_Laguerre{TFloat}
+mutable struct St_Laguerre{Float128}
    
    """
    struct St_Laguerre{TFloat<:Real}
@@ -47,10 +47,10 @@ mutable struct St_Laguerre{TFloat}
         dLaguerre :: TFloat
    end
    """
-   Laguerre  :: Polynomial{TFloat}
-   dLaguerre :: Polynomial{TFloat}
-   d2Laguerre :: Polynomial{TFloat}
-   d3Laguerre :: Polynomial{TFloat}
+   Laguerre  :: Polynomial{Float128}
+   dLaguerre :: Polynomial{Float128}
+   d2Laguerre :: Polynomial{Float128}
+   d3Laguerre :: Polynomial{Float128}
 end
  
 abstract type AbstractIntegrationPointAndWeights end
@@ -84,9 +84,9 @@ mutable struct St_cgl{TFloat} <:AbstractIntegrationPointAndWeights
     ω::Array{TFloat}
 end
 
-mutable struct St_gr{TFloat} <:AbstractIntegrationPointAndWeights
-    ξ::Array{TFloat}
-    ω::Array{TFloat}
+Base.@kwdef mutable struct St_gr{TFloat, backend} <:AbstractIntegrationPointAndWeights
+    ξ = KernelAbstractions.zeros(backend, TFloat, 0)
+    ω = KernelAbstractions.zeros(backend, TFloat, 0)
 end
 
 
@@ -124,9 +124,9 @@ function basis_structs_ξ_ω!(ξωtype::LGL, nop, backend)
     return lgl
 end
 
-function basis_structs_ξ_ω!(ξωtype::LGR, nop,beta, backend)
+function basis_structs_ξ_ω!(ξωtype::LGR, nop, beta, backend)
 
-    lgr = St_gr{TFloat}(KernelAbstractions.zeros(backend, TFloat, nop+1),
+    lgr = St_gr{TFloat, backend}(KernelAbstractions.zeros(backend, TFloat, nop+1),
                          KernelAbstractions.zeros(backend, TFloat, nop+1))
 
     build_Integration_points!(lgr, nop, beta, backend)
@@ -180,7 +180,7 @@ function build_Integration_points!(lgl::St_lgl,nop, backend)
 end
 
 function build_Integration_points!(lgr::St_gr,nop,beta, backend)
-    Laguerre = St_Laguerre(Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)))
+    Laguerre = St_Laguerre(Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)))
     build_gr!(Laguerre,lgr,nop,beta, backend)
 end
 
@@ -290,8 +290,8 @@ end
 
 function build_gr!(Laguerre::St_Laguerre,gr::St_gr,nop,beta, backend)
     size::Int8=nop+1
-    gr.ξ = KernelAbstractions.zeros(backend, TFloat, size)
-    gr.ω = KernelAbstractions.zeros(backend, TFloat, size)
+    gr.ξ = KernelAbstractions.zeros(backend, TFloat, Int64(size))
+    gr.ω = KernelAbstractions.zeros(backend, TFloat, Int64(size))
 
     #LG nodes
     GaussRadauLaguerreNodesAndWeights!(Laguerre,gr,nop,beta, backend)
@@ -392,12 +392,13 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
     ωP ::TFloat=0.0
     
     Δ  ::TFloat=0.0
-    
+    ξ = zeros(TFloat,nop+1)
+    ω = zeros(TFloat,nop+1)
     println( " # Compute LGL nodes ........................")
     
     for j=1:nop+1
-	lgl.ξ[j] = 0.0;
-	lgl.ω[j] = 1.0;
+	ξ[j] = 0.0;
+	ω[j] = 1.0;
     end
     
     if (nop == 1)
@@ -406,25 +407,25 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
 	ξ1           =  1.0
 	ω1           =   ω0
         
-	lgl.ξ[1]     =   ξ0
-	lgl.ξ[nop+1] =   ξ1
-	lgl.ω[1]     =   ω0
-	lgl.ω[nop+1] =   ω1
+	ξ[1]     =   ξ0
+	ξ[nop+1] =   ξ1
+	ω[1]     =   ω0
+	ω[nop+1] =   ω1
     else 
 	ξ0            = -1.0
 	ω0            =  TFloat(2.0/(nop*(nop + 1)))
 	ξP            =  1.0
 	ωP            =   ω0
         
-	lgl.ξ[1]      =   ξ0
-	lgl.ξ[nop+1]  =   ξP
-	lgl.ω[1]      =   ω0
-	lgl.ω[nop+1]  =   ωP
+	ξ[1]      =   ξ0
+	ξ[nop+1]  =   ξP
+	ω[1]      =   ω0
+	ω[nop+1]  =   ωP
 	
         for jj = 2:floor(Int,(nop + 1)/2) 
 	    j = jj - 1
 	    ξj = -cos((j + 0.25)*π/nop - 3.0/(8.0*nop*π*(j + 0.25)))
-	    lgl.ξ[jj] = ξj;
+	    ξ[jj] = ξj;
             
             for k = 0:NITER
 	        LegendreAndDerivativeAndQ!(Legendre, nop, ξj)
@@ -436,26 +437,33 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
                 end
 	    end
             LegendreAndDerivativeAndQ!(Legendre, nop, ξj)
-	    lgl.ξ[jj]      =  ξj
-	    lgl.ξ[nop+1-j] = -ξj
+	    ξ[jj]      =  ξj
+	    ξ[nop+1-j] = -ξj
 	    xj2            =  ξj*ξj
 	    L2             = Legendre.legendre*Legendre.legendre
-	    lgl.ω[jj]      = 2.0/(nop*(nop + 1.0)*L2)
-	    lgl.ω[nop+1-j] = lgl.ω[jj]
+	    ω[jj]      = 2.0/(nop*(nop + 1.0)*L2)
+	    ω[nop+1-j] = ω[jj]
             
         end
     end
     
     if (mod(nop,2) == 0)
 	LegendreAndDerivativeAndQ!(Legendre, nop, 0.0);
-	lgl.ξ[TInt(nop/2)+1] = 0.0;
+	ξ[TInt(nop/2)+1] = 0.0;
 	
 	L2           = Legendre.legendre*Legendre.legendre;
-	lgl.ω[TInt(nop/2)+1] = 2.0/(nop*(nop + 1.0)*L2);
+	ω[TInt(nop/2)+1] = 2.0/(nop*(nop + 1.0)*L2);
     end
 
+    if (backend == CPU())
+        lgl.ξ .= ξ
+        lgl.ω .= ω
+    else
+        KernelAbstractions.copyto!(backend,lgl.ξ,ξ)
+        KernelAbstractions.copyto!(backend,lgl.ω,ω)
+    end
     for j=1:nop+1       
-        println( " # ξ, ω =: ", " ", lgl.ξ[j], " " , lgl.ω[j])
+        println( " # ξ, ω =: ", " ", ξ[j], " " , ω[j])
     end
     
     println(" # Compute LGL nodes ........................ DONE")
@@ -586,62 +594,75 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat, backend)
     Q = size(ξq,1) - 1
     
     #Initialize arrays
+    L_1 = zeros(TFloat, N+1, Q+1)
+    dLdx_1 = zeros(TFloat, N+1, Q+1)
     L    = KernelAbstractions.zeros(backend, TFloat, N+1, Q+1)
     dLdx = KernelAbstractions.zeros(backend, TFloat, N+1, Q+1)
-    
+    ξq_1 = zeros(TFloat,Q+1)
+    ξ_1 = zeros(TFloat,N+1)
+    KernelAbstractions.copyto!(CPU(),ξq_1,ξq)
+    KernelAbstractions.copyto!(CPU(),ξ_1,ξ)
+
     for l=1:Q+1
-        xl = ξq[l]
+        xl = ξq_1[l]
 
         #Construct Basis
         for i=1:N+1
             
-            xi        = ξ[i]
-            L[i,l]    = 1.0
-            dLdx[i,l] = 0.0
+            xi        = ξ_1[i]
+            L_1[i,l]    = 1.0
+            dLdx_1[i,l] = 0.0
             for j=1:N+1
-                xj = ξ[j]
+                xj = ξ_1[j]
 
                 #L
                 if (j != i)
-                    L[i,l] = L[i,l]*(xl - xj)/(xi - xj)
+                    L_1[i,l] = L_1[i,l]*(xl - xj)/(xi - xj)
                 end
                 
                 ddL=1
                 if (j != i)
                     for k=1:N+1
-                        xk = ξ[k]
+                        xk = ξ_1[k]
                         
                         #dL/dx
                         if (k !=i && k !=j)
                             ddL = ddL*(xl - xk)/(xi - xk)
                         end
                     end
-                    dLdx[i, l] = dLdx[i, l] + ddL/(xi - xj)
+                    dLdx_1[i, l] = dLdx_1[i, l] + ddL/(xi - xj)
                 end
             end
         end
+    end
+    if (backend == CPU())
+        L .= L_1
+        dLdx .= dLdx_1
+    else
+        KernelAbstractions.copyto!(backend,L,L_1)
+        KernelAbstractions.copyto!(backend,dLdx,dLdx_1)
     end
 
     return (L, dLdx)
 end
 
 function ScaledLaguerreAndDerivative!(nop,SL::St_Laguerre,beta, backend)
-  Laguerre = KernelAbstractions.zeros(backend, TFloat,nop+1)
+  Laguerre = zeros(Float128,nop+1)
   if (nop == 0)
      Laguerre[1] = 1.0
   elseif (nop == 1)
      Laguerre[1] = 1.0
      Laguerre[2] = -1.0
   else
-    Lkm2 = KernelAbstractions.zeros(backend, TFloat,nop+1,1);
+    Lkm2 = zeros(Float128,nop+1,1);
     Lkm2[nop+1] = 1;
-    Lkm1 = KernelAbstractions.zeros(backend, TFloat,nop+1,1);
+    Lkm1 = zeros(Float128,nop+1,1);
     Lkm1[nop] = -1;
     Lkm1[nop+1] = 1;
 
     for k=2:nop
 
-        Laguerre = KernelAbstractions.zeros(backend, TFloat,nop+1);
+        Laguerre = zeros(Float128,nop+1);
 
         for e=nop-k+1:nop
             Laguerre[e] = (2*k-1)*Lkm1[e] - beta*Lkm1[e+1] + (1-k)*Lkm2[e];
@@ -664,22 +685,22 @@ function ScaledLaguerreAndDerivative!(nop,SL::St_Laguerre,beta, backend)
 end
 
 function LaguerreAndDerivative!(nop,SL::St_Laguerre, backend)
-  Laguerre = KernelAbstractions.zeros(backend, TFloat,nop+1)
+  Laguerre = zeros(Float128, nop+1)
   if (nop == 0)
      Laguerre[1] = 1.0
   elseif (nop == 1)
      Laguerre[1] = 1.0
      Laguerre[2] = -1.0
   else
-    Lkm2 = KernelAbstractions.zeros(backend, nop+1,1);
+    Lkm2 = zeros(nop+1,1);
     Lkm2[nop+1] = 1;
-    Lkm1 = KernelAbstractions.zeros(backend, nop+1,1);
+    Lkm1 = zeros(nop+1,1);
     Lkm1[nop] = -1;
     Lkm1[nop+1] = 1;
 
     for k=2:nop
         
-        Laguerre = KernelAbstractions.zeros(backend, TFloat,nop+1);
+        Laguerre = zeros(Float128, nop+1);
 
         for e=nop-k+1:nop
             Laguerre[e] = (2*k-1)*Lkm1[e] - Lkm1[e+1] + (1-k)*Lkm2[e];
@@ -701,10 +722,10 @@ end
 
 function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, nop,beta, backend)
     Pp1 = nop+1
-    n = zeros(TFloat,nop+1)
-    bn = zeros(TFloat,nop)
-    an = zeros(TFloat,nop+1)
-    filler = zeros(TFloat,nop+1)
+    n = zeros(Float128,nop+1)
+    bn = zeros(Float128,nop)
+    an = zeros(Float128,nop+1)
+    filler = zeros(Float128,nop+1)
     for i = 0:nop
        n[i+1] = i
        an[i+1] = (2 * n[i+1] + 1)/beta
@@ -713,25 +734,25 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
        bn[i] = i/beta
     end
     an[nop+1] = nop/beta
-    J = zeros(TFloat,nop+1,nop+1)
+    J = zeros(Float128,nop+1,nop+1)
     J .= diagm(an) .+ Bidiagonal(filler,bn,:U) .+ Bidiagonal(filler,bn,:L)
     xi = eigen(J)
-    gr.ξ .= TFloat.(xi.values)
+    ξ = Float128.(xi.values)
     ngr = length(gr.ξ)
-    thresh = 1e-8
+    thresh = 1e-5
     x0 = 0.0
     x1 = 0.0
     for k=1:ngr
-      x0 = gr.ξ[k]
+      x0 = ξ[k]
       diff1 = 1.0
       stuck = 1.0
       while(diff1 > thresh)
-          ScaledLaguerreAndDerivative!(nop+1,Laguerre,beta)
+          ScaledLaguerreAndDerivative!(nop+1,Laguerre,beta,backend)
           L1 = Laguerre.Laguerre
           L3 = Laguerre.dLaguerre
           L4 = Laguerre.d2Laguerre
           L5 = Laguerre.d3Laguerre
-          ScaledLaguerreAndDerivative!(nop,Laguerre,beta)
+          ScaledLaguerreAndDerivative!(nop,Laguerre,beta,backend)
           L2 = Laguerre.Laguerre
           #x1 = x0 - L1(x0)/L3(x0)#+ (L1(x0) - L2(x0))/L2(x0)
           #x1 = x0 -  L3(x0)/L4(x0) 
@@ -752,24 +773,33 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
           end=#
           
       end
-      gr.ξ[k] = x1
+      ξ[k] = x1
     end
-    gr.ξ[1] = 0
+    ξ[1] = 0
     #ScaledLaguerreAndDerivative!(nop+1,Laguerre,beta)
     #gr.ξ[2:ngr] = AMRVW.roots((coeffs(Laguerre.dLaguerre)))
     #for k=1:ngr
     #  @info Laguerre.dLaguerre(gr.ξ[k]), gr.ξ[k]
     #end
- 
-    ScaledLaguerreAndDerivative!(nop,Laguerre,beta)
+    ω = zeros(Float128,ngr) 
+    ScaledLaguerreAndDerivative!(nop,Laguerre,beta,backend)
     Lkx = zeros(nop+1,1)
     for i=1:nop+1
-      Lkx[i] = scaled_laguerre(gr.ξ[i],nop,beta)
+      Lkx[i] = scaled_laguerre(ξ[i],nop,beta,backend)
       #Lkx[i] = Laguerre.Laguerre(gr.ξ[i])
-      gr.ω[i] = 1/(beta*Pp1*Lkx[i]^2)
+      ω[i] = 1/(beta*Pp1*Lkx[i]^2)
       #gr.ω[i] = exp(gr.ξ[i]*beta)/(beta*Pp1*Lkx[i]^2)
     
     end
+    if (backend == CPU())
+        gr.ξ .= ξ
+        gr.ω .= ω
+    else
+        KernelAbstractions.copyto!(backend, gr.ξ, Float32.(ξ))
+        KernelAbstractions.copyto!(backend, gr.ω, Float32.(ω))
+    end
+    #@info gr.ξ
+    #@info gr.ω
     #gr.ω[1] = 1-sum(gr.ω[2:nop+1])
     #@info gr.ω
     #if(scale)
@@ -782,28 +812,43 @@ function LagrangeLaguerreBasis(ξ, ξq, beta, TFloat, backend)
     N = nbasis -1
     Np1 = N+1
     
+    psi_1 = ones(TFloat, nbasis, nbasis)
+    dpsi_1 = zeros(TFloat, nbasis, nbasis)
+    ξq_1 = zeros(TFloat, nbasis)
+    ξ_1 = zeros(TFloat, nbasis)
     psi = KernelAbstractions.ones(backend,TFloat, nbasis,nbasis)
     dpsi = KernelAbstractions.zeros(backend, TFloat, nbasis,nbasis)
-    dpsi[1,1]=-beta*((N +1)./2.0)
-
+    KernelAbstractions.copyto!(CPU(), ξq_1, ξq)
+    KernelAbstractions.copyto!(CPU(), ξ_1, ξ)
+    
+    dpsi_1[1,1]=-beta*((N +1)./2.0)
     for i = 1:nbasis
-        xi = ξq[i]
+        xi = ξq_1[i]
         for j = 1:nbasis
-            xj = ξ[j]
+            xj = ξ_1[j]
             if(i != j)
-                psi[i,j] = 0.0
-                dpsi[j,i] = scaled_laguerre(xi,Np1,beta)/(scaled_laguerre(xj,Np1,beta)*(xi -xj));
+                psi_1[i,j] = 0.0
+                dpsi_1[j,i] = scaled_laguerre(xi,Np1,beta,backend)/(scaled_laguerre(xj,Np1,beta,backend)*(xi -xj));
             end
         end
     end
+    if (backend == CPU())
+        psi .= psi_1
+        dpsi .= dpsi_1
+    else
+        KernelAbstractions.copyto!(backend,psi,psi_1)
+        KernelAbstractions.copyto!(backend,dpsi,dpsi_1)
+    end
+
     return (psi,dpsi)
+
 
 end
 
 
-function scaled_laguerre(x,n,beta)
+function scaled_laguerre(x,n,beta,backend)
     Laguerre = St_Laguerre(Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)),Polynomial(TFloat(2.0)))
-    ScaledLaguerreAndDerivative!(n,Laguerre,beta)
+    ScaledLaguerreAndDerivative!(n,Laguerre,beta,CPU())
     #Lkx = Laguerre.Laguerre(x)
     Lkx = Real(Laguerre.Laguerre(x))
     y = exp(-(beta*x)/2)*Lkx#exp(-x)*Lkx

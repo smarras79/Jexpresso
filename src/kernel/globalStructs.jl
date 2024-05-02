@@ -1,16 +1,16 @@
-Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat}
+Base.@kwdef mutable struct St_SolutionVars{TFloat <: AbstractFloat, backend}
 
 
-    qnp1::Array{TFloat,2} = zeros(TFloat, 0, 0)       # qⁿ⁺¹
-    qn::Array{TFloat,2}   = zeros(TFloat, 0, 0)       # qⁿ
-    qq::Array{TFloat,2}   = zeros(TFloat, 0, 0)       # qⁿ
-    qnm1::Array{TFloat,2} = zeros(TFloat, 0, 0)       # qⁿ⁻¹
-    qnm2::Array{TFloat,2} = zeros(TFloat, 0, 0)       # qⁿ⁻²
-    qnm3::Array{TFloat,2} = zeros(TFloat, 0, 0)       # qⁿ⁻³
-    qe::Array{TFloat,2}   = zeros(TFloat, 0, 0)       # qexact    
-    zb::Array{TFloat,2}   = zeros(TFloat, 0, 0)       # zb #shallow water moving bathymetry
-    qnel::Array{TFloat,4} = zeros(TFloat, 0, 0, 0, 0)
-    μ::Array{TFloat,1}    = zeros(TFloat, 0)  
+    qnp1  = KernelAbstractions.zeros(backend,  TFloat, 0, 0)       # qⁿ⁺¹
+    qn    = KernelAbstractions.zeros(backend,  TFloat, 0, 0)       # qⁿ
+    qq    = KernelAbstractions.zeros(backend,  TFloat, 0, 0)       # qⁿ
+    qnm1  = KernelAbstractions.zeros(backend,  TFloat, 0, 0)       # qⁿ⁻¹
+    qnm2  = KernelAbstractions.zeros(backend,  TFloat, 0, 0)       # qⁿ⁻²
+    qnm3  = KernelAbstractions.zeros(backend,  TFloat, 0, 0)       # qⁿ⁻³
+    qe    = KernelAbstractions.zeros(backend,  TFloat, 0, 0)       # qexact    
+    zb    = KernelAbstractions.zeros(backend,  TFloat, 0, 0)       # zb #shallow water moving bathymetry
+    qnel  = KernelAbstractions.zeros(backend,  TFloat, 0, 0, 0, 0)
+    μ     = KernelAbstractions.zeros(backend,  TFloat, 0)  
     neqs = UInt8(1)
     qvars = Array{Union{Nothing, String}}(nothing, 0)
 end
@@ -23,19 +23,21 @@ end
 
 function allocate_post_process_vars(nelem, npoin, ngl, TFloat; neqs)
 
-    qpost = St_SolutionVars{TFloat}(μ = zeros(npoin, neqs))    
+    qpost = St_SolutionVars{TFloat}(μ = KernelAbstractions.zeros(backend,  npoin, neqs))    
 
     return qpost
 end
 
 
-function define_q(SD, nelem, npoin, ngl, qvars, TFloat; neqs=1)
+function define_q(SD, nelem, npoin, ngl, qvars, TFloat, backend; neqs=1)
 
-    q = St_SolutionVars{TFloat}(neqs=neqs,
-                                qn   = zeros(TFloat, npoin, neqs+1), # qn
-                                qnm1 = zeros(TFloat, npoin, neqs+1), # qⁿ
-                                qnm2 = zeros(TFloat, npoin, neqs+1), # qⁿ
-                                qe   = zeros(TFloat, npoin, neqs+1), # qexact
+    q = St_SolutionVars{TFloat, backend}(neqs=neqs,
+                                qn   = KernelAbstractions.zeros(backend,  TFloat, Int64(npoin), neqs+1), # qn
+                                qnm1 = KernelAbstractions.zeros(backend,  TFloat, Int64(npoin), neqs+1), # qⁿ
+                                qnm2 = KernelAbstractions.zeros(backend,  TFloat, Int64(npoin), neqs+1), # qⁿ
+                                qe   = KernelAbstractions.zeros(backend,  TFloat, Int64(npoin), neqs+1), # qexact
                                 qvars=qvars) # μ
+    @info typeof(q.qe)
+    @info backend
     return q
 end

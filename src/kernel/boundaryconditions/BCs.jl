@@ -1,47 +1,38 @@
 include("custom_bcs.jl")
 
 function apply_boundary_conditions!(u, uaux, t,qe,
-                                    mesh, metrics, basis,
-                                    RHS, rhs_el, ubdy,
-                                    ω, neqs, inputs, AD, SD::NSD_1D)
-    if inputs[:lperiodic_1d]
+                                    x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, nedges_bdy, ngl, ngr, nelem_semi_inf, ψ, dψ,
+                                    xmax, ymax, zmax, xmin, ymin, zmin, RHS, rhs_el, ubdy,
+                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type,
+                                    ω, neqs, inputs, AD, SD)
+
+
+    if inputs[:lperiodic_1d] && typeof(SD) == NSD_1D
         apply_periodicity!(u, uaux, t,qe,
-                            mesh, metrics, basis,
+                            npoin_linear, ψ, dψ,
                             RHS, rhs_el, ubdy,
                             ω, neqs, inputs, AD, SD)
     else
-        build_custom_bcs!(SD, t, mesh, metrics, ω,
-                          ubdy, uaux, u, qe,
-                          @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
+        build_custom_bcs!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, nedges_bdy, ngl, ngr, nelem_semi_inf, ω,
+                          xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
+                          connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, rhs_el,
                           neqs, dirichlet!, neumann, inputs)
     end
 end
 
-function apply_boundary_conditions!(u, uaux, t,qe,
-                                    mesh, metrics, basis,
-                                    RHS, rhs_el, ubdy,
-                                    ω, neqs, inputs, AD, SD::NSD_2D)
-
-    build_custom_bcs!(SD, t, mesh, metrics, ω,
-                      ubdy, uaux, u, qe,
-                      @view(RHS[:,:]), @view(rhs_el[:,:,:,:]),
-                      neqs, dirichlet!, neumann, inputs)
-    
-end
-
 function apply_periodicity!(u, uaux, t,qe,
-                            mesh, metrics, basis,
+                            npoin_linear, ψ, dψ,
                             RHS, rhs_el, ubdy,
                             ω, neqs, inputs, AD::FD, SD::NSD_1D)
 
     #this only works for a scalar equation.
     #adjust for systems.
-    u[mesh.npoin_linear] = u[1]
+    u[npoin_linear] = u[1]
 end
 
 
 function apply_periodicity!(u, uaux, t,qe,
-                            mesh, metrics, basis,
+                            npoin_linear, ψ, dψ,
                             RHS, rhs_el, ubdy,
                             ω, neqs, inputs, AD::ContGal, SD::NSD_1D)
     nothing
@@ -49,7 +40,7 @@ end
 
 
 function apply_periodicity!(u, uaux, t,qe,
-                            mesh, metrics, basis,
+                            npoin_linear, ψ, dψ,
                             RHS, rhs_el, ubdy,
                             ω, neqs, inputs, AD::FD, SD::NSD_2D)
     error(" BCs.jl: FD not implemented for NSD_2D yet! ")
@@ -57,7 +48,7 @@ end
 
 
 function apply_periodicity!(u, uaux, t,qe,
-                            mesh, metrics, basis,
+                            npoin_linear, ψ, dψ,
                             RHS, rhs_el, ubdy,
                             ω, neqs, inputs, AD::ContGal, SD::NSD_2D)
     nothing
@@ -146,13 +137,13 @@ function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
     
 end
 
-function build_custom_bcs!(::NSD_1D, t, mesh, metrics, ω,
-                           qbdy, uaux, u, qe,
-                           RHS, rhs_el,
+function build_custom_bcs!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, nedges_bdy, ngl, ngr, nelem_semi_inf, ω,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, rhs_el,
                            neqs, dirichlet!, neumann, inputs)
    ip = 1
    fill!(qbdy, 4325789.0)
-   user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], t, "left", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+   user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], t, "left", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
    for ieq =1:neqs
       if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
          uaux[ip,ieq] = qbdy[ieq]
@@ -160,9 +151,9 @@ function build_custom_bcs!(::NSD_1D, t, mesh, metrics, ω,
       end
     end
     
-    ip=mesh.npoin_linear
+    ip=npoin_linear
     fill!(qbdy, 4325789.0)
-    user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], t, "right", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+    user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], t, "right", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
     for ieq =1:neqs
       if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
          uaux[ip,ieq] = qbdy[ieq]
@@ -171,35 +162,35 @@ function build_custom_bcs!(::NSD_1D, t, mesh, metrics, ω,
     end
 
     #Map back to u after applying b.c.
-    uaux2u!(u, uaux, neqs, mesh.npoin)
+    uaux2u!(u, uaux, neqs, npoin)
 
 end
 
-function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
-                           qbdy, uaux, u, qe,
-                           RHS, rhs_el,
+function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, nedges_bdy, ngl, ngr, nelem_semi_inf, ω,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, rhs_el,
                            neqs, dirichlet!, neumann, inputs)
     #
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
-    for iedge = 1:mesh.nedges_bdy 
-        iel  = mesh.bdy_edge_in_elem[iedge]
+    for iedge = 1:nedges_bdy 
+        iel  = bdy_edge_in_elem[iedge]
         
-        if mesh.bdy_edge_type[iedge] != "periodic1" && mesh.bdy_edge_type[iedge] != "periodic2" && mesh.bdy_edge_type != "Laguerre"
+        if bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" && bdy_edge_type != "Laguerre"
         #if mesh.bdy_edge_type[iedge] == "free_slip"
             
             #tag = mesh.bdy_edge_type[iedge]
-            for k=1:mesh.ngl
-                ip = mesh.poin_in_bdy_edge[iedge,k]
-                nx = metrics.nx[iedge,k]
-                ny = metrics.ny[iedge,k]
+            for k=1:ngl
+                ip = poin_in_bdy_edge[iedge,k]
+                nx_l = nx[iedge,k]
+                ny_l = ny[iedge,k]
                 fill!(qbdy, 4325789.0)
                 #qbdy[:] .= uaux[ip,:]
                 #ipp = 1 #ip               
                 ###_bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge])
 
                 #dirichlet!(@view(uaux[ip,:]),qbdy, mesh.x[ip], mesh.y[ip], t, metrics.nx[iedge,k], metrics.ny[iedge,k], mesh.bdy_edge_type[iedge], @view(qe[ip,:]), inputs[:SOL_VARS_TYPE]) ###AS IT IS NOW, THIS IS ALLOCATING SHIT TONS. REWRITE to make it with ZERO allocation. hint: It may be due to passing the function but possibly not.
-                user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge], qbdy, nx, ny, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+                user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
                 
                 for ieq =1:neqs
                     if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
@@ -213,14 +204,14 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
     end
 
     if(inputs[:llaguerre_bc])
-        for e=1:mesh.nelem_semi_inf
-            for i=1:mesh.ngl
-                ip = mesh.connijk_lag[e,i,mesh.ngr]
-                ny = 1.0
-                nx = 0.0
+        for e=1:nelem_semi_inf
+            for i=1:ngl
+                ip = connijk_lag[e,i,ngr]
+                ny_l = 1.0
+                nx_l = 0.0
                 fill!(qbdy, 4325789.0)
                 tag = inputs[:laguerre_tag]
-                user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], mesh.y[ip], t, tag, qbdy, nx, ny, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+                user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
     
                 for ieq =1:neqs
                     if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
@@ -231,13 +222,13 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                 end
             end
         end
-        for k=1:mesh.ngr
-            ip = mesh.connijk_lag[1,1,k]
-            ny = 0.0
-            nx = -1.0
+        for k=1:ngr
+            ip = connijk_lag[1,1,k]
+            ny_l = 0.0
+            nx_l = -1.0
             fill!(qbdy, 4325789.0)
             tag = inputs[:laguerre_tag]
-            user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], mesh.y[ip], t, tag, qbdy, nx, ny, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+            user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
     
             for ieq =1:neqs
                 if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
@@ -246,11 +237,11 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
                     RHS[ip, ieq] = 0.0
                 end
             end
-            ip = mesh.connijk_lag[mesh.nelem_semi_inf,mesh.ngl,k]
-            ny = 0.0
-            nx = 1.0
+            ip = connijk_lag[nelem_semi_inf,ngl,k]
+            ny_l = 0.0
+            nx_l = 1.0
             fill!(qbdy, 4325789.0)     
-            user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], mesh.y[ip], t, tag, qbdy, nx, ny, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+            user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
     
             for ieq =1:neqs
                 if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
@@ -264,6 +255,40 @@ function build_custom_bcs!(::NSD_2D, t, mesh, metrics, ω,
     end
     
     #Map back to u after applying b.c.
-    uaux2u!(u, uaux, neqs, mesh.npoin)
+    uaux2u!(u, uaux, neqs, npoin)
        
+end
+
+
+function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, nedges_bdy, ngl, ngr, nelem_semi_inf, ω,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, rhs_el,
+                           neqs, dirichlet!, neumann, inputs)
+    #
+    # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
+    #          That
+    for ip = 1:npoin
+
+        fill!(qbdy, 4325789.0)
+
+        user_bc_dirichlet!(@view(uaux[ip,:]),
+                           x[ip], y[ip], z[ip],
+                           t, 0, qbdy,
+                           1, 1, 1,
+                           xmin, xmax,
+                           ymin, ymax,
+                           zmin, zmax,
+                           @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
+        
+        for ieq =1:neqs
+            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                uaux[ip,ieq] = qbdy[ieq]
+                RHS[ip, ieq] = 0.0
+            end
+        end
+    end
+    
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, npoin)
+    
 end

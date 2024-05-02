@@ -29,12 +29,12 @@ end
 
 function perfectGasLaw_ρPtoθ(PhysConst::PhysicalConst; ρ=1.25, Press=100000.0)
     
-    return (1.0/ρ)*(Press/PhysConst.C0)^(1.0/PhysConst.γ) #θ
+    return (Float32(1.0)/ρ)*(Press/PhysConst.C0)^(Float32(1.0)/PhysConst.γ) #θ
     
 end
 
 function perfectGasLaw_θPtoρ(PhysConst::PhysicalConst; θ=300.0, Press=100000.0)
     
-    return (1.0/θ)*(Press/PhysConst.C0)^(1.0/PhysConst.γ) #ρ
+    return (Float32(1.0)/θ)*(Press/PhysConst.C0)^(Float32(1.0)/PhysConst.γ) #ρ
     
 end
