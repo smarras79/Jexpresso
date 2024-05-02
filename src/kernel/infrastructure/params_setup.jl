@@ -19,7 +19,7 @@ function params_setup(sem,
     u        = zeros(T, sem.mesh.npoin*qp.neqs)
     uaux     = zeros(T, sem.mesh.npoin, qp.neqs)
     vaux     = zeros(T, sem.mesh.npoin) #generic auxiliary array for general use
-    
+
     rhs      = allocate_rhs(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T; neqs=qp.neqs)
     fluxes   = allocate_fluxes(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T; neqs=qp.neqs)
     
@@ -29,8 +29,14 @@ function params_setup(sem,
     #
     gradu    = zeros(T, 2, 1, 1)
     ubdy     = zeros(qp.neqs)
-    bdy_flux = zeros(qp.neqs,1)    
+    bdy_flux = zeros(qp.neqs,1)
 
+
+    xmax = maximum(sem.mesh.x)
+    xmin = minimum(sem.mesh.x)
+    ymax = maximum(sem.mesh.y)
+    ymin = minimum(sem.mesh.y)
+    
     #
     # filter arrays
     #
@@ -43,6 +49,11 @@ function params_setup(sem,
                               lfilter=inputs[:lfilter])
     
     fy_t     = transpose(sem.fy)
+
+    for i=1:qp.neqs
+        idx = (i-1)*sem.mesh.npoin
+        u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
+    end
     
     #The following are only built and active if Laguerre boundaries are to be used
     if ( "Laguerre" in sem.mesh.bdy_edge_type ||
@@ -101,8 +112,7 @@ function params_setup(sem,
                   visc_coeff, ivisc_equations,
                   sem.matrix.M, sem.matrix.Minv,tspan,
                   Δt, deps,
-                  maximum(sem.mesh.x), minimum(sem.mesh.x),
-                  maximum(sem.mesh.y), minimum(sem.mesh.y),
+                  xmin, xmax, ymin, ymax,
                   qp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
     else
         params = (T, inputs,
@@ -117,8 +127,7 @@ function params_setup(sem,
                   visc_coeff, ivisc_equations,
                   sem.matrix.M, sem.matrix.Minv,tspan,
                   Δt, deps,
-                  maximum(sem.mesh.x), minimum(sem.mesh.x),
-                  maximum(sem.mesh.y), minimum(sem.mesh.y), 
+                  xmin, xmax, ymin, ymax,
                   qp, sem.fx, sem.fy, fy_t,laguerre=false)
     end
 
