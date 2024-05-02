@@ -30,15 +30,26 @@ function params_setup(sem,
     gradu    = zeros(T, 2, 1, 1)
     ubdy     = zeros(qp.neqs)
     bdy_flux = zeros(qp.neqs,1)    
-   
-    #filter arrays
-    q_t  = zeros(Float64,qp.neqs,sem.mesh.ngl,sem.mesh.ngl)
-    q_ti = zeros(Float64,sem.mesh.ngl,sem.mesh.ngl)
-    fy_t = transpose(sem.fy)
-    fy_t_lag = transpose(sem.fy_lag)
-    fqf = zeros(Float64,qp.neqs,sem.mesh.ngl,sem.mesh.ngl)
-    b = zeros(sem.mesh.nelem, sem.mesh.ngl, sem.mesh.ngl, qp.neqs)
-    B = zeros(Float64, sem.mesh.npoin, qp.neqs) 
+
+    #
+    # filter arrays
+    #
+    filter =  allocate_filter(sem.mesh.SD,
+                              sem.mesh.nelem,
+                              sem.mesh.npoin,
+                              sem.mesh.ngl,
+                              TFloat;
+                              neqs=qp.neqs,
+                              lfilter=inputs[:lfilter])
+    
+    fy_t     = transpose(sem.fy)
+     
+    #q_t = filter.q_t
+    #fqf = filter.fqf
+    #q_ti = filter.q_ti
+    #b = filter.b
+    #B = filter.B
+    
     #store grid limits to save time
     xmax = maximum(sem.mesh.x)
     xmin = minimum(sem.mesh.x)
@@ -47,68 +58,40 @@ function params_setup(sem,
 
     
     #The following are only built and active if Laguerre boundaries are to be used
-    if ( "Laguerre" in sem.mesh.bdy_edge_type)
-        #
-        # 2D & 3D dd if statement like aboe
-        #
+    if ( "Laguerre" in sem.mesh.bdy_edge_type ||
+        inputs[:llaguerre_1d_right] == true   ||
+        inputs[:llaguerre_1d_left]  == true )
         
-        if  sem.mesh.nsd == 2
-            rhs_lag = allocate_rhs_lag(sem.mesh.SD,
-                                       sem.mesh.nelem_semi_inf,
-                                       sem.mesh.npoin,
-                                       sem.mesh.ngl,
-                                       sem.mesh.ngr,
-                                       TFloat; neqs=qp.neqs)
-
-            fluxes_lag = allocate_fluxes_lag(sem.mesh.SD,
-                                             sem.mesh.nelem_semi_inf,
-                                             sem.mesh.npoin,
-                                             sem.mesh.ngl,
-                                             sem.mesh.ngr,
-                                             TFloat; neqs=qp.neqs)
-            #F_lag = fluxes_lag.F_lag
-            #G_lag = fluxes_lag.G_lag
-            #H_lag = fluxes_lag.H_lag
-            #S_lag = fluxes_lag.S_lag
-            #uprimitive_lag = fluxes_lag.uprimitive_lag
-            
-            q_t_lag = zeros(Float64,qp.neqs,sem.mesh.ngl,sem.mesh.ngr)
-            q_ti_lag = zeros(Float64,sem.mesh.ngl,sem.mesh.ngr)
-            fqf_lag = zeros(Float64,qp.neqs,sem.mesh.ngl,sem.mesh.ngr)
-            b_lag = zeros(sem.mesh.nelem_semi_inf, sem.mesh.ngl, sem.mesh.ngr, qp.neqs)
-            B_lag = zeros(Float64, sem.mesh.npoin, qp.neqs)
-        elseif  sem.mesh.nsd == 3
-          error(" src/kernel/infrastructore/params_setup.jl: 3D Laguerre arrays not coded yet!")
-        end
-    end
-    if (inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
-        #
-        # 1D
-        #
         rhs_lag = allocate_rhs_lag(sem.mesh.SD,
                                    sem.mesh.nelem_semi_inf,
                                    sem.mesh.npoin,
+                                   sem.mesh.ngl,
                                    sem.mesh.ngr,
                                    TFloat; neqs=qp.neqs)
 
         fluxes_lag = allocate_fluxes_lag(sem.mesh.SD,
-                                         sem.mesh.nelem_semi_inf,
-                                         sem.mesh.npoin,
+                                         sem.mesh.ngl,
                                          sem.mesh.ngr,
                                          TFloat; neqs=qp.neqs)
 
-       # F_lag = fluxes_lag.F_lag
-       # G_lag = fluxes_lag.G_lag
-        #H_lag = fluxes_lag.H_lag
-        #S_lag = fluxes_lag.S_lag
-        #uprimitive_lag = fluxes_lag.uprimitive_lag
+        filter_lag =  allocate_filter_lag(sem.mesh.SD,
+                                          sem.mesh.nelem_semi_inf,
+                                          sem.mesh.npoin,
+                                          sem.mesh.ngl,
+                                          sem.mesh.ngr,
+                                          TFloat;
+                                          neqs=qp.neqs,
+                                          lfilter=inputs[:lfilter])
+        fy_t_lag = transpose(sem.fy_lag)
         
-        q_t_lag = zeros(Float64, qp.neqs, sem.mesh.ngr)
-        q_ti_lag = zeros(Float64, sem.mesh.ngr)
-        fqf_lag = zeros(Float64, qp.neqs, sem.mesh.ngr)
-        b_lag = zeros(sem.mesh.nelem_semi_inf, sem.mesh.ngr, qp.neqs)
-        B_lag = zeros(Float64, sem.mesh.npoin, qp.neqs)
+        #q_t_lag  =  filter_lag.q_t_lag
+        #q_ti_lag =  filter_lag.q_ti_lag
+        #fqf_lag  =  filter_lag.fqf_lag
+        #b_lag    =  filter_lag.b_lag
+        #B_lag    =  filter_lag.B_lag
+
     end
+   
 
     #-----------------------------------------------------------------
     for i=1:qp.neqs
@@ -129,20 +112,13 @@ function params_setup(sem,
         
         params = (T, rhs, fluxes,
                   rhs_lag, fluxes_lag,
+                  filter, filter_lag,
                   uaux, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
-                  #rhs_el, rhs_diff_el,
-                  #rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
-                  #uprimitive,
-                  q_t, q_ti, fqf, b, B,
-                  q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag,
-                  #RHS, RHS_visc,
-                  #F_lag, G_lag, S_lag, 
-                  #rhs_el_lag,
-                  #rhs_diff_el_lag,
-                  #rhs_diffξ_el_lag, rhs_diffη_el_lag,
-                  #RHS_lag, RHS_visc_lag,
-                  #uprimitive_lag, 
+                 
+                  #q_t, q_ti, fqf, b, B,
+                  #q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag,
+                  
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD,
                   sem.SOL_VARS_TYPE,
                   neqs=qp.neqs,
@@ -153,13 +129,11 @@ function params_setup(sem,
                   qp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
     else
         params = (rhs, fluxes,
+                  filter,
                   T,
                   uaux, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
-                  #rhs_el,
-                  #rhs_diff_el, rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
-                  #uprimitive,
-                  q_t, q_ti, fqf, b, B,
+                  #q_t, q_ti, fqf, b, B,
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
                   sem.SOL_VARS_TYPE, 
                   neqs=qp.neqs,
