@@ -18,7 +18,7 @@
     KernelAbstractions.@atomic RHS[ip] -= ω[il]*dFdxi/ M[ip]
 end
 
-@kernel function _build_rhs_gpu_2D_v0!(RHS, u, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst)
+@kernel function _build_rhs_gpu_2D_v0!(RHS, u, qe, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst)
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
     @inbounds i_x = il[1]
@@ -32,7 +32,8 @@ end
     S = @localmem eltype(RHS) (DIM+1,DIM+1)
 
     uip = @view(u[ip,1:neq])
-    @inbounds flux[ie, i_x, i_y, :] .= user_flux(uip,PhysConst)
+    qeip = @view(qe[ip,1:neq+1])
+    @inbounds flux[ie, i_x, i_y, :] .= user_flux(uip,qeip,PhysConst)
     
     @inbounds source[ie, i_x, i_y, :] .= user_source(uip,x[ip],y[ip],PhysConst)
 
@@ -216,7 +217,7 @@ end
 
 end
 
-@kernel function _build_rhs_diff_gpu_2D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, u, uprimitive, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst)
+@kernel function _build_rhs_diff_gpu_2D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, u, qe, uprimitive, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst)
 
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -227,7 +228,7 @@ end
     DIM = @uniform @groupsize()[1]
     U = @localmem eltype(RHS_diff) (DIM,DIM)
 
-    @inbounds uprimitive[ie, i_x, i_y, 1:neq] .= uToPrimitives_gpu(@view(u[ip,1:neq]))
+    @inbounds uprimitive[ie, i_x, i_y, 1:neq] .= uToPrimitives_gpu(@view(u[ip,1:neq]),@view(qe[ip,1:neq]))
 
     @inbounds ωJac = ω[i_x]*ω[i_y]*Je[ie,i_x,i_y]
 
@@ -324,9 +325,9 @@ end
     @inbounds du[idx] = RHS[ip,ieq]
 end
 
-function uToPrimitives_gpu(u)
+function uToPrimitives_gpu(u,qe)
 
-    return Float32(u[1]), Float32(u[2]/u[1]), Float32(u[3]/u[1]), Float32(u[4]/u[1])
+    return Float32(u[1]+qe[1]), Float32(u[2]/(u[1]+qe[1])), Float32(u[3]/(u[1]+qe[1])), Float32((u[4]+qe[4])/(u[1]+qe[1]) - qe[4]/qe[1])
 end
 
 function uToPrimitives_gpu_3d(u)

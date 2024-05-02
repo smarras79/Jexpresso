@@ -110,15 +110,17 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
             title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
             write_vtk(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
         else
-            u = KernelAbstractions.allocate(CPU(),TFloat,nvar*mesh.npoin)
+            u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
             KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
+            u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
+            KernelAbstractions.copyto!(CPU(),u_exact,qexact)
             if (mesh.SD == NSD_2D())
                 convert_mesh_arrays_to_cpu!(mesh)
             elseif (mesh.SD == NSD_3D())
                 convert_mesh_arrays_to_cpu_3D!(mesh)
             end
             title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, u, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
+            write_vtk(SD, mesh, u, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
         end
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )

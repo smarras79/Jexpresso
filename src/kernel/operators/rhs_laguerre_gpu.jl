@@ -1,7 +1,7 @@
 #---------------------------------------------------------------------------
 # Optimized (more coud possibly be done)
 #---------------------------------------------------------------------------
-@kernel function _build_rhs_lag_gpu_2D_v0!(RHS, u, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, dψ_lag, ω, ω_lag, Minv, flux, source, ngl, ngr, neq, PhysConst)
+@kernel function _build_rhs_lag_gpu_2D_v0!(RHS, u, qe, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, dψ_lag, ω, ω_lag, Minv, flux, source, ngl, ngr, neq, PhysConst)
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
     @inbounds i_ngl = il[1]
@@ -16,7 +16,8 @@
     S = @localmem eltype(RHS) (DIM_1+1, DIM_2+1)
 
     uip = @view(u[ip,1:neq])
-    @inbounds flux[ie, i_ngl, i_ngr, :] .= user_flux(uip,PhysConst)
+    qeip = @view(qe[ip,1:neq+1])
+    @inbounds flux[ie, i_ngl, i_ngr, :] .= user_flux(uip,qeip,PhysConst)
     
     @inbounds source[ie, i_ngl, i_ngr, :] .= user_source(uip,x[ip],y[ip],PhysConst)
 
@@ -46,8 +47,8 @@
         @inbounds dηdx_ij = dηdx[ie,i_ngl,i_ngr]
         @inbounds dηdy_ij = dηdy[ie,i_ngl,i_ngr]
 
-        dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-        dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+        @inbounds dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
+        @inbounds dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
 
     ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
         @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_ngl]*ω_lag[i_ngr]*Je[ie,i_ngl,i_ngr]*((dFdx + dGdy)- S[i_ngl, i_ngr])* Minv[ip]
@@ -55,7 +56,7 @@
 end
 
 
-@kernel function _build_rhs_visc_lag_gpu_2D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, u, uprimitive, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, dψ_lag, ω, ω_lag, Minv, visc_coeff, ngl, ngr, neq, PhysConst)
+@kernel function _build_rhs_visc_lag_gpu_2D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, u, qe, uprimitive, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, dψ_lag, ω, ω_lag, Minv, visc_coeff, ngl, ngr, neq, PhysConst)
 
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -67,7 +68,7 @@ end
     DIM_2 = @uniform @groupsize()[2]
     U = @localmem eltype(RHS_diff) (DIM_1+1, DIM_2+1)
 
-    @inbounds uprimitive[ie, i_ngl, i_ngr, 1:neq] .= uToPrimitives_lag!(@view(u[ip,1:neq]))
+    @inbounds uprimitive[ie, i_ngl, i_ngr, 1:neq] .= uToPrimitives_lag!(@view(u[ip,1:neq]),@view(qe[ip,1:neq]))
 
     @inbounds ωJac = ω[i_ngl]*ω_lag[i_ngr]*Je[ie,i_ngl,i_ngr]
 
@@ -115,7 +116,55 @@ end
 
 end
 
-function uToPrimitives_lag!(u)
+@kernel function apply_boundary_conditions_lag_gpu!(uaux,u,x,y,t,connijk,qbdy,ngl,ngr,neq,npoin,nelem_semi_inf)
 
-    return Float32(u[1]), Float32(u[2]/u[1]), Float32(u[3]/u[1]), Float32(u[4]/u[1])
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    i_ngl = il[1]
+    i_ngr = il[2]
+    if (i_ngr == ngr)
+        ip = connijk[ie,i_ngl,ngr]
+        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= 1234567
+        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),x[ip],y[ip],t,Float32(0.0),Float32(1.0),@view(qbdy[ie, i_ngl, i_ngr, :]))
+        for ieq =1:neq
+            if !(qbdy[ie, i_ngl, i_ngr, ieq] == 1234567) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
+            # if use the commented line in CUDA, somehow get errors
+            # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
+                @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
+            end
+        end
+    end
+    
+    if (ie == Int32(1))
+        ip = connijk[ie,1,i_ngr]
+        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= 1234567
+        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),x[ip],y[ip],t,Float32(-1.0),Float32(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]))
+        for ieq =1:neq
+            if !(qbdy[ie, i_ngl, i_ngr, ieq] == 1234567) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
+            # if use the commented line in CUDA, somehow get errors
+            # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
+                @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
+            end
+        end
+    end
+
+    if (ie == nelem_semi_inf)
+        ip = connijk[ie,ngl,i_ngr]
+        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= 1234567
+        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),x[ip],y[ip],t,Float32(1.0),Float32(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]))
+        for ieq =1:neq
+            if !(qbdy[ie, i_ngl, i_ngr, ieq] == 1234567) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
+            # if use the commented line in CUDA, somehow get errors
+            # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq]
+                @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
+            end
+        end
+    end
+
+
+end
+
+function uToPrimitives_lag!(u,qe)
+
+    return Float32(u[1]+qe[1]), Float32(u[2]/(u[1]+qe[1])), Float32(u[3]/(u[1]+qe[1])), Float32((u[4]+qe[4])/(u[1]+qe[1]) - qe[4]/qe[1])
 end

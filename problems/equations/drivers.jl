@@ -6,6 +6,14 @@ function driver(inputs::Dict,      #input parameters from src/user_input.jl
 
     sem = sem_setup(inputs)
     
+    if (inputs[:backend] != CPU())
+        if (sem.mesh.SD == NSD_2D())
+            convert_mesh_arrays!(sem.mesh, inputs[:backend])
+        elseif (sem.mesh.SD == NSD_3D())
+            convert_mesh_arrays_3D!(sem.mesh, inputs[:backend])
+        end
+    end
+
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     params, u =  params_setup(sem,
@@ -14,17 +22,17 @@ function driver(inputs::Dict,      #input parameters from src/user_input.jl
                               OUTPUT_DIR,
                               TFloat)
 
-    if (inputs[:backend] != CPU())
+    #=if (inputs[:backend] != CPU())
         if (sem.mesh.SD == NSD_2D())
             convert_mesh_arrays!(sem.mesh, inputs[:backend])
         elseif (sem.mesh.SD == NSD_3D())
             convert_mesh_arrays_3D!(sem.mesh, inputs[:backend])    
         end
-    end
+    end=#
     
     if !(inputs[:llinsolve])   
         
-        check_length(params.qp.qn[1,:], params.qp.neqs+1, "drivers --> initialize.jl")
+        #check_length(params.qp.qn[1,:], params.qp.neqs+1, "drivers --> initialize.jl")
 
         solution = time_loop!(inputs, params, u)
         

@@ -13,7 +13,7 @@ function user_inputs()
         :lsource              => true, 
         #:CL                   => NCL(), #CL() is defaults
         :backend              => MetalBackend(),
-        # :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+        :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

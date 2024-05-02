@@ -261,7 +261,6 @@ function uToPrimitives!(neqs, uprimitive, u, uprimitivee, mesh, δtotal_energy, 
 end
 
 function rhs!(du, u, params, time)
-    @info time    
     backend = params.inputs[:backend]
     if (backend == CPU())
         build_rhs!(@view(params.RHS[:,:]), u, params, time)
@@ -331,19 +330,29 @@ function rhs!(du, u, params, time)
               params.mesh.poin_in_bdy_edge,params.qbdy_gpu,params.mesh.ngl,TInt(params.neqs), params.mesh.npoin;
               ndrange = (params.mesh.nedges_bdy*params.mesh.ngl), workgroupsize = (params.mesh.ngl))
             KernelAbstractions.synchronize(backend)
-            
+                
+            if (params.laguerre)
+
+                k = apply_boundary_conditions_lag_gpu!(backend)
+                k(@view(params.uaux[:,:]), @view(u[:]), params.mesh.x,params.mesh.y,TFloat(time), params.mesh.connijk_lag,
+                    params.qbdy_lag_gpu, params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), params.mesh.npoin, params.mesh.nelem_semi_inf;
+                    ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
+                KernelAbstractions.synchronize(backend)
+            end
+
             k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
             
             k = _build_rhs_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-            k(params.RHS, params.uaux, params.mesh.x, params.mesh.y, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je,
+            k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.connijk, 
+              params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je,
               params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu, params.mesh.ngl, TInt(params.neqs), PhysConst;
               ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
             KernelAbstractions.synchronize(backend)
-            
+            #@info maximum(params.RHS) 
             if (params.laguerre)
                 params.RHS_lag .= TFloat(0.0)
-                connijk_lag = KernelAbstractions.allocate(backend, TInt, Int64(params.mesh.nelem_semi_inf),params.mesh.ngl,params.mesh.ngr)
-                KernelAbstractions.copyto!(backend, connijk_lag, params.mesh.connijk_lag)
+                #connijk_lag = KernelAbstractions.allocate(backend, TInt, Int64(params.mesh.nelem_semi_inf),params.mesh.ngl,params.mesh.ngr)
+                #KernelAbstractions.copyto!(backend, connijk_lag, params.mesh.connijk_lag)
 
                 # ku2uaux = utouaux_gpu!(backend)
                 # ku2uaux(u,params.uaux,params.mesh.npoin,TInt(params.neqs);
@@ -352,12 +361,12 @@ function rhs!(du, u, params, time)
 
     
                 k_lag = _build_rhs_lag_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngr)))
-                k_lag(params.RHS_lag, params.uaux, params.mesh.x, params.mesh.y, connijk_lag, params.metrics_lag.dξdx, params.metrics_lag.dξdy,
+                k_lag(params.RHS_lag, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.connijk_lag, params.metrics_lag.dξdx, params.metrics_lag.dξdy,
                       params.metrics_lag.dηdx, params.metrics_lag.dηdy, params.metrics_lag.Je, params.basis.dψ, params.basis_lag.dψ, params.ω,
                       params.ω_lag, params.Minv, params.flux_lag_gpu, params.source_lag_gpu, params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), PhysConst;
                       ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
                 KernelAbstractions.synchronize(backend)
-
+                #@info maximum(params.RHS_lag[:,3]), minimum(params.RHS_lag[:,3]), maximum(params.RHS_lag), minimum(params.RHS_lag)
                 @inbounds params.RHS .+= params.RHS_lag
 
                 if (params.inputs[:lvisc])
@@ -367,8 +376,8 @@ function rhs!(du, u, params, time)
                     params.source_lag_gpu .= TFloat(0.0)
 
                     k_diff_lag = _build_rhs_visc_lag_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngr)))
-                    k_diff_lag(params.RHS_visc_lag, params.rhs_diffξ_el_lag, params.rhs_diffη_el_lag, params.uaux, params.source_lag_gpu, params.mesh.x,
-                               params.mesh.y, connijk_lag, params.metrics_lag.dξdx, params.metrics_lag.dξdy, params.metrics_lag.dηdx, params.metrics_lag.dηdy,
+                    k_diff_lag(params.RHS_visc_lag, params.rhs_diffξ_el_lag, params.rhs_diffη_el_lag, params.uaux, params.qp.qe, params.source_lag_gpu, params.mesh.x,
+                               params.mesh.y, params.mesh.connijk_lag, params.metrics_lag.dξdx, params.metrics_lag.dξdy, params.metrics_lag.dηdx, params.metrics_lag.dηdy,
                                params.metrics_lag.Je, params.basis.dψ, params.basis_lag.dψ, params.ω, params.ω_lag, params.Minv, params.visc_coeff,
                                params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), PhysConst;
                                ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
@@ -386,14 +395,14 @@ function rhs!(du, u, params, time)
                 params.source_gpu .= TFloat(0.0)
                 
                 k = _build_rhs_diff_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-                k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.uaux, params.source_gpu, params.mesh.x, params.mesh.y, params.mesh.connijk, 
+                k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.uaux, params.qp.qe, params.source_gpu, params.mesh.x, params.mesh.y, params.mesh.connijk, 
                   params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, 
                   params.visc_coeff, params.mesh.ngl, TInt(params.neqs), PhysConst; ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
                 KernelAbstractions.synchronize(backend)
 
                 @inbounds params.RHS .+= params.RHS_visc
             end
-
+            #@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
             k1 = RHStodu_gpu!(backend)
             k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
         

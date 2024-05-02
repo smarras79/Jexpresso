@@ -839,6 +839,7 @@ function LagrangeLaguerreBasis(ξ, ξq, beta, TFloat, backend)
         KernelAbstractions.copyto!(backend,psi,psi_1)
         KernelAbstractions.copyto!(backend,dpsi,dpsi_1)
     end
+
     return (psi,dpsi)
 
 
