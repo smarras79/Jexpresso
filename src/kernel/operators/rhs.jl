@@ -31,13 +31,15 @@ end
 function resetRHSToZero_inviscid!(params)
     fill!(params.rhs.rhs_el, zero(params.T))   
     fill!(params.rhs.RHS,    zero(params.T))
-    fill!(params.b,          zero(params.T))
-    fill!(params.B,          zero(params.T))
 end
 
+function reset_filters!(params)
+    fill!(params.filter.b,      zero(params.T))
+    fill!(params.filter.B,      zero(params.T))
+end
 function reset_laguerre_filters!(params)
-    fill!(params.b_lag,      zero(params.T))
-    fill!(params.B_lag,      zero(params.T))
+    fill!(params.filter.b_lag,      zero(params.T))
+    fill!(params.filter.B_lag,      zero(params.T))
 end
 
 function resetRHSToZero_viscous!(params, SD::NSD_2D)
@@ -278,13 +280,17 @@ function _build_rhs!(RHS, u, params, time)
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
-    resetRHSToZero_inviscid!(params) 
-    if (params.laguerre && params.inputs[:lfilter])
-         reset_laguerre_filters!(params)
-    end
+    resetRHSToZero_inviscid!(params)
+
+    # Filter 
     if (params.inputs[:lfilter])
+        reset_filters!(params)
+        if (params.laguerre)
+            reset_laguerre_filters!(params)
+        end
         filter!(u, params, time, SD,params.SOL_VARS_TYPE)
     end
+    
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
                                params.mesh, params.metrics, params.basis,
