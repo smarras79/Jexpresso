@@ -3,14 +3,14 @@
 #
 Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dim1}
     
-    qnp1::Array{T,dim1}  # qⁿ⁺¹
+    qnp1::Array{T,dim1}       # qⁿ⁺¹
     qn::Array{T,dim1}         # qⁿ
-    qq::Array{T,dim1}      # qⁿ
-    qnm1::Array{T,dim1}    # qⁿ⁻¹
+    qq::Array{T,dim1}         # qⁿ
+    qnm1::Array{T,dim1}       # qⁿ⁻¹
     qnm2::Array{T,dim1}       # qⁿ⁻²
     qnm3::Array{T,dim1}       # qⁿ⁻³
-    qe::Array{T,dim1}       # qexact    
-    zb::Array{T,dim1}        # zb #shallow water moving bathymetry
+    qe::Array{T,dim1}         # qexact    
+    zb::Array{T,dim1}         # zb #shallow water moving bathymetry
     qvars = Array{Union{Nothing, String}}(nothing, 0)
     neqs = UInt8(1)
 end
