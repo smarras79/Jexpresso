@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 500.0,
+        :tend                 => 1000.0,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :tinit                => 0.0,
         :Δt                   => 0.05,
@@ -21,7 +21,7 @@ function user_inputs()
         #:llump               => true,
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
-        :nop_laguerre        => 14,
+        :nop_laguerre        => 16,
         :xfac_laguerre       => 0.0,
         :yfac_laguerre       => 110.0,
         :llaguerre_bc        => true,
@@ -31,7 +31,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1, 2, 3, 4),
-        :μ                   => [0.0, 75.0, 75.0, 75.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
