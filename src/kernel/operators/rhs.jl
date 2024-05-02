@@ -311,7 +311,6 @@ function _build_rhs!(RHS, u, params, time)
         
         DSS_rhs!(@view(params.rhs.RHS_visc[:,:]), (params.rhs.rhs_diff_el), params.mesh, nelem, ngl, neqs, SD, AD)
         
-        #params.rhs.RHS[:,:] .= @view(params.rhs.RHS[:,:]) .+ @view(params.rhs.RHS_visc[:,:])
         params.rhs.RHS[:,:] .= (params.rhs.RHS[:,:]) .+ (params.rhs.RHS_visc[:,:])
     end
     for ieq=1:neqs
