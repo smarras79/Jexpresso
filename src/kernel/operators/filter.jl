@@ -72,7 +72,7 @@ function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_2
   end
   
           uaux .= params.B
-          uaux[:,2:3] .+= params.qe[,2:3]
+          uaux[:,2:3] .+= params.qe[:,2:3]
 
   uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
