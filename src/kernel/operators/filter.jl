@@ -1,13 +1,12 @@
 using Quadmath
 
-function filter!(u, params, SD::NSD_2D,::TOTAL)
+function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_2D,::TOTAL)
   
-  u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+  u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
-  fy_t = transpose(params.fy)
   ## Subtract background velocity
   #qv = copy(q)
-  params.uaux[:,2:3] .= params.uaux[:,2:3] .- params.qe[:,2:3]
+  uaux[:,2:3] .= uaux[:,2:3] .- params.qe[:,2:3]
   ## store Dimension of MxM object
 
   ## Loop through the elements
@@ -15,9 +14,9 @@ function filter!(u, params, SD::NSD_2D,::TOTAL)
   for e=1:params.mesh.nelem
     for j=1:params.mesh.ngl
       for i=1:params.mesh.ngl
-        ip = params.mesh.connijk[e,i,j]
+        ip = connijk[e,i,j]
         for m =1:params.neqs
-          params.q_t[m,i,j] = params.uaux[ip,m]
+          params.q_t[m,i,j] = uaux[ip,m]
         end
       end
     end
@@ -60,38 +59,27 @@ function filter!(u, params, SD::NSD_2D,::TOTAL)
       for i=1:params.mesh.ngl
         ip = params.mesh.connijk[e,i,j]
         for m=1:params.neqs
-          params.b[e,i,j,m] = params.b[e,i,j,m] + params.fqf[m,i,j] * params.ω[i]*params.ω[j]*params.metrics.Je[e,i,j]
+          params.b[e,i,j,m] += params.fqf[m,i,j] * params.ω[i]*params.ω[j]*Je[e,i,j]
         end
       end
     end
   end
   
-  DSS_rhs!(@view(params.B[:,:]), @view(params.b[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD)
+  DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
   
   for ieq=1:params.neqs
-        divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
+        divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
   end
   
-  for e=1:params.mesh.nelem
-    for j=1:params.mesh.ngl
-      for i=1:params.mesh.ngl
-        ip = params.mesh.connijk[e,i,j]
-        for m=1:params.neqs
-          params.uaux[ip,m] = params.B[ip,m]
-        end
-        for m=2:3
-          params.uaux[ip,m] += params.qe[ip,m]
-        end
-      end
-    end
-  end 
+          uaux .= params.B
+          uaux[:,2:3] .+= params.qe[,2:3]
 
-  uaux2u!(u, @view(params.uaux[:,:]), params.neqs, params.mesh.npoin)  
+  uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
 
-function filter!(u, params, t, SD::NSD_2D,::PERT)
+function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_2D,::PERT)
  
-  u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+  u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
   #fy_t = transpose(params.fy)
   ## Subtract background velocity
@@ -104,9 +92,9 @@ function filter!(u, params, t, SD::NSD_2D,::PERT)
   for e=1:params.mesh.nelem
     for j=1:params.mesh.ngl
       for i=1:params.mesh.ngl
-        ip = params.mesh.connijk[e,i,j]
+        ip = connijk[e,i,j]
         for m =1:params.neqs
-          params.q_t[m,i,j] = params.uaux[ip,m]
+          params.q_t[m,i,j] = uaux[ip,m]
         end
       end
     end
@@ -144,23 +132,23 @@ function filter!(u, params, t, SD::NSD_2D,::PERT)
 
     for j=1:params.mesh.ngl
       for i=1:params.mesh.ngl
-        ip = params.mesh.connijk[e,i,j]
         for m=1:params.neqs
-          params.b[e,i,j,m] += params.fqf[m,i,j] * params.ω[i]*params.ω[j]*params.metrics.Je[e,i,j]
+          params.b[e,i,j,m] += params.fqf[m,i,j] * params.ω[i]*params.ω[j]*Je[e,i,j]
         end
       end
     end
   end
 
-  DSS_rhs!(@view(params.B[:,:]), @view(params.b[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD)
+  DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
 
   if (params.laguerre)
+
     for e=1:params.mesh.nelem_semi_inf
       for j=1:params.mesh.ngr
         for i=1:params.mesh.ngl
-          ip = params.mesh.connijk_lag[e,i,j]
+          ip = connijk_lag[e,i,j]
           for m =1:params.neqs
-            params.q_t_lag[m,i,j] = params.uaux[ip,m]
+            params.q_t_lag[m,i,j] = uaux[ip,m]
           end
         end
       end
@@ -201,65 +189,46 @@ function filter!(u, params, t, SD::NSD_2D,::PERT)
 
       for j=1:params.mesh.ngr
         for i=1:params.mesh.ngl
-          ip = params.mesh.connijk_lag[e,i,j]
           for m=1:params.neqs
-            params.b_lag[e,i,j,m] += params.fqf_lag[m,i,j] * params.ω[i]*params.ω_lag[j]*params.metrics_lag.Je[e,i,j]
+            params.b_lag[e,i,j,m] += params.fqf_lag[m,i,j] * params.ω[i]*params.ω_lag[j]*Je_lag[e,i,j]
           end
         end
       end
     end
 
-    DSS_rhs_laguerre!(@view(params.B_lag[:,:]), @view(params.b_lag[:,:,:,:]), params.mesh, params.mesh.nelem, params.mesh.ngl, params.neqs, SD)
-    for ip=1:params.mesh.npoin
+    DSS_rhs_laguerre!(params.B_lag, params.b_lag, connijk_lag, params.mesh.nelem_semi_inf, params.mesh.ngl, params.mesh.ngr, params.neqs, SD, params.AD)
+    #for ip=1:params.mesh.npoin
       #if !(ip in params.mesh.poin_in_bdy_edge)
-        params.B[ip,:] .= params.B[ip,:] .+ params.B_lag[ip,:]
+    params.B .+= params.B_lag
         
       #else
         #if (ip in params.mesh.poin_in_bdy_edge && params.mesh.y[ip] > 14000.0 && abs(params.mesh.x[ip]) < 10000.0)
         #@info  t, params.B[ip,:], params.B_lag[ip,:],ip, params.mesh.x[ip],params.mesh.y[ip]
         #end
       #end
-    end
+    #end
   end
 
   #@info "before div"
   #@info params.B[3247,:]
 
   for ieq=1:params.neqs
-       divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin)
+       divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
   end
   #@info "after div"
   #@info params.B[3247,:]
   #@info "before filtering"
   #@info params.uaux[3247,:]
-  for e=1:params.mesh.nelem
-    for j=1:params.mesh.ngl
-      for i=1:params.mesh.ngl
-        ip = params.mesh.connijk[e,i,j]
-        for m=1:params.neqs
-          params.uaux[ip,m] = params.B[ip,m]
-        end
-      end
-    end
-  end
+  uaux .= params.B
 
-  if (params.laguerre)
+  #=if (params.laguerre)
   
-    for e=1:params.mesh.nelem_semi_inf
-      for j=1:params.mesh.ngr
-        for i=1:params.mesh.ngl
-          ip = params.mesh.connijk_lag[e,i,j]
-          for m=1:params.neqs
-            params.uaux[ip,m] = params.B[ip,m]
-          end
-        end
-      end
-    end
+    @time uaux .= params.B
 
-  end
+  end=#
 
 
-  uaux2u!(u, @view(params.uaux[:,:]), params.neqs, params.mesh.npoin)
+  uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
 end
 
 function init_filter(nop,xgl,mu_x,mesh,inputs)

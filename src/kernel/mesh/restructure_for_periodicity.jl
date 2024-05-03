@@ -3,7 +3,6 @@ function periodicity_restructure!(mesh,inputs,backend)
     #per2 = inputs[:per2]
     #determine boundary vectors
     if (mesh.nsd == 2)
-        
 	if (inputs[:lperiodic_laguerre] && "Laguerre" in mesh.bdy_edge_type)
             xmin = minimum(mesh.x)
             xmax = maximum(mesh.x)
@@ -157,6 +156,18 @@ function periodicity_restructure!(mesh,inputs,backend)
                                 end
                             end
                         end
+                        if (inputs[:lperiodic_laguerre])
+                            for e=1:mesh.nelem_semi_inf
+                                for ii=1:mesh.ngl
+                                    for jj=1:mesh.ngr
+                                        ipp = mesh.connijk_lag[e,ii,jj]
+                                        if (ipp > ip_kill)
+                                            mesh.connijk_lag[e,ii,jj] -= 1
+                                        end
+                                     end
+                                end
+                            end
+                        end
                         for i=1:size(interval,1)
                             if (interval[i] > ip_kill)
                                 interval[i] -= 1
@@ -168,7 +179,7 @@ function periodicity_restructure!(mesh,inputs,backend)
                     end   
                 end
             end
-        end 
+        end
         # New periodicity interface
         for iedge_bdy =1:size(mesh.bdy_edge_type,1)
             if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" || mesh.bdy_edge_type[iedge_bdy] == "periodic2")
