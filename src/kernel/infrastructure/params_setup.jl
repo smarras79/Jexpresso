@@ -20,10 +20,10 @@ function params_setup(sem,
     # rhs* -> inviscid and viscous ELEMENT rhs
     # RHS* -> inviscid and viscous GLOBAL  rhs
     #-----------------------------------------------------------------
-    u            = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin)*Int64(qp.neqs))
-    uaux         = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin), Int64(qp.neqs))
+    u    = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin)*Int64(qp.neqs))
+    uaux = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin), Int64(qp.neqs))
 
-    if sem.mesh.nsd == 1
+    #=if sem.mesh.nsd == 1
         uaux_el      = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), Int64(qp.neqs))
         rhs_el       = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), Int64(qp.neqs))
         rhs_diff_el  = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), Int64(qp.neqs))
@@ -69,6 +69,8 @@ function params_setup(sem,
         source_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), qp.neqs)
         qbdy_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nfaces_bdy), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), qp.neqs)
     end
+    =#
+    
     @info sem.mesh.nfaces_bdy 
     RHS      = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin), Int64(qp.neqs))
     RHS_visc = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin), Int64(qp.neqs))
