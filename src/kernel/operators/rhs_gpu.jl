@@ -18,7 +18,7 @@
     KernelAbstractions.@atomic RHS[ip] -= ω[il]*dFdxi/ M[ip]
 end
 
-@kernel function _build_rhs_gpu_2D_v0!(RHS, u, qe, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst)
+@kernel function _build_rhs_gpu_2D_v0!(RHS, u, qe, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst, xmax, xmin, ymax, ymin)
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
     @inbounds i_x = il[1]
@@ -35,7 +35,8 @@ end
     qeip = @view(qe[ip,1:neq+1])
     @inbounds flux[ie, i_x, i_y, :] .= user_flux(uip,qeip,PhysConst)
     
-    @inbounds source[ie, i_x, i_y, :] .= user_source(uip,x[ip],y[ip],PhysConst)
+    
+    @inbounds source[ie, i_x, i_y, :] .= user_source(uip,x[ip],y[ip],PhysConst, xmax, xmin, ymax, ymin)
 
     @synchronize()
     ### do numerical integration
@@ -69,7 +70,9 @@ end
     end
 end
 
-@kernel function _build_rhs_gpu_3D_v0!(RHS, u, x, y, z, connijk, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst)
+@kernel function _build_rhs_gpu_3D_v0!(RHS, u, x, y, z, connijk, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst, 
+        xmax, xmin, ymax, ymin, zmax, zmin)
+    
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
     @inbounds i_x = il[1]
@@ -87,7 +90,7 @@ end
     uip = @view(u[ip,1:neq])
     @inbounds flux[ie, i_x, i_y, i_z,:] .= user_flux(uip,PhysConst)
 
-    @inbounds source[ie, i_x, i_y, i_z,:] .= user_source(uip,x[ip],y[ip],z[ip],PhysConst)
+    @inbounds source[ie, i_x, i_y, i_z,:] .= user_source(uip,x[ip],y[ip],z[ip],PhysConst, xmax, xmin, ymax, ymin, zmax, zmin)
 
     @synchronize()
     ### do numerical integration
@@ -274,14 +277,14 @@ end
 end
 
 
-@kernel function apply_boundary_conditions_gpu!(uaux,u,x,y,t,nx,ny,poin_in_bdy_edge,qbdy,ngl,neq,npoin)
+@kernel function apply_boundary_conditions_gpu!(uaux,u,qe,x,y,t,nx,ny,poin_in_bdy_edge,qbdy,ngl,neq,npoin)
 
     iedge = @index(Group, Linear)
     ik = @index(Local, Linear)
     @inbounds ip = poin_in_bdy_edge[iedge,ik]
     
     @inbounds qbdy[iedge,ik,1:neq] .= 1234567
-    @inbounds qbdy[iedge,ik,1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),x[ip],y[ip],t,nx[iedge,ik],ny[iedge,ik],@view(qbdy[iedge,ik,:]))
+    @inbounds qbdy[iedge,ik,1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,nx[iedge,ik],ny[iedge,ik],@view(qbdy[iedge,ik,:]))
     for ieq =1:neq
         if !(qbdy[iedge,ik,ieq] == 1234567) && !(qbdy[iedge,ik,ieq] == uaux[ip,ieq])
             # if use the commented line in CUDA, somehow get errors
@@ -316,6 +319,13 @@ end
     @inbounds uaux[ip,ieq] = u[idx]
 end
 
+@kernel function uauxtou_gpu!(u,uaux,npoin,neq)
+    id = @index(Global, NTuple)
+    @inbounds ip = id[1]
+    @inbounds ieq = id[2]
+    idx = (ieq-1)*npoin + ip
+    @inbounds u[idx] = uaux[ip,ieq]
+end
 
 @kernel function RHStodu_gpu!(RHS,du,npoin,neq)
     id = @index(Global, NTuple)

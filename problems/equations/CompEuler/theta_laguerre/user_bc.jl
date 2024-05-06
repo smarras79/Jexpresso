@@ -70,7 +70,7 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     return flux
 end
 
-function user_bc_dirichlet(q,x,y,t,nx,ny,qbdy)
+function user_bc_dirichlet(q,qe,x,y,t,nx,ny,qbdy)
     qnl = nx*(q[2]) + ny*(q[3])
     u = q[2] - qnl*nx
     v = q[3] - qnl*ny

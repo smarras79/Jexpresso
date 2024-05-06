@@ -62,7 +62,7 @@ function user_source!(S::SubArray{Float64},
     
 end
 
-function user_source(q,x,y,PhysConst)
+function user_source(q,x,y,PhysConst, xmax, xmin, ymax, ymin)
 
 
     #

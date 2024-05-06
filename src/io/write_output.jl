@@ -330,11 +330,12 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
 		if (j==1)
 		    ip1=1
 		    while (ip1 <= npoin)
-			if(mesh.x[ip1] == xmax && mesh.y[ip1] == ymax)
+                        if(mesh.x[ip1] == TFloat(xmax) && mesh.y[ip1] == TFloat(ymax))
 			    ip_new = ip1
 			end
 			ip1 +=1
 		    end
+                    @info ip1, npoin
                     mesh.connijk_lag[e,mesh.ngl,j] = ip_new
 		else
 		    ip_new = npoin + iter

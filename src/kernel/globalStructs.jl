@@ -37,7 +37,5 @@ function define_q(SD, nelem, npoin, ngl, qvars, TFloat, backend; neqs=1)
                                 qnm2 = KernelAbstractions.zeros(backend,  TFloat, Int64(npoin), neqs+1), # qⁿ
                                 qe   = KernelAbstractions.zeros(backend,  TFloat, Int64(npoin), neqs+1), # qexact
                                 qvars=qvars) # μ
-    @info typeof(q.qe)
-    @info backend
     return q
 end

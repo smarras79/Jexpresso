@@ -23,13 +23,13 @@ function sem_setup(inputs::Dict)
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    
+    @info typeof(mesh.x) 
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
-        mesh.x .= (mesh.x .+ inputs[:xdisp]) .*inputs[:xscale]*0.5
+        mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xscale] != 1.0)
-        mesh.x = mesh.x*inputs[:xscale]*0.5
+        mesh.x = mesh.x*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xdisp] != 0.0)
-        mesh.x .= (mesh.x .+ inputs[:xdisp])
+        mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp]))
     end
     if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
         mesh.y .= (mesh.y .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
@@ -39,7 +39,7 @@ function sem_setup(inputs::Dict)
         mesh.y .= (mesh.y .+ inputs[:ydisp])
     end
     mesh.ymax = maximum(mesh.y)
-    
+    @info typeof(mesh.x) 
     #warp_mesh!(mesh,inputs)    
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
@@ -91,10 +91,27 @@ function sem_setup(inputs::Dict)
             if (inputs[:lfilter])
                 ξω3 = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.ngr-1, inputs[:backend])
                 ξ3,ω3 = ξω3.ξ, ξω3.ω
-                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
-                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
+                if (inputs[:backend] == CPU())
+                    fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
+                    fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
                 #fy_lag = init_filter(mesh.ngr-1,ξ3,inputs[:mu_y],mesh,inputs)
-                fy_lag = init_filter(mesh.ngr-1,ξ2,inputs[:mu_y],mesh,inputs)
+                    fy_lag = init_filter(mesh.ngr-1,ξ2,inputs[:mu_y],mesh,inputs)
+                else
+                    ξ_gl = KernelAbstractions.zeros(CPU(), Float64, Int64(mesh.ngl))
+                    KernelAbstractions.copyto!(CPU(),ξ_gl,ξ)
+                    ξ_gr = KernelAbstractions.zeros(CPU(), Float64, Int64(mesh.ngr))
+                    KernelAbstractions.copyto!(CPU(),ξ_gr,ξ2)
+                    fx_1 = init_filter(mesh.ngl-1,ξ_gl,inputs[:mu_x],mesh,inputs)
+                    fy_1 = init_filter(mesh.ngl-1,ξ_gl,inputs[:mu_y],mesh,inputs)
+                #fy_lag = init_filter(mesh.ngr-1,ξ3,inputs[:mu_y],mesh,inputs)
+                    fy_lag_1 = init_filter(mesh.ngr-1,ξ_gr,inputs[:mu_y],mesh,inputs)
+                    fx = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+                    fy = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+                    fy_lag = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngr), Int64(mesh.ngr))
+                    KernelAbstractions.copyto!(inputs[:backend], fx, fx_1)
+                    KernelAbstractions.copyto!(inputs[:backend], fy, fy_1)
+                    KernelAbstractions.copyto!(inputs[:backend], fy_lag, fy_lag_1)
+                end
             end
             #@time periodicity_restructure!(mesh,inputs)
             if (inputs[:lwarp])

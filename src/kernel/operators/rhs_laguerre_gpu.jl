@@ -1,7 +1,7 @@
 #---------------------------------------------------------------------------
 # Optimized (more coud possibly be done)
 #---------------------------------------------------------------------------
-@kernel function _build_rhs_lag_gpu_2D_v0!(RHS, u, qe, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, dψ_lag, ω, ω_lag, Minv, flux, source, ngl, ngr, neq, PhysConst)
+@kernel function _build_rhs_lag_gpu_2D_v0!(RHS, u, qe, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, dψ_lag, ω, ω_lag, Minv, flux, source, ngl, ngr, neq, PhysConst, xmax, xmin, ymax, ymin)
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
     @inbounds i_ngl = il[1]
@@ -19,7 +19,7 @@
     qeip = @view(qe[ip,1:neq+1])
     @inbounds flux[ie, i_ngl, i_ngr, :] .= user_flux(uip,qeip,PhysConst)
     
-    @inbounds source[ie, i_ngl, i_ngr, :] .= user_source(uip,x[ip],y[ip],PhysConst)
+    @inbounds source[ie, i_ngl, i_ngr, :] .= user_source(uip,x[ip],y[ip],PhysConst, xmax, xmin, ymax, ymin)
 
     @synchronize()
     ### do numerical integration
@@ -116,7 +116,7 @@ end
 
 end
 
-@kernel function apply_boundary_conditions_lag_gpu!(uaux,u,x,y,t,connijk,qbdy,ngl,ngr,neq,npoin,nelem_semi_inf)
+@kernel function apply_boundary_conditions_lag_gpu!(uaux,u,qe,x,y,t,connijk,qbdy,ngl,ngr,neq,npoin,nelem_semi_inf)
 
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -125,7 +125,7 @@ end
     if (i_ngr == ngr)
         ip = connijk[ie,i_ngl,ngr]
         @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= 1234567
-        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),x[ip],y[ip],t,Float32(0.0),Float32(1.0),@view(qbdy[ie, i_ngl, i_ngr, :]))
+        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,Float32(0.0),Float32(1.0),@view(qbdy[ie, i_ngl, i_ngr, :]))
         for ieq =1:neq
             if !(qbdy[ie, i_ngl, i_ngr, ieq] == 1234567) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
             # if use the commented line in CUDA, somehow get errors
@@ -135,10 +135,10 @@ end
         end
     end
     
-    if (ie == Int32(1))
+    #=if (ie == Int32(1))
         ip = connijk[ie,1,i_ngr]
         @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= 1234567
-        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),x[ip],y[ip],t,Float32(-1.0),Float32(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]))
+        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,Float32(-1.0),Float32(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]))
         for ieq =1:neq
             if !(qbdy[ie, i_ngl, i_ngr, ieq] == 1234567) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
             # if use the commented line in CUDA, somehow get errors
@@ -151,7 +151,7 @@ end
     if (ie == nelem_semi_inf)
         ip = connijk[ie,ngl,i_ngr]
         @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= 1234567
-        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),x[ip],y[ip],t,Float32(1.0),Float32(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]))
+        @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,Float32(1.0),Float32(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]))
         for ieq =1:neq
             if !(qbdy[ie, i_ngl, i_ngr, ieq] == 1234567) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
             # if use the commented line in CUDA, somehow get errors
@@ -159,7 +159,7 @@ end
                 @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
             end
         end
-    end
+    end=#
 
 
 end

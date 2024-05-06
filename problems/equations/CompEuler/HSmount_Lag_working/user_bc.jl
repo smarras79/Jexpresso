@@ -40,7 +40,7 @@ end
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe::SubArray{Float64},::PERT)
 #    if (tag == "free_slip")
       
-      if (y<=14950) #(abs(x) < 119500.0 && y<= 19950.0)
+if (y<=14950) #(abs(x) < 119500.0 && y<= 19950.0)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
         qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
         qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
@@ -66,4 +66,14 @@ end
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
+end
+
+function user_bc_dirichlet(q,qe,x,y,t,nx,ny,qbdy)
+    if (y<=14950 && abs(nx)<1) #(abs(x) < 119500.0 && y<= 19950.0)
+        qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
+        u = (q[2]+qe[2] - qnl*nx) - qe[2]
+        v = (q[3]+qe[3] - qnl*ny) - qe[3]
+      end
+
+    return Float32(qbdy[1]), Float32(u), Float32(v), Float32(qbdy[4])
 end

@@ -190,6 +190,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         k = build_2D_gpu_bdy_metrics!(backend)
         k(metrics.Jef, metrics.nx, metrics.ny, x, y, poin_in_bdy_edge, N; ndrange = (nbdy_edges*(N+1)), workgroupsize = (N+1))
     end
+    
     return metrics
 end
 
