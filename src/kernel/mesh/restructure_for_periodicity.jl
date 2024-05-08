@@ -113,7 +113,7 @@ function periodicity_restructure!(mesh,inputs,backend)
         poin_bdy .=mesh.poin_in_bdy_edge
         interval = [2,3,4]
         for iedge_bdy =1:size(mesh.bdy_edge_type,1)
-            if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" || mesh.bdy_edge_type[iedge_bdy] == "periodic2")
+            if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" && mesh.bdy_edge_type[iedge_bdy] == "periodic2")
                 iel = mesh.bdy_edge_in_elem[iedge_bdy]
                 for k=1:mesh.ngl
                     ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
@@ -164,7 +164,7 @@ function periodicity_restructure!(mesh,inputs,backend)
                                         if (ipp > ip_kill)
                                             mesh.connijk_lag[e,ii,jj] -= 1
                                         end
-                                     end
+                                    end
                                 end
                             end
                         end

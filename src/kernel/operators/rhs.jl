@@ -355,7 +355,7 @@ function rhs!(du, u, params, time)
 
                 k = apply_boundary_conditions_lag_gpu!(backend)
                 k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x,params.mesh.y,TFloat(time), params.mesh.connijk_lag,
-                    params.qbdy_lag_gpu, params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), params.mesh.npoin, params.mesh.nelem_semi_inf;
+                  params.qbdy_lag_gpu, params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), params.mesh.npoin, params.mesh.nelem_semi_inf, params.inputs[:lperiodic_laguerre];
                     ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
                 KernelAbstractions.synchronize(backend)
             end
@@ -413,7 +413,7 @@ function rhs!(du, u, params, time)
 
                 @inbounds params.RHS .+= params.RHS_visc
             end
-            @info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
+            #@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
             k1 = RHStodu_gpu!(backend)
             k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
         

@@ -433,21 +433,21 @@ end
 
     #define local arrays for element based filtering
     DIM   = @uniform @groupsize()[1]
-    q_t   = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
-    q_ti  = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
-    q_tij = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
-    fqf   = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
+    q_t   = @localmem eltype(u) (DIM+1,DIM+1,DIM+1)
+    q_ti  = @localmem eltype(u) (DIM+1,DIM+1,DIM+1)
+    q_tij = @localmem eltype(u) (DIM+1,DIM+1,DIM+1)
+    fqf   = @localmem eltype(u) (DIM+1,DIM+1,DIM+1)
 
     for m=1:neqs
         @inbounds q_t[i,j,k] = u[ip,m]
         @synchronize()
-        q_ti[i,j,k] = zero(eltype(RHS))
+        q_ti[i,j,k] = zero(eltype(u))
         for l=1:n_x
            @inbounds q_ti[i,j,k] += fx[i,l] * q_t[l,j,k]
         end
 
         @synchronize()
-        q_tij[i,j,k] = zero(eltype(RHS))
+        q_tij[i,j,k] = zero(eltype(u))
         for n=1:n_z
             for l=1:n_y
                 @inbounds q_tij[i,j,n] += q_ti[i,l,n] * fy_t[l,j]
@@ -455,7 +455,7 @@ end
         end
 
         @synchronize()
-        fqf[i,j,k] = zero(eltype(RHS))
+        fqf[i,j,k] = zero(eltype(u))
         for l=1:n_z
             @inbounds fqf[i,j,k] += q_ti[i,j,k] * fy_z[l,k]
         end

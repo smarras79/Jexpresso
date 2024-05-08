@@ -3,14 +3,15 @@
     il = @index(Local, Linear)
     ip = connijk[ig,il,1]
     
-    KernelAbstractions.@atomic RHS[ip] = Float32(0.0)
+    T = eltype(RHS)
+    KernelAbstractions.@atomic RHS[ip] = T(0.0)
     DIM = @uniform @groupsize()[1]
     ### define and populate flux array as shared memory then make sure blocks are synchronized
     F = @localmem eltype(RHS) (DIM+1,1)
-    F[il] = Float32(1.0)*u[ip] #user_flux(u[ip])
+    F[il] = T(1.0)*u[ip] #user_flux(u[ip])
     @synchronize()
     ### do numerical integration
-    dFdxi = zero(Float32)
+    dFdxi = zero(T)
     for k=1:ngl
         dFdxi += dψ[k,il]*F[k]
     end
@@ -25,6 +26,7 @@ end
     @inbounds i_y = il[2]
     @inbounds ip = connijk[ie,i_x,i_y]
 
+    T = eltype(RHS)
     DIM = @uniform @groupsize()[1]
     ### define and populate flux array as shared memory then make sure blocks are synchronized
     F = @localmem eltype(RHS) (DIM+1,DIM+1)
@@ -45,10 +47,10 @@ end
         @inbounds G[i_x,i_y] = flux[ie, i_x, i_y, neq+ieq]
         @inbounds S[i_x,i_y] = source[ie, i_x, i_y, ieq]
         @synchronize()
-        dFdξ = zero(Float32)
-        dFdη = zero(Float32)
-        dGdξ = zero(Float32)
-        dGdη = zero(Float32)
+        dFdξ = zero(T)
+        dFdη = zero(T)
+        dGdξ = zero(T)
+        dGdη = zero(T)
 
         for k=1:ngl
             @inbounds dFdξ += dψ[k,i_x]*F[k,i_y]
@@ -80,6 +82,7 @@ end
     @inbounds i_z = il[3]
     @inbounds ip = connijk[ie,i_x,i_y,i_z]
 
+    T = eltype(RHS)
     DIM = @uniform @groupsize()[1]
     ### define and populate flux array as shared memory then make sure blocks are synchronized
     F = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
@@ -100,15 +103,15 @@ end
         @inbounds H[i_x,i_y,i_z] = flux[ie, i_x, i_y, i_z, 2*neq+ieq]
         @inbounds S[i_x,i_y,i_z] = source[ie, i_x, i_y, i_z, ieq]
         @synchronize()
-        dFdξ = zero(Float32)
-        dFdη = zero(Float32)
-        dFdζ = zero(Float32)
-        dGdξ = zero(Float32)
-        dGdη = zero(Float32)
-        dGdζ = zero(Float32)
-        dHdξ = zero(Float32)
-        dHdη = zero(Float32)
-        dHdζ = zero(Float32)
+        dFdξ = zero(T)
+        dFdη = zero(T)
+        dFdζ = zero(T)
+        dGdξ = zero(T)
+        dGdη = zero(T)
+        dGdζ = zero(T)
+        dHdξ = zero(T)
+        dHdη = zero(T)
+        dHdζ = zero(T)
 
         for k=1:ngl
             @inbounds dFdξ += dψ[k,i_x]*F[k,i_y,i_z]
@@ -157,6 +160,7 @@ end
     @inbounds i_z = il[3]
     @inbounds ip = connijk[ie,i_x,i_y,i_z]
 
+    T = eltype(RHS_diff)
     DIM = @uniform @groupsize()[1]
     U = @localmem eltype(RHS_diff) (DIM+1,DIM+1,DIM+1)
     
@@ -170,9 +174,9 @@ end
         
         @synchronize()
         
-        dqdξ = zero(Float32)
-        dqdη = zero(Float32)
-        dqdζ = zero(Float32)
+        dqdξ = zero(T)
+        dqdη = zero(T)
+        dqdζ = zero(T)
 
         for ii = 1:ngl
             @inbounds dqdξ += dψ[ii,i_x]*U[ii,i_y,i_z]
@@ -228,6 +232,7 @@ end
     @inbounds i_y = il[2]
     @inbounds ip = connijk[ie,i_x,i_y]
 
+    T = eltype(RHS_diff)
     DIM = @uniform @groupsize()[1]
     U = @localmem eltype(RHS_diff) (DIM,DIM)
 
@@ -241,8 +246,8 @@ end
 
         @synchronize()
 
-        dqdξ = zero(Float32)
-        dqdη = zero(Float32)
+        dqdξ = zero(T)
+        dqdη = zero(T)
 
         for ii = 1:ngl
             @inbounds dqdξ += dψ[ii,i_x]*U[ii,i_y]
@@ -282,7 +287,8 @@ end
     iedge = @index(Group, Linear)
     ik = @index(Local, Linear)
     @inbounds ip = poin_in_bdy_edge[iedge,ik]
-    
+   
+    T = eltype(u)
     @inbounds qbdy[iedge,ik,1:neq] .= 1234567
     @inbounds qbdy[iedge,ik,1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,nx[iedge,ik],ny[iedge,ik],@view(qbdy[iedge,ik,:]))
     for ieq =1:neq
@@ -302,10 +308,11 @@ end
     i_y = il[2]
     @inbounds ip = poin_in_bdy_face[iface,i_x,i_y]
 
-    @inbounds qbdy[iface,i_x,i_y,1:neq] .= Float32(1234567.0)
+    T = eltype(u)
+    @inbounds qbdy[iface,i_x,i_y,1:neq] .= T(1234567.0)
     @inbounds qbdy[iface,i_x,i_y,1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),x[ip],y[ip],z[ip],t,nx[iface,i_x,i_y],ny[iface,i_x,i_y],nz[iface,i_x,i_y],@view(qbdy[iface,i_x,i_y,:]))
     for ieq =1:neq
-        if !(qbdy[iface,i_x,i_y,ieq] == Float32(1234567.0)) && !(qbdy[iface,i_x,i_y,ieq] == uaux[ip,ieq])
+        if !(qbdy[iface,i_x,i_y,ieq] == T(1234567.0)) && !(qbdy[iface,i_x,i_y,ieq] == uaux[ip,ieq])
             @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iface, i_x,i_y, ieq]
         end
     end
@@ -336,11 +343,11 @@ end
 end
 
 function uToPrimitives_gpu(u,qe)
-
-    return Float32(u[1]+qe[1]), Float32(u[2]/(u[1]+qe[1])), Float32(u[3]/(u[1]+qe[1])), Float32((u[4]+qe[4])/(u[1]+qe[1]) - qe[4]/qe[1])
+    T = eltype(u)
+    return T(u[1]+qe[1]), T(u[2]/(u[1]+qe[1])), T(u[3]/(u[1]+qe[1])), T((u[4]+qe[4])/(u[1]+qe[1]) - qe[4]/qe[1])
 end
 
 function uToPrimitives_gpu_3d(u)
-
-    return Float32(u[1]), Float32(u[2]/u[1]), Float32(u[3]/u[1]), Float32(u[4]/u[1]), Float32(u[5]/u[1])
+    T = eltype(u)
+    return T(u[1]), T(u[2]/u[1]), T(u[3]/u[1]), T(u[4]/u[1]), T(u[5]/u[1])
 end
