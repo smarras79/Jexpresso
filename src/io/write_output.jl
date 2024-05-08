@@ -256,7 +256,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
             #@info ivar,ivar1,new_size*ieq-diff,mesh.npoin*ieq
 	    q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:mesh.npoin*ieq]
 	end
-
         iter = 1
     	for iedge = 1:nedges
 
@@ -330,12 +329,12 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
 		if (j==1)
 		    ip1=1
 		    while (ip1 <= npoin)
+                        #@info mesh.x[ip1], TFloat(xmax), mesh.y[ip1], TFloat(ymax)
                         if(mesh.x[ip1] == TFloat(xmax) && mesh.y[ip1] == TFloat(ymax))
 			    ip_new = ip1
 			end
 			ip1 +=1
 		    end
-                    @info ip1, npoin
                     mesh.connijk_lag[e,mesh.ngl,j] = ip_new
 		else
 		    ip_new = npoin + iter

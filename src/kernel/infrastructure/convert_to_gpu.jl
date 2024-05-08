@@ -63,19 +63,19 @@ end
 
 function convert_mesh_arrays_to_cpu!(mesh)
 
-    aux = KernelAbstractions.allocate(CPU(), TFloat, size(mesh.x))
+    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.x))
     KernelAbstractions.copyto!(CPU(), aux, mesh.x)
-    mesh.x = KernelAbstractions.allocate(CPU(), TFloat, size(mesh.x))
+    mesh.x = KernelAbstractions.allocate(CPU(), Float64, size(mesh.x))
     mesh.x .= aux
 
-    aux = KernelAbstractions.allocate(CPU(), TFloat, size(mesh.y))
+    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.y))
     KernelAbstractions.copyto!(CPU(), aux, mesh.y)
-    mesh.y = KernelAbstractions.allocate(CPU(), TFloat, size(mesh.y))
+    mesh.y = KernelAbstractions.allocate(CPU(), Float64, size(mesh.y))
     mesh.y .= aux
 
-    aux = KernelAbstractions.allocate(CPU(), TFloat, size(mesh.z))
+    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.z))
     KernelAbstractions.copyto!(CPU(), aux, mesh.z)
-    mesh.z = KernelAbstractions.allocate(CPU(), TFloat, size(mesh.z))
+    mesh.z = KernelAbstractions.allocate(CPU(), Float64, size(mesh.z))
     mesh.z .= aux
 
     aux = KernelAbstractions.allocate(CPU(), TInt, mesh.nelem, mesh.ngl, mesh.ngl)
