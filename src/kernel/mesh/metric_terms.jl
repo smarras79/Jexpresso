@@ -606,6 +606,46 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             end
 
         end
+        for iface=1:mesh.nfaces_bdy
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    ip = mesh.poin_in_bdy_face[iface,i,j]
+                    if (i < N+1)
+                        ip1 = mesh.poin_in_bdy_face[iface,i+1,j]
+                    else
+                        ip1 = mesh.poin_in_bdy_face[iface,i-1,j]
+                    end
+                    if (j < N+1)
+                        ip2 = mesh.poin_in_bdy_face[iface,i,j+1]
+                    else
+                        ip2 = mesh.poin_in_bdy_face[iface,i,j-1]
+                    end
+                    x1 = mesh.x[ip]
+                    x2 = mesh.x[ip1]
+                    x3 = mesh.x[ip2]
+                    y1 = mesh.y[ip]
+                    y2 = mesh.y[ip1]
+                    y3 = mesh.y[ip2]
+                    z1 = mesh.z[ip]
+                    z2 = mesh.z[ip1]
+                    z3 = mesh.z[ip2]
+                    a1 = x1 - x2
+                    a2 = y1 - y2
+                    a3 = z1 - z2
+                    b1 = x1 - x3
+                    b2 = y1 - y3
+                    b3 = z1 - z3
+                    comp1 = a2*b3 - a3*b2
+                    comp2 = a3*b1 - a1*b3
+                    comp3 = a1*b2 - a2*b1
+                    mag = sqrt(comp1^2 + comp2^2 + comp3^2)
+                    metrics.Jef[iface, i, j] = mag/2
+                    metrics.nx[iface, i, j] = comp1/mag
+                    metrics.ny[iface, i, j] = comp2/mag
+                    metrics.nz[iface, i, j] = comp3/mag
+                end
+            end
+        end
     else
         x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
         y = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
@@ -617,7 +657,8 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         k = build_3D_gpu_metrics!(backend,(N+1,N+1,N+1))
         @info typeof(metrics.dxdξ), typeof(metrics.dydξ)
-        k(metrics.dxdξ,metrics.dxdη,metrics.dxdζ,metrics.dydξ,metrics.dydη,metrics.dydζ,metrics.dzdξ,metrics.dzdη,metrics.dzdζ, ψ, dψ, x, y, z, connijk, Q; ndrange = (mesh.nelem*(N+1),mesh.ngl,mesh.ngl), workgroupsize = (N+1,N+1,N+1))
+        k(metrics.dxdξ,metrics.dxdη,metrics.dxdζ,metrics.dydξ,metrics.dydη,metrics.dydζ,metrics.dzdξ,metrics.dzdη,metrics.dzdζ, ψ, dψ, x, y, z, connijk, Q;
+          ndrange = (mesh.nelem*(N+1),mesh.ngl,mesh.ngl), workgroupsize = (N+1,N+1,N+1))
         metrics.Je .= metrics.dxdξ.*(metrics.dydη.*metrics.dzdζ .- metrics.dydξ.*metrics.dzdη)
         metrics.Je .+= metrics.dydξ.*(metrics.dxdζ.*metrics.dzdη .- metrics.dxdη.*metrics.dzdζ)
         metrics.Je .+= metrics.dzdξ.*(metrics.dxdη.*metrics.dydζ .- metrics.dxdζ.*metrics.dydη)

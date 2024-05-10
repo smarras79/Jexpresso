@@ -75,8 +75,9 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::S
     G[4] = θ
 end
 
-function user_flux(q,qe,PhysConst)
+function user_flux_gpu(q,qe,PhysConst,lpert)
 
+    T = eltype(q)
     ρ  = q[1]+qe[1]
     ρu = q[2]+qe[2]
     ρv = q[3]+qe[3]
@@ -85,5 +86,5 @@ function user_flux(q,qe,PhysConst)
     u  = ρu/ρ
     v  = ρv/ρ
     Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ) - qe[5]
-    return Float32(ρu), Float32(ρu*u + Pressure), Float32(ρv*u), Float32(ρθ*u), Float32(ρv),Float32(ρu*v),Float32(ρv*v + Pressure),Float32(ρθ*v)
+    return T(ρu), T(ρu*u + Pressure), T(ρv*u), T(ρθ*u), T(ρv),T(ρu*v),T(ρv*v + Pressure),T(ρθ*v)
 end

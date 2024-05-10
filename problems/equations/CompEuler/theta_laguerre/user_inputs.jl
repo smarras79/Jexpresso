@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 1000.0,
+        :tend                 => 500.0,
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :tinit                => 0.0,
         :Δt                   => 0.05,
@@ -12,7 +12,7 @@ function user_inputs()
         # :ndiagnostics_outputs => 6,
         :lsource              => true, 
         #:CL                   => NCL(), #CL() is defaults
-        :backend              => MetalBackend(),
+        #:backend              => MetalBackend(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

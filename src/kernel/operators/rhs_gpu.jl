@@ -1,4 +1,4 @@
-@kernel function _build_rhs_gpu_v0!(RHS, u, connijk, dψ, ω, M, ngl)
+@kernel function _build_rhs_gpu_v0!(RHS, u, qe, connijk, dψ, ω, M, ngl, lpert)
     ig = @index(Group, Linear)
     il = @index(Local, Linear)
     ip = connijk[ig,il,1]
@@ -19,7 +19,7 @@
     KernelAbstractions.@atomic RHS[ip] -= ω[il]*dFdxi/ M[ip]
 end
 
-@kernel function _build_rhs_gpu_2D_v0!(RHS, u, qe, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst, xmax, xmin, ymax, ymin)
+@kernel function _build_rhs_gpu_2D_v0!(RHS, u, qe, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst, xmax, xmin, ymax, ymin, lpert)
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
     @inbounds i_x = il[1]
@@ -35,10 +35,10 @@ end
 
     uip = @view(u[ip,1:neq])
     qeip = @view(qe[ip,1:neq+1])
-    @inbounds flux[ie, i_x, i_y, :] .= user_flux(uip,qeip,PhysConst)
+    @inbounds flux[ie, i_x, i_y, :] .= user_flux_gpu(uip,qeip,PhysConst,lpert)
     
     
-    @inbounds source[ie, i_x, i_y, :] .= user_source(uip,x[ip],y[ip],PhysConst, xmax, xmin, ymax, ymin)
+    @inbounds source[ie, i_x, i_y, :] .= user_source_gpu(uip,qeip,x[ip],y[ip],PhysConst, xmax, xmin, ymax, ymin,lpert)
 
     @synchronize()
     ### do numerical integration
@@ -72,8 +72,8 @@ end
     end
 end
 
-@kernel function _build_rhs_gpu_3D_v0!(RHS, u, x, y, z, connijk, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst, 
-        xmax, xmin, ymax, ymin, zmax, zmin)
+@kernel function _build_rhs_gpu_3D_v0!(RHS, u, qe, x, y, z, connijk, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst, 
+        xmax, xmin, ymax, ymin, zmax, zmin, lpert)
     
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -91,9 +91,10 @@ end
     S = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
 
     uip = @view(u[ip,1:neq])
-    @inbounds flux[ie, i_x, i_y, i_z,:] .= user_flux(uip,PhysConst)
+    qeip = @view(qe[ip,1:neq+1])
+    @inbounds flux[ie, i_x, i_y, i_z,:] .= user_flux_gpu(uip,qeip,PhysConst,lpert)
 
-    @inbounds source[ie, i_x, i_y, i_z,:] .= user_source(uip,x[ip],y[ip],z[ip],PhysConst, xmax, xmin, ymax, ymin, zmax, zmin)
+    @inbounds source[ie, i_x, i_y, i_z,:] .= user_source_gpu(uip,qeip,x[ip],y[ip],z[ip],PhysConst, xmax, xmin, ymax, ymin, zmax, zmin,lpert)
 
     @synchronize()
     ### do numerical integration
@@ -146,12 +147,13 @@ end
 
 
     ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
-    @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]*((dFdx + dGdy + dHdz)- S[i_x,i_y,i_z])* Minv[ip]
+        @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]*((dFdx + dGdy + dHdz)- S[i_x,i_y,i_z])* Minv[ip]
     end
 end
 
 
-@kernel function _build_rhs_diff_gpu_3D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, u, uprimitive, x, y, z, connijk, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst)
+@kernel function _build_rhs_diff_gpu_3D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, u, qe, uprimitive, x, y, z, connijk, 
+        dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst, lpert)
 
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -164,7 +166,7 @@ end
     DIM = @uniform @groupsize()[1]
     U = @localmem eltype(RHS_diff) (DIM+1,DIM+1,DIM+1)
     
-    @inbounds uprimitive[ie, i_x, i_y, i_z, 1:neq] .= uToPrimitives_gpu_3d(@view(u[ip,1:neq]))
+    @inbounds uprimitive[ie, i_x, i_y, i_z, 1:neq] .= user_primitives_gpu(@view(u[ip,1:neq]),@view(qe[ip,1:neq]),lpert)
     
     @inbounds ωJac = ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]
 
@@ -224,7 +226,7 @@ end
 
 end
 
-@kernel function _build_rhs_diff_gpu_2D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, u, qe, uprimitive, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst)
+@kernel function _build_rhs_diff_gpu_2D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, u, qe, uprimitive, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst, lpert)
 
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -236,7 +238,7 @@ end
     DIM = @uniform @groupsize()[1]
     U = @localmem eltype(RHS_diff) (DIM,DIM)
 
-    @inbounds uprimitive[ie, i_x, i_y, 1:neq] .= uToPrimitives_gpu(@view(u[ip,1:neq]),@view(qe[ip,1:neq]))
+    @inbounds uprimitive[ie, i_x, i_y, 1:neq] .= user_primitives_gpu(@view(u[ip,1:neq]),@view(qe[ip,1:neq]),lpert)
 
     @inbounds ωJac = ω[i_x]*ω[i_y]*Je[ie,i_x,i_y]
 
@@ -282,17 +284,17 @@ end
 end
 
 
-@kernel function apply_boundary_conditions_gpu!(uaux,u,qe,x,y,t,nx,ny,poin_in_bdy_edge,qbdy,ngl,neq,npoin)
+@kernel function apply_boundary_conditions_gpu!(uaux,u,qe,x,y,t,nx,ny,poin_in_bdy_edge,qbdy,ngl,neq,npoin,lpert)
 
     iedge = @index(Group, Linear)
     ik = @index(Local, Linear)
     @inbounds ip = poin_in_bdy_edge[iedge,ik]
    
     T = eltype(u)
-    @inbounds qbdy[iedge,ik,1:neq] .= 1234567
-    @inbounds qbdy[iedge,ik,1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,nx[iedge,ik],ny[iedge,ik],@view(qbdy[iedge,ik,:]))
+    @inbounds qbdy[iedge,ik,1:neq] .= T(1234567)
+    @inbounds qbdy[iedge,ik,1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,nx[iedge,ik],ny[iedge,ik],@view(qbdy[iedge,ik,:]),lpert)
     for ieq =1:neq
-        if !(qbdy[iedge,ik,ieq] == 1234567) && !(qbdy[iedge,ik,ieq] == uaux[ip,ieq])
+        if !(qbdy[iedge,ik,ieq] == T(1234567)) && !(qbdy[iedge,ik,ieq] == uaux[ip,ieq])
             # if use the commented line in CUDA, somehow get errors
             # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
             @inbounds u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
@@ -300,7 +302,7 @@ end
     end
 end
 
-@kernel function apply_boundary_conditions_gpu_3D!(uaux,u,x,y,z,t,nx,ny,nz,poin_in_bdy_face,qbdy,ngl,neq,npoin)
+@kernel function apply_boundary_conditions_gpu_3D!(uaux,u,qe,x,y,z,t,nx,ny,nz,poin_in_bdy_face,qbdy,ngl,neq,npoin,lpert)
 
     iface = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -309,10 +311,11 @@ end
     @inbounds ip = poin_in_bdy_face[iface,i_x,i_y]
 
     T = eltype(u)
-    @inbounds qbdy[iface,i_x,i_y,1:neq] .= T(1234567.0)
-    @inbounds qbdy[iface,i_x,i_y,1:neq] .= user_bc_dirichlet(@view(uaux[ip,:]),x[ip],y[ip],z[ip],t,nx[iface,i_x,i_y],ny[iface,i_x,i_y],nz[iface,i_x,i_y],@view(qbdy[iface,i_x,i_y,:]))
+    @inbounds qbdy[iface,i_x,i_y,1:neq] .= T(123456.0)
+    @inbounds qbdy[iface,i_x,i_y,1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],z[ip],t,nx[iface,i_x,i_y],ny[iface,i_x,i_y],nz[iface,i_x,i_y],
+                                                                 @view(qbdy[iface,i_x,i_y,:]),lpert)
     for ieq =1:neq
-        if !(qbdy[iface,i_x,i_y,ieq] == T(1234567.0)) && !(qbdy[iface,i_x,i_y,ieq] == uaux[ip,ieq])
+        if !(qbdy[iface,i_x,i_y,ieq] == T(123456.0)) && !(qbdy[iface,i_x,i_y,ieq] == uaux[ip,ieq])
             @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iface, i_x,i_y, ieq]
         end
     end
@@ -342,12 +345,3 @@ end
     @inbounds du[idx] = RHS[ip,ieq]
 end
 
-function uToPrimitives_gpu(u,qe)
-    T = eltype(u)
-    return T(u[1]+qe[1]), T(u[2]/(u[1]+qe[1])), T(u[3]/(u[1]+qe[1])), T((u[4]+qe[4])/(u[1]+qe[1]) - qe[4]/qe[1])
-end
-
-function uToPrimitives_gpu_3d(u)
-    T = eltype(u)
-    return T(u[1]), T(u[2]/u[1]), T(u[3]/u[1]), T(u[4]/u[1]), T(u[5]/u[1])
-end
