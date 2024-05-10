@@ -9,7 +9,7 @@ function user_inputs()
         :ndiagnostics_outputs => 10,
         :output_dir          => "./output/",
         :case                 => "rtb",
-        :backend              => CUDABackend(),
+        :backend              => MetalBackend(),
         #:CL                   => NCL(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
