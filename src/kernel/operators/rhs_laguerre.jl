@@ -21,106 +21,6 @@ function resetRHSToZero_viscous_laguerre!(params)
     fill!(params.RHS_visc_lag,     zero(params.T))
 end
 
-function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, connijk_lag, ngl, ngr, npoin, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
-   nothing
-end
-
-
-function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, connijk_lag, ngl, ngr, npoin, δtotal_energy, iel, PT, ::CL, ::TOTAL, SD::NSD_2D)
-
-    if typeof(PT) == CompEuler
-
-        PhysConst = PhysicalConst{Float64}()
-
-        for j=1:ngr, i=1:ngl
-
-            m1 = connijk_lag[iel,i,j]
-            m2 = m1 + npoin
-            m3 = m2 + npoin
-            m4 = m3 + npoin
-
-            uprimitive[i,j,1] = u[m1]
-            uprimitive[i,j,2] = u[m2]/u[m1]
-            uprimitive[i,j,3] = u[m3]/u[m1]
-            uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
-            #Tracers
-            if(neqs > 4)
-                mieq = m4
-                for ieq = 5:neqs
-                    mieq = mieq + npoin
-                    uprimitive[i,j,ieq] = u[mieq]
-                end
-            end
-            #Pressure:
-            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
-
-        end
-
-    elseif typeof(PT) == AdvDiff
-
-        for j=1:ngr, i=1:ngl
-
-            mieq = connijk_lag[iel,i,j]
-            uprimitive[i,j,1] = u[mieq]
-
-            for ieq = 2:neqs
-                mieq = mieq + npoin
-                uprimitive[i,j,ieq] = u[mieq]
-            end
-
-        end
-    end
-end
-
-function uToPrimitives_laguerre!(neqs, uprimitive, u, uauxe, connijk_lag, ngl, ngr, npoin, δtotal_energy, iel, PT, ::CL, ::PERT, SD::NSD_2D)
-
-    if typeof(PT) == CompEuler
-        PhysConst = PhysicalConst{Float64}()
-
-        for j=1:ngr, i=1:ngl
-
-            m1 = connijk_lag[iel,i,j]
-            m2 = m1 + npoin
-            m3 = m2 + npoin
-            m4 = m3 + npoin
-
-            uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
-            uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]#(u[m2]+uauxe[m1,2])/uauxe[m1,1]#uprimitive[i,j,1]
-            uprimitive[i,j,3] = u[m3]/uprimitive[i,j,1]#(u[m3]+uauxe[m1,3])/uauxe[m1,1]#uprimitive[i,j,1]
-            #uprimitive[i,j,4] = (u[m4] + uprimitive[i,j,1]*uauxe[m1,4])/uprimitive[i,j,1] # CHECK THIS FOR ENE- δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
-            uprimitive[i,j,4] = (u[m4] + uauxe[m1,4])/uprimitive[i,j,1] - uauxe[m1,4]/uauxe[m1,1]#(u[m4] + uauxe[m1,4])/uprimitive[i,j,1]#(u[m4] + uauxe[m1,4])/uauxe[m1,1] - uauxe[m1,4]/uauxe[m1,1]
-
-            #Tracers
-            if(neqs > 4)
-                mieq = m4
-                for ieq = 5:neqs
-                    mieq = mieq + npoin
-                    uprimitive[i,j,ieq] = u[mieq] + uauxe[mieq,1]
-                end
-            end
-
-            #Pressure:
-            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=u[m4]+uauxe[m1,4])
-        end
-
-    elseif typeof(PT) == AdvDiff
-
-        for j=1:ngr, i=1:ngl
-
-            mieq = connijk_lag[iel,i,j]
-            uprimitive[i,j,1] = u[mieq]
-
-            for ieq = 2:neqs
-                mieq = mieq + npoin
-                uprimitive[i,j,ieq] = u[mieq]
-            end
-
-        end
-    end
-
-end
-
-
 function _build_rhs_laguerre!(RHS, u, params, time)
 
     T       = Float64
@@ -172,11 +72,10 @@ function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD
     ymax = params.ymax   
     for iel=1:params.mesh.nelem_semi_inf
 
-        #uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, connijk_lag, params.mesh.ngl, params.mesh.ngr, params.mesh.npoin, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
-
         for i=1:params.mesh.ngr
             ip = connijk_lag[iel,i,1]
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive_lag[i,:]),params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive_lag[i,:]), params.SOL_VARS_TYPE)
+            
             user_flux!(@view(params.F_lag[i,:]), @view(params.G_lag[i,:]), SD,
                        @view(params.uaux[ip,:]),
                        @view(params.qp.qe[ip,:]),         #pref
@@ -207,16 +106,10 @@ function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD
     ymax = params.ymax
     for iel=1:params.mesh.nelem_semi_inf
         
-        #uToPrimitives_laguerre!(params.neqs, params.uprimitive_lag, u, params.qp.qe, connijk_lag, params.mesh.ngl, params.mesh.ngr, params.mesh.npoin, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)       
- 
         for j=1:params.mesh.ngr, i=1:params.mesh.ngl
             ip = connijk_lag[iel,i,j]
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive_lag[i,j,:]),params.SOL_VARS_TYPE)
-            #=if (abs(params.mesh.x[ip])>4990) 
-              #@info params.mesh.x[ip], params.mesh.y[ip]
-              params.uaux[ip,2] = 0.0 
-            end=#
-            #if (abs(params.mesh.y[ip]) == ymax) params.uaux[ip,3] = 0.0 end 
+            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive_lag[i,j,:]), params.SOL_VARS_TYPE)
+            
             user_flux!(@view(params.F_lag[i,j,:]), @view(params.G_lag[i,j,:]), SD,
                         @view(params.uaux[ip,:]), 
                         @view(params.qp.qe[ip,:]),         #pref
