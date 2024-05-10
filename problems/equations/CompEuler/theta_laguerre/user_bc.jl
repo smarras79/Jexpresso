@@ -70,7 +70,7 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     return flux
 end
 
-function user_bc_dirichlet(q,qe,x,y,t,nx,ny,qbdy)
+function user_bc_dirichlet_gpu(q,qe,x,y,t,nx,ny,qbdy,lpert)
     qnl = nx*(q[2]) + ny*(q[3])
     u = q[2] - qnl*nx
     v = q[3] - qnl*ny
@@ -78,8 +78,5 @@ function user_bc_dirichlet(q,qe,x,y,t,nx,ny,qbdy)
         u = qbdy[2]
         v = qbdy[3]
     end
-    #return Float32(q[1]), Float32(0.0), Float32(0.0), Float32(q[4])
-    # return Float32(qbdy[1]), Float32(u), Float32(v), Float32(qbdy[4])
     return Float32(qbdy[1]), Float32(u), Float32(v), Float32(qbdy[4])
-    #return Float32(qbdy[1]), Float32(0.0), Float32(0.0), Float32(qbdy[4])
 end

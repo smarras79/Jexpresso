@@ -391,7 +391,7 @@ function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_3
   uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
 end
 
-@kernel function filter_gpu_2d!(u, B, fx, fy_t, Je, ω_x, ω_y, connijk, Minv, n_x, n_y, neqs)
+@kernel function filter_gpu_2d!(u, qe, B, fx, fy_t, Je, ω_x, ω_y, connijk, Minv, n_x, n_y, neqs,lpert)
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
     @inbounds i = il[1]
@@ -406,7 +406,11 @@ end
     fqf  = @localmem eltype(u) (DIM1+1,DIM2+1)
 
     for m=1:neqs
-        @inbounds q_t[i,j] = u[ip,m]
+        if (lpert)
+            @inbounds q_t[i,j] = u[ip,m]
+        else
+            @inbounds q_t[i,j] = u[ip,m] - qe[ip,m]
+        end
         @synchronize()
         q_ti[i,j] = zero(eltype(u)) 
         for k=1:n_x

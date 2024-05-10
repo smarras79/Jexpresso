@@ -135,7 +135,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     return  S
 end
 
-function user_source(q,x,y,PhysConst,xmax,xmin,ymax,ymin)
+function user_source_gpu(q,qe,x,y,PhysConst,xmax,xmin,ymax,ymin,lpert)
 
     T = eltype(x)
     # distance from the boundary. xs in Restelli's thesis
@@ -174,5 +174,5 @@ function user_source(q,x,y,PhysConst,xmax,xmin,ymax,ymin)
     #
     ρ  = q[1]
 
-    return Float32(-cs*q[1]), Float32(-cs*q[2]), Float32(-cs*q[3]-ρ*PhysConst.g), Float32(-cs*q[4])
+    return T(-cs*q[1]), T(-cs*q[2]), T(-cs*q[3]-ρ*PhysConst.g), T(-cs*q[4])
 end

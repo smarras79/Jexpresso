@@ -79,17 +79,31 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Floa
     
 end
 
-function user_flux(q,PhysConst)
-
-    ρ  = q[1]
-    ρu = q[2]
-    ρv = q[3]
-    ρw = q[4]
-    ρθ = q[5]
-    θ  = ρθ/ρ
-    u  = ρu/ρ
-    v  = ρv/ρ
-    w  = ρw/ρ
-    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-    return Float32(ρu), Float32(ρu*u + Pressure), Float32(ρv*u), Float32(ρw*u), Float32(ρθ*u), Float32(ρv),Float32(ρu*v),Float32(ρv*v + Pressure),Float32(ρw*v), Float32(ρθ*v), Float32(ρw), Float32(ρu*w), Float32(ρv*w),Float32(ρw*w + Pressure), Float32(ρθ*w)
+function user_flux_gpu(q,qe,PhysConst,lpert)
+    T = eltype(q)
+    if (lpert)
+        ρ  = q[1]+qe[1]
+        ρu = q[2]+qe[2]
+        ρv = q[3]+qe[3]
+        ρw = q[4]+qe[4]
+        ρθ = q[5]+qe[5]
+        θ  = ρθ/ρ
+        u  = ρu/ρ
+        v  = ρv/ρ
+        w  = ρw/ρ
+        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ) - qe[6]
+        return T(ρu), T(ρu*u + Pressure), T(ρv*u), T(ρw*u), T(ρθ*u), T(ρv), T(ρu*v), T(ρv*v + Pressure), T(ρw*v), T(ρθ*v), T(ρw), T(ρu*w), T(ρv*w), T(ρw*w + Pressure), T(ρθ*w)
+    else
+        ρ  = q[1]
+        ρu = q[2]
+        ρv = q[3]
+        ρw = q[4]
+        ρθ = q[5]
+        θ  = ρθ/ρ
+        u  = ρu/ρ
+        v  = ρv/ρ
+        w  = ρw/ρ
+        Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+        return T(ρu), T(ρu*u + Pressure), T(ρv*u), T(ρw*u), T(ρθ*u), T(ρv), T(ρu*v), T(ρv*v + Pressure), T(ρw*v), T(ρθ*v), T(ρw), T(ρu*w), T(ρv*w), T(ρw*w + Pressure), T(ρθ*w)
+    end
 end

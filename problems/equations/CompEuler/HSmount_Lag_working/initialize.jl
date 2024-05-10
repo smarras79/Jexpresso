@@ -116,7 +116,11 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
 
     else
-
+        if (inputs[:SOL_VARS_TYPE] == PERT())
+            lpert = true
+        else
+            lpert = false
+        end
         PhysConst = PhysicalConst{TFloat}()
         θref = TFloat(250.0) #K
         θ0 = TFloat(250.0)
@@ -127,14 +131,14 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         N2   = TFloat(N*N)
         
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, θref, θ0, T0, p0, N, N2, PhysConst; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, mesh.x, mesh.y, θref, θ0, T0, p0, N, N2, PhysConst, lpert; ndrange = (mesh.npoin))
     end
     @info "Initialize fields for system of 2D CompEuler with θ equation ........................ DONE"
     @info maximum(q.qn[:,1:4]), minimum(q.qn[:,1:4]) 
     return q
 end
 
-@kernel function initialize_gpu!(qn, qe, x, y, θref, θ0, T0, p0, N, N2, PhysConst)
+@kernel function initialize_gpu!(qn, qe, x, y, θref, θ0, T0, p0, N, N2, PhysConst, lpert)
     ip = @index(Global, Linear)
 
     x = x[ip]

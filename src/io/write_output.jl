@@ -600,6 +600,27 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                     end
                 end
             end
+
+        else
+            qout[1:mesh.npoin] .= q[1:mesh.npoin]
+
+            for ivar = 2:nvars
+                #u = ρu/ρ
+
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= (q[idx+1:ivar*mesh.npoin] .+ qexact[1:mesh.npoin,ivar])./(qout[1:mesh.npoin] .+ qexact[1:mesh.npoin,1]) .- qexact[1:mesh.npoin,ivar]./qexact[1:mesh.npoin,1]
+
+                if (case == "rtb" || case == "mountain") && nvars >= 4
+
+                    if (size(qexact, 1) === mesh.npoin)
+
+                        ivar = 5
+                        idx = (ivar - 1)*mesh.npoin
+                        qout[idx+1:5*mesh.npoin] .= (q[idx+1:5*mesh.npoin] .+ qexact[1:mesh.npoin,5])./(qout[1:mesh.npoin] .+ qexact[1:mesh.npoin,1]) .- qexact[1:mesh.npoin,5]./qexact[1:mesh.npoin,1]
+                    end
+                end
+            end
+
         end
     end
 
