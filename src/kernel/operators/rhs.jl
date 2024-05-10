@@ -65,201 +65,6 @@ function resetRHSToZero_viscous!(params, SD::NSD_3D)
 end
 
 
-function uToPrimitives!(neqs, uprimitive, u, uauxe, mesh, δtotal_energy, iel, PT, ::CL, ::AbstractPert, SD::NSD_1D)
-    nothing
-end
-
-function uToPrimitives!(neqs, uprimitive, u, uauxe, connijk, ngl, npoin, δtotal_energy, iel, PT, ::CL, ::TOTAL, SD::NSD_2D)
-
-    if typeof(PT) == CompEuler
-        
-        PhysConst = PhysicalConst{Float64}()
-        
-        for j=1:ngl ,i=1:ngl
-            
-            m1 = connijk[iel,i,j]
-            m2 = m1 + npoin
-            m3 = m2 + npoin
-            m4 = m3 + npoin
-            
-            uprimitive[i,j,1] = u[m1]
-            uprimitive[i,j,2] = u[m2]/u[m1]
-            uprimitive[i,j,3] = u[m3]/u[m1]
-            uprimitive[i,j,4] = u[m4]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,2]^2 + uprimitive[i,j,3]^2)
-            #Tracers
-            if(neqs > 4)
-                mieq = m4
-                for ieq = 5:neqs
-                    mieq = mieq + npoin
-                    uprimitive[i,j,ieq] = u[mieq]
-                end
-            end
-            #Pressure:
-            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
-            
-        end
-        
-    elseif typeof(PT) == AdvDiff
-        
-        for j=1:ngl, i=1:ngl
-            
-            mieq = connijk[iel,i,j]
-            uprimitive[i,j,1] = u[mieq]
-            
-            for ieq = 2:neqs
-                mieq = mieq + mesh.npoin
-                uprimitive[i,j,ieq] = u[mieq]
-            end
-            
-        end
-    end
-end
-
-
-function uToPrimitives!(neqs, uprimitive, u, uauxe, connijk, ngl, npoin, δtotal_energy, iel, PT, ::CL, ::TOTAL, SD::NSD_3D)
-    
-    if typeof(PT) == CompEuler
-        
-        PhysConst = PhysicalConst{Float64}()
-        
-        for k=1:ngl, j=1:ngl, i=1:ngl
-            
-            m1 = connijk[iel,i,j,k]
-            m2 = m1 + npoin
-            m3 = m2 + npoin
-            m4 = m3 + npoin
-            m5 = m4 + npoin
-            
-            uprimitive[i,j,k,1] = u[m1]
-            uprimitive[i,j,k,2] = u[m2]/u[m1]
-            uprimitive[i,j,k,3] = u[m3]/u[m1]
-            uprimitive[i,j,k,4] = u[m4]/u[m1]
-            uprimitive[i,j,k,5] = u[m5]/u[m1] - δtotal_energy*0.5*(uprimitive[i,j,k,2]^2 + uprimitive[i,j,k,3]^2 + uprimitive[i,j,k,4]^2)
-            #Tracers
-            if(neqs > 5)
-                mieq = m5
-                for ieq = 6:neqs
-                    mieq = mieq + npoin
-                    uprimitive[i,j,k,ieq] = u[mieq]
-                end
-            end
-            #Pressure:
-            uprimitive[i,j,k,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,k,1], θ=uprimitive[i,j,k,5])
-        end
-        
-    elseif typeof(PT) == AdvDiff
-        
-        for k=1:ngl, j=1:ngl, i=1:ngl
-            
-            mieq = connijk[iel,i,j,k]
-            uprimitive[i,j,k,1] = u[mieq]
-            
-            for ieq = 2:neqs
-                mieq = mieq + npoin
-                uprimitive[i,j,k,ieq] = u[mieq]
-            end
-            
-        end
-    end
-end
-
-function uToPrimitives!(neqs, uprimitive, u, uauxe, connijk, ngl, npoin, δtotal_energy, iel, PT, ::CL, ::PERT, SD::NSD_2D)
-    
-    if typeof(PT) == CompEuler
-        PhysConst = PhysicalConst{Float64}()
-        
-        for j=1:ngl, i=1:ngl
-            
-            m1 = connijk[iel,i,j]
-            m2 = m1 + npoin
-            m3 = m2 + npoin
-            m4 = m3 + npoin
-
-            uprimitive[i,j,1] = u[m1] + uauxe[m1,1]
-            uprimitive[i,j,2] = u[m2]/uprimitive[i,j,1]
-            uprimitive[i,j,3] = u[m3]/uprimitive[i,j,1]
-            uprimitive[i,j,4] = (u[m4] + uauxe[m1,4])/uprimitive[i,j,1] - uauxe[m1,4]/uauxe[m1,1]#(u[m4] + uauxe[m1,4])/uprimitive[i,j,1]
-
-            #Tracers
-            if(neqs > 4)
-                mieq = m4
-                for ieq = 5:neqs
-                    mieq = mieq + npoin
-                    uprimitive[i,j,ieq] = u[mieq] + uauxe[mieq,1]
-                end
-            end
-            
-            #Pressure:
-            #uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
-            
-        end
-        
-    elseif typeof(PT) == AdvDiff
-        
-        for j=1:ngl, i=1:ngl
-            
-            mieq = connijk[iel,i,j]
-            uprimitive[i,j,1] = u[mieq]
-            
-            for ieq = 2:neqs
-                mieq = mieq + npoin
-                uprimitive[i,j,ieq] = u[mieq]
-            end
-            
-        end
-    end
-    
-end
-
-
-function uToPrimitives!(neqs, uprimitive, u, uprimitivee, mesh, δtotal_energy, iel, PT, ::NCL, ::AbstractPert, SD::NSD_2D)
-
-    if typeof(PT) == CompEuler
-        PhysConst = PhysicalConst{Float64}()
-        
-        for j=1:mesh.ngl, i=1:mesh.ngl
-            
-            m1 = mesh.connijk[iel,i,j]
-            m2 = m1 + mesh.npoin
-            m3 = m2 + mesh.npoin
-            m4 = m3 + mesh.npoin
-
-            uprimitive[i,j,1] = u[m1]
-            uprimitive[i,j,2] = u[m2]
-            uprimitive[i,j,3] = u[m3]
-            uprimitive[i,j,4] = u[m4]
-
-            #Tracers
-            if(neqs > 4)
-                mieq = 4
-                for ieq = 5:neqs
-                    mieq = mieq + mesh.npoin
-                    uprimitive[i,j,ieq] = u[mieq]                
-                end
-            end
-            
-            #Pressure:
-            uprimitive[i,j,end] = perfectGasLaw_ρθtoP(PhysConst, ρ=uprimitive[i,j,1], θ=uprimitive[i,j,4])
-            
-        end
-        
-    elseif typeof(PT) == AdvDiff
-        
-        for j=1:mesh.ngl, i=1:mesh.ngl
-            
-            mieq = mesh.connijk[iel,i,j]
-            uprimitive[i,j,1] = u[mieq]
-            
-            for ieq = 2:neqs
-                mieq = mieq + mesh.npoin
-                uprimitive[i,j,ieq] = u[mieq]
-            end
-            
-        end
-    end
-    
-end
-
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
     if (backend == CPU())
@@ -501,7 +306,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
         for i=1:params.mesh.ngl
             ip = connijk[iel,i,1]
          
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,:]),params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,:]), params.SOL_VARS_TYPE)
 
             user_flux!(@view(params.F[i,:]), @view(params.G[i,:]), SD,
                        @view(params.uaux[ip,:]),
@@ -530,12 +335,11 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
     xmin = params.xmin
     ymax = params.ymax    
     for iel = 1:params.mesh.nelem
-        #uToPrimitives!(params.neqs, params.uprimitive, u, qe, connijk, params.mesh.ngl, params.mesh.npoin, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
 
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
             
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]),params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
 
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
@@ -564,12 +368,10 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
     
     for iel = 1:params.mesh.nelem
 
-        #uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
-        
         for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j,k]
            
-            #user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,k,:]),params.SOL_VARS_TYPE)
+            #user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,k,:]), params.SOL_VARS_TYPE)
             user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
                        @view(params.uaux[ip,:]),
                        @view(qe[ip,:]),         #pref
@@ -585,7 +387,6 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
             end
         end
 
-        #@time _expansion_inviscid!(u, params, iel, params.CL, params.QT, SD, params.AD)
         _expansion_inviscid!(u, params.neqs, params.mesh.ngl, params.basis.dψ, params.ω, params.F, params.G, params.H, params.S, params.metrics.Je, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.rhs_el, iel, params.CL, params.QT, SD, params.AD) 
     end
 end
@@ -595,8 +396,6 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
     
     for iel=1:params.mesh.nelem
         
-        #uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh.connijk, params.mesh.ngl, params.mesh.npoin, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
-
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
 
@@ -617,7 +416,6 @@ end
 function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
     
     for iel=1:params.mesh.nelem        
-        #uToPrimitives!(params.neqs, params.uprimitive, u, params.qp.qe, params.mesh.connijk, params.mesh.ngl, params.mesh.npoin, params.inputs[:δtotal_energy], iel, params.PT, params.CL, params.SOL_VARS_TYPE, SD)
         
         for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j,k]
