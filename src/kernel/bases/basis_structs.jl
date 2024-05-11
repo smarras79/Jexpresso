@@ -795,8 +795,9 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
         gr.ξ .= ξ
         gr.ω .= ω
     else
-        KernelAbstractions.copyto!(backend, gr.ξ, Float32.(ξ))
-        KernelAbstractions.copyto!(backend, gr.ω, Float32.(ω))
+        T = eltype(gr.ξ)
+        KernelAbstractions.copyto!(backend, gr.ξ, T.(ξ))
+        KernelAbstractions.copyto!(backend, gr.ω, T.(ω))
     end
     #@info gr.ξ
     #@info gr.ω
