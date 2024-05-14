@@ -44,17 +44,41 @@ function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                                     dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1, 1), #∂ξ/∂x[1:Nq, 1:nelem]
                                     Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, 1, 1),
                                     nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), 1))
-    for iel = 1:mesh.nelem
-        for i = 1:N+1
-            for k = 1:Q+1
-                metrics.dxdξ[iel, k, 1]  = mesh.Δx[iel]/2
-                metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
-                metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
-            end
-        end        
-    end     
+    if (backend == CPU())
+        for iel = 1:mesh.nelem
+            for i = 1:N+1
+                for k = 1:Q+1
+                    metrics.dxdξ[iel, k, 1]  = mesh.Δx[iel]/2
+                    metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
+                    metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+                end
+            end        
+        end
+    else
+        x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
+        connijk = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem),N+1)
+        Δx = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.nelem))
+        KernelAbstractions.copyto!(backend, x, mesh.x)
+        KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
+        KernelAbstractions.copyto!(backend, Δx, mesh.Δx)
+        k = build_1D_gpu_metrics!(backend,(N+1))
+        k(metrics.dxdξ, metrics.Je, metrics.dξdx, basis.ψ, basis.dψ, x, connijk, Δx, Q; ndrange = (mesh.nelem*(N+1)), workgroupsize = (N+1))
+    end
     
     return metrics
+end
+
+@kernel function build_1D_gpu_metrics!(dxdξ, Je, dξdx, ψ, dψ, x, connijk, Δx, Q)
+
+    ie = @index(Group, Linear)
+    il = @index(Local, Linear)
+    T = eltype(x)
+    for k=1:Q+1
+        dxdξ[ie, k, 1] = Δx[ie]/2
+        Je[ie, k, 1] = dxdξ[ie, k, 1]
+        dξdx[ie, k, 1] = T(1.0)/Je[ie, k, 1]
+    end
+
 end
 
 function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, inputs,T; backend = CPU())
@@ -64,25 +88,53 @@ function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, ba
                                     Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem_semi_inf), Q+1, 1, 1),
                                     nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), 1))
 
-    dψ = basis.dψ
-    for iel = 1:mesh.nelem_semi_inf
-        for i = 1:mesh.ngr
-            ip = mesh.connijk_lag[iel,i,1]
-            xij = mesh.x[ip]
+    if (backend == CPU())
+        dψ = basis.dψ
+        for iel = 1:mesh.nelem_semi_inf
+            for i = 1:mesh.ngr
+                ip = mesh.connijk_lag[iel,i,1]
+                xij = mesh.x[ip]
             
-            for k = 1:mesh.ngr
-                metrics.dxdξ[iel, k,1]  += dψ[i,k] * (xij) * inputs[:yfac_laguerre]
-                metrics.Je[iel, k, 1]   = inputs[:yfac_laguerre]#abs(metrics.dxdξ[iel, k, 1])
-                if (xij > 0.1)
-                  metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
-                else
-                  metrics.dξdx[iel, k, 1] = -1.0/metrics.Je[iel, k, 1]
+                for k = 1:mesh.ngr
+                    metrics.dxdξ[iel, k,1]  += dψ[i,k] * (xij) * inputs[:yfac_laguerre]
+                    metrics.Je[iel, k, 1]   = inputs[:yfac_laguerre]#abs(metrics.dxdξ[iel, k, 1])
+                    if (xij > 0.1)
+                        metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+                    else
+                        metrics.dξdx[iel, k, 1] = -1.0/metrics.Je[iel, k, 1]
+                    end
                 end
             end
         end
+    else
+        x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
+        connijk_lag = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem_semi_inf),Int64(mesh.ngr))
+        KernelAbstractions.copyto!(backend, x, mesh.x)
+        KernelAbstractions.copyto!(backend, connijk_lag, mesh.connijk_lag)
+        k = build_1D_gpu_metrics_laguerre!(backend,(Int64(mesh.ngr)))
+        k(metrics.dxdξ, metrics.Je, metrics.dξdx, basis.ψ, basis.dψ, x, connijk_lag, TFloat(inputs[:yfac_laguerre]), Q; ndrange = (mesh.nelem_semi_inf*(mesh.ngr)), workgroupsize = (mesh.ngr))
     end
 
     return metrics
+end
+
+@kernel function build_1D_gpu_metrics_laguerre!(dxdξ, Je, dξdx, ψ, dψ, x, connijk_lag, yfac_laguerre, Q)
+
+    ie = @index(Group, Linear)
+    i = @index(Local, Linear)
+    T = eltype(x)
+    ip = connijk_lag[ie,i,1]
+    xij = x[ip]
+    for k=1:Q+1
+        dxdξ[ie, k, 1] += dψ[i,k] * xij * yfac_laguerre
+        Je[ie, k, 1] = yfac_laguerre
+        if (xij > T(0.1))
+            dξdx[ie, k, 1] = T(1.0)/Je[ie, k, 1]
+        else
+            dξdx[ie, k, 1] = -T(1.0)/Je[ie, k, 1]
+        end
+    end
+
 end
 
 function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
