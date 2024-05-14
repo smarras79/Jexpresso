@@ -137,7 +137,7 @@ end
             if !(qbdy[ie, i_ngl, i_ngr, ieq] == T(1234567)) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
             # if use the commented line in CUDA, somehow get errors
             # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
-                @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
+                @inbounds u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
             end
         end
     end
@@ -151,7 +151,7 @@ end
                 if !(qbdy[ie, i_ngl, i_ngr, ieq] == T(1234567)) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
                 # if use the commented line in CUDA, somehow get errors
                 # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq] 
-                    @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
+                    @inbounds u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
                 end
             end
         end
@@ -164,7 +164,7 @@ end
                 if !(qbdy[ie, i_ngl, i_ngr, ieq] == T(1234567)) && !(qbdy[ie, i_ngl, i_ngr, ieq] == uaux[ip,ieq])
                 # if use the commented line in CUDA, somehow get errors
                 # @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[iedge, ik, ieq]
-                    @inbounds KernelAbstractions.@atomic u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
+                    @inbounds u[(ieq-1)*npoin+ip] = qbdy[ie, i_ngl, i_ngr, ieq]
                 end
             end
         end

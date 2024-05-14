@@ -70,7 +70,9 @@ end
 
 function user_bc_dirichlet_gpu(q,qe,x,y,t,nx,ny,qbdy,lpert)
     T = eltype(q)
-    if (y<=14950 && abs(nx)<1) #(abs(x) < 119500.0 && y<= 19950.0)
+    u = qbdy[2]
+    v = qbdy[3]
+    if (y<=T(14950) && abs(nx)<T(1)) #(abs(x) < 119500.0 && y<= 19950.0)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
         u = (q[2]+qe[2] - qnl*nx) - qe[2]
         v = (q[3]+qe[3] - qnl*ny) - qe[3]
