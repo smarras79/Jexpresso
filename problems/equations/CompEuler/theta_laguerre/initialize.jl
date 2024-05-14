@@ -101,6 +101,12 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")    
         write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
     else
+        if (inputs[:SOL_VARS_TYPE] == PERT())
+            lpert = true
+        else
+            lpert = false
+        end
+
         PhysConst = PhysicalConst{TFloat}()
         xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
         yc = TFloat(2500.0) #m
@@ -109,31 +115,32 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
     @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
     @info maximum(q.qn[:,4]), maximum(q.qe[:,5])
     return q
 end
 
-@kernel function initialize_gpu!(qn, qe, x, y, xc, rθ, yc, θref, θc, PhysConst)
+@kernel function initialize_gpu!(qn, qe, x, y, xc, rθ, yc, θref, θc, PhysConst, lpert)
     ip = @index(Global, Linear)
 
+    T = eltype(x)
     x = x[ip]
     y = y[ip]
     r = sqrt( (x - xc)^2 + (y - yc)^2 )
-    Δθ = Float32(0.0) #K
+    Δθ = T(0.0) #K
     if r < rθ
-        Δθ = Float32(θc*(Float32(1.0) - r/rθ))
+        Δθ = T(θc*(T(1.0) - r/rθ))
     end
     θ = θref + Δθ
-    p    = PhysConst.pref*(Float32(1.0) - PhysConst.g*y/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
-    pref = PhysConst.pref*(Float32(1.0) - PhysConst.g*y/(PhysConst.cp*θref))^(PhysConst.cpoverR)
+    p    = PhysConst.pref*(T(1.0) - PhysConst.g*y/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
+    pref = PhysConst.pref*(T(1.0) - PhysConst.g*y/(PhysConst.cp*θref))^(PhysConst.cpoverR)
     ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p)    #kg/m³
     ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=pref) #kg/m³
 
-    u = Float32(0.0)
-    v = Float32(0.0)
+    u = T(0.0)
+    v = T(0.0)
 
     qn[ip,1] = ρ - ρref
     qn[ip,2] = ρ*u

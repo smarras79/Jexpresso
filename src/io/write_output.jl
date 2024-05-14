@@ -256,7 +256,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
             #@info ivar,ivar1,new_size*ieq-diff,mesh.npoin*ieq
 	    q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:mesh.npoin*ieq]
 	end
-
         iter = 1
     	for iedge = 1:nedges
 
@@ -330,7 +329,8 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
 		if (j==1)
 		    ip1=1
 		    while (ip1 <= npoin)
-			if(mesh.x[ip1] == xmax && mesh.y[ip1] == ymax)
+                        #@info mesh.x[ip1], TFloat(xmax), mesh.y[ip1], TFloat(ymax)
+                        if(mesh.x[ip1] == TFloat(xmax) && mesh.y[ip1] == TFloat(ymax))
 			    ip_new = ip1
 			end
 			ip1 +=1
@@ -600,6 +600,27 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                     end
                 end
             end
+
+        else
+            qout[1:mesh.npoin] .= q[1:mesh.npoin]
+
+            for ivar = 2:nvars
+                #u = ρu/ρ
+
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= (q[idx+1:ivar*mesh.npoin] .+ qexact[1:mesh.npoin,ivar])./(qout[1:mesh.npoin] .+ qexact[1:mesh.npoin,1]) .- qexact[1:mesh.npoin,ivar]./qexact[1:mesh.npoin,1]
+
+                if (case == "rtb" || case == "mountain") && nvars >= 4
+
+                    if (size(qexact, 1) === mesh.npoin)
+
+                        ivar = 5
+                        idx = (ivar - 1)*mesh.npoin
+                        qout[idx+1:5*mesh.npoin] .= (q[idx+1:5*mesh.npoin] .+ qexact[1:mesh.npoin,5])./(qout[1:mesh.npoin] .+ qexact[1:mesh.npoin,1]) .- qexact[1:mesh.npoin,5]./qexact[1:mesh.npoin,1]
+                    end
+                end
+            end
+
         end
     end
 

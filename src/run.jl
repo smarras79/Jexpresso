@@ -69,6 +69,7 @@ user_flux_file       = string(case_name_dir, "/user_flux.jl")
 user_source_file     = string(case_name_dir, "/user_source.jl")
 user_bc_file         = string(case_name_dir, "/user_bc.jl")
 user_initialize_file = string(case_name_dir, "/initialize.jl")
+user_primitives_file = string(case_name_dir, "/user_primitives.jl")
 
 include(driver_file)
 
@@ -77,7 +78,7 @@ include(user_flux_file)
 include(user_source_file)
 include(user_bc_file)
 include(user_initialize_file)
-
+include(user_primitives_file)
 #--------------------------------------------------------
 #Read User Inputs:
 #--------------------------------------------------------

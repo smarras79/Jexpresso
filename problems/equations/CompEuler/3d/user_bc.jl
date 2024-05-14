@@ -8,27 +8,27 @@ function user_bc_dirichlet!(q::SubArray{Float64},
                             zmin, zmax,
                             qe::SubArray{Float64}, ::TOTAL)
 
-    e = 1.0e-4
+    qnl = nx*q[2] + ny*q[3] + nz*q[4]
+    qbdy[2] = (q[2] - qnl*nx) 
+    qbdy[3] = (q[3] - qnl*ny) 
+    qbdy[4] = (q[4] - qnl*nz) 
     
-    xmine = xmin + e
-    xmaxe = xmax - e
-    ymine = ymin + e
-    ymaxe = ymax - e
-    zmine = zmin + e
-    zmaxe = zmax - e
+end
 
-    if x < xmine || x > xmaxe
-        qbdy[2] = 0.0
-    end
-    
-    if y < ymine || y > ymaxe 
-        qbdy[3] = 0.0
-    end
+function user_bc_dirichlet!(q::SubArray{Float64},
+                            x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
+                            t::AbstractFloat, tag,
+                            qbdy::AbstractArray,
+                            nx, ny, nz,
+                            xmin, xmax,
+                            ymin, ymax,
+                            zmin, zmax,
+                            qe::SubArray{Float64}, ::PERT)
 
-    if z < zmine || z > zmaxe 
-        qbdy[4] = 0.0
-    end
-    
+    qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])
+    qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
+    qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
+    qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, z::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
@@ -36,44 +36,48 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     return flux
 end
 
-function user_bc_dirichlet(q,x,y,z,t,nx,ny,nz,qbdy)
-
-    qnl = nx*(q[2]) + ny*(q[3]) + nz*(q[4])
-    if (abs(nx) > Float32(0.001))
-        u = q[2] - qnl*nx
+function user_bc_dirichlet_gpu(q,qe,x,y,z,t,nx,ny,nz,qbdy,lpert)
+    T = eltype(q)
+    if (lpert)
+        qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])
+        #=if (abs(nx) > T(0.001))
+            u = (q[2]+qe[2] - qnl*nx) - qe[2]
+        else
+            u = qbdy[2]
+        end
+        if (abs(ny) > T(0.001))
+            v = (q[3]+qe[3] - qnl*ny) - qe[3]
+        else
+            v = qbdy[3]
+        end
+        if (abs(nz) > T(0.001))
+            w = (q[4]+qe[4] - qnl*nz) - qe[4]
+        else
+            w = qbdy[4]
+        end=#
+        u = (q[2]+qe[2] - qnl*nx) - qe[2]
+        v = (q[3]+qe[3] - qnl*ny) - qe[3]
+        w = (q[4]+qe[4] - qnl*nz) - qe[4]
     else
-        u = qbdy[2]
+        qnl = nx*(q[2]) + ny*(q[3]) + nz*(q[4])
+        #=if (abs(nx) > T(0.001))
+            u = q[2] - qnl*nx
+        else
+            u = qbdy[2]
+        end
+        if (abs(ny) > T(0.001))
+            v = q[3] - qnl*ny
+        else
+            v = qbdy[3]
+        end
+        if (abs(nz) > T(0.001))
+            w = q[4] - qnl*nz
+        else
+            w = qbdy[4]
+        end=#
+        u = (q[2] - qnl*nx)
+        v = (q[3] - qnl*ny)
+        w = (q[4] - qnl*nz)
     end
-    if (abs(ny) > Float32(0.001))
-        v = q[3] - qnl*ny
-    else
-        v = qbdy[3]
-    end
-    if (abs(nz) > Float32(0.001))
-        w = q[4] - qnl*nz
-    else
-        w = qbdy[4]
-    end
-    #=if (abs(x) > Float32(4990)) 
-        u = Float32(0.0)
-    else
-        u = qbdy[2]
-    end
-
-    if (z < Float32(0.1) || z > Float32(9990))
-        w = Float32(0.0)
-    else
-        w = qbdy[4]
-    end
-
-    if (y > Float32(1490) || y < Float32(-2990))
-        v = Float32(0.0)
-    else
-        v = qbdy[3]
-    end=#
-
-    #return Float32(q[1]), Float32(0.0), Float32(0.0), Float32(0.0), Float32(q[5])
-    return Float32(qbdy[1]), Float32(u), Float32(v), Float32(w), Float32(qbdy[5])
-    #return Float32(qbdy[1]), Float32(0.0), Float32(v), Float32(0.0), Float32(qbdy[5])
-    #return Float32(qbdy[1]), Float32(0.0), Float32(0.0), Float32(qbdy[4])
+    return T(qbdy[1]), T(u), T(v), T(w), T(qbdy[5])
 end
