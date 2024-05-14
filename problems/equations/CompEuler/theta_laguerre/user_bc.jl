@@ -71,12 +71,13 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
 end
 
 function user_bc_dirichlet_gpu(q,qe,x,y,t,nx,ny,qbdy,lpert)
+    T = eltype(q)
     qnl = nx*(q[2]) + ny*(q[3])
     u = q[2] - qnl*nx
     v = q[3] - qnl*ny
-    if (y > Float32(4995) && abs(ny) > Float32(0.0))
+    if (y > T(4995) && abs(ny) > T(0.0))
         u = qbdy[2]
         v = qbdy[3]
     end
-    return Float32(qbdy[1]), Float32(u), Float32(v), Float32(qbdy[4])
+    return T(qbdy[1]), T(u), T(v), T(qbdy[4])
 end
