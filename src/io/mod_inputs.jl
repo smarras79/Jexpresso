@@ -21,9 +21,13 @@ function mod_inputs_user_inputs!(inputs)
       inputs[:backend] = CPU()
     end
    
-    if(inputs[:backend] == MetalBackend() || inputs[:backend] == CUDABackend())
+    if (inputs[:backend] == MetalBackend())
         global TInt = Int32
         global TFloat = Float32
+        global cpu = false
+    elseif (inputs[:backend] == CUDABackend())
+        global TInt = Int64
+        global TFloat = Float64
         global cpu = false
     end
     ##1D plotting inputs for paper

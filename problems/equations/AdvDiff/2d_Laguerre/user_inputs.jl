@@ -9,7 +9,7 @@ function user_inputs()
         :ndiagnostics_outputs => 10,
         :output_dir          => "./output/",
         :case                 => "rtb",
-        :backend              => CUDABackend(),
+        :backend              => MetalBackend(),
         #:CL                   => NCL(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
@@ -25,7 +25,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1),
         :μ                    => (0.1), 
         #---------------------------------------------------------------------------
