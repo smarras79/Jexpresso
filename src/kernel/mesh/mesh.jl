@@ -2165,6 +2165,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         end    
         mesh.npoin = mesh.npoin + mesh.ngr-1
         mesh.x = x
+        @info maximum(mesh.x)
     end
     if (inputs[:llaguerre_1d_left])
         e = min(2,mesh.nelem_semi_inf)

@@ -35,9 +35,9 @@ function params_setup(sem,
         H            = KernelAbstractions.zeros(backend, T, 0)
         S            = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.ngl), Int64(qp.neqs))
         uprimitive   = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.ngl), Int64(qp.neqs)+1)
-        flux_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem),Int64(sem.mesh.ngl), 2*qp.neqs)
+        flux_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem),Int64(sem.mesh.ngl), qp.neqs)
         source_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), qp.neqs)
-        qbdy_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nedges_bdy), Int64(sem.mesh.ngl), qp.neqs)
+        qbdy_gpu = KernelAbstractions.zeros(backend, T, 0)
     elseif  sem.mesh.nsd == 2
         uaux_el      = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(qp.neqs))
         rhs_el       = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem), Int64(sem.mesh.ngl), Int64(sem.mesh.ngl), Int64(qp.neqs))
@@ -147,8 +147,9 @@ function params_setup(sem,
         fqf_lag = KernelAbstractions.zeros(backend, T, qp.neqs, Int64(sem.mesh.ngr))
         b_lag = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem_semi_inf), Int64(sem.mesh.ngr), qp.neqs)
         B_lag = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.npoin), qp.neqs)
-        flux_lag_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem_semi_inf), Int64(sem.mesh.ngr), 2*qp.neqs)
+        flux_lag_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem_semi_inf), Int64(sem.mesh.ngr), qp.neqs)
         source_lag_gpu = KernelAbstractions.zeros(backend, T, Int64(sem.mesh.nelem_semi_inf), Int64(sem.mesh.ngr), qp.neqs)
+        qbdy_lag_gpu = KernelAbstractions.zeros(backend, T, 0)
     end
 
     #-----------------------------------------------------------------

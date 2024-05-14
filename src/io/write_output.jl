@@ -52,8 +52,9 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
             if (inputs[:backend] == CPU())
                 plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
             else
-                uout = KernelAbstractions.allocate(CPU(),Float32, Int64(mesh.npoin))
+                uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
                 KernelAbstractions.copyto!(CPU(), uout, sol.u[iout][:])
+                convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
                 plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
             end
         end
@@ -78,7 +79,7 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
             else
                 u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
                 KernelAbstractions.copyto!(CPU(),u, sol.u[iout][:])
-                convert_mesh_arrays_to_cpu!(mesh)
+                convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
                 plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
             end
         end
@@ -114,11 +115,7 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
             KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
             u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
             KernelAbstractions.copyto!(CPU(),u_exact,qexact)
-            if (mesh.SD == NSD_2D())
-                convert_mesh_arrays_to_cpu!(mesh)
-            elseif (mesh.SD == NSD_3D())
-                convert_mesh_arrays_to_cpu_3D!(mesh)
-            end
+            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
             title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
             write_vtk(SD, mesh, u, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
         end

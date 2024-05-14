@@ -82,10 +82,28 @@ function rhs!(du, u, params, time)
         end
 
         if (params.SD == NSD_1D())
+            params.RHS .= TFloat(0.0)
+            PhysConst = PhysicalConst{TFloat}()
+
+            k1 = utouaux_gpu!(backend)
+            k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.neqs))
+
             k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngl)))
-            k(params.RHS, u, params.qp.qe, params.mesh.connijk , params.basis.dψ, params.ω, params.M, params.mesh.ngl, lpert; 
+            k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time), params.mesh.connijk , params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu, 
+              PhysConst, params.xmax, params.xmin, params.mesh.ngl, params.neqs, lpert, inputs[:lperiodic_1d], params.mesh.npoin_linear, params.mesh.npoin; 
               ndrange = params.mesh.nelem*params.mesh.ngl,workgroupsize = params.mesh.ngl)
-            RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
+
+            if (params.laguerre)
+                params.RHS_lag .= TFloat(0.0)
+                k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngr)))
+                k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time), params.mesh.connijk_lag , params.basis_lag.dψ, params.ω_lag, params.Minv, 
+                  params.flux_lag_gpu, params.source_lag_gpu,
+                  PhysConst, params.xmax, params.xmin, params.mesh.ngr, params.neqs, lpert, inputs[:lperiodic_1d], params.mesh.npoin_linear, params.mesh.npoin;
+                ndrange = params.mesh.nelem_semi_inf*params.mesh.ngr,workgroupsize = params.mesh.ngr)
+                @inbounds  params.RHS .+= params.RHS_lag
+            end
+            k1 = RHStodu_gpu!(backend)
+            k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
         elseif (params.SD == NSD_3D())
             
             params.RHS .= TFloat(0.0)
@@ -261,7 +279,12 @@ function _build_rhs!(RHS, u, params, time)
          reset_laguerre_filters!(params)
     end
     if (params.inputs[:lfilter])
-       filter!(u, params, time, params.uaux, params.mesh.connijk, params.mesh.connijk_lag, params.metrics.Je, params.metrics_lag.Je, SD, params.SOL_VARS_TYPE)
+        if (params.laguerre)
+            filter!(u, params, time, params.uaux, params.mesh.connijk, params.mesh.connijk_lag, params.metrics.Je, params.metrics_lag.Je, SD, params.SOL_VARS_TYPE;
+                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je)
+        else
+            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE)
+        end
     end
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
@@ -318,7 +341,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
             if lsource
                 user_source!(@view(params.S[i,:]),
                              @view(params.uaux[ip,:]),
-                             @view(qp.qe[ip,:]),          #ρref 
+                             @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end

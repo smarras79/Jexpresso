@@ -1,22 +1,43 @@
-@kernel function _build_rhs_gpu_v0!(RHS, u, qe, connijk, dψ, ω, M, ngl, lpert)
-    ig = @index(Group, Linear)
-    il = @index(Local, Linear)
-    ip = connijk[ig,il,1]
-    
+@kernel function _build_rhs_gpu_v0!(RHS, u, uaux, qe, x, t, connijk, dψ, ω, Minv, flux, source, PhysConst, xmax, xmin, n_x, neq, lpert, lperiodic_1d, npoin_linear, npoin)
+    ie = @index(Group, Linear)
+    i = @index(Local, Linear)
+    ip = connijk[ie,i,1]
+   
     T = eltype(RHS)
     KernelAbstractions.@atomic RHS[ip] = T(0.0)
     DIM = @uniform @groupsize()[1]
     ### define and populate flux array as shared memory then make sure blocks are synchronized
     F = @localmem eltype(RHS) (DIM+1,1)
-    F[il] = T(1.0)*u[ip] #user_flux(u[ip])
+    S = @localmem eltype(RHS) (DIM+1,1)
+    
+    uip = @view(uaux[ip,1:neq])
+    qeip = @view(qe[ip,1:neq+1])
+    
+    if (ip == 1 || ip == npoin_linear) && !(lperiodic_1d)
+        @inbounds uaux[ip,1:neq] .= user_bc_dirichlet_gpu(uip,qeip,x[ip],t,lpert)
+        for ieq =1:neq
+
+            idx = ip + (ieq-1)*npoin
+            @inbounds u[idx] = uaux[ip,ieq]
+        end
+    end
+    @inbounds flux[ie, i, :] .= user_flux_gpu(uip, qeip, PhysConst, lpert)
+
+
+    @inbounds source[ie, i, :] .= user_source_gpu(uip, qeip, x[ip], PhysConst, xmax, xmin, lpert)
+
     @synchronize()
     ### do numerical integration
-    dFdxi = zero(T)
-    for k=1:ngl
-        dFdxi += dψ[k,il]*F[k]
-    end
+    for ieq = 1:neq
+        F[i] = flux[ie, i, ieq]
+        S[i] = source[ie, i, ieq]
+        dFdξ = zero(T)
+        for k=1:n_x
+            dFdξ += dψ[k,i]*F[k]
+        end
     ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
-    KernelAbstractions.@atomic RHS[ip] -= ω[il]*dFdxi/ M[ip]
+        KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i]*(dFdξ - S[i])* Minv[ip]
+    end
 end
 
 @kernel function _build_rhs_gpu_2D_v0!(RHS, u, qe, x, y, connijk, dξdx, dξdy, dηdx, dηdy, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst, xmax, xmin, ymax, ymin, lpert)
