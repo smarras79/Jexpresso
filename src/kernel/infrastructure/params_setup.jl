@@ -54,7 +54,6 @@ function params_setup(sem,
     #
     # GPU arrays
     #
-    
     flux_gpu       = gpuAux.flux_gpu
     source_gpu     = gpuAux.source_gpu
     qbdy_gpu       = gpuAux.qbdy_gpu
@@ -126,11 +125,33 @@ function params_setup(sem,
                                          T, backend;
                                          neqs=qp.neqs)
 
+        
+
+        RHS_lag          = rhs_lag.RHS_lag
+        RHS_visc_lag     = rhs_lag.RHS_visc_lag
+        rhs_el_lag       = rhs_lag.rhs_el_lag
+        rhs_diff_el_lag  = rhs_lag.rhs_diff_el_lag
+        rhs_diffξ_el_lag = rhs_lag.rhs_diffξ_el_lag
+        rhs_diffη_el_lag = rhs_lag.rhs_diffη_el_lag
+        rhs_diffζ_el_lag = rhs_lag.rhs_diffζ_el_lag
+        
+        F_lag            = fluxes_lag.F_lag
+        G_lag            = fluxes_lag.G_lag
+        H_lag            = fluxes_lag.H_lag
+        S_lag            = fluxes_lag.S_lag
+        uprimitive_lag   = fluxes_lag.uprimitive_lag
+        
         flux_lag_gpu   = gpuAux_lag.flux_lag_gpu
         source_lag_gpu = gpuAux_lag.source_lag_gpu
         qbdy_lag_gpu   = gpuAux_lag.qbdy_lag_gpu
         
         fy_t_lag = transpose(sem.fy_lag)
+        q_t_lag  = filter_lag.q_t_lag
+        q_ti_lag = filter_lag.q_ti_lag
+        fqf_lag  = filter_lag.fqf_lag
+        b_lag    = filter_lag.b_lag
+        B_lag    = filter_lag.B_lag
+        
     end
     
     
@@ -144,7 +165,7 @@ function params_setup(sem,
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
-    tspan = (T(inputs[:tinit]), T(inputs[:tend]))    
+    tspan = [T(inputs[:tinit]), T(inputs[:tend])]
     if (backend == CPU())
         visc_coeff = inputs[:μ]
     else
@@ -178,7 +199,7 @@ function params_setup(sem,
     if ("Laguerre" in sem.mesh.bdy_edge_type ||
         inputs[:llaguerre_1d_right] ||
         inputs[:llaguerre_1d_left])
-
+        
         params_lag = (flux_lag_gpu, source_lag_gpu,
                       qbdy_lag_gpu,
                       uprimitive_lag,
@@ -194,6 +215,10 @@ function params_setup(sem,
         params = (params_base..., params_lag)
         params_base = nothing
         params_lag  = nothing
+        dump(params)
+        @info params.tspan
+
+        @mystop
     else
         params = params_base
         params_base = nothing
