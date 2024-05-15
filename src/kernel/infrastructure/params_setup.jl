@@ -163,7 +163,6 @@ function params_setup(sem,
         
     end
     
-    deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
     tspan = [T(inputs[:tinit]), T(inputs[:tend])]
     if (backend == CPU())
@@ -176,52 +175,60 @@ function params_setup(sem,
     end
     ivisc_equations = inputs[:ivisc_equations]   
     
-    params_base = (backend,
-                   T, inputs,
-                   uaux, vaux,
-                   ubdy, gradu, bdy_flux,                   
-                   RHS, RHS_visc,
-                   rhs_el, rhs_diff_el,
-                   rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
-                   uprimitive,
-                   F, G, H, S,
-                   flux_gpu, source_gpu, qbdy_gpu,
-                   q_t, q_ti, fqf, b, B,
-                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
-                   sem.SOL_VARS_TYPE, 
-                   neqs=qp.neqs,
-                   sem.basis, sem.ω, sem.mesh, sem.metrics,
-                   visc_coeff, ivisc_equations,
-                   sem.matrix.M, sem.matrix.Minv,tspan,
-                   Δt, deps, xmax, xmin, ymax, ymin,
-                   qp, sem.fx, sem.fy, fy_t, laguerre=false)
-
+  
     if ("Laguerre" in sem.mesh.bdy_edge_type ||
         inputs[:llaguerre_1d_right] ||
         inputs[:llaguerre_1d_left])
-        
-        params_lag = (flux_lag_gpu, source_lag_gpu,
-                      qbdy_lag_gpu,
-                      uprimitive_lag,
-                      F_lag, G_lag, S_lag, 
-                      rhs_el_lag,
-                      rhs_diff_el_lag,
-                      rhs_diffξ_el_lag, rhs_diffη_el_lag,
-                      RHS_lag, RHS_visc_lag,
-                      q_t_lag, q_ti_lag, fqf_lag,
-                      b_lag, B_lag, 
-                      sem.fy_lag, fy_t_lag, laguerre=true)
-        
-        params = (params_base..., params_lag)
-        params_base = nothing
-        params_lag  = nothing
-        dump(params)
-        @info params.tspan
 
-        @mystop
+        params = (backend, T, F, G, H, S,
+                  uaux, uaux_el, vaux,
+                  ubdy, gradu, bdy_flux, #for B.C.
+                  rhs_el, rhs_diff_el,
+                  rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
+                  uprimitive,
+                  flux_gpu, source_gpu, qbdy_gpu,
+                  q_t, q_ti, fqf, b, B,
+                  q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag, flux_lag_gpu, source_lag_gpu,
+                  qbdy_lag_gpu,
+                  RHS, RHS_visc,
+                  F_lag, G_lag, S_lag, 
+                  uaux_el_lag,
+                  rhs_el_lag,
+                  rhs_diff_el_lag,
+                  rhs_diffξ_el_lag, rhs_diffη_el_lag,
+                  RHS_lag, RHS_visc_lag, uprimitive_lag, 
+                  SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD,
+                  sem.SOL_VARS_TYPE,
+                  neqs=qp.neqs,
+                  sem.mesh,
+		  basis=sem.basis[1], basis_lag = sem.basis[2],
+                  ω = sem.ω[1], ω_lag = sem.ω[2],
+                  metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
+                  inputs, visc_coeff, ivisc_equations,
+                  sem.matrix.M, sem.matrix.Minv,tspan,
+                  Δt, deps, xmax, xmin, ymax, ymin,
+                  qp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
+        
     else
-        params = params_base
-        params_base = nothing
+          params = (backend,
+              T, inputs,
+              uaux, vaux,
+              ubdy, gradu, bdy_flux,                   
+              RHS, RHS_visc,
+              rhs_el, rhs_diff_el,
+              rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+              uprimitive,
+              F, G, H, S,
+              flux_gpu, source_gpu, qbdy_gpu,
+              q_t, q_ti, fqf, b, B,
+              SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
+              sem.SOL_VARS_TYPE, 
+              neqs=qp.neqs,
+              sem.basis, sem.ω, sem.mesh, sem.metrics,
+              visc_coeff, ivisc_equations,
+              sem.matrix.M, sem.matrix.Minv,tspan,
+              Δt, xmax, xmin, ymax, ymin,
+              qp, sem.fx, sem.fy, fy_t, laguerre=false)
     end
 
     println(" # Build arrays and params ................................ DONE")

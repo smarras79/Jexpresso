@@ -287,8 +287,11 @@ function build_rhs!(RHS, u, params, time)
     end
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
-                               params.mesh.x, params.mesh.y, params.mesh.z, params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
-                               params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
+                               params.mesh.x, params.mesh.y, params.mesh.z,
+                               params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                               params.mesh.npoin, params.mesh.npoin_linear, 
+                               params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
+                               params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
                                params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
                                xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
                                params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, params.mesh.bdy_edge_type,
