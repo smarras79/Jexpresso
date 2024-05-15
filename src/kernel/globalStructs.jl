@@ -1,6 +1,24 @@
 #-------------------------------------------------------------------------------------------
 # Solution variables
 #-------------------------------------------------------------------------------------------
+Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, backend}
+
+    u    = KernelAbstractions.zeros(backend, T, dims1)
+    uaux = KernelAbstractions.zeros(backend, T, dims2)
+    vaux = KernelAbstractions.zeros(backend, T, dims3) #generic auxiliary array for general use
+    
+end
+function allocate_uODE(SD, npoin, T, backend; neqs=1)
+
+    dims1 = (Int64(npoin)*Int64(neqs))
+    dims2 = (Int64(npoin), Int64(neqs))
+    dims3 = (Int64(npoin))
+
+    uODE = St_uODE{T, dims1, dims2, dims3, backend}()
+    
+    return uODE
+end
+
 Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dims1, nvars, backend}
 
     qnp1  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁺¹
@@ -10,19 +28,22 @@ Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dims1, nvars, bac
     qnm2  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻²
     qnm3  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻³
     qe    = KernelAbstractions.zeros(backend,  T, dims1) # qexact    
-    zb    = KernelAbstractions.zeros(backend,  T, dims1) # zb #shallow water moving bathymetry
+    zb    = KernelAbstractions.zeros(backend,  T, dims1) # zb #shallow water moving bathymetry 
+    
     qvars = Array{Union{Nothing, String}}(nothing, nvars)
     neqs  = nvars
     
 end
 function define_q(SD, nelem, npoin, ngl, qvars, T, backend; neqs=1)
     
-    dims1 = (npoin, neqs+1)
+    dims1 = (Int64(npoin), Int64(neqs+1))
     
-    q =  St_SolutionVars{T, dims1, neqs, backend}()
+    q       = St_SolutionVars{T, dims1, neqs, backend}()
+    q.qvars = qvars
     
     return q
 end
+
 
 #-------------------------------------------------------------------------------------------
 # rhs
@@ -30,9 +51,9 @@ end
 Base.@kwdef mutable struct St_rhs{T <: AbstractFloat, dims1, dims2, backend}
     
     RHS          = KernelAbstractions.zeros(backend,  T, dims1)         
-    RHS_visc     = KernelAbstractions.zeros(backend,  T, dims1)    
-    rhs_el       = KernelAbstractions.zeros(backend,  T, dims2)     
-    rhs_diff_el  = KernelAbstractions.zeros(backend,  T, dims2) 
+    RHS_visc     = KernelAbstractions.zeros(backend,  T, dims1)
+    rhs_el       = KernelAbstractions.zeros(backend,  T, dims2)
+    rhs_diff_el  = KernelAbstractions.zeros(backend,  T, dims2)
     rhs_diffξ_el = KernelAbstractions.zeros(backend,  T, dims2)
     rhs_diffη_el = KernelAbstractions.zeros(backend,  T, dims2)
     rhs_diffζ_el = KernelAbstractions.zeros(backend,  T, dims2)
@@ -41,14 +62,14 @@ end
 function allocate_rhs(SD, nelem, npoin, ngl, T, backend; neqs=1)
 
     if SD == NSD_1D()
-        dims1 = (npoin, neqs)
-        dims2 = (nelem, ngl, neqs) 
+        dims1 = (Int64(npoin), Int64(neqs))
+        dims2 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
     elseif SD == NSD_2D()
-        dims1 = (npoin, neqs)
-        dims2 = (nelem, ngl, ngl, neqs) 
+        dims1 = (Int64(npoin), Int64(neqs))
+        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) 
     elseif SD == NSD_3D()
-        dims1 = (npoin, neqs)
-        dims2 = (nelem, ngl, ngl, ngl, neqs) 
+        dims1 = (Int64(npoin), Int64(neqs))
+        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) 
     end
     
     rhs = St_rhs{T, dims1, dims2, backend}()
@@ -60,28 +81,26 @@ end
 #-------------------------------------------------------------------------------------------
 # Fluxes
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_fluxes{T <: AbstractFloat, dims1, dims2, backend}
-    
+Base.@kwdef mutable struct St_fluxes{T <: AbstractFloat, dims1, dims2, backend}    
     F = KernelAbstractions.zeros(backend,  T, dims1)
     G = KernelAbstractions.zeros(backend,  T, dims1)
     H = KernelAbstractions.zeros(backend,  T, dims1)
     S = KernelAbstractions.zeros(backend,  T, dims1)
     uprimitive = KernelAbstractions.zeros(backend,  T, dims2)
-    
 end
 function allocate_fluxes(SD, npoin, ngl, T, backend; neqs=1)
 
     if SD == NSD_1D()
-        dims1 = (ngl, neqs)
-        dims2 = (ngl, neqs+1) 
-    else SD == NSD_2D()
-        dims1 = (ngl, ngl, neqs)
-        dims2 = (ngl, ngl, neqs+1) 
-    else SD == NSD_3D)(
-        dims1 = (ngl, ngl, ngl, neqs)
-        dims2 = (ngl, ngl, ngl, neqs+1) 
+        dims1 = (Int64(ngl), Int64(neqs))
+        dims2 = (Int64(ngl), Int64(neqs+1)) 
+    elseif SD == NSD_2D()
+        dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
+        dims2 = (Int64(ngl), Int64(ngl), Int64(neqs+1)) 
+    elseif SD == NSD_3D()
+        dims1 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
+        dims2 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs+1)) 
     end
-        
+    
     fluxes = St_fluxes{T, dims1, dims2, backend}()
     
     return fluxes
@@ -104,10 +123,10 @@ end
 function allocate_rhs_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T, backend; neqs=1)
 
     if SD == NSD_1D()
-        dims1 = (npoin, neqs)
-        dims2 = (nelem_semi_inf, ngr, neqs) 
+        dims1 = (Int64(npoin), Int64(neqs))
+        dims2 = (Int64(nelem_semi_inf), Int64(ngr), Int64(neqs)) 
     elseif SD == NSD_2D()
-        dims1 = (npoin, neqs)
+        dims1 = (Int64(npoin), Int64(neqs))
         dims2 = (nelem_semi_inf, ngl, ngr, neqs) 
     elseif SD == NSD_3D()
         error(" src/kernel/infrastructore/params_setup.jl: 3D Laguerre arrays not coded yet!")
@@ -132,12 +151,12 @@ Base.@kwdef mutable struct St_fluxes_lag{T <: AbstractFloat, dims1, dims2, backe
 end
 function allocate_fluxes_lag(SD, ngl, ngr, T, backend; neqs=1)
     if SD == NSD_1D()
-        dims1 = (ngr, neqs)
-        dims2 = (ngr, neqs+1) 
-    else SD == NSD_2D()
-        dims1 = (ngl, ngr, neqs)
-        dims2 = (ngl, ngr, neqs+1) 
-    else SD == NSD_3D()
+        dims1 = (Int64(ngr), Int64(neqs))
+        dims2 = (Int64(ngr), Int64(neqs+1))
+    elseif SD == NSD_2D()
+        dims1 = (Int64(ngl), Int64(ngr), Int64(neqs))
+        dims2 = (Int64(ngl), Int64(ngr), Int64(neqs+1))
+    elseif SD == NSD_3D()
         error(" src/kernel/infrastructore/params_setup.jl: 3D Laguerre arrays not coded yet!")
     end
     
@@ -156,19 +175,19 @@ Base.@kwdef mutable struct St_filter{T <: AbstractFloat, dims1, dims2, dims3, di
     b    = KernelAbstractions.zeros(backend,  T, dims3)
     B    = KernelAbstractions.zeros(backend,  T, dims4)
 end
-function allocate_filter(SD, nelem, npoin, ngl, T; neqs=1, lfilter=false)
+function allocate_filter(SD, nelem, npoin, ngl, T, backend; neqs=1, lfilter=false)
 
     if lfilter
         if SD == NSD_1D()
-            dims1 = (neqs, ngl)
-            dims2 = (ngl)
-            dims3 = (nelem, ngl, neqs)
-            dims4 = (npoin, neqs)
+            dims1 = (Int64(neqs), Int64(ngl))
+            dims2 = (Int64(ngl))
+            dims3 = (Int64(nelem), Int64(ngl), Int64(neqs))
+            dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_2D()
-            dims1 = (neqs, ngl, ngl)
-            dims2 = (ngl, ngl)
-            dims3 = (nelem, ngl, ngl, neqs)
-            dims4 = (npoin, neqs)
+            dims1 = (Int64(neqs), Int64(ngl), Int64(ngl))
+            dims2 = (Int64(ngl), Int64(ngl))
+            dims3 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs))
+            dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_3D()
             # WARNING Allocate only 1 because there is no 3D filter yet
             dims1 = (1, 1, 1, 1)
@@ -212,22 +231,21 @@ Base.@kwdef mutable struct St_filter_lag{T <: AbstractFloat, dims1, dims2, dims3
     fqf_lag  = KernelAbstractions.zeros(backend,  T, dims1)
     q_ti_lag = KernelAbstractions.zeros(backend,  T, dims2)
     b_lag    = KernelAbstractions.zeros(backend,  T, dims3)
-    B_lag    = KernelAbstractions.zeros(backend,  T, dims4)   
-    
+    B_lag    = KernelAbstractions.zeros(backend,  T, dims4)
 end
-function allocate_filter_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T; neqs=1, lfilter=false)
+function allocate_filter_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T, backend; neqs=1, lfilter=false)
 
     if lfilter
         if SD == NSD_1D()
-            dims1 = (neqs, ngr)
-            dims2 = (ngr)
-            dims3 = (nelem_semi_inf, ngr, neqs)
-            dims4 = (npoin, neqs)
+            dims1 = (Int64(neqs), Int64(ngr))
+            dims2 = (Int64(ngr))
+            dims3 = (Int64(nelem_semi_inf), Int64(ngr), Int64(neqs))
+            dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_2D()
-            dims1 = (neqs, ngl, ngr)
-            dims2 = (ngl, ngr)
-            dims3 = (nelem_semi_inf, ngl, ngr, neqs)
-            dims4 = (npoin, neqs)
+            dims1 = (Int64(neqs), Int64(ngl), Int64(ngr))
+            dims2 = (Int64(ngl), Int64(ngr))
+            dims3 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr), Int64(neqs))
+            dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_3D()
             # WARNING Allocate only 1 because there is no 3D filter yet
             dims1 = (1, 1, 1, 1)
@@ -261,6 +279,79 @@ function allocate_filter_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T; neqs=1, lfi
     return filter_lag
 end
 
+
+#-------------------------------------------------------------------------------------------
+# GPU auxiliary arrays
+#-------------------------------------------------------------------------------------------
+Base.@kwdef mutable struct St_gpuAux{T <: AbstractFloat, dims1, dims2, dims3, backend}
+
+    flux_gpu   = KernelAbstractions.zeros(backend, T, dims1)
+    source_gpu = KernelAbstractions.zeros(backend, T, dims2)
+    qbdy_gpu   = KernelAbstractions.zeros(backend, T, dims3)
+    
+end
+function allocate_gpuAux(SD, nelem, nedges_bdy, nfaces_bdy, ngl, T, backend; neqs=1)
+
+    if backend == CPU()
+        dims1 = (1, 1, 1, 1)
+        dims2 = dims1
+        dims3 = (1, 1, 1)
+    else
+        if SD == NSD_1D()
+            dims1 = (Int64(nelem),      Int64(ngl), 2*neqs)
+            dims2 = (Int64(nelem),      Int64(ngl),   neqs)
+            dims3 = (Int64(0))
+        elseif SD == NSD_2D()
+            dims1 = (Int64(nelem),      Int64(ngl), Int64(ngl), 2*neqs)
+            dims2 = (Int64(nelem),      Int64(ngl), Int64(ngl),   neqs)
+            dims3 = (Int64(nedges_bdy), Int64(ngl),               neqs)
+        elseif SD == NSD_3D()
+            dims1 = (Int64(nelem),      Int64(ngl), Int64(ngl), Int64(ngl), 3*neqs)
+            dims2 = (Int64(nelem),      Int64(ngl), Int64(ngl), Int64(ngl),   neqs)
+            dims3 = (Int64(nfaces_bdy), Int64(ngl), Int64(ngl),               neqs)
+        end
+    end
+    
+    gpuAux = St_gpuAux{T, dims1, dims2, dims3, backend}()
+    
+    return gpuAux
+end
+#
+# GPU Laguerre
+#
+Base.@kwdef mutable struct St_gpuAux_lag{T <: AbstractFloat, dims1, dims2, dims3, backend}
+
+    flux_lag_gpu   = KernelAbstractions.zeros(backend, T, dims1)
+    source_lag_gpu = KernelAbstractions.zeros(backend, T, dims2)
+    qbdy_lag_gpu   = KernelAbstractions.zeros(backend, T, dims3)
+    
+end
+function allocate_gpuAux_lag(SD, nelem_semi_inf, nedges_bdy, nfaces_bdy, ngl, ngr, T, backend; neqs=1)
+
+     if backend == CPU()
+        dims1 = (1, 1, 1, 1)
+        dims2 = dims1
+        dims3 = (1, 1, 1)
+    else
+        if SD == NSD_1D()
+            dims1 = (Int64(nelem_semi_inf), Int64(ngr), 2*neqs)
+            dims2 = (Int64(nelem_semi_inf), Int64(ngr),   neqs)
+            dims3 = (Int64(0))
+        elseif SD == NSD_2D()
+            dims1 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr), 2*neqs)
+            dims2 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr),   neqs)
+            dims3 = (Int64(nedges_bdy),     Int64(ngl),               neqs)
+        elseif SD == NSD_3D()
+            error(" globalStructs.jl: --> 3D Laguerre not implemented yet!")
+        end
+    end
+    
+    gpuAux_lag = St_gpuAux_lag{T, dims1, dims2, dims3, backend}()
+        
+    return gpuAux_lag
+end
+
+
 #-------------------------------------------------------------------------------------------
 # Moist variables WIP    
 #-------------------------------------------------------------------------------------------
@@ -279,11 +370,11 @@ Base.@kwdef mutable struct St_MoistVars{T <: AbstractFloat, dims1, backend}
     
 end
 
-function allocate_MoistVars(nelem, npoin, ngl, T; neqs=1, lfilter=false)
+function allocate_MoistVars(nelem, npoin, ngl, T, backend; neqs=1, lfilter=false)
     
     # WIP
     
-    dims1 = (npoin)
+    dims1 = (Int64(npoin))
     
     moistvars = St_MoistVars{T, dims1, backend}()
     
