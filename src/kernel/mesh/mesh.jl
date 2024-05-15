@@ -2165,7 +2165,6 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         end    
         mesh.npoin = mesh.npoin + mesh.ngr-1
         mesh.x = x
-        @info maximum(mesh.x)
     end
     if (inputs[:llaguerre_1d_left])
         e = min(2,mesh.nelem_semi_inf)
@@ -2270,8 +2269,6 @@ function mod_mesh_mesh_driver(inputs::Dict)
         
         println(" # Build native grid ........................ DONE")
     end
-    #debugWH
-    # @mystop(" stop here: mesh.jl")
     
     if (mesh.nsd == 1)
         mesh.SD = NSD_1D()
@@ -2282,7 +2279,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
     else
         error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
     end
-    #@mystop("temporary stop at L 2341 mesh.jl")
+    
     return mesh
     
 end

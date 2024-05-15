@@ -6,7 +6,7 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.4,
         :tinit                => 0.0,
-        :tend                 => 500.0,
+        :tend                 => 10.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
@@ -14,7 +14,7 @@ function user_inputs()
         :ndiagnostics_outputs => 10,
         :case                 => "rtb",
         :lsource              => true, 
-        :backend              => MetalBackend(),
+        #:backend              => MetalBackend(),
         #:SOL_VARS_TYPE        => PERT(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -25,7 +25,7 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => (1, 2, 3, 4, 5),
+        :ivisc_equations      => [1, 2, 3, 4, 5],
         :μ                   => [0.0, 20.0, 20.0, 20.0, 60.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
