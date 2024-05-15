@@ -219,6 +219,9 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 comp2 = (y1-y2)/mag
                 metrics.nx[iedge, k] = comp2
                 metrics.ny[iedge, k] = -comp1
+                if (y1 < 500 && abs(x1) < 10000)
+                    #@info comp1, comp2, metrics.nx[iedge, k], metrics.ny[iedge, k], x1,x2,y1,y2
+                end
             end
         end
     else
