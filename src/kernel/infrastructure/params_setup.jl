@@ -76,12 +76,14 @@ function params_setup(sem,
     gradu    = KernelAbstractions.zeros(backend, T, 2, 1, 1) #KernelAbstractions.zeros(2,Int64(sem.mesh.npoin),nvars)
     ubdy     = KernelAbstractions.zeros(backend, T, Int64(qp.neqs))
     bdy_flux = KernelAbstractions.zeros(backend, T, Int64(qp.neqs),1)    
-    
+
+    #
+    # Some domain parameters
+    #
     xmax = maximum(sem.mesh.x); xmin = minimum(sem.mesh.x)
     ymax = maximum(sem.mesh.y); ymin = minimum(sem.mesh.y)
     zmax = maximum(sem.mesh.z); zmin = minimum(sem.mesh.z)
     
-   
     #
     # Laguerre arrays
     #
@@ -206,7 +208,7 @@ function params_setup(sem,
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, visc_coeff, ivisc_equations,
                   sem.matrix.M, sem.matrix.Minv,tspan,
-                  Δt, deps, xmax, xmin, ymax, ymin,
+                  Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
         
     else
@@ -227,7 +229,7 @@ function params_setup(sem,
               sem.basis, sem.ω, sem.mesh, sem.metrics,
               visc_coeff, ivisc_equations,
               sem.matrix.M, sem.matrix.Minv,tspan,
-              Δt, xmax, xmin, ymax, ymin,
+              Δt, xmax, xmin, ymax, ymin, zmin, zmax,
               qp, sem.fx, sem.fy, fy_t, laguerre=false)
     end
 
