@@ -232,7 +232,6 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         KernelAbstractions.copyto!(backend, y, mesh.y)
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         k = build_2D_gpu_metrics!(backend,(N+1,N+1))
-        @info typeof(metrics.dxdξ), typeof(metrics.dydξ)
         k(metrics.dxdξ,metrics.dxdη,metrics.dydξ,metrics.dydη, ψ, dψ, x, y, connijk, Q; ndrange = (mesh.nelem*(N+1),mesh.ngl), workgroupsize = (N+1,N+1))
         metrics.Je   .= metrics.dxdξ.*metrics.dydη .- metrics.dydξ .* metrics.dxdη
         metrics.dξdx .= metrics.dydη ./ metrics.Je

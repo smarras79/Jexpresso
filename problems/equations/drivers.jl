@@ -1,6 +1,6 @@
 using HDF5
 
-function driver(inputs::Dict,      #input parameters from src/user_input.jl
+function driver(inputs::Dict,        #input parameters from src/user_input.jl
                 OUTPUT_DIR::String,
                 TFloat) 
 
@@ -17,23 +17,17 @@ function driver(inputs::Dict,      #input parameters from src/user_input.jl
                               inputs,
                               OUTPUT_DIR,
                               TFloat)
-
-    #=if (inputs[:backend] != CPU())
-        if (sem.mesh.SD == NSD_2D())
-            convert_mesh_arrays!(sem.mesh, inputs[:backend])
-        elseif (sem.mesh.SD == NSD_3D())
-            convert_mesh_arrays_3D!(sem.mesh, inputs[:backend])    
-        end
-    end=#
     
     if !(inputs[:llinsolve])   
         
-        #check_length(params.qp.qn[1,:], params.qp.neqs+1, "drivers --> initialize.jl")
-
         solution = time_loop!(inputs, params, u)
         
         if (inputs[:ndiagnostics_outputs] > 0)
-            write_output(sem.mesh.SD, solution,  sem.mesh, OUTPUT_DIR, inputs, params.qp.qvars, inputs[:outformat]; nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
+            write_output(sem.mesh.SD, solution,  sem.mesh,
+                         OUTPUT_DIR, inputs,
+                         params.qp.qvars,
+                         inputs[:outformat];
+                         nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
         end
         
     else
@@ -43,7 +37,8 @@ function driver(inputs::Dict,      #input parameters from src/user_input.jl
             rhs = user_source(RHS[ip],
                               params.qp.qn[ip],
                               params.qp.qe[ip],          #ρref
-                              sem.mesh.npoin, inputs[:CL], inputs[:SOL_VARS_TYPE]; neqs=1, x=sem.mesh.x[ip],y=sem.mesh.y[ip])
+                              sem.mesh.npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
+                              neqs=1, x=sem.mesh.x[ip],y=sem.mesh.y[ip])
             RHS[ip] = rhs
         end
         
