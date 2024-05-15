@@ -1,14 +1,3 @@
-#---------------------------------------------------------------------------
-# Optimized (more coud possibly be done)
-#---------------------------------------------------------------------------
-function build_rhs!(RHS, u, params, time)
-    #
-    # build_rhs()! is called by TimeIntegrators.jl -> time_loop!() via ODEProblem(rhs!, u, tspan, params)
-    #
-    _build_rhs!(RHS, u, params, time)
-    
-end
-
 function RHStoDU!(du, RHS, neqs, npoin)
     for i=1:neqs
         idx = (i-1)*npoin
@@ -25,7 +14,6 @@ function u2uaux!(uaux, u, neqs, npoin)
     
 end
 
-
 function uaux2u!(u, uaux, neqs, npoin)
 
     for i=1:neqs
@@ -40,6 +28,9 @@ end
 function resetRHSToZero_inviscid!(params)
     fill!(params.rhs_el, zero(params.T))   
     fill!(params.RHS,    zero(params.T))
+end
+
+function reset_filters!(params)
     fill!(params.b,      zero(params.T))
     fill!(params.B,      zero(params.T))
 end
@@ -61,9 +52,8 @@ function resetRHSToZero_viscous!(params, SD::NSD_3D)
     fill!(params.rhs_diffξ_el, zero(params.T))
     fill!(params.rhs_diffη_el, zero(params.T))
     fill!(params.rhs_diffζ_el, zero(params.T))
-    fill!(params.RHS_visc,     zero(params.T))
+    fill!(params.RHS_visc, zero(params.T))
 end
-
 
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
@@ -96,8 +86,8 @@ function rhs!(du, u, params, time)
             
             k = apply_boundary_conditions_gpu_3D!(backend)
             k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, TFloat(time),params.metrics.nx,params.metrics.ny, params.metrics.nz,
-            params.mesh.poin_in_bdy_face,params.qbdy_gpu,params.mesh.ngl,TInt(params.neqs), params.mesh.npoin, lpert;
-            ndrange = (params.mesh.nfaces_bdy*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
+              params.mesh.poin_in_bdy_face,params.qbdy_gpu,params.mesh.ngl,TInt(params.neqs), params.mesh.npoin, lpert;
+              ndrange = (params.mesh.nfaces_bdy*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
             KernelAbstractions.synchronize(backend)
             
             k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.neqs))
@@ -105,28 +95,27 @@ function rhs!(du, u, params, time)
             k = _build_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
 
             k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
-            params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.metrics.Je,
-            params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu,
-            params.mesh.ngl, TInt(params.neqs), PhysConst, params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, params.mesh.zmax, params.mesh.zmin, lpert;
-            ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
+              params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.metrics.Je,
+              params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu,
+              params.mesh.ngl, TInt(params.neqs), PhysConst, params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, params.mesh.zmax, params.mesh.zmin, lpert;
+              ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
 
             KernelAbstractions.synchronize(backend)
             if (params.inputs[:lvisc])
-                params.RHS_visc .= TFloat(0.0)
+                params.RHS_visc     .= TFloat(0.0)
                 params.rhs_diffξ_el .= TFloat(0.0)
                 params.rhs_diffη_el .= TFloat(0.0)
                 params.rhs_diffζ_el .= TFloat(0.0)
-                params.source_gpu .= TFloat(0.0)
+                params.source_gpu   .= TFloat(0.0)
                 
                 k = _build_rhs_diff_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
 
                 k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el, params.uaux, params.qp.qe, params.source_gpu, 
-                params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, 
-                params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, 
-                params.metrics.dζdz, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, params.visc_coeff, params.mesh.ngl, TInt(params.neqs), PhysConst, lpert; 
-                ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
+                  params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, 
+                  params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, 
+                  params.metrics.dζdz, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, params.visc_coeff, params.mesh.ngl, TInt(params.neqs), PhysConst, lpert; 
+                  ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
                 KernelAbstractions.synchronize(backend)
-                #@info maximum(params.flux_gpu[:,:,:,:,3]), minimum(params.flux_gpu[:,:,:,:,3]), maximum(params.flux_gpu[:,:,:,:,4]), minimum(params.flux_gpu[:,:,:,:,4])
                 
                 @inbounds params.RHS .+= params.RHS_visc
             end
@@ -139,7 +128,7 @@ function rhs!(du, u, params, time)
             PhysConst = PhysicalConst{TFloat}()
             k1 = utouaux_gpu!(backend)
             k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl, params.neqs))
-           
+            
             if (params.inputs[:lfilter])
                 params.B .= TFloat(0.0)
                 kf = filter_gpu_2d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngl)))
@@ -179,7 +168,7 @@ function rhs!(du, u, params, time)
                 k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x,params.mesh.y,TFloat(time), params.mesh.connijk_lag,
                   params.qbdy_lag_gpu, params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), params.mesh.npoin, params.mesh.nelem_semi_inf, 
                   params.inputs[:lperiodic_laguerre], lpert;
-                    ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
+                  ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
                 KernelAbstractions.synchronize(backend)
             end
 
@@ -244,7 +233,7 @@ function rhs!(du, u, params, time)
     end
 end
 
-function _build_rhs!(RHS, u, params, time)
+function build_rhs!(RHS, u, params, time)
 
     T       = Float64
     SD      = params.SD
@@ -256,7 +245,13 @@ function _build_rhs!(RHS, u, params, time)
     nelem   = params.mesh.nelem
     npoin   = params.mesh.npoin
     lsource = params.inputs[:lsource]
-    
+    xmin    = params.mesh.xmin
+    xmax    = params.mesh.xmax
+    ymin    = params.mesh.ymin
+    ymax    = params.mesh.ymax
+    zmin    = params.mesh.zmin
+    zmax    = params.mesh.zmax
+        
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
@@ -272,13 +267,15 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.x, params.mesh.y, params.mesh.z, params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
                                params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
                                params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
-                               params.mesh.xmax, params.mesh.ymax, params.mesh.zmax, params.mesh.xmin, params.mesh.ymin, params.mesh.zmin, params.RHS, params.rhs_el, params.ubdy,
+                               xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
                                params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, params.mesh.bdy_edge_type,
                                params.ω, neqs, params.inputs, AD, SD)
-    #@info typeof(params.metrics.Je),typeof(params.rhs_el), typeof(params.basis.ψ)
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y,lsource, SD)
+    
+    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y,lsource, SD;
+                     xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax, zmin=zmin, zmax=zmax)
+    
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
-    #@info params.RHS[:,1]
+    
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -297,18 +294,14 @@ function _build_rhs!(RHS, u, params, time)
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
+function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D; xmin=0, xmax=1, ymin=0, ymax=1, zmin=0, zmax=1)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    xmax = params.xmax
-    xmin = params.xmin
-    ymax = params.ymax    
+    
     for iel=1:params.mesh.nelem
         for i=1:params.mesh.ngl
             ip = connijk[iel,i,1]
-         
-            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,:]), params.SOL_VARS_TYPE)
-
+            
             user_flux!(@view(params.F[i,:]), @view(params.G[i,:]), SD,
                        @view(params.uaux[ip,:]),
                        @view(qe[ip,:]),         #pref
@@ -320,7 +313,9 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
                 user_source!(@view(params.S[i,:]),
                              @view(params.uaux[ip,:]),
                              @view(qp.qe[ip,:]),          #ρref 
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
+                             neqs=params.neqs, x=x[ip],y=y[ip],
+                             xmax=xmax,xmin=xmin)
             end
         end
         
@@ -329,12 +324,10 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
+function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D; xmin=0, xmax=1, ymin=0, ymax=1, zmin=0, zmax=1)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    xmax = params.xmax
-    xmin = params.xmin
-    ymax = params.ymax    
+    
     for iel = 1:params.mesh.nelem
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
@@ -352,25 +345,35 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),          #ρref 
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
+                             neqs=params.neqs, x=x[ip],y=y[ip],
+                             xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
             end
         end
 
-        _expansion_inviscid!(u, params.neqs, params.mesh.ngl, params.basis.dψ, params.ω, params.F, params.G, params.S, params.metrics.Je, params.metrics.dξdx,params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+        _expansion_inviscid!(u,
+                             params.neqs,
+                             params.mesh.ngl,
+                             params.basis.dψ, params.ω,
+                             params.F, params.G, params.S,
+                             params.metrics.Je,
+                             params.metrics.dξdx,params.metrics.dξdy,
+                             params.metrics.dηdx, params.metrics.dηdy,
+                             params.rhs_el,
+                             iel, params.CL, params.QT, SD, params.AD)
         
     end
 end
 
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
+function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D; xmin=0, xmax=1, ymin=0, ymax=1, zmin=0, zmax=1)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     for iel = 1:params.mesh.nelem
         for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j,k]
-           
-            #user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,k,:]), params.SOL_VARS_TYPE)
+            
             user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
                        @view(params.uaux[ip,:]),
                        @view(qe[ip,:]),         #pref
@@ -386,7 +389,19 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
             end
         end
 
-        _expansion_inviscid!(u, params.neqs, params.mesh.ngl, params.basis.dψ, params.ω, params.F, params.G, params.H, params.S, params.metrics.Je, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.rhs_el, iel, params.CL, params.QT, SD, params.AD) 
+        _expansion_inviscid!(u,
+                             params.neqs,
+                             params.mesh.ngl,
+                             params.basis.dψ, params.ω,
+                             params.F, params.G, params.H, params.S,
+                             params.metrics.Je,
+                             params.metrics.dξdx, params.metrics.dξdy,
+                             params.metrics.dξdz, params.metrics.dηdx,
+                             params.metrics.dηdy, params.metrics.dηdz,
+                             params.metrics.dζdx, params.metrics.dζdy,
+                             params.metrics.dζdz,
+                             params.rhs_el,
+                             iel, params.CL, params.QT, SD, params.AD) 
     end
 end
 
@@ -402,7 +417,18 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
         end
 
         for ieq in params.ivisc_equations
-            _expansion_visc!(params.rhs_diffξ_el, params.rhs_diffη_el, params.uprimitive, params.visc_coeff, params.ω, params.mesh.ngl, params.basis.dψ, params.metrics.Je, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.inputs, iel, ieq, params.QT, SD, params.AD)
+            _expansion_visc!(params.rhs_diffξ_el,
+                             params.rhs_diffη_el,
+                             params.uprimitive,
+                             params.visc_coeff,
+                             params.ω,
+                             params.mesh.ngl,
+                             params.basis.dψ,
+                             params.metrics.Je,
+                             params.metrics.dξdx, params.metrics.dξdy,
+                             params.metrics.dηdx, params.metrics.dηdy,
+                             params.inputs,
+                             iel, ieq, params.QT, SD, params.AD)
         end
         
     end
@@ -564,54 +590,6 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, H, S, Je, dξdx, dξd
     end
 end
 
-
-
-function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
-
-function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
-    
-    N = params.mesh.ngl
-    Q = N + 1
-    for ieq=1:params.neqs
-        for l=1:Q
-            for k=1:Q
-                ωJac = params.ω[k]*params.ω[l]*params.metrics.Je[iel,k,l]
-                
-                dFdξ = 0.0
-                dFdη = 0.0
-                dGdξ = 0.0
-                dGdη = 0.0
-                for n = 1:N
-                    for m = 1:N
-                        dFdξ += params.basis.dψ[m,k]* params.basis.ψ[n,l]*params.F[m,n,ieq]
-                        dFdη +=  params.basis.ψ[m,k]*params.basis.dψ[n,l]*params.F[m,n,ieq]
-                        
-                        dGdξ += params.basis.dψ[m,k]* params.basis.ψ[n,l]*params.G[m,n,ieq]
-                        dGdη +=  params.basis.ψ[m,k]*params.basis.dψ[n,l]*params.G[m,n,ieq]
-                    end
-                end
-                
-                dξdx_kl = params.metrics.dξdx[iel,k,l]
-                dξdy_kl = params.metrics.dξdy[iel,k,l]
-                dηdx_kl = params.metrics.dηdx[iel,k,l]
-                dηdy_kl = params.metrics.dηdy[iel,k,l]
-                for j = 1:N
-                    for i = 1:N
-                        dFdx = dFdξ*dξdx_kl + dFdη*dηdx_kl
-                        dGdx = dGdξ*dξdx_kl + dGdη*dηdx_kl
-
-                        dFdy = dFdξ*dξdy_kl + dFdη*dηdy_kl
-                        dGdy = dGdξ*dξdy_kl + dGdη*dηdy_kl
-                        
-                        auxi = ωJac*params.basis.ψ[i,k]*params.basis.ψ[j,l]*((dFdx + dGdy) - params.S[i,j,ieq])
-                        params.rhs_el[iel,i,j,ieq] -= auxi
-                    end
-                end
-            end
-        end
-    end
-end
-
 function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
 function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::ContGal)
@@ -666,99 +644,6 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD
             end
         end
     end        
-end
-
-
-function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
-
-function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::ContGal)
-
-    N = params.mesh.ngl
-    Q = N + 1
-
-    for l=1:Q
-        for k=1:Q
-            ωJac = params.ω[k]*params.ω[l]*params.metrics.Je[iel,k,l]
-            
-            dρudξ = 0.0; dρudη = 0.0
-            dρvdξ = 0.0; dρvdη = 0.0
-            dudξ = 0.0; dudη = 0.0
-            dvdξ = 0.0; dvdη = 0.0
-            dθdξ = 0.0; dθdη = 0.0
-            dpdξ = 0.0; dpdη = 0.0         
-            
-            ρkl = 0.0; ukl = 0.0; vkl = 0.0; Skl = 0.0
-            for n=1:N
-                for m=1:N
-                    ψmk = params.basis.ψ[m,k]
-                    ψnl = params.basis.ψ[n,l]
-                    
-                    dψmk_ψnl = params.basis.dψ[m,k]* params.basis.ψ[n,l]
-                    ψmk_dψnl = params.basis.ψ[m,k]*params.basis.dψ[n,l]
-                    
-                    dρudξ += dψmk_ψnl*params.F[m,n,1]
-                    dρudη +=  ψmk_dψnl*params.F[m,n,1]
-                    
-                    dρvdξ += dψmk_ψnl*params.G[m,n,1]
-                    dρvdη +=  ψmk_dψnl*params.G[m,n,1]
-                    
-                    dudξ += dψmk_ψnl*params.uprimitive[m,n,2]
-                    dudη +=  ψmk_dψnl*params.uprimitive[m,n,2]
-
-                    dvdξ += dψmk_ψnl*params.uprimitive[m,n,3]
-                    dvdη +=  ψmk_dψnl*params.uprimitive[m,n,3]
-                    
-                    dθdξ += dψmk_ψnl*params.uprimitive[m,n,4]
-                    dθdη +=  ψmk_dψnl*params.uprimitive[m,n,4]
-
-                    dpdξ += dψmk_ψnl*params.uprimitive[m,n,params.neqs+1]
-                    dpdη +=  ψmk_dψnl*params.uprimitive[m,n,params.neqs+1]
-
-                    ρkl += ψmk*ψnl*params.uprimitive[m,n,1]
-                    ukl += ψmk*ψnl*params.uprimitive[m,n,2]
-                    vkl += ψmk*ψnl*params.uprimitive[m,n,3]
-                    Skl += ψmk*ψnl*params.S[m,n,3]
-                end
-            end
-
-            dξdx_kl = params.metrics.dξdx[iel,k,l]
-            dξdy_kl = params.metrics.dξdy[iel,k,l]
-            dηdx_kl = params.metrics.dηdx[iel,k,l]
-            dηdy_kl = params.metrics.dηdy[iel,k,l]
-            
-            dρudx = dρudξ*dξdx_kl + dρudη*dηdx_kl            
-            dρudy = dρudξ*dξdy_kl + dρudη*dηdy_kl
-            dρvdx = dρvdξ*dξdx_kl + dρvdη*dηdx_kl            
-            dρvdy = dρvdξ*dξdy_kl + dρvdη*dηdy_kl
-            
-            dudx = dudξ*dξdx_kl + dudη*dηdx_kl            
-            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
-            
-            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl            
-            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
-            
-            dθdx = dθdξ*dξdx_kl + dθdη*dηdx_kl            
-            dθdy = dθdξ*dξdy_kl + dθdη*dηdy_kl
-
-            dpdx = dpdξ*dξdx_kl + dpdη*dηdx_kl            
-            dpdy = dpdξ*dξdy_kl + dpdη*dηdy_kl
-
-
-            for j=1:N
-                for i=1:N
-
-                    ψikψjl = params.basis.ψ[i,k]*params.basis.ψ[j,l]
-                    
-                    params.rhs_el[iel,i,j,1] -= ψikψjl*ωJac*(dρudx + dρvdy)
-                    
-                    params.rhs_el[iel,i,j,2] -= ψikψjl*ωJac*(ukl*dudx + vkl*dudy + dpdx/ρkl)
-                    params.rhs_el[iel,i,j,3] -= ψikψjl*ωJac*(ukl*dvdx + vkl*dvdy + dpdy/ρkl - Skl)
-                    params.rhs_el[iel,i,j,4] -= ψikψjl*ωJac*(ukl*dθdx + vkl*dθdy)
-                end
-            end
-            
-        end
-    end
 end
 
 
@@ -916,74 +801,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                     rhs_diffζ_el[k,l,i] -= dhdζ_im * ∇ζ∇u_klm
                 end
             end
-        end
-    end
-end
-
-function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Exact, SD::NSD_2D, ::FD)
-    nothing
-end
-
-function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Exact, SD::NSD_2D, ::ContGal)
-    
-    N = params.mesh.ngl
-    Q = N + 1
-
-    for l=1:Q
-        for k=1:Q
-            ωJac = params.ω[k]*params.ω[l]*params.metrics.Je[iel,k,l]
-            
-            dqdξ = 0.0; dqdη = 0.0
-            ρkl = 0.0; ukl = 0.0; vkl = 0.0; Skl = 0.0
-            for n=1:N
-                for m=1:N
-                    ψmk = params.basis.ψ[m,k]
-                    ψnl = params.basis.ψ[n,l]
-                    
-                    dψmk_ψnl = params.basis.dψ[m,k]* params.basis.ψ[n,l]
-                    ψmk_dψnl = params.basis.ψ[m,k]*params.basis.dψ[n,l]
-                    
-                    dqdξ += dψmk_ψnl*params.uprimitiveieq[m,n]
-                    dqdη += ψmk_dψnl*params.uprimitiveieq[m,n]
-                    ukl  +=  ψmk*ψnl*params.uprimitiveieq[m,n]
-                    
-                end
-            end
-
-            dξdx_kl = params.metrics.dξdx[iel,k,l]
-            dξdy_kl = params.metrics.dξdy[iel,k,l]
-            dηdx_kl = params.metrics.dηdx[iel,k,l]
-            dηdy_kl = params.metrics.dηdy[iel,k,l]
-            
-            dqdx = dqdξ*dξdx_kl + dqdη*dηdx_kl
-            dqdx = dqdx*visc_coeff[2]
-
-            dqdy = dqdξ*dξdy_kl + dqdη*dηdy_kl
-            dqdy = dqdy*visc_coeff[2]
-            
-            ∇ξ∇u_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
-            ∇η∇u_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
-            
-            ###### W I P ######
-            for j=1:N
-                for i=1:N
-
-                    dhdξ_ik = basis.dψ[i,k]
-                    dhdη_il = basis.dψ[i,l]
-                    
-                    rhs_diffξ_el[i,l] -= dhdξ_ik * ∇ξ∇u_kl
-                    rhs_diffη_el[k,i] -= dhdη_il * ∇η∇u_kl
-                    
-                    #params.rhs_diffξ_el[iel,i,j,2] -=
-                    #params.rhs_diffξ_el[iel,i,j,3] -=
-                    #params.rhs_diffξ_el[iel,i,j,4] -=
-                    
-                    #params.rhs_diffη_el[iel,i,j,2] -=
-                    #params.rhs_diffη_el[iel,i,j,3] -=
-                    #params.rhs_diffη_el[iel,i,j,4] -=
-                end
-            end
-            
         end
     end
 end
