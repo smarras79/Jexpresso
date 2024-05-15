@@ -338,7 +338,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D; xmi
             if lsource
                 user_source!(@view(params.S[i,:]),
                              @view(params.uaux[ip,:]),
-                             @view(qp.qe[ip,:]),          #ρref 
+                             @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=x[ip],y=y[ip],
                              xmax=xmax,xmin=xmin)

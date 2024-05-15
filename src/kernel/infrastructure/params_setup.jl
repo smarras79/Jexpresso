@@ -163,6 +163,7 @@ function params_setup(sem,
         
     end
     
+    deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
     tspan = [T(inputs[:tinit]), T(inputs[:tend])]
     if (backend == CPU())
@@ -181,7 +182,7 @@ function params_setup(sem,
         inputs[:llaguerre_1d_left])
 
         params = (backend, T, F, G, H, S,
-                  uaux, uaux_el, vaux,
+                  uaux, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
@@ -192,7 +193,6 @@ function params_setup(sem,
                   qbdy_lag_gpu,
                   RHS, RHS_visc,
                   F_lag, G_lag, S_lag, 
-                  uaux_el_lag,
                   rhs_el_lag,
                   rhs_diff_el_lag,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
