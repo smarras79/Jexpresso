@@ -74,11 +74,11 @@ function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD
 
         for i=1:params.mesh.ngr
             ip = connijk_lag[iel,i,1]
-            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive_lag[i,:]), params.SOL_VARS_TYPE)
+            #user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive_lag[i,:]), params.SOL_VARS_TYPE)
             
             user_flux!(@view(params.F_lag[i,:]), @view(params.G_lag[i,:]), SD,
                        @view(params.uaux[ip,:]),
-                       @view(params.qp.qe[ip,:]),         #pref
+                       @view(qe[ip,:]),         #pref
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
                        neqs=params.neqs)
@@ -86,7 +86,7 @@ function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD
             if lsource
                 user_source!(@view(params.S_lag[i,:]),
                              @view(params.uaux[ip,:]),
-                             @view(params.qp.qe[ip,:]),          #ρref
+                             @view(qe[ip,:]),          #ρref
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
