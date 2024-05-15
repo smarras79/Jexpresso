@@ -7,11 +7,7 @@ function driver(inputs::Dict,      #input parameters from src/user_input.jl
     sem = sem_setup(inputs)
     
     if (inputs[:backend] != CPU())
-        if (sem.mesh.SD == NSD_2D())
-            convert_mesh_arrays!(sem.mesh, inputs[:backend])
-        elseif (sem.mesh.SD == NSD_3D())
-            convert_mesh_arrays_3D!(sem.mesh, inputs[:backend])
-        end
+        convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
 
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)

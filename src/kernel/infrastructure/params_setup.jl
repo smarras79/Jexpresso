@@ -7,6 +7,7 @@ function params_setup(sem,
     
     println(" # Build arrays and params ................................ ")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
+
     backend = inputs[:backend]
     
     uODE = allocate_uODE(sem.mesh.SD,
@@ -97,6 +98,7 @@ function params_setup(sem,
                                    T,
                                    backend;
                                    neqs = qp.neqs)
+
 
         fluxes_lag = allocate_fluxes_lag(sem.mesh.SD,
                                          sem.mesh.ngl,

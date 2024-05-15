@@ -210,6 +210,13 @@ function build_mass_matrix!(Me, SD::NSD_3D, QT::Inexact, ψ, ω, mesh, metrics, 
     end
 end
 
+@kernel function build_mass_matrix_1d_gpu!(Me, ψ, ω, Je, Q)
+    ie = @index(Group, Linear)
+    i = @index(Local, Linear)
+    
+    Me[i,ie] += Je[ie, i, 1] * ω[i]
+end
+
 @kernel function build_mass_matrix_2d_gpu!(Me, ψ, ω, Je, N, Q)
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -489,7 +496,6 @@ function DSS_mass_Laguerre!(M, SD::NSD_2D, Mel::AbstractArray, Mel_lag::Abstract
     end
 end
 
-
 @kernel function DSS_mass_Laguerre_gpu_2D!(M, Mel_lag, connijk_lag, ngl, ngr)
 
     iel = @index(Group, Linear)
@@ -565,6 +571,14 @@ function DSS_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::Abstrac
         end     
     end
     
+end
+
+@kernel function DSS_Mass_gpu_1D!(M, Mel, conn)
+    ie = @index(Group, Linear)
+    i = @index(Local, Linear)
+
+    IP = conn[ie, i, 1]
+    M[IP] = M[IP] + Mel[i,ie]
 end
 
 @kernel function DSS_Mass_gpu_2D!(M, Mel, conn, nelem, npoin, N)
@@ -902,8 +916,11 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     elseif typeof(SD) == NSD_2D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, (N+1)^2, Int64(mesh.nelem))
     end
-    if (backend == CPU() || SD == NSD_1D())
+    if (backend == CPU())
         build_mass_matrix!(Me, SD, QT, basis[1].ψ, ω[1], mesh, metrics[1], N, Q, TFloat)
+    elseif (SD == NSD_1D())
+        k = build_mass_matrix_1d_gpu!(backend, (N+1))
+        k(Me, basis[1].ψ, ω[1], metrics[1].Je, Q; ndrange = (mesh.nelem*mesh.ngl), workgroupsize = (mesh.ngl))
     elseif (SD == NSD_2D())
         k = build_mass_matrix_2d_gpu!(backend, (N+1, N+1))
         k(Me, basis[1].ψ, ω[1], metrics[1].Je, N, Q;ndrange = (mesh.nelem*mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl))
@@ -932,7 +949,25 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
         DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
     else
-        if (typeof(SD) == NSD_2D)
+        if (typeof(SD) == NSD_1D)
+            k = build_mass_matrix_1d_gpu!(backend)
+            k(M_lag, basis[2].ψ, ω[2], metrics[2].Je, mesh.ngr;ndrange = (mesh.nelem_semi_inf*mesh.ngr), workgroupsize = (mesh.ngr))
+            KernelAbstractions.synchronize(backend)
+
+            connijk = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem), N+1)
+            KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
+            k1 = DSS_Mass_gpu_1D!(backend,(N+1))
+            k1(M, Me, connijk;ndrange =(mesh.nelem*mesh.ngl), workgroupsize = (mesh.ngl))
+
+            KernelAbstractions.synchronize(backend)
+
+            connijk_lag = KernelAbstractions.allocate(backend, TInt, Int64(mesh.nelem_semi_inf), Int64(mesh.ngr))
+            KernelAbstractions.copyto!(backend, connijk_lag, mesh.connijk_lag)
+            k2 = DSS_Mass_gpu_1D!(backend)
+            k2(M, M_lag, connijk_lag;ndrange = (mesh.nelem_semi_inf*mesh.ngr), workgroupsize = (mesh.ngr))
+
+            KernelAbstractions.synchronize(backend)
+        elseif (typeof(SD) == NSD_2D)
             k = build_mass_matrix_Laguerre_2d_gpu!(backend)
             k(M_lag, basis[1].ψ, basis[2].ψ, ω[1], ω[2], metrics[2].Je, mesh.ngl, mesh.ngr;ndrange = (mesh.nelem_semi_inf*mesh.ngl,mesh.ngr), workgroupsize = (mesh.ngl,mesh.ngr))
             KernelAbstractions.synchronize(backend)
