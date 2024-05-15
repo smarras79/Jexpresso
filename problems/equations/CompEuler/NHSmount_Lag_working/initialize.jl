@@ -10,7 +10,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     
     qvars = ("dρ", "dρu", "dρv", "dρθ")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
-    if (inputs[:backend]) 
+    if (inputs[:backend] == CPU()) 
         PhysConst = PhysicalConst{Float64}()
         θref = 280.0 #K
         θ0 = 280.0
