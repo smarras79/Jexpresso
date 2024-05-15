@@ -134,3 +134,45 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
 
     return  S
 end
+
+function user_source_gpu(q,qe,x,y,PhysConst,xmax,xmin,ymax,ymin,lpert)
+
+    T = eltype(x)
+    # distance from the boundary. xs in Restelli's thesis
+    zs = T(15000.0)#ymax - 20000.0
+    xr = T(20000.0)
+    xl = T(-20000.0)
+
+    if (y >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
+        betay_coe =  T(sinpi(T(0.5)*(y-zs)/(ymax-zs))^2)#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+    else
+        betay_coe = T(0.0)
+    end
+      ctop= betay_coe#0.5*betay_coe
+
+      if (x > xr)#nsponge_points * dsy) #&& dbl >= 0.0)
+          betaxr_coe =  T(sinpi(T(0.5)*(x-xr)/(xmax-xr))^2)#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+    else
+        betaxr_coe = T(0.0)
+    end
+
+    if (x < xl)#nsponge_points * dsy) #&& dbl >= 0.0)
+        betaxl_coe =  T(sinpi(T(0.5)*(xl-x)/(xl-xmin))^2)#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+    else
+        betaxl_coe = T(0.0)
+    end
+
+    cxr = T(0.25)*betaxr_coe#0.25*betaxr_coe
+    cxl = T(0.25)*betaxl_coe#0.25*betaxl_coe
+    ctop = T(0.1)*min(ctop,1)
+    cxr  = min(cxr,1)
+    cxl  = min(cxl,1)
+    cs = T(1.0) - (T(1.0) -ctop)*(T(1.0)-cxr)*(T(1.0) - cxl)
+
+    #
+    # S(q(x)) = -ρg
+    #
+    ρ  = q[1]
+
+    return T(-cs*q[1]), T(-cs*q[2]), T(-cs*q[3]-ρ*PhysConst.g), T(-cs*q[4])
+end

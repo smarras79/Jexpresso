@@ -1,4 +1,35 @@
-function convert_mesh_arrays!(mesh, backend)
+function convert_mesh_arrays!(::NSD_1D, mesh, backend, inputs)
+
+    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.x))
+    KernelAbstractions.copyto!(backend, aux, mesh.x)
+    mesh.x = KernelAbstractions.allocate(backend, TFloat, size(mesh.x))
+    mesh.x .= aux
+
+    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.y))
+    KernelAbstractions.copyto!(backend, aux, mesh.y)
+    mesh.y = KernelAbstractions.allocate(backend, TFloat, size(mesh.y))
+    mesh.y .= aux
+
+    aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.z))
+    KernelAbstractions.copyto!(backend, aux, mesh.z)
+    mesh.z = KernelAbstractions.allocate(backend, TFloat, size(mesh.z))
+    mesh.z .= aux
+
+    aux = KernelAbstractions.allocate(backend, TInt, mesh.nelem, mesh.ngl, 1)
+    KernelAbstractions.copyto!(backend, aux, mesh.connijk)
+    mesh.connijk = KernelAbstractions.allocate(backend, TInt, mesh.nelem, mesh.ngl, 1)
+    mesh.connijk .= aux
+
+    if (inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
+        aux = KernelAbstractions.allocate(backend, TInt, mesh.nelem_semi_inf, mesh.ngr, 1)
+        KernelAbstractions.copyto!(backend, aux, mesh.connijk_lag)
+        mesh.connijk_lag = KernelAbstractions.allocate(backend, TInt, mesh.nelem_semi_inf, mesh.ngr, 1)
+        mesh.connijk_lag .= aux
+    end
+
+end
+
+function convert_mesh_arrays!(::NSD_2D, mesh, backend, inputs)
 
     aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.x))
     KernelAbstractions.copyto!(backend, aux, mesh.x)
@@ -33,7 +64,7 @@ function convert_mesh_arrays!(mesh, backend)
     mesh.poin_in_bdy_edge .= aux
 end
 
-function convert_mesh_arrays_3D!(mesh, backend)
+function convert_mesh_arrays!(::NSD_3D, mesh, backend, inputs)
 
     aux = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
     KernelAbstractions.copyto!(backend, aux, mesh.x)
@@ -61,7 +92,38 @@ function convert_mesh_arrays_3D!(mesh, backend)
     mesh.poin_in_bdy_face .= aux
 end
 
-function convert_mesh_arrays_to_cpu!(mesh)
+function convert_mesh_arrays_to_cpu!(::NSD_1D, mesh, inputs)
+
+    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.x))
+    KernelAbstractions.copyto!(CPU(), aux, mesh.x)
+    mesh.x = KernelAbstractions.allocate(CPU(), Float64, size(mesh.x))
+    mesh.x .= aux
+
+    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.y))
+    KernelAbstractions.copyto!(CPU(), aux, mesh.y)
+    mesh.y = KernelAbstractions.allocate(CPU(), Float64, size(mesh.y))
+    mesh.y .= aux
+
+    aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.z))
+    KernelAbstractions.copyto!(CPU(), aux, mesh.z)
+    mesh.z = KernelAbstractions.allocate(CPU(), Float64, size(mesh.z))
+    mesh.z .= aux
+
+    aux = KernelAbstractions.allocate(CPU(), TInt, mesh.nelem, mesh.ngl, 1)
+    KernelAbstractions.copyto!(CPU(), aux, mesh.connijk)
+    mesh.connijk = KernelAbstractions.allocate(CPU(), TInt, mesh.nelem, mesh.ngl, 1)
+    mesh.connijk .= aux
+
+    if (inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
+        aux = KernelAbstractions.allocate(CPU(), TInt, mesh.nelem_semi_inf, mesh.ngr, 1)
+        KernelAbstractions.copyto!(CPU(), aux, mesh.connijk_lag)
+        mesh.connijk_lag = KernelAbstractions.allocate(CPU(), TInt, mesh.nelem_semi_inf, mesh.ngr, 1)
+        mesh.connijk_lag .= aux
+    end
+
+end
+
+function convert_mesh_arrays_to_cpu!(::NSD_2D, mesh, inputs)
 
     aux = KernelAbstractions.allocate(CPU(), Float64, size(mesh.x))
     KernelAbstractions.copyto!(CPU(), aux, mesh.x)
@@ -96,7 +158,7 @@ function convert_mesh_arrays_to_cpu!(mesh)
     mesh.poin_in_bdy_edge .= aux
 end
 
-function convert_mesh_arrays_to_cpu_3D!(mesh)
+function convert_mesh_arrays_to_cpu!(::NSD_3D, mesh, inputs)
 
     aux = KernelAbstractions.allocate(CPU(), TFloat, mesh.npoin)
     KernelAbstractions.copyto!(CPU(), aux, mesh.x)

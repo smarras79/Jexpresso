@@ -93,4 +93,19 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     #end
     #S[2] -= (cs)*(q[2])
     return  S
-end    
+end
+
+function user_source_gpu(q,qe,x,PhysConst, xmax, xmin,lpert)
+
+    T = eltype(q)
+    zt = xmax
+    zd = T(60.0)
+    z = max(x-zd,T(0.0))
+    dgamma  =T(0.00005)
+    alpha = T(0.85)
+    sigma = T(zt/T(18.0))
+    fac1 = T((alpha*zt-x)/sigma)
+     cs = T(1.0)*sinpi(T(0.5)*z/(zt-zd))^2
+
+    return T(-cs*q[1])
+end

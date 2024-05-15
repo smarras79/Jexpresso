@@ -77,7 +77,7 @@ function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_2
   uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
 
-function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_2D,::PERT)
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1))
  
   u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
