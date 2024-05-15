@@ -23,7 +23,7 @@ function sem_setup(inputs::Dict)
     # ω = ND.ξ.ω
     #--------------------------------------------------------
     mesh = mod_mesh_mesh_driver(inputs)
-    @info typeof(mesh.x) 
+    
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xscale] != 1.0)
@@ -39,8 +39,7 @@ function sem_setup(inputs::Dict)
         mesh.y .= (mesh.y .+ inputs[:ydisp])
     end
     mesh.ymax = maximum(mesh.y)
-    @info typeof(mesh.x) 
-    #warp_mesh!(mesh,inputs)    
+    
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
@@ -141,9 +140,6 @@ function sem_setup(inputs::Dict)
             end
             @info " metrics"
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
-            
-            @info " periodicity_restructure!"
-            #@time periodicity_restructure!(mesh,inputs, inputs[:backend])
             
             #warp_mesh!(mesh,inputs)
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
