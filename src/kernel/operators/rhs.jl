@@ -345,8 +345,8 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin,ymax=ymax)
             end
         end
-        
-        _expansion_inviscid!(u, params, iel, params.CL, params.QT, SD, params.AD)
+       
+        _expansion_inviscid!(u, params.neqs, params.mesh.ngl, params.basis.dψ, params.ω, params.F, params.S, params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
         
     end
 end
@@ -471,15 +471,15 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD:
 end
 
 
-function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, S, rhs_el, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
     
-    for ieq = 1:params.neqs
-        for i=1:params.mesh.ngl
+    for ieq = 1:neqs
+        for i=1:ngl
             dFdξ = 0.0
-            for k = 1:params.mesh.ngl
-                dFdξ += params.basis.dψ[k,i]*params.F[k,ieq]
+            for k = 1:ngl
+                dFdξ += dψ[k,i]*F[k,ieq]
             end
-            params.rhs_el[iel,i,ieq] -= params.ω[i]*dFdξ - params.ω[i]*params.S[i,ieq]
+            rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*S[i,ieq]
         end
     end
 end
