@@ -23,7 +23,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
                 ip = mesh.connijk[iel_g,i,1]
                 x = mesh.x[ip]
 
-                ex = -(x - 1)^2/σ2
+                ex = -(x)^2/σ2
                 q.qn[ip,1] = 2^ex
                 q.qn[ip,2] = 0.0
 
@@ -57,7 +57,7 @@ end
     T = eltype(x)
     xip = x[ip]
     
-    ex = -(xip - 1)^2/σ2
+    ex = -(xip)^2/σ2
     qn[ip,1] = T(2^ex)
     qn[ip,2] = T(0.0)
 
