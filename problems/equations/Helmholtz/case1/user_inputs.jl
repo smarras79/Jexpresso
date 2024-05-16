@@ -17,7 +17,7 @@ function user_inputs()
         #:llump               => true,
         :interpolation_nodes =>"lgl",
         :nop                 => 10,      # Polynomial order
-        :nop_laguerre        => 64,
+        :nop_laguerre        => 32,
         :xfac_laguerre       => 0.25,
         :yfac_laguerre       => 0.0,
         #---------------------------------------------------------------------------

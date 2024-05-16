@@ -40,16 +40,15 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                               neqs=1, x=sem.mesh.x[ip],y=sem.mesh.y[ip])
             RHS[ip] = rhs
         end
-        
+       
         Minv = diagm(sem.matrix.Minv)
         L_temp = Minv * sem.matrix.L
         sem.matrix.L .= L_temp 
         apply_boundary_conditions_lin_solve!(sem.matrix.L,RHS,sem.mesh,inputs,sem.mesh.SD)             
-
+        
         for ip = 1:sem.mesh.npoin
             sem.matrix.L[ip,ip] += 10
         end
-        
         
         @time solution = solveAx(-sem.matrix.L, RHS, inputs[:ode_solver]) 
 
