@@ -121,7 +121,8 @@ function sem_setup(inputs::Dict)
             metrics = (metrics1, metrics2)
             @time periodicity_restructure!(mesh,inputs,inputs[:backend])
             
-            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
+                                             ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
             
         else
             
