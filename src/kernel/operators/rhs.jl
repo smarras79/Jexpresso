@@ -40,13 +40,17 @@ end
 function resetRHSToZero_inviscid!(params)
     fill!(params.rhs_el, zero(params.T))   
     fill!(params.RHS,    zero(params.T))
-    fill!(params.b,      zero(params.T))
-    fill!(params.B,      zero(params.T))
+end
+
+
+function reset_filters!(params)
+    fill!(params.b, zero(params.T))
+    fill!(params.B, zero(params.T))
 end
 
 function reset_laguerre_filters!(params)
-    fill!(params.b_lag,      zero(params.T))
-    fill!(params.B_lag,      zero(params.T))
+    fill!(params.b_lag, zero(params.T))
+    fill!(params.B_lag, zero(params.T))
 end
 
 function resetRHSToZero_viscous!(params, SD::NSD_2D)
@@ -276,22 +280,22 @@ function _build_rhs!(RHS, u, params, time)
     ymax    = params.mesh.ymax
     zmin    = params.mesh.zmin
     zmax    = params.mesh.zmax    
-        
+    
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
-    resetRHSToZero_inviscid!(params) 
-    if (params.laguerre && params.inputs[:lfilter])
-         reset_laguerre_filters!(params)
-    end
+    resetRHSToZero_inviscid!(params)
     if (params.inputs[:lfilter])
+        reset_filters!(params)
         if (params.laguerre)
+            reset_laguerre_filters!(params)
             filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
                     connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je)
         else
             filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE)
         end
     end
+    
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
                                params.mesh.x, params.mesh.y, params.mesh.z, params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
