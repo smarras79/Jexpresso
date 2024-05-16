@@ -292,7 +292,7 @@ function _build_rhs!(RHS, u, params, time)
             filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
                     connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je)
         else
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.mesh.connijk_lag, params.metrics.Je, params.metrics_lag.Je, SD, params.SOL_VARS_TYPE)
+            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE)
         end
     end
     
