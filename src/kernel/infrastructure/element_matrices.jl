@@ -669,6 +669,24 @@ end
     end 
 end
 
+@kernel function DSS_laplace_gpu_lag!(L, Lel, connijk, ωx, ωy, nx, ny, dηdx_lag, dydη, dηdy, dxdη_lag)
+    ie = @index(Group, Linear)
+    idx = @index(Local, NTuple)
+    i = idx[1]
+    j = idx[2]
+
+    ip = connijk[ie, j, i]
+    for k=1:ny
+        jp = connijk[ie, j, k]
+        KernelAbstractions.@atomic L[ip, jp] += dηdx_lag[ie, j, k] * Lel[i, k] * dydη[ie, j, j] * ωx[j]
+    end
+
+    for l=1:nx
+        jp = connijk[ie,l,i]
+        KernelAbstractions.@atomic L[ip, jp] += dηdy[ie, j, l] * Lel[j, l]*dxdη_lag[ie, l, i] * ωy[i]
+    end
+end
+
 function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
 
     for iel=1:mesh.nelem
@@ -1087,6 +1105,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
             k(L, Le, connijk, ω[1], ω[1], mesh.ngl, mesh.ngl, metrics[1].dξdx, metrics[1].dydη, metrics[1].dηdy, metrics[1].dxdξ; 
               ndrange = (mesh.nelem*mesh.ngl, mesh.ngl), workgroupsize = (mesh.ngl, mesh.ngl))
             KernelAbstractions.synchronize(backend)
+            k = DSS_laplace_gpu_lag!(backend)
             k(L, Le_lag, connijk_lag, ω[1], ω[2], mesh.ngl, mesh.ngr, metrics[2].dηdx, metrics[1].dydη, metrics[1].dηdy, metrics[2].dxdη; 
               ndrange = (mesh.nelem_semi_inf*mesh.ngr, mesh.ngl), workgroupsize = (mesh.ngr, mesh.ngl))
             KernelAbstractions.synchronize(backend)
