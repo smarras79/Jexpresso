@@ -129,6 +129,7 @@ end
     i_ngl = il[1]
     i_ngr = il[2]
     T = eltype(uaux)
+    Ti = eltype(connijk)
     if (i_ngr == ngr)
         ip = connijk[ie,i_ngl,ngr]
         @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= T(1234567)
@@ -143,7 +144,7 @@ end
     end
     
     if !(lperiodic)
-        if (ie == Int32(1))
+        if (ie == Ti(1))
             ip = connijk[ie,1,i_ngr]
             @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= T(1234567)
             @inbounds qbdy[ie, i_ngl, i_ngr, 1:neq] .= user_bc_dirichlet_gpu(@view(uaux[ip,:]),@view(qe[ip,:]),x[ip],y[ip],t,T(-1.0),T(0.0),@view(qbdy[ie, i_ngl, i_ngr, :]),lpert)
@@ -171,6 +172,44 @@ end
     end
 
 
+end
+
+@kernel function apply_boundary_conditions_lag_gpu_lin_solve!(RHS, A, connijk,ngl,ngr,npoin,nelem_semi_inf,lperiodic)
+
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    i_ngl = il[1]
+    i_ngr = il[2]
+    T = eltype(A)
+    Ti = eltype(connijk)
+    if (i_ngr == ngr)
+        ip = connijk[ie,i_ngl,ngr]
+        for jp = 1:npoin
+            A[ip,jp] = T(0.0)
+        end
+        A[ip,ip] = T(1.0)
+        RHS[ip,:] .= T(0.0)
+    end
+
+    if !(lperiodic)
+        if (ie == Ti(1))
+            ip = connijk[ie,1,i_ngr]
+            for jp = 1:npoin
+                A[ip,jp] = T(0.0)
+            end
+            A[ip,ip] = T(1.0)
+            RHS[ip,:] .= T(0.0)
+        end
+
+        if (ie == nelem_semi_inf)
+            ip = connijk[ie,ngl,i_ngr]
+            for jp = 1:npoin
+                A[ip,jp] = T(0.0)
+            end
+            A[ip,ip] = T(1.0)
+            RHS[ip,:] .= T(0.0)
+        end
+    end
 end
 
 #=function uToPrimitives_lag!(u,qe)
