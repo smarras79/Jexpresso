@@ -127,7 +127,7 @@ function allocate_rhs_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T, backend; neqs=
         dims2 = (Int64(nelem_semi_inf), Int64(ngr), Int64(neqs)) 
     elseif SD == NSD_2D()
         dims1 = (Int64(npoin), Int64(neqs))
-        dims2 = (nelem_semi_inf, ngl, ngr, neqs) 
+        dims2 = (Int64(nelem_semi_inf), Int64(ngl), Int64(ngr), Int64(neqs)) 
     elseif SD == NSD_3D()
         error(" src/kernel/infrastructore/params_setup.jl: 3D Laguerre arrays not coded yet!")
     end

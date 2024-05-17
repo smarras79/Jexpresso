@@ -388,6 +388,18 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     return Le
 end
 
+
+@kernel function build_laplace_matrix_gpu!(Le, dψ, ω, Q)
+    idx = @index(Global, NTuple)
+    i = idx[1]
+    j = idx[2]
+
+    for k=1:Q+1
+        sum = ω[k]*dψ[i,k]*dψ[j,k]
+        Le[i,j] = Le[i,j] + sum
+    end
+
+end
 #
 # DSS
 #
@@ -639,6 +651,45 @@ function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, ::NSD_2D)
     #show(stdout, "text/plain", L)
 end
 
+@kernel function DSS_laplace_gpu!(L, Lel, connijk, ωx, ωy, nx, ny, dξdx, dydη, dηdy, dxdξ)
+    ie = @index(Group, Linear)
+    idx = @index(Local, NTuple)
+    i = idx[1]
+    j = idx[2]
+    
+    ip = connijk[ie, i, j]
+    for k=1:nx
+        jp = connijk[ie, k, j]
+        KernelAbstractions.@atomic L[ip, jp] += dξdx[ie, i, k] * Lel[i, k] * dydη[ie, i, k] * ωx[j]
+    end 
+    
+    for l=1:ny
+        jp = connijk[ie,i,l]
+        KernelAbstractions.@atomic L[ip, jp] += dηdy[ie, i, l] * Lel[j, l]*dxdξ[ie, i, l] * ωy[i]
+    end 
+end
+
+function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
+
+    for iel=1:mesh.nelem
+
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                ip = mesh.connijk[iel,i,j]
+                for k =1:mesh.ngl
+                    jp = mesh.connijk[iel,k,j]
+                    L[ip,jp] += metrics.dξdx[iel,i,k]*Lel[i,k]*ω[j]*metrics.dydη[iel,i,k]
+                end
+
+                for l = 1:mesh.ngl
+                    jp = mesh.connijk[iel,i,l]
+                    L[ip,jp] += metrics.dηdy[iel,i,l]*Lel[j,l]*ω[i]*metrics.dxdξ[iel,i,l]
+                end
+            end
+        end
+    end
+end
+
 function DSS_laplace_Laguerre!(L, SD::NSD_2D, Lel::AbstractArray, Lel_lag::AbstractArray, ω, ω_lag, mesh, metrics, metrics_lag, N, T; llump=false)
 
     for iel=1:mesh.nelem
@@ -874,9 +925,24 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
     if lbuild_laplace_matrix
-        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
-        if ldss_laplace
-            L  = DSS_generic_matrix(SD, Le, mesh, TFloat)
+        if (backend == CPU())
+            Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
+            L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))            
+            if ldss_laplace
+                DSS_laplace_Laguerre!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+            end
+        else
+            Le = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+
+            k = build_laplace_matrix_gpu!(backend)
+            k(Le, basis.dψ, ω, TInt(mesh.ngl-1); ndrange=(mesh.ngl,mesh.ngl))
+            KernelAbstractions.synchronize(backend)
+            L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+            KernelAbstractions.synchronize(backend)
+            k = DSS_laplace_gpu!(backend)
+            k(L, Le, connijk, ω, ω, mesh.ngl, mesh.ngl, metrics.dξdx, metrics.dydη, metrics.dηdy, metrics.dxdξ;
+              ndrange = (mesh.nelem*mesh.ngl, mesh.ngl), workgroupsize = (mesh.ngl, mesh.ngl))
+            KernelAbstractions.synchronize(backend)
         end
     end
     
@@ -998,18 +1064,37 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
     Le_Lag = KernelAbstractions.zeros(backend, TFloat, 1,1)
     if lbuild_laplace_matrix
-        L = zeros(mesh.npoin,mesh.npoin)
-        Le = build_laplace_matrix(SD, basis[1].ψ, basis[1].dψ, ω[1], mesh, metrics[1], N, Q, TFloat)
-        Le_lag = build_laplace_matrix(SD, basis[2].ψ, basis[2].dψ, ω[2], mesh, metrics[2], mesh.ngr-1, mesh.ngr-1, TFloat)
-        L = zeros(mesh.npoin,mesh.npoin)
+        if (backend == CPU())
+            L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+            Le = build_laplace_matrix(SD, basis[1].ψ, basis[1].dψ, ω[1], mesh, metrics[1], N, Q, TFloat)
+            Le_lag = build_laplace_matrix(SD, basis[2].ψ, basis[2].dψ, ω[2], mesh, metrics[2], mesh.ngr-1, mesh.ngr-1, TFloat)
+            L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin),Int64(mesh.npoin))
         
-        if ldss_laplace
-            DSS_laplace_Laguerre!(L, SD, Le, Le_lag, ω[1], ω[2], mesh, metrics[1], metrics[2], N, TFloat; llump=inputs[:llump])
+            if ldss_laplace
+                DSS_laplace_Laguerre!(L, SD, Le, Le_lag, ω[1], ω[2], mesh, metrics[1], metrics[2], N, TFloat; llump=inputs[:llump])
+            end
+        else
+            Le = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+            Le_lag = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngr), Int64(mesh.ngr))
+            
+            k = build_laplace_matrix_gpu!(backend)
+            k(Le, basis[1].dψ, ω[1], TInt(mesh.ngl-1); ndrange=(mesh.ngl,mesh.ngl))
+            KernelAbstractions.synchronize(backend)
+            k(Le_lag, basis[2].dψ, ω[2], TInt(mesh.ngr-1); ndrange = (mesh.ngr, mesh.ngr))
+            L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+            KernelAbstractions.synchronize(backend)
+            k = DSS_laplace_gpu!(backend)
+            k(L, Le, connijk, ω[1], ω[1], mesh.ngl, mesh.ngl, metrics[1].dξdx, metrics[1].dydη, metrics[1].dηdy, metrics[1].dxdξ; 
+              ndrange = (mesh.nelem*mesh.ngl, mesh.ngl), workgroupsize = (mesh.ngl, mesh.ngl))
+            KernelAbstractions.synchronize(backend)
+            k(L, Le_lag, connijk_lag, ω[1], ω[2], mesh.ngl, mesh.ngr, metrics[2].dηdx, metrics[1].dydη, metrics[1].dηdy, metrics[2].dxdη; 
+              ndrange = (mesh.nelem_semi_inf*mesh.ngr, mesh.ngl), workgroupsize = (mesh.ngr, mesh.ngl))
+            KernelAbstractions.synchronize(backend)
         end
     end
 
     De = KernelAbstractions.zeros(backend, TFloat, 1, 1)
-    D  = KernelAbstractions.zeros(backend, TFloat, 1,1)
+    D  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
     if lbuild_differentiation_matrix
         De = build_differentiation_matrix(SD, basis.ψ, basis.dψ, ω, mesh,  N, Q, TFloat)
         if ldss_differentiation
@@ -1022,4 +1107,16 @@ end
 
 function mass_inverse!(Minv, M::AbstractVector, QT)
     Minv .= TFloat(1.0)./M
+end
+
+@kernel function diagm_gpu!(Minv_d, Minv)
+    ip = @index(Global, Linear)
+
+    Minv_d[ip,ip] = Minv[ip]
+end
+
+@kernel function add_to_diag!(M, val)
+    ip = @index(Global, Linear)
+
+    M[ip,ip] += val
 end
