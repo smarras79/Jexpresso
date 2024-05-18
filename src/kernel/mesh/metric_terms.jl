@@ -163,7 +163,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     yij = mesh.y[ip]
                     for l=1:Q+1
                         for k=1:Q+1
-                        
+                            
                             metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ[j,l] * xij
                             metrics.dxdη[iel, k, l] += ψ[i,k]*dψ[j,l] * xij
 
@@ -575,29 +575,29 @@ end
 function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
 
     metrics = St_metrics{T, backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dxdη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dxdζ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂x/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dydξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dydη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dydζ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂y/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dzdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂z/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dzdη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂z/∂η[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dzdζ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂z/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ξdx[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dηdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ηdx[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dζdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ζdx[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dξdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ξdy[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dηdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ηdy[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dζdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ζdy[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dξdz = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ξdz[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dηdz = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ηdz[2, 1:Nq, 1:Nq, 1:nelem]
-                                      dζdz = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
-                                      Jef  = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
-                                      Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),
-                                      nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
-                                      ny   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
-                                      nz   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1))  #   Je[1:Nq, 1:Nq, 1:nelem]
-   
+                                     dxdη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dxdζ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂x/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dydξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dydη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dydζ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂y/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dzdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂z/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dzdη = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂z/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dzdζ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂z/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dξdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ξdx[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dηdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ηdx[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dζdx = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ζdx[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dξdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ξdy[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dηdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ηdy[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dζdy = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ζdy[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dξdz = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ξdz[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dηdz = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ηdz[2, 1:Nq, 1:Nq, 1:nelem]
+                                     dζdz = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
+                                     Jef  = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
+                                     Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),
+                                     nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
+                                     ny   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
+                                     nz   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1))  #   Je[1:Nq, 1:Nq, 1:nelem]
+    
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
         

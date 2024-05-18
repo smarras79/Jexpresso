@@ -110,13 +110,13 @@ function inviscid_rhs_el_laguerre!(u, params, connijk_lag, qe, x, y, lsource, SD
             
             user_flux!(@view(params.F_lag[i,j,:]), @view(params.G_lag[i,j,:]), SD,
                         @view(params.uaux[ip,:]), 
-                        @view(params.qp.qe[ip,:]),         #pref
+                        @view(qe[ip,:]),         #pref
                        params.mesh, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs)
             
             if lsource
                 user_source!(@view(params.S_lag[i,j,:]),
                              @view(params.uaux[ip,:]),
-                             @view(params.qp.qe[ip,:]),          #ρref 
+                             @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=x[ip],y=y[ip], xmax = xmax, xmin=xmin, ymax=ymax)
             end

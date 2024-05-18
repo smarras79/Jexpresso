@@ -132,7 +132,15 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
     if inputs[:lplot_surf3d]
         plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1, smoothing_factor=inputs[:smoothing_factor])
     else
-        plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR, inputs;)
+        if (inputs[:backend] == CPU())
+            plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR, inputs;)
+        else
+            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+            KernelAbstractions.copyto!(CPU(),u, sol.u[:])
+            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+            @info u
+            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs;)
+        end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
 end
