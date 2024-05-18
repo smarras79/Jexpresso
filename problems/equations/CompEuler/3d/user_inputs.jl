@@ -14,8 +14,7 @@ function user_inputs()
         :ndiagnostics_outputs => 10,
         :case                 => "rtb",
         :lsource              => true, 
-        #:backend              => MetalBackend(),
-        #:SOL_VARS_TYPE        => PERT(),
+        :backend              => MetalBackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -45,8 +44,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
-#        :lplot_surf3d        => true,
+        :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
