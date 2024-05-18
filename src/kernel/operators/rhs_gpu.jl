@@ -366,3 +366,26 @@ end
     @inbounds du[idx] = RHS[ip,ieq]
 end
 
+@kernel function lin_solve_rhs_gpu_2d!(RHS, u, qe, x, y, neqs)
+    ip = @index(Global, Linear)
+
+    uip = @view(u[ip,:])
+    qeip = @view(qe[ip,:])
+
+    RHS[ip,:] .= user_source_gpu(uip, qeip, x[ip], y[ip])
+
+end
+
+@kernel function apply_boundary_conditions_gpu_lin_solve!(RHS, A, poin_in_bdy_edge, npoin)
+
+    iedge = @index(Group, Linear)
+    ik = @index(Local, Linear)
+    @inbounds ip = poin_in_bdy_edge[iedge,ik]
+
+    T = eltype(RHS)
+    for jp = 1:npoin
+        A[ip,jp] = T(0.0)
+    end
+    A[ip,ip] = T(1.0)
+    RHS[ip,:] .= T(0.0)
+end
