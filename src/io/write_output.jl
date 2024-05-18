@@ -233,8 +233,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     poin_bdy = zeros(size(mesh.bdy_edge_type,1),mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_edge
     qe_temp = similar(qexact)
-    #qe_temp = zeros(mesh.npoin,5)
-    #qe_temp .= qexact
+    
     if ("periodic1" in mesh.bdy_edge_type)
     	xmin = 1000000000.0
         ymax = -1000000000.0
