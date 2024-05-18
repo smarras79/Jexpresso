@@ -210,9 +210,10 @@ julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
 ```
 
-<img src="assets/thetaTracersMesh.png"
+<img src="assets/thetaTracersMeshUnstr.png"
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
+
 
 Example 2: to solve the 3D Euler equations with buyoancy defined in `problems/equations/CompEuler/3d` you would do the following:
 ```bash
