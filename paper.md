@@ -15,7 +15,7 @@ authors:
     orcid: 0000-0000-0000-0000
     affiliation: 3
   - name: Hang Wang
-     orcid: 0000-0000-0000-0000
+    orcid: 0000-0000-0000-0000
     affiliation: 1
 affiliations:
  - name: Department of Mechanical and Industrial Engineering, New Jersey Institute of Technology, Newark (NJ), USA
