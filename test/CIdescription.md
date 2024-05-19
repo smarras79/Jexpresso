@@ -1,27 +1,23 @@
 # Add a new test to CI:
-Follow these simple steps:
+Follow these simple steps to add your new PROBLEM_NAME/YOUR_TEST_DIR_NAME to the CI suite:
 
        1. Set the following keys in problems/equations/PROBLEM_NAME/YOUR_TEST_DIR_NAME/user_inputs.jl
-           - :output_format     => "hdf5",
-	   - :output_dir        => "./test/CI-ref",
-           - :loverwrite_output => true,
+       	  - :output_format     => "hdf5",
+	  - :output_dir        => "./test/CI-ref",
+	  - :loverwrite_output => true,
 	                      
        2. Run your test as usual
        
        3. cp -rf problems/equations/PROBLEM_NAME/YOUR_TEST_DIR_NAME test/CI-runs/PROBLEM_NAME/
-       
-       4. Replace :output_dir in test/CI-runs/PROBLEM_NAME//YOUR_TEST_DIR_NAME/user_inputs.jl
-           - :output_dir => "./CI-runs",
-       
-       5. Open test/runtests.jl and add the following line if necessary:
-           @time @testset "PROBLEM_NAME" begin include("CI-runs/PROBLEM_NAME/runtests.jl") end
+                     
+       4. Open test/runtests.jl and add the following line if necessary:
+           `@time @testset "PROBLEM_NAME" begin include("CI-runs/PROBLEM_NAME/runtests.jl") end`
            Replace PROBLEM_NAME with the one that contains YOUR_TEST_DIR_NAME. 
-           Notice that you do not need to add this new line if YOUR_TEST_DIR_NAME
-	   is contained in any of the lines that are already there.
+           Notice that you do not need to add this new line if YOUR_TEST_DIR_NAME is already there.
         
-        6. cp test/CI-runs/CompEuler/thetaTracers/Tests.jl test/CI-runs/PROBLEM_NAME/YOUR_TEST_DIR_NAME/
+        5. cp test/CI-runs/CompEuler/thetaTracers/Tests.jl test/CI-runs/PROBLEM_NAME/YOUR_TEST_DIR_NAME/
         
-        7. edit test/CI-runs/CompEuler/thetaTracers/Tests.jl and replace 
+        6. edit test/CI-runs/CompEuler/thetaTracers/Tests.jl and replace 
            @testset "JEXPRESSO Examples" begin run_example("CompEuler", "thetaTracers") end
            with
            @testset "JEXPRESSO Examples" begin run_example("PROBLEM_NAME", "YOUR_TEST_DIR_NAME") end

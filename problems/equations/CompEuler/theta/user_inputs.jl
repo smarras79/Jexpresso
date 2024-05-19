@@ -12,7 +12,7 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :ndiagnostics_outputs => 20,
+        :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         :lsource              => true, 
         #:backend              => MetalBackend(),
@@ -44,10 +44,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "hdf5",
         :loverwrite_output   => true,
-        :lwrite_initial      => true,
-        :output_dir          => "./output/",
+        :lwrite_initial      => false,
+        :output_dir          => "./test/CI-ref", #"./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
