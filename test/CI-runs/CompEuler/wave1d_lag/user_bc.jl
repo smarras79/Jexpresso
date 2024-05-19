@@ -39,3 +39,8 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     flux = zeros(size(q,2),1)
     return flux
 end
+
+function user_bc_dirichlet_gpu(q,qe,x,t,lpert)
+    T = eltype(q)
+    return T(q[1]), T(q[2])
+end
