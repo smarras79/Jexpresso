@@ -2,9 +2,9 @@
 Follow these simple steps:
 
        1. Set the following keys in problems/equations/PROBLEM_NAME/YOUR_TEST_DIR_NAME/user_inputs.jl
-           - :output_forma => "hdf5",
-	   - :output_dir   => "./test/CI-ref",
-           - :loverwrite_output = true,
+           - :output_format     => "hdf5",
+	   - :output_dir        => "./test/CI-ref",
+           - :loverwrite_output => true,
 	                      
        2. Run your test as usual
        
