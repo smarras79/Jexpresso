@@ -9,13 +9,12 @@ function user_inputs()
         :tend                 => 9.0,
         :Δt                   => 1.0e-3,
         :ndiagnostics_outputs => 30, #these are steps, not seconds
-        :output_dir          => "./output/",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 6,     # Polynomial order
-        :nop_laguerre        => 50,
+        :nop_laguerre        => 24,
         :lexact_integration  => false,
         :lsource             => true,
         :llaguerre_1d_right  => true,
@@ -37,6 +36,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat         => "hdf5", #choice: "png", "ascii" (default is ascii)
         :loverwrite_output => true,
+        :output_dir        => "./test/CI-ref",
         :plot_vlines       => [-2.5,2.5],
         :plot_axis         => [-0.05,0.55, -0.35,0.35],
         #---------------------------------------------------------------------------
