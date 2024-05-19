@@ -26,19 +26,13 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         #:lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => (1),
-        :μ                    => (0.1), 
+        :ivisc_equations      => [1],
+        :μ                    => [0.1], 
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/agnesi240kmX30km_coarse.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_laguerre_top.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/agnesi-120kmx30km-hm5000.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_RTB.msh",
-        #:gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_180x24_top_lag.msh",
         :gmsh_filename         => "./meshes/gmsh_grids/Wave_Train.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/agnesi240kmX30km_coarse_laguerreTopLateral.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #--------------------------------------------------------------------------- 
