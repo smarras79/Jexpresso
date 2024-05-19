@@ -30,11 +30,9 @@ bibliography: paper.bib
 
 # Summary
 
- (see [@tissaoui2024])
+xxx (see [@tissaoui2024])
 
 ![](code.pdf)
-
-Other FE packages like FEniCS also achieve such compact user interfaces, but in contrast to Gridap, they are based on a sophisticated compiler of variational forms [@Kirby2006], which generates, compiles and links a specialized C++ back-end for the problem at hand. One of the limitations of this approach is that the form compiler is a rigid system that is not designed to be extended by average users.
 
 Jexpresso is an open-source software hosted at Github and distributed under an MIT license.
 
