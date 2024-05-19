@@ -20,3 +20,12 @@ function user_source(S,
     return S
 end
 
+function user_source_gpu(q, qe, x, y)
+    T = eltype(q)
+    L = 2
+    alpha = 10 
+    f = T(- (cos(x/L) * exp(-x/L)*cos(y))/L - sin(x/L)*exp(-x/L)*cos(y))
+    u_e = T(sin(x/L)*exp(-x/L)*cos(y))
+
+    return T(f - alpha*u_e)
+end

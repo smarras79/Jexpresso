@@ -1,3 +1,4 @@
+#using Metal
 function user_inputs()
     inputs = Dict(
         #---------------------------------------------------------------------------
@@ -18,6 +19,7 @@ function user_inputs()
         :lexact_integration  => false,
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
+        :backend             => MetalBackend(),
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------

@@ -1,3 +1,34 @@
+# Add a new test to CI:
+Follow these simple steps:
+
+       1. Set the following keys in problems/equations/PROBLEM_NAME/YOUR_TEST_DIR_NAME/user_inputs.jl
+           - :output_format     => "hdf5",
+	   - :output_dir        => "./test/CI-ref",
+           - :loverwrite_output => true,
+	                      
+       2. Run your test as usual
+       
+       3. cp -rf problems/equations/PROBLEM_NAME/YOUR_TEST_DIR_NAME test/CI-runs/PROBLEM_NAME/
+       
+       4. Replace :output_dir in test/CI-runs/PROBLEM_NAME//YOUR_TEST_DIR_NAME/user_inputs.jl
+           - :output_dir => "./CI-runs",
+       
+       5. Open test/runtests.jl and add the following line if necessary:
+           @time @testset "PROBLEM_NAME" begin include("CI-runs/PROBLEM_NAME/runtests.jl") end
+           Replace PROBLEM_NAME with the one that contains YOUR_TEST_DIR_NAME. 
+           Notice that you do not need to add this new line if YOUR_TEST_DIR_NAME
+	   is contained in any of the lines that are already there.
+        
+        6. cp test/CI-runs/CompEuler/thetaTracers/Tests.jl test/CI-runs/PROBLEM_NAME/YOUR_TEST_DIR_NAME/
+        
+        7. edit test/CI-runs/CompEuler/thetaTracers/Tests.jl and replace 
+           @testset "JEXPRESSO Examples" begin run_example("CompEuler", "thetaTracers") end
+           with
+           @testset "JEXPRESSO Examples" begin run_example("PROBLEM_NAME", "YOUR_TEST_DIR_NAME") end
+
+	Done. At this point the CI will run when you push the code.
+
+# General notes:
     The `runtest.jl` file is part of a Julia package's continuous integration (CI) testing framework. 
     It uses Julia's built-in `Test` module to define and execute test sets for "Jexpresso". 
     Here’s a breakdown of how it is structured and how it contributes to the CI process:
@@ -27,3 +58,4 @@
         This file is integrated into the CI pipeline via GitHub Actions. The CI pipeline will report success if all tests pass, or failure if any test fails, preventing merging broken code into main branches or tagging releases with failing tests.
 
     This structure allows for automated testing of various scenarios within the Jexpresso framework, ensuring that any new changes don't break existing functionality and that all the defined examples work as expected.
+

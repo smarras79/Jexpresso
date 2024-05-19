@@ -19,6 +19,7 @@ function user_inputs()
         :yfac_laguerre       => 300.0,
         :luser_bc            => true,
         :lsource             => true,
+        :lperiodic_laguerre  => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
