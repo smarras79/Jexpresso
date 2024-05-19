@@ -1,5 +1,5 @@
 ---
-title: 'Jexpresso: a fast, modular and general solver of partial differential equations on CPU & GPU using Julia'
+title: 'Jexpresso: a fast, modular and general solver of partial differential equations on CPUs and GPUs using Julia'
 tags:
   - julia
   - pdes
