@@ -6,6 +6,9 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
+using Metal
+using CUDA
+using KernelAbstractions
 using Revise
 using BenchmarkTools
 using Dates
@@ -33,9 +36,11 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
 using UnicodePlots
 using Printf
 
-const TInt   = Int64
-const TFloat = Float64
-
+#const TInt   = Int64
+#const TFloat = Float64
+TInt = Int64
+TFloat = Float64
+cpu = true
 using DocStringExtensions
 
 include(joinpath( "..", "problems", "equations", "AbstractEquations.jl"))
@@ -64,9 +69,15 @@ include(joinpath( "kernel", "infrastructure", "sem_setup.jl"))
 
 include(joinpath( "kernel", "infrastructure", "Kopriva_functions.jl"))
 
+include(joinpath( "kernel", "infrastructure", "convert_to_gpu.jl"))
+
 include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
+
+include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
+
+include(joinpath( "kernel", "operators", "rhs_laguerre_gpu.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 

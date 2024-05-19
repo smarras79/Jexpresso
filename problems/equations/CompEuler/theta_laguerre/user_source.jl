@@ -83,3 +83,14 @@ function user_source!(S::SubArray{Float64},
     S[4] = 0.0
     
 end
+
+function user_source_gpu(q,qe,x,y,PhysConst,xmax, xmin, ymax, ymin,lpert)
+
+    T = eltype(q)
+    #
+    # S(q(x)) = -ρg
+    #
+    ρ  = q[1]
+
+    return T(0.0), T(0.0), T(-ρ*PhysConst.g), T(0.0)
+end

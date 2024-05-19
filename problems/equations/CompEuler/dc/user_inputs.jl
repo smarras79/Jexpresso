@@ -9,6 +9,7 @@ function user_inputs()
         :ndiagnostics_outputs => 2,
         :case                 => "rtb",
         :lsource              => true, 
+        :backend              => MetalBackend(),
         #:CL                   => NCL(), #CL() is defaults
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------

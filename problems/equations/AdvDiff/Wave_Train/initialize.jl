@@ -12,25 +12,39 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     # 
     #---------------------------------------------------------------------------------
     qvars = ("h","u")
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
     
-            
-    for ip=1:mesh.npoin
-            
-            q.qn[ip,1] = 0.0
-            q.qn[ip,2] = 0.0
+    if (inputs[:backend] == CPU())        
+        for ip=1:mesh.npoin
+                
+                q.qn[ip,1] = 0.0
+                q.qn[ip,2] = 0.0
 
             #Store initial background state for plotting and analysis of pertuebations
-            q.qe[ip,1] = 10.0
-            q.qe[ip,2] = 0.0
+                q.qe[ip,1] = 10.0
+                q.qe[ip,2] = 0.0
             
-    end
+        end
 
-    varnames = ["h","u"]
-    write_output(NSD_1D(), q.qn, mesh, OUTPUT_DIR, inputs, varnames, PNG())
-    
+        varnames = ["h","u"]
+        write_output(NSD_1D(), q.qn, mesh, OUTPUT_DIR, inputs, varnames, PNG())
+    else
+        k = initialize_gpu!(inputs[:backend])
+        k(q.qn, q.qe; ndrange = (mesh.npoin))
+    end
     @info " Initialize fields for 1D adv diff ........................ DONE "
     
     return q
+end
+
+@kernel function initialize_gpu!(qn, qe)
+    ip = @index(Global, Linear)
+
+    T=eltype(qn)
+    qn[ip,1] = T(0.0)
+    qn[ip,2] = T(0.0)
+            #Store initial background state for plotting and analysis of pertuebations
+    qe[ip,1] = T(10.0)
+    qe[ip,2] = T(0.0)
 end

@@ -10,13 +10,14 @@ function user_inputs()
         :Δt                   => 0.001,
         :ndiagnostics_outputs => 100, #these are steps, not seconds
         :output_dir          => "./",
+        #:backend             => MetalBackend(),
         :SOL_VARS_TYPE        => PERT(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
-        :nop_laguerre        => 40,
+        :nop_laguerre        => 30,
         :lexact_integration  => false,
         :lsource             => true,
         :llaguerre_1d_right  => true,

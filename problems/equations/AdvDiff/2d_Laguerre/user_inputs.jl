@@ -9,6 +9,7 @@ function user_inputs()
         :ndiagnostics_outputs => 10,
         :output_dir          => "./output/",
         :case                 => "rtb",
+        #:backend              => MetalBackend(),
         #:CL                   => NCL(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
@@ -16,7 +17,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
-        :nop_laguerre        => 40,     # Laguerre polynomial Order
+        :nop_laguerre        => 30,     # Laguerre polynomial Order
         :xfac_laguerre       => 0.0,
         :yfac_laguerre       => 0.07,
         :luser_bc            => true,
@@ -24,20 +25,14 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => (1),
-        :μ                    => (0.1), 
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        :ivisc_equations      => [1],
+        :μ                    => [0.1], 
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/agnesi240kmX30km_coarse.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_laguerre_top.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/agnesi-120kmx30km-hm5000.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_RTB.msh",
-        #:gmsh_filename         => "./meshes/gmsh_grids/hexa_TFI_180x24_top_lag.msh",
         :gmsh_filename         => "./meshes/gmsh_grids/Wave_Train.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/agnesi240kmX30km_coarse_laguerreTopLateral.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #--------------------------------------------------------------------------- 
