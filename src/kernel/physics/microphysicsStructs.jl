@@ -18,8 +18,6 @@ end
 
 function allocate_MicroPhysics(nelem, npoin, ngl, T, backend; neqs=1, lfilter=false)
     
-    # WIP
-    
     dims1 = (Int64(npoin))
     
     mp = St_MoistVars{T, dims1, backend}()
