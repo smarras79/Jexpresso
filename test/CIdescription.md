@@ -9,19 +9,24 @@ Follow these simple steps to add your new PROBLEM_NAME/YOUR_TEST_DIR_NAME to the
        2. Run your test as usual
        
        3. cp -rf problems/equations/PROBLEM_NAME/YOUR_TEST_DIR_NAME test/CI-runs/PROBLEM_NAME/
-                     
-       4. Open test/runtests.jl and add the following line if necessary:
+
+       4. Edit user_inputs.jl to replace 
+       	     :output_dir => "./test/CI-ref",
+	  with
+    	     :output_dir => "./test/CI-runs",
+       
+       5. Open test/runtests.jl and add the following line if necessary:
            `@time @testset "PROBLEM_NAME" begin include("CI-runs/PROBLEM_NAME/runtests.jl") end`
            Replace PROBLEM_NAME with the one that contains YOUR_TEST_DIR_NAME. 
            Notice that you do not need to add this new line if YOUR_TEST_DIR_NAME is already there.
         
-        5. cp test/CI-runs/CompEuler/thetaTracers/Tests.jl test/CI-runs/PROBLEM_NAME/YOUR_TEST_DIR_NAME/
+       6. cp test/CI-runs/CompEuler/thetaTracers/Tests.jl test/CI-runs/PROBLEM_NAME/YOUR_TEST_DIR_NAME/
         
-        6. edit test/CI-runs/CompEuler/thetaTracers/Tests.jl and replace 
-           @testset "JEXPRESSO Examples" begin run_example("CompEuler", "thetaTracers") end
-           with
-           @testset "JEXPRESSO Examples" begin run_example("PROBLEM_NAME", "YOUR_TEST_DIR_NAME") end
-
+       7. edit test/CI-runs/CompEuler/thetaTracers/Tests.jl and replace 
+          @testset "JEXPRESSO Examples" begin run_example("CompEuler", "thetaTracers") end
+          with
+          @testset "JEXPRESSO Examples" begin run_example("PROBLEM_NAME", "YOUR_TEST_DIR_NAME") end
+	  
 	Done. At this point the CI will run when you push the code.
 
 # General notes:
