@@ -36,7 +36,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat         => "hdf5", #choice: "png", "ascii" (default is ascii)
         :loverwrite_output => true,
-        :output_dir        => "./test/CI-ref",
+        :output_dir        => "./test/CI-runs",
         :plot_vlines       => [-2.5,2.5],
         :plot_axis         => [-0.05,0.55, -0.35,0.35],
         #---------------------------------------------------------------------------
