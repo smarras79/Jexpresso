@@ -36,11 +36,10 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
 using UnicodePlots
 using Printf
 
-#const TInt   = Int64
-#const TFloat = Float64
-TInt = Int64
+TInt   = Int64
 TFloat = Float64
-cpu = true
+cpu    = true
+
 using DocStringExtensions
 
 include(joinpath( "..", "problems", "equations", "AbstractEquations.jl"))
@@ -50,6 +49,8 @@ include(joinpath( "macros", "je_macros.jl"))
 include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))
+
+include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
 include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 

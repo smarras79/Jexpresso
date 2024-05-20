@@ -1,29 +1,28 @@
-Base.@kwdef mutable struct St_Microphysics{TFloat <: AbstractFloat}
-    
-    prod::Array{TFloat,1}  = zeros(TFloat, 0)
-    rhs::Array{TFloat,1}   = zeros(TFloat, 0)
-    vt::Array{TFloat,1}    = zeros(TFloat, 0)
-    prodk::Array{TFloat,1} = zeros(TFloat, 0)
-    vtden::Array{TFloat,1} = zeros(TFloat, 0)
-    rdzw::Array{TFloat,1}  = zeros(TFloat, 0)
-    rdzk::Array{TFloat,1}  = zeros(TFloat, 0)
-    ρk::Array{TFloat,1}    = zeros(TFloat, 0)
-    pp::Array{TFloat,1}    = zeros(TFloat, 0)  
+#-------------------------------------------------------------------------------------------
+# Microphysics (mp) variables:
+#-------------------------------------------------------------------------------------------
+Base.@kwdef mutable struct St_MicroPhysics{T <: AbstractFloat, dims1, backend}
 
+    # WIP
+    
+    rainnc  = KernelAbstractions.zeros(backend,  T, dims1)
+    rainncv = KernelAbstractions.zeros(backend,  T, dims1)
+    vt      = KernelAbstractions.zeros(backend,  T, dims1)
+    prod    = KernelAbstractions.zeros(backend,  T, dims1)
+    prodk   = KernelAbstractions.zeros(backend,  T, dims1)
+    vtden   = KernelAbstractions.zeros(backend,  T, dims1)
+    rdzk    = KernelAbstractions.zeros(backend,  T, dims1)
+    ρk      = KernelAbstractions.zeros(backend,  T, dims1)
+    
 end
 
-function allocate_mp(SD, nelem, npoin, ngl, qvars, TFloat; neqs=1)
-
-    mp = St_Microphysics{TFloat}(neqs=neqs,
-                                 prod  = zeros(TFloat, npoin),
-                                 rhs   = zeros(TFloat, npoin),
-                                 vt    = zeros(TFloat, npoin),
-                                 prodk = zeros(TFloat, npoin),
-                                 vtden = zeros(TFloat, npoin),
-                                 rdzw  = zeros(TFloat, npoin),
-                                 rdzk  = zeros(TFloat, npoin),
-                                 ρk    = zeros(TFloat, npoin),
-                                 pp    = zeros(TFloat, npoin))
+function allocate_MicroPhysics(nelem, npoin, ngl, T, backend; neqs=1, lfilter=false)
+    
+    # WIP
+    
+    dims1 = (Int64(npoin))
+    
+    mp = St_MoistVars{T, dims1, backend}()
     
     return mp
 end

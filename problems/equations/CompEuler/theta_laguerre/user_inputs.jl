@@ -45,8 +45,8 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :loverwrite_output   => true,
-        :outformat           => "hdf5",
-        :output_dir          => "./test/CI-runs",
+        :outformat           => "vtk",
+        :output_dir          => "./output",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
