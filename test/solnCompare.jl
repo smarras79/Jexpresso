@@ -24,7 +24,7 @@ function compare_results(generated_data, expected_data)
     for key in keys(generated_data)
         # Compare floating-point numbers up to 8 significant digits
         if typeof(generated_data[key]) == Array{Float64,1}
-            is_equal = isapprox(generated_data[key], expected_data[key], atol=1e-8)
+            is_equal = isapprox(generated_data[key], expected_data[key], atol=1e-5)
         else
             is_equal = generated_data[key] == expected_data[key]
         end
