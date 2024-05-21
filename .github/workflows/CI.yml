@@ -4,10 +4,10 @@
   on:
     pull_request:
       branches:
-        - master
+        - hw/CI_master
     push:
       branches:
-        - master
+        - hw/CI_master
       tags:
         - '*'  
 
