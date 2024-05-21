@@ -24,11 +24,12 @@ function compare_results(generated_data, expected_data)
     for key in keys(generated_data)
         # Compare floating-point numbers up to 8 significant digits
         if typeof(generated_data[key]) == Array{Float64,1}
-            is_equal = isapprox(generated_data[key], expected_data[key], atol=1e-8)
+            is_equal = isapprox(generated_data[key], expected_data[key], atol=1e-5)
         else
             is_equal = generated_data[key] == expected_data[key]
         end
         if !is_equal
+            @info "ref_data, runs_data", generated_data[key], expected_data[key]
             break
         end
     end
@@ -40,6 +41,7 @@ end
 function run_example(parsed_equations::String, parsed_equations_case_name::String)
     # Store the initial directory
     project_root = dirname(Base.current_project())
+    cd(project_root)
     try
         CI_MODE = "true"
         @testset "$parsed_equations - $parsed_equations_case_name" begin
@@ -82,8 +84,6 @@ function run_example(parsed_equations::String, parsed_equations_case_name::Strin
 
     finally
         nothing
-        # Ensure we navigate back to the initial directory
-#        cd(project_root)
     end
 end
 

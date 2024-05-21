@@ -1,7 +1,14 @@
 module JExpressoRunTests
 
+project_root = dirname(Base.current_project())
+include(joinpath(project_root, "test", "solnCompare.jl"))
+
+using .solnCompare
 using Test
 
-@time @testset "CompEuler" begin include("CI-runs/CompEuler/runtests.jl") end
+
+@testset "JEXPRESSO Examples: CompEuler, $alg_case" for alg_case in ("theta", "thetaTracers", "theta_laguerre", "wave1d_lag")
+    run_example("CompEuler", "$alg_case")
+end
 
 end # module
