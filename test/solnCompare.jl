@@ -29,6 +29,7 @@ function compare_results(generated_data, expected_data)
             is_equal = generated_data[key] == expected_data[key]
         end
         if !is_equal
+            @info "ref_data, runs_data", generated_data[key], expected_data[key]
             break
         end
     end
