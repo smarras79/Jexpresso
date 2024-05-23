@@ -185,11 +185,13 @@ function mod_inputs_user_inputs!(inputs)
     else
         inputs[:lrestart] = false
     end
-            
-    #Time:
-    if(!haskey(inputs, :ndiagnostics_outputs) && !haskey(inputs, :ndiagnostics_output))
-        inputs[:ndiagnostics_outputs] = 2
-        inputs[:ndiagnostics_output]  = 2
+    
+    #
+    # Time:
+    #
+    if(!haskey(inputs, :ndiagnostics_outputs) &&
+        !haskey(inputs, :ndiagnostics_output))
+        inputs[:ndiagnostics_outputs] = 0
     end
     mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
@@ -197,6 +199,14 @@ function mod_inputs_user_inputs!(inputs)
     end
     if(!haskey(inputs, :tend))
         inputs[:tend] = 0.0  #end time is 0.0 by default
+    end
+
+    if( !haskey(inputs, :diagnostics_at_times) &&
+        !haskey(inputs, :diagnostics_times) &&
+        !haskey(inputs, :diagnostic_times))
+        
+        inputs[:diagnostics_at_times] = inputs[:tend]
+        inputs[:ndiagnostics_outputs] = 0 #Force this to none to avoid double output
     end
     
     if(!haskey(inputs, :lexact_integration))

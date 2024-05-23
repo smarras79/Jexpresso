@@ -103,6 +103,7 @@ if user_defined_output_dir == "none"
     inputs[:output_dir] = OUTPUT_DIR
 else
     OUTPUT_DIR = joinpath(user_defined_output_dir, parsed_equations, parsed_equations_case_name, outstring)
+    inputs[:output_dir] = OUTPUT_DIR
 end
 if !isdir(OUTPUT_DIR)
     mkpath(OUTPUT_DIR)
@@ -115,10 +116,6 @@ if Sys.iswindows() == false
     run(`$cp $user_input_file $OUTPUT_DIR`)
 end
 
-
 driver(inputs, # input parameters from src/user_input.jl
        OUTPUT_DIR,
        TFloat)
-
-# Export pprof profile and open interactive profiling web interface.
-#pprof()
