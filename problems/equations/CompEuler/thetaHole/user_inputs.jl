@@ -7,8 +7,8 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.2,
         :tinit                => 0.0,
-        :tend                 => 3000.0,
-        :diagnostics_at_times => range(0,3000,100),
+        :tend                 => 5000.0,
+        :diagnostics_at_times => range(0,5000,100),
         :lrestart             => false,
         :restart_input_file_path => "./output/CompEuler/theta/output",
         :case                 => "rtb",
@@ -25,7 +25,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1, 2, 3, 4],
-        :μ                   => [0.0, 80.0, 80.0, 70.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 80.0, 80.0, 65.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
