@@ -209,6 +209,11 @@ julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
 ```
 
+<img src="assets/rtbHole.gif"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
+
 <img src="assets/thetaTracersMeshUnstr.png"
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
