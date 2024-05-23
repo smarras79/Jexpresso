@@ -1,5 +1,15 @@
 using BenchmarkTools
 
+function myaffect!(u, solution, params, OUTPUT_DIR)
+
+    write_output(sem.mesh.SD, solution,  sem.mesh,
+                 OUTPUT_DIR, inputs,
+                 params.qp.qvars,
+                 inputs[:outformat];
+                 nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
+    
+end
+
 function time_loop!(inputs, params, u)
 
     println(" # Solving ODE  ................................ ")
@@ -9,47 +19,41 @@ function time_loop!(inputs, params, u)
                       params.tspan,
                       params);
     
-#=
-    #analysis_interval = 100
-    #analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
-    #                                     extra_analysis_integrals = (entropy,))
-
-    #alive_callback = AliveCallback(analysis_interval = analysis_interval)
-
-    save_solution = SaveSolutionCallback(interval = 100,
-                                         save_initial_solution = true,
-                                         save_final_solution = true,
-                                         solution_variables = cons2prim)
-
-    amr_controller = ControllerThreeLevel(semi, IndicatorMax(semi, variable = first),
-                                          base_level = 4,
-                                          med_level = 5, med_threshold = 0.1,
-                                          max_level = 6, max_threshold = 0.6)
-    amr_callback = AMRCallback(semi, amr_controller,
-                               interval = 5,
-                               adapt_initial_condition = true,
-                               adapt_initial_condition_only_refine = true)
-
-    stepsize_callback = StepsizeCallback(cfl = 1.6)
-
-    callbacks = CallbackSet(summary_callback,
-                            analysis_callback, alive_callback,
-                            save_solution,
-                            amr_callback, stepsize_callback);=#
-
+    #------------------------------------------------------------------------
+    # Callback to plot on the run
+    #------------------------------------------------------------------------
+    dosetimes = inputs[:diagnostics_at_times]
+    idx_ref   = Ref{Int}(0)
+    function condition(u, t, integrator)
+        idx = findfirst(x -> x == t, dosetimes)
+        if idx !== nothing
+            idx_ref[] = idx
+            return true
+        else
+            return false
+        end
+    end
+    function affect!(integrator)
+        idx = idx_ref[]
+        write_output(NSD_2D(), integrator.u, integrator.t, idx,
+                     params.mesh,
+                     inputs[:output_dir], inputs,
+                     params.qp.qvars,
+                     inputs[:outformat];
+                     nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
+    end    
+    cb = DiscreteCallback(condition, affect!)  
+    #------------------------------------------------------------------------
+    # END Callback to plot on the run
+    #------------------------------------------------------------------------
     
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                           callback = cb, tstops = dosetimes,
                            save_everystep = false,
                            adaptive=inputs[:ode_adaptive_solver],
-                           saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
-
-    
-  #=  summary_callback = SummaryCallback()
-
-    =#
-
-
+                           saveat = range(inputs[:tinit], inputs[:tend],
+                                          length=inputs[:ndiagnostics_outputs]));
     
     println(" # Solving ODE  ................................ DONE")
     
