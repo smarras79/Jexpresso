@@ -27,7 +27,8 @@ Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dims1, nvars, bac
     qnm1  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻¹
     qnm2  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻²
     qnm3  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻³
-    qe    = KernelAbstractions.zeros(backend,  T, dims1) # qexact    
+    qe    = KernelAbstractions.zeros(backend,  T, dims1) # qexact 
+    press = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁺¹   
     zb    = KernelAbstractions.zeros(backend,  T, dims1) # zb #shallow water moving bathymetry 
     
     qvars = Array{Union{Nothing, String}}(nothing, nvars)
