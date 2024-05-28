@@ -6,8 +6,6 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
-using Metal
-using CUDA
 using KernelAbstractions
 using Revise
 using BenchmarkTools
@@ -51,8 +49,6 @@ include(joinpath( "kernel", "abstractTypes.jl"))
 include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
-
-include(joinpath( "kernel", "physics", "microphysics.jl"))
 
 include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 
