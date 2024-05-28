@@ -182,7 +182,7 @@ If you are interested in contributing, please get in touch:
 
 To install and run the code assume Julia 1.10.0
 
-## Setup (See [Apple Compilatio Instructions](#apple-compilation-instructions))
+## Setup 
 
 After cloning Jexpresso do the following:
 
@@ -207,7 +207,7 @@ pkg> instantiate
 pkg> precompile
 ```
 
-Notice that points 1. and 2. are for all, but 1.apple is REQUIRED for Apple and Apple users.
+Notice that points 1. and 2. are for all, but 1.apple is required only for Apple users.
 
 To run Jexpresso, do as follows:
 
