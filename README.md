@@ -193,6 +193,7 @@ After cloning Jexpresso do the following:
 ```
 
 If on Apple, add Metal to the dependencies and continue to point 2:
+1.apple
 ```
 julia> ]
 pkg> add Metal
@@ -200,12 +201,13 @@ pkg> add Metal
 
 2.
 ```
-julia> ]
 pkg> instantiate
 ```
 ```
 pkg> precompile
 ```
+
+Notice that points 1. and 2. are for all, but 1.apple is REQUIRED for Apple and Apple users.
 
 To run Jexpresso, do as follows:
 
