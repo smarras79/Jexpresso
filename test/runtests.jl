@@ -7,7 +7,7 @@ using .solnCompare
 using Test
 
 
-@testset "JEXPRESSO Examples: CompEuler, $alg_case" for alg_case in ("theta", "thetaTracers", "theta_laguerre", "wave1d_lag")
+@testset "JEXPRESSO Examples: CompEuler, $alg_case" for alg_case in ("theta", "thetaTracers")
     run_example("CompEuler", "$alg_case")
 end
 

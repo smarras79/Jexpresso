@@ -182,13 +182,32 @@ If you are interested in contributing, please get in touch:
 
 To install and run the code assume Julia 1.10.0
 
-## Setup with CPUs
+## Setup (See [Apple Compilatio Instructions](#apple-compilation-instructions))
 
+After cloning Jexpresso do the following:
+
+1.
 ```bash
 >> cd $JEXPRESSO_HOME
->> julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
+>> julia --project=.
 ```
-followed by the following:
+
+If on Apple, add Metal to the dependencies and continue to point 2:
+```
+julia> ]
+pkg> add Metal
+```
+
+2.
+```
+julia> ]
+pkg> instantiate
+```
+```
+pkg> precompile
+```
+
+To run Jexpresso, do as follows:
 
 Push problem name to ARGS
 You need to do this only when you run a new problem
