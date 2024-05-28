@@ -47,7 +47,7 @@ function parse_commandline()
 end
 
 #--------------------------------------------------------
-#Parse command line args:
+# Parse command line args:
 #--------------------------------------------------------
 parsed_args                = parse_commandline()
 parsed_equations           = string(parsed_args["eqs"])
@@ -80,7 +80,7 @@ include(user_bc_file)
 include(user_initialize_file)
 include(user_primitives_file)
 #--------------------------------------------------------
-#Read User Inputs:
+# Read User Inputs:
 #--------------------------------------------------------
 mod_inputs_print_welcome()
 inputs = Dict{}()
@@ -89,7 +89,7 @@ inputs = user_inputs()
 mod_inputs_user_inputs!(inputs)
 
 #--------------------------------------------------------
-#Create output directory if it doesn't exist:
+# Create output directory if it doesn't exist:
 #--------------------------------------------------------
 user_defined_output_dir = inputs[:output_dir]
 
@@ -103,19 +103,32 @@ if user_defined_output_dir == "none"
     inputs[:output_dir] = OUTPUT_DIR
 else
     OUTPUT_DIR = joinpath(user_defined_output_dir, parsed_equations, parsed_equations_case_name, outstring)
-    inputs[:output_dir] = OUTPUT_DIR
 end
 if !isdir(OUTPUT_DIR)
     mkpath(OUTPUT_DIR)
 end
 
 #--------------------------------------------------------
-#Save a copy of user_inputs.jl for the case being run 
+# Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
 if Sys.iswindows() == false
     run(`$cp $user_input_file $OUTPUT_DIR`)
 end
 
+#--------------------------------------------------------
+# use Metal (for apple) or CUDA (non apple) if we are on GPU
+#--------------------------------------------------------
+if cpu == false
+    if Sys.isapple()
+        using Metal
+    elseif Sys.islinux()
+        using CUDA
+    end
+end
+
 driver(inputs, # input parameters from src/user_input.jl
        OUTPUT_DIR,
        TFloat)
+
+# Export pprof profile and open interactive profiling web interface.
+#pprof()
