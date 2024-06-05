@@ -227,7 +227,7 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
           end
           if !(hlines == "empty")
               for i=1:size(hlines,1)
-                  hlines!(ax,hlines[i], color = :red, linstyle = :dash)
+                  hlines!(ax,hlines[i], color = :red, linestyle = :dash)
               end
           end
           

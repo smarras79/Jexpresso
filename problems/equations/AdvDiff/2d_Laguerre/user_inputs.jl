@@ -16,7 +16,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
-        :nop                 => 4,      # Polynomial order
+        :nop                 => 2,      # Polynomial order
         :nop_laguerre        => 30,     # Laguerre polynomial Order
         :xfac_laguerre       => 0.0,
         :yfac_laguerre       => 0.07,
@@ -25,7 +25,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1],
         :μ                    => [0.1], 
         #---------------------------------------------------------------------------
