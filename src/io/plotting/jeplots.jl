@@ -2,7 +2,6 @@
 using Dierckx
 using LaTeXStrings
 using ColorSchemes
-using CairoMakie
 using Makie
 #Makie.theme(:fonts)
 
@@ -28,7 +27,7 @@ using Makie
 function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
     
     npoin = length(q)
-    fig, ax, plt = CairoMakie.scatter(x[1:npoin], q[1:npoin];
+    fig, ax, plt = Makie.scatter(x[1:npoin], q[1:npoin];
                                       markersize = 10, markercolor="Blue",
                                       xlabel = "x", ylabel = "q(x)",
                                       fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = "u", xlabel = "x")
@@ -49,17 +48,17 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
  
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
-        #=fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
+        #=fig, ax, plt = Makie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
                                           markersize = 10, markercolor="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "x")
                                           )=#
         
         #ylims!(ax, -0.55, 0.55)
-        CairoMakie.activate!(type = "eps")
+        Makie.activate!(type = "eps")
         fig = Figure(size = (600,400),fontsize=22)
         ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
-        CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin];markersize = 10, markercolor="Blue")
+        Makie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin];markersize = 10, markercolor="Blue")
         vlines = inputs[:plot_vlines]
         hlines = inputs[:plot_hlines]
         axis = inputs[:plot_axis]
@@ -98,19 +97,19 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
     for ivar=1:1
         idx = (ivar - 1)*npoin
         #fig, ax, plt =
-        CairoMakie.activate!(type = "eps")
+        Makie.activate!(type = "eps")
         if !(p==[]) 
-          #=push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*mesh.npoin+mesh.npoin_original]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
+          #=push!(p,Makie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*mesh.npoin+mesh.npoin_original]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
                                           markersize = 10, markercolor=color,
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery")#,  axis = (; title = string(outvar[ivar]), xlabel = "x")
                                           ))=#
           ax = Axis(fig[1, 1], title="", xlabel="")
           hidedecorations!(ax)
-          push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, markercolor=color))
+          push!(p,Makie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, markercolor=color))
         else
           ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
-          push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, markercolor=color))
+          push!(p,Makie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, markercolor=color))
         end
         p[end].color = color
         ylims!(ax, -0.03, 0.03)
@@ -168,7 +167,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
     for ivar=1:nvar
 
         idx = (ivar - 1)*npoin
-        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], qout[idx+1:ivar*npoin];
+        fig, ax, plt = Makie.scatter(mesh.x[1:npoin], qout[idx+1:ivar*npoin];
                                           markersize = 10, markercolor="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "xx")
@@ -185,7 +184,7 @@ function plot_1d_grid(mesh::St_mesh)
     
     plt = plot() #Clear plot
     for i=1:mesh.npoin
-        display(CairoMakie.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin), markersizes=4, markercolor="Blue"))
+        display(Makie.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin), markersizes=4, markercolor="Blue"))
     end 
 end
 
