@@ -322,19 +322,6 @@ julia> include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-A second version of this tests generate images with the solutions at different times overlapped.
-
-This version is defined in [`problems/equations/AdvDiff/Wave_Train_Overlapping_Plot`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train_Overlapping_Plot) and by default output will be written to `output/AdvDiff/Wave_Train_Overlapping_Plot`. To run this version of the problem execute the following from the Julia command line:
-
-```bash
-julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train_Overlapping_Plot");
-julia> include("./src/Jexpresso.jl")
-```
-
-<img src="assets/Wave_Train_overlap.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
 Test 3: 2D advection-diffusion equation
 
 The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
