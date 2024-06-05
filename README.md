@@ -187,12 +187,13 @@ To install and run the code assume Julia 1.10.0
 After cloning Jexpresso do the following:
 
 1.
-```bash
+```bashx
 >> cd $JEXPRESSO_HOME
 >> julia --project=.
 ```
 
 If on Apple, add Metal to the dependencies and continue to point 2:
+
 1.apple
 ```
 julia> ]
@@ -375,10 +376,10 @@ julia> include("./src/Jexpresso.jl")
 
 Test 6: Hydrostatic linear mountain waves
 
-The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/equations/CompEuler/HSmount_Lag_working`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag_working) and by default output will be written to `output/CompEuler/HSmount_Lag_working`. To solve this problem run the following commands from the Julia command line:
 
 ```bash      
-julia> push!(empty!(ARGS), "CompEuler", "HSmount_Lag");
+julia> push!(empty!(ARGS), "CompEuler", "HSmount_Lag_working");
 julia> include("./src/Jexpresso.jl")
 ```
 
