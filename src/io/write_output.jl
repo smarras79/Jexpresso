@@ -3,8 +3,6 @@ using SnoopCompile
 using WriteVTK
 using HDF5
 
-#import SciMLBase
-
 include("./plotting/jeplots.jl")
 
 #----------------------------------------------------------------------------------------------------------------------------------------------
