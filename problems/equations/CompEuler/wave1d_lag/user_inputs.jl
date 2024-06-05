@@ -34,7 +34,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        :outformat         => "vtk", #choice: "png", "ascii" (default is ascii)
+        :outformat         => "png", #choice: "png", "ascii" (default is ascii)
         :loverwrite_output => true,
         :output_dir        => "./output",
         :plot_vlines       => [-2.5,2.5],

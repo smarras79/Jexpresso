@@ -21,10 +21,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         N    = 0.01#PhysConst.g/sqrt(PhysConst.cp*T0)
         N2   = N*N
     
-        for iel_g = 1:mesh.nelem
-            for j=1:mesh.ngl, i=1:mesh.ngl
-            
-                ip = mesh.connijk[iel_g,i,j]
+        for ip =1:mesh.npoin
                 y = mesh.y[ip]
                 θ    = θref*exp(N2*y/PhysConst.g)         
                 p    = p0*(1.0 + PhysConst.g2*(exp(-y*N2/PhysConst.g) - 1.0)/(PhysConst.cp*θref*N2))^PhysConst.cpoverR
@@ -51,7 +48,6 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 q.qe[ip,3] = ρref*v
                 q.qe[ip,4] = ρref*θ
                 q.qe[ip,end] = p
-            end
         end
 
     else
