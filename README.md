@@ -187,12 +187,13 @@ To install and run the code assume Julia 1.10.0
 After cloning Jexpresso do the following:
 
 1.
-```bash
+```bashx
 >> cd $JEXPRESSO_HOME
 >> julia --project=.
 ```
 
 If on Apple, add Metal to the dependencies and continue to point 2:
+
 1.apple
 ```
 julia> ]
