@@ -98,18 +98,68 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     
     #Auxiliary arrays for boundary conditions
     
-    bdy_edge_in_elem  =  KernelAbstractions.zeros(backend, TInt, 0)
-    poin_in_bdy_edge  =  KernelAbstractions.zeros(backend, TInt, 0, 0)
-    bdy_face_in_elem  =  KernelAbstractions.zeros(backend, TInt, 0)
-    poin_in_bdy_face  =  KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
-    edge_type     = Array{Union{Nothing, String}}(nothing, 1)
-    face_type     = Array{Union{Nothing, String}}(nothing, 1)
-    bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
-    bdy_face_type = Array{Union{Nothing, String}}(nothing, 1)
-    bdy_edge_type_id  =  KernelAbstractions.zeros(backend, TInt, 0)
+    bdy_edge_in_elem  = KernelAbstractions.zeros(backend, TInt, 0)
+    poin_in_bdy_edge  = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    bdy_face_in_elem  = KernelAbstractions.zeros(backend, TInt, 0)
+    poin_in_bdy_face  = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
+    edge_type         = Array{Union{Nothing, String}}(nothing, 1)
+    face_type         = Array{Union{Nothing, String}}(nothing, 1)
+    bdy_edge_type     = Array{Union{Nothing, String}}(nothing, 1)
+    bdy_face_type     = Array{Union{Nothing, String}}(nothing, 1)
+    bdy_edge_type_id  = KernelAbstractions.zeros(backend, TInt, 0)
+
+    meshijk = [];
     
     SD::AbstractSpaceDimensions
 end
+
+#
+# FD mesh:
+#
+
+Base.@kwdef mutable struct St_mesh_fd
+    x::Float64
+    y::Float64
+    #z::Float64
+    boundary::Bool  # true if the point is a boundary point, false otherwise
+    
+end
+
+
+function create_mesh_fd!(mesh::St_mesh, nx::Int, ny::Int, x_min::Float64, x_max::Float64, y_min::Float64, y_max::Float64)
+
+    #Ni, Nj, Nk = 6, 8, 11
+    #x = [i / Ni * cospi(3/2 * (j - 1) / (Nj - 1)) for i = 1:Ni, j = 1:Nj, k = 1:Nk]
+    #y = [i / Ni * sinpi(3/2 * (j - 1) / (Nj - 1)) for i = 1:Ni, j = 1:Nj, k = 1:Nk]
+    #z = [(k - 1) / Nk for i = 1:Ni, j = 1:Nj, k = 1:Nk]
+
+    
+    dx = (x_max - x_min) / (nx - 1)
+    dy = (y_max - y_min) / (ny - 1)
+
+    mesh_fd = Array{St_mesh_fd}(undef, nx, ny)
+    
+    for i in 1:nx
+        for j in 1:ny
+            x = x_min + (i-1) * dx
+            y = y_min + (j-1) * dy
+            #z = z_min + (k-1) * dz
+            is_boundary = (i == 1 || i == nx || j == 1 || j == ny)
+            mesh.mesh_fd[i, j] = St_mesh_fd(x, y, is_boundary)
+        end
+    end
+    
+    return mesh_fd
+end
+
+function create_mesh_fd(nx::Int, ny::Int, nz::Int, x_min::Float64, x_max::Float64, y_min::Float64, y_max::Float64, z_min::Float64, z_max::Float64)
+    nothing
+end
+
+
+#
+# ENDFD mesh:
+#
 
 function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 
@@ -118,9 +168,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     #
     # Read GMSH grid from file
     #
-    model         = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-    topology      = get_grid_topology(model)
-    mesh.nsd      = num_cell_dims(model)
+    model           = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+    topology        = get_grid_topology(model)
+    mesh.nsd        = num_cell_dims(model)
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
     
     POIN_flg = 0
@@ -220,25 +270,25 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.y = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.z = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     
-    mesh.conn_edge_el = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
-    mesh.conn_face_el = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
+    mesh.conn_edge_el     = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
+    mesh.conn_face_el     = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
     mesh.bdy_edge_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
-    mesh.poin_in_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
+    mesh.poin_in_edge     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
     mesh.poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
     
-    mesh.poin_in_face = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
-    mesh.edge_type     = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
-    mesh.bdy_edge_type                    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
-    mesh.bdy_edge_type_id = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
+    mesh.poin_in_face     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
+    mesh.edge_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
+    mesh.bdy_edge_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
+    mesh.bdy_edge_type_id = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy))  
     
     if mesh.nsd > 2
         mesh.poin_in_bdy_face = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nfaces_bdy), Int64(mesh.ngl), Int64(mesh.ngl))
-        mesh.face_type = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces))
-        mesh.bdy_face_type = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces_bdy))
+        mesh.face_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces))
+        mesh.bdy_face_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces_bdy))
         mesh.bdy_face_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces_bdy))
     end
-    mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
-    mesh.conn = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
+    mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
+    mesh.conn     = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
     
     #
     # Connectivity matrices
@@ -363,7 +413,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             end
         #end #f
     end
-
 
     #
     # Add high-order points to edges, faces, and elements (volumes)
@@ -638,9 +687,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 mesh.x_ho = zeros(1)
 mesh.y_ho = zeros(1)
 mesh.z_ho = zeros(1)
-#resize!(mesh.x_ho, 1)
-#resize!(mesh.y_ho, 1)
-#resize!(mesh.z_ho, 1)
 GC.gc()
 #
 # END Free memory of obsolete arrays
@@ -2090,7 +2136,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         @error(" USE GMSH to build a higher-dimensional grid!")
     end
     
-    println(" # BUILD LINEAR CARTESIAN GRID ............................")
+    println(" # BUILD 1D LINEAR CARTESIAN GRID ............................")
     
     mesh.npoin_linear = mesh.npx
     mesh.npoin        = mesh.npoin_linear #This will be updated for high order grids
@@ -2133,6 +2179,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     # Resize (using resize! from ElasticArrays) as needed
     resize!(mesh.x, (mesh.npoin))
     mesh.npoin_el = ngl
+
     #allocate mesh.conn and reshape it
     mesh.conn = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
     mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1, 1)
@@ -2182,7 +2229,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     end 
     #plot_1d_grid(mesh)
     resize!(mesh.y, (mesh.npoin))
-    println(" # BUILD LINEAR CARTESIAN GRID ............................ DONE")
+    println(" # BUILD 1D LINEAR CARTESIAN GRID ............................ DONE")
     
 end
 
@@ -2210,39 +2257,53 @@ function mod_mesh_mesh_driver(inputs::Dict)
         if (haskey(inputs, :nsd))
             
             if (inputs[:nsd]==1)
-                println(" # ... build 1D grid ")
-                mesh = St_mesh{TInt,TFloat, CPU()}(x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
-                                            npx  = TInt(inputs[:npx]),
-                                            xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
-                                            nop=TInt(inputs[:nop]),
-                                            connijk = KernelAbstractions.zeros(CPU(), TInt,  Int64(inputs[:nelx]), Int64(inputs[:nop]+1), 1, 1),
-                                            ngr=TInt(inputs[:nop_laguerre]+1),
-                                            SD=NSD_1D())
+                println(" # ... build 1D grid struct")
+                mesh = St_mesh{TInt,TFloat, CPU()}(x       = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
+                                                   npx     = TInt(inputs[:npx]),
+                                                   xmin    = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
+                                                   nop     = TInt(inputs[:nop]),
+                                                   connijk = KernelAbstractions.zeros(CPU(), TInt,  Int64(inputs[:nelx]), Int64(inputs[:nop]+1), 1, 1),
+                                                   ngr     = TInt(inputs[:nop_laguerre]+1),
+                                                   SD      = NSD_1D())
                 
             elseif (inputs[:nsd]==2)
-                println(" # ... build 2D grid ")
-                mesh = St_mesh{TInt,TFloat, CPU()}(x =  KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
-                                            z = zeros(TInt(inputs[:npz])),
-                                            npx  = TInt(inputs[:npx]),
-                                            npz  = TInt(inputs[:npz]), 
-                                            xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
-                                            zmin = TFloat(inputs[:zmin]), zmax = TFloat(inputs[:zmax]),
-                                            nop=TInt(inputs[:nop]),
-                                            SD=NSD_2D())
+                println(" # ... build 2D grid struct")
+
+                mesh = St_mesh{TInt,TFloat, CPU()}(x    = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
+                                                   z    = zeros(TInt(inputs[:npz])),
+                                                   npx  = TInt(inputs[:npx]),
+                                                   npz  = TInt(inputs[:npz]), 
+                                                   xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
+                                                   zmin = TFloat(inputs[:zmin]), zmax = TFloat(inputs[:zmax]),
+                                                   nop  = TInt(inputs[:nop]),
+                                                   meshijk = Array{St_mesh_fd}(undef, inputs[:npx], inputs[:npz]),
+                                                   SD   = NSD_2D())
+                @mystop("asas")
+                if (inputs[:AD]==FD())
+                    create_mesh_fd!(mesh,
+                                   TInt(inputs[:npx]),
+                                   TInt(inputs[:npx]),
+                                   TFloat(inputs[:xmin]), TFloat(inputs[:xmax]),
+                                   TFloat(inputs[:zmin]), TFloat(inputs[:zmax]))
+                end
                 
             elseif (inputs[:nsd]==3)
-                println(" # ... build 3D grid ")
+                println(" # ... build 3D grid struct")
+
                 mesh = St_mesh{TInt,TFloat, CPU()}(x = KernelAbstractions.zeros(CPU(),TFloat, Int64(inputs[:npx])),
-                                            y = zeros(TInt(inputs[:npy])),
-                                            z = zeros(TInt(inputs[:npz])),
-                                            npx  = TInt(inputs[:npx]),
-                                            npy  = TInt(inputs[:npy]),
-                                            npz  = TInt(inputs[:npz]), 
-                                            xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
-                                            ymin = TFloat(inputs[:ymin]), ymax = TFloat(inputs[:ymax]),
-                                            zmin = TFloat(inputs[:zmin]), zmax = TFloat(inputs[:zmax]),
-                                            nop=TInt(inputs[:nop]),
-                                            SD=NSD_3D())
+                                                   y = zeros(TInt(inputs[:npy])),
+                                                   z = zeros(TInt(inputs[:npz])),
+                                                   npx  = TInt(inputs[:npx]),
+                                                   npy  = TInt(inputs[:npy]),
+                                                   npz  = TInt(inputs[:npz]), 
+                                                   xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
+                                                   ymin = TFloat(inputs[:ymin]), ymax = TFloat(inputs[:ymax]),
+                                                   zmin = TFloat(inputs[:zmin]), zmax = TFloat(inputs[:zmax]),
+                                                   nop=TInt(inputs[:nop]),
+                                                   SD=NSD_3D())
+                if (inputs[:AD]==FD())
+                    @error( " INPUT ERROR: no FD grid constructor in 3D YET! Come back soon")
+                end
             else
                 @error( " INPUT ERROR: nsd must be an integer in [1, 2, 3] ")
             end
@@ -2255,11 +2316,12 @@ function mod_mesh_mesh_driver(inputs::Dict)
             println(" # ... build DEFAULT 1D grid")
             println(" # ...... DEFINE NSD in your input dictionary if you want a different grid!")
             mesh = St_mesh{TInt,TFloat, CPU()}(x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
-                                        npx  = Int64(inputs[:npx]),
-                                        xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
-                                        nop=Int64(inputs[:nop]),
-                                        ngr=Int64(inputs[:nop_laguerre]+1),
-                                        SD=NSD_1D())
+                                               npx  = Int64(inputs[:npx]),
+                                               xmin = TFloat(inputs[:xmin]),
+                                               xmax = TFloat(inputs[:xmax]),
+                                               nop=Int64(inputs[:nop]),
+                                               ngr=Int64(inputs[:nop_laguerre]+1),
+                                               SD=NSD_1D())
         end
         mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], CPU())
         

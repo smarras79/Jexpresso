@@ -332,7 +332,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
-    for iel=1:params.mesh.nelem
+    @inbounds for iel=1:params.mesh.nelem
         
         for i=1:params.mesh.ngl
             ip = connijk[iel,i,1]
@@ -365,7 +365,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
-    for iel = 1:params.mesh.nelem
+    @inbounds for iel = 1:params.mesh.nelem
 
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
@@ -405,7 +405,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
-    for iel = 1:params.mesh.nelem
+    @inbounds for iel = 1:params.mesh.nelem
 
         for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j,k]
@@ -471,7 +471,7 @@ end
 
 function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
     
-    for iel=1:params.mesh.nelem        
+    @inbounds for iel=1:params.mesh.nelem        
         
         for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j,k]
@@ -556,8 +556,6 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, S, Je, dξdx, dξdy, 
     end
 end
 
-
-#function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
 function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, H, S, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, rhs_el, iel, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
     for ieq=1:neqs
         for k=1:ngl
