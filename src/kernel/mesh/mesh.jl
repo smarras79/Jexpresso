@@ -107,8 +107,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     bdy_edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_face_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type_id  = KernelAbstractions.zeros(backend, TInt, 0)
-
-    meshijk = [];
     
     SD::AbstractSpaceDimensions
 end
@@ -116,44 +114,171 @@ end
 #
 # FD mesh:
 #
+function mod_mesh_create_mesh_fd!(mesh,
+                                  SD::AbstractSpaceDimensions,
+                                  npx::Int, npy::Int, npz::Int,
+                                  x_min::Float64, x_max::Float64,
+                                  y_min::Float64, y_max::Float64,
+                                  z_min::Float64, z_max::Float64,
+                                  backend)
 
-Base.@kwdef mutable struct St_mesh_fd
-    x::Float64
-    y::Float64
-    #z::Float64
-    boundary::Bool  # true if the point is a boundary point, false otherwise
+    #
+    # Mesh elements, nodes, faces, edges
+    #
+    if SD == NSD_2D()
+        mesh.npoin = npx*npy
+        mesh.nelem = (npx - 1)*(npy - 1)
+    elseif SD == NSD_3D()
+        mesh.npoin = npx*npy*npz
+        mesh.nelem = (npx - 1)*(npy - 1)*(npz - 1)
+    end
+    #mesh.nedges       = ... 
+    #mesh.nfaces       = ...
     
-end
-
-
-function create_mesh_fd!(mesh::St_mesh, nx::Int, ny::Int, x_min::Float64, x_max::Float64, y_min::Float64, y_max::Float64)
-
+    #mesh.nelem_bdy    = ...
+    #mesh.nelem_int    = mesh.nelem - mesh.nelem_bdy
+    #mesh.nfaces_bdy   = ...
+    #mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
+    #mesh.nedges_bdy   = ...
+    #mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
+    
+    #get_isboundary_face(topology,mesh.nsd-1)
+    
+    println(" # GMSH LINEAR GRID PROPERTIES")
+    println(" # N. points         : ", mesh.npoin)
+    #=println(" # N. edges          : ", mesh.nedges)
+    println(" # N. faces          : ", mesh.nfaces)    
+    println(" # N. internal elem  : ", mesh.nelem_int)
+    println(" # N. internal edges : ", mesh.nedges_int) 
+    println(" # N. internal faces : ", mesh.nfaces_int)    
+    println(" # N. boundary elem  : ", mesh.nelem_bdy)
+    println(" # N. boundary edges : ", mesh.nedges_bdy)
+    println(" # N. boundary faces : ", mesh.nfaces_bdy)=#
+    println(" # GMSH LINEAR GRID PROPERTIES ...................... END")
+        
+    #tot_edges_internal_nodes = mesh.nedges*(ngl-2)
+    #tot_faces_internal_nodes = mesh.nfaces*(ngl-2)*(ngl-2)
+    #tot_vol_internal_nodes   = mesh.nelem*(ngl-2)^(mesh.nsd)    
+    #el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
+    #el_faces_internal_nodes  = mesh.NFACES_EL*(ngl-2)*(ngl-2)
+    #el_vol_internal_nodes    = (ngl-2)^(mesh.nsd)
+    
     #Ni, Nj, Nk = 6, 8, 11
     #x = [i / Ni * cospi(3/2 * (j - 1) / (Nj - 1)) for i = 1:Ni, j = 1:Nj, k = 1:Nk]
     #y = [i / Ni * sinpi(3/2 * (j - 1) / (Nj - 1)) for i = 1:Ni, j = 1:Nj, k = 1:Nk]
     #z = [(k - 1) / Nk for i = 1:Ni, j = 1:Nj, k = 1:Nk]
 
-    
-    dx = (x_max - x_min) / (nx - 1)
-    dy = (y_max - y_min) / (ny - 1)
+    mesh.nop = 1 #force nop to 1 if finite difference are used
+    mesh.ngl = mesh.nop + 1
 
-    mesh_fd = Array{St_mesh_fd}(undef, nx, ny)
+    mesh.x = KernelAbstractions.zeros(backend, Float64, Int64(mesh.npoin))
+    mesh.y = KernelAbstractions.zeros(backend, Float64, Int64(mesh.npoin))
+    mesh.z = KernelAbstractions.zeros(backend, Float64, Int64(mesh.npoin))
+    mesh.connijk = KernelAbstractions.zeros(backend, Int64, mesh.nelem, 2, 2, 1)
+
+    if SD == NSD_2D()
+        dx = (x_max - x_min) / (npx - 1)
+        dy = (y_max - y_min) / (npy - 1)
+        
+        for j=1:npy
+            for i=1:npx
+                ip = i + (j-1)*npx
+                
+                x = x_min + (i-1) * dx
+                y = y_min + (j-1) * dy
+                
+                is_boundary = (i == 1 || i == npx || j == 1 || j == npy)
+                
+                mesh.x[ip] = x
+                mesh.y[ip] = y
+                #@printf(" %d %d %d - %f %f\n", ip, i, j, mesh.x[ip], mesh.y[ip])
+            end
+        end
+        
+        build_connectivity_cartesian!(mesh.connijk, npx, npy, mesh.nelem, backend)
+        
+    elseif SD == NSD_3D()
+        dx = (x_max - x_min) / (npx - 1)
+        dy = (y_max - y_min) / (npy - 1)
+        dz = (z_max - z_min) / (npz - 1)
+        
+        for i in 1:npx
+            for j in 1:npy
+                for k in 1:npz
+                    x = x_min + (i-1) * dx
+                    y = y_min + (j-1) * dy
+                    z = z_min + (k-1) * dz
+                    is_boundary = (i == 1 || i == npx || j == 1 || j == npy || k == 1 || k == npz)
+                    
+                    mesh.x[ip] = x
+                    mesh.y[ip] = y
+                    mesh.z[ip] = z
+                end
+            end
+        end
+        
+        build_connectivity_cartesian!(mesh.connijk, npx, npy, npz, mesh.nelem, backend)
+        
+    end
     
-    for i in 1:nx
-        for j in 1:ny
-            x = x_min + (i-1) * dx
-            y = y_min + (j-1) * dy
-            #z = z_min + (k-1) * dz
-            is_boundary = (i == 1 || i == nx || j == 1 || j == ny)
-            mesh.mesh_fd[i, j] = St_mesh_fd(x, y, is_boundary)
+end
+
+function build_connectivity_cartesian!(connijk, npx, npy, nelem, backend)
+    
+    
+    # Loop through each element (cell)
+    element_idx = 1
+    for j = 1:npy-1
+        for i = 1:npx-1
+            # Global node indices (1-indexed)
+            node1 = element_idx + (j - 1)    # Bottom-left node
+            node2 = node1 + 1                # Bottom-right node 
+            node3 = node2 + npx              # Top-right node
+            node4 = node3 - 1                # top-left node
+            
+            # Store node connections for the element
+            connijk[element_idx, :, :] = [node1 node4; node2 node3]
+
+            element_idx += 1
+        end
+    end
+
+    for iel=1:4
+         @printf(" %d %d %d %d\n", connijk[iel, 1, 1], connijk[iel, 2, 1] , connijk[iel, 2,2], connijk[iel, 1, 2] )
+    end
+    # 3 4
+    # 1 2
+    #
+#    7 8 9
+#    4 5 6
+#    1 2 3
+end
+
+
+function build_connectivity_cartesian!(connijk, npx, npy, npz, nelem, backend)
+    
+    # Loop through each element (cell)
+    element_idx = 1
+    for k = 1:npz-1
+        for j = 1:npy-1
+            for i = 1:npx-1
+                # Global node indices (1-indexed)
+                node1 = (k - 1) * npx * npy + (j - 1) * npx + i     # Back bottom-left node
+                node2 = node1 + 1                                   # Back bottom-right node
+                node3 = node1 + npx                                 # Back top-left node
+                node4 = node3 + 1                                   # Back top-right node
+                node5 = node1 + npx * npy                           # Front bottom-left node
+                node6 = node5 + 1                                   # Front bottom-right node
+                node7 = node5 + npx                                 # Front top-left node
+                node8 = node7 + 1                                   # Front top-right node
+
+                # Store node connections for the element (counterclockwise from the back)
+                conn[element_idx, :, :] = [node1 node2 node4 node3; node5 node6 node8 node7]
+                element_idx += 1
+            end
         end
     end
     
-    return mesh_fd
-end
-
-function create_mesh_fd(nx::Int, ny::Int, nz::Int, x_min::Float64, x_max::Float64, y_min::Float64, y_max::Float64, z_min::Float64, z_max::Float64)
-    nothing
 end
 
 
@@ -413,7 +538,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             end
         #end #f
     end
-
+ 
     #
     # Add high-order points to edges, faces, and elements (volumes)
     #
@@ -2235,15 +2360,16 @@ end
 
 
 function mod_mesh_mesh_driver(inputs::Dict)
+    
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
         
         println(" # Read gmsh grid and populate with high-order points ")
         
         # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
         mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
-                                    nop=TInt(inputs[:nop]),
-                                    ngr=TInt(inputs[:nop_laguerre]+1),
-                                    SD=NSD_1D())
+                                           nop=TInt(inputs[:nop]),
+                                           ngr=TInt(inputs[:nop_laguerre]+1),
+                                           SD=NSD_1D())
         
         # Read gmsh grid using the GridapGmsh reader
         mod_mesh_read_gmsh!(mesh, inputs)
@@ -2253,6 +2379,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
     else
         
         println(" # Build native grid")
+
         # Initialize mesh struct for native structured grid:
         if (haskey(inputs, :nsd))
             
@@ -2268,24 +2395,23 @@ function mod_mesh_mesh_driver(inputs::Dict)
                 
             elseif (inputs[:nsd]==2)
                 println(" # ... build 2D grid struct")
-
+                
                 mesh = St_mesh{TInt,TFloat, CPU()}(x    = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
-                                                   z    = zeros(TInt(inputs[:npz])),
+                                                   y    = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npy])),
                                                    npx  = TInt(inputs[:npx]),
-                                                   npz  = TInt(inputs[:npz]), 
+                                                   npy  = TInt(inputs[:npy]),
                                                    xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
-                                                   zmin = TFloat(inputs[:zmin]), zmax = TFloat(inputs[:zmax]),
+                                                   ymin = TFloat(inputs[:ymin]), ymax = TFloat(inputs[:ymax]),
                                                    nop  = TInt(inputs[:nop]),
-                                                   meshijk = Array{St_mesh_fd}(undef, inputs[:npx], inputs[:npz]),
                                                    SD   = NSD_2D())
-                @mystop("asas")
-                if (inputs[:AD]==FD())
-                    create_mesh_fd!(mesh,
-                                   TInt(inputs[:npx]),
-                                   TInt(inputs[:npx]),
-                                   TFloat(inputs[:xmin]), TFloat(inputs[:xmax]),
-                                   TFloat(inputs[:zmin]), TFloat(inputs[:zmax]))
-                end
+
+                mesh.nsd = 2
+                mesh.NNODES_EL  = 4
+                mesh.NEDGES_EL  = 4
+                mesh.NFACES_EL  = 1
+                mesh.EDGE_NODES = 2
+                mesh.FACE_NODES = 4
+                mesh.ngl = mesh.nop + 1
                 
             elseif (inputs[:nsd]==3)
                 println(" # ... build 3D grid struct")
@@ -2301,6 +2427,8 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                                    zmin = TFloat(inputs[:zmin]), zmax = TFloat(inputs[:zmax]),
                                                    nop=TInt(inputs[:nop]),
                                                    SD=NSD_3D())
+                mesh.nsd = 3
+                
                 if (inputs[:AD]==FD())
                     @error( " INPUT ERROR: no FD grid constructor in 3D YET! Come back soon")
                 end
@@ -2315,15 +2443,30 @@ function mod_mesh_mesh_driver(inputs::Dict)
             #
             println(" # ... build DEFAULT 1D grid")
             println(" # ...... DEFINE NSD in your input dictionary if you want a different grid!")
-            mesh = St_mesh{TInt,TFloat, CPU()}(x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
+            mesh = St_mesh{TInt,TFloat, CPU()}(x    = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
                                                npx  = Int64(inputs[:npx]),
                                                xmin = TFloat(inputs[:xmin]),
                                                xmax = TFloat(inputs[:xmax]),
-                                               nop=Int64(inputs[:nop]),
-                                               ngr=Int64(inputs[:nop_laguerre]+1),
-                                               SD=NSD_1D())
+                                               nop  = Int64(inputs[:nop]),
+                                               ngr  = Int64(inputs[:nop_laguerre]+1),
+                                               SD   = NSD_1D())
+            mesh.nsd = 1
         end
-        mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], CPU())
+           
+        if (inputs[:AD]==FD())
+            mod_mesh_create_mesh_fd!(mesh,
+                                     mesh.SD,
+                                     TInt(inputs[:npx]),
+                                     TInt(inputs[:npy]),
+                                     TInt(inputs[:npz]),
+                                     TFloat(inputs[:xmin]), TFloat(inputs[:xmax]),
+                                     TFloat(inputs[:ymin]), TFloat(inputs[:ymax]),
+                                     TFloat(inputs[:zmin]), TFloat(inputs[:zmax]),
+                                     CPU())
+            
+        else
+            mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], CPU())
+        end
         
         #Write structured grid to VTK
         #vtkfile = vtk_grid("mySTRUCTURED_GRID", mesh.x, mesh.y, mesh.z) # 3-D

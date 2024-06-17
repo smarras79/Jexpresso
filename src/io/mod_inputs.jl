@@ -14,9 +14,7 @@ function mod_inputs_user_inputs!(inputs)
     
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
-    #
-    mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
-    
+    #    
     if(!haskey(inputs, :backend))
         inputs[:backend] = CPU()
     end
@@ -311,21 +309,26 @@ function mod_inputs_user_inputs!(inputs)
 
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
-        
-        mod_inputs_check(inputs, :nsd,  Int8(1), "-")
-        mod_inputs_check(inputs, :nelx, "e")
+        mod_inputs_check(inputs, :nsd,  Int8(1), "e")
+        mod_inputs_check(inputs, :npx,  Int8(1), "e")
+        if (inputs[:nsd] == 2)
+            if (!haskey(inputs, :npy) && !haskey(inputs, :nely))
+                @error(" user_inputs: in 2D you need to set a value for either npy or nely.")
+            end
+            if (!haskey(inputs, :ymin) || !haskey(inputs, :ymax))
+                @error(" user_inputs: in 2D you need to set ymin and ymax.")
+            end
+            inputs[:zmin] = -1.0
+            inputs[:zmax] =  1.0
+            inputs[:npz]  = 1
+            inputs[:nelz] = 0
+            
+        end
         mod_inputs_check(inputs, :xmin, "e")
         mod_inputs_check(inputs, :xmax, "e")
-        mod_inputs_check(inputs, :nely,  Int8(2), "-")
-        mod_inputs_check(inputs, :ymin, Float64(-1.0), "-")
-        mod_inputs_check(inputs, :ymax, Float64(+1.0), "-")
-        mod_inputs_check(inputs, :nelz,  Int8(2), "-")
-        mod_inputs_check(inputs, :zmin, Float64(-1.0), "-")
-        mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
-        
+                
     else
         mod_inputs_check(inputs, :gmsh_filename, "e")
-        
         mod_inputs_check(inputs, :nsd,  Int8(3), "-")
         mod_inputs_check(inputs, :nelx,  Int8(2), "-")
         mod_inputs_check(inputs, :xmin, Float64(-1.0), "-")
@@ -384,18 +387,12 @@ function mod_inputs_user_inputs!(inputs)
     # values for the user's nelx,y,z
     if(haskey(inputs, :nelx))
         inputs[:npx] = inputs[:nelx] + 1
-    else
-        inputs[:npx] = UInt8(2)
     end
     if(haskey(inputs, :nely))
         inputs[:npy] = inputs[:nely] + 1
-    else
-        inputs[:npy] = UInt8(2)
     end
     if(haskey(inputs, :nelz))
         inputs[:npz] = inputs[:nelz] + 1
-    else
-        inputs[:npz] = UInt8(2)
     end
     
     if (inputs[:nsd] == 1)
@@ -498,6 +495,18 @@ function mod_inputs_user_inputs!(inputs)
     else
         if inputs[:AD] != ContGal() && inputs[:AD] != FD()
             @mystop(" :AD can only be either ContGal() or FD() at the moment.")
+        end
+    end
+
+    if(!haskey(inputs, :nop))
+        if (inputs[:AD] == FD())
+            inputs[:nop] = 1
+        else
+            inputs[:nop] = 4
+        end
+    else
+        if (inputs[:AD] == FD())
+            inputs[:nop] = 1
         end
     end
     

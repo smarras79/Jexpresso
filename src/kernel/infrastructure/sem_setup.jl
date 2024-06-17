@@ -183,6 +183,6 @@ function sem_setup(inputs::Dict)
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
-    
     return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
+    
 end

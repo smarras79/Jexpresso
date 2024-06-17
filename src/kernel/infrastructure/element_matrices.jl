@@ -866,8 +866,12 @@ function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, 
 end
 
 function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
-                        ldss_laplace=false, ldss_differentiation=false)
+                        ldss_laplace=false, ldss_differentiation=false, backend = CPU())
 
+    
+    lbuild_differentiation_matrix = false
+    lbuild_laplace_matrix = false
+    
     if typeof(SD) == NSD_1D
         Me = zeros(TFloat, 1, 1)
     elseif typeof(SD) == NSD_2D

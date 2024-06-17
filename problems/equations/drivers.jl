@@ -9,7 +9,7 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
-
+    
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     params, u =  params_setup(sem,
@@ -17,6 +17,7 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                               inputs,
                               OUTPUT_DIR,
                               TFloat)
+    
     if !(inputs[:llinsolve])   
         
         solution = time_loop!(inputs, params, u)
