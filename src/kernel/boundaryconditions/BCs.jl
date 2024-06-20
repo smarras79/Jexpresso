@@ -174,12 +174,10 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
     for iedge = 1:nedges_bdy 
-        iel  = bdy_edge_in_elem[iedge]
+        #iel  = bdy_edge_in_elem[iedge]
         
         if bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" && bdy_edge_type != "Laguerre"
-        #if mesh.bdy_edge_type[iedge] == "free_slip"
             
-            #tag = mesh.bdy_edge_type[iedge]
             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
                 nx_l = nx[iedge,k]
@@ -194,7 +192,6 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                 
                 for ieq =1:neqs
                     if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                        #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq] 
                         uaux[ip,ieq] = qbdy[ieq]
                         RHS[ip, ieq] = 0.0
                     end

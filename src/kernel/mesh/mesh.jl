@@ -76,8 +76,10 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     #low and high order connectivity tables
     cell_node_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(1))
-    cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))    
-    cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
+    #cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
+    cell_edge_ids = Array{TInt}(undef,  1, 2)
+    cell_face_ids = Array{TInt}(undef,  1, 2)
+    #cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
 
     connijk_lag = KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
     connijk =  KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
@@ -86,18 +88,16 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     conn::Array{TInt,2}  = KernelAbstractions.zeros(backend, TInt, 0, 0)
     conn_unique_edges    = Array{TInt}(undef,  1, 2)
-    conn_unique_edges1   = Array{Int64}(undef,  1, 2)
     conn_unique_faces    = Array{TInt}(undef,  1, 4)
     poin_in_edge         = Array{TInt}(undef, 0, 0)
     conn_edge_el         = Array{TInt}(undef, 0, 0, 0)
     poin_in_face         = Array{TInt}(undef, 0, 0, 0)
     conn_face_el         = Array{TInt}(undef, 0, 0, 0)
     face_in_elem         = Array{TInt}(undef, 0, 0, 0)
-
+    
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
     
     #Auxiliary arrays for boundary conditions
-    
     bdy_edge_in_elem  = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_edge  = KernelAbstractions.zeros(backend, TInt, 0, 0)
     bdy_face_in_elem  = KernelAbstractions.zeros(backend, TInt, 0)
@@ -116,6 +116,7 @@ end
 #
 function mod_mesh_create_mesh_fd!(mesh,
                                   SD::AbstractSpaceDimensions,
+                                  AD::AbstractDiscretization,
                                   npx::Int, npy::Int, npz::Int,
                                   x_min::Float64, x_max::Float64,
                                   y_min::Float64, y_max::Float64,
@@ -125,61 +126,92 @@ function mod_mesh_create_mesh_fd!(mesh,
     #
     # Mesh elements, nodes, faces, edges
     #
-    if SD == NSD_2D()
-        mesh.npoin = npx*npy
-        mesh.nelem = (npx - 1)*(npy - 1)
-    elseif SD == NSD_3D()
-        mesh.npoin = npx*npy*npz
-        mesh.nelem = (npx - 1)*(npy - 1)*(npz - 1)
-    end
-    #mesh.nedges       = ... 
-    #mesh.nfaces       = ...
-    
-    #mesh.nelem_bdy    = ...
-    #mesh.nelem_int    = mesh.nelem - mesh.nelem_bdy
-    #mesh.nfaces_bdy   = ...
-    #mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
-    #mesh.nedges_bdy   = ...
-    #mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
-    
-    #get_isboundary_face(topology,mesh.nsd-1)
-    
-    println(" # GMSH LINEAR GRID PROPERTIES")
-    println(" # N. points         : ", mesh.npoin)
-    #=println(" # N. edges          : ", mesh.nedges)
-    println(" # N. faces          : ", mesh.nfaces)    
-    println(" # N. internal elem  : ", mesh.nelem_int)
-    println(" # N. internal edges : ", mesh.nedges_int) 
-    println(" # N. internal faces : ", mesh.nfaces_int)    
-    println(" # N. boundary elem  : ", mesh.nelem_bdy)
-    println(" # N. boundary edges : ", mesh.nedges_bdy)
-    println(" # N. boundary faces : ", mesh.nfaces_bdy)=#
-    println(" # GMSH LINEAR GRID PROPERTIES ...................... END")
+    if mesh.nsd == 2
         
-    #tot_edges_internal_nodes = mesh.nedges*(ngl-2)
-    #tot_faces_internal_nodes = mesh.nfaces*(ngl-2)*(ngl-2)
-    #tot_vol_internal_nodes   = mesh.nelem*(ngl-2)^(mesh.nsd)    
-    #el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
-    #el_faces_internal_nodes  = mesh.NFACES_EL*(ngl-2)*(ngl-2)
-    #el_vol_internal_nodes    = (ngl-2)^(mesh.nsd)
+        if AD == FD()
+            mesh.nop = 1 #force nop to 1 if finite difference are used
+            mesh.ngl = mesh.nop + 1
+        end
+
+        mesh.nsd = 2
+        mesh.NNODES_EL  = 4
+        mesh.NEDGES_EL  = 4
+        mesh.NFACES_EL  = 1
+        mesh.EDGE_NODES = 2
+        mesh.FACE_NODES = 4
+        
+        mesh.npoin_linear = npx*npy
+        mesh.npoin        = mesh.npoin_linear
+        mesh.nelem        = (npx - 1)*(npy - 1)
+        mesh.nfaces       = mesh.nelem
+        mesh.nedges       = (npx - 1)*npy + (npy - 1)*npx
+        mesh.nedges_bdy   = (npx - 1)*2 + (npy - 1)*2
+        mesh.nelem_bdy    = mesh.nedges_bdy - 4
+        mesh.nfaces_bdy   = mesh.nelem_bdy
+        mesh.nelem_int    = mesh.nelem  - mesh.nelem_bdy
+        mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
+        mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
+
+        tot_edges_internal_nodes = mesh.nedges*(mesh.ngl-2)
+        tot_faces_internal_nodes = mesh.nfaces*(mesh.ngl-2)*(mesh.ngl-2)
+        tot_vol_internal_nodes   = mesh.nelem*(mesh.ngl-2)^(mesh.nsd)
+        
+        el_edges_internal_nodes = mesh.NEDGES_EL*(mesh.ngl-2)
+        el_faces_internal_nodes = mesh.NFACES_EL*(mesh.ngl-2)*(mesh.ngl-2)
+        el_vol_internal_nodes   = (mesh.ngl-2)^(mesh.nsd)
+        
+    elseif mesh.nsd == 3
+        @error(" mesh.jl L143: no 3D Cartesian grid being built YET! Come back next year or next decade!")
+    end
+    
+    println(" # NATIVE LINEAR GRID PROPERTIES")
+    println(" # N. points         : ", mesh.npoin)
+    println(" # N. edges          : ", mesh.nedges)
+    println(" # N. boundary edges : ", mesh.nedges_bdy)
+    println(" # N. internal edges : ", mesh.nedges_int)
+    if AD != FD()
+        println(" # N. faces          : ", mesh.nfaces)
+        println(" # N. internal elem  : ", mesh.nelem_int)    
+        println(" # N. internal faces : ", mesh.nfaces_int)
+        println(" # N. boundary elem  : ", mesh.nelem_bdy)
+        println(" # N. boundary faces : ", mesh.nfaces_bdy)
+    end
+    println(" # NATIVE LINEAR GRID PROPERTIES ...................... END")
     
     #Ni, Nj, Nk = 6, 8, 11
     #x = [i / Ni * cospi(3/2 * (j - 1) / (Nj - 1)) for i = 1:Ni, j = 1:Nj, k = 1:Nk]
     #y = [i / Ni * sinpi(3/2 * (j - 1) / (Nj - 1)) for i = 1:Ni, j = 1:Nj, k = 1:Nk]
     #z = [(k - 1) / Nk for i = 1:Ni, j = 1:Nj, k = 1:Nk]
-
-    mesh.nop = 1 #force nop to 1 if finite difference are used
-    mesh.ngl = mesh.nop + 1
-
-    mesh.x = KernelAbstractions.zeros(backend, Float64, Int64(mesh.npoin))
-    mesh.y = KernelAbstractions.zeros(backend, Float64, Int64(mesh.npoin))
-    mesh.z = KernelAbstractions.zeros(backend, Float64, Int64(mesh.npoin))
-    mesh.connijk = KernelAbstractions.zeros(backend, Int64, mesh.nelem, 2, 2, 1)
-
+    
+    mesh.x                = KernelAbstractions.zeros(backend, Float64, Int64(mesh.npoin))
+    mesh.y                = KernelAbstractions.zeros(backend, Float64, Int64(mesh.npoin))
+    mesh.z                = KernelAbstractions.zeros(backend, Float64, Int64(mesh.npoin))
+    mesh.conn             = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl^mesh.nsd))
+    mesh.connijk          = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), 1)
+    
+    mesh.conn_edge_el     = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
+    mesh.conn_face_el     = KernelAbstractions.zeros(backend, TInt, 4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
+    mesh.bdy_edge_in_elem = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy))  
+    mesh.poin_in_edge     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges),     Int64(mesh.ngl))
+    mesh.poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy), Int64(mesh.ngl))
+    mesh.poin_in_face     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
+    mesh.edge_type        = Array{Union{Nothing, String}}(nothing,  Int64(mesh.nedges))
+    mesh.bdy_edge_type    = Array{Union{Nothing, String}}(nothing,  Int64(mesh.nedges_bdy))
+    mesh.bdy_edge_type_id = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy))  
+    
+    mesh.conn_unique_edges = [zeros(Int, 2) for _ in 1:mesh.nedges]
+    mesh.cell_edge_ids     = [zeros(Int, mesh.NEDGES_EL) for _ in 1:mesh.nelem]
+    
+    #
+    # Unique edges 2D cartesian grid: OK
+    #        
+    boundary_points = []  # Initialize an empty array
+    is_boundary = []
+    
     if SD == NSD_2D()
         dx = (x_max - x_min) / (npx - 1)
         dy = (y_max - y_min) / (npy - 1)
-        
+
         for j=1:npy
             for i=1:npx
                 ip = i + (j-1)*npx
@@ -188,98 +220,263 @@ function mod_mesh_create_mesh_fd!(mesh,
                 y = y_min + (j-1) * dy
                 
                 is_boundary = (i == 1 || i == npx || j == 1 || j == npy)
-                
+                if is_boundary
+                    push!(boundary_points, "bdywall")  # Add the point index to the array
+                end
                 mesh.x[ip] = x
                 mesh.y[ip] = y
                 #@printf(" %d %d %d - %f %f\n", ip, i, j, mesh.x[ip], mesh.y[ip])
             end
         end
-        
-        build_connectivity_cartesian!(mesh.connijk, npx, npy, mesh.nelem, backend)
-        
-    elseif SD == NSD_3D()
-        dx = (x_max - x_min) / (npx - 1)
-        dy = (y_max - y_min) / (npy - 1)
-        dz = (z_max - z_min) / (npz - 1)
-        
-        for i in 1:npx
-            for j in 1:npy
-                for k in 1:npz
-                    x = x_min + (i-1) * dx
-                    y = y_min + (j-1) * dy
-                    z = z_min + (k-1) * dz
-                    is_boundary = (i == 1 || i == npx || j == 1 || j == npy || k == 1 || k == npz)
-                    
-                    mesh.x[ip] = x
-                    mesh.y[ip] = y
-                    mesh.z[ip] = z
+        build_connectivity_cartesian!(mesh.conn, mesh.connijk, npx, npy, mesh.nelem, mesh.ngl, backend)
+    end
+    nbdy_points = size(boundary_points)
+    
+    #
+    # Unique edges and bdy edges: 2D cartesian grid: OK
+    #
+    populate_conn_edge_el!(mesh, SD)
+    
+    iedge_g = 1
+    ibdy_edge = 1
+    for j = 1:npy
+        for i = 1:npx-1
+            ip1 = i   + (j-1)*npx
+            ip2 = ip1 + 1
+            mesh.poin_in_edge[iedge_g,1] = ip1
+            mesh.poin_in_edge[iedge_g,2] = ip2
+
+            mesh.conn_unique_edges[iedge_g][1] = ip1
+            mesh.conn_unique_edges[iedge_g][2] = ip2
+            
+            if j == 1 || j == npy
+                mesh.poin_in_bdy_edge[ibdy_edge, 1] = ip1
+                mesh.poin_in_bdy_edge[ibdy_edge, 2] = ip2
+                ibdy_edge = ibdy_edge + 1
+            end
+            
+            iedge_g = iedge_g + 1
+        end
+    end
+    
+    for j = 1:npy-1
+        for i = 1:npx
+            ip1 = i   + (j-1)*npx
+            ip2 = ip1 + npx
+            
+            mesh.poin_in_edge[iedge_g,1] = ip1
+            mesh.poin_in_edge[iedge_g,2] = ip2
+            
+            mesh.conn_unique_edges[iedge_g][1] = ip1
+            mesh.conn_unique_edges[iedge_g][2] = ip2
+            
+            if i == 1 || i == npx
+                mesh.poin_in_bdy_edge[ibdy_edge, 1] = ip1
+                mesh.poin_in_bdy_edge[ibdy_edge, 2] = ip2
+                ibdy_edge = ibdy_edge + 1
+            end
+            
+            iedge_g = iedge_g + 1
+        end
+    end
+    for ibdy_edge = 1:mesh.nedges_bdy
+        mesh.bdy_edge_type[ibdy_edge] = "bdywall"
+    end
+    
+    for iel=1:mesh.nelem
+        for iedge_el = 1:mesh.NEDGES_EL
+
+            #@printf(" %d %d %d %d\n", iel, iedge_el, mesh.conn_edge_el[1, iedge_el, iel], mesh.conn_edge_el[2, iedge_el, iel])
+            
+            for iedge_g = 1:mesh.nedges
+                
+                if ((mesh.conn_unique_edges[iedge_g][1] == mesh.conn_edge_el[1, iedge_el, iel] &&
+                    mesh.conn_unique_edges[iedge_g][2] == mesh.conn_edge_el[2, iedge_el, iel]) ||
+                    (mesh.conn_unique_edges[iedge_g][1] == mesh.conn_edge_el[2, iedge_el, iel] &&
+                    mesh.conn_unique_edges[iedge_g][2] == mesh.conn_edge_el[1, iedge_el, iel]))
+                    mesh.cell_edge_ids[iel][iedge_el] = iedge_g
+                    #@printf(" %d %d %d\n", iel, iedge_el, mesh.cell_edge_ids[iel][iedge_el])
                 end
             end
+
         end
-        
-        build_connectivity_cartesian!(mesh.connijk, npx, npy, npz, mesh.nelem, backend)
-        
     end
+    
+    #HO WARNING: THI IS REPEATED CODE --> PUT POPULATING H.O. AS A COMMON
+    # OPERATION AFTER BOTH READING OR BUILD THE NATIVE GRID
+    #
+    # Add high-order points to edges, faces, and elements (volumes)
+    #
+    # initialize LGL struct and buyild Gauss-Lobatto-xxx points
+    lgl = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, backend)
+
+    println(" # POPULATE GRID with SPECTRAL NODES ............................ ")
+    #
+    # Edges
+    #
+    populate_conn_edge_el!(mesh, mesh.SD)
+    add_high_order_nodes_edges!(mesh, lgl, mesh.SD, backend)
+
+    #
+    # Faces
+    #
+    populate_conn_face_el!(mesh, mesh.SD)
+    add_high_order_nodes_faces!(mesh, lgl, mesh.SD)
+
+    #
+    # Volume
+    #
+    # NOTICE: in 2D we consider only edges. faces are the elements.
+    #         
+    add_high_order_nodes_volumes!(mesh, lgl, mesh.SD)
+    
+    for ip = mesh.npoin_linear+1:mesh.npoin
+        mesh.x[ip] = mesh.x_ho[ip]
+        mesh.y[ip] = mesh.y_ho[ip]
+        mesh.z[ip] = 0.0
+        if (mesh.nsd > 2)
+            mesh.z[ip] = mesh.z_ho[ip]
+        end
+    end
+    
+    #end HO
     
 end
 
-function build_connectivity_cartesian!(connijk, npx, npy, nelem, backend)
-    
-    
+function build_connectivity_cartesian!(conn, connijk, npx, npy, nelem, ngl, backend)
+    #
+    # 2D
+    #
     # Loop through each element (cell)
     element_idx = 1
     for j = 1:npy-1
         for i = 1:npx-1
             # Global node indices (1-indexed)
-            node1 = element_idx + (j - 1)    # Bottom-left node
-            node2 = node1 + 1                # Bottom-right node 
-            node3 = node2 + npx              # Top-right node
-            node4 = node3 - 1                # top-left node
+            node1 = element_idx + (j - 1)    # Bottom-left
+            node2 = node1 + 1                # Bottom-right
+            node3 = node2 + npx              # Top-right
+            node4 = node3 - 1                # top-left
             
             # Store node connections for the element
-            connijk[element_idx, :, :] = [node1 node4; node2 node3]
-
+            conn[element_idx, 1:4]         = [node1 node2 node3 node4]
+            
+            connijk[element_idx,   1,   1] = node1
+            connijk[element_idx, ngl,   1] = node2
+            connijk[element_idx, ngl, ngl] = node3
+            connijk[element_idx,   1, ngl] = node4
+            
             element_idx += 1
         end
     end
+end
 
-    for iel=1:4
-         @printf(" %d %d %d %d\n", connijk[iel, 1, 1], connijk[iel, 2, 1] , connijk[iel, 2,2], connijk[iel, 1, 2] )
-    end
-    # 3 4
-    # 1 2
+function build_connectivity_cartesian!(conn, connijk, npx, npy, npz, nelem, ngl, backend)
     #
-#    7 8 9
-#    4 5 6
-#    1 2 3
+    # 3D
+    #
+    @error(" 3D FD grid connectivity not built yet. mesh.jl")
 end
 
 
-function build_connectivity_cartesian!(connijk, npx, npy, npz, nelem, backend)
-    
-    # Loop through each element (cell)
-    element_idx = 1
-    for k = 1:npz-1
-        for j = 1:npy-1
-            for i = 1:npx-1
-                # Global node indices (1-indexed)
-                node1 = (k - 1) * npx * npy + (j - 1) * npx + i     # Back bottom-left node
-                node2 = node1 + 1                                   # Back bottom-right node
-                node3 = node1 + npx                                 # Back top-left node
-                node4 = node3 + 1                                   # Back top-right node
-                node5 = node1 + npx * npy                           # Front bottom-left node
-                node6 = node5 + 1                                   # Front bottom-right node
-                node7 = node5 + npx                                 # Front top-left node
-                node8 = node7 + 1                                   # Front top-right node
+function find_cartesian_index(ip::Int, npx::Int, x::Vector{Float64}, y::Vector{Float64})
+    # Check if ip is valid
+    if ip < 1 || ip > length(x)
+        error("Invalid point index: ip must be between 1 and $(length(x))")
+    end
 
-                # Store node connections for the element (counterclockwise from the back)
-                conn[element_idx, :, :] = [node1 node2 node4 node3; node5 node6 node8 node7]
-                element_idx += 1
+    # Find the row (j) using integer division
+    j = (ip - 1) ÷ npx + 1 
+
+    # Find the column (i) using the remainder after division
+    i = (ip - 1) % npx + 1
+
+    return (i, j)  # Return the indices as a tuple
+end
+
+function find_cartesian_indices(ip, x, y, conn)
+    # 1. Find Elements Connected to Node ip
+    connected_elements = findall(in(ip), conn)
+    
+    # 2. Get Coordinates of Corner Nodes for a Connected Element
+    elem_idx = connected_elements[1]  # Choose the first connected element
+    corner_nodes = conn[elem_idx, :, :] 
+    corner_coords = [(x[node], y[node]) for node in corner_nodes]
+    
+    # 3. Determine i, j based on Relative Position (with NaN check)
+    min_x, max_x = extrema(first.(corner_coords))
+    min_y, max_y = extrema(last.(corner_coords))
+    
+    # Check for repeated coordinates
+    # Adjust slightly to ensure unique values
+    unique_x = sort(unique(x .+ 1e-6 .* (1:length(x)))) 
+    unique_y = sort(unique(y .+ 1e-6 .* (1:length(y))))
+
+    # Calculate num_x and num_y correctly
+    num_x = length(unique_x) - 1  
+    num_y = length(unique_y) - 1
+
+
+    # Find the index of x[ip] and y[ip] in the sorted arrays of unique coordinates
+    i_index = findfirst(==(x[ip]), unique_x)
+    j_index = findfirst(==(y[ip]), unique_y)
+
+    # Correct for edge cases
+    if i_index == 1 
+        i = 1
+    elseif i_index == length(unique_x) 
+        i = num_x + 1
+    else
+        i = i_index
+    end
+
+    if j_index == 1
+        j = 1
+    elseif j_index == length(unique_y)
+        j = num_y + 1
+    else
+        j = j_index
+    end
+ @info i, j
+    return i, j
+end
+
+
+##
+# Assuming npx, npy, x, y, conn are defined
+function find_cartesian_indices(ip, conn, npoin, npx)
+    # Initialize arrays to store the Cartesian indices
+    i_indices = zeros(Int, npoin)
+    j_indices = zeros(Int, npoin)
+
+    # Find the Cartesian indices for each point
+    for elem in 1:size(conn, 1)
+        # Extract the connectivity for the current element
+        for ni in 1:2
+            for nj in 1:2
+                ip = conn[elem, ni, nj]
+                if ip > 0
+                    # Determine the relative position in the grid
+                    i_indices[ip] = ni + (elem - 1) % npx
+                    j_indices[ip] = nj + div(elem - 1, npx)
+                end
+        
             end
         end
     end
+
+    #for ip = 1:npoin
+    #    @printf(" %d -> (%d %d )\n", ip, i_indices[ip], j_indices[ip])
+    #end
     
 end
+
+# Function to get the (i, j) index for a given point ip
+function get_cartesian_index(ip)
+    return i_indices[ip], j_indices[ip]
+end
+
+##
+
 
 
 #
@@ -400,7 +597,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.bdy_edge_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
     mesh.poin_in_edge     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
     mesh.poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
-    
     mesh.poin_in_face     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
     mesh.edge_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
     mesh.bdy_edge_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
@@ -515,18 +711,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             for kk = 1:mesh.nelem)
         
         #
-        #Use NodeNumbering.jl
-        #
-        #adjacency = create_adjacency_graph(elements, element_types)
-        #degrees = node_degrees(adjacency)
-        #neworder = RCM(adjacency, degrees, tot_linear_poin, tot_linear_poin)
-        #finalorder = renumbering(neworder)
-        #RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
-        #newmatrix = adjacency_visualization(RCM_adjacency)
-        #display(UnicodePlots.heatmap(newmatrix))
-        
-        
-        #
         # Rewrite coordinates in RCM order:
         #
         #open("./COORDS_LO.dat", "w") do f
@@ -584,12 +768,35 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     end
     
     #----------------------------------------------------------------------
+    # Extract cartesian indeces i,j,k from ip
+    #----------------------------------------------------------------------
+    if inputs[:AD] == FD()
+
+        if mesh.nsd == 2
+            npx = TInt(inputs[:npx])
+            npy = TInt(inputs[:npy])
+            
+            for ip=1:mesh.npoin
+                #i, j = find_cartesian_index(ip, npx, mesh.x, mesh.y)
+                #i, j = find_cartesian_indices(ip, mesh.x, mesh.y, mesh.connijk)
+                find_cartesian_indices(ip, mesh.connijk, mesh.npoin, npx)
+                #@printf(" %d -> (%d %d ) %f %f\n", ip, i, j, mesh.x[ip], mesh.y[ip])
+            end
+            
+        elseif mesh.nsd == 3
+            @error( " mesh.jl: NO 3D CARTESIAN IMPLEMENTED YET")           
+        end
+    end
+    
+    
+    #----------------------------------------------------------------------
     # Extract boundary edges and faces nodes:
     #----------------------------------------------------------------------
     #
     # Bdy edges
     #
     if mesh.nsd == 2
+        
         isboundary_edge = compute_isboundary_face(topology, EDGE_flg)
         #
         # Get labels contained in the current GMSH grid:
@@ -853,15 +1060,20 @@ function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_2D)
         #
         # CGNS numbering
         #
-        ip1 = mesh.cell_node_ids[iel][4]
-        ip2 = mesh.cell_node_ids[iel][3]
-        ip3 = mesh.cell_node_ids[iel][1]
-        ip4 = mesh.cell_node_ids[iel][2]
+        #ip1 = mesh.cell_node_ids[iel][4]
+        #ip2 = mesh.cell_node_ids[iel][3]
+        #ip3 = mesh.cell_node_ids[iel][1]
+        #ip4 = mesh.cell_node_ids[iel][2]
+
+        ip1 = mesh.connijk[iel, mesh.ngl, 1]
+        ip2 = mesh.connijk[iel, mesh.ngl, mesh.ngl]
+        ip3 = mesh.connijk[iel, 1, mesh.ngl]
+        ip4 = mesh.connijk[iel, 1, 1]
         
-	    # Edges bottom face:
-	    iedg_el = 1
+	# Edges bottom face:
+	iedg_el = 1
         mesh.conn_edge_el[1, iedg_el, iel] = ip1
-	    mesh.conn_edge_el[2, iedg_el, iel] = ip2
+	mesh.conn_edge_el[2, iedg_el, iel] = ip2
         iedg_el = 2
         mesh.conn_edge_el[1, iedg_el, iel] = ip2
         mesh.conn_edge_el[2, iedg_el, iel] = ip3
@@ -872,12 +1084,10 @@ function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_2D)
         mesh.conn_edge_el[1, iedg_el, iel] = ip4
         mesh.conn_edge_el[2, iedg_el, iel] = ip1
     end
-    
+
 end #populate_edge_el!
 
 function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_3D)
-
-    mesh.conn_unique_edges1 = Array{Int64}(undef, mesh.nedges, 2)
     
     cache_edge_ids = array_cache(mesh.cell_edge_ids) # allocation here
     for iel = 1:mesh.nelem
@@ -905,10 +1115,16 @@ function populate_conn_face_el!(mesh::St_mesh, SD::NSD_2D)
         #
         # CGNS numbering
         #
-        ip1 = mesh.cell_node_ids[iel][4]
-        ip2 = mesh.cell_node_ids[iel][3]
-        ip3 = mesh.cell_node_ids[iel][1]
-        ip4 = mesh.cell_node_ids[iel][2]
+        #ip1 = mesh.cell_node_ids[iel][4]
+        #ip2 = mesh.cell_node_ids[iel][3]
+        #ip3 = mesh.cell_node_ids[iel][1]
+        #ip4 = mesh.cell_node_ids[iel][2]
+        
+        ip1 = mesh.connijk[iel, mesh.ngl, 1]
+        ip2 = mesh.connijk[iel, mesh.ngl, mesh.ngl]
+        ip3 = mesh.connijk[iel, 1, mesh.ngl]
+        ip4 = mesh.connijk[iel, 1, 1]
+#        @printf("XX %d %d %d %d\n", ip1, ip2, ip3, ip4)
         
         #
         # Local faces node connectivity:
@@ -1092,12 +1308,12 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend)
                 ξ = lgl.ξ[l];
                 
                 mesh.x_ho[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
-	            mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
+	        mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
                 
                 mesh.poin_in_edge[iedge_g, l] = ip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-    #            @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
+                #@printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                 ip = ip + 1
             end
         end
@@ -1244,8 +1460,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend)
             #
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
-            #ip1 = mesh.conn_edge_el[1, iedge_el, iel]
-            #ip2 = mesh.conn_edge_el[2, iedge_el, iel]
+            
             mesh.poin_in_edge[iedge_g,        1] = ip1
             mesh.poin_in_edge[iedge_g, mesh.ngl] = ip2
             
@@ -1557,10 +1772,10 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
         for iface_g = 1:mesh.nelem #NOTICE: in 2D the faces are the elements themselves
             iel = iface_g
             #GGNS numbering
-            ip1 = mesh.cell_node_ids[iel][1]
-            ip2 = mesh.cell_node_ids[iel][2]
-            ip3 = mesh.cell_node_ids[iel][4]
-            ip4 = mesh.cell_node_ids[iel][3]
+            ip3 = mesh.connijk[iel, mesh.ngl, 1]
+            ip4 = mesh.connijk[iel, mesh.ngl, mesh.ngl]
+            ip1 = mesh.connijk[iel, 1, mesh.ngl]
+            ip2 = mesh.connijk[iel, 1, 1]
 
             mesh.poin_in_face[iface_g, 1, 1]     = ip1
             mesh.poin_in_face[iface_g, ngl, 1]   = ip2
@@ -1589,18 +1804,14 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
 		                      + y4*(1 - ξ)*(1 + ζ)*0.25)
 
                     mesh.poin_in_face[iface_g, l, m] = ip
-                    #NEW ORDERING
                     mesh.connijk[iel, m, ngl-l+1] = ip
-                    #OLD ORDERING
-                    #mesh.connijk[iel, m, l] = ip
-      #              @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                     
 	            ip = ip + 1
                 end
             end
         end
     #end #do f
-
+    
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
     #
@@ -2257,104 +2468,120 @@ end
 
 function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
 
-    if (mesh.nsd > 1)
-        @error(" USE GMSH to build a higher-dimensional grid!")
-    end
-    
-    println(" # BUILD 1D LINEAR CARTESIAN GRID ............................")
-    
-    mesh.npoin_linear = mesh.npx
-    mesh.npoin        = mesh.npoin_linear #This will be updated for high order grids
-    mesh.nelem        = mesh.npx - 1
-    
-    Δx::TFloat=0.0
-    resize!(mesh.Δx, mesh.nelem)
-    
-    Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
-    mesh.npoin = mesh.npx
+    #if (mesh.nsd > 1)
+    #    @error(" USE GMSH to build a higher-dimensional grid!")
+    #end
 
-    mesh.x[1] = mesh.xmin
-    for i = 2:mesh.npx
-        mesh.x[i] = mesh.x[i-1] + Δx
-        mesh.Δx[i-1] = Δx #Constant for the sake of simplicity in 1D problems. This may change later
-    end
-    mesh.NNODES_EL  = 2
-    
-    println(" # 1D NATIVE LINEAR GRID PROPERTIES")
-    println(" # N. elements       : ", mesh.nelem)
-    println(" # N. points         : ", mesh.npoin_linear)
-    println(" # 1D NATIVE LINEAR GRID PROPERTIES ...................... END")
-    
-    ngl                     = mesh.nop + 1
-    tot_linear_poin         = mesh.npoin_linear    
-    tot_vol_internal_nodes  = mesh.nelem*(ngl-2)  
-    el_vol_internal_nodes   = (ngl-2)
-    
-    #Update number of grid points from linear count to total high-order points
-    mesh.npoin = tot_linear_poin + tot_vol_internal_nodes
-    
-    if (mesh.nop > 1)
-        println(" # 1D NATIVE HIGH-ORDER GRID PROPERTIES")
-        println(" # N. volumes internal points : ", tot_vol_internal_nodes)
-        println(" # N. total high order points : ", mesh.npoin)
-        println(" # 1D NATIVE HIGH-ORDER GRID PROPERTIES ...................... END")
-    end
-    
-    
-    # Resize (using resize! from ElasticArrays) as needed
-    resize!(mesh.x, (mesh.npoin))
-    mesh.npoin_el = ngl
+    if (mesh.nsd == 1)
+        println(" # BUILD 1D LINEAR CARTESIAN GRID ............................")
+        
+        mesh.npoin_linear = mesh.npx
+        mesh.npoin        = mesh.npoin_linear #This will be updated for high order grids
+        mesh.nelem        = mesh.npx - 1
+        
+        Δx::TFloat=0.0
+        resize!(mesh.Δx, mesh.nelem)
+        
+        Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
+        mesh.npoin = mesh.npx
 
-    #allocate mesh.conn and reshape it
-    mesh.conn = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
-    mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1, 1)
-    for iel = 1:mesh.nelem
-        mesh.conn[iel, 1] = iel
-        mesh.conn[iel, 2] = iel + 1
+        mesh.x[1] = mesh.xmin
+        for i = 2:mesh.npx
+            mesh.x[i] = mesh.x[i-1] + Δx
+            mesh.Δx[i-1] = Δx #Constant for the sake of simplicity in 1D problems. This may change later
+        end
+        mesh.NNODES_EL  = 2
+        
+        println(" # 1D NATIVE LINEAR GRID PROPERTIES")
+        println(" # N. elements       : ", mesh.nelem)
+        println(" # N. points         : ", mesh.npoin_linear)
+        println(" # 1D NATIVE LINEAR GRID PROPERTIES ...................... END")
+        
+        ngl                     = mesh.nop + 1
+        tot_linear_poin         = mesh.npoin_linear    
+        tot_vol_internal_nodes  = mesh.nelem*(ngl-2)  
+        el_vol_internal_nodes   = (ngl-2)
+        
+        #Update number of grid points from linear count to total high-order points
+        mesh.npoin = tot_linear_poin + tot_vol_internal_nodes
+        
+        if (mesh.nop > 1)
+            println(" # 1D NATIVE HIGH-ORDER GRID PROPERTIES")
+            println(" # N. volumes internal points : ", tot_vol_internal_nodes)
+            println(" # N. total high order points : ", mesh.npoin)
+            println(" # 1D NATIVE HIGH-ORDER GRID PROPERTIES ...................... END")
+        end
+        
+        
+        # Resize (using resize! from ElasticArrays) as needed
+        resize!(mesh.x, (mesh.npoin))
+        mesh.npoin_el = ngl
 
-        mesh.connijk[iel, 1] = iel
-        mesh.connijk[iel, mesh.ngl] = iel + 1
-    end
-    
-    #Add high-order nodes
-    add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes, backend)
+        #allocate mesh.conn and reshape it
+        mesh.conn    = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
+        mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1, 1)
+        for iel = 1:mesh.nelem
+            mesh.conn[iel, 1] = iel
+            mesh.conn[iel, 2] = iel + 1
 
-    mesh.nelem_semi_inf = 0
-    if (inputs[:llaguerre_1d_right]) mesh.nelem_semi_inf +=1 end 
-    if (inputs[:llaguerre_1d_left]) mesh.nelem_semi_inf +=1 end
-    if (mesh.nelem_semi_inf == 0) mesh.nelem_semi_inf = 1 end  
-    mesh.connijk_lag = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem_semi_inf), Int64(mesh.ngr), 1, 1)
-    mesh.npoin_original = mesh.npoin
-    if (inputs[:llaguerre_1d_right])
-        x = KernelAbstractions.zeros(backend, TFloat, mesh.npoin+mesh.ngr-1)      
-        x[1:mesh.npoin] .= mesh.x[1:mesh.npoin] 
-        gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend)
-        mesh.connijk_lag[1,1,1] = mesh.npoin_linear 
-        for i=2:mesh.ngr
-            ip = mesh.npoin+i-1
-            mesh.connijk_lag[1,i,1] = ip
-            x[ip] = mesh.xmax + inputs[:yfac_laguerre]*gr.ξ[i]
-        end    
-        mesh.npoin = mesh.npoin + mesh.ngr-1
-        mesh.x = x
-    end
-    if (inputs[:llaguerre_1d_left])
-        e = min(2,mesh.nelem_semi_inf)
-        x = zeros(Float64,mesh.npoin+mesh.ngr-1)
-        x[1:mesh.npoin] .= mesh.x[1:mesh.npoin]
-        gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend)
-        mesh.connijk_lag[e,1,1] = 1
+            mesh.connijk[iel, 1] = iel
+            mesh.connijk[iel, mesh.ngl] = iel + 1
+        end
+        
+        #Add high-order nodes
+        add_high_order_nodes_1D_native_mesh!(mesh, interpolation_nodes, backend)
+
+        mesh.nelem_semi_inf = 0
+        if (inputs[:llaguerre_1d_right]) mesh.nelem_semi_inf +=1 end 
+        if (inputs[:llaguerre_1d_left]) mesh.nelem_semi_inf +=1 end
+        if (mesh.nelem_semi_inf == 0) mesh.nelem_semi_inf = 1 end  
+        mesh.connijk_lag = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem_semi_inf), Int64(mesh.ngr), 1, 1)
+        mesh.npoin_original = mesh.npoin
+        if (inputs[:llaguerre_1d_right])
+            x = KernelAbstractions.zeros(backend, TFloat, mesh.npoin+mesh.ngr-1)      
+            x[1:mesh.npoin] .= mesh.x[1:mesh.npoin] 
+            gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend)
+            mesh.connijk_lag[1,1,1] = mesh.npoin_linear 
+            for i=2:mesh.ngr
+                ip = mesh.npoin+i-1
+                mesh.connijk_lag[1,i,1] = ip
+                x[ip] = mesh.xmax + inputs[:yfac_laguerre]*gr.ξ[i]
+            end    
+            mesh.npoin = mesh.npoin + mesh.ngr-1
+            mesh.x = x
+        end
+        if (inputs[:llaguerre_1d_left])
+            e = min(2,mesh.nelem_semi_inf)
+            x = zeros(Float64,mesh.npoin+mesh.ngr-1)
+            x[1:mesh.npoin] .= mesh.x[1:mesh.npoin]
+            gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend)
+            mesh.connijk_lag[e,1,1] = 1
         for i=2:mesh.ngr
             ip = mesh.npoin+i-1
             mesh.connijk_lag[e,i,1] = ip
             x[ip] = mesh.xmin - inputs[:yfac_laguerre]*gr.ξ[i]
         end
-        mesh.npoin = mesh.npoin + mesh.ngr-1
-        mesh.x = x
-    end 
-    #plot_1d_grid(mesh)
-    resize!(mesh.y, (mesh.npoin))
-    println(" # BUILD 1D LINEAR CARTESIAN GRID ............................ DONE")
+            mesh.npoin = mesh.npoin + mesh.ngr-1
+            mesh.x = x
+        end 
+        #plot_1d_grid(mesh)
+        resize!(mesh.y, (mesh.npoin))
+        println(" # BUILD 1D LINEAR CARTESIAN GRID ............................ DONE")
+
+
+    else
+        mod_mesh_create_mesh_fd!(mesh,
+                                 mesh.SD,
+                                 inputs[:AD],
+                                 TInt(inputs[:npx]),
+                                 TInt(inputs[:npy]),
+                                 TInt(inputs[:npz]),
+                                 TFloat(inputs[:xmin]), TFloat(inputs[:xmax]),
+                                 TFloat(inputs[:ymin]), TFloat(inputs[:ymax]),
+                                 TFloat(inputs[:zmin]), TFloat(inputs[:zmax]),
+                                 CPU())
+        
+    end
     
 end
 
@@ -2453,7 +2680,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
             mesh.nsd = 1
         end
            
-        if (inputs[:AD]==FD())
+        #=if (inputs[:AD]==FD())
             mod_mesh_create_mesh_fd!(mesh,
                                      mesh.SD,
                                      TInt(inputs[:npx]),
@@ -2464,9 +2691,9 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                      TFloat(inputs[:zmin]), TFloat(inputs[:zmax]),
                                      CPU())
             
-        else
+        else=#
             mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], CPU())
-        end
+        #end
         
         #Write structured grid to VTK
         #vtkfile = vtk_grid("mySTRUCTURED_GRID", mesh.x, mesh.y, mesh.z) # 3-D

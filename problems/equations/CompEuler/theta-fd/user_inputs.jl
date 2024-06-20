@@ -7,7 +7,7 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.4,
         :tinit                => 0.0,
-        :tend                 => 1000,
+        :tend                 => 300,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
@@ -20,7 +20,6 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :AD                  => FD(),
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
@@ -32,16 +31,16 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        #:lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_20el.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
-        :nsd  => 2,
-        :npx =>   40,
-        :npy =>   40,
-        :xmin =>  0.0,
-        :xmax => 10000.0,
+        :lread_gmsh          => true, #If false, a 1D problem will be enforced
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB2x2.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
+        :nsd => 2,
+        :xmin => -5000.0,
+        :xmax => -5000.0,
         :ymin =>  0.0,
         :ymax => 10000.0,
+        :nelx => 2,
+        :nely => 2,
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -54,7 +53,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
         :loverwrite_output   => true,
-        :lwrite_initial      => true,
+        :lwrite_initial      => false,
         :output_dir          => "./output",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

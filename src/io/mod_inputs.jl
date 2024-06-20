@@ -310,24 +310,53 @@ function mod_inputs_user_inputs!(inputs)
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         mod_inputs_check(inputs, :nsd,  Int8(1), "e")
-        mod_inputs_check(inputs, :npx,  Int8(1), "e")
-        if (inputs[:nsd] == 2)
-            if (!haskey(inputs, :npy) && !haskey(inputs, :nely))
-                @error(" user_inputs: in 2D you need to set a value for either npy or nely.")
+
+        if (inputs[:nsd] == 1)
+            if (!haskey(inputs, :nelx))
+                if (haskey(inputs, :npx))
+                    inputs[:nelx] = inputs[:npx] - 1
+                else
+                    @error("jexpresso: :nelx or :npx is missing in .../IO/user_inputs.jl. Set either one!")
+                end
+            else
+                inputs[:npx] = inputs[:nelx] + 1
             end
-            if (!haskey(inputs, :ymin) || !haskey(inputs, :ymax))
-                @error(" user_inputs: in 2D you need to set ymin and ymax.")
+
+        elseif (inputs[:nsd] == 2)
+            if (!haskey(inputs, :nelx))
+                if (haskey(inputs, :npx))
+                    inputs[:nelx] = inputs[:npx] - 1
+                else
+                    @error("jexpresso -->  :nelx or :npx is missing in .../IO/user_inputs.jl. Set either one!")
+                end
+            else
+                inputs[:npx] = inputs[:nelx] + 1
             end
-            inputs[:zmin] = -1.0
-            inputs[:zmax] =  1.0
-            inputs[:npz]  = 1
-            inputs[:nelz] = 0
+
+            if (!haskey(inputs, :nely))
+                if (haskey(inputs, :npy))
+                    inputs[:nely] = inputs[:npy] - 1
+                else
+                    @error("jexpresso -->  :nelx or :npx is missing in .../IO/user_inputs.jl. Set either one!")
+                end
+            else
+                inputs[:npy] = inputs[:nely] + 1
+            end
+
+            #set all z variables to being equal to y to keep the convention x-y where y is the vertical in 2D
+            inputs[:zmin] = inputs[:ymin]
+            inputs[:zmax] = inputs[:ymax]
+            inputs[:npz]  = inputs[:npy]
+            inputs[:nelz]  =inputs[:nely]
             
         end
         mod_inputs_check(inputs, :xmin, "e")
         mod_inputs_check(inputs, :xmax, "e")
+        mod_inputs_check(inputs, :ymax, "e")
+        mod_inputs_check(inputs, :ymax, "e")
                 
     else
+        
         mod_inputs_check(inputs, :gmsh_filename, "e")
         mod_inputs_check(inputs, :nsd,  Int8(3), "-")
         mod_inputs_check(inputs, :nelx,  Int8(2), "-")
@@ -340,9 +369,14 @@ function mod_inputs_user_inputs!(inputs)
         mod_inputs_check(inputs, :zmin, Float64(-1.0), "-")
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
 
+        if (haskey(inputs, :AD) && inputs[:AD] == FD())
+            mod_inputs_check(inputs, :npx, "e")
+            mod_inputs_check(inputs, :npy, "e")
+        end
+        
         s= string("jexpresso: Some undefined (but unnecessary) user inputs 
                                   MAY have been given some default values.
-                                  User needs not to worry about them.")
+                                  The user may want to assess whether some should be explicitly set in user_inputs.jl")
         
         #@warn s
         
@@ -583,8 +617,7 @@ function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
     if (!haskey(inputs, key))
         s = """
                     jexpresso: $key is missing in .../IO/user_inputs.jl
-                    The default value $key=$value will be used.
-                    """
+            """
         if (error_or_warning=="e")
             error(s)
         elseif (error_or_warning=="w")

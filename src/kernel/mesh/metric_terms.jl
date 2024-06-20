@@ -151,11 +151,10 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                                     Jef  = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), Q+1, 1),
                                     nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), Q+1),
                                     ny   = KernelAbstractions.zeros(backend, T, Int64(mesh.nedges_bdy), Q+1)) #   Je[1:Nq, 1:Nq, 1:nelem]
-    @info size(metrics.dxdξ)
-    @info size(basis.dψ), size(basis.ψ)
-
+    
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
+    
     if (backend == CPU())
         for iel = 1:mesh.nelem
             for j = 1:N+1
