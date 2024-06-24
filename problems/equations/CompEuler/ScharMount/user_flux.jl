@@ -1,4 +1,4 @@
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::SubArray{Float64}, qe::SubArray{Float64}, mesh::St_mesh, ::CL, ::TOTAL; neqs=4)
+function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::SubArray{Float64}, qe::SubArray{Float64}, mesh::St_mesh, ::CL, ::TOTAL; neqs=4, ip=1)
 
     PhysConst = PhysicalConst{Float64}()
     
@@ -25,7 +25,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::S
     
 end
 
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::SubArray{Float64}, qe::SubArray{Float64}, mesh::St_mesh, ::CL, ::PERT; neqs=4)
+function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::SubArray{Float64}, qe::SubArray{Float64}, mesh::St_mesh, ::CL, ::PERT; neqs=4, ip=1)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -54,7 +54,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::S
 end
 
 
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::SubArray{Float64}, pref::Float64, mesh::St_mesh, ::NCL; neqs=4)
+function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::SubArray{Float64}, pref::Float64, mesh::St_mesh, ::NCL; neqs=4, ip=1)
 
     PhysConst = PhysicalConst{Float64}()
                 
@@ -73,4 +73,18 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::S
     G[2] = v
     G[3] = v
     G[4] = θ
+end
+
+function user_flux_gpu(q,qe,PhysConst,lpert)
+
+    T = eltype(q)
+    ρ  = q[1]+qe[1]
+    ρu = q[2]+qe[2]
+    ρv = q[3]+qe[3]
+    ρθ = q[4]+qe[4]
+    θ  = ρθ/ρ
+    u  = ρu/ρ
+    v  = ρv/ρ
+    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ) - qe[5]
+    return T(ρu), T(ρu*u + Pressure), T(ρv*u), T(ρθ*u), T(ρv),T(ρu*v),T(ρv*v + Pressure),T(ρθ*v)
 end

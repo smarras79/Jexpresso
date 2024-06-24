@@ -29,14 +29,14 @@ function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
     
     npoin = length(q)
     fig, ax, plt = CairoMakie.scatter(x[1:npoin], q[1:npoin];
-                                      markersize = 10, markercolor="Blue",
+                                      markersize = 10, color="Blue",
                                       xlabel = "x", ylabel = "q(x)",
                                       fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = "u", xlabel = "x")
                                       )
     
     fout_name = string(OUTPUT_DIR, "/INIT-", ivar, ".png")
     @info fout_name
-    save(string(fout_name), fig; size = (600, 400))
+    save(string(fout_name), fig)
     fig
 end
 
@@ -50,7 +50,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         #=fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
-                                          markersize = 10, markercolor="Blue",
+                                          markersize = 10, color="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "x")
                                           )=#
@@ -59,7 +59,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
         CairoMakie.activate!(type = "eps")
         fig = Figure(size = (600,400),fontsize=22)
         ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
-        CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin];markersize = 10, markercolor="Blue")
+        CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin];markersize = 10, color="Blue")
         vlines = inputs[:plot_vlines]
         hlines = inputs[:plot_hlines]
         axis = inputs[:plot_axis]
@@ -81,7 +81,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
         end
         #ylims!(ax, -0.05, 0.55)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
-        save(string(fout_name), fig; size = (600, 400))
+        save(string(fout_name), fig)
         fig
     end
 end
@@ -101,21 +101,21 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
         CairoMakie.activate!(type = "eps")
         if !(p==[]) 
           #=push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*mesh.npoin+mesh.npoin_original]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
-                                          markersize = 10, markercolor=color,
+                                          markersize = 10, color=color,
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery")#,  axis = (; title = string(outvar[ivar]), xlabel = "x")
                                           ))=#
           ax = Axis(fig[1, 1], title="", xlabel="")
           hidedecorations!(ax)
-          push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, markercolor=color))
+          push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, color=color))
         else
           ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
-          push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, markercolor=color))
+          push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, color=color))
         end
         p[end].color = color
         ylims!(ax, -0.03, 0.03)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".eps")  
-        save(string(fout_name), fig; size = (600, 400))
+        save(string(fout_name), fig)
         fig
     end
 end
@@ -169,14 +169,14 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
 
         idx = (ivar - 1)*npoin
         fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], qout[idx+1:ivar*npoin];
-                                          markersize = 10, markercolor="Blue",
+                                          markersize = 10, color="Blue",
                                           xlabel = "x", ylabel = "q(x)",
                                           fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "xx")
                                           )
 
         
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
-        save(string(fout_name), fig; size = (600, 400))
+        save(string(fout_name), fig)
         fig
     end
 end
@@ -185,7 +185,7 @@ function plot_1d_grid(mesh::St_mesh)
     
     plt = plot() #Clear plot
     for i=1:mesh.npoin
-        display(CairoMakie.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin), markersizes=4, markercolor="Blue"))
+        display(CairoMakie.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin), markersizes=4, color="Blue"))
     end 
 end
 
@@ -227,7 +227,7 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
           end
           if !(hlines == "empty")
               for i=1:size(hlines,1)
-                  hlines!(ax,hlines[i], color = :red, linstyle = :dash)
+                  hlines!(ax,hlines[i], color = :red, linestyle = :dash)
               end
           end
           

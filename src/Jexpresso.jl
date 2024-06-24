@@ -6,6 +6,14 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
+if Sys.isapple()
+    using Metal
+    using CUDA
+elseif Sys.islinux()
+    using CUDA
+end
+
+using KernelAbstractions
 using Revise
 using BenchmarkTools
 using Dates
@@ -33,8 +41,9 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
 using UnicodePlots
 using Printf
 
-const TInt   = Int64
-const TFloat = Float64
+TInt   = Int64
+TFloat = Float64
+cpu    = true
 
 using DocStringExtensions
 
@@ -45,6 +54,8 @@ include(joinpath( "macros", "je_macros.jl"))
 include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))
+
+include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
 include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 
@@ -58,13 +69,21 @@ include(joinpath( "kernel", "mesh", "metric_terms.jl"))
 
 include(joinpath( "kernel", "infrastructure", "element_matrices.jl"))
 
+include(joinpath( "kernel", "infrastructure", "params_setup.jl"))
+
 include(joinpath( "kernel", "infrastructure", "sem_setup.jl"))
 
 include(joinpath( "kernel", "infrastructure", "Kopriva_functions.jl"))
 
+include(joinpath( "kernel", "infrastructure", "convert_to_gpu.jl"))
+
 include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
+
+include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
+
+include(joinpath( "kernel", "operators", "rhs_laguerre_gpu.jl"))
 
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
 

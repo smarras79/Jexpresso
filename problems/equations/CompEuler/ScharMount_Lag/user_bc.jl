@@ -67,3 +67,14 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     flux = zeros(size(q,2),1)
     return flux
 end
+
+function user_bc_dirichlet_gpu(q,qe,x,y,t,nx,ny,qbdy,lpert)
+    T = eltype(q)
+    if (y<=14990 && abs(nx)<1) #(abs(x) < 119500.0 && y<= 19950.0)
+        qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
+        u = (q[2]+qe[2] - qnl*nx) - qe[2]
+        v = (q[3]+qe[3] - qnl*ny) - qe[3]
+      end
+
+    return T(qbdy[1]), T(u), T(v), T(qbdy[4])
+end
