@@ -8,3 +8,8 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_1D,
     F[2] = q[1]
     
 end
+
+function user_flux_gpu(q,qe,PhysConst,lpert)
+    T = eltype(q)
+    return T(q[2]), T(q[1])
+end

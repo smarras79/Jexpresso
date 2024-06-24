@@ -1,16 +1,3 @@
-# Documentation
-
-```@meta
-CurrentModule = Jexpresso
-DocTestSetup = quote
-    using Jexpresso
-end
-```
-
-```@autodocs
-Modules = [Jexpresso]
-```
-
 # Jexpresso.jl
 
 Documentation of `Jexpresso.jl`.
@@ -18,9 +5,27 @@ Documentation of `Jexpresso.jl`.
 !!! note
 
      This documentation is and will always be WIP!
-          A research software for the numerical solution of a system of an arbitrary number of conservation laws using continuous spectral elements. DISCLAIMER: this is WIP and only 2D is being maintained until parallelization is complete.
+          
+## Introduction
 
-# Equations:
+Jexpresso is a CPU/GPU research software for the numerical solution of a system of arbitrary conservation laws in 1D, 2D, 3D using continuous spectral elements. Nevertheless, the code is built so that any other numerical method can be added. For example, the Jexpresso already contains a 1D finite difference implementation as well.
+
+Jexpresso is written in the [Julia programming language](https://julialang.org/) and was thought to be modular and allow any user to add any equations in any dimensions without knowing anything about numerical methods. 
+
+## Do I need to know Julia to use Jexpresso?
+Yes and no. It depends how much you are interested in adding your own equation set in the code rather than using it as a black box. 
+
+The following are useful resources about Julia:
+* Julia webpage [docs.julialang.org](https://docs.julialang.org/)
+* Official list of learning resources [julialang.org/learning](https://julialang.org/learning/)
+
+```@contents
+Pages = [
+  "Jexpresso.md",
+  ]
+```
+
+## Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
 
 $$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2{\bf q} + {\bf S}({\bf q}) + ~{\rm b.c.}$$
@@ -31,7 +36,6 @@ and are taken to be zero vectors of the appropriate size when not explicitly sta
 The Julia package [DifferentialEquations.jl](https://docs.sciml.ai/DiffEqDocs/stable/) is used for time discretization and stepping.
 
 In order, we provide tests and results for the following equations:
-
 
 1. 1D wave equation:
    
@@ -124,14 +128,54 @@ cN_{xx} + cN_{zz}
 The equation of state for a perfect gas is used to close the system.
 
 
+6. 3D Euler equations of compressible flows with gravity
+
+$${\bf q}=\begin{bmatrix}
+\rho \\
+\rho u\\
+\rho v\\
+\rho w\\
+\rho \theta\\
+\end{bmatrix}\quad {\bf F}1=\begin{bmatrix}
+\rho u\\
+\rho u^2 + p\\
+\rho u v\\
+\rho u w\\
+\rho u \theta\\
+\end{bmatrix}\quad {\bf F}2=\begin{bmatrix}
+\rho v\\
+\rho v u\\
+\rho v^2 + p\\
+\rho v w\\
+\rho v \theta\\
+\end{bmatrix}\quad {\bf F}3=\begin{bmatrix}
+\rho w\\
+\rho w u\\
+\rho w v\\
+\rho w^2 + p\\
+\rho w \theta\\
+\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
+0\\
+0\\
+0\\
+-\rho g\\
+0\\
+\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
+0\\
+u_{xx} + u_{yy} + u_{zz}\\
+v_{xx} + v_{yy} + v_{zz}\\
+w_{xx} + w_{yy} + w_{zz}\\
+\theta_{xx} + \theta_{yy} + \theta_{zz}\\
+\end{bmatrix}.$$
+
+
 If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
 
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia 1.9.3
+To install and run the code assume Julia 1.10.0
 
 ## Setup with CPUs
 
@@ -153,6 +197,20 @@ julia> include("./src/Jexpresso.jl")
 
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
+
+## Tutorials
+
+The following tutorials will introduce you to the functionality of
+Jexpresso.jl.
+
+```@contents
+Pages = [
+    "features/performance.md",
+    "tutorials/theta.md",
+    "tutorials/theta.md",
+    ]
+Depth = 2
+```
 
 Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash

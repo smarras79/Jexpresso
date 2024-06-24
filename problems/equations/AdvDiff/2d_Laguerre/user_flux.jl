@@ -48,3 +48,10 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     F[1] = qu
     G[1] = qv
 end
+
+function user_flux_gpu(q,qe,PhysConst,lpert)
+    
+    T = eltype(q) 
+    return T(q[1]*0.5), T(q[1]*1.0)
+
+end

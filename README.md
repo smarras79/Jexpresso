@@ -1,9 +1,21 @@
+# <img src="https://github.com/smarras79/Jexpresso/blob/sm/3d/assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
+
 | **Documentation** |
 |:------------ |
-| [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/)
+ [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/) [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://smarras79.github.io/Jexpresso/dev/) |
+|**Build Status** |
+| [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/smarras79/Jexpresso/actions?query=workflow%3ACI)
+| **Contacts**  |
+| [![Simone Marras](https://img.shields.io/badge/Simone%20Marras-smarras%40njit.edu-8e7cc3)](mailto:smarras@njit.edu) |
+| [![Yassine Tissaoui](https://img.shields.io/badge/Yassine%20Tissaoui-yt277%40njit.edu-8e7cc3)](mailto:yt277@njit.edu) |
+| [![Hang Wang](https://img.shields.io/badge/Hang%20Wang-hang.wang%40njit.edu-8e7cc3)](mailto:hang.wang@njit.edu) |
+| **Citation** |
+| [![DOI](https://img.shields.io/badge/article-arXiv:2401.05624-green)](https://doi.org/10.48550/arXiv.2401.05624) |
 
 # JEXPRESSO
-A research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements**. DISCLAIMER: this is WIP. Its GPU expansion is also under development. 
+A CPU and GPU research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this will always be WIP! Contact us to join the team of developers!
+
+Suggested Julia version: 1.10.0
 
 Suggested Julia version: 1.10
 
@@ -123,23 +135,84 @@ c1_{xx} + c1_{zz}\\
 cN_{xx} + cN_{zz}
 \end{bmatrix}.$$
 
+6. 3D Euler equations of compressible flows with gravity
+
+$${\bf q}=\begin{bmatrix}
+\rho \\
+\rho u\\
+\rho v\\
+\rho w\\
+\rho \theta\\
+\end{bmatrix}\quad {\bf F}1=\begin{bmatrix}
+\rho u\\
+\rho u^2 + p\\
+\rho u v\\
+\rho u w\\
+\rho u \theta\\
+\end{bmatrix}\quad {\bf F}2=\begin{bmatrix}
+\rho v\\
+\rho v u\\
+\rho v^2 + p\\
+\rho v w\\
+\rho v \theta\\
+\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
+\rho w\\
+\rho w u\\
+\rho w v\\
+\rho w^2 + p\\
+\rho w \theta\\
+\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
+0\\
+0\\
+0\\
+-\rho g\\
+0\\
+\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
+0\\
+u_{xx} + u_{yy} + u_{zz}\\
+v_{xx} + v_{yy} + v_{zz}\\
+w_{xx} + w_{yy} + w_{zz}\\
+\theta_{xx} + \theta_{yy} + \theta_{zz}\\
+\end{bmatrix}.$$
+
 
 If you are interested in contributing, please get in touch:
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-I WILL POINT YOU TO THE MOST EFFICIENT, but less general BRANCH OF THE CODE!
 
 
 # Some notes on using JEXPRESSO
 
 To install and run the code assume Julia 1.10
 
-## Setup with CPUs
+## Setup 
 
-```bash
+After cloning Jexpresso do the following:
+
+1.
+```bashx
 >> cd $JEXPRESSO_HOME
->> julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
+>> julia --project=.
 ```
-followed by the following:
+
+If on Apple, add Metal to the dependencies and continue to point 2:
+
+1.apple
+```
+julia> ]
+pkg> add Metal
+```
+
+2.
+```
+pkg> instantiate
+```
+```
+pkg> precompile
+```
+
+Notice that points 1. and 2. are for all, but 1.apple is required only for Apple users.
+
+To run Jexpresso, do as follows:
 
 Push problem name to ARGS
 You need to do this only when you run a new problem
@@ -160,12 +233,28 @@ julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
 ```
 
-<img src="assets/thetaTracersMesh.png"
+<img src="assets/rtbHole.gif"
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
 
 
-Example 2: to solve the 2D Euler equations leading to a density current defined in `problems/equations/CompEuler/dc` you would do the following:
+<img src="assets/thetaTracersMeshUnstr.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
+
+Example 2: to solve the 3D Euler equations with buyoancy defined in `problems/equations/CompEuler/3d` you would do the following:
+```bash
+julia> push!(empty!(ARGS), "CompEuler", "3d");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/rtb3d.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
+
+Example 3: to solve the 2D Euler equations leading to a density current defined in `problems/equations/CompEuler/dc` you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "dc");
 julia> include("./src/Jexpresso.jl")
@@ -175,7 +264,7 @@ julia> include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Example 3: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
+Example 4: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "wave1d");
 julia> include("./src/Jexpresso.jl")
@@ -232,19 +321,6 @@ julia> include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/Wave_Train_final.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-A second version of this tests generate images with the solutions at different times overlapped.
-
-This version is defined in [`problems/equations/AdvDiff/Wave_Train_Overlapping_Plot`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train_Overlapping_Plot) and by default output will be written to `output/AdvDiff/Wave_Train_Overlapping_Plot`. To run this version of the problem execute the following from the Julia command line:
-
-```bash
-julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train_Overlapping_Plot");
-julia> include("./src/Jexpresso.jl")
-```
-
-<img src="assets/Wave_Train_overlap.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
@@ -307,4 +383,4 @@ modify ./src/io/plotting/jplots.jl accordinly.
 For non-periodic 2D tests, the output can also be written to VTK files by setting the value "vtk" for the usier_input key :outformat
 
 ## Contacts
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu), [Hang Wang](mailto:hang.wang@njit.edu)

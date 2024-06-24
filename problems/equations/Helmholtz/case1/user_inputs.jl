@@ -8,6 +8,7 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
+        #:backend              => MetalBackend(),
         #:CL                   => NCL(), #CL() is defaults
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
@@ -17,7 +18,7 @@ function user_inputs()
         #:llump               => true,
         :interpolation_nodes =>"lgl",
         :nop                 => 10,      # Polynomial order
-        :nop_laguerre        => 64,
+        :nop_laguerre        => 14,
         :xfac_laguerre       => 0.25,
         :yfac_laguerre       => 0.0,
         #---------------------------------------------------------------------------

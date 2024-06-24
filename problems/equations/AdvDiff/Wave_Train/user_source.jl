@@ -94,4 +94,17 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     S[1] = -(cs)*(q[1])
     S[2] = -(cs)*(q[2])
     return  S
-end    
+end
+
+function user_source_gpu(q,qe,x,PhysConst, xmax, xmin,lpert)
+
+    T = eltype(q)
+    if (x >= T(5000.0))#nsponge_points * dsy) #&& dbl >= 0.0)
+        sponge_coe = T(2.0)/(1+exp((T(0.3)*(xmax-5000)-x+5000)/(xmax/18)))
+    else
+        sponge_coe = T(0.0)
+    end
+    cs = min(sponge_coe,1)
+
+    return T(-cs*q[1]), T(-cs*q[2])
+end

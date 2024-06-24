@@ -7,3 +7,10 @@ function user_source!(S::SubArray{Float64},
     
     nothing
 end
+
+function user_source_gpu(q,qe,x,PhysConst, xmax, xmin,lpert)
+
+    T = eltype(q)
+
+    return T(0.0), T(0.0)
+end

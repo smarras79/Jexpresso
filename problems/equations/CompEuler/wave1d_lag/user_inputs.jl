@@ -9,13 +9,12 @@ function user_inputs()
         :tend                 => 9.0,
         :Δt                   => 1.0e-3,
         :ndiagnostics_outputs => 30, #these are steps, not seconds
-        :output_dir          => "./output/",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 6,     # Polynomial order
-        :nop_laguerre        => 50,
+        :nop_laguerre        => 24,
         :lexact_integration  => false,
         :lsource             => true,
         :llaguerre_1d_right  => true,
@@ -32,16 +31,14 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => false, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh", 
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        :outformat     => "png", #choice: "png", "ascii" (default is ascii)
-        :plot_vlines   => [-2.5,2.5],
-        :plot_axis     => [-0.05,0.55, -0.35,0.35],
+        :outformat         => "png", #choice: "png", "ascii" (default is ascii)
+        :loverwrite_output => true,
+        :output_dir        => "./output",
+        :plot_vlines       => [-2.5,2.5],
+        :plot_axis         => [-0.05,0.55, -0.35,0.35],
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------

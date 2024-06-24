@@ -8,6 +8,7 @@ function user_inputs()
         :Δt                   => 0.025,
         :ndiagnostics_outputs => 10,
         :lsource              => false,
+        #:backend              => MetalBackend(),
         #:CL                   => NCL(), #CL() is defaults
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------

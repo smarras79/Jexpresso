@@ -7,16 +7,17 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver          => SSPRK33(),
         :tend                 => 5000.0,
-        :Δt                   => 0.1,
+        :Δt                   => 0.02,
         :ndiagnostics_outputs => 101, #these are steps, not seconds
         :output_dir          => "./output/",
+        #:backend              => MetalBackend(),
         :SOL_VARS_TYPE        => PERT(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
-        :nop_laguerre        => 50,
+        :nop_laguerre        => 20,
         :lexact_integration  => false,
         :lsource             => true,
         :llaguerre_1d_right  => true,
