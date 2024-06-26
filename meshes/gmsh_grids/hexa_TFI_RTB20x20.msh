@@ -3,7 +3,7 @@ $MeshFormat
 $EndMeshFormat
 $PhysicalNames
 3
-0 1 "free_slip"
+0 1 "boundary"
 1 2 "free_slip"
 2 3 "domain"
 $EndPhysicalNames
