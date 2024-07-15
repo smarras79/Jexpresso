@@ -7,6 +7,7 @@ function user_inputs()
         :Δt                   => 0.0005,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :ndiagnostics_outputs => 10,
+        :diagnostics_at_times => (0.5, 1, 2, 4),
         :output_dir          => "./output/",
         :case                 => "rtb",
         #:backend              => MetalBackend(),
