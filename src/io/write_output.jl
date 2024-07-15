@@ -12,13 +12,10 @@ include("./plotting/jeplots.jl")
 # PNG 1D
 #
 function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
-#function write_output(SD::NSD_1D, q::Array,          mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG)
-
-    #Reference values only (definied in initial conditions)
-    
+    #OK
     nvar = length(varnames)
     qout = zeros(mesh.npoin)
-
+    
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
@@ -64,6 +61,31 @@ end
 
 #
 # PNG 2D
+#
+function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+
+    println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+    
+    if inputs[:lplot_surf3d]
+        for iout = 1:size(sol.t[:], 1)
+            title = @sprintf "final solution at t=%6.4f" t
+            plot_surf3d(SD, mesh, u[:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
+        end
+    else
+
+        title = @sprintf "final solution at t=%6.4f" t
+        if (inputs[:backend] == CPU())
+            plot_triangulation(SD, mesh, u[:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+        else
+            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+            KernelAbstractions.copyto!(CPU(),u, u[:])
+            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+        end
+    end
+    println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
+end
+
 #
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
 
@@ -671,7 +693,7 @@ end
 
 
 function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
-    @mystop("BB")
+    
     #nothing
     if (mesh.nelem_semi_inf > 0)
         subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
