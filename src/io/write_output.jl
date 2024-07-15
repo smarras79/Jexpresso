@@ -3,8 +3,6 @@ using SnoopCompile
 using WriteVTK
 using HDF5
 
-
-
 include("./plotting/jeplots.jl")
 
 #----------------------------------------------------------------------------------------------------------------------------------------------
@@ -13,14 +11,15 @@ include("./plotting/jeplots.jl")
 #
 # PNG 1D
 #
-function write_output(SD::NSD_1D, q::Array, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG)
+function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+#function write_output(SD::NSD_1D, q::Array,          mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG)
 
     #Reference values only (definied in initial conditions)
     
     nvar = length(varnames)
-    for ivar = 1:nvar
-        plot_results(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
-    end
+    qout = zeros(mesh.npoin)
+
+    plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
 function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
@@ -72,12 +71,12 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     
     if inputs[:lplot_surf3d]
         for iout = 1:size(sol.t[:], 1)
-            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
             plot_surf3d(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
         end
     else
         for iout = 1:size(sol.t[:],1)
-            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
             if (inputs[:backend] == CPU())
                 plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
             else
@@ -113,11 +112,11 @@ end
 # VTK 2D/3D
 #
 function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
-    
+ 
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
-            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
             write_vtk(SD, mesh, sol.u[iout][:], sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
         else
             u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
@@ -125,7 +124,7 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
             u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
             KernelAbstractions.copyto!(CPU(),u_exact,qexact)
             convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
             write_vtk(SD, mesh, u, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
         end
     end
@@ -134,8 +133,8 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
 end
 
 function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
-
-    title = @sprintf "Tracer: final solution at t=%6.4f" iout
+    
+    title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
         write_vtk(SD, mesh, u, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
     else
@@ -168,7 +167,7 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
             u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
             KernelAbstractions.copyto!(CPU(),u, sol.u[:])
             convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-            @info u
+            #@info u
             plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs;)
         end
     end
@@ -235,11 +234,8 @@ end
 #------------
 # VTK writer
 #------------
-#function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
-    
-    #nothing
-    
+
     outvars = varnames
     nvars = length(outvars)
     
@@ -535,8 +531,9 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         end
     end
 
-
-    #Solution:
+    #
+    # Write solution:
+    #
     fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")
     vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*TFloat(0.0), cells)
     for ivar = 1:nvar
@@ -661,7 +658,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     end
 
     #Solution:
-    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")    
+    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")
     vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells)
     for ivar = 1:nvars
         idx = (ivar - 1)*mesh.npoin
@@ -674,7 +671,7 @@ end
 
 
 function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
-
+    @mystop("BB")
     #nothing
     if (mesh.nelem_semi_inf > 0)
         subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)

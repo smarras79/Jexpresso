@@ -189,8 +189,7 @@ function mod_inputs_user_inputs!(inputs)
     #
     # Time:
     #
-    if(!haskey(inputs, :ndiagnostics_outputs) &&
-        !haskey(inputs, :ndiagnostics_output))
+    if(!haskey(inputs, :ndiagnostics_outputs))
         inputs[:ndiagnostics_outputs] = 0
     end
     mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
@@ -201,12 +200,13 @@ function mod_inputs_user_inputs!(inputs)
         inputs[:tend] = 0.0  #end time is 0.0 by default
     end
 
-    if( !haskey(inputs, :diagnostics_at_times) &&
-        !haskey(inputs, :diagnostics_times) &&
-        !haskey(inputs, :diagnostic_times))
-
+    if( !haskey(inputs, :diagnostics_at_times) )
         inputs[:diagnostics_at_times] = inputs[:tend]
-        inputs[:ndiagnostics_outputs] = 0 #Force this to none to avoid double output
+        if (!haskey(inputs, :ndiagnostics_outputs))
+            inputs[:ndiagnostics_outputs] = 1 #Force this to none to avoid double output
+        end
+    else
+        inputs[:ndiagnostics_outputs] = 0
     end
     
     if(!haskey(inputs, :lexact_integration))
@@ -480,6 +480,10 @@ function mod_inputs_user_inputs!(inputs)
         @error s
     end
 
+    if(!haskey(inputs, :lmoist))
+        inputs[:lmoist] = false
+    end
+    
     if(!haskey(inputs, :energy_equation))
         inputs[:energy_equation] = "theta"
         inputs[:δtotal_energy] = 0.0

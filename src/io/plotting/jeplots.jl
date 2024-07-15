@@ -8,16 +8,16 @@ using Makie
 
 #= CITE Mackie:
 @article{DanischKrumbiegel2021,
-  doi = {10.21105/joss.03349},
-  url = {https://doi.org/10.21105/joss.03349},
-  year = {2021},
-  publisher = {The Open Journal},
-  volume = {6},
-  number = {65},
-  pages = {3349},
-  author = {Simon Danisch and Julius Krumbiegel},
-  title = {Makie.jl: Flexible high-performance data visualization for Julia},
-  journal = {Journal of Open Source Software}
+doi = {10.21105/joss.03349},
+url = {https://doi.org/10.21105/joss.03349},
+year = {2021},
+publisher = {The Open Journal},
+volume = {6},
+number = {65},
+pages = {3349},
+author = {Simon Danisch and Julius Krumbiegel},
+title = {Makie.jl: Flexible high-performance data visualization for Julia},
+journal = {Journal of Open Source Software}
 }
 =#
 
@@ -46,16 +46,10 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
     epsi = 1.1
     npoin = floor(Int64, size(q, 1)/nvar)
     #qout = copy(q)
- 
+    
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
-        #=fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], q[idx+1:ivar*npoin]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
-                                          markersize = 10, color="Blue",
-                                          xlabel = "x", ylabel = "q(x)",
-                                          fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "x")
-                                          )=#
         
-        #ylims!(ax, -0.55, 0.55)
         CairoMakie.activate!(type = "eps")
         fig = Figure(size = (600,400),fontsize=22)
         ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
@@ -76,8 +70,8 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
             end
         end
         if !(axis == "empty")
-           idx = (ivar-1)*2
-           ylims!(ax, axis[1+idx], axis[2+idx])
+            idx = (ivar-1)*2
+            ylims!(ax, axis[1+idx], axis[2+idx])
         end
         #ylims!(ax, -0.05, 0.55)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
@@ -100,17 +94,12 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
         #fig, ax, plt =
         CairoMakie.activate!(type = "eps")
         if !(p==[]) 
-          #=push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*mesh.npoin+mesh.npoin_original]; #qout[1:npoin,ivar]; #qout[idx+1:ivar*npoin];
-                                          markersize = 10, color=color,
-                                          xlabel = "x", ylabel = "q(x)",
-                                          fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery")#,  axis = (; title = string(outvar[ivar]), xlabel = "x")
-                                          ))=#
-          ax = Axis(fig[1, 1], title="", xlabel="")
-          hidedecorations!(ax)
-          push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, color=color))
+            ax = Axis(fig[1, 1], title="", xlabel="")
+            hidedecorations!(ax)
+            push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, color=color))
         else
-          ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
-          push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, color=color))
+            ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
+            push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, color=color))
         end
         p[end].color = color
         ylims!(ax, -0.03, 0.03)
@@ -126,7 +115,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
     qmin = minimum(q);      qmax = maximum(q);
     epsi = 1.1
     npoin = floor(Int64, size(q, 1)/nvar)
-   
+    
     qout = copy(q)
     qe   = range(0,0,npoin)
 
@@ -196,10 +185,10 @@ end
 
 function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1)
 
-"""
-    This function uses the amazing package Mackie to plot arbitrarily gridded
-    unstructured data to filled contour plot
-"""
+    """
+        This function uses the amazing package Mackie to plot arbitrarily gridded
+        unstructured data to filled contour plot
+    """
     
     if ("Laguerre" in mesh.bdy_edge_type)
         npoin = mesh.npoin_original
@@ -216,30 +205,30 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
         maxq = maximum(q[idx+1:ivar*npoin])
 
         if (maxq > minq) 
-          Lx = abs(maximum(mesh.x) - minimum(mesh.x))
-          Ly = abs(maximum(mesh.y) - minimum(mesh.y))
-          vlines = inputs[:plot_vlines]
-          hlines = inputs[:plot_hlines]
-          if !(vlines == "empty")
-              for i=1:size(vlines,1)
-                  vlines!(ax,vlines[i], color = :red, linestyle = :dash)
-              end
-          end
-          if !(hlines == "empty")
-              for i=1:size(hlines,1)
-                  hlines!(ax,hlines[i], color = :red, linestyle = :dash)
-              end
-          end
-          
-          if (Ly > Lx)
-            ax.aspect = Lx/Ly; colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
-          else
-            #ax.aspect = Lx/Ly; #colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
-          end      
+            Lx = abs(maximum(mesh.x) - minimum(mesh.x))
+            Ly = abs(maximum(mesh.y) - minimum(mesh.y))
+            vlines = inputs[:plot_vlines]
+            hlines = inputs[:plot_hlines]
+            if !(vlines == "empty")
+                for i=1:size(vlines,1)
+                    vlines!(ax,vlines[i], color = :red, linestyle = :dash)
+                end
+            end
+            if !(hlines == "empty")
+                for i=1:size(hlines,1)
+                    hlines!(ax,hlines[i], color = :red, linestyle = :dash)
+                end
+            end
+            
+            if (Ly > Lx)
+                ax.aspect = Lx/Ly; colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
+            else
+                #ax.aspect = Lx/Ly; #colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
+            end      
 
-          Colorbar(fig[1,2], colormap = :viridis,  limits = (minq, maxq))        
-          save(string(fout_name), fig) #, size = (600, 600))
-          fig
+            Colorbar(fig[1,2], colormap = :viridis,  limits = (minq, maxq))        
+            save(string(fout_name), fig) #, size = (600, 600))
+            fig
         end
         
     end
