@@ -1,15 +1,5 @@
 using BenchmarkTools
 
-function myaffect!(u, solution, params, OUTPUT_DIR)
-
-    write_output(sem.mesh.SD, solution,  sem.mesh,
-                 OUTPUT_DIR, inputs,
-                 params.qp.qvars,
-                 inputs[:outformat];
-                 nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
-
-end
-
 function time_loop!(inputs, params, u)
 
     println(" # Solving ODE  ................................ ")
@@ -22,7 +12,7 @@ function time_loop!(inputs, params, u)
     #------------------------------------------------------------------------
     # Callback to plot on the run
     #------------------------------------------------------------------------
-    dosetimes = inputs[:diagnostics_at_times]
+    dosetimes = inputs[:diagnostics_at_times]    
     idx_ref   = Ref{Int}(0)
     function condition(u, t, integrator)
         idx = findfirst(x -> x == t, dosetimes)
@@ -35,14 +25,15 @@ function time_loop!(inputs, params, u)
     end
     function affect!(integrator)
         idx = idx_ref[]
-        write_output(NSD_2D(), integrator.u, integrator.t, idx,
+        
+        write_output(params.SD, integrator.u, integrator.t, idx,
                      params.mesh,
                      inputs[:output_dir], inputs,
                      params.qp.qvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
-    end    
-    cb = DiscreteCallback(condition, affect!)  
+    end
+    cb = DiscreteCallback(condition, affect!)
     #------------------------------------------------------------------------
     # END Callback to plot on the run
     #------------------------------------------------------------------------
@@ -50,10 +41,10 @@ function time_loop!(inputs, params, u)
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                            callback = cb, tstops = dosetimes,
+                           #saveat = dosetimes,
                            save_everystep = false,
                            adaptive=inputs[:ode_adaptive_solver],
-                           saveat = range(inputs[:tinit], inputs[:tend],
-                                          length=inputs[:ndiagnostics_outputs]));
+                           saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
     
     println(" # Solving ODE  ................................ DONE")
     
