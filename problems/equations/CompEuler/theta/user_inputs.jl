@@ -8,13 +8,13 @@ function user_inputs()
         #:Δt                   => 0.02,
         :Δt                   => 0.4,
         :tinit                => 0.0,
-        :tend                 => 300.0,
+        :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        #:ndiagnostics_outputs => 2,
-        :diagnostics_at_times => (10, 50, 100, 200, 300),
+        :ndiagnostics_outputs => 2,
+        #:diagnostics_at_times => (10, 50, 100, 200, 300),
         :case                 => "rtb",
         :lsource              => true, 
         #:backend              => MetalBackend(),
@@ -23,13 +23,13 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 3,      # Polynomial order
+        :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1, 2, 3, 4],
-        :μ                   => [0.0, 80.0, 80.0, 60.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 20.0, 20.0, 60.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -47,10 +47,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "hdf5",
         :loverwrite_output   => true,
         :lwrite_initial      => false,
-        :output_dir          => "./output",
+        #:output_dir          => "./output",
+        :output_dir          => "./test/CI-ref",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
