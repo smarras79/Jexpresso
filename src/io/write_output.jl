@@ -173,7 +173,6 @@ function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, 
 
 end
 
-#
 # PNG 2D
 #
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
@@ -200,7 +199,17 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-
+function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
+    
+    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
+    iout = size(t,1)
+    title = @sprintf "Final solution at t=%6.4f" t
+    
+    write_hdf5(SD, mesh, u, qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
+    
+    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
+    
+end
 function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
