@@ -38,27 +38,6 @@ function time_loop!(inputs, params, u)
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
 
-    try
-        @time solution = solve(prob,
-                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                            save_everystep = false,
-                            adaptive=inputs[:ode_adaptive_solver],
-                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
-    catch e
-        # println("Instability detected: ", e)
-        if isa(e, SciMLBase.InstabilityException)
-            solution = e.sol
-        else
-            println("Error detected: ", e)
-        end
-    end
-    
-    end
-    cb = DiscreteCallback(condition, affect!)
-    
-    #------------------------------------------------------------------------
-    # END Callback to plot on the run
-    #------------------------------------------------------------------------
     
     end
     cb = DiscreteCallback(condition, affect!)
