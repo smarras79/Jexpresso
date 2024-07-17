@@ -9,36 +9,34 @@ function time_loop!(inputs, params, u)
                       params.tspan,
                       params);
     
-#=
-    #analysis_interval = 100
-    #analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
-    #                                     extra_analysis_integrals = (entropy,))
+    #------------------------------------------------------------------------
+    # Callback to plot on the run
+    #------------------------------------------------------------------------
+    dosetimes = inputs[:diagnostics_at_times]
+    idx_ref   = Ref{Int}(0)
+    c         = Float64(0.0)
+    function condition(u, t, integrator)
+        idx  = findfirst(x -> x == t, dosetimes)
+        
+        if idx !== nothing
+            idx_ref[] = idx
+            return true
+        else
+            return false
+        end
+    end
+    function affect!(integrator)
+        idx  = idx_ref[]
 
-    #alive_callback = AliveCallback(analysis_interval = analysis_interval)
-
-    save_solution = SaveSolutionCallback(interval = 100,
-                                         save_initial_solution = true,
-                                         save_final_solution = true,
-                                         solution_variables = cons2prim)
-
-    amr_controller = ControllerThreeLevel(semi, IndicatorMax(semi, variable = first),
-                                          base_level = 4,
-                                          med_level = 5, med_threshold = 0.1,
-                                          max_level = 6, max_threshold = 0.6)
-    amr_callback = AMRCallback(semi, amr_controller,
-                               interval = 5,
-                               adapt_initial_condition = true,
-                               adapt_initial_condition_only_refine = true)
-
-    stepsize_callback = StepsizeCallback(cfl = 1.6)
-
-    callbacks = CallbackSet(summary_callback,
-                            analysis_callback, alive_callback,
-                            save_solution,
-                            amr_callback, stepsize_callback);=#
-                            
-    # Initialize the solution variable
-    solution = nothing
+        println(" #  t=", integrator.t)
+        computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD)
+        
+        write_output(params.SD, integrator.u, integrator.t, idx,
+                     params.mesh,
+                     inputs[:output_dir], inputs,
+                     params.qp.qvars,
+                     inputs[:outformat];
+                     nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
 
     try
         @time solution = solve(prob,
@@ -55,16 +53,20 @@ function time_loop!(inputs, params, u)
         end
     end
     
-    if solution === nothing
-        error("Solution could not be obtained due to an error.")
     end
-
+    cb = DiscreteCallback(condition, affect!)
     
-  #=  summary_callback = SummaryCallback()
-
-    =#
-
-
+    #------------------------------------------------------------------------
+    # END Callback to plot on the run
+    #------------------------------------------------------------------------
+    
+    @time solution = solve(prob,
+                           inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                           callback = cb, tstops = dosetimes,
+                           #saveat = dosetimes,
+                           save_everystep = false,
+                           adaptive=inputs[:ode_adaptive_solver],
+                           saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
     
     println(" # Solving ODE  ................................ DONE")
     
