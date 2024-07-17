@@ -36,13 +36,28 @@ function time_loop!(inputs, params, u)
                             analysis_callback, alive_callback,
                             save_solution,
                             amr_callback, stepsize_callback);=#
+                            
+    # Initialize the solution variable
+    solution = nothing
 
+    try
+        @time solution = solve(prob,
+                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                            save_everystep = false,
+                            adaptive=inputs[:ode_adaptive_solver],
+                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
+    catch e
+        # println("Instability detected: ", e)
+        if isa(e, SciMLBase.InstabilityException)
+            solution = e.sol
+        else
+            println("Error detected: ", e)
+        end
+    end
     
-    @time solution = solve(prob,
-                           inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                           save_everystep = false,
-                           adaptive=inputs[:ode_adaptive_solver],
-                           saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
+    if solution === nothing
+        error("Solution could not be obtained due to an error.")
+    end
 
     
   #=  summary_callback = SummaryCallback()

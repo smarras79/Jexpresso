@@ -5,6 +5,10 @@ import Thermodynamics.Parameters as TP
 # using CLIMAParameters
 # using CLIMAParameters: grav
 
+# struct EarthParameterSet <: AbstractEarthParameterSet end
+# const param_set = EarthParameterSet()
+
+
 function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
 
@@ -49,20 +53,35 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # INITIAL STATE from scratch:
             #
+            param_set = TP.ThermodynamicsParameters(Float64)
+            new_param_set = update_p_ref_theta(param_set, 101325.0)
             for ip = 1:mesh.npoin
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
             
             
+                # @info param_set
+                Δθ = 0.0 #K
+    
+                θ = 0.0
+                θref = 0.0
+                p    = 0.0
+                pref = 0.0
+                ρ    = 0.0
                 ρref = 0.0
+                
                 u = 0.0
                 v = 0.0
                 w = 0.0
-                θref = 0.0
-                Δθ = 0.0 #K
-                pref = 0.0
-                param_set = TP.ThermodynamicsParameters(eltype(z))
-                initialize_bomex!(ρref, u, v, w, θref, Δθ, pref, z, param_set)
+                ρref, u, v, w, θref, Δθ, pref = initialize_bomex!(z, new_param_set)
+                # @info ρref, u, v, w, θref, Δθ, pref
+                # ρref = params.ρ
+                # u = params.u
+                # v = params.v
+                # w = params.w
+                # θref = params.θ
+                # Δθ = params.Δθ #K
+                # pref = params.P
                 ρ = ρref
                 θ = θref + Δθ
                 p = pref
@@ -137,10 +156,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             lpert = false
         end
         PhysConst = PhysicalConst{TFloat}()
+        FT = TFloat
         param_set = TP.ThermodynamicsParameters(TFloat)
+        new_param_set = update_p_ref_theta(param_set, FT(101325.0))
 
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, mesh.y, mesh.z, PhysConst, param_set, lpert; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, mesh.x, mesh.y, mesh.z, PhysConst, new_param_set, lpert; ndrange = (mesh.npoin))
     end
     @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
     
@@ -155,10 +176,11 @@ end
     y = y[ip]
     z = z[ip]
 
+
     Δθ = T(0.0) #K
     
     θ = T(0.0)
-    θref = 0.0
+    θref = T(0.0)
     p    = T(0.0)
     pref = T(0.0)
     ρ    = T(0.0)
@@ -167,7 +189,9 @@ end
     u = T(0.0)
     v = T(0.0)
     w = T(0.0)
-    initialize_bomex!(ρref, u, v, w, θref, Δθ, pref, z, param_set)
+    ρref, u, v, w, θref, Δθ, pref = initialize_bomex!(z, param_set)
+
+    # u = 0
     ρ = ρref
     θ = θref + Δθ
     p = pref
@@ -198,7 +222,7 @@ end
 
 end
 
-function initialize_bomex!(ρ, u, v, w, θ, Δθ, P, z, param_set)
+function initialize_bomex!(z, param_set)
     FT = eltype(z)
     @inbounds begin
         P_sfc::FT = 1.015e5 # Surface air pressure
@@ -208,6 +232,7 @@ function initialize_bomex!(ρ, u, v, w, θ, Δθ, P, z, param_set)
         T_sfc = FT(300.4) # Surface temperature
         _grav = FT(TP.grav(param_set))
         H = Rm_sfc * T_sfc / _grav
+        # z = FT(500.0)
         P = P_sfc * exp(-z / H)
         
         zlv::FT = 700
@@ -216,14 +241,13 @@ function initialize_bomex!(ρ, u, v, w, θ, Δθ, P, z, param_set)
         zl3::FT = 2000
         zl4::FT = 3000
         u = FT(0.0)
-        if z <= zlv
-            u = -8.75
-        else
-            u = -8.75 + (z - zlv) * (-4.61 + 8.75) / (zl4 - zlv)
-        end
+        # if z <= zlv
+        #     u = -8.75
+        # else
+        #     u = -8.75 + (z - zlv) * (-4.61 + 8.75) / (zl4 - zlv)
+        # end
         v = FT(0.0)
         w = FT(0.0)
-        P = P_sfc * exp(-z / H)
 
         # Assign piecewise quantities to θ_liq and q_tot
         θ_liq::FT = 0
@@ -257,11 +281,29 @@ function initialize_bomex!(ρ, u, v, w, θ, Δθ, P, z, param_set)
         ρ = TD.air_density(param_set, TS)
         q_pt = TD.PhasePartition(param_set, TS)
         θ = TD.virtual_pottemp(param_set, TS)
-
+        bhasCondense = TD.has_condensate(param_set, TS)
+        # @info TS
+        Δθ = FT(0.0)
         if z < FT(400)
             Δθ = FT((rand()-0.5) * 1.0)
         end
     end
-    # @info z, ρ, u, θ, q_pt, P
+    return ρ, u, v, w, θ, Δθ, P
+    # if bhasCondense
+    #     @info z, ρ, u, T, θ_liq, θ, q_tot, q_pt.liq, P, bhasCondense
+    # end
+end
 
+
+
+# Function to update p_ref_theta
+function update_p_ref_theta(ps::TP.ThermodynamicsParameters{FT}, new_p_ref_theta::FT) where {FT}
+    return TP.ThermodynamicsParameters(
+        ps.T_0, ps.MSLP, new_p_ref_theta, ps.cp_v, ps.cp_l, ps.cp_i,
+        ps.LH_v0, ps.LH_s0, ps.press_triple, ps.T_triple, ps.T_freeze, ps.T_min,
+        ps.T_max, ps.T_init_min, ps.entropy_reference_temperature, ps.entropy_dry_air,
+        ps.entropy_water_vapor, ps.kappa_d, ps.gas_constant, ps.molmass_dryair,
+        ps.molmass_water, ps.T_surf_ref, ps.T_min_ref, ps.grav, ps.T_icenuc,
+        ps.pow_icenuc
+    )
 end
