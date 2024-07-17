@@ -12,10 +12,12 @@ function time_loop!(inputs, params, u)
     #------------------------------------------------------------------------
     # Callback to plot on the run
     #------------------------------------------------------------------------
-    dosetimes = inputs[:diagnostics_at_times]    
+    dosetimes = inputs[:diagnostics_at_times]
     idx_ref   = Ref{Int}(0)
+    c         = Float64(0.0)
     function condition(u, t, integrator)
-        idx = findfirst(x -> x == t, dosetimes)
+        idx  = findfirst(x -> x == t, dosetimes)
+        
         if idx !== nothing
             idx_ref[] = idx
             return true
@@ -24,7 +26,10 @@ function time_loop!(inputs, params, u)
         end
     end
     function affect!(integrator)
-        idx = idx_ref[]
+        idx  = idx_ref[]
+
+        println(" #  t=", integrator.t)
+        computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD)
         
         write_output(params.SD, integrator.u, integrator.t, idx,
                      params.mesh,
@@ -32,8 +37,11 @@ function time_loop!(inputs, params, u)
                      params.qp.qvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
+
+    
     end
     cb = DiscreteCallback(condition, affect!)
+    
     #------------------------------------------------------------------------
     # END Callback to plot on the run
     #------------------------------------------------------------------------

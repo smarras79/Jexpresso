@@ -21,7 +21,7 @@ end
 
 function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     
     if (inputs[:plot_overlap])
         fig = Figure(size = (1200,800),fontsize=22)
@@ -64,7 +64,7 @@ end
 #
 function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
 
-    println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+    #println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     
     if inputs[:lplot_surf3d]
         for iout = 1:size(sol.t[:], 1)
@@ -89,7 +89,7 @@ end
 #
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
 
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     
     if inputs[:lplot_surf3d]
         for iout = 1:size(sol.t[:], 1)
@@ -117,7 +117,8 @@ end
 #
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::ASCII; nvar=1, PT=nothing)
     
-    println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
+    #println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
+    
     for iout = 1:size(sol.t[:],1)
         #Write out data at final timestep
 	fname = @sprintf "it-%d.dat" iout
@@ -135,7 +136,8 @@ end
 #
 function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
  
-    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
+    #println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
+    
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
@@ -177,7 +179,8 @@ end
 #
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
+    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
+    
     title = @sprintf "Solution to ∇⋅∇(q) = f"
     if inputs[:lplot_surf3d]
         plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1, smoothing_factor=inputs[:smoothing_factor])
@@ -201,7 +204,7 @@ end
 #------------
 function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
-    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
+    # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)
     title = @sprintf "Final solution at t=%6.4f" t
     
@@ -212,7 +215,8 @@ function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, 
 end
 function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
-    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
+    #println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
+    
     iout = size(sol.t[:],1)
     title = @sprintf "Final solution at t=%6.4f" sol.t[iout]
 
@@ -223,7 +227,7 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
 end
 function read_output(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5; nvar=1)
     
-    println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
+    #println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
     q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
     println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ... DONE") )
 
