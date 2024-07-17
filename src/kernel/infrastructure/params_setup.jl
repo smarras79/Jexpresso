@@ -51,17 +51,17 @@ function params_setup(sem,
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
 
-    #
+    #------------------------------------------------------------------------------------
     # GPU arrays
-    #
+    #------------------------------------------------------------------------------------
     flux_gpu       = gpuAux.flux_gpu
     source_gpu     = gpuAux.source_gpu
     qbdy_gpu       = gpuAux.qbdy_gpu
     uprimitive     = fluxes.uprimitive
     
-    #
+    #------------------------------------------------------------------------------------
     # filter arrays
-    #
+    #------------------------------------------------------------------------------------
     filter = allocate_filter(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs, lfilter=inputs[:lfilter])
     fy_t   = transpose(sem.fy)
     q_t    = filter.q_t
@@ -70,23 +70,23 @@ function params_setup(sem,
     b      = filter.b
     B      = filter.B
 
-    #    
+    #------------------------------------------------------------------------------------  
     # B.C. arrays
-    #
+    #------------------------------------------------------------------------------------
     gradu    = KernelAbstractions.zeros(backend, T, 2, 1, 1) #KernelAbstractions.zeros(2,Int64(sem.mesh.npoin),nvars)
     ubdy     = KernelAbstractions.zeros(backend, T, Int64(qp.neqs))
     bdy_flux = KernelAbstractions.zeros(backend, T, Int64(qp.neqs),1)    
 
-    #
+    #------------------------------------------------------------------------------------
     # Some domain parameters
-    #
+    #------------------------------------------------------------------------------------
     xmax = maximum(sem.mesh.x); xmin = minimum(sem.mesh.x)
     ymax = maximum(sem.mesh.y); ymin = minimum(sem.mesh.y)
     zmax = maximum(sem.mesh.z); zmin = minimum(sem.mesh.z)
     
-    #
+    #------------------------------------------------------------------------------------
     # Laguerre arrays
-    #
+    #------------------------------------------------------------------------------------
     if ( "Laguerre" in sem.mesh.bdy_edge_type ||
         inputs[:llaguerre_1d_right] == true   ||
         inputs[:llaguerre_1d_left]  == true )
@@ -156,7 +156,15 @@ function params_setup(sem,
         
     end
     
+    #------------------------------------------------------------------------------------
+    # Allocate micophysics arrays
+    #------------------------------------------------------------------------------------
+    mp = allocate_Microphysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
     
+    
+    #------------------------------------------------------------------------------------
+    # Populate solution arrays
+    #------------------------------------------------------------------------------------
     for i=1:qp.neqs
         idx = (i-1)*sem.mesh.npoin
         u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
@@ -177,8 +185,10 @@ function params_setup(sem,
         KernelAbstractions.copyto!(backend,visc_coeff,coeffs)
     end
     ivisc_equations = inputs[:ivisc_equations]   
-    
-  
+
+    #------------------------------------------------------------------------------------
+    # Populate params tuple to carry global arrays and constants around
+    #------------------------------------------------------------------------------------
     if ("Laguerre" in sem.mesh.bdy_edge_type ||
         inputs[:llaguerre_1d_right] ||
         inputs[:llaguerre_1d_left])
@@ -209,7 +219,7 @@ function params_setup(sem,
                   inputs, visc_coeff, ivisc_equations,
                   sem.matrix.M, sem.matrix.Minv,tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
-                  qp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
+                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
         
     else
           params = (backend,
@@ -230,7 +240,7 @@ function params_setup(sem,
               visc_coeff, ivisc_equations,
               sem.matrix.M, sem.matrix.Minv,tspan,
               Δt, xmax, xmin, ymax, ymin, zmin, zmax,
-              qp, sem.fx, sem.fy, fy_t, laguerre=false)
+              qp, mp, sem.fx, sem.fy, fy_t, laguerre=false)
     end
 
     println(" # Build arrays and params ................................ DONE")

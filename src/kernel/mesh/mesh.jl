@@ -107,6 +107,12 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
     bdy_face_type = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type_id  =  KernelAbstractions.zeros(backend, TInt, 0)
+
+    Δelem        = KernelAbstractions.zeros(backend, TInt, 0)
+    Δelem_s      = 0.0
+    Δelem_l      = 0.0
+    Δeffective_s = 0.0
+    Δeffective_l = 0.0
     
     SD::AbstractSpaceDimensions
 end
@@ -115,6 +121,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 
     # determine backend
     backend = CPU()
+    
     #
     # Read GMSH grid from file
     #
@@ -2279,6 +2286,15 @@ function mod_mesh_mesh_driver(inputs::Dict)
     else
         error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
     end
+
+    #
+    # Element size:
+    # 
+    #   mesh.Δelem[1:nelem] --> smallest distance between two corner points inside each element
+    #   mesh.Δelem_smallest --> size of the smallest element inside a grid (==minimum(mesh.Δelem))
+    #   mesh.Δeffective     --> mesh.Δelem_smallest/mesh.nop
+    #
+    compute_element_size_driver(mesh, mesh.SD, Float64, CPU())
     
     return mesh
     
@@ -2312,27 +2328,36 @@ end
 # WARNING: this only gives an estimate if the grid is not cartesian
 #
 #----------------------------------------------------------------------
-function compute_element_size_driver(mesh::St_mesh, SD, T)
-
-    Δlocal = zeros(T, mesh.nelem)
-    for ie = 1:mesh.nelem
-        Δlocal[ie] = compute_element_size(ie, mesh::St_mesh, SD, T)
-    end
-    Δelem      = minimum(Δlocal)
-    Δeffective = TFloat(Δelem/mesh.nop)
-    @info Δelem
-    @info Δeffective
+function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     
+    mesh.Δelem = KernelAbstractions.zeros(backend, T, mesh.nelem)
+    for ie = 1:mesh.nelem
+         compute_element_size!(SD, ie, mesh::St_mesh, T)
+    end
+    mesh.Δelem_s      = minimum(mesh.Δelem)    
+    mesh.Δelem_l      = maximum(mesh.Δelem)
+    mesh.Δeffective_s = TFloat(mesh.Δelem_s/mesh.nop)
+    mesh.Δeffective_l = TFloat(mesh.Δelem_l/mesh.nop)
+
+    println(" # ")
+    println(" # ELEMENT SIZES:")
+    println(" #   The smallest element has size: ", mesh.Δelem_s, " and effective resolution ", mesh.Δeffective_s)
+    println(" #   The biggest  element has size: ", mesh.Δelem_l, " and effective resolution ", mesh.Δeffective_l)
+    println(" # ")
 end
 
 #------------------------------------------------------------------------------------
 #Computes element size assuming flow in a straght-sided cube
 #------------------------------------------------------------------------------------
-function compute_element_size(ie, mesh::St_mesh, SD::NSD_2D, T)
+function compute_element_size!(SD::NSD_1D, ie, mesh::St_mesh, T) nothing end
+    
+function compute_element_size!(SD::NSD_2D, ie, mesh::St_mesh, T)
     
     #local arrays
-    ngl = mesh.ngl    
-    x = y = zeros(T, 4)
+    ngl   = mesh.ngl
+    
+    x     = zeros(T, 4)
+    y     = zeros(T, 4)
     inode = zeros(TInt, 4)
     
     inode[1] = mesh.connijk[ie, 1,   ngl]
@@ -2344,26 +2369,51 @@ function compute_element_size(ie, mesh::St_mesh, SD::NSD_2D, T)
     for m = 1:4
         x[m] = mesh.x[inode[m]]
         y[m] = mesh.y[inode[m]]
-
-        @info m, x[m], y[m]
+        #@info m, x[m], y[m]
     end
     
-    #Diagonal distance:
-    Δ12 = sqrt((x[1]-x[2])*(x[1]-x[2]) + (y[1]-y[2])*(y[1]-y[2]))
-    Δ24 = sqrt((x[2]-x[4])*(x[2]-x[4]) + (y[2]-y[4])*(y[2]-y[4]))
-    Δ34 = sqrt((x[3]-x[4])*(x[3]-x[4]) + (y[3]-y[4])*(y[3]-y[4]))
-    Δ13 = sqrt((x[3]-x[1])*(x[3]-x[1]) + (y[3]-y[1])*(y[3]-y[1]))
+    # Nodes distances as if it were linear
+    dx = maximum(x) - minimum(x)
+    dy = maximum(y) - minimum(y)
+    
+    mesh.Δelem[ie] = min(dx, dy)           #shortest distance of two points corner within a given element
+    #mesh.Δelem_largest[ie]  = max(dx, dy) #longest distance of two points corner within a given element
+    
+end
 
-    @info Δ12
-    @info Δ24
-    @info Δ34
-    @info Δ13
+function compute_element_size!(SD::NSD_3D, ie, mesh::St_mesh, T)
     
-    #Diagonal distance:
-    Δ14 = sqrt((x[1]-x[4])*(x[1]-x[4]) + (y[1]-y[4])*(y[1]-y[4]))
-    Δ23 = sqrt((x[2]-x[3])*(x[2]-x[3]) + (y[2]-y[3])*(y[2]-y[3]))
+    #local arrays
+    ngl   = mesh.ngl
     
-    Δelem = min(Δ14, Δ23, Δ12, Δ24, Δ34, Δ13)
+    x     = zeros(T, 8)
+    y     = zeros(T, 8)
+    z     = zeros(T, 8)
+    inode = zeros(TInt, 8)
     
-    return Δelem
+    inode[1] = mesh.connijk[ie, 1,     1, ngl]
+    inode[2] = mesh.connijk[ie, 1,     1,   1]
+    inode[3] = mesh.connijk[ie, ngl,   1, ngl]
+    inode[4] = mesh.connijk[ie, ngl,   1,   1]
+    inode[5] = mesh.connijk[ie, 1,   ngl, ngl]
+    inode[6] = mesh.connijk[ie, 1,   ngl,   1]
+    inode[7] = mesh.connijk[ie, ngl, ngl, ngl]
+    inode[8] = mesh.connijk[ie, ngl, ngl,   1]
+    
+    #Store Coordinates
+    for m = 1:8
+        x[m] = mesh.x[inode[m]]
+        y[m] = mesh.y[inode[m]]
+        z[m] = mesh.z[inode[m]]
+        #@info m, x[m], y[m], z[m]
+    end
+
+    #Element sizes (as if it were linear)
+    dx = maximum(x) - minimum(x)
+    dy = maximum(y) - minimum(y)
+    dz = maximum(z) - minimum(z)
+    
+    mesh.Δelem[ie] = min(dx, dy, dz)            #shortest distance of two points corner within a given element
+    #mesh.Δelem_largest[ie]  = max(dx, dy, dz)  #longest distance of two points corner within a given element
+    
 end

@@ -32,7 +32,7 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
