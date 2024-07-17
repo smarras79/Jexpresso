@@ -60,6 +60,13 @@ function time_loop!(inputs, params, u)
     # END Callback to plot on the run
     #------------------------------------------------------------------------
     
+    end
+    cb = DiscreteCallback(condition, affect!)
+    
+    #------------------------------------------------------------------------
+    # END Callback to plot on the run
+    #------------------------------------------------------------------------
+    
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                            callback = cb, tstops = dosetimes,
