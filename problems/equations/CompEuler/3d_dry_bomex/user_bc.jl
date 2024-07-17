@@ -12,6 +12,13 @@ function user_bc_dirichlet!(q::SubArray{Float64},
     qbdy[2] = (q[2] - qnl*nx) 
     qbdy[3] = (q[3] - qnl*ny) 
     qbdy[4] = (q[4] - qnl*nz) 
+    if (z < 0.01) 
+        qbdy[2] = 0.0
+        qbdy[3] = 0.0
+        qbdy[4] = 0.0
+        # @info qe[5], qe[1], qe[5]/qe[1]
+        qbdy[5] = 2.0*qe[1] + qe[5]
+    end
     
 end
 
@@ -75,9 +82,17 @@ function user_bc_dirichlet_gpu(q,qe,x,y,z,t,nx,ny,nz,qbdy,lpert)
         else
             w = qbdy[4]
         end=#
+        
         u = (q[2] - qnl*nx)
         v = (q[3] - qnl*ny)
         w = (q[4] - qnl*nz)
+        if (z < 0.01)
+            u = 0.0
+            v = 0.0
+            w = 0.0
+            qbdy[5] = 303.0*q[1]
+        end
+
     end
     return T(qbdy[1]), T(u), T(v), T(w), T(qbdy[5])
 end
