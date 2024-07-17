@@ -156,19 +156,21 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
     
 end
 
-function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, u, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
         write_vtk(SD, mesh, u, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
     else
         #VERIFY THIS on GPU
-        u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
-        KernelAbstractions.copyto!(CPU(),u, u)
+        u_gpu = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
+        KernelAbstractions.copyto!(CPU(),u_gpu, u)
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-        write_vtk(SD, mesh, u, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+        write_vtk(SD, mesh, u_gpu, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+        convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
+
     end
 
     println(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE") )

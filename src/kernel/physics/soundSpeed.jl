@@ -1,21 +1,46 @@
-function soundSpeed(npoin, integrator)
-    
-    #speed of sound
-    PhysConst = PhysicalConst{TFloat}()
-    ctmp = Float32(0.0)
-    c = Float32(0.0)
-    for i=1:npoin
-        ρ  = integrator.u[i]
-        θ  = integrator.u[3*npoin+i]
-        p  = perfectGasLaw_ρθtoP(PhysConst; ρ=ρ, θ=θ)
-        c  = sqrt(PhysConst.γ*p/ρ)
-        c  = max(c, ctmp)
-        ctmp = c
+function soundSpeed(npoin, integrator, SD)
+    # Physical constants
+    PhysConst = PhysicalConst{Float32}()
+    pos::TInt = 2
+    if (SD == NSD_2D())
+        pos = 3
+    elseif (SD == NSD_3D())
+        pos = 4
     end
-
-    return c
+    # Initialize arrays
+    ρ = integrator.u[1:npoin]
+    θ = integrator.u[pos*npoin+1:(pos+1)*npoin]
     
+    # Compute pressure using vectorized operation
+    p = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
+    
+    # Compute speed of sound using vectorized operation
+    c = sqrt.(PhysConst.γ .* p ./ ρ)
+    
+    # Find the maximum speed of sound
+    max_c = maximum(c)
+    
+    return max_c
 end
+
+# function soundSpeed(npoin, integrator)
+    
+#     #speed of sound
+#     PhysConst = PhysicalConst{TFloat}()
+#     ctmp = Float32(0.0)
+#     c = Float32(0.0)
+#     for i=1:npoin
+#         ρ  = integrator.u[i]
+#         θ  = integrator.u[3*npoin+i]
+#         p  = perfectGasLaw_ρθtoP(PhysConst; ρ=ρ, θ=θ)
+#         c  = sqrt(PhysConst.γ*p/ρ)
+#         c  = max(c, ctmp)
+#         ctmp = c
+#     end
+
+#     return c
+    
+# end
 
 function computeCFL(npoin, dt, Δs, integrator, SD::NSD_2D)
 
@@ -32,7 +57,7 @@ function computeCFL(npoin, dt, Δs, integrator, SD::NSD_2D)
     velomax = max(umax, vmax)
     
     #speed of sound
-    c     = soundSpeed(npoin, integrator)
+    c     = soundSpeed(npoin, integrator, SD)
     
     cfl_u = velomax*dt/Δs #Advective CFL
     cfl_c = c*dt/Δs       #Acoustic CFL
@@ -55,13 +80,13 @@ function computeCFL(npoin, dt, Δs, integrator, SD::NSD_3D)
     #w
     ieq = 4
     idx = (ieq-1)*npoin
-    vmax = maximum(integrator.u[idx+1:ieq*npoin])        
+    wmax = maximum(integrator.u[idx+1:ieq*npoin])        
     
     #velomax
     velomax = max(umax, vmax, wmax)
     
     #speed of sound
-    c     = soundSpeed(npoin, integrator)
+    c     = soundSpeed(npoin, integrator, SD)
     
     cfl_u = velomax*dt/Δs #Advective CFL
     cfl_c = c*dt/Δs       #Acoustic CFL

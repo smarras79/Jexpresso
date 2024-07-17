@@ -345,7 +345,7 @@ end
 
 
 @kernel function _build_rhs_diff_gpu_3D_v1!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, u, qe, uprimitive, x, y, z, connijk, 
-    dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst, lpert)
+    dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, visc_coeff, ngl, neq, Δeffective_s, PhysConst, lpert)
 
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
@@ -433,8 +433,8 @@ end
     S32 = S23
     S33 = dwdz
     # |Sij|
-    Sij = sqrt(2.0 * (S11*S11 + S12*S12 + S13*S13 + S21*S21 + S22*S22 + S23*S23 + S31*S31 + S32*S32 + S33*S33))
-    delta2::T = 10000.0
+    Sij::T = sqrt(2.0 * (S11*S11 + S12*S12 + S13*S13 + S21*S21 + S22*S22 + S23*S23 + S31*S31 + S32*S32 + S33*S33))
+    delta2::T = (2.0 * cbrt(Je[ie,i_x,i_y,i_z]) / (ngl-1))^2
 
     for ieq=1:neq
 
