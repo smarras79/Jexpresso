@@ -10,7 +10,7 @@ function time_loop!(inputs, params, u)
                       params);
     
     #------------------------------------------------------------------------
-    # Callback to plot on the run
+    # Runtime callbacks
     #------------------------------------------------------------------------
     dosetimes = inputs[:diagnostics_at_times]
     idx_ref   = Ref{Int}(0)
@@ -29,8 +29,11 @@ function time_loop!(inputs, params, u)
         idx  = idx_ref[]
 
         println(" #  t=", integrator.t)
+
+        #CFL
         computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD)
-        
+
+        #Write results to file
         write_output(params.SD, integrator.u, integrator.t, idx,
                      params.mesh,
                      inputs[:output_dir], inputs,
@@ -40,10 +43,9 @@ function time_loop!(inputs, params, u)
 
     
     end
-    cb = DiscreteCallback(condition, affect!)
-    
+    cb = DiscreteCallback(condition, affect!)    
     #------------------------------------------------------------------------
-    # END Callback to plot on the run
+    # END runtime callbacks
     #------------------------------------------------------------------------
     
     @time solution = solve(prob,
