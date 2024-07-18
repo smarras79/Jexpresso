@@ -1,10 +1,12 @@
 using HDF5
 
-function driver(inputs::Dict,        #input parameters from src/user_input.jl
+function driver(nparts,
+                distribute,
+                inputs::Dict,
                 OUTPUT_DIR::String,
                 TFloat) 
-
-    sem = sem_setup(inputs)
+    
+    sem = sem_setup(inputs, nparts, distribute)
     
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
