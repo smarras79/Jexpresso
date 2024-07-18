@@ -13,7 +13,6 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        #:ndiagnostics_outputs => 2,
         :diagnostics_at_times => (100, 200, 300, 400, 500, 600, 700, 800, 900, 1000),
         :case                 => "rtb",
         :lsource              => true, 
