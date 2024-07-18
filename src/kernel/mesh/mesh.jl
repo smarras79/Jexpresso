@@ -1,5 +1,5 @@
+using MPI
 using Gridap
-using GridapGmsh
 using Gridap.Arrays
 using Gridap.Arrays: Table
 using Gridap.Geometry
@@ -7,7 +7,9 @@ using Gridap.Fields
 using Gridap.ReferenceFEs
 using Gridap.CellData
 using Gridap.Geometry: GridMock
-
+using GridapDistributed
+using PartitionedArrays
+using GridapGmsh
 
 export St_mesh
 export mod_mesh_mesh_driver
@@ -117,18 +119,21 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     SD::AbstractSpaceDimensions
 end
 
-function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
+function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
 
     # determine backend
     backend = CPU()
     
     #
     # Read GMSH grid from file
-    #
-    model         = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+    #      
+    parts  = distribute(LinearIndices((nparts,)))
+    model  = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+   
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
+        
     
     POIN_flg = 0
     EDGE_flg = 1
@@ -183,7 +188,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
     
     #get_isboundary_face(topology,mesh.nsd-1)
-    
     println(" # GMSH LINEAR GRID PROPERTIES")
     println(" # N. points         : ", mesh.npoin_linear)
     println(" # N. elements       : ", mesh.nelem)
@@ -659,7 +663,19 @@ GC.gc()
         @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
     end
 end #f
+
+
 =#
+
+
+write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./")
+
+#
+# gridapDistributed test on gmsh
+#
+@mystop("my stop at mesh.jl L135")
+# end gridapDistributed test on gmsh
+
 
 #show(stdout, "text/plain", mesh.conn')
 println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
@@ -2194,7 +2210,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
 end
 
 
-function mod_mesh_mesh_driver(inputs::Dict)
+function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute)
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
         
         println(" # Read gmsh grid and populate with high-order points ")
@@ -2206,7 +2222,7 @@ function mod_mesh_mesh_driver(inputs::Dict)
                                     SD=NSD_1D())
         
         # Read gmsh grid using the GridapGmsh reader
-        mod_mesh_read_gmsh!(mesh, inputs)
+        mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute)
         
         println(" # Read gmsh grid and populate with high-order points ........................ DONE")
         

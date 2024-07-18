@@ -1,7 +1,7 @@
 include("../mesh/restructure_for_periodicity.jl")
 include("../mesh/warping.jl")
 
-function sem_setup(inputs::Dict)
+function sem_setup(inputs::Dict, nparts, distribute)
     
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
@@ -22,7 +22,7 @@ function sem_setup(inputs::Dict)
     # ξ = ND.ξ.ξ
     # ω = ND.ξ.ω
     #--------------------------------------------------------
-    mesh = mod_mesh_mesh_driver(inputs)
+    mesh = mod_mesh_mesh_driver(inputs, nparts, distribute)
     
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)

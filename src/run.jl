@@ -127,6 +127,16 @@ if cpu == false
     end
 end
 
-driver(inputs, # input parameters from src/user_input.jl
-       OUTPUT_DIR,
-       TFloat)
+
+nparts = 4
+with_mpi() do distribute
+    
+    #main_ex4(nparts,distribute)
+
+    driver(nparts,
+           distribute, 
+           inputs, # input parameters from src/user_input.jl
+           OUTPUT_DIR,
+           TFloat)
+    
+end
