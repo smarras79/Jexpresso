@@ -129,44 +129,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     # Read GMSH grid from file
     #      
     parts  = distribute(LinearIndices((nparts,)))
-    # function do_partition(g, np)
-        # Metis.partition(g,np)
-    # end
-    # model  = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-    # cell_graph = GridapDistributed.compute_cell_graph(model_globe)
-    # cell_to_partition = Metis.partition(cell_graph, nparts)
-    # Get the rank and size of the communicator
-    comm = MPI.COMM_WORLD
-    rank_comm = MPI.Comm_rank(comm)+1
-    size_comm = MPI.Comm_size(comm)
-    # println(length(parts))
-    # partitioned_model = DiscreteModel(1:nparts, model_globe, cell_to_partition, cell_graph)
     partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
-    # show(parts)
-    # @info partitioned_model.models, LinearIndices((nparts,))
-    # model  = partitioned_model.models[rank_comm].model
-    # local_views(partitioned_model) 
     model = local_views(partitioned_model).item_ref[]
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
-    # @info num_faces(model_ref,2)
-    # @info nlfaces, rank_comm
 
-
-    # Create a new field with the partition information
-    # cell_partition_field = CellField("partition", cell_to_partition, partitioned_model)
-
-    # Step 6: Write the partitioned model to a VTK file
-    vtk_directory = "./"  # Replace with your desired output directory
-    writevtk(partitioned_model, vtk_directory)
-
-
-
-    # println("Number of 3D elements: ", num_faces(partitioned_model.models[rank_comm], 2))
-
-
-        
+    # Write the partitioned model to a VTK file
+    # vtk_directory = "./" 
+    # writevtk(partitioned_model, vtk_directory)
     
     POIN_flg = 0
     EDGE_flg = 1
