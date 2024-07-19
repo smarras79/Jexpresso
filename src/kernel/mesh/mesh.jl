@@ -10,7 +10,6 @@ using Gridap.Geometry: GridMock
 using GridapDistributed
 using PartitionedArrays
 using GridapGmsh
-using Metis
 
 export St_mesh
 export mod_mesh_mesh_driver
