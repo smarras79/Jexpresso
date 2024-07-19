@@ -10,6 +10,7 @@ using Gridap.Geometry: GridMock
 using GridapDistributed
 using PartitionedArrays
 using GridapGmsh
+using Metis
 
 export St_mesh
 export mod_mesh_mesh_driver
@@ -128,11 +129,43 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     # Read GMSH grid from file
     #      
     parts  = distribute(LinearIndices((nparts,)))
-    model  = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-   
+    # function do_partition(g, np)
+        # Metis.partition(g,np)
+    # end
+    # model  = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+    # cell_graph = GridapDistributed.compute_cell_graph(model_globe)
+    # cell_to_partition = Metis.partition(cell_graph, nparts)
+    # Get the rank and size of the communicator
+    comm = MPI.COMM_WORLD
+    rank_comm = MPI.Comm_rank(comm)+1
+    size_comm = MPI.Comm_size(comm)
+    # println(length(parts))
+    # partitioned_model = DiscreteModel(1:nparts, model_globe, cell_to_partition, cell_graph)
+    partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+    # show(parts)
+    # @info partitioned_model.models, LinearIndices((nparts,))
+    # model  = partitioned_model.models[rank_comm].model
+    # local_views(partitioned_model) 
+    model = local_views(partitioned_model).item_ref[]
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
+    # @info num_faces(model_ref,2)
+    # @info nlfaces, rank_comm
+
+
+    # Create a new field with the partition information
+    # cell_partition_field = CellField("partition", cell_to_partition, partitioned_model)
+
+    # Step 6: Write the partitioned model to a VTK file
+    vtk_directory = "./"  # Replace with your desired output directory
+    writevtk(partitioned_model, vtk_directory)
+
+
+
+    # println("Number of 3D elements: ", num_faces(partitioned_model.models[rank_comm], 2))
+
+
         
     
     POIN_flg = 0
@@ -254,7 +287,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     #
     # Connectivity matrices
     #
-    mesh.cell_node_ids     = model.grid.cell_node_ids
+    mesh.cell_node_ids     = get_cell_node_ids(get_grid(model))
     mesh.conn_unique_faces = get_face_nodes(model, FACE_flg) #faces --> 4 nodes
     mesh.conn_unique_edges = get_face_nodes(model, EDGE_flg) #edges --> 2 nodes
 
@@ -305,8 +338,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
         #open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 
-                mesh.x[ip] = model.grid.node_coordinates[ip][1]
-                mesh.y[ip] = model.grid.node_coordinates[ip][2]
+                mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
+                mesh.y[ip] = get_node_coordinates(get_grid(model))[ip][2]
                 
         #        @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
             end
@@ -367,9 +400,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
         #
         #open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
-                mesh.x[ip] = model.grid.node_coordinates[ip][1]
-                mesh.y[ip] = model.grid.node_coordinates[ip][2]
-                mesh.z[ip] = model.grid.node_coordinates[ip][3]
+                mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
+                mesh.y[ip] = get_node_coordinates(get_grid(model))[ip][2]
+                mesh.z[ip] = get_node_coordinates(get_grid(model))[ip][3]
         #        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
             end
         #end #f
@@ -668,7 +701,7 @@ end #f
 =#
 
 
-write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./")
+write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./", parts, nparts)
 
 #
 # gridapDistributed test on gmsh

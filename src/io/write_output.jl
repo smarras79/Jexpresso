@@ -818,7 +818,7 @@ function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, O
 end
 
 
-function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String)
+function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
     
     #nothing
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
@@ -867,14 +867,21 @@ function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPU
     #Reference values only (definied in initial conditions)
     fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
     
-    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    vtkfile = map(parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf
+    end
+
     
-    outfiles = vtk_save(vtkfile)
+    outfiles = map(vtk_save, vtkfile)
 end
 
 
 
-function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String)
+function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String, parts, nparts)
 
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
