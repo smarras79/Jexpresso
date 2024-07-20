@@ -5,7 +5,7 @@ include("NextInCond.jl");
 function BldTPoly(dd, nn, NN, hb, rr, InVal, Del_x,
     Gamma, Tot_Int_Pts,
     Tot_X_Pts, A, Shock_Flag,
-    Exit_Pressure, ithroat)
+    Exit_Pressure, ithroat, params)
     #BLDTPOLY calculates all Taylor polynomial coefficients for subint i
     #   BldTPoly calculates the Taylor polynomial coefficients for each
     #   subsubinterval j in the subinterval i.
@@ -76,7 +76,7 @@ function BldTPoly(dd, nn, NN, hb, rr, InVal, Del_x,
 
 
         InVal = NextInCond(mat, InVal, hb, dd, rr, A, Gamma, Tot_Int_Pts,
-            Tot_X_Pts, Shock_Flag, Exit_Pressure)
+            Tot_X_Pts, Shock_Flag, Exit_Pressure, params)
     end
 
     return ll, ff_throat

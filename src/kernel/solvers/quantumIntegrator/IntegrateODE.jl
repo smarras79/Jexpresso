@@ -190,7 +190,7 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
     #       of subinterval i
 
     # builds the taylor polynomial for each subinterval. Eqn 9 in review? #
-    StoreLz, ff_throat = BldTPoly(d, n, N, hbar, r, InitVal, Del_x, Gamma, Tot_Int_Pts, Tot_X_Pts, A, Shock_Flag, Exit_Pressure, ithroat)
+    StoreLz, ff_throat = BldTPoly(d, n, N, hbar, r, InitVal, Del_x, Gamma, Tot_Int_Pts, Tot_X_Pts, A, Shock_Flag, Exit_Pressure, ithroat, params)
 
     # store values of ff_throat for subinterval i for easy of writing to
     #   files
@@ -236,7 +236,7 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
     ###### Uses boundary conditions to find the initial values for the next subinterval ######
     if Shock_Flag .== 0
-      InitVal_BVals = CalcBCmSW(InitVal, A, Gamma, d, Tot_X_Pts)
+      InitVal_BVals = CalcBCmSW(InitVal, A, Gamma, d, Tot_X_Pts, params)
     elseif Shock_Flag .== 1
       InitVal_BVals = CalcBCpSW(InitVal, A, Gamma, d, Tot_X_Pts,
         Exit_Pressure)
@@ -360,6 +360,27 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
       print("  Final result for steady state U values are:")
     end
     @info InitVal
+
+    initvalprintfile = open("./Output/InitVal$(i).txt", "w+")
+
+    for i=1:d
+      for j=1:Tot_X_Pts
+        @printf(initvalprintfile, "%8.3f", InitVal[i, j]);
+      end
+      @printf(initvalprintfile, "\n");
+    end
+
+    npoin = Tot_X_Pts
+    fig, ax, plt = CairoMakie.scatter(range(1, 3, length=31), InitVal[1, 1:npoin];
+                                      markersize = 10, markercolor="Blue",
+                                      xlabel = "x", ylabel = "q(x)",
+                                      fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = "u", xlabel = "x")
+                                      )
+    
+    fout_name = string("./Output/InitVals", i, ".png")
+    @info fout_name
+    save(string(fout_name), fig; size = (600, 400))
+    fig
 
     nextStartTime = n^(k - 1) * hbar * i
 

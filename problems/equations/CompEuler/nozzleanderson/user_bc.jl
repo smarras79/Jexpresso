@@ -45,7 +45,6 @@ function user_bc_dirichlet!(ip,
             qbdy[1] = U1in
             qbdy[2] = U2in
             qbdy[3] = U3in
-
             # @info "U2 inner points: " U1in U2in U3in
             
         end

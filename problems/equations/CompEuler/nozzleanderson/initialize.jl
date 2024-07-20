@@ -19,7 +19,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     γ   = 1.4
 
     qout = copy(q.qn)
-    ρ = 0.0
+    ρ = 1.0
     T = 0.0
 
     lshock = false #Notice, only try shock if you have some artificial diffusion implemented
@@ -28,7 +28,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
 
     initial = zeros(mesh.npoin, 10)
     
-    mass_flow = 0.59
+    mass_flow = 0.579
     
     for iel_g = 1:mesh.nelem
         for i=1:mesh.ngl
@@ -74,8 +74,8 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             initial[ip,4] = T
                         
             q.qn[ip,1] = ρ*A
-            q.qn[ip,2] = ρ*A*u
-            q.qn[ip,3] = ρ*(e/γm1 + 0.5*γ*u*u)*A
+            q.qn[ip,2] = mass_flow#ρ*A*u
+            q.qn[ip,3] = q.qn[ip, 1]*(e/γm1 + 0.5*γ*(q.qn[ip, 2]/q.qn[ip, 1])^2)#0.5*γ*u*u)*A
             q.qn[ip,end] = p
             
             initial[ip,6] = q.qn[ip,1]

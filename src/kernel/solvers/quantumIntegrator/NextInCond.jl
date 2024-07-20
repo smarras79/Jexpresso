@@ -5,7 +5,7 @@ using Polynomials
 
 function NextInCond(mmat, InitVal, hbar, d, r, A, Gamma,
     Tot_Int_Pts, Tot_X_Pts, Shock_Flag,
-    Exit_Pressure)
+    Exit_Pressure, params)
     #NEXTINCOND determines initial condition for next subsubinterval 
     #   NextInCond evaluates the Taylor polynomials for a given subsubinterval
     #   at the subsubinterval's greatest value & uses this result as the
@@ -68,7 +68,7 @@ function NextInCond(mmat, InitVal, hbar, d, r, A, Gamma,
     #       boundary grid-points
 
     if (Shock_Flag .== 0)
-        U_Bvals = CalcBCmSW(InitVal, A, Gamma, d, Tot_X_Pts)
+        U_Bvals = CalcBCmSW(InitVal, A, Gamma, d, Tot_X_Pts, params)
     elseif (Shock_Flag .== 1)
         U_Bvals = CalcBCpSW(InitVal, A, Gamma, d, Tot_X_Pts, Exit_Pressure)
     else

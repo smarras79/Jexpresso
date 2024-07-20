@@ -156,6 +156,7 @@ function build_custom_bcs!(::NSD_1D, t, mesh, metrics, ω,
                            qbdy, uaux, u, qe,
                            RHS, rhs_el,
                            neqs, dirichlet!, neumann, inputs)
+    
     ip = 1
     fill!(qbdy, 4325789.0)
     #user_bc_dirichlet!(@view(uaux[ip,:]), mesh.x[ip], t, "left", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
@@ -177,7 +178,6 @@ function build_custom_bcs!(::NSD_1D, t, mesh, metrics, ω,
             RHS[ip, ieq] = 0.0
         end
     end
-
     #Map back to u after applying b.c.
     uaux2u!(u, uaux, neqs, mesh.npoin)
 

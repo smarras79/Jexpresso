@@ -393,12 +393,21 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::FD)
     
-    for ieq = 1:params.neqs
-        for ip=1:params.mesh.npoin
-            if (ip > 1 && ip < params.mesh.npoin)
-                params.RHS[ip,ieq] = -0.5*(params.F[ip+1,ieq] - params.F[ip-1,ieq])/(params.mesh.Δx[ip]) + params.S[ip,ieq]
-            end
-         end
+    # for ieq = 1:params.neqs
+    #     for ip=1:params.mesh.npoin
+    #         if (ip > 1 && ip < params.mesh.npoin)
+    #             params.RHS[ip,ieq] = -0.5*(params.F[ip+1,ieq] - params.F[ip-1,ieq])/(params.mesh.Δx[ip]) + params.S[ip,ieq]
+    #         end
+    #      end
+    # end
+    
+    Tot_Int_Pts = params.mesh.npoin - 2
+    for i=1:Tot_Int_Pts
+        fac_1 = (-1)/(2*params.mesh.Δx[i])
+        gridLabel = i+1
+        params.RHS[i+1, 1] = fac_1*(params.F[i+2, 1] - params.F[i, 1])
+        params.RHS[i+1, 2] = fac_1*(params.F[i+2, 2] - params.F[i, 2] - params.S[i, 2])
+        params.RHS[i+1, 3] = fac_1*(params.F[i+2, 3] - params.F[i, 3])
     end
     
 end
