@@ -1,16 +1,3 @@
-<<<<<<< HEAD
-#include("CalcBCmSW.jl"); 
-#include("CalcBCpSW.jl"); 
-#include("Calcf0.jl");
-=======
-# include("CalcBCmSW.jl"); 
-# include("CalcBCpSW.jl"); 
-# include("Calcf0.jl");
-#include("../../operators/rhs.jl");
-
-using Polynomials
->>>>>>> 37daf2dbb7bbc880dc7ae8ede187285aa7247afb
-
 function fOrc(t, Start, TCoeffs, d, 
               rmaxp1, Tot_Int_Pts, Gamma, Del_x, A, 
               Shock_Flag, Exit_Pressure, params)
