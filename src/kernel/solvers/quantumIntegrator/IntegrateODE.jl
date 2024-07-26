@@ -396,7 +396,7 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
     end
 
     npoin = Tot_X_Pts
-    fig, ax, plt = CairoMakie.scatter(range(1, 3, length=31), InitVal[1, 1:npoin];
+    fig, ax, plt = CairoMakie.scatter(range(1, 3, length=31), InitVal[2, 1:npoin];
                                       markersize = 10, markercolor="Blue",
                                       xlabel = "x", ylabel = "q(x)",
                                       fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = "u", xlabel = "x")

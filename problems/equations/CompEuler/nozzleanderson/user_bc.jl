@@ -28,7 +28,7 @@ function user_bc_dirichlet!(ip,
         Tin = 1.0
         ρin = 1.0
         pin = ρin*Tin
-        mass_flow = 0.59
+        mass_flow = 0.579
         uin = mass_flow/(ρin*Ain)
         
         γ = 1.4
@@ -38,7 +38,7 @@ function user_bc_dirichlet!(ip,
         
         if (tag == "left")
             
-            U1in = Ain*ρin
+            U1in = Ain#*ρin
             U2in = 2*q[ip2,2] - q[ip3,2]
             uin  = U2in/U1in
             U3in = U1in*(1/γm1 + 0.5*γ*(U2in/U1in)^2)
@@ -83,7 +83,7 @@ function user_bc_dirichlet!(ip,
         Tin = 1.0
         ρin = 1.0
         pin = ρin*Tin
-        mass_flow = 0.59
+        mass_flow = 0.579
         uin = mass_flow/(ρin*Ain)
         
         γ = 1.4
