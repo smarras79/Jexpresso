@@ -6,7 +6,7 @@ function user_inputs()
         :tend                 => 1000.0,
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 0.4,
-        :ndiagnostics_outputs => 2,
+        :ndiagnostics_outputs => 10,
         :case                 => "rtb",
         :lsource              => true,
         #:CL                   => NCL(), #CL() is defaults
@@ -35,7 +35,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
+        :outformat           => "png",
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

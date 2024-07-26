@@ -1,6 +1,8 @@
 #include("CalcBCmSW.jl");
 #include("CalcBCpSW.jl");
 
+using Polynomials
+
 function NextInCond(mmat, InitVal, hbar, d, r, A, Gamma,
     Tot_Int_Pts, Tot_X_Pts, Shock_Flag,
     Exit_Pressure, params)
