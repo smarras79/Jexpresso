@@ -1,6 +1,6 @@
-include("CalcBCmSW.jl"); 
-include("CalcBCpSW.jl"); 
-include("Calcf0.jl");
+# include("CalcBCmSW.jl"); 
+# include("CalcBCpSW.jl"); 
+# include("Calcf0.jl");
 #include("../../operators/rhs.jl");
 
 using Polynomials

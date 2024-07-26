@@ -1,6 +1,6 @@
-include("FuncOrc.jl"); 
-include("MeanOrc.jl"); 
-include("QAmpEst.jl");
+# include("FuncOrc.jl"); 
+# include("MeanOrc.jl"); 
+# include("QAmpEst.jl");
 
 function IntegrateGij(StoreLz, StoreTimes4i, Start,
   d, r, N, delta1, hbar, rho,

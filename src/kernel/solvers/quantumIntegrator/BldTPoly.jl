@@ -1,6 +1,6 @@
-include("Derivs.jl");
-include("BldTMat.jl");
-include("NextInCond.jl");
+# include("Derivs.jl");
+# include("BldTMat.jl");
+# include("NextInCond.jl");
 
 function BldTPoly(dd, nn, NN, hb, rr, InVal, Del_x,
     Gamma, Tot_Int_Pts,

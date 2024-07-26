@@ -1,8 +1,28 @@
-include("./BldTPoly.jl"); 
-include("./IntegrateGij.jl"); 
-include("./CalcBCmSW.jl"); 
-include("./CalcBCpSW.jl"); 
-include("./Calc_FlowVarResults.jl");
+# include("./BldTPoly.jl"); 
+# include("./IntegrateGij.jl"); 
+# include("./Calc_FlowVarResults.jl");
+# include("CalcFlux.jl")
+# include("CalcSource.jl"); 
+# include("CalcFunc.jl"); 
+# include("CalcfBvalsmSW.jl");
+# include("CalcfBvalspSW.jl"); 
+# include("Calc_dFdt.jl"); 
+# include("Calc_dJdt.jl"); 
+# include("Calc_dffdt.jl"); 
+# include("CalcdfdtBvalsmSW.jl"); 
+# include("CalcdfdtBvalspSW.jl");
+# include("Calc_d2Fdt2.jl"); 
+# include("Calc_d2Jdt2.jl"); 
+# include("Calc_d2ffdt2.jl");
+# include("Derivs.jl");
+# include("BldTMat.jl");
+# include("NextInCond.jl");
+# include("FuncOrc.jl"); 
+# include("MeanOrc.jl"); 
+# include("QAmpEst.jl");
+# include("fOrc.jl");
+# include("Calcf0.jl");
+
 
 using Statistics;
 
@@ -176,6 +196,9 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
   U2 = U2_in
 
+  allTimestepValues = zeros(Float64, n+1, d, Tot_X_Pts)
+  allTimestepValues[1, :, :] .= InitVal[:, :]
+
   # Begin loop over the subintervals i; result is approximate solution z[t].
 
   ###### looping over all subintervals as defined in paper######
@@ -261,22 +284,22 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
     # evaluate physical flow variables from InitVal for next subinterval
 
-    Mach_D, Mrho_D, Press_D, Temp_D, Vel_D = Calc_FlowVarResults(Gamma, Tot_X_Pts, A, InitVal)
+    #Mach_D, Mrho_D, Press_D, Temp_D, Vel_D = Calc_FlowVarResults(Gamma, Tot_X_Pts, A, InitVal)
 
-    if i .== n
-      # calculate relative error in primary flow variables
+    # if i .== n
+    #   # calculate relative error in primary flow variables
 
-      Rel_MachErr = map(abs, Mach_D - Mach_E) ./ Mach_E #abs(Mach_D - Mach_E)
-      Rel_MrhoErr = map(abs, Mrho_D - Mrho_E) ./ Mrho_E
-      Rel_PressErr = map(abs, Press_D - Press_E) ./ Press_E
-      Rel_TempErr = map(abs, Temp_D - Temp_E) ./ Temp_E
-      Rel_VelErr = map(abs, Vel_D - Vel_E) ./ Vel_E
+    #   Rel_MachErr = map(abs, Mach_D - Mach_E) ./ Mach_E #abs(Mach_D - Mach_E)
+    #   Rel_MrhoErr = map(abs, Mrho_D - Mrho_E) ./ Mrho_E
+    #   Rel_PressErr = map(abs, Press_D - Press_E) ./ Press_E
+    #   Rel_TempErr = map(abs, Temp_D - Temp_E) ./ Temp_E
+    #   Rel_VelErr = map(abs, Vel_D - Vel_E) ./ Vel_E
 
-      # calculate mean mass flow rate at final time; define array to store
+    #   # calculate mean mass flow rate at final time; define array to store
 
-      # MeanU2 = mean(U2[:, Int(n)+1])
+    #   # MeanU2 = mean(U2[:, Int(n)+1])
 
-      AvU2 = zeros(1, Tot_X_Pts)
+    #   AvU2 = zeros(1, Tot_X_Pts)
 
       # calculate mean and standard deviation of relative errors & store
 
@@ -332,7 +355,7 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
       #                                 SDevRelPressErr
       # end
 
-    end
+    #end
 
     # before returning to top of loop over subintervals i; store Taylor 
     #   polynomial for approximate solution in subinterval i in 
@@ -361,6 +384,8 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
     end
     @info InitVal
 
+    allTimestepValues[i+1, :, :] .= InitVal[:, :]
+
     initvalprintfile = open("./Output/InitVal$(i).txt", "w+")
 
     for i=1:d
@@ -388,12 +413,12 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
   end
 
-  return U2, Mach_D, Mrho_D, Press_D, Temp_D, Vel_D, Rel_MachErr,
-    Rel_MrhoErr, Rel_PressErr, Rel_TempErr, Rel_VelErr,
+  return U2, #=Mach_D, Mrho_D, Press_D, Temp_D, Vel_D, Rel_MachErr,
+    Rel_MrhoErr, Rel_PressErr, Rel_TempErr, Rel_VelErr,=#
     #= AvRelTempErr, AvPlusSDevRelTempErr, AvMinusSDevRelTempErr,
     AvRelMachErr, AvPlusSDevRelMachErr, AvMinusSDevRelMachErr,
     AvRelMrhoErr, AvPlusSDevRelMrhoErr, AvMinusSDevRelMrhoErr,
     AvRelPressErr, AvPlusSDevRelPressErr, AvMinusSDevRelPressErr,
     AvU2,=#
-    ff0_throat, ff1_throat, ff2_throat, InitVal
+    ff0_throat, ff1_throat, ff2_throat, InitVal, allTimestepValues
 end
