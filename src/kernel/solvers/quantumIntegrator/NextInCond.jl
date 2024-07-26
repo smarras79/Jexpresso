@@ -1,5 +1,5 @@
-# include("CalcBCmSW.jl");
-# include("CalcBCpSW.jl");
+#include("CalcBCmSW.jl");
+#include("CalcBCpSW.jl");
 
 using Polynomials
 

@@ -1,29 +1,3 @@
-# include("./BldTPoly.jl"); 
-# include("./IntegrateGij.jl"); 
-# include("./Calc_FlowVarResults.jl");
-# include("CalcFlux.jl")
-# include("CalcSource.jl"); 
-# include("CalcFunc.jl"); 
-# include("CalcfBvalsmSW.jl");
-# include("CalcfBvalspSW.jl"); 
-# include("Calc_dFdt.jl"); 
-# include("Calc_dJdt.jl"); 
-# include("Calc_dffdt.jl"); 
-# include("CalcdfdtBvalsmSW.jl"); 
-# include("CalcdfdtBvalspSW.jl");
-# include("Calc_d2Fdt2.jl"); 
-# include("Calc_d2Jdt2.jl"); 
-# include("Calc_d2ffdt2.jl");
-# include("Derivs.jl");
-# include("BldTMat.jl");
-# include("NextInCond.jl");
-# include("FuncOrc.jl"); 
-# include("MeanOrc.jl"); 
-# include("QAmpEst.jl");
-# include("fOrc.jl");
-# include("Calcf0.jl");
-
-
 using Statistics;
 
 function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts, Shock_Flag, Exit_Pressure, ithroat, a, delta1, rho, InitVal, A, t, U2_in, ff0_throat_in, ff1_throat_in, ff2_throat_in, Mach_E, Mrho_E, Press_E, Temp_E, Vel_E, In_Mass_Flow, params)

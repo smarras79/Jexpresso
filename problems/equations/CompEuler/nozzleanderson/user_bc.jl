@@ -73,7 +73,11 @@ function user_bc_dirichlet!(ip,
         U1out = 0.0
         U2out = 0.0
         U3out = 0.0
-               
+        
+        ip2 = 2 #this is the 2nd point of the linear grid
+        ip3 = 3 #this is the 3rd point of the linear grid
+        #ipN = length(q[:,1]) #last geometric point of the 1D mesh. The H-O node count starts from this one in the first element.
+        ipN = mesh.npoin_linear #last geometric point of the 1D mesh. The H-O node count starts from this one in the first element.
         
         xin = 0.0
         Ain = 1.0 + 2.2*(xin - 1.5)^2
@@ -93,19 +97,20 @@ function user_bc_dirichlet!(ip,
         
         if (tag == "left")
             
-            U1in = Ain
-            
+            U1in = Ain*ρin
+
+            #U2in = 2*q[ip2,2] - q[ip3,2]
             U2in = je_spline_1D_left(mesh, q, mesh.xmin; ielem=1, ivar=2)
             
             uin  = U2in/U1in
             U3in = U1in*(1/γm1 + 0.5*γ*(U2in/U1in)^2)
-
+                        
             qbdy[1] = U1in
             qbdy[2] = U2in
             qbdy[3] = U3in
            
         elseif (tag == "right")
-            pout = 0.6784        
+            pout = 0.6784
 
             U1out = je_spline_1D_right(mesh, q, mesh.xmax; ielem=mesh.nelem, ivar=1)
             #U1out = 2*q[ipN-1,1] - q[ipN-2,1]
@@ -122,7 +127,7 @@ function user_bc_dirichlet!(ip,
         end
         
     end
-        
+    
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)

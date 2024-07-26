@@ -6,14 +6,8 @@ xmax = 240000.0;
 zmax =  30000.0;
 
 //Set nelx = -1 if you want to use dx, dz intead
-<<<<<<< HEAD
-nelx = 50;
-nelz = 25;
-=======
 nelx = -10;
 nelz = 10;
->>>>>>> 128f48970c99d437fc8db46430c6afffd2d0f1c0
-
 dx = 4100.0;
 dz = 1920.0;
 
@@ -21,15 +15,10 @@ stretchingx = 1.0;
 stretchingz = 1.0;
 
 //Mountain:
-<<<<<<< HEAD
 hm = 0.0;
-=======
-hm = 1.0;
->>>>>>> 128f48970c99d437fc8db46430c6afffd2d0f1c0
 a = 10000;
 xc = (xmin + xmax)/2.0;
 // End user inputs (except for B.C. below)
-
 
 ls = 0.0; //this is useless since we use transfinite with defined dx/dz or nelx/nelz
 Point(1) = {xmin, 0, 0, ls};

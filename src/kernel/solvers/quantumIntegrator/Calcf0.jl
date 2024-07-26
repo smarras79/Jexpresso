@@ -1,7 +1,3 @@
-#include("CalcFlux.jl"); 
-# include("CalcSource.jl"); 
-# include("CalcFunc.jl");
-
 ### equivalent of jexpresso _expansion_inviscid
 function Calcf0( d, Tot_X_Pts, Tot_Int_Pts, Gamma, Del_x, U, A, params )
     #CALCF0 evaluates ODE driver function f(U) at flow variables U 
