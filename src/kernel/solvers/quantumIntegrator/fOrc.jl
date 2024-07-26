@@ -1,9 +1,6 @@
-include("CalcBCmSW.jl"); 
-include("CalcBCpSW.jl"); 
-include("Calcf0.jl");
-#include("../../operators/rhs.jl");
-
-using Polynomials
+#include("CalcBCmSW.jl"); 
+#include("CalcBCpSW.jl"); 
+#include("Calcf0.jl");
 
 function fOrc(t, Start, TCoeffs, d, 
               rmaxp1, Tot_Int_Pts, Gamma, Del_x, A, 

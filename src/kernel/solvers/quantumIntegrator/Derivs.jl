@@ -1,4 +1,4 @@
-include("CalcFlux.jl"); 
+#=include("CalcFlux.jl"); 
 include("CalcSource.jl"); 
 include("CalcFunc.jl"); 
 include("CalcfBvalsmSW.jl");
@@ -10,7 +10,7 @@ include("CalcdfdtBvalsmSW.jl");
 include("CalcdfdtBvalspSW.jl");
 include("Calc_d2Fdt2.jl"); 
 include("Calc_d2Jdt2.jl"); 
-include("Calc_d2ffdt2.jl");
+include("Calc_d2ffdt2.jl");=#
 
 function Derivs( d,r,InitVal,Del_x,Gamma,Tot_Int_Pts,Tot_X_Pts,
     A,Shock_Flag)

@@ -1,7 +1,5 @@
-include("CalcBCmSW.jl");
-include("CalcBCpSW.jl");
-
-using Polynomials
+#include("CalcBCmSW.jl");
+#include("CalcBCpSW.jl");
 
 function NextInCond(mmat, InitVal, hbar, d, r, A, Gamma,
     Tot_Int_Pts, Tot_X_Pts, Shock_Flag,
