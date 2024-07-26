@@ -10,6 +10,7 @@ function user_inputs()
         :Δt                   => 1.0e-5,
         :ndiagnostics_outputs => 10, #these are steps, not seconds
         :output_dir          => "./",
+        :loverwrite_output   => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -30,9 +31,6 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => false, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/2d-grid.msh", 
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_25x25.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/circle_TFI.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh",
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
