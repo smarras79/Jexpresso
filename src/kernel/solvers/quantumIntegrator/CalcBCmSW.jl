@@ -50,7 +50,7 @@ function CalcBCmSW(U,A,Gamma,d,Tot_X_Pts, params)
     apply_boundary_conditions!(u, params.uaux, 0.0, params.qp.qe,
     params.mesh, params.metrics, params.basis,
     params.RHS, params.rhs_el, params.ubdy,
-    params.ω, params.neqs, params.inputs, FD(), NSD_1D())
+    params.ω, params.neqs, params.inputs, params.inputs[:AD], NSD_1D())
 
     for l=0:d-1
         U_Bvals[l+1, 1] = u[Tot_X_Pts*l + 1]

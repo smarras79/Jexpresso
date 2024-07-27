@@ -32,7 +32,7 @@ function  CalcfBvalsmSW(U,Gamma,ff_vals,d,Tot_Int_Pts)
     # calculate use boundary conditions on flow variables to determine
     #   ff_Bvals at nozzle exit()
     
-    for k = 1:3
+    for k = 1:d
         ff_Bvals[k,2] = 2*ff_vals[k,Tot_Int_Pts] - ff_vals[k,(Tot_Int_Pts-1)]
     end
     

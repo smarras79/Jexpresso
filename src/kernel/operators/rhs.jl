@@ -320,7 +320,6 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D, ::ContGal)
         
         for i=1:params.mesh.ngl
             ip = params.mesh.connijk[iel,i,1]
-            
             user_flux!(@view(params.F[i,1,:]), @view(params.G[i,1,:]), SD,
                        @view(params.uaux[ip,:]),
                        @view(params.qp.qe[ip,:]),         #pref

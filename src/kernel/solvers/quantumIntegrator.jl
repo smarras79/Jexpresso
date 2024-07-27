@@ -34,13 +34,14 @@ include("quantumIntegrator/Calcf0.jl");
 
 using Makie
 
+#TODO: Note: next step is to create values for derivatives of driver function.
 
 function quantumIntegrator(u, params, inputs)
     t_steps = 1400
     N, delta1, n, k = InitParms(16, 0.005, 0.005, t_steps) #all from qns_inputdata in jqc (user inputs)
     a = 0 
     d = 3#params.mesh.neqs
-    r = 2
+    r = 2 #TODO: change back to 2
     n = Int(n)
     N = Int(N)
     @info n, N
@@ -54,7 +55,7 @@ function quantumIntegrator(u, params, inputs)
     rho = 1
     x, Del_x = Set_XGrid(params.xmin, params.xmax, Tot_X_Pts)
     A = Calc_Noz_Area(x)
-    In_Mass_Flow = 0.579
+    #In_Mass_Flow = 0.579
 
     Delta_t = inputs[:Δt]
     # Mrho_E = zeros(Float64, 1, Tot_X_Pts) #set to 0 for now?
@@ -62,37 +63,44 @@ function quantumIntegrator(u, params, inputs)
     # Mach_E =  zeros(Float64, 1, Tot_X_Pts)#?
     # Press_E =  zeros(Float64, 1, Tot_X_Pts)#?
     # Vel_E =  zeros(Float64, 1, Tot_X_Pts)#?
-    Mach_E, Mrho_E, Press_E, Temp_E, Vel_E = Calc_ExactResultsmSW(Gamma, Tot_X_Pts, A) #tentative
+    #Mach_E, Mrho_E, Press_E, Temp_E, Vel_E = Calc_ExactResultsmSW(Gamma, Tot_X_Pts, A) #tentative
     InitVal = zeros(Float64, d, Tot_X_Pts) # rhs[ip, ieq] corresponds to InitVal[ieq, ip]...
-    for i=1:d
+    # build_rhs!(params.RHS, u, params, 0.0)
+    for i=1:2 #TODO: make sure to change back to d
         for j=1:Tot_X_Pts
             InitVal[i, j] = u[params.mesh.npoin*(i-1)+j]
         end
     end
-    U2_in = zeros(Float64, Tot_X_Pts, n+1) #initial mass flow rate in col. 1, all other cols are 0
-    U2_in[1, :] .= In_Mass_Flow
+    @info InitVal
+    # for i=1:Tot_X_Pts
+    #     for j=1:d-1 #TODO: change back to d after wave1d
+    #         InitVal[j, i] = params.RHS[i, j]
+    #     end
+    # end
+    #U2_in = zeros(Float64, Tot_X_Pts, n+1) #initial mass flow rate in col. 1, all other cols are 0
+    #U2_in[1, :] .= In_Mass_Flow
     #InitVal, Delta_t, In_Mass_Flow_Noisy = SetInCond(shock_flag, In_Mass_Flow, gamma, x, Del_x, A, d, Mrho_E, Temp_E, ICMFlowErrScale, ICrhoErrScale, ICtempErrScale)
     b =  t_steps*Delta_t#inputs[:Δt]
     t, hbar = IPrtn(a, b, n, N)
-    ff0_throat_in = zeros(Float64, d, n)
-    ff1_throat_in = zeros(Float64, d, n)
-    ff2_throat_in = zeros(Float64, d, n)
+    #ff0_throat_in = zeros(Float64, d, n)
+    #ff1_throat_in = zeros(Float64, d, n)
+    #ff2_throat_in = zeros(Float64, d, n)
     #mach_E = mach number at all pts
     #mrho_E = mass density at all grid pts
     # press_E = pressure at all grid-pts
     # temp_E = temperature at all grid-pts
     # vel_E = velocity at all grid-pts
-    U2, #=Mach_D, Mrho_D, Press_D, Temp_D, Vel_D, Rel_MachErr, Rel_MrhoErr, 
+    #=U2,=# #=Mach_D, Mrho_D, Press_D, Temp_D, Vel_D, Rel_MachErr, Rel_MrhoErr, 
     Rel_PressErr, Rel_TempErr, Rel_VelErr=# #=AvRelTempErr, AvPlusSDevRelTempErr, 
     AvMinusSDevRelTempErr, AvRelMachErr, AvPlusSDevRelMachErr, AvMinusSDevRelMachErr, 
     AvRelMrhoErr, AvPlusSDevRelMrhoErr, AvMinusSDevRelMrhoErr, AvRelPressErr, 
-    AvPlusSDevRelPressErr, AvMinusSDevRelPressErr, AvU2,=# ff0_throat, ff1_throat, 
-    ff2_throat, FinalVal, allTimestepValues = IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, 
+    AvPlusSDevRelPressErr, AvMinusSDevRelPressErr, AvU2,=# #=ff0_throat, ff1_throat, 
+    ff2_throat, =#FinalVal, allTimestepValues = IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, 
     Tot_X_Pts, Shock_Flag, Exit_Pressure, ithroat, a, delta1, rho, InitVal#=?=#, A, 
-    t, U2_in, ff0_throat_in, ff1_throat_in, ff2_throat_in, Mach_E, Mrho_E, Press_E, 
-    Temp_E, Vel_E, In_Mass_Flow, params)
+    t, #=U2_in,=# #=ff0_throat_in, ff1_throat_in, ff2_throat_in,=# #=Mach_E, Mrho_E, Press_E, 
+    Temp_E, Vel_E, In_Mass_Flow,=# params)
     #finalU = zeros(Float64, d*Tot_X_Pts)
-    for ieq=1:d
+    for ieq=1:2 #TODO: change back to d later
         for ip=1:Tot_X_Pts
             u[(ieq-1)*Tot_X_Pts + ip] = FinalVal[ieq, ip]
         end
@@ -116,13 +124,13 @@ function quantumIntegrator(u, params, inputs)
         time2[] = j
     end
 
-    time3 = Observable(1)
-    xs3 = LinRange(0, 3, Tot_X_Pts)
-    zs3 = @lift[allTimestepValues[$time3, 3, x] for x=1:Tot_X_Pts]
-    title3 = "InitVal3"
-    fig3 = scatter(xs3, zs3, axis=(type=Axis,title=title3))
-    record(fig3, "InitVal3.mp4", 2:n+1, framerate = 2) do k
-        time3[] = k
-    end
+    # time3 = Observable(1)
+    # xs3 = LinRange(0, 3, Tot_X_Pts)
+    # zs3 = @lift[allTimestepValues[$time3, 3, x] for x=1:Tot_X_Pts]
+    # title3 = "InitVal3"
+    # fig3 = scatter(xs3, zs3, axis=(type=Axis,title=title3))
+    # record(fig3, "InitVal3.mp4", 2:n+1, framerate = 2) do k
+    #     time3[] = k
+    # end #TODO: add later if necessary
     return u
 end

@@ -1,4 +1,4 @@
-function CalcFlux(U, Gamma, d, Tot_X_Pts)
+function CalcFlux(U, Gamma, d, Tot_X_Pts, params)
     #CALCFLUX evaluates flow fluxes at all grid-points for Nav-Stokes dynamics
     #   CalcFlux evaluates the flow fluxes for the compressible; inviscid
     #       Navier-Stokes dynamics at all grid-points.

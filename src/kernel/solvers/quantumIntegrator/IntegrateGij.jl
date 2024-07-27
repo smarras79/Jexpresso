@@ -161,12 +161,13 @@ function IntegrateGij(StoreLz, StoreTimes4i, Start,
         elseif DelGij <= Tolerance
           global IntegralValue[k, ll] = 0.0
 
-          print("DelGij .< Tolerance! Beware dividing by 0!")
-          GijMin
-          GijMax
-          DelGij
-          print("   Press any key to continue calculation...")
-          readline()
+          # print("DelGij .< Tolerance! Beware dividing by 0!")
+          # print(GijMin)
+          # print(GijMax)
+          # print(DelGij)
+          # print("   Press any key to continue calculation...")
+          # readline()
+          # TODO: chagne later or not
         end
 
         # need to undo shift & rescaling to get integral of GijVals

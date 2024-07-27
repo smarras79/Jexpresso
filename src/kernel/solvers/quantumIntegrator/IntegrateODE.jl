@@ -1,6 +1,6 @@
 using Statistics;
 
-function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts, Shock_Flag, Exit_Pressure, ithroat, a, delta1, rho, InitVal, A, t, U2_in, ff0_throat_in, ff1_throat_in, ff2_throat_in, Mach_E, Mrho_E, Press_E, Temp_E, Vel_E, In_Mass_Flow, params)
+function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts, Shock_Flag, Exit_Pressure, ithroat, a, delta1, rho, InitVal, A, t, #=U2_in=# #=ff0_throat_in, ff1_throat_in, ff2_throat_in,=##=Mach_E, Mrho_E, Press_E, Temp_E, Vel_E, In_Mass_Flow, =# params)
   #INTEGRATEODE numerically integrates ODE for 1D Navier-Stokes flow()
   #   IntegrateODE numerically integrates the set of ordinary differential
   #       equations for 1D Navier-Stokes flow using Kacewicz' quantum
@@ -134,41 +134,18 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
   # initialize arrays ff0_throat; ff1_throat; ff2_throat to values passed
   #   through function input arguments 
 
-  local U2
-  local Mach_D
-  local Mrho_D
-  local Press_D
-  local Temp_D
-  local Vel_D
-  local Rel_MachErr
-  local Rel_MrhoErr
-  local Rel_PressErr
-  local Rel_TempErr
-  local Rel_VelErr
-  local AvRelTempErr
-  local AvPlusSDevRelTempErr
-  local AvMinusSDevRelTempErr
-  local AvRelMachErr
-  local AvPlusSDevRelMachErr
-  local AvMinusSDevRelMachErr
-  local AvRelMrhoErr
-  local AvPlusSDevRelMrhoErr
-  local AvMinusSDevRelMrhoErr
-  local AvRelPressErr
-  local AvPlusSDevRelPressErr
-  local AvMinusSDevRelPressErr
-  local AvU2
-  local ff0_throat
-  local ff1_throat
-  local ff2_throat
+  #local U2
+  #local ff0_throat
+  #local ff1_throat
+  #local ff2_throat
 
-  ff0_throat = ff0_throat_in
-  ff1_throat = ff1_throat_in
-  ff2_throat = ff2_throat_in
+  #ff0_throat = ff0_throat_in
+  #ff1_throat = ff1_throat_in
+  #ff2_throat = ff2_throat_in
 
   # similarly; initialize U2 to U2_in
 
-  U2 = U2_in
+  #U2 = U2_in
 
   allTimestepValues = zeros(Float64, n+1, d, Tot_X_Pts)
   allTimestepValues[1, :, :] .= InitVal[:, :]
@@ -187,14 +164,14 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
     #       of subinterval i
 
     # builds the taylor polynomial for each subinterval. Eqn 9 in review? #
-    StoreLz, ff_throat = BldTPoly(d, n, N, hbar, r, InitVal, Del_x, Gamma, Tot_Int_Pts, Tot_X_Pts, A, Shock_Flag, Exit_Pressure, ithroat, params)
+    StoreLz #=ff_throat=# = BldTPoly(d, n, N, hbar, r, InitVal, Del_x, Gamma, Tot_Int_Pts, Tot_X_Pts, A, Shock_Flag, Exit_Pressure, ithroat, params)
 
     # store values of ff_throat for subinterval i for easy of writing to
     #   files
 
-    ff0_throat[:, Int(i)] = map(abs, ff_throat[:, 1])#abs(ff_throat[:, 1])
-    ff1_throat[:, Int(i)] = map(abs, ff_throat[:, 2])#abs(ff_throat[:, 2])
-    ff2_throat[:, Int(i)] = map(abs, ff_throat[:, 3])#abs(ff_throat[:, 3])
+    #ff0_throat[:, Int(i)] = map(abs, ff_throat[:, 1])#abs(ff_throat[:, 1])
+    # TODO: just for wave, change later ff1_throat[:, Int(i)] = map(abs, ff_throat[:, 2])#abs(ff_throat[:, 2])
+    #TODO: just for wave, change later ff2_throat[:, Int(i)] = map(abs, ff_throat[:, 3])#abs(ff_throat[:, 3])
 
     # store N intermediate times for subinterval i
 
@@ -252,9 +229,9 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
     # store U2 values at start of subinterval i + 1 at all gridpoints
 
-    for gridpt = 1:Tot_X_Pts
-      U2[gridpt, Int(i)+1] = InitVal[2, gridpt]
-    end
+    # for gridpt = 1:Tot_X_Pts
+    #   U2[gridpt, Int(i)+1] = InitVal[2, gridpt]
+    # end
 
     # evaluate physical flow variables from InitVal for next subinterval
 
@@ -362,7 +339,7 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
     initvalprintfile = open("./Output/InitVal$(i).txt", "w+")
 
-    for i=1:d
+    for i=1:2 #TODO: just for wave1d
       for j=1:Tot_X_Pts
         @printf(initvalprintfile, "%8.3f", InitVal[i, j]);
       end
@@ -370,7 +347,7 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
     end
 
     npoin = Tot_X_Pts
-    fig, ax, plt = CairoMakie.scatter(range(1, 3, length=31), InitVal[2, 1:npoin];
+    fig, ax, plt = CairoMakie.scatter(range(params.inputs[:xmin], params.inputs[:xmax], length=Tot_X_Pts), InitVal[2, 1:npoin];
                                       markersize = 10, markercolor="Blue",
                                       xlabel = "x", ylabel = "q(x)",
                                       fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = "u", xlabel = "x")
@@ -387,12 +364,12 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
   end
 
-  return U2, #=Mach_D, Mrho_D, Press_D, Temp_D, Vel_D, Rel_MachErr,
+  return #=U2=# #=Mach_D, Mrho_D, Press_D, Temp_D, Vel_D, Rel_MachErr,
     Rel_MrhoErr, Rel_PressErr, Rel_TempErr, Rel_VelErr,=#
     #= AvRelTempErr, AvPlusSDevRelTempErr, AvMinusSDevRelTempErr,
     AvRelMachErr, AvPlusSDevRelMachErr, AvMinusSDevRelMachErr,
     AvRelMrhoErr, AvPlusSDevRelMrhoErr, AvMinusSDevRelMrhoErr,
     AvRelPressErr, AvPlusSDevRelPressErr, AvMinusSDevRelPressErr,
     AvU2,=#
-    ff0_throat, ff1_throat, ff2_throat, InitVal, allTimestepValues
+    #=ff0_throat, ff1_throat, ff2_throat, =# InitVal, allTimestepValues
 end

@@ -48,15 +48,15 @@ function BldTPoly(dd, nn, NN, hb, rr, InVal, Del_x,
         #    store in ff = dd x [rr+1] x Tot_Int_Pts array
 
         ff = Derivs(dd, rr, InVal, Del_x, Gamma, Tot_Int_Pts, Tot_X_Pts, A,
-            Shock_Flag)
+            Shock_Flag, params, InVal)
         #@info "ff =: " ff
         #readline();
         # if j .== NN store values of ff at ithroat to send back to 
         #   main program
 
-        if j .== NN
-            ff_throat = ff[:, :, Int(ithroat)]
-        end
+        # if j .== NN
+        #     ff_throat = ff[:, :, Int(ithroat)]
+        # end
 
         # for each subsubinterval j; calculate & store Taylor poly coeffs. 
         #  for each component of ODE driver function & interior grid-point  
@@ -75,6 +75,6 @@ function BldTPoly(dd, nn, NN, hb, rr, InVal, Del_x,
             Tot_X_Pts, Shock_Flag, Exit_Pressure, params)
     end
 
-    return ll, ff_throat
+    return ll#, ff_throat
 
 end

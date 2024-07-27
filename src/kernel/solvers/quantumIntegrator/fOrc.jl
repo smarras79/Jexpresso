@@ -102,7 +102,7 @@ function fOrc(t, Start, TCoeffs, d,
     # # to here, replace with jexpresso bc's
     u = zeros(Float64, params.mesh.npoin*d)
     for ip=1:Tot_X_Pts
-        for ieq=0:d-1
+        for ieq=0:d-2 #TODO: change back to d-1 after done with wave-fd
             u[Tot_X_Pts*ieq + ip] = U[ieq+1, ip]
         end
     end
@@ -117,7 +117,7 @@ function fOrc(t, Start, TCoeffs, d,
 
     rhs = zeros(Float64, d, Tot_Int_Pts)
     for i=1:Tot_Int_Pts
-        for j=1:d
+        for j=1:d-1 #TODO: change back to d after wave1d
             rhs[j, i] = params.RHS[i+1, j]
         end
     end

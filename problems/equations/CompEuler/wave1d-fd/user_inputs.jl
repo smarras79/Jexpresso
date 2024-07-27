@@ -7,7 +7,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver          => ABM54(),
         :tend                 => 3.0,
-        :Δt                   => 1.0e-5,
+        :Δt                   => 1.0e-3,
         :ndiagnostics_outputs => 10, #these are steps, not seconds
         :output_dir          => "./",
         #---------------------------------------------------------------------------
@@ -19,6 +19,7 @@ function user_inputs()
         :lexact_integration  => false,
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
+        :lquantum            => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -40,9 +41,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
-        :xmin          =>   0.0,
-        :xmax          =>   5.0,
-        :nelx          =>   200,
+        :xmin          =>   1.0,
+        :xmax          =>   3.0,
+        :nelx          =>   50,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
