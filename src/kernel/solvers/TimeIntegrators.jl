@@ -29,7 +29,7 @@ function time_loop!(inputs, params, u)
         idx  = idx_ref[]
 
         println(" #  t=", integrator.t)
-        computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD)
+        # computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD)
         
         write_output(params.SD, integrator.u, integrator.t, idx,
                      params.mesh,
