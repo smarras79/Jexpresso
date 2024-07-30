@@ -630,27 +630,43 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
      
     #npoin = mesh.npoin
     qout = copy(q)
+    TF = eltype(q)
+    ρ = zeros(TF, mesh.npoin,1)
+    u = zeros(TF, mesh.npoin,1)
+    v = zeros(TF, mesh.npoin,1)
+    w = zeros(TF, mesh.npoin,1)
+    e_tot = zeros(TF, mesh.npoin,1)
+    qt = zeros(TF, mesh.npoin,1)
+    ql = zeros(TF, mesh.npoin,1)
+    θ = zeros(TF, mesh.npoin,1)
+    param_set = update_p_ref_theta(TF(101325.0))
+    _grav = TF(TP.grav(param_set))
+
 
     if (inputs[:CL] == CL())
         if (inputs[:SOL_VARS_TYPE] == TOTAL())
             #ρ
             qout[1:mesh.npoin] .= q[1:mesh.npoin]
+            ρ[:] .= q[1:mesh.npoin]
             
             if (case == "rtb" || case == "mountain") && nvars >= 4
                 #u = ρu/ρ
                 ivar = 2
                 idx = (ivar - 1)*mesh.npoin
                 qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                u[:] .= qout[idx+1:ivar*mesh.npoin]
 
                 #v = ρv/ρ
                 ivar = 3
                 idx = (ivar - 1)*mesh.npoin
                 qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                v[:] .= qout[idx+1:ivar*mesh.npoin]
                 
                 #w = ρw/ρ
                 ivar = 4
                 idx = (ivar - 1)*mesh.npoin
                 qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                w[:] .= qout[idx+1:ivar*mesh.npoin]
                 
                 if (size(qexact, 1) == mesh.npoin)
 
@@ -666,11 +682,35 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                         ivar = 5
                         idx = (ivar - 1)*mesh.npoin
                         qout[idx+1:5*mesh.npoin] .= q[idx+1:5*mesh.npoin]./q[1:mesh.npoin]
+                        e_tot[:] .= qout[idx+1:ivar*mesh.npoin]
 
                     end
                 end
-            end
+                
 
+                #qt = ρqt/ρ
+                ivar = 6
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                qt[:] .= qout[idx+1:ivar*mesh.npoin]
+
+
+                #ql = ρql/ρ
+                ivar = 7
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                ql[:] .= qout[idx+1:ivar*mesh.npoin]
+                
+                for i = 1:mesh.npoin
+                    e_kin = 0.5 * (u[i]^2 + v[i]^2 + w[i]^2)
+                    e_pot = _grav * mesh.z[i]
+                    e_int::TF = e_tot[i] - e_pot - e_kin
+                    q_pt = TD.PhasePartition(qt[i], ql[i])
+                    Temp = TD.air_temperature(param_set, e_int, q_pt)
+                    θ[i] = TD.virtual_pottemp(param_set, Temp, ρ[i], q_pt)
+                end
+                
+            end
         else
             qout[1:mesh.npoin] .= q[1:mesh.npoin]
 
@@ -701,6 +741,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         idx = (ivar - 1)*mesh.npoin
         vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*mesh.npoin])
     end
+    vtkfile["theta", VTKPointData()] =  @view(θ[:])
     outfiles = vtk_save(vtkfile)
     
 end

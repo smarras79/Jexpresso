@@ -175,6 +175,87 @@ end
 end
 
 
+@kernel function _build_rhs_gpu_3D_v1!(RHS, u, qe, x, y, z, connijk, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, flux, source, ngl, neq, PhysConst, param_set, 
+    xmax, xmin, ymax, ymin, zmax, zmin, lpert)
+
+ie = @index(Group, Linear)
+il = @index(Local, NTuple)
+@inbounds i_x = il[1]
+@inbounds i_y = il[2]
+@inbounds i_z = il[3]
+@inbounds ip = connijk[ie,i_x,i_y,i_z]
+
+T = eltype(RHS)
+DIM = @uniform @groupsize()[1]
+### define and populate flux array as shared memory then make sure blocks are synchronized
+F = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
+G = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
+H = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
+S = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
+
+uip = @view(u[ip,1:neq])
+qeip = @view(qe[ip,1:neq+1])
+@inbounds flux[ie, i_x, i_y, i_z,:] .= user_flux_gpu(uip,qeip,z[ip],PhysConst, param_set,lpert)
+
+@inbounds source[ie, i_x, i_y, i_z,:] .= user_source_gpu(uip,qeip,x[ip],y[ip],z[ip],PhysConst, xmax, xmin, ymax, ymin, zmax, zmin,lpert)
+
+@synchronize()
+### do numerical integration
+for ieq =1:neq
+    @inbounds F[i_x,i_y,i_z] = flux[ie, i_x, i_y, i_z, ieq]
+    @inbounds G[i_x,i_y,i_z] = flux[ie, i_x, i_y, i_z, neq+ieq]
+    @inbounds H[i_x,i_y,i_z] = flux[ie, i_x, i_y, i_z, 2*neq+ieq]
+    @inbounds S[i_x,i_y,i_z] = source[ie, i_x, i_y, i_z, ieq]
+    @synchronize()
+    dFdξ = zero(T)
+    dFdη = zero(T)
+    dFdζ = zero(T)
+    dGdξ = zero(T)
+    dGdη = zero(T)
+    dGdζ = zero(T)
+    dHdξ = zero(T)
+    dHdη = zero(T)
+    dHdζ = zero(T)
+
+    for k=1:ngl
+        @inbounds dFdξ += dψ[k,i_x]*F[k,i_y,i_z]
+        @inbounds dFdη += dψ[k,i_y]*F[i_x,k,i_z]
+        @inbounds dFdζ += dψ[k,i_z]*F[i_x,i_y,k]
+        
+        @inbounds dGdξ += dψ[k,i_x]*G[k,i_y,i_z]
+        @inbounds dGdη += dψ[k,i_y]*G[i_x,k,i_z]
+        @inbounds dGdζ += dψ[k,i_z]*G[i_x,i_y,k]
+
+        @inbounds dHdξ += dψ[k,i_x]*H[k,i_y,i_z]
+        @inbounds dHdη += dψ[k,i_y]*H[i_x,k,i_z]
+        @inbounds dHdζ += dψ[k,i_z]*H[i_x,i_y,k]
+        
+    end
+    @synchronize()
+
+    @inbounds dξdx_ijk = dξdx[ie,i_x,i_y,i_z]
+    @inbounds dξdy_ijk = dξdy[ie,i_x,i_y,i_z]
+    @inbounds dξdz_ijk = dξdz[ie,i_x,i_y,i_z]
+    
+    @inbounds dηdx_ijk = dηdx[ie,i_x,i_y,i_z]
+    @inbounds dηdy_ijk = dηdy[ie,i_x,i_y,i_z]
+    @inbounds dηdz_ijk = dηdz[ie,i_x,i_y,i_z]
+
+    @inbounds dζdx_ijk = dζdx[ie,i_x,i_y,i_z]
+    @inbounds dζdy_ijk = dζdy[ie,i_x,i_y,i_z]
+    @inbounds dζdz_ijk = dζdz[ie,i_x,i_y,i_z]
+
+    dFdx = dFdξ*dξdx_ijk + dFdη*dηdx_ijk + dFdζ*dζdx_ijk
+    dGdy = dGdξ*dξdy_ijk + dGdη*dηdy_ijk + dGdζ*dζdy_ijk
+    dHdz = dHdξ*dξdz_ijk + dHdη*dηdz_ijk + dHdζ*dζdz_ijk
+
+
+### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
+    @inbounds KernelAbstractions.@atomic RHS[ip,ieq] -= ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]*((dFdx + dGdy + dHdz)- S[i_x,i_y,i_z])* Minv[ip]
+    @synchronize()
+end
+end
+
 @kernel function _build_rhs_diff_gpu_3D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, u, qe, uprimitive, x, y, z, connijk, 
         dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst, lpert)
 
@@ -585,6 +666,17 @@ end
             @inbounds u[(ieq-1)*npoin+ip] = qbdy[iface, i_x,i_y, ieq]
         end
     end
+end
+
+@kernel function saturation_adjustment_gpu_3D!(uaux, qe, z, connijk, neqs, param_set, lpert)
+    
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    @inbounds i_x = il[1]
+    @inbounds i_y = il[2]
+    @inbounds i_z = il[3]
+    @inbounds ip = connijk[ie,i_x,i_y,i_z]
+    @inbounds uaux[ip, 1:neqs] .= user_saturation_adjustment(@view(uaux[ip,:]), @view(qe[ip,:]), z[ip], param_set, lpert)
 end
 
 @kernel function utouaux_gpu!(u,uaux,npoin,neq)
