@@ -77,6 +77,7 @@ function rhs!(du, u, params, time)
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
             params.RHS .= @views(params.RHS .+ params.RHS_lag)
         end
+        DSS_global_RHS!(@view(params.RHS[:,:]), params.mesh.ip2gip, params.mesh.gip2owner, params.mesh.parts, params.mesh.npoin, params.mesh.gnpoin, params.neqs)
         RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     else
         if (params.SOL_VARS_TYPE == PERT())
@@ -255,6 +256,8 @@ function rhs!(du, u, params, time)
                 @inbounds params.RHS .+= params.RHS_visc
             end
             #@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
+            DSS_global_RHS!(@view(params.RHS[:,:]), params.mesh.ip2gip, params.mesh.gip2owner, params.mesh.parts, params.mesh.npoin, params.mesh.gnpoin, params.neqs)
+
             k1 = RHStodu_gpu!(backend)
             k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
             

@@ -40,7 +40,10 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # INITIAL STATE from scratch:
             #
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            comm = MPI.COMM_WORLD
+            max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
+            min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+            xc = (max_x + min_x)/2
             yc = 2500.0 #m
             r0 = 2000.0 #m
         

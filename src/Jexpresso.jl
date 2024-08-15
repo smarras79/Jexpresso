@@ -63,6 +63,8 @@ include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 
 include(joinpath( "kernel", "physics", "constitutiveLaw.jl"))
 
+include(joinpath( "kernel", "mesh", "Geom.jl"))
+
 include(joinpath( "kernel", "mesh", "mesh.jl"))
 
 include(joinpath( "kernel", "bases", "basis_structs.jl"))

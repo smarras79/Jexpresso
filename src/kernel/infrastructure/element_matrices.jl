@@ -894,6 +894,44 @@ function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, 
     
 end
 
+function DSS_global_RHS!(RHS, ip2gip, gip2owner, parts, npoin, gnpoin, neqs)
+    for i = 1:neqs
+        DSS_global_mass!(@view(RHS[:,i]), ip2gip, gip2owner, parts, npoin, gnpoin)
+    end
+end
+
+function DSS_global_mass!(M, ip2gip, gip2owner, parts, npoin, gnpoin)
+    # @info ip2gip
+    row_partition = map(parts) do part
+        row_partition = LocalIndices(gnpoin,part,ip2gip,gip2owner)
+        # gM = M
+        row_partition
+    end
+    pM = pvector(values->M, row_partition)
+    # map(parts,local_values(pM)) do part,values
+    #     # if part == 1
+    #         @info values
+    # #     end
+    # end
+
+    # map(partition(pM),row_partition) do values, indices
+    #     local_index_to_owner = local_to_owner(indices)
+    #     @info local_index_to_owner
+    #     # for lid in 1:length(local_index_to_owner)
+    #     #     owner = local_index_to_owner[lid]
+    #     #     @test values[lid] == 10*owner
+    #     # end
+    # end
+
+
+    assemble!(pM) |> wait
+    consistent!(pM) |> wait
+    M = map(local_values(pM)) do values
+        M = values
+        M
+    end
+end
+
 function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
         ldss_laplace=false, ldss_differentiation=false, backend = CPU())
 
@@ -939,6 +977,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         k(M,Me,connijk,mesh.nelem, mesh.npoin, N;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
     end
+    DSS_global_mass!(M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    # @mystop("my stop at DSS_global_mass!")
+
     mass_inverse!(Minv, M, QT)
     Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)

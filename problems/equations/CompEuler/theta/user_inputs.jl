@@ -16,7 +16,7 @@ function user_inputs()
         :diagnostics_at_times => (100, 200, 300, 400, 500, 600, 700, 800, 900, 1000),
         :case                 => "rtb",
         :lsource              => true, 
-        #:backend              => MetalBackend(),
+        # :backend              => CUDABackend(),
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
