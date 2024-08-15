@@ -10,6 +10,10 @@ using Gridap.Geometry: GridMock
 using GridapDistributed
 using PartitionedArrays
 using GridapGmsh
+using GridapP4est
+using Metis
+using .MyGeometry
+using Test
 
 export St_mesh
 export mod_mesh_mesh_driver
@@ -62,6 +66,13 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     nfaces::Union{TInt, Missing} = 1       # total number of faces
     nfaces_bdy::Union{TInt, Missing} = 1   # bdy faces
     nfaces_int::Union{TInt, Missing} = 1   # internal faces
+
+    # global for MPI
+    gnelem::Union{TInt, Missing} = 1
+    gnpoin::Union{TInt, Missing} = 1        # This is updated after populating with high-order nodes
+    gnpoin_linear::Union{TInt, Missing} = 1 # This is always the original number of the first-order grid
+    gnedges::Union{TInt, Missing} = 1       # total number of edges
+    gnfaces::Union{TInt, Missing} = 1       # total number of faces
     
     nsd::Union{TInt, Missing} = 1          # number of space dim
     nop::Union{TInt, Missing} = 4          # poly order
@@ -97,6 +108,11 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     face_in_elem         = Array{TInt}(undef, 0, 0, 0)
 
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
+
+    ip2gip              = KernelAbstractions.zeros(backend, TInt, 0)
+    gip2owner              = KernelAbstractions.zeros(backend, TInt, 0)
+    parts               = 1
+    nparts              = 1
     
     #Auxiliary arrays for boundary conditions
     
@@ -123,20 +139,41 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
 
     # determine backend
     backend = CPU()
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
     
     #
     # Read GMSH grid from file
     #      
     parts  = distribute(LinearIndices((nparts,)))
+    mesh.parts = distribute(LinearIndices((nparts,)))
+    mesh.nparts = nparts
+    gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
     partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+    # smodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+    # g = GridapDistributed.compute_cell_graph(smodel)
+    # cell_to_part = Metis.partition(g,4)
+    # @info cell_to_part
+
+    # coarse_discrete_model = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+    # num_uniform_refinements = 1
+    # partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts,
+    #                                                    coarse_discrete_model,
+    #                                                    num_uniform_refinements)
     model = local_views(partitioned_model).item_ref[]
     topology      = get_grid_topology(model)
+    gtopology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
+    @info d_to_num_dfaces
+    point2ppoint = Geometry.get_face_to_parent_face(model,0)
+    edge2pedge = Geometry.get_face_to_parent_face(model,1)
+    face2pface = Geometry.get_face_to_parent_face(model,2)
+    # @info edge2pedge
 
     # Write the partitioned model to a VTK file
-    # vtk_directory = "./" 
-    # writevtk(partitioned_model, vtk_directory)
+    vtk_directory = "./" 
+    writevtk(partitioned_model, vtk_directory)
     
     POIN_flg = 0
     EDGE_flg = 1
@@ -182,6 +219,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     mesh.nedges       = num_faces(model,EDGE_flg)
     mesh.nfaces       = num_faces(model,FACE_flg)   
     mesh.nelem        = num_faces(model,ELEM_flg)
+
+    mesh.gnpoin_linear = num_faces(gmodel,POIN_flg)    
+    mesh.gnpoin        = mesh.gnpoin_linear         #This will be updated for the high order grid
+    mesh.gnedges       = num_faces(gmodel,EDGE_flg)
+    mesh.gnfaces       = num_faces(gmodel,FACE_flg)   
+    mesh.gnelem        = num_faces(gmodel,ELEM_flg)
     
     mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
     mesh.nelem_int    = mesh.nelem - mesh.nelem_bdy
@@ -192,10 +235,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     
     #get_isboundary_face(topology,mesh.nsd-1)
     println(" # GMSH LINEAR GRID PROPERTIES")
-    println(" # N. points         : ", mesh.npoin_linear)
-    println(" # N. elements       : ", mesh.nelem)
-    println(" # N. edges          : ", mesh.nedges)
-    println(" # N. faces          : ", mesh.nfaces)    
+    println(" # N. points         : ", mesh.gnpoin_linear)
+    println(" # N. elements       : ", mesh.gnelem)
+    println(" # N. edges          : ", mesh.gnedges)
+    println(" # N. faces          : ", mesh.gnfaces)    
     println(" # N. internal elem  : ", mesh.nelem_int)
     println(" # N. internal edges : ", mesh.nedges_int) 
     println(" # N. internal faces : ", mesh.nfaces_int)    
@@ -233,6 +276,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     mesh.x = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.y = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.z = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+
+    mesh.ip2gip = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
+    mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
+    
     
     mesh.conn_edge_el = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
     mesh.conn_face_el = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
@@ -264,6 +311,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
     mesh.edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
+    # @info rank,node_global
+
 
 
     if (mesh.nsd == 1)
@@ -289,8 +338,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
             mesh.connijk[iel, ngl,  ngl] = mesh.cell_node_ids[iel][3]
             mesh.connijk[iel, ngl,    1] = mesh.cell_node_ids[iel][4]
             
-            #@printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[iel, 1, 1], mesh.connijk[iel, ngl, 1] , mesh.connijk[iel, 1,ngl], mesh.connijk[iel, ngl, ngl] )
-            
+            # @printf(" [1,1] [ngl, 1] [1, ngl] [ngl, ngl] %d %d %d %d\n", mesh.connijk[iel, 1, 1], mesh.connijk[iel, ngl, 1] , mesh.connijk[iel, 1,ngl], mesh.connijk[iel, ngl, ngl] )
         end
         #
         # Fill in elements dictionary needed by NodeOrdering.jl
@@ -305,15 +353,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
         #
         # Rewrite coordinates in RCM order:
         #
-        #open("./COORDS_LO.dat", "w") do f
+        # filename = "./COORDS_LO_" + rank + ".dat" 
+        open("./COORDS_LO_$rank.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 
                 mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
                 mesh.y[ip] = get_node_coordinates(get_grid(model))[ip][2]
                 
-        #        @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
+                mesh.ip2gip[ip] = point2ppoint[ip]
+                # mesh.gip2owner[ip] = 1
+                @printf(f, " %.6f %.6f 0.000000 %d %d\n", mesh.x[ip],  mesh.y[ip], ip, point2ppoint[ip])
             end
-        #end #f
+        end #f
 
     elseif (mesh.nsd == 3)
         
@@ -373,7 +424,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
                 mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
                 mesh.y[ip] = get_node_coordinates(get_grid(model))[ip][2]
                 mesh.z[ip] = get_node_coordinates(get_grid(model))[ip][3]
-        #        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+                mesh.ip2gip[ip] = point2ppoint[ip]
+                # mesh.gip2owner[ip] = 1
+                #        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
             end
         #end #f
     end
@@ -390,13 +443,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     # Edges
     #
     populate_conn_edge_el!(mesh, mesh.SD)
-    add_high_order_nodes_edges!(mesh, lgl, mesh.SD, backend)
+    add_high_order_nodes_edges!(mesh, lgl, mesh.SD, backend, edge2pedge)
 
     #
     # Faces
     #
     populate_conn_face_el!(mesh, mesh.SD)
-    add_high_order_nodes_faces!(mesh, lgl, mesh.SD)
+    add_high_order_nodes_faces!(mesh, lgl, mesh.SD, face2pface)
 
     #
     # Volume
@@ -404,6 +457,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     # NOTICE: in 2D we consider only edges. faces are the elements.
     #         
     add_high_order_nodes_volumes!(mesh, lgl, mesh.SD)
+
+    mesh.gnpoin = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
+    # @info mesh.gnpoin
+    mesh.gip2owner = find_gip_owner(mesh.ip2gip)
     
     for ip = mesh.npoin_linear+1:mesh.npoin
         mesh.x[ip] = mesh.x_ho[ip]
@@ -422,7 +479,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
         mesh.zmax = maximum(mesh.z)
         mesh.zmin = minimum(mesh.z)
     end
-    
+
+    for ip = 1: mesh.npoin
+        if mesh.gip2owner[ip] != rank+1
+            @info mesh.x[ip], mesh.y[ip], rank
+        end
+    end
+
     #----------------------------------------------------------------------
     # Extract boundary edges and faces nodes:
     #----------------------------------------------------------------------
@@ -431,11 +494,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     #
     if mesh.nsd == 2
         isboundary_edge = compute_isboundary_face(topology, EDGE_flg)
+        # @info isboundary_edge
         #
         # Get labels contained in the current GMSH grid:
         #
         n_semi_inf = 0
         labels = get_face_labeling(model)
+        # @info labels.tag_to_name
         for ilabel in labels.tag_to_name
             edges_to_tag  = get_face_tag_index(labels,ilabel,EDGE_flg)
             idx_edges_inflow = findall( x -> x == 1, edges_to_tag)
@@ -445,10 +510,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
             for idx in idx_edges_inflow
                 mesh.edge_type[idx] = ilabel
             end
+            @info mesh.edge_type
         end
         iedge_bdy = 1
         for iedge = 1:mesh.nedges #total nedges
             if isboundary_edge[iedge] == true
+                if rank == 1
+                    @info mesh.x[mesh.poin_in_edge[iedge, 1]], mesh.y[mesh.poin_in_edge[iedge, 1]]
+                end
                 for igl = 1:mesh.ngl
                     mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
                     mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
@@ -642,49 +711,139 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
         end=#
     end
 
-#----------------------------------------------------------------------
-# END Extract boundary edges and faces nodes
-#----------------------------------------------------------------------
-#
-#
-# Free memory of obsolete arrays
-#
-mesh.x_ho = zeros(1)
-mesh.y_ho = zeros(1)
-mesh.z_ho = zeros(1)
-#resize!(mesh.x_ho, 1)
-#resize!(mesh.y_ho, 1)
-#resize!(mesh.z_ho, 1)
-GC.gc()
-#
-# END Free memory of obsolete arrays
-#
+    #----------------------------------------------------------------------
+    # END Extract boundary edges and faces nodes
+    #----------------------------------------------------------------------
+    #
+    #
+    # Free memory of obsolete arrays
+    #
+    mesh.x_ho = zeros(1)
+    mesh.y_ho = zeros(1)
+    mesh.z_ho = zeros(1)
+    #resize!(mesh.x_ho, 1)
+    #resize!(mesh.y_ho, 1)
+    #resize!(mesh.z_ho, 1)
+    GC.gc()
+    #
+    # END Free memory of obsolete arrays
+    #
 
-#=open("./COORDS_GLOBAL.dat", "w") do f
-    for ip = 1:mesh.npoin
-        #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-    end
-end #f
-
-
-=#
+    #=open("./COORDS_GLOBAL.dat", "w") do f
+        for ip = 1:mesh.npoin
+            #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+            @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+        end
+    end #f
 
 
-write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./", parts, nparts)
+    # =#
+    # n = 10
+    # row_partition = map(parts) do part
+    #     if part == 1
+    #         LocalIndices(n,part,[1,2,3,5,7,8],Int32[1,1,1,1,1,1])
+    #     elseif part == 2
+    #         LocalIndices(n,part,[2,4,5,10],Int32[2,2,2,2])
+    #     elseif part == 3
+    #         LocalIndices(n,part,[6,7,8,5,4,9,10],Int32[3,3,3,3,3,3,3])
+    #     else
+    #         LocalIndices(n,part,[1,3,7,9,10],Int32[4,4,4,4,4])
+    #     end
+    # end
+    # v = pzeros(row_partition)
+    # # map(parts,partition(v),row_partition) do part, values, indices
+    # #     local_index_to_owner = local_to_owner(indices)
+    # #     for lid in 1:length(local_index_to_owner)
+    # #         owner = local_index_to_owner[lid]
+    # #         if owner == part
+    # #             values[lid] = 10*part
+    # #         end
+    # #     end
+    # # end
+    # # consistent!(v) |> wait
 
-#
-# gridapDistributed test on gmsh
-#
-@mystop("my stop at mesh.jl L135")
-# end gridapDistributed test on gmsh
+    # # map(partition(v),row_partition) do values, indices
+    # #     local_index_to_owner = local_to_owner(indices)
+    # #     for lid in 1:length(local_index_to_owner)
+    # #         owner = local_index_to_owner[lid]
+    # #         @test values[lid] == 10*owner
+    # #         @info values[lid]
+    # #     end
+    # # end
+
+    # map(local_values(v)) do values
+    #     fill!(values,10.0)
+    # end
+
+    # # assemble!(v) |> wait
+    # consistent!(v) |> wait
+    # # map(parts,local_values(v)) do part,values
+    # #     if part == 1
+    # #         @test values == [20.0, 20.0, 20.0, 0.0, 0.0, 0.0]
+    # #     # elseif part == 2
+    # #         # @test values == [0.0, 20.0, 30.0, 0.0]
+    # #     # elseif part == 3
+    # #         # @test values == [10.0, 30.0, 20.0, 0.0, 0.0, 0.0]
+    # #     elseif part == 4
+    # #         @test values == [0.0, 0.0, 0.0, 10.0, 30.0]
+    # #     end
+    # # end
+    # @test collect(v) == [20.0, 20.0, 20.0, 20.0, 30.0, 10.0, 30.0, 20.0, 10.0, 30.0]
+    # @info collect(v)
+
+    write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./", parts, nparts)
+
+    #
+    # gridapDistributed test on gmsh
+    #
+    # @mystop("my stop at mesh.jl L135")
+    # end gridapDistributed test on gmsh
 
 
-#show(stdout, "text/plain", mesh.conn')
-println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
+    #show(stdout, "text/plain", mesh.conn')
+    println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
 
-#writevtk(model,"gmsh_grid")
+    #writevtk(model,"gmsh_grid")
 end
+
+function find_gip_owner(a)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    size = MPI.Comm_size(comm)
+    
+    # Gather all elements from all ranks to rank 0
+    all_elements = MPI.gather(a, comm)
+    
+    if rank == 0
+        # Flatten the gathered list
+        flat_elements = vcat(all_elements...)
+        all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
+
+        # Create a dictionary to store the smallest rank for each element
+        element_owner_map = Dict{Int, Int}()
+        for i in 1:length(flat_elements)
+            el = flat_elements[i]
+            owner = all_owners[i]
+            if !haskey(element_owner_map, el) || owner < element_owner_map[el]
+                element_owner_map[el] = owner
+            end
+        end
+
+        # Map the owners back to the original elements in each rank's vector
+        all_owners_result = [element_owner_map[el] for el in flat_elements]
+        
+        # Split the ownership result according to the original vectors
+        chunked_owners = [all_owners_result[sum(length.(all_elements)[1:i-1])+1:sum(length.(all_elements)[1:i])] for i in 1:size]
+    else
+        chunked_owners = nothing
+    end
+
+    # Scatter the ownership chunks back to all ranks
+    element_owners = MPI.scatter(chunked_owners, comm)
+
+    return element_owners
+end
+
 
 function determine_colinearity(vec1,vec2)
     match = false
@@ -895,7 +1054,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
 end
 
 
-function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend)
+function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, edge2pedge)
     
     if (mesh.nop < 2) return end
     
@@ -909,6 +1068,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend)
 
     ngl                      = mesh.nop + 1
     tot_linear_poin          = mesh.npoin_linear
+    gtot_linear_poin          = mesh.gnpoin_linear
     tot_edges_internal_nodes = mesh.nedges*(ngl-2)
     tot_vol_internal_nodes   = mesh.nelem*(ngl-2)*(ngl-2)
     el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
@@ -926,15 +1086,19 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend)
     end
     
     #poin_in_edge::Array{TInt, 2}  = zeros(mesh.nedges, mesh.ngl)
-    #open("./COORDS_HO_edges.dat", "w") do f
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    open("./COORDS_HO_edges_$rank.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
         #
         ip = tot_linear_poin + 1
+        gip::Int64 = 0
         for iedge_g = 1:mesh.nedges
             
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
+            gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
             
             mesh.poin_in_edge[iedge_g,        1] = ip1
             mesh.poin_in_edge[iedge_g, mesh.ngl] = ip2
@@ -950,13 +1114,16 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend)
 	            mesh.y_ho[ip] = y1*(1.0 - ξ)*0.5 + y2*(1.0 + ξ)*0.5;
                 
                 mesh.poin_in_edge[iedge_g, l] = ip
+                mesh.ip2gip[ip] = gip
+                # mesh.gip2owner[ip] = 1
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-    #            @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
-                ip = ip + 1
+               @printf(f, " %.6f %.6f 0.000000 %d %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip, gip, edge2pedge[iedge_g])
+                ip  = ip + 1
+                gip = gip + 1
             end
         end
-    #end #do f
+    end #do f
     #show(stdout, "text/plain", poin_in_edge)
     #@info "-----2D edges"
     
@@ -1052,7 +1219,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend)
 end
 
 
-function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend)
+function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, edge2pedge)
     
     if (mesh.nop < 2) return end
     
@@ -1093,12 +1260,14 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend)
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
         #
         ip = tot_linear_poin + 1
+        gip::Int64 = 0
         for iedge_g = 1:mesh.nedges
             #
             # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
             #
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
+            gip = tot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
             #ip1 = mesh.conn_edge_el[1, iedge_el, iel]
             #ip2 = mesh.conn_edge_el[2, iedge_el, iel]
             mesh.poin_in_edge[iedge_g,        1] = ip1
@@ -1116,11 +1285,13 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend)
                 mesh.z_ho[ip] = z1*(1.0 - ξ)*0.5 + z2*(1.0 + ξ)*0.5;
                 
                 mesh.poin_in_edge[iedge_g, l] = ip
+                mesh.ip2gip[ip] = gip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
     #            @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 #@printf( " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
-                ip = ip + 1
+                ip  = ip + 1
+                gip = gip + 1
             end
         end
     #end #end f
@@ -1371,7 +1542,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend)
 end
 
 
-function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
+function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface)
 
     if (mesh.nop < 2) return end
     
@@ -1388,7 +1559,9 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
     
     ngl                      = mesh.nop + 1
     tot_linear_poin          = mesh.npoin_linear
+    gtot_linear_poin          = mesh.gnpoin_linear
     tot_edges_internal_nodes = mesh.nedges*(ngl-2)
+    gtot_edges_internal_nodes = mesh.gnedges*(ngl-2)
     tot_faces_internal_nodes = mesh.nfaces*(ngl-2)*(ngl-2)
     
     el_edges_internal_nodes  = mesh.NEDGES_EL*(ngl-2)
@@ -1409,8 +1582,10 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
         # First pass:
         #
         ip  = tot_linear_poin + tot_edges_internal_nodes + 1
+        gip::Int64  = 0
         for iface_g = 1:mesh.nelem #NOTICE: in 2D the faces are the elements themselves
             iel = iface_g
+            gip = gtot_linear_poin + gtot_edges_internal_nodes + 1 + (face2pface[iel] - 1) * (ngl-2) * (ngl - 2)
             #GGNS numbering
             ip1 = mesh.cell_node_ids[iel][1]
             ip2 = mesh.cell_node_ids[iel][2]
@@ -1433,10 +1608,10 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
                 for m=2:ngl-1
                     ζ = lgl.ξ[m];
                     
-	            mesh.x_ho[ip] = (x1*(1 - ξ)*(1 - ζ)*0.25
-                                     + x2*(1 + ξ)*(1 - ζ)*0.25
-		                     + x3*(1 + ξ)*(1 + ζ)*0.25			
-		                     + x4*(1 - ξ)*(1 + ζ)*0.25)
+                    mesh.x_ho[ip] = (x1*(1 - ξ)*(1 - ζ)*0.25
+                                        + x2*(1 + ξ)*(1 - ζ)*0.25
+                                + x3*(1 + ξ)*(1 + ζ)*0.25			
+                                + x4*(1 - ξ)*(1 + ζ)*0.25)
                     
                     mesh.y_ho[ip] =  (y1*(1 - ξ)*(1 - ζ)*0.25
 		                      + y2*(1 + ξ)*(1 - ζ)*0.25
@@ -1446,11 +1621,14 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D)
                     mesh.poin_in_face[iface_g, l, m] = ip
                     #NEW ORDERING
                     mesh.connijk[iel, m, ngl-l+1] = ip
+
+                    mesh.ip2gip[ip] = gip
                     #OLD ORDERING
                     #mesh.connijk[iel, m, l] = ip
       #              @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                     
-	            ip = ip + 1
+	                ip = ip + 1
+	                gip = gip + 1
                 end
             end
         end
@@ -2436,3 +2614,5 @@ function compute_element_size!(SD::NSD_3D, ie, mesh::St_mesh, T)
     #mesh.Δelem_largest[ie]  = max(dx, dy, dz)  #longest distance of two points corner within a given element
     
 end
+
+
