@@ -77,7 +77,7 @@ function rhs!(du, u, params, time)
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
             params.RHS .= @views(params.RHS .+ params.RHS_lag)
         end
-        DSS_global_RHS!(@view(params.RHS[:,:]), params.mesh.ip2gip, params.mesh.gip2owner, params.mesh.parts, params.mesh.npoin, params.mesh.gnpoin, params.neqs)
+        @time DSS_global_RHS!(@view(params.RHS[:,:]), params.mesh.ip2gip, params.mesh.gip2owner, params.mesh.parts, params.mesh.npoin, params.mesh.gnpoin, params.neqs)
         RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     else
         if (params.SOL_VARS_TYPE == PERT())
