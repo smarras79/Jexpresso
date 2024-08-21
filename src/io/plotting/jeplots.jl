@@ -4,6 +4,7 @@ using LaTeXStrings
 using ColorSchemes
 using CairoMakie
 using Makie
+using Interpolations
 #Makie.theme(:fonts)
 
 #= CITE Mackie:
@@ -278,6 +279,46 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         fig
     end
     
+end
+
+function plot_volume3d(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-3)
+            
+    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
+    ymin = minimum(mesh.y); ymax = maximum(mesh.y);
+    zmin = minimum(mesh.z); zmax = maximum(mesh.z);    
+    nxi = 20
+    nyi = 20
+    nzi = 20
+    npoin = floor(Int64, size(q, 1)/nvar)
+    fout_name = string(OUTPUT_DIR, "/ivar", 1, "-it", iout, ".png")
+    for ivar=1:nvar                   
+        idx = (ivar - 1)*npoin        
+        
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
+            
+        #Spline3d
+        spl_x = Spline1D(mesh.x[1:npoin], q[idx+1:ivar*npoin]; k=4, s=smoothing_factor)
+        c_x = get_coeffes(spl_x)
+        c_xy = Spline1D(mesh.y[1:npoin], c_x; k=4, s=smoothing_factor)
+        c_xyz = Spline1D(mesh.z[1:npoin], c_z; k=4, s=smoothing_factor)
+        #spl = Interpolations.interpolate(mesh.x, q, (Gridded(Linear())))
+        
+        xg = LinRange(xmin, xmax, nxi); yg = LinRange(ymin, ymax, nyi); zg = LinRange(zmin, zmax, nzi);
+        zspl = evalgrid(spl, xg, yg, zg);
+        #End spline2d
+        
+        #figure: 
+        fig = Figure(size=(1200, 400))    
+        axs = [Axis3(fig[1, i]; aspect=(1, 1, 1), azimuth=-π/2, elevation=π/2) for i = 1:1]
+                                          
+        hm = Makie.volume!(axs[1], xg, yg, zg, zspl) # xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
+        #Colorbar(fig[1, 1], hm, height=Relative(0.5))
+        
+        save(string(fout_name), fig)
+        #display(fig)
+        fig
+    end
+
 end
 
 #
