@@ -1,7 +1,7 @@
 #-------------------------------------------------------------------------------------------
 # Microphysics (mp) variables:
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_MicroPhysics{T <: AbstractFloat, dims1, backend}
+Base.@kwdef mutable struct St_Microphysics{T <: AbstractFloat, dims1, backend}
 
     # WIP
     
@@ -12,15 +12,22 @@ Base.@kwdef mutable struct St_MicroPhysics{T <: AbstractFloat, dims1, backend}
     prodk   = KernelAbstractions.zeros(backend,  T, dims1)
     vtden   = KernelAbstractions.zeros(backend,  T, dims1)
     rdzk    = KernelAbstractions.zeros(backend,  T, dims1)
+    rdzw    = KernelAbstractions.zeros(backend,  T, dims1)
     ρk      = KernelAbstractions.zeros(backend,  T, dims1)
+    temp1   = KernelAbstractions.zeros(backend,  T, dims1)
+    temp2   = KernelAbstractions.zeros(backend,  T, dims1)
     
 end
 
-function allocate_MicroPhysics(nelem, npoin, ngl, T, backend; neqs=1, lfilter=false)
+function allocate_Microphysics(nelem, npoin, ngl, T, backend; lmoist=false)
+
+    if lmoist
+        dims1 = (Int64(npoin))
+    else
+        dims1 = (Int64(1))        
+    end
     
-    dims1 = (Int64(npoin))
-    
-    mp = St_MoistVars{T, dims1, backend}()
+    mp = St_Microphysics{T, dims1, backend}()
     
     return mp
 end

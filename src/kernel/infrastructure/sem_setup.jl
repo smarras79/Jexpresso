@@ -6,7 +6,7 @@ function sem_setup(inputs::Dict)
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
     fy_lag = zeros(Float64,1,1)
-    Nξ = inputs[:nop]
+    Nξ    = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:equations]
     AD    = inputs[:AD]
