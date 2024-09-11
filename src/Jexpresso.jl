@@ -57,6 +57,8 @@ include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
+include(joinpath( "kernel", "physics", "soundSpeed.jl"))
+
 include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 
 include(joinpath( "kernel", "physics", "constitutiveLaw.jl"))

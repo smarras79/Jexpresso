@@ -17,7 +17,8 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                               inputs,
                               OUTPUT_DIR,
                               TFloat)
-    if !(inputs[:llinsolve])   
+    
+    if !inputs[:llinsolve]
         
         solution = time_loop!(inputs, params, u)
         
