@@ -147,7 +147,6 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         k(q.qn, q.qe, mesh.x, mesh.y, mesh.z, xc, rθ, zc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
     @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
-    
     return q
 end
 
