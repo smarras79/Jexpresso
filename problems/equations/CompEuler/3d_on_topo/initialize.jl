@@ -43,6 +43,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             # INITIAL STATE from scratch:
             #
             xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            yc = (maximum(mesh.y) + minimum(mesh.y))/2
             zc = 3500.0 #m
             r0 = 2000.0 #m
         
@@ -52,7 +53,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
             
-                r = sqrt( (x - xc)^2 + (z - zc)^2 )
+                r = sqrt( (x - xc)^2 + (y - yc)^2 + (z - zc)^2 )
             
                 Δθ = 0.0 #K
                 if r < r0
