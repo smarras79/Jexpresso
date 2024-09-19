@@ -5,18 +5,17 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
-        :ode_solver          => ABM54(),
+        :ode_solver           => ABM54(),
         :tend                 => 3.0,
         :Δt                   => 1.0e-5,
         :ndiagnostics_outputs => 10, #these are steps, not seconds
-        :output_dir          => "./",
-        :loverwrite_output   => true,
+        :output_dir           => "./",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :AD                  => FD(),
+        #:AD                  => FD(),
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 1,     # Polynomial order
+        :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
@@ -40,7 +39,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :xmin          =>   0.0,
         :xmax          =>   5.0,
-        :nelx          =>   200,
+        :nelx          =>   50, #200,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter

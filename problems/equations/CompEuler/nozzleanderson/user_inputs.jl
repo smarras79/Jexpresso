@@ -4,13 +4,13 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :tend                 => 3.9,
-        :ode_solver           => ABM54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :Δt                   => 0.001,
+        :ode_solver           => RDPK3SpFSAL49(), #ABM54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
+        :Δt                   => 0.0001,
         :ndiagnostics_outputs => 20,
         :case                 => "rtb",
         :lsource              => true,
-        :AD                   => FD(),
-        :lquantum             => true,
+        #:AD                   => FD(),
+        #:lquantum             => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -29,7 +29,7 @@ function user_inputs()
         #:lread_gmsh => false, #If false, a 1D problem will be enforced
         :xmin => 0.0,
         :xmax => 3.0,
-        :nelx => 3,
+        :nelx => 10,
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------

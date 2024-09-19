@@ -17,10 +17,11 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     
     σ = Float64(0.15)
     σ2= σ*σ
-    for iel_g = 1:mesh.nelem
-        for i=1:mesh.ngl
+    for ip = 1:mesh.npoin
+    #for iel_g = 1:mesh.nelem
+    #    for i=1:mesh.ngl
             
-            ip = mesh.connijk[iel_g,i,1]
+        #ip = mesh.connijk[iel_g,i,1]
             x = mesh.x[ip]
 
             ex = -(x - 1)^2/σ2
@@ -31,7 +32,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             q.qe[ip,1] = 0.0
             q.qe[ip,2] = 0.0
             
-        end
+        #end
     end
     
     for ivar=1:length(qvars)

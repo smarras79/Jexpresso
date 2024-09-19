@@ -29,9 +29,9 @@ function time_loop!(inputs, params, u)
         energy_ini = 0.0
         end=#
         
-        
         @time solution = solve(prob,
                                inputs[:ode_solver], dt=inputs[:Δt],
+                               abstol=1e-10, reltol=1e-10,
                                save_everystep = false,
                                adaptive=inputs[:ode_adaptive_solver],
                                saveat = range(inputs[:tinit],
