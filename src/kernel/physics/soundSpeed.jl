@@ -24,6 +24,11 @@ function soundSpeed(npoin, integrator, SD)
     return max_c
 end
 
+
+function computeCFL(npoin, dt, Δs, integrator, SD::NSD_1D)
+    nothing
+end
+
 function computeCFL(npoin, dt, Δs, integrator, SD::NSD_2D)
 
     #u
