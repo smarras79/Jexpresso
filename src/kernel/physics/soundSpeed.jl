@@ -1,5 +1,5 @@
 function soundSpeed(npoin, integrator, SD)
-
+    
     # Physical constants
     PhysConst = PhysicalConst{Float32}()
     pos::TInt = 2
