@@ -182,35 +182,13 @@ If you are interested in contributing, please get in touch:
 
 To install and run the code assume Julia 1.10.0
 
-## Setup 
+## Setup with CPUs
 
-After cloning Jexpresso do the following:
-
-1.
-```bashx
+```bash
 >> cd $JEXPRESSO_HOME
->> julia --project=.
+>> julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
-
-If on Apple, add Metal to the dependencies and continue to point 2:
-
-1.apple
-```
-julia> ]
-pkg> add Metal
-```
-
-2.
-```
-pkg> instantiate
-```
-```
-pkg> precompile
-```
-
-Notice that points 1. and 2. are for all, but 1.apple is required only for Apple users.
-
-To run Jexpresso, do as follows:
+followed by the following:
 
 Push problem name to ARGS
 You need to do this only when you run a new problem
@@ -230,11 +208,6 @@ Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers
 julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
 ```
-
-<img src="assets/rtbHole.gif"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
-
 
 <img src="assets/thetaTracersMeshUnstr.png"
      alt="Markdown icon"
@@ -319,6 +292,19 @@ julia> include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/Wave_Train_final.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+A second version of this tests generate images with the solutions at different times overlapped.
+
+This version is defined in [`problems/equations/AdvDiff/Wave_Train_Overlapping_Plot`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train_Overlapping_Plot) and by default output will be written to `output/AdvDiff/Wave_Train_Overlapping_Plot`. To run this version of the problem execute the following from the Julia command line:
+
+```bash
+julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train_Overlapping_Plot");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/Wave_Train_overlap.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
