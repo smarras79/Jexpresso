@@ -22,13 +22,11 @@ If you use Jexpresso please drop us a line to let us know. We'd like to add a li
 Please cite Jexpresso using:
 
 ```
-@misc{tissaoui2024,
-      title={Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions}, 
+@article{tissaoui2024,
+      title={Efficient Spectral Element Method for the Euler Equations on Unbounded Domains}, 
       author={Yassine Tissaoui and James F. Kelly and Simone Marras},
       year={2024},
-      eprint={2401.05624},
-      archivePrefix={arXiv},
-      primaryClass={math.NA}
+      journal={Mathematics and Computation (accepted for publication)},
 }
 ```
 
