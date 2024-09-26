@@ -14,7 +14,7 @@ function user_inputs()
         :ndiagnostics_outputs => 10,
         :case                 => "rtb",
         :lsource              => true, 
-        #:backend              => MetalBackend(),
+        #:backend              => CUDABackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
