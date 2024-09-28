@@ -534,6 +534,9 @@ function mod_inputs_user_inputs!(inputs)
     if(!haskey(inputs, :lsource))
         inputs[:lsource] = false
     end
+    if(!haskey(inputs, :lbomex))
+        inputs[:lbomex] = false
+    end
 
     if(!haskey(inputs, :ldss_differentiation))
         inputs[:ldss_differentiation] = false
