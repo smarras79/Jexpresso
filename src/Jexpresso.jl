@@ -40,6 +40,10 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   get_proposed_dt, set_proposed_dt!,
                   terminate!, remake
 
+import ClimaParams as CP
+import Thermodynamics as TD
+import Thermodynamics.Parameters as TP
+
 using UnicodePlots
 using Printf
 

@@ -1,9 +1,9 @@
 using Random
-import ClimaParams as CP
-import Thermodynamics as TD
-import Thermodynamics.Parameters as TP
-# using CLIMAParameters
-# using CLIMAParameters: grav
+#import ClimaParams as CP
+#import Thermodynamics as TD
+#import Thermodynamics.Parameters as TP
+## using CLIMAParameters
+## using CLIMAParameters: grav
 
 # struct EarthParameterSet <: AbstractEarthParameterSet end
 # const param_set = EarthParameterSet()
@@ -330,19 +330,4 @@ function initialize_bomex!(z, param_set)
     # if bhasCondense
     #     @info z, ρ, u, T, θ_liq, θ, q_tot, q_pt.liq, P, bhasCondense
     # end
-end
-
-
-
-# Function to update p_ref_theta
-function update_p_ref_theta(new_p_ref_theta::FT) where {FT}
-    ps = TP.ThermodynamicsParameters(TFloat)
-    return TP.ThermodynamicsParameters(
-    ps.T_0, ps.MSLP, new_p_ref_theta, ps.cp_v, ps.cp_l, ps.cp_i,
-    ps.LH_v0, ps.LH_s0, ps.press_triple, ps.T_triple, ps.T_freeze, ps.T_min,
-    ps.T_max, ps.T_init_min, ps.entropy_reference_temperature, ps.entropy_dry_air,
-    ps.entropy_water_vapor, ps.kappa_d, ps.gas_constant, ps.molmass_dryair,
-    ps.molmass_water, ps.T_surf_ref, ps.T_min_ref, ps.grav, ps.T_icenuc,
-    ps.pow_icenuc
-    )
 end
