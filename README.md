@@ -23,10 +23,12 @@ Please cite Jexpresso using:
 
 ```
 @article{tissaoui2024,
-      title={Efficient Spectral Element Method for the Euler Equations on Unbounded Domains}, 
-      author={Yassine Tissaoui and James F. Kelly and Simone Marras},
-      year={2024},
-      journal={Mathematics and Computation (accepted for publication)},
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
+  volume ={487},
+  pages={129080},
+  year = {2024},
+  journal = {App. Math. Comput.},
 }
 ```
 
@@ -223,17 +225,7 @@ julia> include("./src/Jexpresso.jl")
      style="float: left; margin-right: 5px;" />
 
 
-Example 3: to solve the 2D Euler equations leading to a density current defined in `problems/equations/CompEuler/dc` you would do the following:
-```bash
-julia> push!(empty!(ARGS), "CompEuler", "dc");
-julia> include("./src/Jexpresso.jl")
-```
-
-<img src="assets/dc.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Example 4: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
+Example 3: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "wave1d");
 julia> include("./src/Jexpresso.jl")
@@ -260,10 +252,11 @@ This section contains instructions to run all of the test cases presented in
 ```
 @article{tissaoui2024,
   author = {Y. Tissaoui and J. F. Kelly and S. Marras}
-  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions},
-  url = {https://arxiv.org/abs/2401.05624},
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
+  volume ={487},
+  pages={129080},
   year = {2024},
-  journal = {arXiv:2401.05624 [math.NA]},
+  journal = {App. Math. Comput.},
 }
 ```
 
@@ -293,18 +286,6 @@ julia> include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-A second version of this tests generate images with the solutions at different times overlapped.
-
-This version is defined in [`problems/equations/AdvDiff/Wave_Train_Overlapping_Plot`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train_Overlapping_Plot) and by default output will be written to `output/AdvDiff/Wave_Train_Overlapping_Plot`. To run this version of the problem execute the following from the Julia command line:
-
-```bash
-julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train_Overlapping_Plot");
-julia> include("./src/Jexpresso.jl")
-```
-
-<img src="assets/Wave_Train_overlap.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
 
 Test 3: 2D advection-diffusion equation
 
