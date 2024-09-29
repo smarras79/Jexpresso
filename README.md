@@ -208,7 +208,7 @@ Example of cloud simulations (please contact us to run this because its branch h
 
 <img src="assets/bomex.png"
      alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
+     style="float: left; margin-right: 3.5px;" />
 
 
 Examples available in this branch:
