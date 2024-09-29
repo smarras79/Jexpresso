@@ -203,6 +203,16 @@ julia> include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
+
+Example of cloud simulations (please contact us to run this because its branch has not been merged into master yet)
+
+<img src="assets/bomex.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
+
+Examples available in this branch:
+
 Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
