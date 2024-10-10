@@ -37,6 +37,9 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
                   get_proposed_dt, set_proposed_dt!,
                   terminate!, remake
+import ClimaParams as CP
+import Thermodynamics as TD
+import Thermodynamics.Parameters as TP
 
 using UnicodePlots
 using Printf
@@ -56,6 +59,8 @@ include(joinpath( "kernel", "abstractTypes.jl"))
 include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
+
+include(joinpath( "kernel", "physics", "soundSpeed.jl"))
 
 include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 

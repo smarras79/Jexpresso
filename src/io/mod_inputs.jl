@@ -23,8 +23,8 @@ function mod_inputs_user_inputs!(inputs)
     
     if (inputs[:backend] != CPU())
         if (inputs[:backend] == CUDABackend())
-            global TInt = Int64
-            global TFloat = Float64
+            global TInt = Int32
+            global TFloat = Float32
             global cpu = false
         else
             global TInt = Int32
@@ -189,11 +189,11 @@ function mod_inputs_user_inputs!(inputs)
     else
         inputs[:lrestart] = false
     end
-            
-    #Time:
-    if(!haskey(inputs, :ndiagnostics_outputs) && !haskey(inputs, :ndiagnostics_output))
-        inputs[:ndiagnostics_outputs] = 2
-        inputs[:ndiagnostics_output]  = 2
+    #
+    # Time:
+    #
+    if(!haskey(inputs, :ndiagnostics_outputs))
+        inputs[:ndiagnostics_outputs] = 0
     end
     mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
@@ -201,6 +201,15 @@ function mod_inputs_user_inputs!(inputs)
     end
     if(!haskey(inputs, :tend))
         inputs[:tend] = 0.0  #end time is 0.0 by default
+    end
+
+    if( !haskey(inputs, :diagnostics_at_times) )
+        inputs[:diagnostics_at_times] = inputs[:tend]
+        if (!haskey(inputs, :ndiagnostics_outputs))
+            inputs[:ndiagnostics_outputs] = 1 #Force this to none to avoid double output
+        end
+    else
+        inputs[:ndiagnostics_outputs] = 0
     end
     
     if(!haskey(inputs, :lexact_integration))
@@ -474,6 +483,10 @@ function mod_inputs_user_inputs!(inputs)
         @error s
     end
 
+    if(!haskey(inputs, :lmoist))
+        inputs[:lmoist] = false
+    end
+    
     if(!haskey(inputs, :energy_equation))
         inputs[:energy_equation] = "theta"
         inputs[:δtotal_energy] = 0.0
@@ -523,6 +536,9 @@ function mod_inputs_user_inputs!(inputs)
     end
     if(!haskey(inputs, :lsource))
         inputs[:lsource] = false
+    end
+    if(!haskey(inputs, :lbomex))
+        inputs[:lbomex] = false
     end
 
     if(!haskey(inputs, :ldss_differentiation))
