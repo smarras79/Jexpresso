@@ -23,8 +23,8 @@ function mod_inputs_user_inputs!(inputs)
     
     if (inputs[:backend] != CPU())
         if (inputs[:backend] == CUDABackend())
-            global TInt = Int64
-            global TFloat = Float64
+            global TInt = Int32
+            global TFloat = Float32
             global cpu = false
         else
             global TInt = Int32
