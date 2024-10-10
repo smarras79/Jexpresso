@@ -1,5 +1,5 @@
 function soundSpeed(npoin, integrator, SD)
-
+    
     # Physical constants
     PhysConst = PhysicalConst{Float32}()
     pos::TInt = 2
@@ -24,10 +24,21 @@ function soundSpeed(npoin, integrator, SD)
     return max_c
 end
 
-function computeCFL(npoin, dt, Δs, integrator, SD::NSD_2D; visc=(0.0))
+function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_1D; visc=(0.0))
+    nothing
+end
 
+function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_2D; visc=(0.0))
+
+    velmax = @SVector zeros(neqs)
+    
     #u
-    ieq = 2
+    for ieq = 1:neqs-1
+        idx = (ieq)*npoin
+        velmax[i] = maximum(integrator.u[idx+1:ieq*npoin])
+    end
+    #u
+#=    ieq = 2
     idx = (ieq-1)*npoin
     umax = maximum(integrator.u[idx+1:ieq*npoin])
 
@@ -40,10 +51,11 @@ function computeCFL(npoin, dt, Δs, integrator, SD::NSD_2D; visc=(0.0))
     #v
     ieq = 3
     idx = (ieq-1)*npoin
-    vmax = maximum(integrator.u[idx+1:ieq*npoin])        
+    vmax = maximum(integrator.u[idx+1:ieq*npoin])=#  
     
     #velomax
-    velomax = max(umax, vmax)
+    #velomax = max(umax, vmax)
+    velomax = maximum(velmax)
     
     #speed of sound
     c     = soundSpeed(npoin, integrator, SD)
@@ -62,7 +74,7 @@ function computeCFL(npoin, dt, Δs, integrator, SD::NSD_2D; visc=(0.0))
     
 end
 
-function computeCFL(npoin, dt, Δs, integrator, SD::NSD_3D; visc=(0.0))
+function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_3D; visc=(0.0))
 
     #u
     ieq = 2

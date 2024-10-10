@@ -22,13 +22,11 @@ If you use Jexpresso please drop us a line to let us know. We'd like to add a li
 Please cite Jexpresso using:
 
 ```
-@misc{tissaoui2024,
-      title={Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions}, 
+@article{tissaoui2024,
+      title={Efficient Spectral Element Method for the Euler Equations on Unbounded Domains}, 
       author={Yassine Tissaoui and James F. Kelly and Simone Marras},
       year={2024},
-      eprint={2401.05624},
-      archivePrefix={arXiv},
-      primaryClass={math.NA}
+      journal={Mathematics and Computation (accepted for publication)},
 }
 ```
 
@@ -182,35 +180,13 @@ If you are interested in contributing, please get in touch:
 
 To install and run the code assume Julia 1.10.0
 
-## Setup 
+## Setup with CPUs
 
-After cloning Jexpresso do the following:
-
-1.
-```bashx
+```bash
 >> cd $JEXPRESSO_HOME
->> julia --project=.
+>> julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
-
-If on Apple, add Metal to the dependencies and continue to point 2:
-
-1.apple
-```
-julia> ]
-pkg> add Metal
-```
-
-2.
-```
-pkg> instantiate
-```
-```
-pkg> precompile
-```
-
-Notice that points 1. and 2. are for all, but 1.apple is required only for Apple users.
-
-To run Jexpresso, do as follows:
+followed by the following:
 
 Push problem name to ARGS
 You need to do this only when you run a new problem
@@ -225,16 +201,17 @@ julia> include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
+Example of simulated shallow cumuli
+<img src="assets/bomex.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
+
 Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
 julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
 julia> include("./src/Jexpresso.jl")
 ```
-
-<img src="assets/rtbHole.gif"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
-
 
 <img src="assets/thetaTracersMeshUnstr.png"
      alt="Markdown icon"
@@ -289,10 +266,10 @@ This section contains instructions to run all of the test cases presented in
 ```
 @article{tissaoui2024,
   author = {Y. Tissaoui and J. F. Kelly and S. Marras}
-  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions},
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
   url = {https://arxiv.org/abs/2401.05624},
   year = {2024},
-  journal = {arXiv:2401.05624 [math.NA]},
+  journal = {Mathematics and Computation (accepted for pubblication)},
 }
 ```
 
@@ -319,6 +296,19 @@ julia> include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/Wave_Train_final.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+A second version of this tests generate images with the solutions at different times overlapped.
+
+This version is defined in [`problems/equations/AdvDiff/Wave_Train_Overlapping_Plot`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train_Overlapping_Plot) and by default output will be written to `output/AdvDiff/Wave_Train_Overlapping_Plot`. To run this version of the problem execute the following from the Julia command line:
+
+```bash
+julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train_Overlapping_Plot");
+julia> include("./src/Jexpresso.jl")
+```
+
+<img src="assets/Wave_Train_overlap.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
