@@ -161,6 +161,11 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     mp = allocate_Microphysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
     
+
+    #------------------------------------------------------------------------------------
+    # Allocate Thermodynamic params for bomex case
+    #------------------------------------------------------------------------------------
+    thermo_params = create_updated_TD_Parameters(TFloat(101325.0))
     
     #------------------------------------------------------------------------------------
     # Populate solution arrays
@@ -240,7 +245,7 @@ function params_setup(sem,
               visc_coeff, ivisc_equations,
               sem.matrix.M, sem.matrix.Minv,tspan,
               Δt, xmax, xmin, ymax, ymin, zmin, zmax,
-              qp, mp, sem.fx, sem.fy, fy_t, laguerre=false)
+              qp, mp, sem.fx, sem.fy, fy_t, thermo_params, laguerre=false)
     end
 
     println(" # Build arrays and params ................................ DONE")

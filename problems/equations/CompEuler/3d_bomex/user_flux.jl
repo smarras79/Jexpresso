@@ -5,7 +5,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Floa
                     ::CL, ::TOTAL; neqs=4, ip=1)
 
     PhysConst = PhysicalConst{Float64}()
-    param_set = update_p_ref_theta(Float64(101325.0))
+    param_set = create_updated_TD_Parameters(Float64(101325.0))
     
     ρ  = q[1]
     ρu = q[2]
