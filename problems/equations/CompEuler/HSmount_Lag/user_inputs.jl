@@ -10,7 +10,7 @@ function user_inputs()
         :output_dir           => "./output/",
         :case                 => "rtb",
         #:CL                   => NCL(),
-        :backend              => CUDABackend(),
+        #:backend              => CUDABackend(),
         # :backend              => MetalBackend(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
