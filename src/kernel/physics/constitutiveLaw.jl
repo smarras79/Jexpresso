@@ -41,3 +41,9 @@ function perfectGasLaw_θPtoρ(PhysConst::PhysicalConst; θ=300.0, Press=100000.
     return (T(1.0)/θ)*(Press/PhysConst.C0)^(T(1.0)/PhysConst.γ) #ρ
     
 end
+
+function moistPressure(PhysConst::PhysicalConst; ρ=1.25, Temp=300.0, qv = 0.0)
+    T = typeof(Temp)
+    #@info ρ*Temp*PhysConst.Rair + ρ*Temp*qv*PhysConst.Rvap, Temp, qv, ρ, PhysConst.Rvap
+    return (T(ρ*Temp*PhysConst.Rair + ρ*Temp*qv*PhysConst.Rvap))
+end

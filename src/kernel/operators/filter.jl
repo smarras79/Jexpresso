@@ -231,7 +231,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
   uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
 end
 
-function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_3D,::PERT)
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1))
 
   u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -275,18 +275,22 @@ function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_3
     ## ETA Derivative
       ## this is very likely wrong, work out on paper
       #params.fqf[m,:,:] .= params.q_ti * params.fy_t
-      for k=1:mesh.ngl
-          params.q_tij[1,1,k] = 0.0
-          for l=1:params.mesh.ngl
-              params.q_tij[1,1,k] += params.q_ti[1,1,l] * params.fy_t[l,k]
+      for i=1:params.mesh.ngl
+        for j=1:params.mesh.ngl
+          for k=1:params.mesh.ngl
+            params.q_tij[i,j,k] = 0.0
+            for l=1:params.mesh.ngl
+                params.q_tij[i,j,k] += params.q_ti[i,l,k] * params.fy_t[l,j]
+            end
           end
+        end
       end
 
-      for i=1:mesh.ngl
-          for j=1:mesh.ngl
-              for k =1:mesh.ngl
+      for i=1:params.mesh.ngl
+          for j=1:params.mesh.ngl
+              for k =1:params.mesh.ngl
                   params.fqf[m,i,j,k] = 0.0
-                  for l=1:params.ngl
+                  for l=1:params.mesh.ngl
                       params.fqf[m,i,j,k] += params.q_tij[i,j,l] * params.fz_t[l,k]
                   end
               end
@@ -299,8 +303,10 @@ function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_3
 
     for j=1:params.mesh.ngl
       for i=1:params.mesh.ngl
-        for m=1:params.neqs
-          params.b[e,i,j,m] += params.fqf[m,i,j] * params.ω[i]*params.ω[j]*Je[e,i,j]
+          for k=1:params.mesh.ngl
+            for m=1:params.neqs
+                params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[e,i,j,k]
+            end
         end
       end
     end
@@ -379,7 +385,7 @@ function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_3
        divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
   end
 
-  uaux .= params.B
+  uaux[:,params.neqs] .= params.B[:,params.neqs]
 
   #=if (params.laguerre)
 

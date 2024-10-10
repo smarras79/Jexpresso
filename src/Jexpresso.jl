@@ -25,6 +25,7 @@ using Geodesy
 using InternedStrings
 using LinearAlgebra
 using NetCDF
+using SpecialFunctions
 using StaticArrays
 using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
 using DiffEqBase
@@ -58,6 +59,10 @@ include(joinpath( "kernel", "abstractTypes.jl"))
 include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
+
+include(joinpath( "kernel", "physics", "microphysics.jl"))
+
+include(joinpath( "kernel", "physics", "saturation.jl"))
 
 include(joinpath( "kernel", "physics", "soundSpeed.jl"))
 
@@ -104,6 +109,8 @@ include(joinpath( "io", "write_output.jl"))
 include(joinpath( "io", "diagnostics.jl"))
 
 include(joinpath( "io", "Extract_topo.jl"))
+
+include(joinpath( "io", "soundings.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
 
