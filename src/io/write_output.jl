@@ -134,14 +134,14 @@ end
 #
 # VTK 2D/3D
 #
-function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
  
     #println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
     
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, sol.u[iout][:], sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
+            write_vtk(SD, mesh, sol.u[iout][:], mp, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
         else
             u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
             KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
@@ -149,18 +149,18 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
             KernelAbstractions.copyto!(CPU(),u_exact,qexact)
             convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, u, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+            write_vtk(SD, mesh, u, mp, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
         end
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
     
 end
 
-function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, u::Array, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
-        write_vtk(SD, mesh, u, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
+        write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
     else
         #VERIFY THIS on GPU
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
@@ -168,7 +168,7 @@ function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, 
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-        write_vtk(SD, mesh, u, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+        write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
     println(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE") )
@@ -586,7 +586,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     end
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
     outvars = varnames
     nvars = length(outvars)
     
@@ -699,6 +699,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         idx = (ivar - 1)*mesh.npoin
         vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*mesh.npoin])
     end
+    if (inputs[:lmoist])
+        vtkfile[string("T"), VTKPointData()] =  @view(mp.Tabs[:])
+        vtkfile[string("qi"), VTKPointData()] =  @view(mp.qi[:])
+        vtkfile[string("qc"), VTKPointData()] =  @view(mp.qc[:])
+        vtkfile[string("qr"), VTKPointData()] =  @view(mp.qr[:])
+        vtkfile[string("qs"), VTKPointData()] =  @view(mp.qs[:])
+        vtkfile[string("qg"), VTKPointData()] =  @view(mp.qg[:])
+    end
+         
     outfiles = vtk_save(vtkfile)
     
 end

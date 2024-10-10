@@ -23,7 +23,7 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
         solution = time_loop!(inputs, params, u)
         
         if (inputs[:ndiagnostics_outputs] > 0)
-            write_output(sem.mesh.SD, solution,  sem.mesh,
+            write_output(sem.mesh.SD, solution,  sem.mesh, params.mp,
                          OUTPUT_DIR, inputs,
                          params.qp.qvars,
                          inputs[:outformat];

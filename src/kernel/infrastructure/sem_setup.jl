@@ -5,6 +5,7 @@ function sem_setup(inputs::Dict)
     
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
+    fz = zeros(Float64,1,1)
     fy_lag = zeros(Float64,1,1)
     Nξ    = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
@@ -132,6 +133,9 @@ function sem_setup(inputs::Dict)
             if (inputs[:lfilter])
                 fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
                 fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
+                if (mesh.nsd >2)
+                    fz = init_filter(mesh.ngl-1,ξ,inputs[:mu_z],mesh,inputs)
+                end
             end
             #--------------------------------------------------------
             # Build metric terms
@@ -189,6 +193,5 @@ function sem_setup(inputs::Dict)
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
-    
-    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
+    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz)
 end

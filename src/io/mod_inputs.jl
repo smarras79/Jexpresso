@@ -33,6 +33,10 @@ function mod_inputs_user_inputs!(inputs)
         end
     end
 
+    if(!haskey(inputs, :sounding_file))
+       inputs[:sounding_file] = "empty"
+    end
+
     if(!haskey(inputs, :topo_database))
        inputs[:topo_database] = "empty"
     end
@@ -127,6 +131,10 @@ function mod_inputs_user_inputs!(inputs)
 
     if(!haskey(inputs,:mu_y))
         inputs[:mu_y] = 0.0
+    end
+
+    if(!haskey(inputs,:mu_z))
+        inputs[:mu_z] = 0.0
     end
 
     if(!haskey(inputs,:lwarp))
@@ -506,6 +514,10 @@ function mod_inputs_user_inputs!(inputs)
 
     if(!haskey(inputs, :lmoist))
         inputs[:lmoist] = false
+    end
+
+    if(!haskey(inputs, :lprecip))
+        inputs[:lprecip] = false
     end
     
     if(!haskey(inputs, :energy_equation))

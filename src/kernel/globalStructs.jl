@@ -10,8 +10,8 @@ Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, back
 end
 function allocate_uODE(SD, npoin, T, backend; neqs=1)
 
-    dims1 = (Int64(npoin)*Int64(neqs))
-    dims2 = (Int64(npoin), Int64(neqs))
+    dims1 = (Int64(npoin)*Int64(neqs+1))
+    dims2 = (Int64(npoin), Int64(neqs+1))
     dims3 = (Int64(npoin))
 
     uODE = St_uODE{T, dims1, dims2, dims3, backend}()
@@ -170,11 +170,12 @@ end
 # Filter:
 #-------------------------------------------------------------------------------------------
 Base.@kwdef mutable struct St_filter{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend}   
-    q_t  = KernelAbstractions.zeros(backend,  T, dims1)
-    fqf  = KernelAbstractions.zeros(backend,  T, dims1)
-    q_ti = KernelAbstractions.zeros(backend,  T, dims2)
-    b    = KernelAbstractions.zeros(backend,  T, dims3)
-    B    = KernelAbstractions.zeros(backend,  T, dims4)
+    q_t   = KernelAbstractions.zeros(backend,  T, dims1)
+    fqf   = KernelAbstractions.zeros(backend,  T, dims1)
+    q_ti  = KernelAbstractions.zeros(backend,  T, dims2)
+    q_tij = KernelAbstractions.zeros(backend,  T, dims2)
+    b     = KernelAbstractions.zeros(backend,  T, dims3)
+    B     = KernelAbstractions.zeros(backend,  T, dims4)
 end
 function allocate_filter(SD, nelem, npoin, ngl, T, backend; neqs=1, lfilter=false)
 
@@ -191,11 +192,11 @@ function allocate_filter(SD, nelem, npoin, ngl, T, backend; neqs=1, lfilter=fals
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_3D()
             # WARNING Allocate only 1 because there is no 3D filter yet
-            dims1 = (1, 1, 1, 1)
-            dims2 = (1, 1, 1)
-            dims3 = (1, 1, 1, 1, 1)
-            dims4 = (1, 1)
-            warning( " 3D filter not implemented yet")
+            dims1 = (Int64(neqs), Int64(ngl), Int64(ngl), Int64(ngl))
+            dims2 = (Int64(ngl), Int64(ngl), Int64(ngl))
+            dims3 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
+            dims4 = (Int64(npoin), Int64(neqs))
+            #warning( " 3D filter not implemented yet")
         end
     else
         if SD == NSD_1D()
@@ -249,11 +250,11 @@ function allocate_filter_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T, backend; ne
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_3D()
             # WARNING Allocate only 1 because there is no 3D filter yet
-            dims1 = (1, 1, 1, 1)
-            dims2 = (1, 1, 1)
-            dims3 = (1, 1, 1, 1, 1)
-            dims4 = (1, 1)
-            warning( " 3D laguerre filter not implemented yet")
+            #dims1 = (1, 1, 1, 1)
+            #dims2 = (1, 1, 1)
+            #dims3 = (1, 1, 1, 1, 1)
+            #dims4 = (1, 1)
+            #warning( " 3D laguerre filter not implemented yet")
         end
         
     else

@@ -64,8 +64,10 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     filter = allocate_filter(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs, lfilter=inputs[:lfilter])
     fy_t   = transpose(sem.fy)
+    fz_t   = transpose(sem.fz)
     q_t    = filter.q_t
     q_ti   = filter.q_ti
+    q_tij  = filter.q_tij
     fqf    = filter.fqf
     b      = filter.b
     B      = filter.B
@@ -159,7 +161,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Allocate micophysics arrays
     #------------------------------------------------------------------------------------
-    mp = allocate_Microphysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
+    mp = allocate_SamMicrophysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
     
     
     #------------------------------------------------------------------------------------
@@ -200,7 +202,7 @@ function params_setup(sem,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
                   uprimitive,
                   flux_gpu, source_gpu, qbdy_gpu,
-                  q_t, q_ti, fqf, b, B,
+                  q_t, q_ti, q_tij, fqf, b, B,
                   q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag, flux_lag_gpu, source_lag_gpu,
                   qbdy_lag_gpu,
                   RHS, RHS_visc,
@@ -219,7 +221,7 @@ function params_setup(sem,
                   inputs, visc_coeff, ivisc_equations,
                   sem.matrix.M, sem.matrix.Minv,tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
-                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
+                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
         
     else
           params = (backend,
@@ -232,7 +234,7 @@ function params_setup(sem,
               uprimitive,
               F, G, H, S,
               flux_gpu, source_gpu, qbdy_gpu,
-              q_t, q_ti, fqf, b, B,
+              q_t, q_ti, q_tij, fqf, b, B,
               SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
               sem.SOL_VARS_TYPE, 
               neqs=qp.neqs,
@@ -240,7 +242,7 @@ function params_setup(sem,
               visc_coeff, ivisc_equations,
               sem.matrix.M, sem.matrix.Minv,tspan,
               Δt, xmax, xmin, ymax, ymin, zmin, zmax,
-              qp, mp, sem.fx, sem.fy, fy_t, laguerre=false)
+              qp, mp, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false)
     end
 
     println(" # Build arrays and params ................................ DONE")
