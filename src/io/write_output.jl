@@ -8,21 +8,20 @@ include("./plotting/jeplots.jl")
 #----------------------------------------------------------------------------------------------------------------------------------------------
 # ∂q/∂t = RHS -> q(x,t)
 #----------------------------------------------------------------------------------------------------------------------------------------------
-# PNG
-function write_output(SD::NSD_1D, q::Array, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG)
-
-    #Reference values only (definied in initial conditions)
-    
+#
+# PNG 1D
+#
+function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+    #OK
     nvar = length(varnames)
-    for ivar = 1:nvar
-        #plot_results!(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames; iout=1, nvar=nvar, PT=nothing)
-        plot_results(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
-    end
+    qout = zeros(mesh.npoin)
+    
+    plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
 function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     
     if (inputs[:plot_overlap])
         fig = Figure(size = (1200,800),fontsize=22)
@@ -60,18 +59,46 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+#
+# PNG 2D
+#
+function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
 
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+    #println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  "))
     
     if inputs[:lplot_surf3d]
         for iout = 1:size(sol.t[:], 1)
-            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            title = @sprintf "final solution at t=%6.4f" t
+            plot_surf3d(SD, mesh, u[:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
+        end
+    else
+
+        title = @sprintf "final solution at t=%6.4f" t
+        if (inputs[:backend] == CPU())
+            plot_triangulation(SD, mesh, u[:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+        else
+            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+            KernelAbstractions.copyto!(CPU(),u, u[:])
+            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+        end
+    end
+    println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
+end
+
+#
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+
+    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
+    
+    if inputs[:lplot_surf3d]
+        for iout = 1:size(sol.t[:], 1)
+            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
             plot_surf3d(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
         end
     else
         for iout = 1:size(sol.t[:],1)
-            title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
+            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
             if (inputs[:backend] == CPU())
                 plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
             else
@@ -85,10 +112,13 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
 
-# ASCII
+#
+# ASCII 2D
+#
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::ASCII; nvar=1, PT=nothing)
     
-    println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
+    #println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
+    
     for iout = 1:size(sol.t[:],1)
         #Write out data at final timestep
 	fname = @sprintf "it-%d.dat" iout
@@ -101,36 +131,57 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") ) 
 end
 
+#
+# VTK 2D/3D
+#
 function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+ 
+    #println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
     
-    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
-    if (inputs[:lvolume3d])
-        for iout = 1:size(sol.t[:],1)
-            plot_volume3d(SD, mesh, sol.u[iout][:], "title", OUTPUT_DIR; iout=iout, nvar=1, smoothing_factor=inputs[:smoothing_factor])
+    for iout = 1:size(sol.t[:],1)
+        if (inputs[:backend] == CPU())
+            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
+            write_vtk(SD, mesh, sol.u[iout][:], sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
+        else
+            u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
+            KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
+            u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
+            KernelAbstractions.copyto!(CPU(),u_exact,qexact)
+            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
+            write_vtk(SD, mesh, u, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
         end
-    else
-        for iout = 1:size(sol.t[:],1)
-            if (inputs[:backend] == CPU())
-                title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-                write_vtk(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
-            else
-                u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
-                KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
-                u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
-                KernelAbstractions.copyto!(CPU(),u_exact,qexact)
-                convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-                title = @sprintf "Tracer: final solution at t=%6.4f" sol.t[iout]
-                write_vtk(SD, mesh, u, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
-            end
-        end
-        println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
     end
+    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
 end
 
+function write_output(SD, u, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+    
+    title = @sprintf "final solution at t=%6.4f" iout
+    if (inputs[:backend] == CPU())
+        write_vtk(SD, mesh, u, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
+    else
+        #VERIFY THIS on GPU
+        u_gpu = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
+        KernelAbstractions.copyto!(CPU(),u_gpu, u)
+        u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
+        KernelAbstractions.copyto!(CPU(),u_exact,qexact)
+        convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+        write_vtk(SD, mesh, u_gpu, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+        convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
 
+    end
+
+    println(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE") )
+
+end
+
+# PNG 2D
+#
 function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
     
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
+    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
+    
     title = @sprintf "Solution to ∇⋅∇(q) = f"
     if inputs[:lplot_surf3d]
         plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1, smoothing_factor=inputs[:smoothing_factor])
@@ -141,7 +192,7 @@ function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, 
             u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
             KernelAbstractions.copyto!(CPU(),u, sol.u[:])
             convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-            @info u
+            #@info u
             plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs;)
         end
     end
@@ -152,10 +203,21 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-
+function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
+    
+    # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
+    iout = size(t,1)
+    title = @sprintf "Final solution at t=%6.4f" t
+    
+    write_hdf5(SD, mesh, u, qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
+    
+    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
+    
+end
 function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
-    println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
+    #println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
+    
     iout = size(sol.t[:],1)
     title = @sprintf "Final solution at t=%6.4f" sol.t[iout]
 
@@ -166,7 +228,7 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
 end
 function read_output(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, outformat::HDF5; nvar=1)
     
-    println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
+    #println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ...  ") )
     q, qe = read_hdf5(SD, INPUT_DIR, inputs, npoin, nvar)
     println(string(" # Reading restart HDF5 file:", INPUT_DIR, "*.h5 ... DONE") )
 
@@ -208,9 +270,8 @@ end
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
-    #nothing
-    
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+
     outvars = varnames
     nvars = length(outvars)
     
@@ -506,9 +567,10 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
         end
     end
 
-
-    #Solution:
-    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")    
+    #
+    # Write solution:
+    #
+    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")
     vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*TFloat(0.0), cells)
     for ivar = 1:nvar
         idx = (ivar - 1)*npoin
@@ -525,7 +587,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     end
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
     outvars = varnames
     nvars = length(outvars)
     npoin = mesh.npoin
@@ -969,27 +1031,43 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
      
     #npoin = mesh.npoin
     qout = copy(q)
+    TF = eltype(q)
+    ρ = zeros(TF, mesh.npoin,1)
+    u = zeros(TF, mesh.npoin,1)
+    v = zeros(TF, mesh.npoin,1)
+    w = zeros(TF, mesh.npoin,1)
+    e_tot = zeros(TF, mesh.npoin,1)
+    qt = zeros(TF, mesh.npoin,1)
+    ql = zeros(TF, mesh.npoin,1)
+    θ = zeros(TF, mesh.npoin,1)
+    param_set = create_updated_TD_Parameters(TF(101325.0))
+    _grav = TF(TP.grav(param_set))
+
 
     if (inputs[:CL] == CL())
         if (inputs[:SOL_VARS_TYPE] == TOTAL())
             #ρ
-            qout[1:npoin] .= q[1:npoin]
+            qout[1:mesh.npoin] .= q[1:mesh.npoin]
+            ρ[:] .= q[1:mesh.npoin]
             
             if (case == "rtb" || case == "mountain") && nvars >= 4
                 #u = ρu/ρ
                 ivar = 2
-                idx = (ivar - 1)*npoin
-                qout[idx+1:ivar*npoin] .= q[idx+1:ivar*npoin]./q[1:npoin]
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                u[:] .= qout[idx+1:ivar*mesh.npoin]
 
                 #v = ρv/ρ
                 ivar = 3
-                idx = (ivar - 1)*npoin
-                qout[idx+1:ivar*npoin] .= q[idx+1:ivar*npoin]./q[1:npoin]
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                v[:] .= qout[idx+1:ivar*mesh.npoin]
                 
                 #w = ρw/ρ
                 ivar = 4
-                idx = (ivar - 1)*npoin
-                qout[idx+1:ivar*npoin] .= q[idx+1:ivar*npoin]./q[1:npoin]
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                w[:] .= qout[idx+1:ivar*mesh.npoin]
                 
                 if (size(qexact, 1) == npoin)
 
@@ -1003,13 +1081,37 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
                         qout[idx+1:5*npoin] .= q[idx+1:5*npoin]./q[1:npoin] .- qexact[1:npoin,5]./qexact[1:npoin,1]
                     else
                         ivar = 5
-                        idx = (ivar - 1)*npoin
-                        qout[idx+1:5*npoin] .= q[idx+1:5*npoin]./q[1:npoin]
+                        idx = (ivar - 1)*mesh.npoin
+                        qout[idx+1:5*mesh.npoin] .= q[idx+1:5*mesh.npoin]./q[1:mesh.npoin]
+                        e_tot[:] .= qout[idx+1:ivar*mesh.npoin]
 
                     end
                 end
-            end
+                
+                if (inputs[:lbomex])
+                    #qt = ρqt/ρ
+                    ivar = 6
+                    idx = (ivar - 1)*mesh.npoin
+                    qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                    qt[:] .= qout[idx+1:ivar*mesh.npoin]
 
+
+                    #ql = ρql/ρ
+                    ivar = 7
+                    idx = (ivar - 1)*mesh.npoin
+                    qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                    ql[:] .= qout[idx+1:ivar*mesh.npoin]
+                    
+                    for i = 1:mesh.npoin
+                        e_kin = 0.5 * (u[i]^2 + v[i]^2 + w[i]^2)
+                        e_pot = _grav * mesh.z[i]
+                        e_int::TF = e_tot[i] - e_pot - e_kin
+                        q_pt = TD.PhasePartition(qt[i], ql[i])
+                        Temp = TD.air_temperature(param_set, e_int, q_pt)
+                        θ[i] = TD.virtual_pottemp(param_set, Temp, ρ[i], q_pt)
+                    end
+                end
+            end
         else
             qout[1:npoin] .= q[1:npoin]
 
@@ -1034,11 +1136,14 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DI
     end
 
     #Solution:
-    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")    
-    vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.z[1:npoin], cells)
+    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")
+    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells)
     for ivar = 1:nvars
         idx = (ivar - 1)*npoin
         vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+    end
+    if (inputs[:lbomex])
+        vtkfile["theta", VTKPointData()] =  @view(θ[:])
     end
     outfiles = vtk_save(vtkfile)
     mesh.x .= xx
@@ -1052,7 +1157,7 @@ end
 
 
 function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
-
+    
     #nothing
     if (mesh.nelem_semi_inf > 0)
         subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)

@@ -33,10 +33,7 @@ end
 using Parameters
 
 @with_kw struct MicrophysicalConst{T}
-
-    #Thermodynamic constants at T=300 K
-    Rair::T
-
+    
     # Constants related to saturation water pressure
     xlv::T    = 2500000.0
     ep2::T    = 0.6217504
