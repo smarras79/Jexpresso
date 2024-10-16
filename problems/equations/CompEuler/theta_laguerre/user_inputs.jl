@@ -7,7 +7,7 @@ function user_inputs()
         :ode_solver           => SSPRK33(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :tinit                => 0.0,
         :Δt                   => 0.05,
-        :ndiagnostics_outputs => 2,
+        :diagnostics_at_times => (100, 200, 300, 400, 500, 600, 700, 800, 900, 1000),
         :case                 => "rtb",
         :lsource              => true, 
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
