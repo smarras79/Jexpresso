@@ -13,7 +13,7 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (100, 200, 300, 400, 500, 600, 700, 800, 900, 1000),
+        :diagnostics_at_times => (10, 500, 1000),
         :case                 => "rtb",
         :lsource              => true, 
         #:backend              => MetalBackend(),
@@ -33,8 +33,6 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_20el.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/plate_hole.msh", #for nop=4
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters

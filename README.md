@@ -17,6 +17,8 @@ A CPU and GPU research software for the numerical solution of a system of arbitr
 
 Suggested Julia version: 1.10.0
 
+Suggested Julia version: 1.10
+
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
 
 Please cite Jexpresso using:
@@ -180,7 +182,7 @@ If you are interested in contributing, please get in touch:
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia 1.10.0
+To install and run the code assume Julia 1.10
 
 ## Setup with CPUs
 
@@ -202,7 +204,6 @@ julia> include("./src/Jexpresso.jl")
 
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
-
 
 Example of cloud simulations (please contact us to run this because its branch has not been merged into master yet)
 
