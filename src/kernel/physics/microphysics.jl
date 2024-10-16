@@ -51,19 +51,23 @@ function do_micro_physics!(mp::St_SamMicrophysics, npoin, uaux, z, qe, ::PERT)
                                                                              (uaux[ip,6]+qe[ip,6])/(uaux[ip,1]+qe[ip,1]),
                                                                              (uaux[ip,7]+qe[ip,7])/(uaux[ip,1]+qe[ip,1]),
                                                                              z[ip],MicroConst,PhysConst)
-        #mp.Tabs[ip] = T
+        mp.Tabs[ip] = T
         mp.qn[ip] = qn
         mp.qi[ip] = qi
         mp.qc[ip] = qc
         mp.qr[ip] = qr
         mp.qs[ip] = qs
         mp.qg[ip] = qg
-        hl = (uaux[ip,1]+qe[ip,1])*(PhysConst.cp*T + PhysConst.g*z[ip] - MicroConst.Lc*(qc) - MicroConst.Ls*(qi))
-        uaux[ip,5] = hl - qe[ip,5]
+        #hl = (uaux[ip,1]+qe[ip,1])*(PhysConst.cp*T + PhysConst.g*z[ip] - MicroConst.Lc*(qc + qr) - MicroConst.Ls*(qi+qs+qg))
+        #uaux[ip,5] = hl - qe[ip,5]
         ## retrieve absolute temp
-        T = (hl/(uaux[ip,1]+qe[ip,1]) - PhysConst.g*z[ip] + MicroConst.Lc*(qc + qr) + MicroConst.Ls*(qi + qs + qg))/PhysConst.cp 
-        mp.Tabs[ip] = T
-        P = moistPressure(PhysConst; ρ = uaux[ip,1]+qe[ip,1], Temp = T, qv = (uaux[ip,6]+qe[ip,6])/(uaux[ip,1]+qe[ip,1])-qn)
+        #T = (hl/(uaux[ip,1]+qe[ip,1]) - PhysConst.g*z[ip] + MicroConst.Lc*(qc + qr) + MicroConst.Ls*(qi + qs + qg))/PhysConst.cp 
+        #mp.Tabs[ip] = T
+        #P = moistPressure(PhysConst; ρ = uaux[ip,1]+qe[ip,1], Temp = T, qv = (uaux[ip,6]+qe[ip,6])/(uaux[ip,1]+qe[ip,1])-qn)
+        #hl = (uaux[ip,5]+qe[ip,5])/(uaux[ip,1]+qe[ip,1])
+        #T = (hl - PhysConst.g*z[ip] + MicroConst.Lc*(qc + qr) + MicroConst.Ls*(qi+qs+qg))/PhysConst.cp
+        #P = moistPressure(PhysConst; ρ = uaux[ip,1]+qe[ip,1], Temp = T, qv = (uaux[ip,6]+qe[ip,6])/(uaux[ip,1]+qe[ip,1])-qn)
+        #mp.Tabs[ip] = T
         uaux[ip,end] = P
 
         ### find Pr, Ps, Pg
@@ -385,7 +389,7 @@ function saturation_adjustment_sam_microphysics(ρ,hl,qt,qp,z,MicroConst,PhysCon
     T =  (hl - g*z)/cp
     qt = max(0.0,qt)
     qp = max(0.0,qp)
-    P = moistPressure(PhysConst; ρ=ρ, Temp=T, qv = qt) 
+    #P = moistPressure(PhysConst; ρ=ρ, Temp=T, qv = qt) 
     an = 1/(T0n - T00n)
     bn = T00n * an
     ap = 1/(T0p - T00p)
@@ -394,16 +398,21 @@ function saturation_adjustment_sam_microphysics(ρ,hl,qt,qp,z,MicroConst,PhysCon
     fac2 = fac_fus*ap
     ag = 1/(T0g - T00g)
     T1 = T + fac1*qp/(1+fac2*qp)
-    
+    P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
+    #if (qp > 1e-8) 
+    #    @info qp, T, T1, fac1*qp/(1+fac2*qp), fac1*qp, (1+fac2*qp)
+    #end
 
     if (T1 >= T0n)
 
         T1 = T + fac_cond*qp
+        P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
         qsatt = qsatw(T1, P/100)
 
     elseif (T1 <= T00n)
 
         T1 = T + fac_sub*qp
+        P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
         qsatt = qsati(T1, P/100)
 
     else
@@ -480,7 +489,13 @@ function saturation_adjustment_sam_microphysics(ρ,hl,qt,qp,z,MicroConst,PhysCon
         qn = 0.0
     end
     
-    T = T1
+    T = T1#= - fac1*qp/(1+fac2*qp)
+    if (T1 >= T0n)
+        T = T1 - fac_cond*qp
+    elseif (T1 <= T00n)
+        T = T1 - fac_sub*qp
+    end=#
+
     qp = max(0.0, qp)
 
     ωn = max(0,min(1,an*T-bn))
@@ -494,6 +509,7 @@ function saturation_adjustment_sam_microphysics(ρ,hl,qt,qp,z,MicroConst,PhysCon
     qs = max(0.0,(1-ωp)*(1-ωg)*qp)
     qg = max(0.0,(1-ωp)*ωg*qp)
     P = moistPressure(PhysConst; ρ = ρ, Temp = T, qv = qt-qn)
+    
     return T,P,qn,qc,qi,qr,qs,qg,qsatt
 end
 
