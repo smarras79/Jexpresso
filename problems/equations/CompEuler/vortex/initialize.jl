@@ -50,14 +50,15 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         if mycase=="vor"
             
             # base flow
-            xc, yc = SVector(0.0, 0.0)
+            xc = 0.0
+            yc = 0.0
             
             #
             # INITIAL STATE from scratch:
             #
             if inputs[:case] == "shu" #Shu
                 
-                αdeg = 45.0
+                αdeg = 0.0
                 Minf = sqrt(2.0/γ)
                 ρinf = 1.0
                 pinf = 1.0
@@ -65,7 +66,6 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 R    = 1.0
                 σ    = 1.0
                 β    = Minf*5.0*sqrt(2.0)/(4π)*exp(0.5)
-                L    = 5.0
                                 
             elseif inputs[:case] == "vincent" #vincent
                 
@@ -77,7 +77,6 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 R    = 1.5
                 σ    = 1.0
                 β    = Minf*27.0/(4π)*exp(2.0/9.0)
-                L    = 20.0
                 
             elseif inputs[:case] == "hw" #Hesthaven and Warburton
                 
@@ -89,7 +88,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 R    = 0.7071067811865476
                 σ    = 1.0
                 β    = Minf*5.0/(2π)*exp(1.0)
-                L    = 5.0
+                
             end
             
             α        = αdeg*π/180.0
@@ -104,7 +103,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             
             for ip = 1:mesh.npoin
                 
-                x, y = mesh.x[ip], mesh.y[ip]
+                x = mesh.x[ip]
+                y = mesh.y[ip]
                 
                 f  = Const*( (x - xc)^2 +  (y - yc)^2 )
                 Ω  = β*exp(f)
@@ -133,7 +133,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[ip,3] = 0.0
                 q.qe[ip,4] = 0.0
                 q.qe[ip,end] = 0.0
-            end    
+            end
+            
         elseif mycase=="the"
 
             xc = (maximum(mesh.x) + minimum(mesh.x))/2
