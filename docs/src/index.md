@@ -8,7 +8,7 @@ Documentation of `Jexpresso.jl`.
           
 ## Introduction
 
-Jexpresso is a CPU/GPU research software for the numerical solution of a system of arbitrary conservation laws in 1D, 2D, 3D using continuous spectral elements. Nevertheless, the code is built so that any other numerical method can be added. For example, the Jexpresso already contains a 1D finite difference implementation as well.
+Jexpresso is a CPU/GPU research software for the numerical solution of a system of arbitrary conservation laws in 1D, 2D, 3D using continuous spectral elements (SEM). Nevertheless, the code is built so that any other numerical method can be added. For example, the Jexpresso already contains a 1D finite difference implementation as well.
 
 Jexpresso is written in the [Julia programming language](https://julialang.org/) and was thought to be modular and allow any user to add any equations in any dimensions without knowing anything about numerical methods. 
 
