@@ -5,18 +5,15 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.005,
+        :Δt                   => 0.0005,
         :tinit                => 0.0,
         :tend                 => 20.0,
-        :diagnostics_at_times => (1, 2, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 12, 14, 16, 18, 20), 
-
+        :diagnostics_at_times => range(0,20,41),
         :case                 => "shu",
         #:case                 => "hw",
         #:case                 => "vincent",
-
         :lsource              => true,
         :lperiodic            => true,
-
         #:backend              => MetalBackend(),
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
@@ -29,7 +26,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1, 2, 3, 4],
-        :μ                    => [0.0, 0.01, 0.01, 0.01], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 0.05, 0.05, 0.05], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
