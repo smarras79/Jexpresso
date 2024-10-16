@@ -13,9 +13,19 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     #---------------------------------------------------------------------------------
     qvars = ("ρ", "ρu", "ρv", "ρe")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
-    mycase = "the"
     #---------------------------------------------------------------------------------
     PhysConst = PhysicalConst{Float64}()
+
+    
+    mycase   = "vor"
+    Rair     = PhysConst.Rair
+    cv       = PhysConst.cv
+    γ        = PhysConst.γ
+    γinv     = 1.0/γ
+    γm1      = γ - 1.0
+    γm1inv   = 1.0/γm1
+    γstar    = γ*γm1inv
+    
     if inputs[:lrestart] == true
         #
         # READ RESTART HDF5:
@@ -38,33 +48,59 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         
     else
         if mycase=="vor"
-            #
-            # INITIAL STATE from scratch:
-            #
-            Tc = 5.0
             
             # base flow
             xc, yc = SVector(0.0, 0.0)
-
-            Rair     = PhysConst.Rair
-            cv       = PhysConst.cv
-            γ        = PhysConst.γ
-            γinv     = 1.0/γ
-            γm1      = γ - 1.0
-            γm1inv   = 1.0/γm1
-            γstar    = γ*γm1inv
-            Minf     = sqrt(1.0/γ)
-            β        = Minf*2.5/π
-            σ        = 1.0
-            σ2       = σ*σ
-            R        = 0.7071067811865476
+            
+            #
+            # INITIAL STATE from scratch:
+            #
+            if inputs[:case] == "shu" #Shu
+                
+                αdeg = 45.0
+                Minf = sqrt(2.0/γ)
+                ρinf = 1.0
+                pinf = 1.0
+                Tinf = 1.0
+                R    = 1.0
+                σ    = 1.0
+                β    = Minf*5.0*sqrt(2.0)/(4π)*exp(0.5)
+                L    = 5.0
+                                
+            elseif inputs[:case] == "vincent" #vincent
+                
+                αdeg = 90.0
+                Minf = 0.4
+                ρinf = 1.0
+                pinf = 1.0/(γ*Minf*Minf)
+                Tinf = 1.0
+                R    = 1.5
+                σ    = 1.0
+                β    = Minf*27.0/(4π)*exp(2.0/9.0)
+                L    = 20.0
+                
+            elseif inputs[:case] == "hw" #Hesthaven and Warburton
+                
+                αdeg = 0.0
+                Minf = sqrt(1.0/γ)
+                ρinf = 1.0
+                pinf = 1.0
+                Tinf = 1.0
+                R    = 0.7071067811865476
+                σ    = 1.0
+                β    = Minf*5.0/(2π)*exp(1.0)
+                L    = 5.0
+            end
+            
+            α        = αdeg*π/180.0
+            MinfCos  = Minf*cos(α)
+            MinfSin  = Minf*sin(α)
             R2       = R*R
+            σ2       = σ*σ            
             oneOverR = 1.0/R
             Const    = -0.5/(σ2*R2)
             g        = 1.0/(γ - 1.0)
-            α        = 0.0
-            MinfCos  = Minf*cos(α)
-            MinfSin  = Minf*sin(α)
+            Tc       = 5.0
             
             for ip = 1:mesh.npoin
                 
@@ -73,15 +109,15 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 f  = Const*( (x - xc)^2 +  (y - yc)^2 )
                 Ω  = β*exp(f)
                 
-                du =0.0# -y*Ω*oneOverR
-                dv =0.0#  x*Ω*oneOverR
-                dT =0.0# -0.5*γm1*Ω^2
+                du = -y*Ω*oneOverR
+                dv =  x*Ω*oneOverR
+                dT = -0.5*γm1*Ω^2
 
                 ρ = (1.0 + dT)^γm1inv
                 u = MinfCos + du
-                v = MinfSin + dv
-                
+                v = MinfSin + dv                
                 p = γinv*(1.0 + dT)^γstar
+                
                 T = p/(ρ*Rair)
                 e = p/(γ - 1.0) + 0.5*ρ*(u^2 + v^2);
                 
@@ -143,7 +179,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     end
     
     if (inputs[:lwrite_initial] == true)
-        outvarsref = ("drho_init", "du_init", "dv_init", "de_init", "dp_init")
+        outvarsref = ("rho_init", "u_init", "v_init", "e_init", "p_init")
         write_vtk_ref(SD, mesh, q.qn.-q.qe, "initial_state", inputs[:output_dir]; nvar=length(q.qn[1,:]), outvarsref=outvarsref)
         
         outvarsref = ("rho_ref", "u_ref", "v_ref", "e_ref", "p_ref")    
