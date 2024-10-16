@@ -113,7 +113,7 @@ function periodicity_restructure!(mesh,inputs,backend)
         poin_bdy .=mesh.poin_in_bdy_edge
         interval = [2,3,4]
         for iedge_bdy =1:size(mesh.bdy_edge_type,1)
-            if (mesh.bdy_edge_type[iedge_bdy] == "periodic1" && mesh.bdy_edge_type[iedge_bdy] == "periodic2")
+            if ("periodic2" in mesh.bdy_edge_type && "periodic1" in mesh.bdy_edge_type)
                 iel = mesh.bdy_edge_in_elem[iedge_bdy]
                 for k=1:mesh.ngl
                     ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
@@ -322,7 +322,719 @@ function periodicity_restructure!(mesh,inputs,backend)
             end
         end
     elseif (mesh.nsd == 3)
-        nothing
+        if ("periodic1" in mesh.bdy_face_type)
+            finder = false
+            iface_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_face_type[iface_bdy] == "periodic1")
+                    ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
+                    ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
+                    ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    s1 = t1[2]*t2[3] - t1[3]*t2[2]
+                    s2 = t1[3]*t2[1] - t1[1]*t2[3]
+                    s3 = t1[1]*t2[2] - t1[2]*t2[1]
+                    mag = sqrt(s1^2 + s2^2 + s3^2)
+                    nor1 = [s1/mag, s2/mag, s3/mag]
+                    finder = true
+                else
+                    iface_bdy +=1
+                end
+            end
+        else
+            nor1 = [1.0, 0.0, 0.0]
+        end
+        if ("periodic2" in mesh.bdy_face_type)
+            finder = false
+            iface_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_face_type[iface_bdy] == "periodic2")
+                    ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
+                    ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
+                    ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    s1 = t1[2]*t2[3] - t1[3]*t2[2]
+                    s2 = t1[3]*t2[1] - t1[1]*t2[3]
+                    s3 = t1[1]*t2[2] - t1[2]*t2[1]
+                    mag = sqrt(s1^2 + s2^2 + s3^2)
+                    nor2 = [s1/mag, s2/mag, s3/mag] 
+                    finder = true
+                else
+                    iface_bdy +=1
+                end
+            end
+        else
+            nor2 = [0.0, 1.0, 0.0]
+        end
+        if ("periodic3" in mesh.bdy_face_type)
+            finder = false
+            iface_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_face_type[iface_bdy] == "periodic3")
+                    ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
+                    ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
+                    ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    s1 = t1[2]*t2[3] - t1[3]*t2[2]
+                    s2 = t1[3]*t2[1] - t1[1]*t2[3]
+                    s3 = t1[1]*t2[2] - t1[2]*t2[1]
+                    mag = sqrt(s1^2 + s2^2 + s3^2)
+                    nor3 = [s1/mag, s2/mag, s3/mag]
+                    finder = true
+                else
+                    iface_bdy +=1
+                end
+            end
+        else
+            nor3 = [0.0, 0.0, 1.0]
+        end
+
+        xx = zeros(TFloat, size(mesh.x,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.x,1),1)
+        yy = zeros(TFloat, size(mesh.y,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.y,1),1)
+        zz = zeros(TFloat, size(mesh.y,1),1)
+        poin_bdy= zeros(TInt, size(mesh.poin_in_bdy_face))#KernelAbstractions.zeros(CPU(), TInt,size(mesh.poin_in_bdy_edge))
+        xx .= mesh.x
+        yy .= mesh.y
+        zz .= mesh.z
+        poin_bdy .=mesh.poin_in_bdy_face
+        ### triple periodicity for corners 
+        interval = [2,3,4,5,6,7,8]
+        if ("periodic1" in mesh.bdy_face_type && "periodic2" in mesh.bdy_face_type && "periodic3" in mesh.bdy_face_type)    
+            for iface_bdy =1:size(mesh.bdy_face_type,1)
+                iel = mesh.bdy_face_in_elem[iface_bdy]
+                for k=1:mesh.ngl
+                    for l=1:mesh.ngl
+                        ip = mesh.poin_in_bdy_face[iface_bdy,k,l]
+                        if (ip in interval)
+                            ip_kill=ip
+                            ip_dest=1
+                            for e=1:mesh.nelem
+                                for ii=1:mesh.ngl
+                                    for jj=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            if (mesh.connijk[iel,ii,jj,kk] == ip_kill)
+                                                mesh.connijk[iel,ii,jj,kk] = ip_dest
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            for i=ip_kill:mesh.npoin-1
+                                mesh.x[i] = mesh.x[i+1]
+                                mesh.y[i] = mesh.y[i+1]
+                                mesh.z[i] = mesh.z[i+1]
+                            end
+                            mesh.npoin = mesh.npoin-1
+                            for iface =1:size(mesh.poin_in_bdy_face,1)
+                                for kk=1:mesh.ngl
+                                    for ll=1:mesh.ngl
+                                        val = mesh.poin_in_bdy_face[iface,kk,ll]
+                                        if (val > ip_kill)
+                                            mesh.poin_in_bdy_face[iface,kk,ll] = val - 1
+                                        end
+                                        if (val == ip_kill)
+                                            mesh.poin_in_bdy_face[iface,kk,ll] = ip_dest
+                                        end
+                                    end
+                                end
+                            end
+
+                            for e=1:mesh.nelem
+                                for ii=1:mesh.ngl
+                                    for jj=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            ipp = mesh.connijk[e,ii,jj,kk]
+                                            if (ipp > ip_kill)
+                                                mesh.connijk[e,ii,jj,kk] -= 1
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            for i=1:size(interval,1)
+                                if (interval[i] > ip_kill)
+                                    interval[i] -= 1
+                                elseif (interval[i] == ip_kill)
+                                    interval[i] = 0
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            ### done with triple periodicity
+        end
+        ### double periodicity
+        ### check if we have more than one periodic set of boundaries
+        nperiodic = 0
+        double1 = [0, 0, 0]
+        double2 = [0, 0, 0]
+        double3 = [0, 0, 0]
+        if ("periodic1" in mesh.bdy_face_type)
+            nperiodic +=1
+            double1 = nor1
+        end
+        if ("periodic2" in mesh.bdy_face_type)
+            nperiodic +=1
+            double2 = nor2
+        end
+        if ("periodic3" in mesh.bdy_face_type)
+            nperiodic +=1
+            if (double1 == [0 ,0 ,0])
+                double1 = nor3
+            end
+            if (double2 == [0 ,0 ,0])
+                double2 = nor3
+            end
+
+        end
+        if (nperiodic == 2) ## if we have triple periodicity this is handled above, for less than 2 periodic boundaries double periodicity does not apply
+            ## find periodic planes
+            @info "doing double periodicity"
+            plane1 = [0, 0, 0, 0]
+            plane2 = [0, 0, 0, 0]
+            plane1[1] = 1
+            plane2_idx = 1
+            plane1_idx = 2
+            for i=2:8
+                vec = [mesh.x[1] - mesh.x[i], mesh.y[1] - mesh.y[i], mesh.z[1] - mesh.z[i]]
+                if (determine_colinearity(vec,double1),determine_colinearity(vec,double2),determine_colinearity(vec,double1+double2))
+                    plane1[plane1_idx] = i
+                    plane1_idx += 1
+                else
+                    plane2[plane2_idx] = i
+                    plane2_idx += 1
+                end
+            end
+            target_idx = plane1[1]
+            interval = [0, 0, 0]
+            for i =1:3
+                interval[i] = plane1[i+1]
+            end
+            for i in interval
+                ip_kill=i
+                ip_dest=target_idx
+                for e=1:mesh.nelem
+                    for ii=1:mesh.ngl
+                        for jj=1:mesh.ngl
+                            for kk=1:mesh.ngl
+                                if (mesh.connijk[iel,ii,jj,kk] == ip_kill)
+                                    mesh.connijk[iel,ii,jj,kk] = ip_dest
+                                end
+                            end
+                        end
+                    end
+                end
+                for i=ip_kill:mesh.npoin-1
+                    mesh.x[i] = mesh.x[i+1]
+                    mesh.y[i] = mesh.y[i+1]
+                    mesh.z[i] = mesh.z[i+1]
+                end
+                mesh.npoin = mesh.npoin-1
+                for iface =1:size(mesh.poin_in_bdy_face,1)
+                    for kk=1:mesh.ngl
+                        for ll=1:mesh.ngl
+                            val = mesh.poin_in_bdy_face[iface,kk,ll]
+                            if (val > ip_kill)
+                                mesh.poin_in_bdy_face[iface,kk,ll] = val - 1
+                            end
+                            if (val == ip_kill)
+                                mesh.poin_in_bdy_face[iedge,kk,ll] = ip_dest
+                            end
+                        end
+                    end
+                end
+                for e=1:mesh.nelem
+                    for ii=1:mesh.ngl
+                        for jj=1:mesh.ngl
+                            for kk=1:mesh.ngl
+                                ipp = mesh.connijk[e,ii,jj,kk]
+                                if (ipp > ip_kill)
+                                    mesh.connijk[e,ii,jj,kk] -= 1
+                                end
+                            end
+                        end
+                    end
+                end
+                for i=1:size(interval,1)
+                    if (interval[i] > ip_kill)
+                        interval[i] -= 1
+                    end
+                    if (interval[i] == ip_kill)
+                        interval[i] = 0
+                    end
+                end
+            end
+
+            target_idx = plane2[1]
+            interval = [0, 0, 0]
+            for i =1:3
+                interval[i] = plane2[i+1]
+            end
+            for i in interval
+                ip_kill=i
+                ip_dest=target_idx
+                for e=1:mesh.nelem
+                    for ii=1:mesh.ngl
+                        for jj=1:mesh.ngl
+                            for kk=1:mesh.ngl
+                                if (mesh.connijk[iel,ii,jj,kk] == ip_kill)
+                                    mesh.connijk[iel,ii,jj,kk] = ip_dest
+                                end
+                            end
+                        end
+                    end
+                end
+                for i=ip_kill:mesh.npoin-1
+                    mesh.x[i] = mesh.x[i+1]
+                    mesh.y[i] = mesh.y[i+1]
+                    mesh.z[i] = mesh.z[i+1]
+                end
+                mesh.npoin = mesh.npoin-1
+                for iface =1:size(mesh.poin_in_bdy_face,1)
+                    for kk=1:mesh.ngl
+                        for ll=1:mesh.ngl
+                            val = mesh.poin_in_bdy_face[iface,kk,ll]
+                            if (val > ip_kill)
+                                mesh.poin_in_bdy_face[iface,kk,ll] = val - 1
+                            end
+                            if (val == ip_kill)
+                                mesh.poin_in_bdy_face[iedge,kk,ll] = ip_dest
+                            end
+                        end
+                    end
+                end
+                for e=1:mesh.nelem
+                    for ii=1:mesh.ngl
+                        for jj=1:mesh.ngl
+                            for kk=1:mesh.ngl
+                                ipp = mesh.connijk[e,ii,jj,kk]
+                                if (ipp > ip_kill)
+                                    mesh.connijk[e,ii,jj,kk] -= 1
+                                end
+                            end
+                        end
+                    end
+                end
+                for i=1:size(interval,1)
+                    if (interval[i] > ip_kill)
+                        interval[i] -= 1
+                    end
+                    if (interval[i] == ip_kill)
+                        interval[i] = 0
+                    end
+                end
+            end
+
+        end
+        ### done with double periodicity
+        ### do regular periodicity
+        per1_points = []
+        per2_points = []
+        per3_points = []
+        for iface_bdy =1:size(mesh.bdy_face_type,1)
+            for k=1:mesh.ngl
+                for l=1:mesh.ngl
+                    ip = mesh.poin_in_bdy_face[iface_bdy,k,l]
+                    if (mesh.bdy_face_type[iface_bdy] == "periodic1")
+                        per1_points = [per1_points; ip]
+                    elseif (mesh.bdy_face_type[iface_bdy] == "periodic2")
+                        per2_points = [per2_points; ip]
+                    elseif (mesh.bdy_face_type[iface_bdy] == "periodic3")
+                        per3_points = [per3_points; ip]
+                    end
+                end
+            end
+        end
+        ### remove duplicates
+        unique!(per1_points)
+        unique!(per2_points)
+        unique!(per3_points)
+        ### work single periodicity on the periodic1 boundaries if applicable
+        if (size(per1_points,1) > 1) 
+            for i=1:size(per1_points,1)
+                found = false
+                i1 = i+1
+                while (i1 <= size(per1_points,1) && found == false)
+                    ip = per1_points[i]
+                    ip1 = per1_points[i1]
+                    vec = [mesh.x[ip] - mesh.x[ip1], mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    if (determine_colinearity(vec, nor1))
+                        #@info "found a match", vec, nor1, ip, ip1, mesh.x[ip], mesh.x[ip1]
+                        found = true
+                        cond1 = mesh.x[ip]*abs(mesh.y[ip])*abs(mesh.z[ip]) <= mesh.x[ip1]*abs(mesh.y[ip1])*abs(mesh.z[ip1])
+                        cond2 = mesh.y[ip]*abs(mesh.x[ip])*abs(mesh.z[ip]) <= mesh.y[ip1]*abs(mesh.x[ip1])*abs(mesh.z[ip1])
+                        cond3 = mesh.z[ip]*abs(mesh.x[ip])*abs(mesh.y[ip]) <= mesh.z[ip1]*abs(mesh.x[ip1])*abs(mesh.y[ip1])
+                        if (cond1 || cond2 || cond3)    
+                            ip_dest = ip
+                            ip_kill = ip1
+                        else
+                            ip_dest = ip1
+                            ip_kill = ip
+                        end
+                        for e=1:mesh.nelem
+                            for ii=1:mesh.ngl
+                                for jj=1:mesh.ngl
+                                    for kk=1:mesh.ngl
+                                        ipp = mesh.connijk[e,ii,jj,kk]
+                                        if (ipp == ip1 || ipp == ip)
+                                            mesh.connijk[e,ii,jj,kk] = ip_dest
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        for iface = 1:size(mesh.poin_in_bdy_face,1)
+                            for kk =1:mesh.ngl
+                                for ll=1:mesh.ngl
+                                    ipp = mesh.poin_in_bdy_face[iface,kk,ll]
+                                    if (ipp == ip1 || ipp == ip)
+                                        mesh.poin_in_bdy_face[iface,kk,ll] = ip_dest
+                                    end
+                                end
+                            end
+                        end
+                        if !(ip_kill in mesh.connijk)
+                            mesh.x[ip_dest] = min(mesh.x[ip_kill],mesh.x[ip_dest])
+                            mesh.y[ip_dest] = min(mesh.y[ip_kill],mesh.y[ip_dest])
+                            mesh.z[ip_dest] = min(mesh.z[ip_kill],mesh.z[ip_dest])
+                            for ii=ip_kill:mesh.npoin-1
+                                mesh.x[ii] = mesh.x[ii+1]
+                                mesh.y[ii] = mesh.y[ii+1]
+                                mesh.z[ii] = mesh.z[ii+1]
+                            end
+                            mesh.npoin = mesh.npoin-1
+                            for iface =1:size(mesh.poin_in_bdy_face,1)
+                                for kk=1:mesh.ngl
+                                    for ll=1:mesh.ngl
+                                        val = mesh.poin_in_bdy_face[iface,kk,ll]
+                                        if (val > ip_kill)
+                                            mesh.poin_in_bdy_face[iface,kk,ll] = val - 1
+                                        end
+                                        if (val == ip_kill)
+                                            mesh.poin_in_bdy_face[iface,kk,ll] = ip_dest
+                                        end
+                                    end
+                                end
+                            end
+
+                            for e=1:mesh.nelem
+                                for ii=1:mesh.ngl
+                                    for jj=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            ipp = mesh.connijk[e,ii,jj,kk]
+                                            if (ipp > ip_kill)
+                                                mesh.connijk[e,ii,jj,kk] -= 1
+                                            end
+                                            if (ipp == ip_kill)
+                                                mesh.connijk[e,ii,jj,kk] = ip_dest
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            for ii=1:size(per1_points,1)
+                                if (per1_points[ii] == ip_kill)
+                                    per1_points[ii] = ip_dest
+                                end
+                            end
+                            for ii=1:size(per2_points,1)
+                                if (per2_points[ii] == ip_kill)
+                                    per2_points[ii] = ip_dest
+                                end
+                            end
+                            for ii=1:size(per3_points,1)
+                                if (per3_points[ii] == ip_kill)
+                                    per3_points[ii] = ip_dest
+                                end
+                            end
+                            for ii=1:size(per1_points,1)
+                                if (per1_points[ii] > ip_kill)
+                                    per1_points[ii] -= 1
+                                end
+                            end
+                            for ii=1:size(per2_points,1)
+                                if (per2_points[ii] > ip_kill)
+                                    per2_points[ii] -= 1
+                                end
+                            end
+                            for ii=1:size(per3_points,1)
+                                if (per3_points[ii] > ip_kill)
+                                    per3_points[ii] -= 1
+                                end
+                            end
+                        end
+                    else
+                        i1 += 1
+                    end
+
+                end
+            end
+        end
+        unique!(per1_points)
+        unique!(per2_points)
+        unique!(per3_points)
+        ### work on single periodicity on the periodic2 boundaries if applicable
+        if (size(per2_points,1) > 1)    
+            for i=1:size(per2_points,1)
+                found = false
+                i1 = i+1
+                while (i1 <= size(per2_points,1) && found == false)
+                    ip = per2_points[i]
+                    ip1 = per2_points[i1]
+                    vec = [mesh.x[ip] - mesh.x[ip1], mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    if (determine_colinearity(vec, nor2))
+                        #@info "found a match", vec, nor2, ip, ip1,mesh.z[ip], mesh.z[ip1], mesh.y[ip], mesh.y[ip1], mesh.x[ip], mesh.x[ip1]
+                        found = true
+                        cond1 = mesh.x[ip]*abs(mesh.y[ip])*abs(mesh.z[ip]) <= mesh.x[ip1]*abs(mesh.y[ip1])*abs(mesh.z[ip1])
+                        cond2 = mesh.y[ip]*abs(mesh.x[ip])*abs(mesh.z[ip]) <= mesh.y[ip1]*abs(mesh.x[ip1])*abs(mesh.z[ip1])
+                        cond3 = mesh.z[ip]*abs(mesh.x[ip])*abs(mesh.y[ip]) <= mesh.z[ip1]*abs(mesh.x[ip1])*abs(mesh.y[ip1])
+                        if (cond1 || cond2 || cond3)
+                            ip_dest = ip
+                            ip_kill = ip1
+                        else
+                            ip_dest = ip1
+                            ip_kill = ip
+                        end
+                        for e=1:mesh.nelem
+                            for ii=1:mesh.ngl
+                                for jj=1:mesh.ngl
+                                    for kk=1:mesh.ngl
+                                        ipp = mesh.connijk[e,ii,jj,kk]
+                                        if (ipp == ip1 || ipp == ip)
+                                            mesh.connijk[e,ii,jj,kk] = ip_dest
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        for iface = 1:size(mesh.poin_in_bdy_face,1)
+                            for kk =1:mesh.ngl
+                                for ll=1:mesh.ngl
+                                    ipp = mesh.poin_in_bdy_face[iface,kk,ll]
+                                    if (ipp == ip1 || ipp == ip)
+                                        mesh.poin_in_bdy_face[iface,kk,ll] = ip_dest
+                                    end
+                                end
+                            end
+                        end
+                        if !(ip_kill in mesh.connijk)
+                            mesh.x[ip_dest] = min(mesh.x[ip_kill],mesh.x[ip_dest])
+                            mesh.y[ip_dest] = min(mesh.y[ip_kill],mesh.y[ip_dest])
+                            mesh.z[ip_dest] = min(mesh.z[ip_kill],mesh.z[ip_dest])
+                            for ii=ip_kill:mesh.npoin-1
+                                mesh.x[ii] = mesh.x[ii+1]
+                                mesh.y[ii] = mesh.y[ii+1]
+                                mesh.z[ii] = mesh.z[ii+1]
+                            end
+                            mesh.npoin = mesh.npoin-1
+                            for iface =1:size(mesh.poin_in_bdy_face,1)
+                                for kk=1:mesh.ngl
+                                    for ll=1:mesh.ngl
+                                        val = mesh.poin_in_bdy_face[iface,kk,ll]
+                                        if (val > ip_kill)
+                                            mesh.poin_in_bdy_face[iface,kk,ll] = val - 1
+                                        end
+                                        if (val == ip_kill)
+                                            mesh.poin_in_bdy_face[iface,kk] = ip_dest
+                                        end
+                                    end
+                                end
+                            end
+
+                            for e=1:mesh.nelem
+                                for ii=1:mesh.ngl
+                                    for jj=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            ipp = mesh.connijk[e,ii,jj,kk]
+                                            if (ipp > ip_kill)
+                                                mesh.connijk[e,ii,jj,kk] -= 1
+                                            end
+                                            if (ipp == ip_kill)
+                                                mesh.connijk[e,ii,jj,kk] = ip_dest
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            for ii=1:size(per1_points,1)
+                                if (per1_points[ii] == ip_kill)
+                                    per1_points[ii] = ip_dest
+                                end
+                            end
+                            for ii=1:size(per2_points,1)
+                                if (per2_points[ii] == ip_kill)
+                                    per2_points[ii] = ip_dest
+                                end
+                            end
+                            for ii=1:size(per3_points,1)
+                                if (per3_points[ii] == ip_kill)
+                                    per3_points[ii] = ip_dest
+                                end
+                            end
+                            for ii=1:size(per1_points,1)
+                                if (per1_points[ii] > ip_kill)
+                                    per1_points[ii] -= 1
+                                end
+                            end
+                            for ii=1:size(per2_points,1)
+                                if (per2_points[ii] > ip_kill)
+                                    per2_points[ii] -= 1
+                                end
+                            end
+                            for ii=1:size(per3_points,1)
+                                if (per3_points[ii] > ip_kill)
+                                    per3_points[ii] -= 1
+                                end
+                            end
+                        end
+                    else
+                        i1 += 1
+                    end
+
+                end
+            end
+        end
+        unique!(per1_points)
+        unique!(per2_points)
+        unique!(per3_points)
+        ### work on single periodicity on the periodic3 boundaries if applicable
+        if (size(per3_points,1) > 1)
+            for i=1:size(per3_points,1)
+                found = false
+                i1 = i+1
+                while (i1 <= size(per3_points,1) && found == false)
+                    ip = per3_points[i]
+                    ip1 = per3_points[i1]
+                    vec = [mesh.x[ip] - mesh.x[ip1], mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    if (determine_colinearity(vec, nor3))
+                        #@info "found a match", vec, nor3, ip, ip1, mesh.y[ip], mesh.y[ip1], mesh.x[ip], mesh.x[ip1], mesh.z[ip], mesh.z[ip1]
+                        found = true
+                        cond1 = mesh.x[ip]*abs(mesh.y[ip])*abs(mesh.z[ip]) <= mesh.x[ip1]*abs(mesh.y[ip1])*abs(mesh.z[ip1])
+                        cond2 = mesh.y[ip]*abs(mesh.x[ip])*abs(mesh.z[ip]) <= mesh.y[ip1]*abs(mesh.x[ip1])*abs(mesh.z[ip1])
+                        cond3 = mesh.z[ip]*abs(mesh.x[ip])*abs(mesh.y[ip]) <= mesh.z[ip1]*abs(mesh.x[ip1])*abs(mesh.y[ip1])
+                        if (cond1 || cond2 || cond3)
+                            ip_dest = ip
+                            ip_kill = ip1
+                        else
+                            ip_dest = ip1
+                            ip_kill = ip
+                        end
+                        for e=1:mesh.nelem
+                            for ii=1:mesh.ngl
+                                for jj=1:mesh.ngl
+                                    for kk=1:mesh.ngl
+                                        ipp = mesh.connijk[e,ii,jj,kk]
+                                        if (ipp == ip1 || ipp == ip)
+                                            mesh.connijk[e,ii,jj,kk] = ip_dest
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        for iface = 1:size(mesh.poin_in_bdy_face,1)
+                            for kk =1:mesh.ngl
+                                for ll=1:mesh.ngl
+                                    ipp = mesh.poin_in_bdy_face[iface,kk,ll]
+                                    if (ipp == ip1 || ipp == ip)
+                                        mesh.poin_in_bdy_face[iface,kk,ll] = ip_dest
+                                    end
+                                end
+                            end
+                        end
+                        if !(ip_kill in mesh.connijk)
+                            mesh.x[ip_dest] = min(mesh.x[ip_kill],mesh.x[ip_dest])
+                            mesh.y[ip_dest] = min(mesh.y[ip_kill],mesh.y[ip_dest])
+                            mesh.z[ip_dest] = min(mesh.z[ip_kill],mesh.z[ip_dest])
+                            for ii=ip_kill:mesh.npoin-1
+                                mesh.x[ii] = mesh.x[ii+1]
+                                mesh.y[ii] = mesh.y[ii+1]
+                                mesh.z[ii] = mesh.z[ii+1]
+                            end
+                            mesh.npoin = mesh.npoin-1
+                            for iface =1:size(mesh.poin_in_bdy_face,1)
+                                for kk=1:mesh.ngl
+                                    for ll=1:mesh.ngl
+                                        val = mesh.poin_in_bdy_face[iface,kk,ll]
+                                        if (val > ip_kill)
+                                            mesh.poin_in_bdy_face[iface,kk,ll] = val - 1
+                                        end
+                                        if (val == ip_kill)
+                                            mesh.poin_in_bdy_face[iface,kk] = ip_dest
+                                        end
+                                    end
+                                end
+                            end
+
+                            for e=1:mesh.nelem
+                                for ii=1:mesh.ngl
+                                    for jj=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            ipp = mesh.connijk[e,ii,jj,kk]
+                                            if (ipp > ip_kill)
+                                                mesh.connijk[e,ii,jj,kk] -= 1
+                                            end
+                                            if (ipp == ip_kill)
+                                                mesh.connijk[e,ii,jj,kk] = ip_dest
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            for ii=1:size(per1_points,1)
+                                if (per1_points[ii] == ip_kill)
+                                    per1_points[ii] = ip_dest
+                                end
+                            end
+                            for ii=1:size(per2_points,1)
+                                if (per2_points[ii] == ip_kill)
+                                    per2_points[ii] = ip_dest
+                                end
+                            end
+                            for ii=1:size(per3_points,1)
+                                if (per3_points[ii] == ip_kill)
+                                    per3_points[ii] = ip_dest
+                                end
+                            end
+                            for ii=1:size(per1_points,1)
+                                if (per1_points[ii] > ip_kill)
+                                    per1_points[ii] -= 1
+                                end
+                            end
+                            for ii=1:size(per2_points,1)
+                                if (per2_points[ii] > ip_kill)
+                                    per2_points[ii] -= 1
+                                end
+                            end
+                            for ii=1:size(per3_points,1)
+                                if (per3_points[ii] > ip_kill)
+                                    per3_points[ii] -= 1
+                                end
+                            end
+                        end
+                    else
+                        i1 += 1
+                    end
+
+                end
+            end
+        end
+        unique!(per1_points)
+        unique!(per2_points)
+        unique!(per3_points)
+        for e=1:mesh.nelem
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    for k=1:mesh.ngl
+                        ip = mesh.connijk[e,i,j,k]
+                    end
+                end
+            end
+        end
     else
         #
         # 1D periodicity
