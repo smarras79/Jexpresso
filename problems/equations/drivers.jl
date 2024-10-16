@@ -19,7 +19,9 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                               TFloat)
     
     if !inputs[:llinsolve]
-        
+        #
+        # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
+        #
         solution = time_loop!(inputs, params, u)
         
         if (inputs[:ndiagnostics_outputs] > 0)
@@ -31,30 +33,36 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
         end
         
     else
-        
-        RHS = KernelAbstractions.zeros(inputs[:backend], TFloat,Int64(sem.mesh.npoin), qp.neqs)
+        #
+        # Problems that lead to Ax = b
+        #
+        RHS = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin), qp.neqs)
         if (inputs[:backend] == CPU())
             for ip =1:sem.mesh.npoin
-                rhs = user_source(RHS[ip],
+                b = user_source(RHS[ip],
                                   params.qp.qn[ip],
-                                  params.qp.qe[ip],          #ρref
+                                  params.qp.qe[ip],
                                   sem.mesh.npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
                                   neqs=1, x=sem.mesh.x[ip],y=sem.mesh.y[ip])
-                RHS[ip] = rhs
+                RHS[ip] = b
             end
-       
+            
             Minv = diagm(sem.matrix.Minv)
+
+            @info size(Minv)
+            @info size(sem.matrix.L)
+            @mystop("as")
             L_temp = Minv * sem.matrix.L
-            sem.matrix.L .= L_temp 
-            apply_boundary_conditions_lin_solve!(sem.matrix.L,RHS,sem.mesh,inputs,sem.mesh.SD)             
+            sem.matrix.L .= L_temp
+            apply_boundary_conditions_lin_solve!(sem.matrix.L, RHS, sem.mesh, inputs, sem.mesh.SD)
             for ip = 1:sem.mesh.npoin
-                sem.matrix.L[ip,ip] += 10
+                sem.matrix.L[ip,ip] += inputs[:rconst][1] ## FOR YASSINE, what's this sum?
             end
         else
             k = lin_solve_rhs_gpu_2d!(inputs[:backend])
             k(RHS, qp.qn, qp.qe, sem.mesh.x, sem.mesh.y, qp.neqs; ndrange = sem.mesh.npoin)
             KernelAbstractions.synchronize(inputs[:backend])
-           
+            
             Minv = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin), Int64(sem.mesh.npoin))
             k =  diagm_gpu!(inputs[:backend])
             k(Minv , sem.matrix.Minv; ndrange = sem.mesh.npoin)
@@ -74,7 +82,8 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
             k(sem.matrix.L, TFloat(10.0); ndrange = sem.mesh.npoin)
             KernelAbstractions.synchronize(inputs[:backend])
         end
-        
+            @info size(RHS)
+            @mystop        
         @time solution = solveAx(-sem.matrix.L, RHS, inputs[:ode_solver]) 
 
         write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=params.qp.neqs)
