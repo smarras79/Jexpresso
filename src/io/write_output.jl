@@ -366,16 +366,38 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 		    end
                     if (rep==1 && unwind==1)
 			#@info iter,ip,e,mesh.y[ip] 
-			ip_new = ip_rep
-                        mesh.connijk[e,l,m] = ip_new
+                        ip_new = ip_rep
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
+                        for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
                         mesh.poin_in_bdy_edge[iedge,k] = ip_new
 		    elseif (unwind==1)
 			#@info iter,ip,e,mesh.y[ip]
 			ip_new = mesh.npoin + iter
                         mesh.x[ip_new] = xmax
-                        mesh.connijk[e,l,m] = ip_new
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
                         mesh.y[ip_new] = mesh.y[ip]
-			mesh.poin_in_bdy_edge[iedge,k] = ip_new
+			for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
+                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
                         iter += 1
                 	for ieq=1:nvar
         	            ivar = new_size*(ieq-1)
@@ -427,7 +449,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 	
     end  
 
-    if ("periodic2" in mesh.bdy_edge_type)
+    #=if ("periodic2" in mesh.bdy_edge_type)
         xmax = 1000000000.0
         ymin = -1000000000.0
         for e=1:mesh.nelem
@@ -494,15 +516,38 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                     end
                     if (rep==1 && unwind==1)
                         #@info iter,ip,e,mesh.y[ip]
+
                         ip_new = ip_rep
-                        mesh.connijk[e,l,m] = ip_new
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
+                        for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
                         mesh.poin_in_bdy_edge[iedge,k] = ip_new
                     elseif (unwind==1)
                         #@info iter,ip,e,mesh.y[ip]
                         ip_new = npoin + iter
                         mesh.y[ip_new] = ymax
-                        mesh.connijk[e,l,m] = ip_new
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
                         mesh.x[ip_new] = mesh.x[ip]
+                        for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
                         mesh.poin_in_bdy_edge[iedge,k] = ip_new
                         iter += 1
                         for ieq=1:nvar
@@ -519,7 +564,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         q = q_new
         qexact = q_exact1
 
-    end
+    end=#
 
 
     for iel = 1:mesh.nelem
