@@ -38,15 +38,7 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
         #
         RHS = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin), qp.neqs)
         if (inputs[:backend] == CPU())
-            for ip =1:sem.mesh.npoin
-                b = user_source(RHS[ip],
-                                  params.qp.qn[ip],
-                                  params.qp.qe[ip],
-                                  sem.mesh.npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                  neqs=1, x=sem.mesh.x[ip],y=sem.mesh.y[ip])
-                RHS[ip] = b
-            end
-            
+          
             Minv = diagm(sem.matrix.Minv)
 
             @info size(Minv)
@@ -54,7 +46,37 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
            
             L_temp = Minv * sem.matrix.L
             sem.matrix.L .= L_temp
-            apply_boundary_conditions_lin_solve!(sem.matrix.L, RHS, sem.mesh, inputs, sem.mesh.SD)
+            
+            for ip =1:sem.mesh.npoin
+                b = user_source(RHS[ip],
+                                params.qp.qn[ip],
+                                params.qp.qe[ip],
+                                sem.mesh.npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
+                                neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip])
+                RHS[ip] = b
+            end
+            
+            apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
+                                                 params.mesh.x, params.mesh.y, params.mesh.z,
+                                                 params.metrics.nx,
+                                                 params.metrics.ny,
+                                                 params.metrics.nz,
+                                                 sem.mesh.npoin, params.mesh.npoin_linear, 
+                                                 params.mesh.poin_in_bdy_edge,
+                                                 params.mesh.poin_in_bdy_face,
+                                                 params.mesh.nedges_bdy,
+                                                 params.mesh.nfaces_bdy,
+                                                 params.mesh.ngl, params.mesh.ngr,
+                                                 params.mesh.nelem_semi_inf,
+                                                 params.basis.ψ, params.basis.dψ,
+                                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                                 RHS, 0.0, params.ubdy,
+                                                 params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
+                                                 params.mesh.bdy_edge_type,
+                                                 params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
+    
+
+            
             for ip = 1:sem.mesh.npoin
                 sem.matrix.L[ip,ip] += inputs[:rconst][1] ## FOR YASSINE, what's this sum?
             end

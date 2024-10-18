@@ -25,11 +25,17 @@
     
 """
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
-    if (tag == "free_slip")
     
-        qnl = nx*q[2] + ny*q[3]
-        qbdy[2] = q[2] - qnl*nx
-        qbdy[3] = q[3] - qnl*ny
+    @info "QI"
+    @mystop
+    if (tag == "T1")
+        qbdy[1] = 2.0
+    elseif (tag == "T2")
+        qbdy[1] = 3.0
+    elseif (tag == "T3")
+        qbdy[1] = 4.0
+    elseif (tag == "T4")
+        qbdy[1] = 5.0
     end
     
 end
