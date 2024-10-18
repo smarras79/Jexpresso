@@ -51,7 +51,7 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
 
             @info size(Minv)
             @info size(sem.matrix.L)
-            @mystop("as")
+           
             L_temp = Minv * sem.matrix.L
             sem.matrix.L .= L_temp
             apply_boundary_conditions_lin_solve!(sem.matrix.L, RHS, sem.mesh, inputs, sem.mesh.SD)
@@ -82,13 +82,14 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
             k(sem.matrix.L, TFloat(10.0); ndrange = sem.mesh.npoin)
             KernelAbstractions.synchronize(inputs[:backend])
         end
-            @info size(RHS)
-            @mystop        
-        @time solution = solveAx(-sem.matrix.L, RHS, inputs[:ode_solver]) 
+        
+        @time solution = solveAx(-sem.matrix.L, RHS, inputs[:ode_solver])
 
-        write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=params.qp.neqs)
+        write_output(sem.mesh.SD, solution,  sem.mesh,
+                     OUTPUT_DIR, inputs,
+                     params.qp.qvars,
+                     inputs[:outformat];
+                     nvar=params.qp.neqs, qexact=params.qp.qe, case="none")
         
     end
-
-    
 end
