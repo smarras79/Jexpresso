@@ -18,6 +18,9 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                               TFloat)
     
     if !inputs[:llinsolve]
+        #
+        # dq/dt = RHS
+        #
         
         solution = time_loop!(inputs, params, u)
         
@@ -30,6 +33,9 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
         end
         
     else
+        #
+        # Ax = b
+        #
         
         RHS = KernelAbstractions.zeros(inputs[:backend], TFloat,Int64(sem.mesh.npoin), qp.neqs)
         if (inputs[:backend] == CPU())
