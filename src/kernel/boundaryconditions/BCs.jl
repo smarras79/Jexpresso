@@ -70,13 +70,14 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
     
     for iedge = 1:nedges_bdy
         if (bdy_edge_type[iedge] != "Laguerre")
-            
-           # build_custom_bcs!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
-           #                   poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
-           #                   ngl, ngr, nelem_semi_inf, ω,
-           #                   xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
-           #                   connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, rhs_el,
-           #                   neqs, dirichlet!, neumann, inputs)
+
+            # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
+            # build_custom_bcs!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
+            #                   poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+            #                   ngl, ngr, nelem_semi_inf, ω,
+            #                   xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
+            #                   connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, rhs_el,
+            #                   neqs, dirichlet!, neumann, inputs)
             
             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
