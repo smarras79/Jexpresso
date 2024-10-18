@@ -8,11 +8,11 @@ function user_source(S,
     PhysConst = PhysicalConst{Float64}()
         
     #
-    # S(q(x)) = -ρg
+    # S(q(x))
     #
     L = 2
     alpha = 10
-    f = - (cos(x/L) * exp(-x/L)*cos(y))/L - sin(x/L)*exp(-x/L)*cos(y)
+    f = 0.0#- (cos(x/L) * exp(-x/L)*cos(y))/L - sin(x/L)*exp(-x/L)*cos(y)
     u_e = sin(x/L)*exp(-x/L)*cos(y)
         
     S = f - alpha*u_e

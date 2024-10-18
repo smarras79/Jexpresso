@@ -20,9 +20,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         for ip =1:mesh.npoin
             x=mesh.x[ip]
             y=mesh.y[ip]           
-            q.qn[ip,1] = sin(x/2)*exp(-x/2)*cos(y)
+            q.qn[ip,1] = 1.0 #sin(x/2)*exp(-x/2)*cos(y)
 
-            q.qe[ip,1] = sin(x/2)*exp(-x/2)*cos(y)
+            q.qe[ip,1] = 1.0 #sin(x/2)*exp(-x/2)*cos(y)
         end
     else
         k = initialize_gpu!(inputs[:backend])
