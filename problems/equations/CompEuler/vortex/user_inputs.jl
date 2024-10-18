@@ -9,9 +9,9 @@ function user_inputs()
         :tinit                => 0.0,
         :tend                 => 20.0,
         :diagnostics_at_times => range(0,20,41),
-        :case                 => "shu",
+        #:case                 => "shu",
         #:case                 => "hw",
-        #:case                 => "vincent",
+        :case                 => "vincent",
         :lsource              => true,
         :lperiodic            => true,
         #:backend              => MetalBackend(),
@@ -26,12 +26,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1, 2, 3, 4],
-        :μ                    => [0.0, 0.05, 0.05, 0.05], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 0.025, 0.025, 0.01], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/vortex_20x20.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/vortex_L20.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
