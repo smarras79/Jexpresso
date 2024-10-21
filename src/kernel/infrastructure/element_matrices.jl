@@ -907,7 +907,7 @@ function DSS_global_mass!(M, ip2gip, gip2owner, parts, npoin, gnpoin)
         # gM = M
         row_partition
     end
-    pM = pvector(values->M, row_partition)
+    pM = pvector(values->@view(M[:]), row_partition)
     # map(parts,local_values(pM)) do part,values
     #     # if part == 1
     #         @info values

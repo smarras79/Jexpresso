@@ -6,13 +6,16 @@ function driver(nparts,
                 OUTPUT_DIR::String,
                 TFloat) 
     
-    sem = sem_setup(inputs, nparts, distribute)
+    sem, partitioned_model = sem_setup(inputs, nparts, distribute)
     
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
 
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+
+    # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
+    test_projection_solutions(sem.mesh, qp, partitioned_model, inputs, nparts, distribute)
 
     params, u =  params_setup(sem,
                               qp,

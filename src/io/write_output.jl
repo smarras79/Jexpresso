@@ -776,6 +776,19 @@ function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, O
         vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
     end
     outfiles = vtk_save(vtkfile)
+
+
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+
+        for ivar = 1:length(outvarsref)
+            vtkf[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+        end
+        vtkf
+    end
+    outfiles = map(vtk_save, vtkfile)
 end
 
 
@@ -826,6 +839,19 @@ function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, O
         vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
     end
     outfiles = vtk_save(vtkfile)
+
+
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+
+        for ivar = 1:length(outvarsref)
+            vtkf[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+        end
+        vtkf
+    end
+    outfiles = map(vtk_save, vtkfile)
 end
 
 
@@ -892,7 +918,7 @@ end
 
 
 
-function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String, parts, nparts)
+function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
 
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
@@ -932,7 +958,13 @@ function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::Str
     #Reference values only (definied in initial conditions)
     fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
     
-    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells)
-
-    outfiles = vtk_save(vtkfile)
+    # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    vtkfile = map(parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf
+    end
+    outfiles = map(vtk_save, vtkfile)
+    # outfiles = vtk_save(vtkfile)
 end

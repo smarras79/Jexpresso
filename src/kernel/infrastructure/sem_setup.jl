@@ -22,7 +22,7 @@ function sem_setup(inputs::Dict, nparts, distribute)
     # ξ = ND.ξ.ξ
     # ω = ND.ξ.ω
     #--------------------------------------------------------
-    mesh = mod_mesh_mesh_driver(inputs, nparts, distribute)
+    mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
     
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
@@ -184,5 +184,5 @@ function sem_setup(inputs::Dict, nparts, distribute)
     # Build matrices
     #--------------------------------------------------------
     
-    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
+    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag), partitioned_model
 end
