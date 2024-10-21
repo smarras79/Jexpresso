@@ -26,8 +26,6 @@
 """
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
     
-    @info "QI"
-    @mystop
     if (tag == "T1")
         qbdy[1] = 2.0
     elseif (tag == "T2")
@@ -38,24 +36,4 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractF
         qbdy[1] = 5.0
     end
     
-end
-
-function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe::SubArray{Float64},::PERT)
-     #if (y <4995 || abs(x) > 4995)
-     if (tag == "free_slip")
-        qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
-        qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
-        qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
-     end
-
-end
-
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
-    flux = zeros(size(q,2),1)
-    return flux
-end
-
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
-    flux = zeros(size(q,2),1)
-    return flux
 end
