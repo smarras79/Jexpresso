@@ -153,7 +153,6 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
         end
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
-    
 end
 
 function write_output(SD, u, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
@@ -315,8 +314,9 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 	nedges = size(mesh.bdy_edge_type,1)
         new_size = size(mesh.x,1)
         diff = new_size-mesh.npoin 
-	q_new = zeros(new_size*4)
-        q_exact1 = zeros(new_size,5)
+	q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
+        @info mesh.npoin, new_size, size(q_exact1), size(qexact)
         q_exact1[1:mesh.npoin,:] .= qexact[1:mesh.npoin,:] 
         
         for ieq = 1:nvars
@@ -366,18 +366,40 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 		    end
                     if (rep==1 && unwind==1)
 			#@info iter,ip,e,mesh.y[ip] 
-			ip_new = ip_rep
-                        mesh.connijk[e,l,m] = ip_new
+                        ip_new = ip_rep
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
+                        for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
                         mesh.poin_in_bdy_edge[iedge,k] = ip_new
 		    elseif (unwind==1)
 			#@info iter,ip,e,mesh.y[ip]
 			ip_new = mesh.npoin + iter
                         mesh.x[ip_new] = xmax
-                        mesh.connijk[e,l,m] = ip_new
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
                         mesh.y[ip_new] = mesh.y[ip]
-			mesh.poin_in_bdy_edge[iedge,k] = ip_new
+			for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
+                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
                         iter += 1
-                	for ieq=1:4
+                	for ieq=1:nvar
         	            ivar = new_size*(ieq-1)
 	                    ivar1 = mesh.npoin*(ieq-1)
                             q_new[ivar+ip_new] = q[ivar1+ip]
@@ -427,6 +449,124 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 	
     end  
 
+    #=if ("periodic2" in mesh.bdy_edge_type)
+        xmax = 1000000000.0
+        ymin = -1000000000.0
+        for e=1:mesh.nelem
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    ip = mesh.connijk[e,i,j]
+                    ymin = min(ymin,mesh.y[ip])
+                    xmax = max(xmax,mesh.x[ip])
+                end
+            end
+        end
+        ymax = -ymin
+        nedges = size(mesh.bdy_edge_type,1)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
+        q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            ivar1 = npoin*(ieq-1)
+            #@info ivar,ivar1,new_size*ieq-diff,mesh.npoin*ieq
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+        end
+        iter = 1
+        for iedge = 1:nedges
+
+            if (mesh.bdy_edge_type[iedge] == "periodic2")
+                e = mesh.bdy_edge_in_elem[iedge]
+                for k=1:mesh.ngl
+                    ip = mesh.poin_in_bdy_edge[iedge,k]
+                    yedge = mesh.y[ip]
+                    unwind = 0
+                    l = 0
+                    m = 0
+                    dy = abs(mesh.y[mesh.connijk[e,1,2]]-mesh.y[mesh.connijk[e,1,mesh.ngl-1]])/(mesh.ngl-3)
+                    for i=1:mesh.ngl
+                        for j=1:mesh.ngl
+                            ip1 = mesh.connijk[e,i,j]
+                            if (mesh.y[ip1] > yedge + (mesh.ngl)*dy)
+                                unwind=1
+                            end
+                             if (ip1 == ip)
+                                l=i
+                                m=j
+                            end
+                        end
+                    end
+                    rep = 0
+                    ip_rep = 0
+                    if (k == 1 || k == mesh.ngl)
+                        for ee=1:mesh.nelem
+                            for i=1:mesh.ngl
+                                for j=1:mesh.ngl
+                                    ip1 = mesh.connijk[ee,i,j]
+                                    if (ip1 > npoin && mesh.x[ip1] == mesh.x[ip])
+                                        ip_rep = ip1
+                                        rep = 1
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    if (rep==1 && unwind==1)
+                        #@info iter,ip,e,mesh.y[ip]
+
+                        ip_new = ip_rep
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
+                        for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
+                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
+                    elseif (unwind==1)
+                        #@info iter,ip,e,mesh.y[ip]
+                        ip_new = npoin + iter
+                        mesh.y[ip_new] = ymax
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
+                        mesh.x[ip_new] = mesh.x[ip]
+                        for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
+                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
+                        iter += 1
+                        for ieq=1:nvar
+                            ivar = new_size*(ieq-1)
+                            ivar1 = npoin*(ieq-1)
+                            q_new[ivar+ip_new] = q[ivar1+ip]
+                        end
+                        q_exact1[ip_new,:] .= qexact[ip,:]
+                    end
+                end
+            end
+        end
+        npoin += iter-1;
+        q = q_new
+        qexact = q_exact1
+
+    end=#
+
+
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl-1
             for j = 1:mesh.ngl-1
@@ -465,7 +605,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         end
     end
     
-    #npoin = mesh.npoin
     qout = copy(q)
 
     if (inputs[:CL] == CL())
@@ -591,7 +730,409 @@ end
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
     outvars = varnames
     nvars = length(outvars)
+    npoin = mesh.npoin
+    xx = zeros(size(mesh.x,1))
+    yy = zeros(size(mesh.x,1))
+    zz = zeros(size(mesh.x,1))
+    xx .= mesh.x 
+    yy .= mesh.y
+    zz .= mesh.z
+    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
+    conn .= mesh.connijk
+
+    poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
+    poin_bdy .= mesh.poin_in_bdy_face
+    qe_temp = similar(qexact)
     
+    if ("periodic1" in mesh.bdy_face_type)
+        xmin = 1000000000.0
+        ymax = -1000000000.0
+        zmax = -100000000.0
+        for e=1:mesh.nelem
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    for k=1:mesh.ngl
+                        ip = mesh.connijk[e,i,j,k]
+                        ymax = max(ymax,mesh.y[ip])
+                        xmin = min(xmin,mesh.x[ip])
+                        zmax = max(zmax,mesh.z[ip])
+                    end
+                end
+            end
+        end
+        xmax = -xmin
+        nfaces = size(mesh.bdy_face_type,1)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
+        q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            ivar1 = npoin*(ieq-1)
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+        end
+        iter = 1
+        for iface = 1:nfaces
+
+            if (mesh.bdy_face_type[iface] == "periodic1")
+                e = mesh.bdy_face_in_elem[iface]
+                for k=1:mesh.ngl
+                    for l=1:mesh.ngl
+                        ip = mesh.poin_in_bdy_face[iface,k,l]
+                        xface = mesh.x[ip]
+                        unwind = 0
+                        ll = 0
+                        m = 0
+                        n = 0
+                        dx = abs(mesh.x[mesh.connijk[e,2,1,1]]-mesh.x[mesh.connijk[e,mesh.ngl-1,1,1]])/(mesh.ngl-3)
+                        for i=1:mesh.ngl
+                            for j=1:mesh.ngl
+                                for kk=1:mesh.ngl
+                                    ip1 = mesh.connijk[e,i,j,kk]
+                                    if (mesh.x[ip1] > xface + (mesh.ngl)*dx)
+                                        unwind=1
+                                    end
+                                    if (ip1 == ip)
+                                        ll=i
+                                        m=j
+                                        n = kk
+                                    end
+                                end
+                            end
+                        end
+                        rep = 0
+                        ip_rep = 0
+                        if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
+                            for ee=1:mesh.nelem
+                                for i=1:mesh.ngl
+                                    for j=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            ip1 = mesh.connijk[ee,i,j,kk]
+                                            if (ip1 > npoin && mesh.y[ip1] == mesh.y[ip] && mesh.z[ip1] == mesh.z[ip])
+                                                ip_rep = ip1
+                                                rep = 1
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        if (rep==1 && unwind==1)
+                            ip_new = ip_rep
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                        elseif (unwind==1)
+                            ip_new = npoin + iter
+                            mesh.x[ip_new] = xmax
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+                            mesh.y[ip_new] = mesh.y[ip]
+                            mesh.z[ip_new] = mesh.z[ip]
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end 
+                                    end 
+                                end 
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                            iter += 1
+                            for ieq=1:nvar
+                                ivar = new_size*(ieq-1)
+                                ivar1 = npoin*(ieq-1)
+                                q_new[ivar+ip_new] = q[ivar1+ip]
+                            end
+                            q_exact1[ip_new,:] .= qexact[ip,:]
+                        end
+                    end
+                end
+            end
+        end
+        npoin += iter-1;
+        q = q_new
+        qexact = q_exact1
+    end
+    
+    if ("periodic2" in mesh.bdy_face_type)
+        xmax = -1000000000.0
+        ymax = -1000000000.0
+        zmin = 100000000.0
+        for e=1:mesh.nelem
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    for k=1:mesh.ngl
+                        ip = mesh.connijk[e,i,j,k]
+                        xmax = max(xmax,mesh.x[ip])
+                        zmin = min(zmin,mesh.z[ip])
+                        ymax = max(ymax,mesh.y[ip])
+                    end
+                end
+            end
+        end
+        zmax = 2.0#-zmin
+        nfaces = size(mesh.bdy_face_type,1)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
+        q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            ivar1 = npoin*(ieq-1)
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+        end
+        iter = 1
+        for iface = 1:nfaces
+
+            if (mesh.bdy_face_type[iface] == "periodic2")
+                e = mesh.bdy_face_in_elem[iface]
+                for k=1:mesh.ngl
+                    for l=1:mesh.ngl
+                        ip = mesh.poin_in_bdy_face[iface,k,l]
+                        zface = mesh.z[ip]
+                        unwind = 0
+                        ll = 0
+                        m = 0
+                        n = 0
+                        dz = abs(mesh.z[mesh.connijk[e,1,1,2]]-mesh.z[mesh.connijk[e,1,1,mesh.ngl-1]])/(mesh.ngl-3)
+                        for i=1:mesh.ngl
+                            for j=1:mesh.ngl
+                                for kk=1:mesh.ngl
+                                    ip1 = mesh.connijk[e,i,j,kk]
+                                    if (mesh.z[ip1] > zface + (mesh.ngl)*dz)
+                                        unwind=1
+                                    end
+                                    if (ip1 == ip)
+                                        ll=i
+                                        m=j
+                                        n = kk
+                                    end
+                                end
+                            end
+                        end
+                        rep = 0
+                        ip_rep = 0
+                        if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
+                            for ee=1:mesh.nelem
+                                for i=1:mesh.ngl
+                                    for j=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            ip1 = mesh.connijk[ee,i,j,kk]
+                                            if (ip1 > npoin && mesh.x[ip1] == mesh.x[ip] && mesh.y[ip1] == mesh.y[ip])
+                                                ip_rep = ip1
+                                                rep = 1
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        if (rep==1 && unwind==1)
+                            ip_new = ip_rep
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                        elseif (unwind==1)
+                            #@info iter,ip,e,mesh.y[ip]
+                            ip_new = npoin + iter
+                            mesh.z[ip_new] = zmax
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+                            mesh.y[ip_new] = mesh.y[ip]
+                            mesh.x[ip_new] = mesh.x[ip]
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end 
+                                    end 
+                                end 
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                            iter += 1
+                            for ieq=1:nvar
+                                ivar = new_size*(ieq-1)
+                                ivar1 = npoin*(ieq-1)
+                                q_new[ivar+ip_new] = q[ivar1+ip]
+                            end
+                            q_exact1[ip_new,:] .= qexact[ip,:]
+                        end
+                    end
+                end
+            end
+        end
+        npoin += iter-1;
+        q = q_new
+        qexact = q_exact1
+    end
+    
+    if ("periodic3" in mesh.bdy_face_type)
+        xmax = -1000000000.0
+        ymin = 1000000000.0
+        zmax = -100000000.0
+        for e=1:mesh.nelem
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    for k=1:mesh.ngl
+                        ip = mesh.connijk[e,i,j,k]
+                        xmax = max(xmax,mesh.x[ip])
+                        ymin = min(ymin,mesh.y[ip])
+                        zmax = max(zmax,mesh.z[ip])
+                    end
+                end
+            end
+        end
+        ymax = -ymin
+        nfaces = size(mesh.bdy_face_type,1)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
+        q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            ivar1 = npoin*(ieq-1)
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+        end
+        iter = 1
+        for iface = 1:nfaces
+
+            if (mesh.bdy_face_type[iface] == "periodic3")
+                e = mesh.bdy_face_in_elem[iface]
+                for k=1:mesh.ngl
+                    for l=1:mesh.ngl
+                        ip = mesh.poin_in_bdy_face[iface,k,l]
+                        yface = mesh.y[ip]
+                        unwind = 0
+                        ll = 0
+                        m = 0
+                        n = 0
+                        dy = abs(mesh.y[mesh.connijk[e,1,2,1]]-mesh.y[mesh.connijk[e,1,mesh.ngl-1,1]])/(mesh.ngl-3)
+                        for i=1:mesh.ngl
+                            for j=1:mesh.ngl
+                                for kk=1:mesh.ngl
+                                    ip1 = mesh.connijk[e,i,j,kk]
+                                    if (mesh.y[ip1] > yface + (mesh.ngl)*dy)
+                                        unwind=1
+                                    end
+                                    if (ip1 == ip)
+                                        ll=i
+                                        m=j
+                                        n=kk
+                                    end
+                                end
+                            end
+                        end
+                        rep = 0
+                        ip_rep = 0
+                        if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
+                            for ee=1:mesh.nelem
+                                for i=1:mesh.ngl
+                                    for j=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            ip1 = mesh.connijk[ee,i,j,kk]
+                                            if (ip1 > npoin && mesh.x[ip1] == mesh.x[ip] && mesh.z[ip1] == mesh.z[ip])
+                                                ip_rep = ip1
+                                                rep = 1
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        if (rep==1 && unwind==1)
+                            ip_new = ip_rep
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                        elseif (unwind==1)
+                            ip_new = npoin + iter
+                            mesh.y[ip_new] = ymax
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+
+                            mesh.z[ip_new] = mesh.z[ip]
+                            mesh.x[ip_new] = mesh.x[ip]
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end 
+                                    end 
+                                end 
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                            iter += 1
+                            for ieq=1:nvar
+                                ivar = new_size*(ieq-1)
+                                ivar1 = npoin*(ieq-1)
+                                q_new[ivar+ip_new] = q[ivar1+ip]
+                            end
+                            q_exact1[ip_new,:] .= qexact[ip,:]
+                        end
+                    end
+                end
+            end
+        end
+        npoin += iter-1;
+        q = q_new
+        qexact = q_exact1
+    end
+
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
     
@@ -627,7 +1168,8 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         end
     end
 
-     
+    npoin1 = mesh.npoin
+    mesh.npoin = npoin
     #npoin = mesh.npoin
     qout = copy(q)
     TF = eltype(q)
@@ -639,7 +1181,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     qt = zeros(TF, mesh.npoin,1)
     ql = zeros(TF, mesh.npoin,1)
     θ = zeros(TF, mesh.npoin,1)
-    param_set = update_p_ref_theta(TF(101325.0))
+    param_set = create_updated_TD_Parameters(TF(101325.0))
     _grav = TF(TP.grav(param_set))
 
 
@@ -668,16 +1210,16 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                 qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
                 w[:] .= qout[idx+1:ivar*mesh.npoin]
                 
-                if (size(qexact, 1) == mesh.npoin)
+                if (size(qexact, 1) == npoin)
 
                     if inputs[:loutput_pert] == true
                         #ρ'
-                        qout[1:mesh.npoin] .= q[1:mesh.npoin] .- qexact[1:mesh.npoin,1]
+                        qout[1:npoin] .= q[1:npoin] .- qexact[1:npoin,1]
                         
                         #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
                         ivar = 5
-                        idx = (ivar - 1)*mesh.npoin
-                        qout[idx+1:5*mesh.npoin] .= q[idx+1:5*mesh.npoin]./q[1:mesh.npoin] .- qexact[1:mesh.npoin,5]./qexact[1:mesh.npoin,1]
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:5*npoin] .= q[idx+1:5*npoin]./q[1:npoin] .- qexact[1:npoin,5]./qexact[1:npoin,1]
                     else
                         ivar = 5
                         idx = (ivar - 1)*mesh.npoin
@@ -687,46 +1229,46 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                     end
                 end
                 
+                if (inputs[:lbomex])
+                    #qt = ρqt/ρ
+                    ivar = 6
+                    idx = (ivar - 1)*mesh.npoin
+                    qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                    qt[:] .= qout[idx+1:ivar*mesh.npoin]
 
-                #qt = ρqt/ρ
-                ivar = 6
-                idx = (ivar - 1)*mesh.npoin
-                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
-                qt[:] .= qout[idx+1:ivar*mesh.npoin]
 
-
-                #ql = ρql/ρ
-                ivar = 7
-                idx = (ivar - 1)*mesh.npoin
-                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
-                ql[:] .= qout[idx+1:ivar*mesh.npoin]
-                
-                for i = 1:mesh.npoin
-                    e_kin = 0.5 * (u[i]^2 + v[i]^2 + w[i]^2)
-                    e_pot = _grav * mesh.z[i]
-                    e_int::TF = e_tot[i] - e_pot - e_kin
-                    q_pt = TD.PhasePartition(qt[i], ql[i])
-                    Temp = TD.air_temperature(param_set, e_int, q_pt)
-                    θ[i] = TD.virtual_pottemp(param_set, Temp, ρ[i], q_pt)
+                    #ql = ρql/ρ
+                    ivar = 7
+                    idx = (ivar - 1)*mesh.npoin
+                    qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                    ql[:] .= qout[idx+1:ivar*mesh.npoin]
+                    
+                    for i = 1:mesh.npoin
+                        e_kin = 0.5 * (u[i]^2 + v[i]^2 + w[i]^2)
+                        e_pot = _grav * mesh.z[i]
+                        e_int::TF = e_tot[i] - e_pot - e_kin
+                        q_pt = TD.PhasePartition(qt[i], ql[i])
+                        Temp = TD.air_temperature(param_set, e_int, q_pt)
+                        θ[i] = TD.virtual_pottemp(param_set, Temp, ρ[i], q_pt)
+                    end
                 end
-                
             end
         else
-            qout[1:mesh.npoin] .= q[1:mesh.npoin]
+            qout[1:npoin] .= q[1:npoin]
 
             for ivar = 2:nvars
                 #u = ρu/ρ
 
-                idx = (ivar - 1)*mesh.npoin
-                qout[idx+1:ivar*mesh.npoin] .= (q[idx+1:ivar*mesh.npoin] .+ qexact[1:mesh.npoin,ivar])./(qout[1:mesh.npoin] .+ qexact[1:mesh.npoin,1]) .- qexact[1:mesh.npoin,ivar]./qexact[1:mesh.npoin,1]
+                idx = (ivar - 1)*npoin
+                qout[idx+1:ivar*npoin] .= (q[idx+1:ivar*npoin] .+ qexact[1:npoin,ivar])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,ivar]./qexact[1:npoin,1]
 
                 if (case == "rtb" || case == "mountain") && nvars >= 4
 
-                    if (size(qexact, 1) === mesh.npoin)
+                    if (size(qexact, 1) === npoin)
 
                         ivar = 5
-                        idx = (ivar - 1)*mesh.npoin
-                        qout[idx+1:5*mesh.npoin] .= (q[idx+1:5*mesh.npoin] .+ qexact[1:mesh.npoin,5])./(qout[1:mesh.npoin] .+ qexact[1:mesh.npoin,1]) .- qexact[1:mesh.npoin,5]./qexact[1:mesh.npoin,1]
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:5*npoin] .= (q[idx+1:5*npoin] .+ qexact[1:npoin,5])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,5]./qexact[1:npoin,1]
                     end
                 end
             end
@@ -738,12 +1280,20 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")
     vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells)
     for ivar = 1:nvars
-        idx = (ivar - 1)*mesh.npoin
-        vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*mesh.npoin])
+        idx = (ivar - 1)*npoin
+        vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
     end
-    vtkfile["theta", VTKPointData()] =  @view(θ[:])
+    if (inputs[:lbomex])
+        vtkfile["theta", VTKPointData()] =  @view(θ[:])
+    end
     outfiles = vtk_save(vtkfile)
-    
+    mesh.npoin = npoin1
+    mesh.x .= xx
+    mesh.y .= yy
+    mesh.z .= zz
+    mesh.connijk .= conn
+    mesh.poin_in_bdy_face .= poin_bdy
+    qexact = copy(qe_temp)
 end
 
 

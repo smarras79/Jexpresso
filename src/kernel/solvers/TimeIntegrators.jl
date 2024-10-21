@@ -31,8 +31,8 @@ function time_loop!(inputs, params, u)
         println(" #  t=", integrator.t)
 
         #CFL
-        #computeCFL(params.mesh.npoin, params.neqs, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD)
-
+        #computeCFL(params.mesh.npoin, params.neqs, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD; visc=inputs[:μ])
+        
         #Write results to file
         write_output(params.SD, integrator.u, integrator.t, idx,
                      params.mesh,
@@ -51,7 +51,6 @@ function time_loop!(inputs, params, u)
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                            callback = cb, tstops = dosetimes,
-                           #saveat = dosetimes,
                            save_everystep = false,
                            adaptive=inputs[:ode_adaptive_solver],
                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));

@@ -193,6 +193,9 @@ function mod_inputs_user_inputs!(inputs)
     if(!haskey(inputs, :lplot_surf3d))
         inputs[:lplot_surf3d] = false
     end
+    if(!haskey(inputs, :lvolume3d))
+        inputs[:lvolume3d] = false
+    end
     if(!haskey(inputs, :smoothing_factor))
         #This is the spline2d smoothing factor. Too small and it may break the spline2d, but it should be as small as possible for precision
         inputs[:smoothing_factor] = 1.0e-1
@@ -557,6 +560,9 @@ function mod_inputs_user_inputs!(inputs)
     end
     if(!haskey(inputs, :lsource))
         inputs[:lsource] = false
+    end
+    if(!haskey(inputs, :lbomex))
+        inputs[:lbomex] = false
     end
 
     if(!haskey(inputs, :ldss_differentiation))

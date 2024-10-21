@@ -1,12 +1,5 @@
 using Random
-#import ClimaParams as CP
-#import Thermodynamics as TD
-#import Thermodynamics.Parameters as TP
-## using CLIMAParameters
-## using CLIMAParameters: grav
 
-# struct EarthParameterSet <: AbstractEarthParameterSet end
-# const param_set = EarthParameterSet()
 
 
 function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
@@ -53,8 +46,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # INITIAL STATE from scratch:
             #
-            param_set = TP.ThermodynamicsParameters(Float64)
-            new_param_set = update_p_ref_theta(param_set, 101325.0)
+            new_param_set = create_updated_TD_Parameters(FT(101325.0))
             for ip = 1:mesh.npoin
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
@@ -157,8 +149,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         end
         PhysConst = PhysicalConst{TFloat}()
         FT = TFloat
-        param_set = TP.ThermodynamicsParameters(TFloat)
-        new_param_set = update_p_ref_theta(param_set, FT(101325.0))
+        new_param_set = create_updated_TD_Parameters(FT(101325.0))
 
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, mesh.y, mesh.z, PhysConst, new_param_set, lpert; ndrange = (mesh.npoin))
@@ -293,3 +284,4 @@ function initialize_bomex!(z, param_set)
     #     @info z, ρ, u, T, θ_liq, θ, q_tot, q_pt.liq, P, bhasCondense
     # end
 end
+
