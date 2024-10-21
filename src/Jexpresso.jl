@@ -97,6 +97,8 @@ include(joinpath("kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
+include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
+
 include(joinpath( "io", "mod_inputs.jl"))
 
 include(joinpath( "io", "write_output.jl"))
@@ -107,4 +109,6 @@ include(joinpath( "auxiliary", "checks.jl"))
 
 include("./run.jl")
 
+# Run the test
+# test_create_2d_projection_matrices_numa2d()
 end
