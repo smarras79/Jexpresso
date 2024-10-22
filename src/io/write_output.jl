@@ -20,9 +20,9 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
 end
 
 function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
-    
-    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
-    
+    #
+    # 1D PNG of q(t) from dq/dt = RHS
+    #
     if (inputs[:plot_overlap])
         fig = Figure(size = (1200,800),fontsize=22)
         colors = ["Blue","Red","Green","Yellow","Black","Purple","Orange"]
@@ -63,9 +63,9 @@ end
 # PNG 2D
 #
 function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
-
-    #println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  "))
-    
+    #
+    # 2D PNG of q(t) from dq/dt = RHS
+    #  
     if inputs[:lplot_surf3d]
         for iout = 1:size(sol.t[:], 1)
             title = @sprintf "final solution at t=%6.4f" t
@@ -86,11 +86,11 @@ function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
 
-#
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
 
-    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
-    
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+    #
+    # 2D PNG of q(t) from dq/dt = RHS
+    #  
     if inputs[:lplot_surf3d]
         for iout = 1:size(sol.t[:], 1)
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
@@ -112,13 +112,37 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
 
+
+function write_output(SD::NSD_2D, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+    #
+    # 2D PNG write x from Ax=b
+    #
+    if inputs[:lplot_surf3d]
+        title = @sprintf " Solution"
+        plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
+    else
+        title = @sprintf " Solution"
+        if (inputs[:backend] == CPU())
+            plot_triangulation(SD, mesh, sol.u, title,  OUTPUT_DIR, inputs; iout=1, nvar=nvar)
+        else
+            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+            KernelAbstractions.copyto!(CPU(),u, sol.u)
+            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=1, nvar=nvar)
+        end
+    end
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
+end
+
+
+###
 #
 # ASCII 2D
 #
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::ASCII; nvar=1, PT=nothing)
-    
-    #println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
-    
+    #
+    # 2D ASCII of q(t) from dq/dt = RHS
+    #  
     for iout = 1:size(sol.t[:],1)
         #Write out data at final timestep
 	fname = @sprintf "it-%d.dat" iout
@@ -135,9 +159,9 @@ end
 # VTK 2D/3D
 #
 function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
- 
-    #println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
-    
+    #
+    # 2D/3D VTK of q(t) from dq/dt = RHS
+    #    
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
@@ -153,6 +177,30 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
         end
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
+end
+
+
+function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+    #
+    # 2D VTK of x from Ax=b
+    #    
+    if (inputs[:backend] == CPU())
+        title = @sprintf "Solution"
+        write_vtk(SD, mesh, sol.u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=qexact, case=case)
+    else
+        u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
+        KernelAbstractions.copyto!(CPU(),u,sol.u)
+
+        u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
+        KernelAbstractions.copyto!(CPU(),u_exact,qexact)
+
+        convert_mesh_arrays_to_cpu!(SD, mesh, inputs)        
+        title = @sprintf "Solution"
+        write_vtk(SD, mesh, u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=u_exact, case=case)
+    end
+    
+    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
+    
 end
 
 function write_output(SD, u, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
