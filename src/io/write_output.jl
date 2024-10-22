@@ -20,9 +20,9 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
 end
 
 function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
-    
-    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
-    
+    #
+    # 1D PNG of q(t) from dq/dt = RHS
+    #
     if (inputs[:plot_overlap])
         fig = Figure(size = (1200,800),fontsize=22)
         colors = ["Blue","Red","Green","Yellow","Black","Purple","Orange"]
@@ -63,9 +63,9 @@ end
 # PNG 2D
 #
 function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
-
-    #println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  "))
-    
+    #
+    # 2D PNG of q(t) from dq/dt = RHS
+    #  
     if inputs[:lplot_surf3d]
         for iout = 1:size(sol.t[:], 1)
             title = @sprintf "final solution at t=%6.4f" t
@@ -86,11 +86,11 @@ function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
 
-#
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
 
-    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  "))
-    
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+    #
+    # 2D PNG of q(t) from dq/dt = RHS
+    #  
     if inputs[:lplot_surf3d]
         for iout = 1:size(sol.t[:], 1)
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
@@ -112,13 +112,37 @@ function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
 end
 
+
+function write_output(SD::NSD_2D, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+    #
+    # 2D PNG write x from Ax=b
+    #
+    if inputs[:lplot_surf3d]
+        title = @sprintf " Solution"
+        plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
+    else
+        title = @sprintf " Solution"
+        if (inputs[:backend] == CPU())
+            plot_triangulation(SD, mesh, sol.u, title,  OUTPUT_DIR, inputs; iout=1, nvar=nvar)
+        else
+            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+            KernelAbstractions.copyto!(CPU(),u, sol.u)
+            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=1, nvar=nvar)
+        end
+    end
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
+end
+
+
+###
 #
 # ASCII 2D
 #
 function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::ASCII; nvar=1, PT=nothing)
-    
-    #println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  ") )
-    
+    #
+    # 2D ASCII of q(t) from dq/dt = RHS
+    #  
     for iout = 1:size(sol.t[:],1)
         #Write out data at final timestep
 	fname = @sprintf "it-%d.dat" iout
@@ -135,9 +159,9 @@ end
 # VTK 2D/3D
 #
 function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
- 
-    #println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ...  ") )
-    
+    #
+    # 2D/3D VTK of q(t) from dq/dt = RHS
+    #    
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
@@ -153,6 +177,30 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
         end
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
+end
+
+
+function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+    #
+    # 2D VTK of x from Ax=b
+    #    
+    if (inputs[:backend] == CPU())
+        title = @sprintf "Solution"
+        write_vtk(SD, mesh, sol.u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=qexact, case=case)
+    else
+        u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
+        KernelAbstractions.copyto!(CPU(),u,sol.u)
+
+        u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
+        KernelAbstractions.copyto!(CPU(),u_exact,qexact)
+
+        convert_mesh_arrays_to_cpu!(SD, mesh, inputs)        
+        title = @sprintf "Solution"
+        write_vtk(SD, mesh, u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=u_exact, case=case)
+    end
+    
+    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
+    
 end
 
 function write_output(SD, u, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
@@ -314,8 +362,9 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 	nedges = size(mesh.bdy_edge_type,1)
         new_size = size(mesh.x,1)
         diff = new_size-mesh.npoin 
-	q_new = zeros(new_size*4)
-        q_exact1 = zeros(new_size,5)
+	q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
+        @info mesh.npoin, new_size, size(q_exact1), size(qexact)
         q_exact1[1:mesh.npoin,:] .= qexact[1:mesh.npoin,:] 
         
         for ieq = 1:nvars
@@ -365,18 +414,40 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 		    end
                     if (rep==1 && unwind==1)
 			#@info iter,ip,e,mesh.y[ip] 
-			ip_new = ip_rep
-                        mesh.connijk[e,l,m] = ip_new
+                        ip_new = ip_rep
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
+                        for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
                         mesh.poin_in_bdy_edge[iedge,k] = ip_new
 		    elseif (unwind==1)
 			#@info iter,ip,e,mesh.y[ip]
 			ip_new = mesh.npoin + iter
                         mesh.x[ip_new] = xmax
-                        mesh.connijk[e,l,m] = ip_new
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
                         mesh.y[ip_new] = mesh.y[ip]
-			mesh.poin_in_bdy_edge[iedge,k] = ip_new
+			for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
+                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
                         iter += 1
-                	for ieq=1:4
+                	for ieq=1:nvar
         	            ivar = new_size*(ieq-1)
 	                    ivar1 = mesh.npoin*(ieq-1)
                             q_new[ivar+ip_new] = q[ivar1+ip]
@@ -426,6 +497,124 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 	
     end  
 
+    #=if ("periodic2" in mesh.bdy_edge_type)
+        xmax = 1000000000.0
+        ymin = -1000000000.0
+        for e=1:mesh.nelem
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    ip = mesh.connijk[e,i,j]
+                    ymin = min(ymin,mesh.y[ip])
+                    xmax = max(xmax,mesh.x[ip])
+                end
+            end
+        end
+        ymax = -ymin
+        nedges = size(mesh.bdy_edge_type,1)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
+        q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            ivar1 = npoin*(ieq-1)
+            #@info ivar,ivar1,new_size*ieq-diff,mesh.npoin*ieq
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+        end
+        iter = 1
+        for iedge = 1:nedges
+
+            if (mesh.bdy_edge_type[iedge] == "periodic2")
+                e = mesh.bdy_edge_in_elem[iedge]
+                for k=1:mesh.ngl
+                    ip = mesh.poin_in_bdy_edge[iedge,k]
+                    yedge = mesh.y[ip]
+                    unwind = 0
+                    l = 0
+                    m = 0
+                    dy = abs(mesh.y[mesh.connijk[e,1,2]]-mesh.y[mesh.connijk[e,1,mesh.ngl-1]])/(mesh.ngl-3)
+                    for i=1:mesh.ngl
+                        for j=1:mesh.ngl
+                            ip1 = mesh.connijk[e,i,j]
+                            if (mesh.y[ip1] > yedge + (mesh.ngl)*dy)
+                                unwind=1
+                            end
+                             if (ip1 == ip)
+                                l=i
+                                m=j
+                            end
+                        end
+                    end
+                    rep = 0
+                    ip_rep = 0
+                    if (k == 1 || k == mesh.ngl)
+                        for ee=1:mesh.nelem
+                            for i=1:mesh.ngl
+                                for j=1:mesh.ngl
+                                    ip1 = mesh.connijk[ee,i,j]
+                                    if (ip1 > npoin && mesh.x[ip1] == mesh.x[ip])
+                                        ip_rep = ip1
+                                        rep = 1
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    if (rep==1 && unwind==1)
+                        #@info iter,ip,e,mesh.y[ip]
+
+                        ip_new = ip_rep
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
+                        for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
+                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
+                    elseif (unwind==1)
+                        #@info iter,ip,e,mesh.y[ip]
+                        ip_new = npoin + iter
+                        mesh.y[ip_new] = ymax
+                        if (l > 0 && m >0)
+                            mesh.connijk[e,l,m] = ip_new
+                        end
+                        mesh.x[ip_new] = mesh.x[ip]
+                        for iedge_1=1:nedges
+                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
+                                for i=1:mesh.ngl
+                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
+                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
+                                    end
+                                end
+                            end
+                        end
+                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
+                        iter += 1
+                        for ieq=1:nvar
+                            ivar = new_size*(ieq-1)
+                            ivar1 = npoin*(ieq-1)
+                            q_new[ivar+ip_new] = q[ivar1+ip]
+                        end
+                        q_exact1[ip_new,:] .= qexact[ip,:]
+                    end
+                end
+            end
+        end
+        npoin += iter-1;
+        q = q_new
+        qexact = q_exact1
+
+    end=#
+
+
     for iel = 1:mesh.nelem
         for i = 1:mesh.ngl-1
             for j = 1:mesh.ngl-1
@@ -464,7 +653,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         end
     end
     
-    #npoin = mesh.npoin
     qout = copy(q)
 
     if (inputs[:CL] == CL())
@@ -1028,7 +1216,8 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         end
     end
 
-     
+    npoin1 = mesh.npoin
+    mesh.npoin = npoin
     #npoin = mesh.npoin
     qout = copy(q)
     TF = eltype(q)
@@ -1146,6 +1335,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         vtkfile["theta", VTKPointData()] =  @view(θ[:])
     end
     outfiles = vtk_save(vtkfile)
+    mesh.npoin = npoin1
     mesh.x .= xx
     mesh.y .= yy
     mesh.z .= zz

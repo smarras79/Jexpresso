@@ -2,10 +2,10 @@ nelemx = 20;
 nelemy = 20;
 nelemz = 1;
 
-xmin = -5000;
-xmax =	5000;
-ymin =     0;
-ymax = 10000;
+xmin = -10;
+xmax =	10;
+ymin = -10;
+ymax =  10;
 gridsize = (xmax-xmin) / nelemx;
 
 Point(1) = {xmin, ymin, gridsize};
@@ -56,10 +56,9 @@ Recombine Surface {12};
 // in a single group (with prescribed tag 5); and a physical surface with name
 // "My surface" (with an automatic tag) containing the geometrical surface 1:
 //
-Physical Point("boundary",   1) = {1, 2, 3, 4};
-Physical Curve("T1",   2) = {1, 2};
-Physical Curve("T2",   3) = {3, 4};
-//Physical Curve("free_slip",   2) = {1, 2, 3, 4};
+Physical Point("boundary",  1) = {1, 2, 3, 4};
+Physical Curve("periodic1", 2) = {1, 3};
+Physical Curve("periodic2", 3) = {2, 4};
 Physical Surface("domain") = {1};
 
 //
