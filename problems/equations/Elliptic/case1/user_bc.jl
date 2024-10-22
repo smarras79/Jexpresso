@@ -25,15 +25,17 @@
     
 """
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
+
+    L = 5.0
     
-    if (tag == "T1")
-        qbdy[1] = 2.0
-    elseif (tag == "T2")
-        qbdy[1] = 3.0
-    elseif (tag == "T3")
-        qbdy[1] = 4.0
-    elseif (tag == "T4")
-        qbdy[1] = 5.0
+    if (tag == "bottom")
+        qbdy[1] = 100.0
+    elseif (tag == "right") 
+        qbdy[1] = 100.0
+    elseif (tag == "top") #top
+        qbdy[1] = 100 + 10.0*sin(π*x/L)
+    elseif (tag == "left") #left
+        qbdy[1] = 100.0
     end
     
 end
