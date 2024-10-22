@@ -69,14 +69,14 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                               ω, neqs, inputs, AD, SD)
 
     # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
-  #=  build_custom_bcs_lin_solve!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
+    build_custom_bcs_lin_solve!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
                                 poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
                                 ngl, ngr, nelem_semi_inf, ω,
                                 xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
                                 connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                 neqs, dirichlet!, neumann, inputs)
     
-    =#
+    #=
     for iedge = 1:nedges_bdy
 
         if (bdy_edge_type[iedge] != "Laguerre")
@@ -121,7 +121,7 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
             end
         end
     end
-    
+    =#
 end
 
 
@@ -284,10 +284,8 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, np
     #
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
-    #
+    #=
     for iedge = 1:nedges_bdy 
-        iel  = bdy_edge_in_elem[iedge]
-        
         if  bdy_edge_type[iedge] != "periodic1" &&
             bdy_edge_type[iedge] != "periodic2" &&
             bdy_edge_type != "Laguerre"
@@ -304,14 +302,37 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, np
                     L[ip,ip1] = 0.0
                 end
                 L[ip,ip] = 1.0
-                
-                #for ieq =1:neqs
-                    RHS[ip,:] .= @view(qbdy[:])
+
+                #for ieq=1:neqs
+                    RHS[ip] = 0.0 #@view(qbdy[:])
                 #end
             end
         end
-    end
+    end=#
 
+    for iedge = 1:nedges_bdy
+
+        if (bdy_edge_type[iedge] != "periodic1" &&
+            bdy_edge_type[iedge] != "periodic2" &&
+            bdy_edge_type[iedge] != "Laguerre")
+            for k=1:ngl
+                ip = poin_in_bdy_edge[iedge,k]
+                nx_l = nx[iedge,k]
+                ny_l = ny[iedge,k]
+                fill!(qbdy, 4325789.0)
+                
+                user_bc_dirichlet!(@view(RHS[ip,:]), x[ip], y[ip], t, bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+
+                for ip1 = 1:npoin
+                    L[ip,ip1] = 0.0
+                end
+                L[ip,ip] = 1.0
+                for ieq=1:neqs
+                    RHS[ip,ieq] = qbdy[ieq]
+                end
+            end
+        end
+    end
     
     if ("Laguerre" in bdy_edge_type)
         for k=1:ngr
