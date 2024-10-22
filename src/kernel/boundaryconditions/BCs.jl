@@ -54,13 +54,35 @@ function apply_periodicity!(u, uaux, t,qe,
     nothing
 end
 
-function apply_boundary_conditions_lin_solve!(L,RHS,mesh,inputs,SD::NSD_2D)
+#function apply_boundary_conditions_lin_solve!(L,RHS,mesh,inputs,SD::NSD_2D)
+
+function apply_boundary_conditions_lin_solve!(L, t, qe,
+                                              x, y, z,
+                                              nx, ny, nz,
+                                              npoin, npoin_linear,
+                                              poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                              ngl, ngr, nelem_semi_inf,
+                                              ψ, dψ,
+                                              xmax, ymax, zmax, xmin, ymin, zmin,
+                                              RHS, rhs_el, ubdy,
+                                              connijk_lag, bdy_edge_in_elem, bdy_edge_type,
+                                              ω, neqs, inputs, AD, SD)
+
+    # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
+    build_custom_bcs_lin_solve!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
+                                poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                ngl, ngr, nelem_semi_inf, ω,
+                                xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
+                                connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
+                                neqs, dirichlet!, neumann, inputs)
     
-    for iedge = 1:mesh.nedges_bdy
-        if (mesh.bdy_edge_type[iedge] != "Laguerre")
-            for k=1:mesh.ngl
-                ip = mesh.poin_in_bdy_edge[iedge,k]
-                for ip1 = 1:mesh.npoin
+    #=
+    for iedge = 1:nedges_bdy
+
+        if (bdy_edge_type[iedge] != "Laguerre")
+            for k=1:ngl
+                ip = poin_in_bdy_edge[iedge,k]
+                for ip1 = 1:npoin
                     L[ip,ip1] = 0.0
                 end
                 L[ip,ip] = 1.0
@@ -69,38 +91,37 @@ function apply_boundary_conditions_lin_solve!(L,RHS,mesh,inputs,SD::NSD_2D)
         end
     end
     
-    if ("Laguerre" in mesh.bdy_edge_type)
-        for k=1:mesh.ngr
-            ip = mesh.connijk_lag[1,1,k]
-            for ip1 = 1:mesh.npoin
+    if ("Laguerre" in bdy_edge_type)
+        for k=1:ngr
+            ip = connijk_lag[1, 1, k]
+            for ip1 = 1:npoin
                 L[ip,ip1] = 0.0
             end
             L[ip,ip] = 1.0
             RHS[ip] = 0.0
         end
 
-        for k=1:mesh.ngr
-            ip = mesh.connijk_lag[mesh.nelem_semi_inf,mesh.ngl,k]
-            for ip1 = 1:mesh.npoin
+        for k=1:ngr
+            ip = connijk_lag[nelem_semi_inf, ngl, k]
+            for ip1 = 1:npoin
                 L[ip,ip1] = 0.0
             end
             L[ip,ip] = 1.0
             RHS[ip] = 0.0
         end
        
-        for e=1:mesh.nelem_semi_inf
-            for i=1:mesh.ngl
-                ip = mesh.connijk_lag[e,i,mesh.ngr]
-                for ip1 = 1:mesh.npoin
+        for e=1:nelem_semi_inf
+            for i=1:ngl
+                ip = connijk_lag[e, i, ngr]
+                for ip1 = 1:npoin
                     L[ip,ip1] = 0.0
                 end
                 L[ip,ip] = 1.0
                 RHS[ip] = 0.0
             end
         end
-
     end
-
+    =#
 end
 
 
@@ -185,11 +206,7 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                 nx_l = nx[iedge,k]
                 ny_l = ny[iedge,k]
                 fill!(qbdy, 4325789.0)
-                #qbdy[:] .= uaux[ip,:]
-                #ipp = 1 #ip               
-                ###_bc_dirichlet!(qbdy, mesh.x[ip], mesh.y[ip], t, mesh.bdy_edge_type[iedge])
-
-                #dirichlet!(@view(uaux[ip,:]),qbdy, mesh.x[ip], mesh.y[ip], t, metrics.nx[iedge,k], metrics.ny[iedge,k], mesh.bdy_edge_type[iedge], @view(qe[ip,:]), inputs[:SOL_VARS_TYPE]) ###AS IT IS NOW, THIS IS ALLOCATING SHIT TONS. REWRITE to make it with ZERO allocation. hint: It may be due to passing the function but possibly not.
+                
                 user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
                 
                 for ieq =1:neqs
@@ -257,6 +274,122 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
     #Map back to u after applying b.c.
     uaux2u!(u, uaux, neqs, npoin)
        
+end
+
+
+function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
+                           neqs, dirichlet!, neumann, inputs)
+    
+    for iedge = 1:nedges_bdy
+
+        if (bdy_edge_type[iedge] != "periodic1" &&
+            bdy_edge_type[iedge] != "periodic2" &&
+            bdy_edge_type[iedge] != "Laguerre")
+            for k=1:ngl
+                ip = poin_in_bdy_edge[iedge,k]
+                nx_l = nx[iedge,k]
+                ny_l = ny[iedge,k]
+                fill!(qbdy, 4325789.0)
+                
+                user_bc_dirichlet!(@view(RHS[ip,:]), x[ip], y[ip], t, bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+
+                for ip1 = 1:npoin
+                    L[ip,ip1] = 0.0
+                end
+                L[ip,ip] = 1.0
+                for ieq=1:neqs
+                    RHS[ip,ieq] = qbdy[ieq]
+                end
+            end
+        end
+    end
+    
+    if ("Laguerre" in bdy_edge_type)
+        for k=1:ngr
+            ip = connijk_lag[1, 1, k]
+            for ip1 = 1:npoin
+                L[ip,ip1] = 0.0
+            end
+            L[ip,ip] = 1.0
+            RHS[ip] = 0.0
+        end
+
+        for k=1:ngr
+            ip = connijk_lag[nelem_semi_inf, ngl, k]
+            for ip1 = 1:npoin
+                L[ip,ip1] = 0.0
+            end
+            L[ip,ip] = 1.0
+            RHS[ip] = 0.0
+        end
+       
+        for e=1:nelem_semi_inf
+            for i=1:ngl
+                ip = connijk_lag[e, i, ngr]
+                for ip1 = 1:npoin
+                    L[ip,ip1] = 0.0
+                end
+                L[ip,ip] = 1.0
+                RHS[ip] = 0.0
+            end
+        end
+    end
+    
+    # QUESTION FOR YT; what is this doing on the Laguerre bdy?
+    # Why is this sep[arate from the one above?
+#=    if(inputs[:llaguerre_bc])
+        for e=1:nelem_semi_inf
+            for i=1:ngl
+                ip = connijk_lag[e,i,ngr]
+                ny_l = 1.0
+                nx_l = 0.0
+                fill!(qbdy, 4325789.0)
+                tag = inputs[:laguerre_tag]
+                user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+    
+                for ieq =1:neqs
+                    if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                        #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
+                        uaux[ip,ieq] = qbdy[ieq]
+                        RHS[ip, ieq] = 0.0
+                    end
+                end
+            end
+        end
+        for k=1:ngr
+            ip = connijk_lag[1,1,k]
+            ny_l = 0.0
+            nx_l = -1.0
+            fill!(qbdy, 4325789.0)
+            tag = inputs[:laguerre_tag]
+            user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+    
+            for ieq =1:neqs
+                if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                        #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
+                    uaux[ip,ieq] = qbdy[ieq]
+                    RHS[ip, ieq] = 0.0
+                end
+            end
+            ip = connijk_lag[nelem_semi_inf,ngl,k]
+            ny_l = 0.0
+            nx_l = 1.0
+            fill!(qbdy, 4325789.0)     
+            user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+    
+            for ieq =1:neqs
+                if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                        #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
+                    uaux[ip,ieq] = qbdy[ieq]
+                    RHS[ip, ieq] = 0.0
+                end
+            end
+        end
+    end
+    =#
+           
 end
 
 
