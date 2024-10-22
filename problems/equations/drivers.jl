@@ -39,10 +39,7 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
         if (inputs[:backend] == CPU())
           
             Minv = diagm(sem.matrix.Minv)
-
-            @info size(Minv)
-            @info size(sem.matrix.L)
-           
+            
             L_temp = Minv * sem.matrix.L
             sem.matrix.L .= L_temp
             
@@ -104,7 +101,7 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
             KernelAbstractions.synchronize(inputs[:backend])
         end
         
-        @time solution = solveAx(-sem.matrix.L, RHS, inputs[:ode_solver])
+        @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
 
         write_output(sem.mesh.SD, solution,  sem.mesh,
                      OUTPUT_DIR, inputs,

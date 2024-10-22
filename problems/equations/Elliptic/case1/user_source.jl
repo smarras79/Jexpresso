@@ -14,7 +14,7 @@ function user_source(S,
     alpha = 10
     f   = 0.0 #- (cos(x/L) * exp(-x/L)*cos(y))/L - sin(x/L)*exp(-x/L)*cos(y)
     u_e = 0.0 #sin(x/L)*exp(-x/L)*cos(y)
-        
+    
     S = f - alpha*u_e
     return S
 end
