@@ -281,35 +281,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, np
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
                            connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                            neqs, dirichlet!, neumann, inputs)
-    #
-    # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
-    #          That
-    #=
-    for iedge = 1:nedges_bdy 
-        if  bdy_edge_type[iedge] != "periodic1" &&
-            bdy_edge_type[iedge] != "periodic2" &&
-            bdy_edge_type != "Laguerre"
-            
-            for k=1:ngl
-                ip = poin_in_bdy_edge[iedge,k]
-                nx_l = nx[iedge,k]
-                ny_l = ny[iedge,k]
-                fill!(qbdy, 4325789.0)
-                
-                user_bc_dirichlet!(@view(RHS[ip,:]), x[ip], y[ip], t, bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-
-                for ip1 = 1:npoin
-                    L[ip,ip1] = 0.0
-                end
-                L[ip,ip] = 1.0
-
-                #for ieq=1:neqs
-                    RHS[ip] = 0.0 #@view(qbdy[:])
-                #end
-            end
-        end
-    end=#
-
+    
     for iedge = 1:nedges_bdy
 
         if (bdy_edge_type[iedge] != "periodic1" &&
