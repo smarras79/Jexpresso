@@ -54,8 +54,6 @@ function apply_periodicity!(u, uaux, t,qe,
     nothing
 end
 
-#function apply_boundary_conditions_lin_solve!(L,RHS,mesh,inputs,SD::NSD_2D)
-
 function apply_boundary_conditions_lin_solve!(L, t, qe,
                                               x, y, z,
                                               nx, ny, nz,
@@ -76,52 +74,6 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                 connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                 neqs, dirichlet!, neumann, inputs)
     
-    #=
-    for iedge = 1:nedges_bdy
-
-    if (bdy_edge_type[iedge] != "Laguerre")
-    for k=1:ngl
-    ip = poin_in_bdy_edge[iedge,k]
-    for ip1 = 1:npoin
-    L[ip,ip1] = 0.0
-    end
-    L[ip,ip] = 1.0
-    RHS[ip] = 0.0
-    end
-    end
-    end
-    
-    if ("Laguerre" in bdy_edge_type)
-    for k=1:ngr
-    ip = connijk_lag[1, 1, k]
-    for ip1 = 1:npoin
-    L[ip,ip1] = 0.0
-    end
-    L[ip,ip] = 1.0
-    RHS[ip] = 0.0
-    end
-
-    for k=1:ngr
-    ip = connijk_lag[nelem_semi_inf, ngl, k]
-    for ip1 = 1:npoin
-    L[ip,ip1] = 0.0
-    end
-    L[ip,ip] = 1.0
-    RHS[ip] = 0.0
-    end
-    
-    for e=1:nelem_semi_inf
-    for i=1:ngl
-    ip = connijk_lag[e, i, ngr]
-    for ip1 = 1:npoin
-    L[ip,ip1] = 0.0
-    end
-    L[ip,ip] = 1.0
-    RHS[ip] = 0.0
-    end
-    end
-    end
-    =#
 end
 
 
