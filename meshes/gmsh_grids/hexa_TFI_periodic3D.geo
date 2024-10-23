@@ -61,3 +61,5 @@ surfaceVector = Extrude {0,(ymax-ymin),0} {
 Show "*";
 //+
 Show "*";
+//+
+Show "*";
