@@ -13,7 +13,7 @@ function user_inputs()
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
         :ndiagnostics_outputs => 10,
         :case                 => "rtb",
-        :diagnostics_at_times => range(0,10,10),
+        :diagnostics_at_times => range(0,10,20),
         :lsource              => true, 
         #:backend              => MetalBackend(),
         #---------------------------------------------------------------------------
@@ -31,10 +31,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_periodic3D.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-16x16x19.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_periodic3D.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
