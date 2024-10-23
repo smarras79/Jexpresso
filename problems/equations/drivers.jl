@@ -52,6 +52,10 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                                 neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip])
                 RHS[ip] = b
             end
+
+            for ip = 1:sem.mesh.npoin
+                sem.matrix.L[ip,ip] += inputs[:rconst][1]
+            end
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
                                                  params.mesh.x, params.mesh.y, params.mesh.z,
@@ -71,12 +75,8 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                                                  params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
                                                  params.mesh.bdy_edge_type,
                                                  params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
-    
-
-            
-            for ip = 1:sem.mesh.npoin
-                sem.matrix.L[ip,ip] += inputs[:rconst][1] ## FOR YASSINE, what's this sum?
-            end
+      
+         
         else
             k = lin_solve_rhs_gpu_2d!(inputs[:backend])
             k(RHS, qp.qn, qp.qe, sem.mesh.x, sem.mesh.y, qp.neqs; ndrange = sem.mesh.npoin)

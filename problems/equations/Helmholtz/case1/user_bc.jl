@@ -25,7 +25,10 @@
     
 """
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
-    
-    qbdy[1] = 0.0
+    if tag == "boundary_edges"
+        qbdy[1] = 0.0 #2.0
+    else
+        qbdy[1] = 0.0
+    end
         
 end
