@@ -449,7 +449,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 	
     end  
 
-    #=if ("periodic2" in mesh.bdy_edge_type)
+    if ("periodic2" in mesh.bdy_edge_type)
         xmax = 1000000000.0
         ymin = -1000000000.0
         for e=1:mesh.nelem
@@ -564,7 +564,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         q = q_new
         qexact = q_exact1
 
-    end=#
+    end
 
 
     for iel = 1:mesh.nelem
@@ -743,7 +743,6 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_face
     qe_temp = similar(qexact)
-    
     if ("periodic1" in mesh.bdy_face_type)
         xmin = 1000000000.0
         ymax = -1000000000.0
@@ -889,7 +888,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                 end
             end
         end
-        zmax = 2.0#-zmin
+        zmax = -zmin
         nfaces = size(mesh.bdy_face_type,1)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
