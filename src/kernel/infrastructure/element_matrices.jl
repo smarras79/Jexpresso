@@ -172,7 +172,6 @@ function build_mass_matrix!(Me, SD::NSD_3D, QT::Inexact, ψ, ω, mesh, metrics, 
     MN = N + 1
     QN = Q + 1
     for iel=1:mesh.nelem
-        
         for o = 1:Q+1
             for n = 1:Q+1
                 for m = 1:Q+1

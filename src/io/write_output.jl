@@ -497,7 +497,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 	
     end  
 
-    #=if ("periodic2" in mesh.bdy_edge_type)
+    if ("periodic2" in mesh.bdy_edge_type)
         xmax = 1000000000.0
         ymin = -1000000000.0
         for e=1:mesh.nelem
@@ -612,7 +612,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         q = q_new
         qexact = q_exact1
 
-    end=#
+    end
 
 
     for iel = 1:mesh.nelem

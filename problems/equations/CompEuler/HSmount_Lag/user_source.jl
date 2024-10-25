@@ -119,8 +119,8 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betaxl_coe = 0.0
     end
     
-    cxr = 0.01*betaxr_coe#0.25*betaxr_coe
-    cxl = 0.01*betaxl_coe#0.25*betaxl_coe
+    cxr = 0.05*betaxr_coe#0.25*betaxr_coe
+    cxl = 0.05*betaxl_coe#0.25*betaxl_coe
     ctop = 0.1*min(ctop,1)
     cxr  = min(cxr,1)
     cxl  = min(cxl,1)
