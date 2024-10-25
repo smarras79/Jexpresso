@@ -707,6 +707,50 @@ function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T
     end
 end
 
+using SparseArrays
+
+function DSS_laplace_sparse!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
+
+    # Initialize vectors to store the sparse matrix triplets (row, col, value)
+    I = Int[]
+    J = Int[]
+    V = Float64[]
+
+    for iel=1:mesh.nelem
+
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                ip = mesh.connijk[iel,i,j]
+                for k =1:mesh.ngl
+                    jp = mesh.connijk[iel,k,j]
+                    value = metrics.dξdx[iel,i,k]*Lel[i,k]*ω[j]*metrics.dydη[iel,i,k]
+                    
+                    # Store the row, column, and value for this entry
+                    push!(I, ip)
+                    push!(J, jp)
+                    push!(V, value)
+                end
+
+                for l = 1:mesh.ngl
+                    jp = mesh.connijk[iel,i,l]
+                    value = metrics.dηdy[iel,i,l]*Lel[j,l]*ω[i]*metrics.dxdξ[iel,i,l]
+                    
+                    # Store the row, column, and value for this entry
+                    push!(I, ip)
+                    push!(J, jp)
+                    push!(V, value)
+                end
+            end
+        end
+    end
+
+    # Convert triplet format (I, J, V) into a sparse matrix
+    L_sparse = sparse(I, J, V)
+
+    return L_sparse
+end
+
+
 function DSS_laplace_Laguerre!(L, SD::NSD_2D, Lel::AbstractArray, Lel_lag::AbstractArray, ω, ω_lag, mesh, metrics, metrics_lag, N, T; llump=false)
 
     for iel=1:mesh.nelem
@@ -950,7 +994,11 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
                 if(inputs[:llaguerre_bc])
                     DSS_laplace_Laguerre!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
                 else
-                    DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                    if (inputs[:lsparse])
+                        DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                    else
+                        DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                    end
                 end
             end
         else

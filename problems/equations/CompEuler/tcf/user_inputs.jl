@@ -6,14 +6,14 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.001,
         :tinit                => 0.0,
-        :tend                 => 10.0,
+        :tend                 => 1.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
         :ndiagnostics_outputs => 10,
         :case                 => "rtb",
-        :diagnostics_at_times => range(0,10,20),
+        :diagnostics_at_times => [0,0.1, 0.2, 0.3, 0.5], #range(0,10,20),
         :lsource              => true, 
         #:backend              => MetalBackend(),
         #---------------------------------------------------------------------------
@@ -31,7 +31,7 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-5x5x5.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_periodic3D.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
