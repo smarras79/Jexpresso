@@ -494,7 +494,6 @@ function periodicity_restructure!(mesh,inputs,backend)
         end
         if (nperiodic == 2) ## if we have triple periodicity this is handled above, for less than 2 periodic boundaries double periodicity does not apply
             ## find periodic planes
-            @info "doing double periodicity"
             plane1 = [0, 0, 0, 0]
             plane2 = [0, 0, 0, 0]
             plane1[1] = 1
@@ -502,8 +501,7 @@ function periodicity_restructure!(mesh,inputs,backend)
             plane1_idx = 2
             for i=2:8
                 vec = [mesh.x[1] - mesh.x[i], mesh.y[1] - mesh.y[i], mesh.z[1] - mesh.z[i]]
-                #if (determine_colinearity(vec,double1), determine_colinearity(vec,double2), determine_colinearity(vec,double1+double2))
-                if (determine_colinearity(vec,double1) || determine_colinearity(vec,double2) || determine_colinearity(vec,double1+double2))
+                if (determine_colinearity(vec,double1) || determine_colinearity(vec,double2) || determine_colinearity(vec,abs.(double1+double2)))
                     plane1[plane1_idx] = i
                     plane1_idx += 1
                 else
@@ -523,8 +521,8 @@ function periodicity_restructure!(mesh,inputs,backend)
                     for ii=1:mesh.ngl
                         for jj=1:mesh.ngl
                             for kk=1:mesh.ngl
-                                if (mesh.connijk[iel,ii,jj,kk] == ip_kill)
-                                    mesh.connijk[iel,ii,jj,kk] = ip_dest
+                                if (mesh.connijk[e,ii,jj,kk] == ip_kill)
+                                    mesh.connijk[e,ii,jj,kk] = ip_dest
                                 end
                             end
                         end
@@ -544,7 +542,7 @@ function periodicity_restructure!(mesh,inputs,backend)
                                 mesh.poin_in_bdy_face[iface,kk,ll] = val - 1
                             end
                             if (val == ip_kill)
-                                mesh.poin_in_bdy_face[iedge,kk,ll] = ip_dest
+                                mesh.poin_in_bdy_face[iface,kk,ll] = ip_dest
                             end
                         end
                     end
@@ -564,14 +562,42 @@ function periodicity_restructure!(mesh,inputs,backend)
                 for i=1:size(interval,1)
                     if (interval[i] > ip_kill)
                         interval[i] -= 1
-                    end
-                    if (interval[i] == ip_kill)
+                    elseif (interval[i] == ip_kill)
                         interval[i] = 0
                     end
                 end
+                for i=1:size(plane2,1)
+                    if (plane2[i] > ip_kill)
+                        plane2[i] -= 1
+                    elseif (plane2[i] == ip_kill)
+                        plane2[i] = ip_dest
+                    end
+                end
             end
-
             target_idx = plane2[1]
+            p2_idx = 1
+            #make sure to pick a corner consistent with the vtk unwrap
+            for i=2:size(plane2,1)
+                ii = plane2[i]
+                xt = mesh.x[target_idx]
+                yt = mesh.y[target_idx]
+                zt = mesh.z[target_idx]
+                xi = mesh.x[ii]
+                yi = mesh.y[ii]
+                zi = mesh.z[ii]
+                comp1 = xi*abs(yi*zi) < xt*abs(yt*zt)
+                comp2 = yi*abs(xi*zi) < yt*abs(xt*zt)
+                comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
+                if (comp1 || comp2 || comp3)#(comp1 && comp2) || (comp1 && comp3) || (comp2 && comp3)
+                    target_idx = plane2[i]
+                    p2_idx = i
+                end
+            end
+            if !(plane2[1] == target_idx)
+                aux = plane2[1]
+                plane2[1] = target_idx
+                plane2[p2_idx] = aux
+            end
             interval = [0, 0, 0]
             for i =1:3
                 interval[i] = plane2[i+1]
@@ -583,8 +609,8 @@ function periodicity_restructure!(mesh,inputs,backend)
                     for ii=1:mesh.ngl
                         for jj=1:mesh.ngl
                             for kk=1:mesh.ngl
-                                if (mesh.connijk[iel,ii,jj,kk] == ip_kill)
-                                    mesh.connijk[iel,ii,jj,kk] = ip_dest
+                                if (mesh.connijk[e,ii,jj,kk] == ip_kill)
+                                    mesh.connijk[e,ii,jj,kk] = ip_dest
                                 end
                             end
                         end
@@ -604,7 +630,7 @@ function periodicity_restructure!(mesh,inputs,backend)
                                 mesh.poin_in_bdy_face[iface,kk,ll] = val - 1
                             end
                             if (val == ip_kill)
-                                mesh.poin_in_bdy_face[iedge,kk,ll] = ip_dest
+                                mesh.poin_in_bdy_face[iface,kk,ll] = ip_dest
                             end
                         end
                     end
@@ -624,10 +650,12 @@ function periodicity_restructure!(mesh,inputs,backend)
                 for i=1:size(interval,1)
                     if (interval[i] > ip_kill)
                         interval[i] -= 1
-                    end
-                    if (interval[i] == ip_kill)
+                    elseif (interval[i] == ip_kill)
                         interval[i] = 0
                     end
+                end
+                if (target_idx > ip_kill)
+                    target_idx -=1
                 end
             end
 
@@ -667,9 +695,9 @@ function periodicity_restructure!(mesh,inputs,backend)
                     if (determine_colinearity(vec, nor1))
                         #@info "found a match", vec, nor1, ip, ip1, mesh.x[ip], mesh.x[ip1]
                         found = true
-                        cond1 = mesh.x[ip]*abs(mesh.y[ip])*abs(mesh.z[ip]) <= mesh.x[ip1]*abs(mesh.y[ip1])*abs(mesh.z[ip1])
-                        cond2 = mesh.y[ip]*abs(mesh.x[ip])*abs(mesh.z[ip]) <= mesh.y[ip1]*abs(mesh.x[ip1])*abs(mesh.z[ip1])
-                        cond3 = mesh.z[ip]*abs(mesh.x[ip])*abs(mesh.y[ip]) <= mesh.z[ip1]*abs(mesh.x[ip1])*abs(mesh.y[ip1])
+                        cond1 = mesh.x[ip]*abs(mesh.y[ip])*abs(mesh.z[ip]) < mesh.x[ip1]*abs(mesh.y[ip1])*abs(mesh.z[ip1])
+                        cond2 = mesh.y[ip]*abs(mesh.x[ip])*abs(mesh.z[ip]) < mesh.y[ip1]*abs(mesh.x[ip1])*abs(mesh.z[ip1])
+                        cond3 = mesh.z[ip]*abs(mesh.x[ip])*abs(mesh.y[ip]) < mesh.z[ip1]*abs(mesh.x[ip1])*abs(mesh.y[ip1])
                         if (cond1 || cond2 || cond3)    
                             ip_dest = ip
                             ip_kill = ip1
@@ -791,9 +819,9 @@ function periodicity_restructure!(mesh,inputs,backend)
                     if (determine_colinearity(vec, nor2))
                         #@info "found a match", vec, nor2, ip, ip1,mesh.z[ip], mesh.z[ip1], mesh.y[ip], mesh.y[ip1], mesh.x[ip], mesh.x[ip1]
                         found = true
-                        cond1 = mesh.x[ip]*abs(mesh.y[ip])*abs(mesh.z[ip]) <= mesh.x[ip1]*abs(mesh.y[ip1])*abs(mesh.z[ip1])
-                        cond2 = mesh.y[ip]*abs(mesh.x[ip])*abs(mesh.z[ip]) <= mesh.y[ip1]*abs(mesh.x[ip1])*abs(mesh.z[ip1])
-                        cond3 = mesh.z[ip]*abs(mesh.x[ip])*abs(mesh.y[ip]) <= mesh.z[ip1]*abs(mesh.x[ip1])*abs(mesh.y[ip1])
+                        cond1 = mesh.x[ip]*abs(mesh.y[ip])*abs(mesh.z[ip]) < mesh.x[ip1]*abs(mesh.y[ip1])*abs(mesh.z[ip1])
+                        cond2 = mesh.y[ip]*abs(mesh.x[ip])*abs(mesh.z[ip]) < mesh.y[ip1]*abs(mesh.x[ip1])*abs(mesh.z[ip1])
+                        cond3 = mesh.z[ip]*abs(mesh.x[ip])*abs(mesh.y[ip]) < mesh.z[ip1]*abs(mesh.x[ip1])*abs(mesh.y[ip1])
                         if (cond1 || cond2 || cond3)
                             ip_dest = ip
                             ip_kill = ip1
@@ -915,9 +943,9 @@ function periodicity_restructure!(mesh,inputs,backend)
                     if (determine_colinearity(vec, nor3))
                         #@info "found a match", vec, nor3, ip, ip1, mesh.y[ip], mesh.y[ip1], mesh.x[ip], mesh.x[ip1], mesh.z[ip], mesh.z[ip1]
                         found = true
-                        cond1 = mesh.x[ip]*abs(mesh.y[ip])*abs(mesh.z[ip]) <= mesh.x[ip1]*abs(mesh.y[ip1])*abs(mesh.z[ip1])
-                        cond2 = mesh.y[ip]*abs(mesh.x[ip])*abs(mesh.z[ip]) <= mesh.y[ip1]*abs(mesh.x[ip1])*abs(mesh.z[ip1])
-                        cond3 = mesh.z[ip]*abs(mesh.x[ip])*abs(mesh.y[ip]) <= mesh.z[ip1]*abs(mesh.x[ip1])*abs(mesh.y[ip1])
+                        cond1 = mesh.x[ip]*abs(mesh.y[ip])*abs(mesh.z[ip]) < mesh.x[ip1]*abs(mesh.y[ip1])*abs(mesh.z[ip1])
+                        cond2 = mesh.y[ip]*abs(mesh.x[ip])*abs(mesh.z[ip]) < mesh.y[ip1]*abs(mesh.x[ip1])*abs(mesh.z[ip1])
+                        cond3 = mesh.z[ip]*abs(mesh.x[ip])*abs(mesh.y[ip]) < mesh.z[ip1]*abs(mesh.x[ip1])*abs(mesh.y[ip1])
                         if (cond1 || cond2 || cond3)
                             ip_dest = ip
                             ip_kill = ip1
