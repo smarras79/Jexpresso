@@ -502,7 +502,8 @@ function periodicity_restructure!(mesh,inputs,backend)
             plane1_idx = 2
             for i=2:8
                 vec = [mesh.x[1] - mesh.x[i], mesh.y[1] - mesh.y[i], mesh.z[1] - mesh.z[i]]
-                if (determine_colinearity(vec,double1),determine_colinearity(vec,double2),determine_colinearity(vec,double1+double2))
+                #if (determine_colinearity(vec,double1), determine_colinearity(vec,double2), determine_colinearity(vec,double1+double2))
+                if (determine_colinearity(vec,double1) || determine_colinearity(vec,double2) || determine_colinearity(vec,double1+double2))
                     plane1[plane1_idx] = i
                     plane1_idx += 1
                 else

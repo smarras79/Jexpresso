@@ -571,7 +571,6 @@ function build_metric_terms(SD::NSD_2D, MT::CNVAR, mesh::St_mesh, basis::St_Lagr
     return metrics
 end
 
-
 function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
 
     metrics = St_metrics{T, backend}(dxdξ = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),  #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
@@ -596,23 +595,53 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                                      Je   = KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1),
                                      nx   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
                                      ny   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1),
-                                     nz   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1))  #   Je[1:Nq, 1:Nq, 1:nelem]
-    
+                                     nz   = KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1))  #   Je[1:Nq, 1:Nq, 1:nelem]=#
+
+  
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
         
     @info " 3D metric terms"
     if (backend == CPU())
+
+        metrics.dxdξ .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂x/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dxdη .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂x/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dxdζ .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂x/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dydξ .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂y/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dydη .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂y/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dydζ .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂y/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dzdξ .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂z/∂ξ[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dzdη .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂z/∂η[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dzdζ .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂z/∂ζ[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dξdx .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂ξdx[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dηdx .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂ηdx[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dζdx .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂ζdx[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dξdy .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂ξdy[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dηdy .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂ηdy[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dζdy .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂ζdy[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dξdz .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂ξdz[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dηdz .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂ηdz[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.dζdz .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)  #∂ζdz[2, 1:Nq, 1:Nq, 1:nelem]
+        metrics.Jef  .= KernelAbstractions.zeros(backend, T, Int64(mesh.nfaces_bdy), Q+1, Q+1)
+        metrics.Je   .= KernelAbstractions.zeros(backend, T, Int64(mesh.nelem), Q+1, Q+1, Q+1)
+
+        ip   = 1
+        xijk = 0.0
+        yijk = 0.0
+        zijk = 0.0
         for iel = 1:mesh.nelem
             for k = 1:N+1
                 for j = 1:N+1
                     for i = 1:N+1
+                        
+                        #ip = mesh.connijk[iel,i,j,k]
 
-                        ip = mesh.connijk[iel,i,j,k]
-                    
-                        xijk = mesh.x[ip]
-                        yijk = mesh.y[ip]
-                        zijk = mesh.z[ip]
+                        xijk = mesh.x[mesh.connijk[iel, i, j, k]]
+                        yijk = mesh.y[mesh.connijk[iel, i, j, k]]
+                        zijk = mesh.z[mesh.connijk[iel, i, j, k]]
+                        #xijk = mesh.x[ip]
+                        #yijk = mesh.y[ip]
+                        #zijk = mesh.z[ip]
                     
                         for n = 1:Q+1
                             for m = 1:Q+1
