@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>User inputs · Jexpresso.jl</title><meta name="title" content="User inputs · Jexpresso.jl"/><meta property="og:title" content="User inputs · Jexpresso.jl"/><meta property="twitter:title" content="User inputs · Jexpresso.jl"/><meta name="description" content="Documentation for Jexpresso.jl."/><meta property="og:description" content="Documentation for Jexpresso.jl."/><meta property="twitter:description" content="Documentation for Jexpresso.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script><link href="../../assets/favicon.ico" rel="icon" type="image/x-icon"/></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Jexpresso.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Jexpresso.jl</a></li><li><a class="tocitem" href="../../features/performance/">Performance</a></li><li><a class="tocitem" href="../../features/best-practices/">Best practices</a></li><li class="is-active"><a class="tocitem" href>User inputs</a></li><li><a class="tocitem" href="../theta/">Tutorials</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>User inputs</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>User inputs</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/smarras79/Jexpresso" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/smarras79/Jexpresso/blob/master/docs/src/tutorials/user_inputs.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="user_inputs.jl"><a class="docs-heading-anchor" href="#user_inputs.jl"><code>user_inputs.jl</code></a><a id="user_inputs.jl-1"></a><a class="docs-heading-anchor-permalink" href="#user_inputs.jl" title="Permalink"></a></h1><p>Every user-defined problem has its own namelist/input file called <code>user_inputs.jl</code>. A sample user<em>inputs.jl file with all possible entries (notice that not all entries are necessary). Use <code>#</code> to comment a line. When a line is commented or not explicitaly give, default values will be used.  The entries (with default values) are defined in `src/io/mod</em>inputs.jl`.</p><pre><code class="nohighlight hljs">function user_inputs()
+    
+    inputs = Dict(
+        #---------------------------------------------------------------------------
+        # User define your inputs below: the order doesn&#39;t matter
+        #---------------------------------------------------------------------------
+        :ode_solver           =&gt; SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        #:Δt                   =&gt; 0.02,
+        :Δt                   =&gt; 0.4,
+        :tinit                =&gt; 0.0,
+        :tend                 =&gt; 1000.0,
+        #:tinit                =&gt; 100.0,
+        #:tend                 =&gt; 1000.0,
+        #:lrestart             =&gt; true,
+        :restart_input_file_path =&gt; &quot;./output/CompEuler/theta/&quot;,
+        :diagnostics_at_times =&gt; (100, 200, 300, 400, 500, 600, 700, 800, 900, 1000),
+        :lsource              =&gt; true, 
+        #:backend              =&gt; MetalBackend(),
+        #:SOL_VARS_TYPE        =&gt; PERT(), #TOTAL() is default
+        #---------------------------------------------------------------------------
+        #Integration and quadrature properties
+        #---------------------------------------------------------------------------
+        :interpolation_nodes =&gt;&quot;lgl&quot;,
+        :nop                 =&gt; 4,      # Polynomial order
+        #---------------------------------------------------------------------------
+        # Physical parameters/constants:
+        #---------------------------------------------------------------------------
+        :lvisc                =&gt; true,                   #false by default
+        :ivisc_equations      =&gt; [1, 2, 3, 4],           # use [], not ()!
+        :μ                   =&gt; [0.0, 20.0, 20.0, 60.0], # use [], not ()!
+        #---------------------------------------------------------------------------
+        # Mesh paramters and files:
+        #---------------------------------------------------------------------------
+        :lread_gmsh          =&gt; true, #If false, a 1D problem will be enforced
+        :gmsh_filename       =&gt; &quot;./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh&quot;,
+        #---------------------------------------------------------------------------
+        # Filter parameters
+        #---------------------------------------------------------------------------
+        #:lfilter             =&gt; true,
+        #:mu_x                =&gt; 0.01,
+        #:mu_y                =&gt; 0.01,
+        #:filter_type         =&gt; &quot;erf&quot;,
+        #---------------------------------------------------------------------------
+        # Plotting parameters
+        #---------------------------------------------------------------------------
+        :outformat           =&gt; &quot;vtk&quot;,
+        :loverwrite_output   =&gt; true,
+        :lwrite_initial      =&gt; false,
+        :output_dir          =&gt; &quot;./output&quot;,
+        #:output_dir          =&gt; &quot;./test/CI-run&quot;,
+        :loutput_pert        =&gt; true,  #this is only implemented for VTK for now
+        #---------------------------------------------------------------------------
+    ) #Dict
+    #---------------------------------------------------------------------------
+    # END User define your inputs below: the order doesn&#39;t matter
+    #---------------------------------------------------------------------------
+
+    return inputs
+    
+end</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../features/best-practices/">« Best practices</a><a class="docs-footer-nextpage" href="../theta/">Tutorials »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.7.0 on <span class="colophon-date" title="Friday 25 October 2024 02:47">Friday 25 October 2024</span>. Using Julia version 1.10.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
