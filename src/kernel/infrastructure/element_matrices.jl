@@ -422,7 +422,6 @@ function DSS_mass!(M, SD::NSD_2D, QT::Exact, Mel::AbstractArray, conn::AbstractA
         end
         
     else
-        
         for iel=1:nelem    
             for j = 1:N+1
                 for i = 1:N+1
@@ -629,7 +628,7 @@ end
     end
 end
 
-function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, ::NSD_2D)
+function (L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, N, T; llump=false)
     
     for iel=1:mesh.nelem
         for j = 1:mesh.ngl
@@ -744,7 +743,7 @@ function DSS_laplace_Laguerre!(L, SD::NSD_2D, Lel::AbstractArray, Lel_lag::Abstr
             end
         end
     end
-
+@info "YES HERE"
 end
 
 
@@ -898,7 +897,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
 
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false
-
+    if (ldss_differentiation) lbuild_differentiation_matrix = true end
+    if (ldss_laplace) lbuild_laplace_matrix = true end
+    
     if typeof(SD) == NSD_1D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, Int64(mesh.nelem))
     elseif typeof(SD) == NSD_2D
@@ -939,14 +940,17 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         k(M,Me,connijk,mesh.nelem, mesh.npoin, N;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
     end
     mass_inverse!(Minv, M, QT)
-    Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
-    L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
+    
     if lbuild_laplace_matrix
         if (backend == CPU())
             Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
             L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))            
             if ldss_laplace
-                DSS_laplace_Laguerre!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                if(inputs[:llaguerre_bc])
+                    DSS_laplace_Laguerre!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                else
+                    DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                end
             end
         else
             Le = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
@@ -961,6 +965,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
               ndrange = (mesh.nelem*mesh.ngl, mesh.ngl), workgroupsize = (mesh.ngl, mesh.ngl))
             KernelAbstractions.synchronize(backend)
         end
+    else
+        Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
+        L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
     end
     
     De = KernelAbstractions.zeros(backend, TFloat, 1, 1)

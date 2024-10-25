@@ -54,11 +54,21 @@ Recombine Surface {12};
 // in a single group (with prescribed tag 5); and a physical surface with name
 // "My surface" (with an automatic tag) containing the geometrical surface 1:
 //
+
 Physical Point("boundary",   1) = {1, 2, 3, 4};
 Physical Curve("boundary_edges",     2) = {1, 3, 4};
 //Physical Curve("free_slip", 4) = {1};
 Physical Curve("Laguerre", 3) = {2};
 Physical Surface("domain") = {1};
+
+/*
+Physical Point("boundary",   1) = {1, 2, 3, 4};
+Physical Curve("T1", 2) = {1};
+Physical Curve("T2", 3) = {2};
+Physical Curve("T3", 4) = {3};
+Physical Curve("T4", 5) = {4};
+Physical Surface("domain") = {1};
+*/
 
 //
 // You can save the mesh in older

@@ -404,6 +404,16 @@ function mod_inputs_user_inputs!(inputs)
     end
 
     #
+    # Array of user-defined constant with a user-given meaning. For example, this is used in drivers for the elliptic problems
+    #
+    if(!haskey(inputs, :rconst))
+        inputs[:rconst] = Float64(0.0)
+    end
+    if(!haskey(inputs, :iconst))
+        inputs[:iconst] = Int32(1)
+    end
+
+    #
     # BC
     #
     if(!haskey(inputs, :luser_bc))

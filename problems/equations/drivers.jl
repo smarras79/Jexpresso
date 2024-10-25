@@ -18,7 +18,9 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                               TFloat)
     
     if !inputs[:llinsolve]
-        
+        #
+        # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
+        #
         solution = time_loop!(inputs, params, u)
         
         if (inputs[:ndiagnostics_outputs] > 0)
@@ -30,30 +32,56 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
         end
         
     else
-        
-        RHS = KernelAbstractions.zeros(inputs[:backend], TFloat,Int64(sem.mesh.npoin), qp.neqs)
+        #
+        # Problems that lead to Ax = b
+        #
+        RHS = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin), qp.neqs)
+
         if (inputs[:backend] == CPU())
-            for ip =1:sem.mesh.npoin
-                rhs = user_source(RHS[ip],
-                                  params.qp.qn[ip],
-                                  params.qp.qe[ip],          #ρref
-                                  sem.mesh.npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                  neqs=1, x=sem.mesh.x[ip],y=sem.mesh.y[ip])
-                RHS[ip] = rhs
-            end
-       
+          
             Minv = diagm(sem.matrix.Minv)
+            
             L_temp = Minv * sem.matrix.L
-            sem.matrix.L .= L_temp 
-            apply_boundary_conditions_lin_solve!(sem.matrix.L,RHS,sem.mesh,inputs,sem.mesh.SD)             
+            sem.matrix.L .= L_temp
+            
+            for ip =1:sem.mesh.npoin
+                b = user_source(RHS[ip],
+                                params.qp.qn[ip],
+                                params.qp.qe[ip],
+                                sem.mesh.npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
+                                neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip])
+                RHS[ip] = b
+            end
+            
+            apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
+                                                 params.mesh.x, params.mesh.y, params.mesh.z,
+                                                 params.metrics.nx,
+                                                 params.metrics.ny,
+                                                 params.metrics.nz,
+                                                 sem.mesh.npoin, params.mesh.npoin_linear, 
+                                                 params.mesh.poin_in_bdy_edge,
+                                                 params.mesh.poin_in_bdy_face,
+                                                 params.mesh.nedges_bdy,
+                                                 params.mesh.nfaces_bdy,
+                                                 params.mesh.ngl, params.mesh.ngr,
+                                                 params.mesh.nelem_semi_inf,
+                                                 params.basis.ψ, params.basis.dψ,
+                                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                                 RHS, 0.0, params.ubdy,
+                                                 params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
+                                                 params.mesh.bdy_edge_type,
+                                                 params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
+    
+
+            
             for ip = 1:sem.mesh.npoin
-                sem.matrix.L[ip,ip] += 10
+                sem.matrix.L[ip,ip] += inputs[:rconst][1] ## FOR YASSINE, what's this sum?
             end
         else
             k = lin_solve_rhs_gpu_2d!(inputs[:backend])
             k(RHS, qp.qn, qp.qe, sem.mesh.x, sem.mesh.y, qp.neqs; ndrange = sem.mesh.npoin)
             KernelAbstractions.synchronize(inputs[:backend])
-           
+            
             Minv = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin), Int64(sem.mesh.npoin))
             k =  diagm_gpu!(inputs[:backend])
             k(Minv , sem.matrix.Minv; ndrange = sem.mesh.npoin)
@@ -74,11 +102,13 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
             KernelAbstractions.synchronize(inputs[:backend])
         end
         
-        @time solution = solveAx(-sem.matrix.L, RHS, inputs[:ode_solver]) 
+        @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
 
-        write_output(solution, sem.mesh.SD, sem.mesh, OUTPUT_DIR, inputs, inputs[:outformat]; nvar=params.qp.neqs)
+        write_output(sem.mesh.SD, solution,  sem.mesh,
+                     OUTPUT_DIR, inputs,
+                     params.qp.qvars,
+                     inputs[:outformat];
+                     nvar=params.qp.neqs, qexact=params.qp.qe, case="none")
         
     end
-
-    
 end
