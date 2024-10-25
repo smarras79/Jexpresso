@@ -3,8 +3,8 @@ $MeshFormat
 $EndMeshFormat
 $PhysicalNames
 4
-2 1 "periodic3"
-2 3 "periodic2"
+2 1 "periodic2"
+2 3 "solid"
 2 4 "periodic1"
 3 2 "internal"
 $EndPhysicalNames
