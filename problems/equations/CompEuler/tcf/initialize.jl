@@ -140,7 +140,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst,lpert; ndrange = (mesh.npoin))
     end
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
+    @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
     
     return q
 end
