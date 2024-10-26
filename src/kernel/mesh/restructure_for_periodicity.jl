@@ -476,19 +476,19 @@ function periodicity_restructure!(mesh,inputs,backend)
         double3 = [0, 0, 0]
         if ("periodic1" in mesh.bdy_face_type)
             nperiodic +=1
-            double1 = nor1
+            double1 = nor1*(mesh.xmax - mesh.xmin)
         end
         if ("periodic2" in mesh.bdy_face_type)
             nperiodic +=1
-            double2 = nor2
+            double2 = nor2*(mesh.zmax - mesh.zmin)
         end
         if ("periodic3" in mesh.bdy_face_type)
             nperiodic +=1
             if (double1 == [0 ,0 ,0])
-                double1 = nor3
+                double1 = nor3*(mesh.ymax-mesh.ymin)
             end
             if (double2 == [0 ,0 ,0])
-                double2 = nor3
+                double2 = nor3*(mesh.ymax-mesh.ymin)
             end
 
         end

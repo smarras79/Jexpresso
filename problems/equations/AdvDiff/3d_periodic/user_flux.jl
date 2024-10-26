@@ -7,11 +7,11 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Floa
     PhysConst = PhysicalConst{Float64}()
     
     
-    F[1] = 0.2*q[1]
+    F[1] = 0.5*q[1]
 
-    G[1] = 0.2*q[1]
+    G[1] = 0.5*q[1]
     
-    H[1] = 0.2*q[1]
+    H[1] = 0.5*q[1]
     
 end
 

@@ -2,8 +2,8 @@ nelemx = 3;
 nelemy = 3;
 nelemz = 3;
 
-xmin =  -1;
-xmax =	 1;
+xmin =  0;
+xmax =	 3;
 ymin =  -1;
 ymax =   1;
 zmin =   -1;

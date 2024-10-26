@@ -739,27 +739,11 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     zz .= mesh.z
     conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
     conn .= mesh.connijk
-
     poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_face
     qe_temp = similar(qexact)
     if ("periodic1" in mesh.bdy_face_type)
-        xmin = 1000000000.0
-        ymax = -1000000000.0
-        zmax = -100000000.0
-        for e=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    for k=1:mesh.ngl
-                        ip = mesh.connijk[e,i,j,k]
-                        ymax = max(ymax,mesh.y[ip])
-                        xmin = min(xmin,mesh.x[ip])
-                        zmax = max(zmax,mesh.z[ip])
-                    end
-                end
-            end
-        end
-        xmax = -xmin
+        xmax = mesh.xmax
         nfaces = size(mesh.bdy_face_type,1)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
@@ -873,22 +857,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     end
     
     if ("periodic2" in mesh.bdy_face_type)
-        xmax = -1000000000.0
-        ymax = -1000000000.0
-        zmin = 100000000.0
-        for e=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    for k=1:mesh.ngl
-                        ip = mesh.connijk[e,i,j,k]
-                        xmax = max(xmax,mesh.x[ip])
-                        zmin = min(zmin,mesh.z[ip])
-                        ymax = max(ymax,mesh.y[ip])
-                    end
-                end
-            end
-        end
-        zmax = -zmin
+        zmax = mesh.zmax
         nfaces = size(mesh.bdy_face_type,1)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
@@ -1003,22 +972,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     end
     
     if ("periodic3" in mesh.bdy_face_type)
-        xmax = -1000000000.0
-        ymin = 1000000000.0
-        zmax = -100000000.0
-        for e=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    for k=1:mesh.ngl
-                        ip = mesh.connijk[e,i,j,k]
-                        xmax = max(xmax,mesh.x[ip])
-                        ymin = min(ymin,mesh.y[ip])
-                        zmax = max(zmax,mesh.z[ip])
-                    end
-                end
-            end
-        end
-        ymax = -ymin
+        ymax = mesh.ymax
         nfaces = size(mesh.bdy_face_type,1)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
