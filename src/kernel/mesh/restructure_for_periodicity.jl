@@ -612,7 +612,7 @@ function periodicity_restructure!(mesh,inputs,backend)
                 else
                     comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
                 end
-                @info xi,yi,zi,xt,yt,zt, comp1,comp2,comp3
+                #@info xi,yi,zi,xt,yt,zt, comp1,comp2,comp3
                 if (comp1 || comp2 || comp3)#(comp1 && comp2) || (comp1 && comp3) || (comp2 && comp3)
                     target_idx = plane2[i]
                     p2_idx = i
