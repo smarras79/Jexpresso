@@ -11,7 +11,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("u")
+    qvars = ("u", "v")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
     
@@ -26,13 +26,13 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         
             for ip=1:mesh.npoin
                 ρ  = q.qn[ip,1]
-                ρθ = q.qn[ip,5]
+                ρθ = q.qn[ip,end-1]
                 θ  = ρθ/ρ
                 P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
                 q.qn[ip,end] = P
             
                 ρe  = q.qe[ip,1]
-                ρθe = q.qe[ip,5]
+                ρθe = q.qe[ip,end-1]
                 θe  = ρθe/ρ
                 Pe = perfectGasLaw_ρθtoP(PhysConst, ρ=ρe, θ=θe)
                 q.qe[ip,end] = Pe
@@ -59,7 +59,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     Δθ = θc*(1.0 - r/rc)
                 end
                 q.qn[ip,1] = Δθ
+                q.qn[ip,2] = 2*Δθ
                 q.qe[ip,1] = 0.0
+                q.qe[ip,2] = 0.0
                 #end
             end
         end
