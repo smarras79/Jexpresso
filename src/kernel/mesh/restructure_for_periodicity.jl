@@ -585,14 +585,40 @@ function periodicity_restructure!(mesh,inputs,backend)
                 xi = mesh.x[ii]
                 yi = mesh.y[ii]
                 zi = mesh.z[ii]
-                comp1 = xi*abs(yi*zi) < xt*abs(yt*zt)
-                comp2 = yi*abs(xi*zi) < yt*abs(xt*zt)
-                comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
+                if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
+                    comp1 = xi < xt
+                elseif (yi == 0 && yt == 0)
+                    comp1 = xi*abs(zi) < xt*abs(zt)
+                elseif (zi == 0 && zt == 0) 
+                    comp1 = xi*abs(zi) < xt*abs(yt)
+                else
+                    comp1 = xi*abs(yi*zi) < xt*abs(yt*zt)
+                end
+                if (xi ==0 && xt == 0 && zi == 0 && zt ==0)
+                    comp2 = yi < yt
+                elseif (xi == 0 && xt == 0)
+                    comp2 = yi*abs(zi) < yt*abs(zt)
+                elseif (zi == 0 && zt == 0)
+                    comp2 = yi*abs(xi) < yt*abs(xt)
+                else
+                    comp2 = yi*abs(xi*zi) < yt*abs(xt*zt)
+                end
+                if (xi == 0 && xt == 0 && yi == 0 && yt ==0)
+                    comp3 = zi < zt
+                elseif (xi == 0 && xt == 0)
+                    comp3 = zi*abs(yi) < zt*abs(yt)
+                elseif (yi == 0 && yt == 0)
+                    comp3 = zi*abs(xi) < zt*abs(xt)
+                else
+                    comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
+                end
+                @info xi,yi,zi,xt,yt,zt, comp1,comp2,comp3
                 if (comp1 || comp2 || comp3)#(comp1 && comp2) || (comp1 && comp3) || (comp2 && comp3)
                     target_idx = plane2[i]
                     p2_idx = i
                 end
             end
+            @info mesh.x[target_idx], mesh.y[target_idx],mesh.z[target_idx]
             if !(plane2[1] == target_idx)
                 aux = plane2[1]
                 plane2[1] = target_idx
