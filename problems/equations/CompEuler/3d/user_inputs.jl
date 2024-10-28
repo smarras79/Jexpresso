@@ -47,6 +47,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",
+        :loverwrite_output   => true,
         :lwrite_initial      => true,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

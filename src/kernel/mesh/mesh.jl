@@ -138,6 +138,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     # for AMR
     ad_lvl = KernelAbstractions.zeros(backend, TInt, 0)
+    # hangingfacets
     # partitioned_model::VoidOctreeDistributedDiscreteModel{nsd,nsd,parts,C,D}
 end
 
@@ -176,20 +177,20 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
         gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
         # gmodel_type = typeof(gmodel)
         # @info gmodel_type.parameters
-        partitioned_model = OctreeDistributedDiscreteModel(parts,gmodel)
+        partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
 
-        # ref_coarse_flags=map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
-        #     flags=zeros(Cint,length(indices))
-        #     flags.=nothing_flag
-        #     # @info flags
-        #     if rank == 2
-        #         # flags[10:5:end] .= refine_flag
-        #         flags .= refine_flag
-        #         # flags[1:5] .= refine_flag
-        #     end
-        #     flags
-        # end
-        # partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags);
+        ref_coarse_flags=map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
+            flags=zeros(Cint,length(indices))
+            flags.=nothing_flag
+            # @info flags
+            if rank == 2
+                # flags[10:5:end] .= refine_flag
+                flags .= refine_flag
+                # flags[1:5] .= refine_flag
+            end
+            flags
+        end
+        partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags);
         # ref_coarse_flags=map(parts,partition(get_cell_gids(partitioned_model.dmodel))) do rank,indices
         #     flags=zeros(Cint,length(indices))
         #     flags.=nothing_flag
@@ -235,8 +236,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
 
     cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
     dmodel = local_views(partitioned_model.dmodel.models).item_ref[]
+    cmodel = local_views(partitioned_model_coarse.dmodel.models).item_ref[]
+    cell_gids_c = local_views(partition(get_cell_gids(partitioned_model_coarse))).item_ref[]
     # @info rank, own_to_local(cell_gids), local_to_own(cell_gids), local_to_global(cell_gids)
     model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
+    model_coarse  = DiscreteModelPortion(cmodel, own_to_local(cell_gids_c))
     topology      = get_grid_topology(model)
     gtopology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
@@ -433,7 +437,22 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     # element refinement level
     #
     mesh.ad_lvl = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem))
+    nelem_c        = num_faces(model_coarse,ELEM_flg)
 
+    glue = local_views(glue_adapt).item_ref[]
+    r_c_flags = local_views(ref_coarse_flags).item_ref[]
+    for i in 1:nelem_c
+        elem_idx = glue.o2n_faces_map[i]
+        for j in elem_idx
+            mesh.ad_lvl[j] = 0
+            if r_c_flags[i] == 1
+                mesh.ad_lvl[j] += 1
+            elseif r_c_flags[i] == 2
+                mesh.ad_lvl[j] -= 1
+            end
+        end
+    end
+    @info rank, mesh.ad_lvl
 
 
     if (mesh.nsd == 1)
