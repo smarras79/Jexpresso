@@ -180,13 +180,15 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
     if (backend == CPU())
-        for iel = 1:mesh.nelem
+        
+        xij = 0.0
+        yij = 0.0
+        @inbounds for iel = 1:mesh.nelem
             for j = 1:N+1
                 for i = 1:N+1
 
-                    ip = mesh.connijk[iel,i,j]
-                    xij = mesh.x[ip]
-                    yij = mesh.y[ip]
+                    xij = mesh.x[mesh.connijk[iel, i, j]]
+                    yij = mesh.y[mesh.connijk[iel, i, j]]
                     
                     @turbo for l=1:Q+1
                         for k=1:Q+1
@@ -203,7 +205,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 end
             end
              
-            for l = 1:Q+1
+            @inbounds for l = 1:Q+1
                 for k = 1:Q+1
               
                 # Extract values from memory once per iteration
@@ -212,23 +214,22 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     dydξ_val = metrics.dydξ[iel, k, l]
                     dxdη_val = metrics.dxdη[iel, k, l]
                 # Compute Je once and reuse its value
-                    Je_val = dxdξ_val * dydη_val - dydξ_val * dxdη_val
-                    metrics.Je[iel, k, l] = Je_val
-
+                    metrics.Je[iel, k, l] = dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                    
                 # Use the precomputed Je value for the other calculations
-                    inv_Je = 1.0 / Je_val
+                    Jinv = 1.0/metrics.Je[iel, k, l]
 
-                    metrics.dξdx[iel, k, l] =  dydη_val * inv_Je
-                    metrics.dξdy[iel, k, l] = -dxdη_val * inv_Je
-                    metrics.dηdx[iel, k, l] = -dydξ_val * inv_Je
-                    metrics.dηdy[iel, k, l] =  dxdξ_val * inv_Je
+                    metrics.dξdx[iel, k, l] =  dydη_val * Jinv
+                    metrics.dξdy[iel, k, l] = -dxdη_val * Jinv
+                    metrics.dηdx[iel, k, l] = -dydξ_val * Jinv
+                    metrics.dηdy[iel, k, l] =  dxdξ_val * Jinv
                 
                 end
             end
         #show(stdout, "text/plain", metrics.Je[iel, :,:])
         end
         nbdy_edges = size(mesh.poin_in_bdy_edge,1)
-        for iedge =1:nbdy_edges
+        @inbounds for iedge =1:nbdy_edges
             for k=1:N+1
                 ip = mesh.poin_in_bdy_edge[iedge,k]
                 if (k < N+1)
@@ -246,9 +247,9 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 comp2 = (y1-y2)/mag
                 metrics.nx[iedge, k] = comp2
                 metrics.ny[iedge, k] = -comp1
-                if (y1 < 500 && abs(x1) < 10000)
-                    #@info comp1, comp2, metrics.nx[iedge, k], metrics.ny[iedge, k], x1,x2,y1,y2
-                end
+                #if (y1 < 500 && abs(x1) < 10000)
+                #    #@info comp1, comp2, metrics.nx[iedge, k], metrics.ny[iedge, k], x1,x2,y1,y2
+                #end
             end
         end
     else
@@ -511,17 +512,14 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     @info " 3D metric terms"
     if (backend == CPU())
         
-        ip   = 1
         xijk = 0.0
         yijk = 0.0
         zijk = 0.0
-        for iel = 1:mesh.nelem
+        @inbounds for iel = 1:mesh.nelem
             for k = 1:N+1
                 for j = 1:N+1
                     for i = 1:N+1
                         
-                        #ip = mesh.connijk[iel,i,j,k]
-
                         xijk = mesh.x[mesh.connijk[iel, i, j, k]]
                         yijk = mesh.y[mesh.connijk[iel, i, j, k]]
                         zijk = mesh.z[mesh.connijk[iel, i, j, k]]
@@ -549,30 +547,44 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     # @printf(" dxdξ=%f, dxdη=%f, dydξ=%f dydη=%f \n",  metrics.dxdξ[iel, k, l],  metrics.dxdη[iel, k, l], metrics.dydξ[iel, k, l],  metrics.dydη[iel, k, l] )
                 end
             end
-
-            @turbo for l = 1:Q+1
+            
+            @inbounds for l = 1:Q+1
                 for m = 1:Q+1
                     for n =1:Q+1
-                        metrics.Je[iel, l, m, n]  = metrics.dxdξ[iel, l, m, n]*(metrics.dydη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])
-                        metrics.Je[iel, l, m, n] += metrics.dydξ[iel, l, m, n]*(metrics.dxdζ[iel, l, m, n]*metrics.dzdη[iel, l, m, n] - metrics.dxdη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n])
-                        metrics.Je[iel, l, m, n] += metrics.dzdξ[iel, l, m, n]*(metrics.dxdη[iel, l, m, n]*metrics.dydζ[iel, l, m, n] - metrics.dxdζ[iel, l, m, n]*metrics.dydη[iel, l, m, n])
 
-                        metrics.dξdx[iel, l, m, n] =  (metrics.dydη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                        metrics.dξdy[iel, l, m, n] =  (metrics.dxdζ[iel, l, m, n]*metrics.dzdη[iel, l, m, n] - metrics.dxdη[iel, l, m, n]*metrics.dzdη[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                        metrics.dξdz[iel, l, m, n] =  (metrics.dxdη[iel, l, m, n]*metrics.dydζ[iel, l, m, n] - metrics.dxdζ[iel, l, m, n]*metrics.dydη[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                        metrics.dηdx[iel, l, m, n] =  (metrics.dydζ[iel, l, m, n]*metrics.dzdξ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdζ[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                        metrics.dηdy[iel, l, m, n] =  (metrics.dxdξ[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dxdζ[iel, l, m, n]*metrics.dzdξ[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                        metrics.dηdz[iel, l, m, n] =  (metrics.dxdζ[iel, l, m, n]*metrics.dydξ[iel, l, m, n] - metrics.dxdξ[iel, l, m, n]*metrics.dydζ[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                        metrics.dζdx[iel, l, m, n] =  (metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n] - metrics.dydη[iel, l, m, n]*metrics.dzdξ[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                        metrics.dζdy[iel, l, m, n] =  (metrics.dxdη[iel, l, m, n]*metrics.dzdξ[iel, l, m, n] - metrics.dxdξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])/metrics.Je[iel, l, m, n]
-                        metrics.dζdz[iel, l, m, n] =  (metrics.dxdξ[iel, l, m, n]*metrics.dydη[iel, l, m, n] - metrics.dxdη[iel, l, m, n]*metrics.dydξ[iel, l, m, n])/metrics.Je[iel, l, m, n] 
+                        dxdξ = metrics.dxdξ[iel, l, m, n]
+                        dydη = metrics.dydη[iel, l, m, n]
+                        dzdζ = metrics.dzdζ[iel, l, m, n]
+                        dydξ = metrics.dydξ[iel, l, m, n]
+                        dzdη = metrics.dzdη[iel, l, m, n]
+                        dxdζ = metrics.dxdζ[iel, l, m, n]
+                        dxdη = metrics.dxdη[iel, l, m, n]
+                        dydζ = metrics.dydζ[iel, l, m, n]
+                        dzdξ = metrics.dzdξ[iel, l, m, n]
+
+                        # Calculate metrics.Je[iel, l, m, n] with inlined expressions
+                        metrics.Je[iel, l, m, n] = dxdξ * (dydη * dzdζ - dydξ * dzdη) +
+                                                   dydξ * (dxdζ * dzdη - dxdη * dzdζ) +
+                                                   dzdξ * (dxdη * dydζ - dxdζ * dydη)
+                        
+                        Jinv = 1.0/metrics.Je[iel, l, m, n]
+                        
+                        metrics.dξdx[iel, l, m, n] =  (dydη*dzdζ- dydξ*dzdη)*Jinv
+                        metrics.dξdy[iel, l, m, n] =  (dxdζ*dzdη- dxdη*dzdη)*Jinv
+                        metrics.dξdz[iel, l, m, n] =  (dxdη*dydζ- dxdζ*dydη)*Jinv
+                        metrics.dηdx[iel, l, m, n] =  (dydζ*dzdξ- dydξ*dzdζ)*Jinv
+                        metrics.dηdy[iel, l, m, n] =  (dxdξ*dzdζ- dxdζ*dzdξ)*Jinv
+                        metrics.dηdz[iel, l, m, n] =  (dxdζ*dydξ- dxdξ*dydζ)*Jinv
+                        metrics.dζdx[iel, l, m, n] =  (dydξ*dzdη- dydη*dzdξ)*Jinv
+                        metrics.dζdy[iel, l, m, n] =  (dxdη*dzdξ- dxdξ*dzdη)*Jinv
+                        metrics.dζdz[iel, l, m, n] =  (dxdξ*dydη- dxdη*dydξ)*Jinv
                         
                     end
                 end
             end
 
         end
-        for iface=1:mesh.nfaces_bdy
+        @inbounds for iface=1:mesh.nfaces_bdy
             for i=1:mesh.ngl
                 for j=1:mesh.ngl
                     ip = mesh.poin_in_bdy_face[iface,i,j]
@@ -604,11 +616,12 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     comp1 = a2*b3 - a3*b2
                     comp2 = a3*b1 - a1*b3
                     comp3 = a1*b2 - a2*b1
-                    mag = sqrt(comp1^2 + comp2^2 + comp3^2)
+                    mag    = sqrt(comp1^2 + comp2^2 + comp3^2)
+                    maginv = 1.0/mag
                     metrics.Jef[iface, i, j] = mag/2
-                    metrics.nx[iface, i, j] = comp1/mag
-                    metrics.ny[iface, i, j] = comp2/mag
-                    metrics.nz[iface, i, j] = comp3/mag
+                    metrics.nx[iface, i, j] = comp1*maginv
+                    metrics.ny[iface, i, j] = comp2*maginv
+                    metrics.nz[iface, i, j] = comp3*maginv
                 end
             end
         end

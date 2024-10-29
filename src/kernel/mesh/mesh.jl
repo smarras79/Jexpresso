@@ -670,33 +670,27 @@ println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"
 #writevtk(model,"gmsh_grid")
 end
 
-function determine_colinearity(vec1,vec2)
-    if (size(vec1,1) < 3)
-
-        match = false
-        if (AlmostEqual(vec1[1],0.0) && AlmostEqual(vec2[1],0.0))
-            match = (abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7)
-        elseif (AlmostEqual(vec1[2],0.0) && AlmostEqual(vec2[2],0.0))
-            match = (abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7)
-        elseif (abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7) && (abs(vec1[1]) > 1e-7 && abs(vec2[1] > 1e-7))
-
-            rat1 = (vec[1]+1e-16) / (per1[1]+1e-16)
-            rat2 = (vec[2]+1e-16) / (per1[2]+1e-16)
-            rat3 = (vec[1]+1e-16) / (per2[1]+1e-16)
-            rat4 = (vec[2]+1e-16) / (per2[2]+1e-16)
-            match = (AlmostEqual(rat1,rat2) || AlmostEqual(rat3,rat4))
+function determine_colinearity(vec1, vec2)
+    # For 2D vectors
+    if size(vec1, 1) < 3
+        if AlmostEqual(vec1[1], 0.0) && AlmostEqual(vec2[1], 0.0)
+            return abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7
+        elseif AlmostEqual(vec1[2], 0.0) && AlmostEqual(vec2[2], 0.0)
+            return abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7
+        elseif abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7 && abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7
+            return AlmostEqual((vec1[1] + 1e-16) / (vec2[1] + 1e-16), (vec1[2] + 1e-16) / (vec2[2] + 1e-16))
+        else
+            return false
         end
+
+    # For 3D vectors
     else
-        match = false
-        s1 = vec1[2]*vec2[3] - vec1[3]*vec2[2]
-        s2 = vec1[3]*vec2[1] - vec1[1]*vec2[3]
-        s3 = vec1[1]*vec2[2] - vec1[2]*vec2[1]
-        if (abs(s1) < 1e-7 && abs(s2) < 1e-7 && abs(s3) < 1e-7)
-            match = true
-        end
+        return abs(vec1[2] * vec2[3] - vec1[3] * vec2[2]) < 1e-7 &&
+               abs(vec1[3] * vec2[1] - vec1[1] * vec2[3]) < 1e-7 &&
+               abs(vec1[1] * vec2[2] - vec1[2] * vec2[1]) < 1e-7
     end
-    return match
 end
+
 function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_2D)
     
     for iel = 1:mesh.nelem

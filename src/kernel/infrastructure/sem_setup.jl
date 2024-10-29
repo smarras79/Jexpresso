@@ -127,8 +127,9 @@ function sem_setup(inputs::Dict)
                                              ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
             
         else
-            
+            @info " Build interpolation bases ......"
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
+            @info " Build interpolation bases ...... END"
             ω1 = ω
             ω = ω1
             if (inputs[:lfilter])
@@ -144,11 +145,13 @@ function sem_setup(inputs::Dict)
             @info " Build metrics ......"
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
             @info " Build metrics ...... END"
-      #@mystop(" L 146 sem_setup")
-            
+           
             @info " Build periodicity infrastructure ......"
             @time periodicity_restructure!(mesh,inputs,inputs[:backend])
             @info " Build periodicity infrastructure ...... DONE"
+
+@mystop(" L 152 sem_setup")
+                       
             #warp_mesh!(mesh,inputs)
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
         end

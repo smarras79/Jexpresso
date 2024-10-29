@@ -105,11 +105,11 @@ function periodicity_restructure!(mesh,inputs,backend)
         else
             per2 = [1.0, 0.0]
         end     
-        xx = zeros(TFloat, size(mesh.x,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.x,1),1)
-        yy = zeros(TFloat, size(mesh.y,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.y,1),1)
+        #xx = zeros(TFloat, size(mesh.x,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.x,1),1)
+        #yy = zeros(TFloat, size(mesh.y,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.y,1),1)
         poin_bdy= zeros(TInt, size(mesh.poin_in_bdy_edge))#KernelAbstractions.zeros(CPU(), TInt,size(mesh.poin_in_bdy_edge))
-        xx .= mesh.x
-        yy .= mesh.y
+        #xx .= mesh.x
+        #yy .= mesh.y
         poin_bdy .=mesh.poin_in_bdy_edge
         interval = [2,3,4]
         for iedge_bdy =1:size(mesh.bdy_edge_type,1)
@@ -187,8 +187,8 @@ function periodicity_restructure!(mesh,inputs,backend)
                 for k =1:mesh.ngl
                     ip = poin_bdy[iedge_bdy, k]
                     ip_true = mesh.poin_in_bdy_edge[iedge_bdy,k]
-                    x1 = xx[ip]
-                    y1 = yy[ip]
+                    x1 = mesh.x[ip]
+                    y1 = mesh.y[ip]
                     m=1
                     l=1
                     for ii=1:mesh.ngl
@@ -204,8 +204,8 @@ function periodicity_restructure!(mesh,inputs,backend)
                     else
                         ip1 = poin_bdy[iedge_bdy,k-1]
                     end
-                    x3 = xx[ip1]
-                    y3 = yy[ip1]
+                    x3 = mesh.x[ip1]
+                    y3 = mesh.y[ip1]
                     vec_bdy = [x1-x3,y1-y3]
                     #@info vec_bdy, per1, per2, determine_colinearity(vec_bdy,per2), determine_colinearity(vec_bdy,per1),x1, x3, y1, y3
                     if (determine_colinearity(vec_bdy,per1))
@@ -222,15 +222,15 @@ function periodicity_restructure!(mesh,inputs,backend)
                             for k_per=1:mesh.ngl
                                 ip_per = poin_bdy[iedge_per,k_per]
                                 ip_true1 = mesh.poin_in_bdy_edge[iedge_per,k_per]
-                                x2 = xx[ip_per]
-                                y2 = yy[ip_per]
+                                x2 = mesh.x[ip_per]
+                                y2 = mesh.y[ip_per]
                                 if (k_per < mesh.ngl)
                                     ip_per1 = poin_bdy[iedge_per,k_per+1]
                                 else
                                     ip_per1 = poin_bdy[iedge_per,k_per-1]
                                 end
-                                x4 = xx[ip_per1]
-                                y4 = yy[ip_per1]
+                                x4 = mesh.x[ip_per1] #
+                                y4 = nesh.y[ip_per1]
                                 vec_per = [x2-x4, y2-y4]
 
                                 vec = [x1 - x2, y1 - y2]
@@ -321,21 +321,24 @@ function periodicity_restructure!(mesh,inputs,backend)
                 end
             end
         end
-    elseif (mesh.nsd == 3)
+   elseif (mesh.nsd == 3)
+        #
+        # 3D
+        #
         if ("periodic1" in mesh.bdy_face_type)
             finder = false
             iface_bdy = 1
             while (finder == false)
                 if (mesh.bdy_face_type[iface_bdy] == "periodic1")
-                    ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
-                    ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
-                    ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
-                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
-                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
-                    s1 = t1[2]*t2[3] - t1[3]*t2[2]
-                    s2 = t1[3]*t2[1] - t1[1]*t2[3]
-                    s3 = t1[1]*t2[2] - t1[2]*t2[1]
-                    mag = sqrt(s1^2 + s2^2 + s3^2)
+                    ip   = mesh.poin_in_bdy_face[iface_bdy,1,1]
+                    ip1  = mesh.poin_in_bdy_face[iface_bdy,1,2]
+                    ip2  = mesh.poin_in_bdy_face[iface_bdy,2,1]
+                    t1   = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    t2   = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    s1   = t1[2]*t2[3] - t1[3]*t2[2]
+                    s2   = t1[3]*t2[1] - t1[1]*t2[3]
+                    s3   = t1[1]*t2[2] - t1[2]*t2[1]
+                    mag  = sqrt(s1^2 + s2^2 + s3^2)
                     nor1 = [s1/mag, s2/mag, s3/mag]
                     finder = true
                 else
@@ -391,14 +394,14 @@ function periodicity_restructure!(mesh,inputs,backend)
         else
             nor3 = [0.0, 0.0, 1.0]
         end
-
-        xx = zeros(TFloat, size(mesh.x,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.x,1),1)
-        yy = zeros(TFloat, size(mesh.y,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.y,1),1)
-        zz = zeros(TFloat, size(mesh.y,1),1)
+#SM
+        #xx = zeros(TFloat, size(mesh.x,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.x,1),1)
+        #yy = zeros(TFloat, size(mesh.y,1),1)#KernelAbstractions.zeros(CPU(), TFloat, size(mesh.y,1),1)
+        #zz = zeros(TFloat, size(mesh.y,1),1)
         poin_bdy= zeros(TInt, size(mesh.poin_in_bdy_face))#KernelAbstractions.zeros(CPU(), TInt,size(mesh.poin_in_bdy_edge))
-        xx .= mesh.x
-        yy .= mesh.y
-        zz .= mesh.z
+        #xx .= mesh.x
+        #yy .= mesh.y
+        #zz .= mesh.z
         poin_bdy .=mesh.poin_in_bdy_face
         ### triple periodicity for corners 
         interval = [2,3,4,5,6,7,8]
@@ -468,6 +471,7 @@ function periodicity_restructure!(mesh,inputs,backend)
 
             ### done with triple periodicity
         end
+
         ### double periodicity
         ### check if we have more than one periodic set of boundaries
         nperiodic = 0
@@ -494,6 +498,10 @@ function periodicity_restructure!(mesh,inputs,backend)
         end
         if (nperiodic == 2) ## if we have triple periodicity this is handled above, for less than 2 periodic boundaries double periodicity does not apply
             ## find periodic planes
+            
+            co1 = false
+            co2 = false
+            co3 = false
             plane1 = [0, 0, 0, 0]
             plane2 = [0, 0, 0, 0]
             plane1[1] = 1
@@ -501,7 +509,10 @@ function periodicity_restructure!(mesh,inputs,backend)
             plane1_idx = 2
             for i=2:8
                 vec = [mesh.x[1] - mesh.x[i], mesh.y[1] - mesh.y[i], mesh.z[1] - mesh.z[i]]
-                if (determine_colinearity(vec,double1) || determine_colinearity(vec,double2) || determine_colinearity(vec,abs.(double1+double2)))
+                co1 = determine_colinearity(vec,double1)
+                co2 = determine_colinearity(vec,double2)
+                co3 = determine_colinearity(vec,abs.(double1+double2))
+                if (co1 || co2 || co3)
                     plane1[plane1_idx] = i
                     plane1_idx += 1
                 else
@@ -550,7 +561,7 @@ function periodicity_restructure!(mesh,inputs,backend)
                 for e=1:mesh.nelem
                     for ii=1:mesh.ngl
                         for jj=1:mesh.ngl
-                            for kk=1:mesh.ngl
+                           @inbounds for kk=1:mesh.ngl
                                 ipp = mesh.connijk[e,ii,jj,kk]
                                 if (ipp > ip_kill)
                                     mesh.connijk[e,ii,jj,kk] -= 1
@@ -678,17 +689,20 @@ function periodicity_restructure!(mesh,inputs,backend)
                     end
                 end
             end
-        end
+end
+
         ### remove duplicates
         unique!(per1_points)
         unique!(per2_points)
         unique!(per3_points)
-        ### work single periodicity on the periodic1 boundaries if applicable
-        if (size(per1_points,1) > 1) 
-            for i=1:size(per1_points,1)
+
+### work single periodicity on the periodic1 boundaries if applicable
+sz1 = size(per1_points,1)
+        if (sz1 > 1) 
+            for i=1:sz1
                 found = false
                 i1 = i+1
-                while (i1 <= size(per1_points,1) && found == false)
+                while (i1 <= sz1 && found == false)
                     ip = per1_points[i]
                     ip1 = per1_points[i1]
                     vec = [mesh.x[ip] - mesh.x[ip1], mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
@@ -803,7 +817,8 @@ function periodicity_restructure!(mesh,inputs,backend)
 
                 end
             end
-        end
+end
+
         unique!(per1_points)
         unique!(per2_points)
         unique!(per3_points)
@@ -1084,7 +1099,9 @@ function periodicity_restructure!(mesh,inputs,backend)
                 mesh.x[ip] = mesh.x[ip+1]
             end
             mesh.npoin = mesh.npoin-1
-        end
-    end
+end
+
+end
+
     @info " periodicity_restructure!"
 end
