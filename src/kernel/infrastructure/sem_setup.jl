@@ -112,7 +112,7 @@ function sem_setup(inputs::Dict)
                     KernelAbstractions.copyto!(inputs[:backend], fy_lag, fy_lag_1)
                 end
             end
-            #@time periodicity_restructure!(mesh,inputs)
+            
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end
@@ -142,7 +142,9 @@ function sem_setup(inputs::Dict)
             @info " Build metrics ......"
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
             @info " Build metrics ...... END"
-#@mystop("quiii")
+            
+            #@mystop(" L 146 sem_setup")
+            
             @info " Build periodicity infrastructure ......"
             @time periodicity_restructure!(mesh,inputs,inputs[:backend])
             @info " Build periodicity infrastructure ...... DONE"
