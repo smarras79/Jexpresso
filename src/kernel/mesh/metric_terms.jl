@@ -183,10 +183,12 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         for iel = 1:mesh.nelem
             for j = 1:N+1
                 for i = 1:N+1
+
                     ip = mesh.connijk[iel,i,j]
                     xij = mesh.x[ip]
                     yij = mesh.y[ip]
-                    for l=1:Q+1
+                    
+                    @turbo for l=1:Q+1
                         for k=1:Q+1
                             
                             metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ[j,l] * xij
@@ -523,12 +525,9 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                         xijk = mesh.x[mesh.connijk[iel, i, j, k]]
                         yijk = mesh.y[mesh.connijk[iel, i, j, k]]
                         zijk = mesh.z[mesh.connijk[iel, i, j, k]]
-                        #xijk = mesh.x[ip]
-                        #yijk = mesh.y[ip]
-                        #zijk = mesh.z[ip]
                         
-                        for n = 1:Q+1
-                            for m = 1:Q+1
+                        @turbo for n = 1:Q+1
+                        for m = 1:Q+1
                                 for l = 1:Q+1
                                     
                                     metrics.dxdξ[iel, l, m, n] += dψ[i,l]* ψ[j,m]* ψ[k,n]*xijk
@@ -551,7 +550,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 end
             end
 
-            for l = 1:Q+1
+            @turbo for l = 1:Q+1
                 for m = 1:Q+1
                     for n =1:Q+1
                         metrics.Je[iel, l, m, n]  = metrics.dxdξ[iel, l, m, n]*(metrics.dydη[iel, l, m, n]*metrics.dzdζ[iel, l, m, n] - metrics.dydξ[iel, l, m, n]*metrics.dzdη[iel, l, m, n])

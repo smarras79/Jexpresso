@@ -116,9 +116,11 @@ function sem_setup(inputs::Dict)
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end
-            metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat; backend = inputs[:backend])
-            metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
+            @info " Build metrics ......"
+            @time metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat; backend = inputs[:backend])
+            @time metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
             metrics = (metrics1, metrics2)
+            @info " Build metrics ...... DONE"
             @time periodicity_restructure!(mesh,inputs,inputs[:backend])
             
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
@@ -142,8 +144,7 @@ function sem_setup(inputs::Dict)
             @info " Build metrics ......"
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
             @info " Build metrics ...... END"
-            
-            #@mystop(" L 146 sem_setup")
+      #@mystop(" L 146 sem_setup")
             
             @info " Build periodicity infrastructure ......"
             @time periodicity_restructure!(mesh,inputs,inputs[:backend])
@@ -165,9 +166,11 @@ function sem_setup(inputs::Dict)
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-            metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat;backend = inputs[:backend])
-            metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat;backend = inputs[:backend])
-            metrics = (metrics1, metrics2) 
+             @info " Build metrics ......"
+             @time metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat;backend = inputs[:backend])
+             @time metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat;backend = inputs[:backend])
+            metrics = (metrics1, metrics2)
+             @info " Build metrics ...... DONE"
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
         else
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
@@ -177,7 +180,7 @@ function sem_setup(inputs::Dict)
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-            metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
+             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
 
             if (inputs[:lperiodic_1d])
                 periodicity_restructure!(mesh,inputs,inputs[:backend])
