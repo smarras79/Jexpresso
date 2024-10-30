@@ -842,7 +842,6 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
             q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
         end
         iter = 1
-        @info mesh.npoin, size(mesh.x)
         for iface = 1:nfaces
 
             if (mesh.bdy_face_type[iface] == "periodic1")

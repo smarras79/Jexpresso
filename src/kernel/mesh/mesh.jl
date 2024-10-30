@@ -221,7 +221,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         println(" # N. total high order points : ", mesh.npoin)
         println(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END")
     end
-    @info mesh.npoin
     
     #
     # Resize as needed
