@@ -78,6 +78,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     cell_node_ids_ho::Table{Int64,Vector{Int64},Vector{Int64}} = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))    
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
+    face_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nfaces), zeros(1))
 
     connijk_lag = KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
     connijk =  KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
@@ -256,6 +257,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 
     mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
+    mesh.face_edge_ids     = get_faces(topology,mesh.nsd-1, 1)
     mesh.edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
 
 
@@ -605,9 +607,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
                 mesh.face_type[idx] = ilabel
             end
         end
+        get_bdy_poin_in_face_on_edges!(mesh, @view(isboundary_face[:]), mesh.SD)
         iface_bdy = 1
-        for iface = 1:mesh.nfaces #total nedges
-            if isboundary_face[iface] == true
+        for iface in findall(x -> x == true, isboundary_face) #total nedges
+            # if isboundary_face[iface] == true
                 for igl = 1:mesh.ngl
                     for jgl = 1:mesh.ngl
                         mesh.poin_in_bdy_face[iface_bdy, igl,jgl] = mesh.poin_in_face[iface, igl,jgl]
@@ -616,7 +619,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
                     end
                 end
                 iface_bdy += 1
-            end
+            # end
         end
         for iel = 1:mesh.nelem
             for iface_bdy = 1:mesh.nfaces_bdy
@@ -668,18 +671,29 @@ println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"
 end
 
 function determine_colinearity(vec1,vec2)
-    match = false
-    if (AlmostEqual(vec1[1],0.0) && AlmostEqual(vec2[1],0.0))
-        match = (abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7)
-    elseif (AlmostEqual(vec1[2],0.0) && AlmostEqual(vec2[2],0.0))
-        match = (abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7)
-    elseif (abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7) && (abs(vec1[1]) > 1e-7 && abs(vec2[1] > 1e-7))
+    if (size(vec1,1) < 3)
 
-        rat1 = (vec[1]+1e-16) / (per1[1]+1e-16)
-        rat2 = (vec[2]+1e-16) / (per1[2]+1e-16)
-        rat3 = (vec[1]+1e-16) / (per2[1]+1e-16)
-        rat4 = (vec[2]+1e-16) / (per2[2]+1e-16)
-        match = (AlmostEqual(rat1,rat2) || AlmostEqual(rat3,rat4))
+        match = false
+        if (AlmostEqual(vec1[1],0.0) && AlmostEqual(vec2[1],0.0))
+            match = (abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7)
+        elseif (AlmostEqual(vec1[2],0.0) && AlmostEqual(vec2[2],0.0))
+            match = (abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7)
+        elseif (abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7) && (abs(vec1[1]) > 1e-7 && abs(vec2[1] > 1e-7))
+
+            rat1 = (vec[1]+1e-16) / (per1[1]+1e-16)
+            rat2 = (vec[2]+1e-16) / (per1[2]+1e-16)
+            rat3 = (vec[1]+1e-16) / (per2[1]+1e-16)
+            rat4 = (vec[2]+1e-16) / (per2[2]+1e-16)
+            match = (AlmostEqual(rat1,rat2) || AlmostEqual(rat3,rat4))
+        end
+    else
+        match = false
+        s1 = vec1[2]*vec2[3] - vec1[3]*vec2[2]
+        s2 = vec1[3]*vec2[1] - vec1[1]*vec2[3]
+        s3 = vec1[1]*vec2[2] - vec1[2]*vec2[1]
+        if (abs(s1) < 1e-7 && abs(s2) < 1e-7 && abs(s3) < 1e-7)
+            match = true
+        end
     end
     return match
 end
@@ -1568,30 +1582,6 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
             x3, y3, z3 = mesh.x[ip3], mesh.y[ip3], mesh.z[ip3]
             x4, y4, z4 = mesh.x[ip4], mesh.y[ip4], mesh.z[ip4]
             
-            ###find edges belonging to this face and populate edges on poin_in_face array
-            for iedge = 1:mesh.nedges
-                ipe1 = mesh.conn_unique_edges[iedge][1]
-                ipe2 = mesh.conn_unique_edges[iedge][2]
-                if (ipe1 == ip1 && ipe2 == ip2) || (ipe1 == ip2 && ipe2 == ip1)
-                    for i=2:mesh.ngl-1
-                        mesh.poin_in_face[iface_g,i,1] = mesh.poin_in_edge[iedge,i]
-                    end
-                elseif (ipe1 == ip2 && ipe2 == ip3) || (ipe1 == ip3 && ipe2 == ip2)
-                    for i=2:mesh.ngl-1
-                        mesh.poin_in_face[iface_g,mesh.ngl,i] = mesh.poin_in_edge[iedge,i]
-                    end
-                elseif (ipe1 == ip3 && ipe2 == ip4) || (ipe1 == ip4 && ipe2 == ip3)
-                    for i=2:mesh.ngl-1
-                        mesh.poin_in_face[iface_g,i,mesh.ngl] = mesh.poin_in_edge[iedge,i]
-                    end
-                elseif (ipe1 == ip4 && ipe2 == ip1) || (ipe1 == ip1 && ipe2 == ip4)
-                    for i=2:mesh.ngl-1
-                        mesh.poin_in_face[iface_g,1,i] = mesh.poin_in_edge[iedge,i]
-                    end
-                end
-            end
-
-
 
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
@@ -1903,6 +1893,42 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D)
     #show(stdout, "text/plain", mesh.conn')
     println(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE")
 
+end
+
+function get_bdy_poin_in_face_on_edges!(mesh::St_mesh, isboundary_face, SD::NSD_3D)
+    
+    for iface_g in  findall(x -> x == true, isboundary_face)
+        
+        #GGNS numbering
+        ip1 = mesh.conn_unique_faces[iface_g][1]
+        ip2 = mesh.conn_unique_faces[iface_g][2]
+        ip3 = mesh.conn_unique_faces[iface_g][4]
+        ip4 = mesh.conn_unique_faces[iface_g][3]
+
+            
+        ###find edges belonging to this face and populate edges on poin_in_face array
+        for iedge in mesh.face_edge_ids[iface_g]
+            ipe1 = mesh.conn_unique_edges[iedge][1]
+            ipe2 = mesh.conn_unique_edges[iedge][2]
+            if (ipe1 == ip1 && ipe2 == ip2) || (ipe1 == ip2 && ipe2 == ip1)
+                for i=2:mesh.ngl-1
+                    mesh.poin_in_face[iface_g,i,1] = mesh.poin_in_edge[iedge,i]
+                end
+            elseif (ipe1 == ip2 && ipe2 == ip3) || (ipe1 == ip3 && ipe2 == ip2)
+                for i=2:mesh.ngl-1
+                    mesh.poin_in_face[iface_g,mesh.ngl,i] = mesh.poin_in_edge[iedge,i]
+                end
+            elseif (ipe1 == ip3 && ipe2 == ip4) || (ipe1 == ip4 && ipe2 == ip3)
+                for i=2:mesh.ngl-1
+                    mesh.poin_in_face[iface_g,i,mesh.ngl] = mesh.poin_in_edge[iedge,i]
+                end
+            elseif (ipe1 == ip4 && ipe2 == ip1) || (ipe1 == ip1 && ipe2 == ip4)
+                for i=2:mesh.ngl-1
+                    mesh.poin_in_face[iface_g,1,i] = mesh.poin_in_edge[iedge,i]
+                end
+            end
+        end
+    end
 end
 
 function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_2D)
@@ -2405,7 +2431,7 @@ function compute_element_size!(SD::NSD_3D, ie, mesh::St_mesh, T)
         x[m] = mesh.x[inode[m]]
         y[m] = mesh.y[inode[m]]
         z[m] = mesh.z[inode[m]]
-        #@info m, x[m], y[m], z[m]
+        # @info m, x[m], y[m], z[m]
     end
 
     #Element sizes (as if it were linear)

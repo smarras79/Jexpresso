@@ -23,8 +23,8 @@ function mod_inputs_user_inputs!(inputs)
     
     if (inputs[:backend] != CPU())
         if (inputs[:backend] == CUDABackend())
-            global TInt = Int64
-            global TFloat = Float64
+            global TInt = Int32
+            global TFloat = Float32
             global cpu = false
         else
             global TInt = Int32
@@ -168,6 +168,9 @@ function mod_inputs_user_inputs!(inputs)
     # Write png to surface using Spline2D interpolation of unstructured data:
     if(!haskey(inputs, :lplot_surf3d))
         inputs[:lplot_surf3d] = false
+    end
+    if(!haskey(inputs, :lvolume3d))
+        inputs[:lvolume3d] = false
     end
     if(!haskey(inputs, :smoothing_factor))
         #This is the spline2d smoothing factor. Too small and it may break the spline2d, but it should be as small as possible for precision
@@ -377,6 +380,16 @@ function mod_inputs_user_inputs!(inputs)
     end
 
     #
+    # Array of user-defined constant with a user-given meaning. For example, this is used in drivers for the elliptic problems
+    #
+    if(!haskey(inputs, :rconst))
+        inputs[:rconst] = Float64(0.0)
+    end
+    if(!haskey(inputs, :iconst))
+        inputs[:iconst] = Int32(1)
+    end
+
+    #
     # BC
     #
     if(!haskey(inputs, :luser_bc))
@@ -533,6 +546,9 @@ function mod_inputs_user_inputs!(inputs)
     end
     if(!haskey(inputs, :lsource))
         inputs[:lsource] = false
+    end
+    if(!haskey(inputs, :lbomex))
+        inputs[:lbomex] = false
     end
 
     if(!haskey(inputs, :ldss_differentiation))

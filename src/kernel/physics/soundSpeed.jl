@@ -1,5 +1,5 @@
 function soundSpeed(npoin, integrator, SD)
-
+    
     # Physical constants
     PhysConst = PhysicalConst{Float32}()
     pos::TInt = 2
@@ -24,19 +24,38 @@ function soundSpeed(npoin, integrator, SD)
     return max_c
 end
 
-function computeCFL(npoin, dt, Δs, integrator, SD::NSD_2D)
+function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_1D; visc=(0.0))
+    nothing
+end
 
+function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_2D; visc=(0.0))
+
+    velmax = @SVector zeros(neqs)
+    
     #u
-    ieq = 2
+    for ieq = 1:neqs-1
+        idx = (ieq)*npoin
+        velmax[i] = maximum(integrator.u[idx+1:ieq*npoin])
+    end
+    #u
+#=    ieq = 2
     idx = (ieq-1)*npoin
     umax = maximum(integrator.u[idx+1:ieq*npoin])
+
+    #umax = integrator.u[idx+1]
+# Iterate over the specified range to find the maximum value
+    #for i in (idx+2):(ieq*npoin)
+    #    umax = max(umax, integrator.u[i])
+    #end
+    
     #v
     ieq = 3
     idx = (ieq-1)*npoin
-    vmax = maximum(integrator.u[idx+1:ieq*npoin])        
+    vmax = maximum(integrator.u[idx+1:ieq*npoin])=#  
     
     #velomax
-    velomax = max(umax, vmax)
+    #velomax = max(umax, vmax)
+    velomax = maximum(velmax)
     
     #speed of sound
     c     = soundSpeed(npoin, integrator, SD)
@@ -44,12 +63,18 @@ function computeCFL(npoin, dt, Δs, integrator, SD::NSD_2D)
     cfl_u = velomax*dt/Δs #Advective CFL
     cfl_c = c*dt/Δs       #Acoustic CFL
 
+    Δs2      = Δs*Δs
+    μ        = maximum(visc)
+    λ        = 2.0 #free parameter
+    cfl_visc = dt*λ*μ/Δs2 #Viscous CFL
+
     println(" #  Advective CFL: ", cfl_u)
     println(" #  Acoustic  CFL: ", cfl_c)
+    println(" #  Viscous   CFL: ", cfl_visc)
     
 end
 
-function computeCFL(npoin, dt, Δs, integrator, SD::NSD_3D)
+function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_3D; visc=(0.0))
 
     #u
     ieq = 2
@@ -72,8 +97,14 @@ function computeCFL(npoin, dt, Δs, integrator, SD::NSD_3D)
     
     cfl_u = velomax*dt/Δs #Advective CFL
     cfl_c = c*dt/Δs       #Acoustic CFL
-
+    
+    Δs2      = Δs*Δs
+    μ        = maximum(visc)
+    λ        = 2.0 #free parameter
+    cfl_visc = dt*λ*μ/Δs2 #Viscous CFL
+    
     println(" #  Advective CFL: ", cfl_u)
     println(" #  Acoustic  CFL: ", cfl_c)
+    println(" #  Viscous   CFL: ", cfl_visc)
     
 end
