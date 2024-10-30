@@ -187,47 +187,51 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             for j = 1:N+1
                 for i = 1:N+1
 
-                    xij = mesh.x[mesh.connijk[iel, i, j]]
-                    yij = mesh.y[mesh.connijk[iel, i, j]]
+                    ip = mesh.connijk[iel, i, j]
+                    xij = mesh.x[ip]
+                    yij = mesh.y[ip]
                     
                     @turbo for l=1:Q+1
                         for k=1:Q+1
-                            
-                            metrics.dxdξ[iel, k, l] += dψ[i,k]*ψ[j,l] * xij
-                            metrics.dxdη[iel, k, l] += ψ[i,k]*dψ[j,l] * xij
 
-                            metrics.dydξ[iel, k, l] += dψ[i,k]*ψ[j,l] * yij
-                            metrics.dydη[iel, k, l] += ψ[i,k]*dψ[j,l] * yij
-                        
-                        #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
+                            a = dψ[i,k]*ψ[j,l]
+                            b = ψ[i,k]*dψ[j,l]
+                            metrics.dxdξ[iel, k, l] += a * xij
+                            metrics.dxdη[iel, k, l] += b * xij
+
+                            metrics.dydξ[iel, k, l] += a * yij
+                            metrics.dydη[iel, k, l] += b * yij
+                            
+                            #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
                         end
                     end
                 end
             end
-             
+            
             @inbounds for l = 1:Q+1
                 for k = 1:Q+1
-              
-                # Extract values from memory once per iteration
+                    
+                    # Extract values from memory once per iteration
                     dxdξ_val = metrics.dxdξ[iel, k, l]
                     dydη_val = metrics.dydη[iel, k, l]
                     dydξ_val = metrics.dydξ[iel, k, l]
                     dxdη_val = metrics.dxdη[iel, k, l]
-                # Compute Je once and reuse its value
+                    # Compute Je once and reuse its value
                     metrics.Je[iel, k, l] = dxdξ_val * dydη_val - dydξ_val * dxdη_val
                     
-                # Use the precomputed Je value for the other calculations
+                    # Use the precomputed Je value for the other calculations
                     Jinv = 1.0/metrics.Je[iel, k, l]
 
                     metrics.dξdx[iel, k, l] =  dydη_val * Jinv
                     metrics.dξdy[iel, k, l] = -dxdη_val * Jinv
                     metrics.dηdx[iel, k, l] = -dydξ_val * Jinv
                     metrics.dηdy[iel, k, l] =  dxdξ_val * Jinv
-                
+                    
                 end
             end
-        #show(stdout, "text/plain", metrics.Je[iel, :,:])
+            #show(stdout, "text/plain", metrics.Je[iel, :,:])
         end
+        
         nbdy_edges = size(mesh.poin_in_bdy_edge,1)
         @inbounds for iedge =1:nbdy_edges
             for k=1:N+1
@@ -247,9 +251,6 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 comp2 = (y1-y2)/mag
                 metrics.nx[iedge, k] = comp2
                 metrics.ny[iedge, k] = -comp1
-                #if (y1 < 500 && abs(x1) < 10000)
-                #    #@info comp1, comp2, metrics.nx[iedge, k], metrics.ny[iedge, k], x1,x2,y1,y2
-                #end
             end
         end
     else
@@ -274,6 +275,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     end
     
     return metrics
+    
 end
 
 @kernel function build_2D_gpu_metrics!(dxdξ, dxdη, dydξ, dydη, ψ, dψ, x, y, connijk, Q)
@@ -516,30 +518,35 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         yijk = 0.0
         zijk = 0.0
         @inbounds for iel = 1:mesh.nelem
+            
             for k = 1:N+1
                 for j = 1:N+1
                     for i = 1:N+1
-                        
-                        xijk = mesh.x[mesh.connijk[iel, i, j, k]]
-                        yijk = mesh.y[mesh.connijk[iel, i, j, k]]
-                        zijk = mesh.z[mesh.connijk[iel, i, j, k]]
+
+                        ip = mesh.connijk[iel, i, j, k]
+                        xijk = mesh.x[ip]
+                        yijk = mesh.y[ip]
+                        zijk = mesh.z[ip]
                         
                         @turbo for n = 1:Q+1
-                        for m = 1:Q+1
+                            for m = 1:Q+1
                                 for l = 1:Q+1
                                     
-                                    metrics.dxdξ[iel, l, m, n] += dψ[i,l]* ψ[j,m]* ψ[k,n]*xijk
-                                    metrics.dxdη[iel, l, m, n] +=  ψ[i,l]*dψ[j,m]* ψ[k,n]*xijk
-                                    metrics.dxdζ[iel, l, m, n] +=  ψ[i,l]* ψ[j,m]*dψ[k,n]*xijk
+                                    a = dψ[i,l]* ψ[j,m]* ψ[k,n]
+                                    b = ψ[i,l]*dψ[j,m]* ψ[k,n]
+                                    c = ψ[i,l]* ψ[j,m]*dψ[k,n]
+                                    
+                                    metrics.dxdξ[iel, l, m, n] += a*xijk
+                                    metrics.dxdη[iel, l, m, n] += b*xijk
+                                    metrics.dxdζ[iel, l, m, n] += c*xijk
 
-                                    metrics.dydξ[iel, l, m, n] += dψ[i,l]* ψ[j,m]* ψ[k,n]*yijk
-                                    metrics.dydη[iel, l, m, n] +=  ψ[i,l]*dψ[j,m]* ψ[k,n]*yijk
-                                    metrics.dydζ[iel, l, m, n] +=  ψ[i,l]* ψ[j,m]*dψ[k,n]*yijk
+                                    metrics.dydξ[iel, l, m, n] += a*yijk
+                                    metrics.dydη[iel, l, m, n] += b*yijk
+                                    metrics.dydζ[iel, l, m, n] += c*yijk
 
-                                    metrics.dzdξ[iel, l, m, n] += dψ[i,l]* ψ[j,m]* ψ[k,n]*zijk
-                                    metrics.dzdη[iel, l, m, n] +=  ψ[i,l]*dψ[j,m]* ψ[k,n]*zijk
-                                    metrics.dzdζ[iel, l, m, n] +=  ψ[i,l]* ψ[j,m]*dψ[k,n]*zijk
-                                    #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
+                                    metrics.dzdξ[iel, l, m, n] += a*zijk
+                                    metrics.dzdη[iel, l, m, n] += b*zijk
+                                    metrics.dzdζ[iel, l, m, n] += c*zijk
                                 end
                             end
                         end
@@ -547,6 +554,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     # @printf(" dxdξ=%f, dxdη=%f, dydξ=%f dydη=%f \n",  metrics.dxdξ[iel, k, l],  metrics.dxdη[iel, k, l], metrics.dydξ[iel, k, l],  metrics.dydη[iel, k, l] )
                 end
             end
+            
             
             @inbounds for l = 1:Q+1
                 for m = 1:Q+1
@@ -569,15 +577,15 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                         
                         Jinv = 1.0/metrics.Je[iel, l, m, n]
                         
-                        metrics.dξdx[iel, l, m, n] =  (dydη*dzdζ- dydξ*dzdη)*Jinv
-                        metrics.dξdy[iel, l, m, n] =  (dxdζ*dzdη- dxdη*dzdη)*Jinv
-                        metrics.dξdz[iel, l, m, n] =  (dxdη*dydζ- dxdζ*dydη)*Jinv
-                        metrics.dηdx[iel, l, m, n] =  (dydζ*dzdξ- dydξ*dzdζ)*Jinv
-                        metrics.dηdy[iel, l, m, n] =  (dxdξ*dzdζ- dxdζ*dzdξ)*Jinv
-                        metrics.dηdz[iel, l, m, n] =  (dxdζ*dydξ- dxdξ*dydζ)*Jinv
-                        metrics.dζdx[iel, l, m, n] =  (dydξ*dzdη- dydη*dzdξ)*Jinv
-                        metrics.dζdy[iel, l, m, n] =  (dxdη*dzdξ- dxdξ*dzdη)*Jinv
-                        metrics.dζdz[iel, l, m, n] =  (dxdξ*dydη- dxdη*dydξ)*Jinv
+                        metrics.dξdx[iel, l, m, n] = (dydη*dzdζ- dydξ*dzdη)*Jinv
+                        metrics.dξdy[iel, l, m, n] = (dxdζ*dzdη- dxdη*dzdη)*Jinv
+                        metrics.dξdz[iel, l, m, n] = (dxdη*dydζ- dxdζ*dydη)*Jinv
+                        metrics.dηdx[iel, l, m, n] = (dydζ*dzdξ- dydξ*dzdζ)*Jinv
+                        metrics.dηdy[iel, l, m, n] = (dxdξ*dzdζ- dxdζ*dzdξ)*Jinv
+                        metrics.dηdz[iel, l, m, n] = (dxdζ*dydξ- dxdξ*dydζ)*Jinv
+                        metrics.dζdx[iel, l, m, n] = (dydξ*dzdη- dydη*dzdξ)*Jinv
+                        metrics.dζdy[iel, l, m, n] = (dxdη*dzdξ- dxdξ*dzdη)*Jinv
+                        metrics.dζdz[iel, l, m, n] = (dxdξ*dydη- dxdη*dydξ)*Jinv
                         
                     end
                 end
