@@ -8,6 +8,7 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
+        :lsparse              => true,
         :rconst               => [0.0],
         #:backend              => MetalBackend(),
         #:CL                   => NCL(), #CL() is defaults
@@ -16,7 +17,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 10,      # Polynomial order
+        :nop                 => 2,      # Polynomial order
         #:nop_laguerre        => 14,
         #:xfac_laguerre       => 0.25,
         #:yfac_laguerre       => 0.0,
@@ -31,7 +32,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_helmholtz_noLaguerre.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/2x2.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #---------------------------------------------------------------------------
