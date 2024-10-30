@@ -251,13 +251,24 @@ end
 #------------
 # HDF5 writer/reader
 #------------
-function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, u::AbstractArray, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::HDF5; nvar=1, qexact=zeros(1,nvar), case="")
     
     # println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ...  ") )
     iout = size(t,1)
     title = @sprintf "Final solution at t=%6.4f" t
+    if (inputs[:backend] == CPU())
     
-    write_hdf5(SD, mesh, u, qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
+        write_hdf5(SD, mesh, u, qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
+    else
+        u_gpu = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
+        KernelAbstractions.copyto!(CPU(),u_gpu, u)
+        u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
+        KernelAbstractions.copyto!(CPU(),u_exact,qexact)
+        convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+        write_hdf5(SD, mesh, u_gpu, u_exact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
+        convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
+    end
+
     
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
     
@@ -269,7 +280,17 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, i
     iout = size(sol.t[:],1)
     title = @sprintf "Final solution at t=%6.4f" sol.t[iout]
 
-    write_hdf5(SD, mesh, sol.u[iout][:], qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
+    if (inputs[:backend] == CPU())
+        write_hdf5(SD, mesh, sol.u[iout][:], qexact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
+    else
+        u_gpu = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
+        KernelAbstractions.copyto!(CPU(),u_gpu, sol.u[iout][:])
+        u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
+        KernelAbstractions.copyto!(CPU(),u_exact,qexact)
+        convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+        write_hdf5(SD, mesh, u_gpu, u_exact, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, case=case)
+        convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
+    end
     
     println(string(" # Writing restart HDF5 file:", OUTPUT_DIR, "*.h5 ... DONE") )
     
@@ -284,7 +305,7 @@ function read_output(SD::NSD_2D, INPUT_DIR::String, inputs::Dict, npoin, outform
 end
 
 
-function write_hdf5(SD, mesh::St_mesh, q::Array, qe::Array, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
+function write_hdf5(SD, mesh::St_mesh, q::AbstractArray, qe::AbstractArray, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, case="")
     
     #Write one HDF5 file per variable
     for ivar = 1:nvar
@@ -821,6 +842,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
             q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
         end
         iter = 1
+        @info mesh.npoin, size(mesh.x)
         for iface = 1:nfaces
 
             if (mesh.bdy_face_type[iface] == "periodic1")
