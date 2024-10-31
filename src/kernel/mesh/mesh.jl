@@ -450,10 +450,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
                 for igl = 1:mesh.ngl
                     mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
                     mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
-                    mesh.bdy_edge_in_elem[iedge_bdy] = mesh.facet_cell_ids[iface][1]
-                    if (size(mesh.facet_cell_ids[iface],1) ≠ 1)
+                    mesh.bdy_edge_in_elem[iedge_bdy] = mesh.facet_cell_ids[iedge][1]
+                    if (size(mesh.facet_cell_ids[iedge],1) ≠ 1)
                         s = """
-                        Check boundary elements! size(mesh.facet_cell_ids[iface],1) ≠ 1 
+                        Check boundary elements! size(mesh.facet_cell_ids[iedge],1) ≠ 1 
                             """
                 
                         @error s
