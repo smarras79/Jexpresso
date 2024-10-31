@@ -706,6 +706,62 @@ function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T
             end
         end
     end
+    
+end
+
+using SparseArrays
+
+function DSS_laplace_sparse!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
+
+    # Initialize storage for sparse matrix in CSR format
+    data = Float64[]           # Stores non-zero values of the matrix
+    row_indices = Int[]        # Row indices of non-zero entries
+    col_indices = Int[]        # Column indices of non-zero entries
+
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl
+            for j = 1:mesh.ngl
+                ip = mesh.connijk[iel, i, j]
+                for k = 1:mesh.ngl
+                    jp = mesh.connijk[iel, k, j]
+                    
+                    # Compute the element contribution
+                    value = metrics.dξdx[iel, i, k] * Lel[i, k] * ω[j] * metrics.dydη[iel, i, k]
+                    
+                    # Store if non-zero
+                    if value != 0.0
+                        push!(data, value)
+                        push!(row_indices, ip)
+                        push!(col_indices, jp)
+                    end
+                end
+
+                for l = 1:mesh.ngl
+                    jp = mesh.connijk[iel, i, l]
+                    
+                    # Compute the element contribution
+                    value = metrics.dηdy[iel, i, l] * Lel[j, l] * ω[i] * metrics.dxdξ[iel, i, l]
+                    
+                    # Store if non-zero
+                    if value != 0.0
+                        push!(data, value)
+                        push!(row_indices, ip)
+                        push!(col_indices, jp)
+                    end
+                end
+            end
+        end
+    end
+
+    # After assembly, you can create a sparse matrix
+    L_sparse = sparse(row_indices, col_indices, data)
+
+
+    @info"sparse" size(data) size(row_indices) size(col_indices)
+    @info size(L_sparse)
+    @mystop
+
+    #return L_sparse
 end
 
 function DSS_laplace_Laguerre!(L, SD::NSD_2D, Lel::AbstractArray, Lel_lag::AbstractArray, ω, ω_lag, mesh, metrics, metrics_lag, N, T; llump=false)
@@ -947,7 +1003,18 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
             L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))            
             if ldss_laplace
-                DSS_laplace_Laguerre!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                
+                if(inputs[:llaguerre_bc])
+                    DSS_laplace_Laguerre!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                else
+                    @info inputs[:lsparse]
+                    if (inputs[:lsparse])
+                        DSS_laplace_sparse!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                    else
+                        DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                    end
+                end
+
             end
         else
             Le = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
