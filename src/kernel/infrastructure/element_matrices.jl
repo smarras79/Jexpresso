@@ -122,10 +122,10 @@ end
 #
 # Element mass matrix
 #
-function build_mass_matrix!(Me, SD::NSD_1D, QT::Inexact, ψ, ω, mesh, Je, N, Q, T)
+function build_mass_matrix!(Me, SD::NSD_1D, QT::Inexact, ψ, ω, nelem, Je, Δx, N, Q, T)
     
-    for iel=1:mesh.nelem
-        Jac = mesh.Δx[iel]/2
+    for iel=1:nelem
+        Jac = Δx[iel]/2
         
         for i=1:N+1
             Me[i,iel] += Jac*ω[i]
@@ -133,11 +133,11 @@ function build_mass_matrix!(Me, SD::NSD_1D, QT::Inexact, ψ, ω, mesh, Je, N, Q,
     end
 end
 
-function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, mesh, Je, N, Q, T)
+function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, mesh, Je, Δx, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
-    for iel=1:mesh.nelem
+    for iel=1:nelem
         
         for l = 1:Q+1
             for k = 1:Q+1
@@ -167,7 +167,7 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, mesh, Je, N, Q,
     
 end
 
-function build_mass_matrix!(Me, SD::NSD_3D, QT::Inexact, ψ, ω, nelem, Je, N, Q, T)
+function build_mass_matrix!(Me, SD::NSD_3D, QT::Inexact, ψ, ω, nelem, Je, Δx, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
@@ -908,7 +908,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^3, (N+1)^3, Int64(mesh.nelem))
     end
     if (backend == CPU())
-        @time build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, N, Q, TFloat)
+        @time build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, mesh.Δx, N, Q, TFloat)
     elseif (SD == NSD_1D())
         k = build_mass_matrix_1d_gpu!(backend, (N+1))
         k(Me, basis.ψ, ω, metrics.Je, Q; ndrange = (mesh.nelem*mesh.ngl), workgroupsize = (mesh.ngl))
@@ -1004,7 +1004,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, (N+1)^2, Int64(mesh.nelem))
     end
     if (backend == CPU())
-        build_mass_matrix!(Me, SD, QT, basis[1].ψ, ω[1], mesh.nelem, metrics[1].Je, N, Q, TFloat)
+        build_mass_matrix!(Me, SD, QT, basis[1].ψ, ω[1], mesh.nelem, metrics[1].Je, mesh.Δx, N, Q, TFloat)
     elseif (SD == NSD_1D())
         k = build_mass_matrix_1d_gpu!(backend, (N+1))
         k(Me, basis[1].ψ, ω[1], metrics[1].Je, Q; ndrange = (mesh.nelem*mesh.ngl), workgroupsize = (mesh.ngl))
@@ -1030,7 +1030,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     end
     if (backend == CPU())
         if typeof(SD) == NSD_1D
-            build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[2].ψ, ω[2], mesh, metrics[2], N, Q, TFloat)
+            build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[2].ψ, ω[2], mesh, metrics[2], mesh.Δx, N, Q, TFloat)
         elseif typeof(SD) == NSD_2D
             build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[1].ψ, basis[2].ψ, ω[1], ω[2], mesh, metrics[2], N, Q, TFloat)
         end
