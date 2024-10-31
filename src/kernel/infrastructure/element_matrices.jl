@@ -133,7 +133,7 @@ function build_mass_matrix!(Me, SD::NSD_1D, QT::Inexact, ψ, ω, nelem, Je, Δx,
     end
 end
 
-function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, mesh, Je, Δx, N, Q, T)
+function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, nelem, Je, Δx, N, Q, T)
     
     MN = N + 1
     QN = Q + 1
