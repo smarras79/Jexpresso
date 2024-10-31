@@ -327,6 +327,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                 end
             end
         end
+        mesh.npoin = npoin
     elseif (nsd == 3)
         if ("periodic1" in bdy_face_type)
             finder = false
@@ -1223,11 +1224,6 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
             end
         end
         mesh.npoin = npoin
-        mesh.x .= x
-        mesh.y .= y
-        mesh.z .= z
-        mesh.connijk .= connijk
-        mesh.poin_in_bdy_face .= poin_in_bdy_face
     else
         #
         # 1D periodicity
@@ -1250,5 +1246,6 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
             npoin = npoin-1
         end
     end
+    mesh.npoin = npoin
     @info " periodicity_restructure!"
 end
