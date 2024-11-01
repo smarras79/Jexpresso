@@ -3,10 +3,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 30000.0, #2π,
+        :tend                 => 30,#000.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => SSPRK54(),
-        :ndiagnostics_outputs => 10,
+        #:ndiagnostics_outputs => 10,
+        :diagnostics_at_times => range(0,30,30),
         :output_dir           => "./output/",
         :case                 => "rtb",
         #:CL                   => NCL(),
@@ -27,8 +28,8 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         #:lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => (2,3,4),
-        :μ                    => (0.0,1.0,1.0,1.0), #kinematic viscosity constant for θ equation
+        :ivisc_equations      => [2,3,4],
+        :μ                    => [0.0,1.0,1.0,1.0], #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
