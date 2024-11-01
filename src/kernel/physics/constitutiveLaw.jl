@@ -85,7 +85,7 @@ end
 
 # Function to update p_ref_theta
 function create_updated_TD_Parameters(new_p_ref_theta::FT) where {FT}
-    ps = TP.ThermodynamicsParameters(TFloat)
+    ps = TP.ThermodynamicsParameters(FT)
     return TP.ThermodynamicsParameters(
     ps.T_0, ps.MSLP, new_p_ref_theta, ps.cp_v, ps.cp_l, ps.cp_i,
     ps.LH_v0, ps.LH_s0, ps.press_triple, ps.T_triple, ps.T_freeze, ps.T_min,
