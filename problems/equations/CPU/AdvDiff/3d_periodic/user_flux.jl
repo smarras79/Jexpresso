@@ -11,7 +11,7 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, H::SubArray{Floa
 
     G[1] = 0.2*q[1]
     
-    H[1] = 0.2*q[1]
+    H[1] = 0.0*q[1]
     
 end
 
