@@ -343,7 +343,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 
     outvars = varnames
     nvars = length(outvars)
-    
+    new_size = size(mesh.x,1)
     if (mesh.nelem_semi_inf > 0)
         subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
         cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
@@ -744,7 +744,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         
         #ρ
         qout[1:npoin] .= (q[1:npoin])
-
+        
         for ivar = 1:nvars
             
             idx = (ivar - 1)*npoin
@@ -818,6 +818,8 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_face
     qe_temp = similar(qexact)
+    new_size = npoin
+    iter = 1
     if ("periodic1" in mesh.bdy_face_type || "periodic2" in mesh.bdy_face_type || "periodic3" in mesh.bdy_face_type)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
@@ -1234,7 +1236,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
             qout[1:mesh.npoin] .= q[1:mesh.npoin]
             ρ[:] .= q[1:mesh.npoin]
             
-            if (case == "rtb" || case == "mountain") && nvars >= 4
+            if (case == "rtb" || case == "mountain" || case == "bomex") && nvars >= 4
                 #u = ρu/ρ
                 ivar = 2
                 idx = (ivar - 1)*mesh.npoin
@@ -1270,7 +1272,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                     end
                 end
                 
-                if (inputs[:lbomex])
+                if case == "bomex"
                     #qt = ρqt/ρ
                     ivar = 6
                     idx = (ivar - 1)*mesh.npoin
