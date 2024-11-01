@@ -924,6 +924,11 @@ end
 function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
                         ldss_laplace=false, ldss_differentiation=false)
 
+     lbuild_differentiation_matrix = false
+    lbuild_laplace_matrix = false
+    if (ldss_differentiation) lbuild_differentiation_matrix = true end
+    if (ldss_laplace) lbuild_laplace_matrix = true end
+    
     if typeof(SD) == NSD_1D
         Me = zeros(TFloat, 1, 1)
     elseif typeof(SD) == NSD_2D
@@ -955,7 +960,10 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
 
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false
-
+    if (ldss_differentiation) lbuild_differentiation_matrix = true end
+    if (ldss_laplace) lbuild_laplace_matrix = true end
+    
+    
     if typeof(SD) == NSD_1D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, Int64(mesh.nelem))
     elseif typeof(SD) == NSD_2D
@@ -963,25 +971,30 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     elseif typeof(SD) == NSD_3D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^3, (N+1)^3, Int64(mesh.nelem))
     end
+
+    
     if (backend == CPU())
         @time build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, mesh.Δx, N, Q, TFloat)
-    elseif (SD == NSD_1D())
-        k = build_mass_matrix_1d_gpu!(backend, (N+1))
-        k(Me, basis.ψ, ω, metrics.Je, Q; ndrange = (mesh.nelem*mesh.ngl), workgroupsize = (mesh.ngl))
-    elseif (SD == NSD_2D())
-        k= build_mass_matrix_2d_gpu!(backend,(N+1,N+1))
-        k(Me, basis.ψ, ω, metrics.Je, N, Q;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl))
-    elseif (SD == NSD_3D())
-        k= build_mass_matrix_3d_gpu!(backend,(N+1,N+1,N+1))
-        k(Me, basis.ψ, ω, metrics.Je, N, Q;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
-    end
-    if (QT == Exact() && inputs[:llump] == false)
-        M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
-        Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
-    else
-        M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-        Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-    end
+
+        if (SD == NSD_1D())
+            
+            k = build_mass_matrix_1d_gpu!(backend, (N+1))
+            k(Me, basis.ψ, ω, metrics.Je, Q; ndrange = (mesh.nelem*mesh.ngl), workgroupsize = (mesh.ngl))
+        elseif (SD == NSD_2D())
+            k= build_mass_matrix_2d_gpu!(backend,(N+1,N+1))
+            k(Me, basis.ψ, ω, metrics.Je, N, Q;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl))
+        elseif (SD == NSD_3D())
+            k= build_mass_matrix_3d_gpu!(backend,(N+1,N+1,N+1))
+            k(Me, basis.ψ, ω, metrics.Je, N, Q;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
+        end
+        if (QT == Exact() && inputs[:llump] == false)
+            M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+            Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+        else
+            M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+        end
+        
     if (backend == CPU() || SD == NSD_1D())
         @time DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
     elseif (SD == NSD_2D())
