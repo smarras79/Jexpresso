@@ -33,7 +33,7 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractF
     elseif (tag == "right") 
         qbdy[1] = 100.0
     elseif (tag == "top") #top
-        qbdy[1] = 100 + 10.0*sin(π*x/L)
+        qbdy[1] = 100 + 20.0*sin(π*x/L)
     elseif (tag == "left") #left
         qbdy[1] = 100.0
     end

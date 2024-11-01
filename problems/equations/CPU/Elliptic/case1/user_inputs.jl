@@ -32,8 +32,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_helmholtz_noLaguerre.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/2x2.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/2x2.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #---------------------------------------------------------------------------
