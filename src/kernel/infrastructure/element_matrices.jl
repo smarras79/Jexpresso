@@ -267,7 +267,7 @@ end
 end
 
 
-function build_mass_matrix_Laguerre!(Me, SD::NSD_1D, QT, ψ, ω, mesh, metrics, N, Q, T)
+function build_mass_matrix_Laguerre!(Me, SD::NSD_1D, QT, ψ, ω, mesh, metrics, Δx, N, Q, T)
 
     for iel=1:mesh.nelem_semi_inf
         for i=1:mesh.ngr
@@ -930,7 +930,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     elseif typeof(SD) == NSD_3D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^3, (N+1)^3, Int64(mesh.nelem))
     end
-    if (backend == CPU()) #BUG? CPU else SD?
+    if (backend == CPU())
         @time build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, mesh.Δx, N, Q, TFloat)
     else
         if (SD == NSD_1D())
@@ -951,8 +951,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         M    = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
         Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     end
-
-    #if (backend == CPU() || SD == NSD_1D())
+    
     if backend == CPU()
         @time DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
     else
