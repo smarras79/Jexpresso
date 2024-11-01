@@ -125,7 +125,7 @@ function rhs!(du, u, params, time)
             
             k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.neqs))
             
-            if (!params.inputs[:lbomex])
+            if (params.inputs[:case] != "bomex")
                 k = _build_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
                 k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
                 params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.metrics.Je,
@@ -170,7 +170,7 @@ function rhs!(du, u, params, time)
 
                 end
                 KernelAbstractions.synchronize(backend)
-                if (params.inputs[:lbomex])
+                if (params.inputs[:case] == "bomex")
                     # param_set = TP.ThermodynamicsParameters(TFloat)
                     k_sa = saturation_adjustment_gpu_3D!(backend)
                     k_sa(params.uaux, params.qp.qe, params.mesh.z, params.mesh.connijk, TInt(params.neqs), params.thermo_params, lpert;

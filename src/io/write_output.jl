@@ -1326,7 +1326,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         idx = (ivar - 1)*npoin
         vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
     end
-    if (inputs[:lbomex])
+    if (inputs[:case] == "bomex")
         vtkfile["theta", VTKPointData()] =  @view(θ[:])
     end
     outfiles = vtk_save(vtkfile)
