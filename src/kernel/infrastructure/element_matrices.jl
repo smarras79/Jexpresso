@@ -705,8 +705,6 @@ function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T
             end
         end
     end
-    @info size(L)
-    @mystop
 end
 
 using SparseArrays
@@ -756,10 +754,7 @@ function DSS_laplace_sparse!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metric
     # After assembly, you can create a sparse matrix
     L_sparse = sparse(row_indices, col_indices, data)
 
-
-    @info"sparse" size(data) size(row_indices) size(col_indices)
-    @info size(L_sparse)
-    @mystop
+    #@info"sparse" size(data) size(row_indices) size(col_indices)
 
     #return L_sparse
 end
