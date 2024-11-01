@@ -3,7 +3,7 @@ include("custom_bcs.jl")
 function apply_boundary_conditions!(u, uaux, t,qe,
                                     x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ψ, dψ,
                                     xmax, ymax, zmax, xmin, ymin, zmin, RHS, rhs_el, ubdy,
-                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type,
+                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type,
                                     ω, neqs, inputs, AD, SD)
 
 
@@ -15,7 +15,7 @@ function apply_boundary_conditions!(u, uaux, t,qe,
     else
         build_custom_bcs!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                           xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
-                          connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, rhs_el,
+                          connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
                           neqs, dirichlet!, neumann, inputs)
     end
 end
@@ -112,7 +112,7 @@ end
 
 function build_custom_bcs!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, rhs_el,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
                            neqs, dirichlet!, neumann, inputs)
     ip = 1
     fill!(qbdy, 4325789.0)
@@ -141,7 +141,7 @@ end
 
 function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, rhs_el,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
                            neqs, dirichlet!, neumann, inputs)
     #
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
@@ -149,7 +149,7 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
     for iedge = 1:nedges_bdy 
         iel  = bdy_edge_in_elem[iedge]
         
-        if bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" && bdy_edge_type != "Laguerre"
+        if bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" && bdy_edge_type[iedge] != "Laguerre"
             #if mesh.bdy_edge_type[iedge] == "free_slip"
             
             #tag = mesh.bdy_edge_type[iedge]
@@ -294,30 +294,32 @@ end
 
 function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, rhs_el,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
                            neqs, dirichlet!, neumann, inputs)
     #
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
     #for ip = 1:npoin
     for iface = 1:nfaces_bdy
-        for i=1:ngl
-            for j=1:ngl
-                fill!(qbdy, 4325789.0)
-                ip = poin_in_bdy_face[iface,i,j]
-                user_bc_dirichlet!(@view(uaux[ip,:]),
-                                   x[ip], y[ip], z[ip],
-                                   t, 0, qbdy,
-                                   nx[iface,i,j], ny[iface,i,j], nz[iface,i,j],
-                                   xmin, xmax,
-                                   ymin, ymax,
-                                   zmin, zmax,
-                                   @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
+        if bdy_face_type[iface] != "periodic1" && bdy_face_type[iface] != "periodic2" && bdy_face_type[iface] != "periodic3" 
+            for i=1:ngl
+                for j=1:ngl
+                    fill!(qbdy, 4325789.0)
+                    ip = poin_in_bdy_face[iface,i,j]
+                    user_bc_dirichlet!(@view(uaux[ip,:]),
+                                       x[ip], y[ip], z[ip],
+                                       t, 0, qbdy,
+                                       nx[iface,i,j], ny[iface,i,j], nz[iface,i,j],
+                                       xmin, xmax,
+                                       ymin, ymax,
+                                       zmin, zmax,
+                                       @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
                 
-                for ieq =1:neqs
-                    if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                        uaux[ip,ieq] = qbdy[ieq]
-                        RHS[ip, ieq] = 0.0
+                    for ieq =1:neqs
+                        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                            uaux[ip,ieq] = qbdy[ieq]
+                            RHS[ip, ieq] = 0.0
+                        end
                     end
                 end
             end

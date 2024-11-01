@@ -40,7 +40,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             # INITIAL STATE from scratch:
             #
             xc = (maximum(mesh.x) + minimum(mesh.x))/2
-            yc = 2500.0 #m
+            yc = 1500.0 #m
             r0 = 2000.0 #m
         
             θref = 300.0 #K
@@ -98,7 +98,6 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 #end
             end
         end
-    
         if inputs[:CL] == NCL()
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[:,2] .= q.qn[:,2]./(q.qn[:,1] + q.qe[:,1])

@@ -3,12 +3,12 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
     #per1 = inputs[:per1dd]
     #per2 = inputs[:per2]
     #determine boundary vectors
-    x_spare = zeros(npoin)
-    y_spare = zeros(npoin) 
-    z_spare = zeros(npoin)
+    x_spare = zeros(npoin,1)
+    y_spare = zeros(npoin,1) 
+    z_spare = zeros(npoin,1)
     connijk_spare = zeros(nelem,ngl,ngl,ngl)
     poin_in_bdy_face_spare = zeros(size(poin_in_bdy_face,1),ngl,ngl)
-    if (nsd == 2)
+    @time if (nsd == 2)
 	if (inputs[:lperiodic_laguerre] && "Laguerre" in bdy_edge_type)
             xmin = minimum(x)
             xmax = maximum(x)
@@ -327,6 +327,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                 end
             end
         end
+        mesh.npoin = npoin
     elseif (nsd == 3)
         if ("periodic1" in bdy_face_type)
             finder = false
@@ -512,6 +513,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
             for i =1:3
                 interval[i] = plane1[i+1]
             end
+            @info x[target_idx], y[target_idx],z[target_idx]
             for i in interval
                 ip_kill=i
                 ip_dest=target_idx
@@ -574,8 +576,17 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
             end
             target_idx = plane2[1]
             p2_idx = 1
-            #make sure to pick a corner consistent with the vtk unwrap
+            x_dest = x[target_idx]
+            y_dest = y[target_idx]
+            z_dest = z[target_idx]
             for i=2:size(plane2,1)
+                ii= plane2[i]
+                x_dest = min(x_dest,x[ii])
+                y_dest = min(y_dest,y[ii])
+                z_dest = min(z_dest,z[ii])
+            end
+            #make sure to pick a corner consistent with the vtk unwrap
+            #=for i=2:size(plane2,1)
                 ii = plane2[i]
                 xt = x[target_idx]
                 yt = y[target_idx]
@@ -592,6 +603,8 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                 else
                     comp1 = xi*abs(yi*zi) < xt*abs(yt*zt)
                 end
+                if (xt == xi && xi < 0.0) comp1 = !(comp1) end
+
                 if (xi ==0 && xt == 0 && zi == 0 && zt ==0)
                     comp2 = yi < yt
                 elseif (xi == 0 && xt == 0)
@@ -601,6 +614,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                 else
                     comp2 = yi*abs(xi*zi) < yt*abs(xt*zt)
                 end
+                if (yt == yi && yi < 0.0) comp2 = !(comp2) end 
                 if (xi == 0 && xt == 0 && yi == 0 && yt ==0)
                     comp3 = zi < zt
                 elseif (xi == 0 && xt == 0)
@@ -610,18 +624,21 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                 else
                     comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
                 end
+                if (zt == zi && zi < 0.0) comp3 = !(comp3) end
                 xi,yi,zi,xt,yt,zt, comp1,comp2,comp3
                 if (comp1 || comp2 || comp3)#(comp1 && comp2) || (comp1 && comp3) || (comp2 && comp3)
+                    @info xi,yi,zi,xt,yt,zt, comp1,comp2,comp3
                     target_idx = plane2[i]
                     p2_idx = i
                 end
-            end
-            x[target_idx], y[target_idx],z[target_idx]
-            if !(plane2[1] == target_idx)
+            end=#
+            @info x_dest, y_dest, z_dest
+            #@info x[target_idx], y[target_idx],z[target_idx]
+            #=if !(plane2[1] == target_idx)
                 aux = plane2[1]
                 plane2[1] = target_idx
                 plane2[p2_idx] = aux
-            end
+            end=#
             interval = [0, 0, 0]
             for i =1:3
                 interval[i] = plane2[i+1]
@@ -640,6 +657,9 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                         end
                     end
                 end
+                x[ip_dest] = x_dest
+                y[ip_dest] = y_dest
+                z[ip_dest] = z_dest
                 for i=ip_kill:npoin-1
                     x[i] = x[i+1]
                     y[i] = y[i+1]
@@ -719,10 +739,43 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                     if (determine_colinearity(vec, nor1))
                         #@info "found a match", vec, nor1, ip, ip1, x[ip], x[ip1]
                         found = true
-                        cond1 = x[ip]*abs(y[ip])*abs(z[ip]) < x[ip1]*abs(y[ip1])*abs(z[ip1])
-                        cond2 = y[ip]*abs(x[ip])*abs(z[ip]) < y[ip1]*abs(x[ip1])*abs(z[ip1])
-                        cond3 = z[ip]*abs(x[ip])*abs(y[ip]) < z[ip1]*abs(x[ip1])*abs(y[ip1])
-                        if (cond1 || cond2 || cond3)    
+                        xt = x[ip1]
+                        yt = y[ip1]
+                        zt = z[ip1]
+                        xi = x[ip]
+                        yi = y[ip]
+                        zi = z[ip]
+                        if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
+                            comp1 = xi < xt
+                        elseif (yi == 0 && yt == 0)
+                            comp1 = xi*abs(zi) < xt*abs(zt)
+                        elseif (zi == 0 && zt == 0)
+                            comp1 = xi*abs(zi) < xt*abs(yt)
+                        else
+                            comp1 = xi*abs(yi*zi) < xt*abs(yt*zt)
+                        end
+                        if (xi ==0 && xt == 0 && zi == 0 && zt ==0)
+                            comp2 = yi < yt
+                        elseif (xi == 0 && xt == 0)
+                            comp2 = yi*abs(zi) < yt*abs(zt)
+                        elseif (zi == 0 && zt == 0)
+                            comp2 = yi*abs(xi) < yt*abs(xt)
+                        else
+                            comp2 = yi*abs(xi*zi) < yt*abs(xt*zt)
+                        end
+                        if (xi == 0 && xt == 0 && yi == 0 && yt ==0)
+                            comp3 = zi < zt
+                        elseif (xi == 0 && xt == 0)
+                            comp3 = zi*abs(yi) < zt*abs(yt)
+                        elseif (yi == 0 && yt == 0)
+                            comp3 = zi*abs(xi) < zt*abs(xt)
+                        else
+                            comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
+                        end
+                        #cond1 = x[ip]*abs(y[ip])*abs(z[ip]) < x[ip1]*abs(y[ip1])*abs(z[ip1])
+                        #cond2 = y[ip]*abs(x[ip])*abs(z[ip]) < y[ip1]*abs(x[ip1])*abs(z[ip1])
+                        #cond3 = z[ip]*abs(x[ip])*abs(y[ip]) < z[ip1]*abs(x[ip1])*abs(y[ip1])
+                        if (comp1 || comp2 || comp3)    
                             ip_dest = ip
                             ip_kill = ip1
                         else
@@ -730,7 +783,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                             ip_kill = ip
                         end
                         connijk_spare .= connijk .- ip_kill
-                        poin_in_bdy_face_spare .= poin_in_bdy_face_spare .- ip_kill
+                        poin_in_bdy_face_spare .= poin_in_bdy_face .- ip_kill
                         for e=1:nelem
                             for ii=1:ngl
                                 for jj=1:ngl
@@ -754,6 +807,8 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                             end
                         end
                         if !(ip_kill in connijk)
+                            connijk_spare .= connijk .- ip_kill
+                            poin_in_bdy_face_spare .= poin_in_bdy_face .- ip_kill
                             x_spare .= x
                             y_spare .= y
                             z_spare .= z
@@ -773,7 +828,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                                     for ll=1:ngl
                                         val = poin_in_bdy_face_spare[iface,kk,ll]
                                         if (val > 0)
-                                            poin_in_bdy_face[iface,kk,ll] = val - 1
+                                            poin_in_bdy_face[iface,kk,ll] -= 1
                                         end
                                     end
                                 end
@@ -844,10 +899,43 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                     if (determine_colinearity(vec, nor2))
                         #@info "found a match", vec, nor2, ip, ip1,z[ip], z[ip1], y[ip], y[ip1], x[ip], x[ip1]
                         found = true
-                        cond1 = x[ip]*abs(y[ip])*abs(z[ip]) < x[ip1]*abs(y[ip1])*abs(z[ip1])
-                        cond2 = y[ip]*abs(x[ip])*abs(z[ip]) < y[ip1]*abs(x[ip1])*abs(z[ip1])
-                        cond3 = z[ip]*abs(x[ip])*abs(y[ip]) < z[ip1]*abs(x[ip1])*abs(y[ip1])
-                        if (cond1 || cond2 || cond3)
+                        xt = x[ip1]
+                        yt = y[ip1]
+                        zt = z[ip1]
+                        xi = x[ip]
+                        yi = y[ip]
+                        zi = z[ip]
+                        if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
+                            comp1 = xi < xt
+                        elseif (yi == 0 && yt == 0)
+                            comp1 = xi*abs(zi) < xt*abs(zt)
+                        elseif (zi == 0 && zt == 0)
+                            comp1 = xi*abs(zi) < xt*abs(yt)
+                        else
+                            comp1 = xi*abs(yi*zi) < xt*abs(yt*zt)
+                        end
+                        if (xi ==0 && xt == 0 && zi == 0 && zt ==0)
+                            comp2 = yi < yt
+                        elseif (xi == 0 && xt == 0)
+                            comp2 = yi*abs(zi) < yt*abs(zt)
+                        elseif (zi == 0 && zt == 0)
+                            comp2 = yi*abs(xi) < yt*abs(xt)
+                        else
+                            comp2 = yi*abs(xi*zi) < yt*abs(xt*zt)
+                        end
+                        if (xi == 0 && xt == 0 && yi == 0 && yt ==0)
+                            comp3 = zi < zt
+                        elseif (xi == 0 && xt == 0)
+                            comp3 = zi*abs(yi) < zt*abs(yt)
+                        elseif (yi == 0 && yt == 0)
+                            comp3 = zi*abs(xi) < zt*abs(xt)
+                        else
+                            comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
+                        end
+                        #cond1 = x[ip]*abs(y[ip])*abs(z[ip]) < x[ip1]*abs(y[ip1])*abs(z[ip1])
+                        #cond2 = y[ip]*abs(x[ip])*abs(z[ip]) < y[ip1]*abs(x[ip1])*abs(z[ip1])
+                        #cond3 = z[ip]*abs(x[ip])*abs(y[ip]) < z[ip1]*abs(x[ip1])*abs(y[ip1])
+                        if (comp1 || comp2 || comp3)
                             ip_dest = ip
                             ip_kill = ip1
                         else
@@ -855,8 +943,8 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                             ip_kill = ip
                         end
                         connijk_spare .= connijk .- ip_kill
-                        poin_in_bdy_face_spare .= poin_in_bdy_face_spare .- ip_kill
-                        @time for e=1:nelem
+                        poin_in_bdy_face_spare .= poin_in_bdy_face .- ip_kill
+                        for e=1:nelem
                             for ii=1:ngl
                                 for jj=1:ngl
                                     for kk=1:ngl
@@ -868,7 +956,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                                 end
                             end
                         end
-                        @time for iface = 1:size(poin_in_bdy_face,1)
+                        for iface = 1:size(poin_in_bdy_face,1)
                             for kk =1:ngl
                                 for ll=1:ngl
                                     ipp = poin_in_bdy_face_spare[iface,kk,ll]
@@ -878,7 +966,9 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                                 end
                             end
                         end
-                        @time if !(ip_kill in connijk)
+                        if !(ip_kill in connijk)
+                            connijk_spare .= connijk .- ip_kill
+                            poin_in_bdy_face_spare .= poin_in_bdy_face .- ip_kill
                             x_spare .= x
                             y_spare .= y
                             z_spare .= z
@@ -897,7 +987,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                                     for ll=1:ngl
                                         val = poin_in_bdy_face_spare[iface,kk,ll]
                                         if (val > 0)
-                                            poin_in_bdy_face[iface,kk,ll] = val - 1
+                                            poin_in_bdy_face[iface,kk,ll] -= 1
                                         end
                                     end
                                 end
@@ -968,10 +1058,43 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                     if (determine_colinearity(vec, nor3))
                         #@info "found a match", vec, nor3, ip, ip1, y[ip], y[ip1], x[ip], x[ip1], z[ip], z[ip1]
                         found = true
-                        cond1 = x[ip]*abs(y[ip])*abs(z[ip]) < x[ip1]*abs(y[ip1])*abs(z[ip1])
-                        cond2 = y[ip]*abs(x[ip])*abs(z[ip]) < y[ip1]*abs(x[ip1])*abs(z[ip1])
-                        cond3 = z[ip]*abs(x[ip])*abs(y[ip]) < z[ip1]*abs(x[ip1])*abs(y[ip1])
-                        if (cond1 || cond2 || cond3)
+                        xt = x[ip1]
+                        yt = y[ip1]
+                        zt = z[ip1]
+                        xi = x[ip]
+                        yi = y[ip]
+                        zi = z[ip]
+                        if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
+                            comp1 = xi < xt
+                        elseif (yi == 0 && yt == 0)
+                            comp1 = xi*abs(zi) < xt*abs(zt)
+                        elseif (zi == 0 && zt == 0)
+                            comp1 = xi*abs(zi) < xt*abs(yt)
+                        else
+                            comp1 = xi*abs(yi*zi) < xt*abs(yt*zt)
+                        end
+                        if (xi ==0 && xt == 0 && zi == 0 && zt ==0)
+                            comp2 = yi < yt
+                        elseif (xi == 0 && xt == 0)
+                            comp2 = yi*abs(zi) < yt*abs(zt)
+                        elseif (zi == 0 && zt == 0)
+                            comp2 = yi*abs(xi) < yt*abs(xt)
+                        else
+                            comp2 = yi*abs(xi*zi) < yt*abs(xt*zt)
+                        end
+                        if (xi == 0 && xt == 0 && yi == 0 && yt ==0)
+                            comp3 = zi < zt
+                        elseif (xi == 0 && xt == 0)
+                            comp3 = zi*abs(yi) < zt*abs(yt)
+                        elseif (yi == 0 && yt == 0)
+                            comp3 = zi*abs(xi) < zt*abs(xt)
+                        else
+                            comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
+                        end
+                        #cond1 = x[ip]*abs(y[ip])*abs(z[ip]) < x[ip1]*abs(y[ip1])*abs(z[ip1])
+                        #cond2 = y[ip]*abs(x[ip])*abs(z[ip]) < y[ip1]*abs(x[ip1])*abs(z[ip1])
+                        #cond3 = z[ip]*abs(x[ip])*abs(y[ip]) < z[ip1]*abs(x[ip1])*abs(y[ip1])
+                        if (comp1 || comp2 || comp3)
                             ip_dest = ip
                             ip_kill = ip1
                         else
@@ -979,7 +1102,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                             ip_kill = ip
                         end
                         connijk_spare .= connijk .- ip_kill
-                        poin_in_bdy_face_spare .= poin_in_bdy_face_spare .- ip_kill
+                        poin_in_bdy_face_spare .= poin_in_bdy_face .- ip_kill
                         for e=1:nelem
                             for ii=1:ngl
                                 for jj=1:ngl
@@ -1003,6 +1126,8 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                             end
                         end
                         if !(ip_kill in connijk)
+                            connijk_spare .= connijk .- ip_kill
+                            poin_in_bdy_face_spare .= poin_in_bdy_face .- ip_kill
                             x_spare .= x
                             y_spare .= y
                             z_spare .= z
@@ -1030,7 +1155,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                                     for ll=1:ngl
                                         val = poin_in_bdy_face_spare[iface,kk,ll]
                                         if (val > 0)
-                                            poin_in_bdy_face[iface,kk,ll] = val - 1
+                                            poin_in_bdy_face[iface,kk,ll] -= 1
                                         end
                                     end
                                 end
@@ -1121,5 +1246,6 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
             npoin = npoin-1
         end
     end
+    mesh.npoin = npoin
     @info " periodicity_restructure!"
 end

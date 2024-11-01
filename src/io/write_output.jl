@@ -366,7 +366,17 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     poin_bdy = zeros(size(mesh.bdy_edge_type,1),mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_edge
     qe_temp = similar(qexact)
-    
+    if ("periodic1" in mesh.bdy_face_type || "periodic2" in mesh.bdy_face_type)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            ivar1 = npoin*(ieq-1)
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+        end
+        q = q_new
+    end 
     if ("periodic1" in mesh.bdy_edge_type)
     	xmin = 1000000000.0
         ymax = -1000000000.0
@@ -385,14 +395,12 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         diff = new_size-mesh.npoin 
 	q_new = zeros(new_size*nvar)
         q_exact1 = zeros(new_size,nvar+1)
-        @info mesh.npoin, new_size, size(q_exact1), size(qexact)
         q_exact1[1:mesh.npoin,:] .= qexact[1:mesh.npoin,:] 
         
         for ieq = 1:nvars
 	    ivar = new_size*(ieq-1)
-            ivar1 = mesh.npoin*(ieq-1)
             #@info ivar,ivar1,new_size*ieq-diff,mesh.npoin*ieq
-	    q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:mesh.npoin*ieq]
+	    q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
 	end
         iter = 1
     	for iedge = 1:nedges
@@ -470,8 +478,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                         iter += 1
                 	for ieq=1:nvar
         	            ivar = new_size*(ieq-1)
-	                    ivar1 = mesh.npoin*(ieq-1)
-                            q_new[ivar+ip_new] = q[ivar1+ip]
+                            q_new[ivar+ip_new] = q[ivar+ip]
 			end
 			q_exact1[ip_new,:] .= qexact[ip,:]
 		    end
@@ -504,8 +511,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                     iter += 1
 		    for ieq=1:4
                         ivar = new_size*(ieq-1)
-                        ivar1 = mesh.npoin*(ieq-1)
-                        q_new[ivar+ip_new] = q[ivar1+ip]
+                        q_new[ivar+ip_new] = q[ivar+ip]
                     end
 		    q_exact1[ip_new,:] .= qexact[ip,:]
 		end
@@ -540,9 +546,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 
         for ieq = 1:nvars
             ivar = new_size*(ieq-1)
-            ivar1 = npoin*(ieq-1)
-            #@info ivar,ivar1,new_size*ieq-diff,mesh.npoin*ieq
-            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
         end
         iter = 1
         for iedge = 1:nedges
@@ -621,8 +625,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                         iter += 1
                         for ieq=1:nvar
                             ivar = new_size*(ieq-1)
-                            ivar1 = npoin*(ieq-1)
-                            q_new[ivar+ip_new] = q[ivar1+ip]
+                            q_new[ivar+ip_new] = q[ivar+ip]
                         end
                         q_exact1[ip_new,:] .= qexact[ip,:]
                     end
@@ -808,27 +811,26 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     zz .= mesh.z
     conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
     conn .= mesh.connijk
-
+    x_spare = zeros(Bool,size(mesh.x,1),1)
+    y_spare = zeros(Bool,size(mesh.y,1),1)
+    z_spare = zeros(Bool,size(mesh.z,1),1)
+    connijk_spare = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
     poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_face
     qe_temp = similar(qexact)
-    if ("periodic1" in mesh.bdy_face_type)
-        xmin = 1000000000.0
-        ymax = -1000000000.0
-        zmax = -100000000.0
-        for e=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    for k=1:mesh.ngl
-                        ip = mesh.connijk[e,i,j,k]
-                        ymax = max(ymax,mesh.y[ip])
-                        xmin = min(xmin,mesh.x[ip])
-                        zmax = max(zmax,mesh.z[ip])
-                    end
-                end
-            end
+    if ("periodic1" in mesh.bdy_face_type || "periodic2" in mesh.bdy_face_type || "periodic3" in mesh.bdy_face_type)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            ivar1 = npoin*(ieq-1)
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
         end
-        xmax = -xmin
+        q = q_new
+    end
+    if ("periodic1" in mesh.bdy_face_type)
+        xmax = mesh.xmax
         nfaces = size(mesh.bdy_face_type,1)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
@@ -838,9 +840,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 
         for ieq = 1:nvars
             ivar = new_size*(ieq-1)
-            ivar1 = npoin*(ieq-1)
-            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
         end
+        
         iter = 1
         for iface = 1:nfaces
 
@@ -855,11 +857,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                         m = 0
                         n = 0
                         dx = abs(mesh.x[mesh.connijk[e,2,1,1]]-mesh.x[mesh.connijk[e,mesh.ngl-1,1,1]])/(mesh.ngl-3)
+                        DX = xface + (mesh.ngl)*dx
+                        x_spare .= mesh.x .- DX .> 0
                         for i=1:mesh.ngl
                             for j=1:mesh.ngl
                                 for kk=1:mesh.ngl
                                     ip1 = mesh.connijk[e,i,j,kk]
-                                    if (mesh.x[ip1] > xface + (mesh.ngl)*dx)
+                                    if (x_spare[ip1])#xface + (mesh.ngl)*dx)
                                         unwind=1
                                     end
                                     if (ip1 == ip)
@@ -873,12 +877,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                         rep = 0
                         ip_rep = 0
                         if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
+                            connijk_spare .= mesh.connijk .- npoin
                             for ee=1:mesh.nelem
                                 for i=1:mesh.ngl
                                     for j=1:mesh.ngl
                                         for kk=1:mesh.ngl
                                             ip1 = mesh.connijk[ee,i,j,kk]
-                                            if (ip1 > npoin && mesh.y[ip1] == mesh.y[ip] && mesh.z[ip1] == mesh.z[ip])
+                                            if (connijk_spare[ee,i,j,kk] > 0 && mesh.y[ip1] == mesh.y[ip] && mesh.z[ip1] == mesh.z[ip])
                                                 ip_rep = ip1
                                                 rep = 1
                                             end
@@ -925,10 +930,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                             end
                             mesh.poin_in_bdy_face[iface,k,l] = ip_new
                             iter += 1
-                            for ieq=1:nvar
+                            for ieq=1:nvars
                                 ivar = new_size*(ieq-1)
-                                ivar1 = npoin*(ieq-1)
-                                q_new[ivar+ip_new] = q[ivar1+ip]
+                                q_new[ivar+ip_new] = q[ivar+ip]
                             end
                             q_exact1[ip_new,:] .= qexact[ip,:]
                         end
@@ -940,24 +944,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         q = q_new
         qexact = q_exact1
     end
-    
+    diff = new_size-npoin
     if ("periodic2" in mesh.bdy_face_type)
-        xmax = -1000000000.0
-        ymax = -1000000000.0
-        zmin = 100000000.0
-        for e=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    for k=1:mesh.ngl
-                        ip = mesh.connijk[e,i,j,k]
-                        xmax = max(xmax,mesh.x[ip])
-                        zmin = min(zmin,mesh.z[ip])
-                        ymax = max(ymax,mesh.y[ip])
-                    end
-                end
-            end
-        end
-        zmax = -zmin
+        zmax = mesh.zmax
         nfaces = size(mesh.bdy_face_type,1)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
@@ -967,8 +956,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 
         for ieq = 1:nvars
             ivar = new_size*(ieq-1)
-            ivar1 = npoin*(ieq-1)
-            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
         end
         iter = 1
         for iface = 1:nfaces
@@ -984,11 +972,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                         m = 0
                         n = 0
                         dz = abs(mesh.z[mesh.connijk[e,1,1,2]]-mesh.z[mesh.connijk[e,1,1,mesh.ngl-1]])/(mesh.ngl-3)
+                        DZ = zface + (mesh.ngl)*dz
+                        z_spare .= mesh.z .- DZ .> 0
                         for i=1:mesh.ngl
                             for j=1:mesh.ngl
                                 for kk=1:mesh.ngl
                                     ip1 = mesh.connijk[e,i,j,kk]
-                                    if (mesh.z[ip1] > zface + (mesh.ngl)*dz)
+                                    if (z_spare[ip1])
                                         unwind=1
                                     end
                                     if (ip1 == ip)
@@ -1002,12 +992,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                         rep = 0
                         ip_rep = 0
                         if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
+                            connijk_spare .= mesh.connijk .- npoin
                             for ee=1:mesh.nelem
                                 for i=1:mesh.ngl
                                     for j=1:mesh.ngl
                                         for kk=1:mesh.ngl
                                             ip1 = mesh.connijk[ee,i,j,kk]
-                                            if (ip1 > npoin && mesh.x[ip1] == mesh.x[ip] && mesh.y[ip1] == mesh.y[ip])
+                                            if (connijk_spare[ee,i,j,kk] > 0 && mesh.x[ip1] == mesh.x[ip] && mesh.y[ip1] == mesh.y[ip])
                                                 ip_rep = ip1
                                                 rep = 1
                                             end
@@ -1057,8 +1048,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                             iter += 1
                             for ieq=1:nvar
                                 ivar = new_size*(ieq-1)
-                                ivar1 = npoin*(ieq-1)
-                                q_new[ivar+ip_new] = q[ivar1+ip]
+                                q_new[ivar+ip_new] = q[ivar+ip]
                             end
                             q_exact1[ip_new,:] .= qexact[ip,:]
                         end
@@ -1072,22 +1062,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     end
     
     if ("periodic3" in mesh.bdy_face_type)
-        xmax = -1000000000.0
-        ymin = 1000000000.0
-        zmax = -100000000.0
-        for e=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    for k=1:mesh.ngl
-                        ip = mesh.connijk[e,i,j,k]
-                        xmax = max(xmax,mesh.x[ip])
-                        ymin = min(ymin,mesh.y[ip])
-                        zmax = max(zmax,mesh.z[ip])
-                    end
-                end
-            end
-        end
-        ymax = -ymin
+        ymax = mesh.ymax
         nfaces = size(mesh.bdy_face_type,1)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
@@ -1097,8 +1072,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
 
         for ieq = 1:nvars
             ivar = new_size*(ieq-1)
-            ivar1 = npoin*(ieq-1)
-            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
         end
         iter = 1
         for iface = 1:nfaces
@@ -1114,11 +1088,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                         m = 0
                         n = 0
                         dy = abs(mesh.y[mesh.connijk[e,1,2,1]]-mesh.y[mesh.connijk[e,1,mesh.ngl-1,1]])/(mesh.ngl-3)
+                        DY = yface + (mesh.ngl)*dy
+                        y_spare .= mesh.y .- DY .> 0
                         for i=1:mesh.ngl
                             for j=1:mesh.ngl
                                 for kk=1:mesh.ngl
                                     ip1 = mesh.connijk[e,i,j,kk]
-                                    if (mesh.y[ip1] > yface + (mesh.ngl)*dy)
+                                    if (y_spare[ip1])
                                         unwind=1
                                     end
                                     if (ip1 == ip)
@@ -1132,12 +1108,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                         rep = 0
                         ip_rep = 0
                         if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
+                            connijk_spare .= mesh.connijk .- npoin
                             for ee=1:mesh.nelem
                                 for i=1:mesh.ngl
                                     for j=1:mesh.ngl
                                         for kk=1:mesh.ngl
                                             ip1 = mesh.connijk[ee,i,j,kk]
-                                            if (ip1 > npoin && mesh.x[ip1] == mesh.x[ip] && mesh.z[ip1] == mesh.z[ip])
+                                            if (connijk_spare[ee,i,j,kk] > 0 && mesh.x[ip1] == mesh.x[ip] && mesh.z[ip1] == mesh.z[ip])
                                                 ip_rep = ip1
                                                 rep = 1
                                             end
@@ -1187,8 +1164,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                             iter += 1
                             for ieq=1:nvar
                                 ivar = new_size*(ieq-1)
-                                ivar1 = npoin*(ieq-1)
-                                q_new[ivar+ip_new] = q[ivar1+ip]
+                                q_new[ivar+ip_new] = q[ivar+ip]
                             end
                             q_exact1[ip_new,:] .= qexact[ip,:]
                         end
@@ -1196,11 +1172,10 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                 end
             end
         end
-        npoin += iter-1;
         q = q_new
         qexact = q_exact1
     end
-
+    npoin += iter-1;
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
     
@@ -1265,7 +1240,6 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                 idx = (ivar - 1)*mesh.npoin
                 qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
                 u[:] .= qout[idx+1:ivar*mesh.npoin]
-
                 #v = ρv/ρ
                 ivar = 3
                 idx = (ivar - 1)*mesh.npoin
@@ -1293,7 +1267,6 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                         idx = (ivar - 1)*mesh.npoin
                         qout[idx+1:5*mesh.npoin] .= q[idx+1:5*mesh.npoin]./q[1:mesh.npoin]
                         e_tot[:] .= qout[idx+1:ivar*mesh.npoin]
-
                     end
                 end
                 
