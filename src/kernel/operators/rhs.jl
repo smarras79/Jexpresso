@@ -149,8 +149,6 @@ function rhs!(du, u, params, time)
                 params.rhs_diffζ_el .= TFloat(0.0)
                 params.source_gpu .= TFloat(0.0)
 
-
-
                 if inputs[:visc_model] == "av" #Default is artificial viscosity with constant coefficient
 
                     k = _build_rhs_diff_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
