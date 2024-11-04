@@ -113,7 +113,7 @@ function rhs!(du, u, params, time)
             
             params.RHS .= TFloat(0.0)
             PhysConst = PhysicalConst{TFloat}()
-            
+            MicroConst = MicrophysicalConst{TFloat}()
             k1 = utouaux_gpu!(backend)
             k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.neqs))
             
@@ -150,7 +150,11 @@ function rhs!(du, u, params, time)
                 
                 @inbounds params.RHS .+= params.RHS_visc
             end
-            
+            if (inputs[:lmoist])
+                k_moist = do_micro_physics_gpu_3D!(backend)
+                k_moist(params.uaux, params.qp.qe, params.mp.Tabs, params.mp.qn, params.mp.qi, params.mp.qc, params.mp.qr, params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
+                        params.mp.S_micro, PhysConst, MicroConst, lpert, params.neq, params.mesh.npoin, params.mesh.z)
+            end
             k1 = RHStodu_gpu!(backend)
             k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
             
