@@ -11,16 +11,10 @@ function user_bc_dirichlet!(q::SubArray{TFloat}, x::AbstractFloat, y::AbstractFl
     #  end
     #  qnl = a*(sqrt(2)/2)*q[2] + b*(sqrt(2)/2)*q[3]
     
-    # else
     qnl = nx*q[2] + ny*q[3]
-    # end
+
     qbdy[2] = q[2] - qnl*nx
     qbdy[3] = q[3] - qnl*ny
-
-    #   else
-    #    qbdy[2] = 0.0
-    # end
-    #return qbdy #, flags
     
 end
 

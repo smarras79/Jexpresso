@@ -1080,3 +1080,31 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
         end
     end
 end
+
+function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω,dψ)
+        for k=1:ngl
+            for j=1:ngl
+                for i=1:ngl
+                    ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                    dHdξ = 0.0
+                    dHdη = 0.0
+                    dHdζ = 0.0
+                    @turbo for m = 1:ngl
+                        dHdξ += dψ[m,i]*q[m,j,k,1]
+                        dHdη += dψ[m,j]*q[i,m,k,1]
+                        dHdζ += dψ[m,k]*q[i,j,m,1]
+                    end
+                    dξdz_ij = dξdz[iel,i,j,k]
+
+                    dηdz_ij = dηdz[iel,i,j,k]
+
+                    dζdz_ij = dζdz[iel,i,j,k]
+
+                    dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
+
+                    auxi = ωJac*(dHdz)
+                    dqdz[iel,i,j,k] += auxi
+                end
+            end
+        end
+end

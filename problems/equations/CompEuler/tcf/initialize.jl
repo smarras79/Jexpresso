@@ -40,14 +40,14 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             # INITIAL STATE from scratch:
             #
             xc = (maximum(mesh.x) + minimum(mesh.x))/2
-            yc = 1500.0 #m
-            r0 = 2000.0 #m
+            yc = (maximum(mesh.y) + minimum(mesh.y))/2
+            r0 = 1000.0 #m
         
             θref = 300.0 #K
-            θc   =   2.0 #K
+            θc   =   5.0 #K
             for ip = 1:mesh.npoin
             
-                x, y = mesh.x[ip], mesh.y[ip]
+                x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
                 r = sqrt( (x - xc)^2 + (y - yc)^2 )
             
                 Δθ = 0.0 #K
@@ -55,15 +55,15 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     Δθ = θc*(1.0 - r/r0)
                 end
                 θ = θref + Δθ
-                p    = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
-                pref = PhysConst.pref*(1.0 - PhysConst.g*y/(PhysConst.cp*θref))^(PhysConst.cpoverR)
+                p    = PhysConst.pref #*(1.0 - PhysConst.g*z/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
+                pref = PhysConst.pref #*(1.0 - PhysConst.g*z/(PhysConst.cp*θref))^(PhysConst.cpoverR)
                 ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p)    #kg/m³
                 ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=pref) #kg/m³
 
-                u = 0.0
+                u = 10.0
                 v = 0.0
                 w = 0.0
-
+                
                 if inputs[:SOL_VARS_TYPE] == PERT()
                     q.qn[ip,1] = ρ - ρref
                     q.qn[ip,2] = ρ*u - ρref*u

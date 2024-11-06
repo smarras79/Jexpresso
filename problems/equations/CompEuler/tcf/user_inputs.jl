@@ -4,36 +4,36 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.001,
+        :Δt                   => 0.1,
         :tinit                => 0.0,
-        :tend                 => 1.0,
+        :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
         #:ndiagnostics_outputs => 2,
-        :case                 => "rtb",
-        :diagnostics_at_times => [0,0.1, 0.2, 0.3, 0.5], #range(0,10,20),
+        #:case                 => "rtb",
+        :diagnostics_at_times => range(0,1000,50),
         :lsource              => true, 
         #:backend              => MetalBackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 5,      # Polynomial order
+        :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         #:lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1, 2, 3, 4, 5],
-        :μ                   => [0.0, 20.0, 20.0, 20.0, 60.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 50.0, 50.0, 50.0, 100.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-10x10x12.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-10x10x12.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-20x10x3.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-2x2x2.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-2x2x2.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
