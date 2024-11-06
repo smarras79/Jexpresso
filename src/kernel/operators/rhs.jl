@@ -395,8 +395,19 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
                              neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin)
             end
         end
+
+       # _compute_duds!(dudx_el, u, params.mesh.ngl, params.basis.dψ, dξdx, dξdy, dηdx, dηdy, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal; coeff=1.0)
         
-        _expansion_inviscid!(u, params.neqs, params.mesh.ngl, params.basis.dψ, params.ω, params.F, params.S, params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+        #_expansion_inviscid!(u, params.neqs, params.mesh.ngl, params.basis.dψ, params.ω, params.F, params.S, params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+
+        _expansion_inviscid!(u,
+                             params.neqs, params.mesh.ngl,
+                             params.basis.dψ, params.ω,
+                             params.F, params.S,
+                             params.metrics.Je,
+                             params.metrics.dξdx,
+                             params.rhs_el, iel,
+                             params.CL, params.QT, SD, params.AD)
         
     end
 end
@@ -415,7 +426,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
 
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
-                       @view(qe[ip,:]),         #pref
+                       @view(qe[ip,:]),
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
                        neqs=params.neqs, ip=ip)
@@ -545,15 +556,25 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD:
 end
 
 
-function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, S, rhs_el, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
-    
+#function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, S, rhs_el, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, S, Je, dξdx, rhs_el, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+
     for ieq = 1:neqs
         for i=1:ngl
+            ωJac = ω[i]*Je[iel,i]
             dFdξ = 0.0
-            for k = 1:ngl
+            @turbo for k = 1:ngl
                 dFdξ += dψ[k,i]*F[k,ieq]
             end
-            rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*S[i,ieq]
+            dξdx_i = dξdx[iel,i]
+            
+            dFdx = dFdξ*dξdx_i
+
+            auxi = ωJac*(dFdx - S[i,ieq])
+            rhs_el[iel,i,ieq] -= auxi
+            
+            #rhs_el[iel,i,ieq] -= ωJac*dFdx - ωJac*S[i,ieq]
+            #rhs_el[iel,i,ieq] -= ωJac*dFdξ - ωJac*S[i,ieq]
         end
     end
 end
@@ -1081,30 +1102,117 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
     end
 end
 
-function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω,dψ)
-        for k=1:ngl
-            for j=1:ngl
-                for i=1:ngl
-                    ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
-                    dHdξ = 0.0
-                    dHdη = 0.0
-                    dHdζ = 0.0
-                    @turbo for m = 1:ngl
-                        dHdξ += dψ[m,i]*q[m,j,k,1]
-                        dHdη += dψ[m,j]*q[i,m,k,1]
-                        dHdζ += dψ[m,k]*q[i,j,m,1]
-                    end
-                    dξdz_ij = dξdz[iel,i,j,k]
-
-                    dηdz_ij = dηdz[iel,i,j,k]
-
-                    dζdz_ij = dζdz[iel,i,j,k]
-
-                    dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
-
-                    auxi = ωJac*(dHdz)
-                    dqdz[iel,i,j,k] += auxi
+function compute_vertical_derivative_q_and_integrate!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω,dψ)
+    for k=1:ngl
+        for j=1:ngl
+            for i=1:ngl
+                ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                dHdξ = 0.0
+                dHdη = 0.0
+                dHdζ = 0.0
+                @turbo for m = 1:ngl
+                    dHdξ += dψ[m,i]*q[m,j,k,1]
+                    dHdη += dψ[m,j]*q[i,m,k,1]
+                    dHdζ += dψ[m,k]*q[i,j,m,1]
                 end
+                dξdz_ij = dξdz[iel,i,j,k]
+
+                dηdz_ij = dηdz[iel,i,j,k]
+
+                dζdz_ij = dζdz[iel,i,j,k]
+
+                dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
+
+                auxi = ωJac*(dHdz)
+                dqdz[iel,i,j,k] += auxi
             end
         end
+    end
+end
+
+
+function _compute_duds!(dudx_el, u, ngl, dψ, dξdx, dξdy, dηdx, dηdy, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal; coeff=1.0)
+    
+    for i=1:ngl
+        dudξ = 0.0
+        @turbo for k = 1:ngl
+            dudξ += dψ[k,i]*u[k]
+            
+            dudx = coeff*dudξ*dξdx_ij
+
+            #dudx
+            dudx_el[iel,i] = dudx
+
+        end
+    end
+end
+
+
+function _compute_duds!(dudx_el, dudy_el, u, ngl, dψ, dξdx, dξdy, dηdx, dηdy, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal; coeffx=1.0, coeffy=1.0)
+    
+    for j=1:ngl
+        for i=1:ngl
+            dudξ = 0.0
+            dudη = 0.0
+            @turbo for k = 1:ngl
+                dudξ += dψ[k,i]*u[k,j]
+                dudη += dψ[k,j]*u[i,k]
+            end
+            dξdx_ij = dξdx[iel,i,j]
+            dηdx_ij = dηdx[iel,i,j]
+            dξdy_ij = dξdy[iel,i,j]
+            dηdy_ij = dηdy[iel,i,j]
+            
+            dudx = dudξ*dξdx_ij + dudη*dηdx_ij
+            dudy = dudξ*dξdy_ij + dudη*dηdy_ij
+
+            #dudx
+            dudx_el[iel,i,j] = coeff*dudx
+            #dudy
+            dudy_el[iel,i,j] = coeff*dudy
+        end
+    end
+    
+end
+
+function _compute_duds!(dudx_el, dudy_el, dudz, u, ngl, dψ, dξdx, dξdy, dηdx, dηdy, iel, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal; coeffx=1.0, coeffy=1.0, coeffz=1.0)
+    
+    for k=1:ngl
+        for j=1:ngl
+            for i=1:ngl
+                dudξ = 0.0
+                dudη = 0.0
+                dudζ = 0.0
+                @turbo for m = 1:ngl
+                    dudξ += dψ[m,i]*u[m,j,k,ieq]
+                    dudη += dψ[m,j]*u[i,m,k,ieq]
+                    dudζ += dψ[m,k]*u[i,j,m,ieq]
+                end
+                dξdx_ij = dξdx[iel,i,j,k]
+                dξdy_ij = dξdy[iel,i,j,k]
+                dξdz_ij = dξdz[iel,i,j,k]
+                
+                dηdx_ij = dηdx[iel,i,j,k]
+                dηdy_ij = dηdy[iel,i,j,k]
+                dηdz_ij = dηdz[iel,i,j,k]
+
+                dζdx_ij = dζdx[iel,i,j,k]
+                dζdy_ij = dζdy[iel,i,j,k]
+                dζdz_ij = dζdz[iel,i,j,k]
+                
+                dudx = dudξ*dξdx_ij + dudη*dηdx_ij + dudζ*dζdx_ij
+                dudy = dudξ*dξdy_ij + dudη*dηdy_ij + dudζ*dζdy_ij
+                dudz = dudξ*dξdz_ij + dudη*dηdz_ij + dudζ*dζdz_ij
+
+                #dudx
+                dudx_el[iel,i,j,k] = coeffx*dudx
+                #dudy
+                dudy_el[iel,i,j,k] = coeffy*dudy
+                #dudz
+                dudz_el[iel,i,j,k] = coeffz*dudz
+                
+            end
+        end
+    end
+   
 end

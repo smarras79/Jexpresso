@@ -276,11 +276,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
             mesh.conn[iel, 3] = mesh.cell_node_ids[iel][4]
             mesh.conn[iel, 4] = mesh.cell_node_ids[iel][3]
 
+            conn[nelem, 1:ngl^2] = [iel, cornerpoints, edgespoints, internalpoints]
+            
             #
-            # 3-----4
+            # 1-----3
             # |     |
             # |     |
-            # 1-----2
+            # 2-----4
             #
             mesh.connijk[iel, 1,      1] = mesh.cell_node_ids[iel][2]
             mesh.connijk[iel, 1,    ngl] = mesh.cell_node_ids[iel][1]

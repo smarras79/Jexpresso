@@ -87,7 +87,7 @@ function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         for iel = 1:mesh.nelem
             for i = 1:N+1
                 for k = 1:Q+1
-                    metrics.dxdξ[iel, k, 1]  = mesh.Δx[iel]/2
+                    metrics.dxdξ[iel, k, 1] = mesh.Δx[iel]/2
                     metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
                     metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
                 end
@@ -114,7 +114,7 @@ end
     T = eltype(x)
     for k=1:Q+1
         dxdξ[ie, k, 1] = Δx[ie]/2
-        Je[ie, k, 1] = dxdξ[ie, k, 1]
+        Je[ie, k, 1]   = dxdξ[ie, k, 1]
         dξdx[ie, k, 1] = T(1.0)/Je[ie, k, 1]
     end
 
