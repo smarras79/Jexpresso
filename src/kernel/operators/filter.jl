@@ -433,7 +433,7 @@ end
     end
 end
 
-@kernel function filter_gpu_3d!(u, B, fx, fy_t, fz_t, Je, ω_x, ω_y, ω_z, Minv, connijk, n_x, n_y, n_z, neqs)
+@kernel function filter_gpu_3d!(u, qe, B, fx, fy_t, fz_t, Je, ω_x, ω_y, ω_z, connijk, Minv, n_x, n_y, n_z, neqs, lpert)
     ie = @index(Group, Linear)
     il = @index(Local, NTuple)
     @inbounds i = il[1]
@@ -449,7 +449,11 @@ end
     fqf   = @localmem eltype(u) (DIM+1,DIM+1,DIM+1)
 
     for m=1:neqs
-        @inbounds q_t[i,j,k] = u[ip,m]
+        if (lpert)
+            @inbounds q_t[i,j,k] = u[ip,m]
+        else
+            @inbounds q_t[i,j,k] = u[ip,m] - qe[ip,m]
+        end
         @synchronize()
         q_ti[i,j,k] = zero(eltype(u))
         for l=1:n_x
@@ -458,20 +462,18 @@ end
 
         @synchronize()
         q_tij[i,j,k] = zero(eltype(u))
-        for n=1:n_z
-            for l=1:n_y
-                @inbounds q_tij[i,j,n] += q_ti[i,l,n] * fy_t[l,j]
-            end
+        for l=1:n_y
+            @inbounds q_tij[i,j,k] += q_ti[i,l,k] * fy_t[l,j]
         end
 
         @synchronize()
         fqf[i,j,k] = zero(eltype(u))
         for l=1:n_z
-            @inbounds fqf[i,j,k] += q_ti[i,j,k] * fy_z[l,k]
+            @inbounds fqf[i,j,k] += q_ti[i,j,l] * fz_t[l,k]
         end
 
 
-        @inbounds KernelAbstractions.@atomic B[ip,m] += ω_x[i]*ω_y[j]*ω_z*Je[ie,i,j,k]*fqf[i,j,k]
+        @inbounds KernelAbstractions.@atomic B[ip,m] += ω_x[i]*ω_y[j]*ω_z[k]*Je[ie,i,j,k]*fqf[i,j,k]*Minv[ip]
     end 
 end
 

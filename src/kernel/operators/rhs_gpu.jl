@@ -111,7 +111,7 @@ end
     H = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
     S = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
 
-    uip = @view(u[ip,1:neq])
+    uip = @view(u[ip,1:neq+1])
     qeip = @view(qe[ip,1:neq+1])
     @inbounds flux[ie, i_x, i_y, i_z,:] .= user_flux_gpu(uip,qeip,PhysConst,lpert)
 
@@ -172,6 +172,60 @@ end
     end
 end
 
+@kernel function _build_precipitation_rhs_gpu_3D_v0!(RHS, u, qe, x, y, z, connijk, dξdz, dηdz, dζdz, Je, dψ, ω, Minv, flux_micro, source_micro, ngl, neq, PhysConst,
+        xmax, xmin, ymax, ymin, zmax, zmin, lpert, Pr, Ps, Pg, qi, qn, Tabs, S_micro, MicroConst)
+
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    @inbounds i_x = il[1]
+    @inbounds i_y = il[2]
+    @inbounds i_z = il[3]
+    @inbounds ip = connijk[ie,i_x,i_y,i_z]
+
+    T = eltype(RHS)
+    DIM = @uniform @groupsize()[1]
+    ### define and populate flux array as shared memory then make sure blocks are synchronized
+    H = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
+    S = @localmem eltype(RHS) (DIM+1,DIM+1,DIM+1)
+
+    uip = @view(u[ip,1:neq])
+    qeip = @view(qe[ip,1:neq+1])
+    @inbounds flux_micro[ie, i_x, i_y, i_z,:] .= precipitation_flux_gpu(uip,qeip,MicroConst,lpert,Pr[ip],Ps[ip],Pg[ip],qi[ip])
+
+    @inbounds source_micro[ie, i_x, i_y, i_z,:] .= precipitation_source_gpu(uip,qeip,lpert, qn[ip], S_micro[ip], PhysConst, MicroConst)
+
+    @synchronize()
+    ### do numerical integration
+    for ieq =4:neq
+        @inbounds H[i_x,i_y,i_z] = flux_micro[ie, i_x, i_y, i_z, ieq-3]
+        @inbounds S[i_x,i_y,i_z] = source_micro[ie, i_x, i_y, i_z, ieq-3]
+        @synchronize()
+        dHdξ = zero(T)
+        dHdη = zero(T)
+        dHdζ = zero(T)
+
+        for k=1:ngl
+            @inbounds dHdξ += dψ[k,i_x]*H[k,i_y,i_z]
+            @inbounds dHdη += dψ[k,i_y]*H[i_x,k,i_z]
+            @inbounds dHdζ += dψ[k,i_z]*H[i_x,i_y,k]
+        end
+        @inbounds dξdz_ijk = dξdz[ie,i_x,i_y,i_z]
+
+        @inbounds dηdz_ijk = dηdz[ie,i_x,i_y,i_z]
+
+        @inbounds dζdz_ijk = dζdz[ie,i_x,i_y,i_z]
+
+        dHdz = dHdξ*dξdz_ijk + dHdη*dηdz_ijk + dHdζ*dζdz_ijk
+
+
+    ### Adding to rhs, DSS and division by the mass matrix can all be done in one combined step
+        @inbounds KernelAbstractions.@atomic RHS[ip,ieq] += ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]*((dHdz) + S[i_x,i_y,i_z])* Minv[ip]
+        if (ieq == 6)
+            ωn = T(max(T(0),min(T(1),(Tabs[ip]-MicroConst.T00n)/(MicroConst.T0n - MicroConst.T00n))))
+            @inbounds KernelAbstractions.@atomic RHS[ip,ieq-1] += ω[i_x]*ω[i_y]*ω[i_z]*Je[ie,i_x,i_y,i_z]*(((MicroConst.Lc + ωn*MicroConst.Lf)*dHdz))* Minv[ip] 
+        end
+    end
+end
 
 @kernel function _build_rhs_diff_gpu_3D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, u, qe, uprimitive, x, y, z, connijk, 
         dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst, lpert)

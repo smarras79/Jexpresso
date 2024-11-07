@@ -36,6 +36,13 @@ function params_setup(sem,
                              T, backend;
                              neqs=qp.neqs)
 
+    gpuMoist = allocate_gpuMoist(sem.mesh.SD,
+                             sem.mesh.npoin,
+                             sem.mesh.nelem,
+                             sem.mesh.ngl,
+                             T, backend, inputs[:lmoist];
+                             neqs=qp.neqs)
+
     u            = uODE.u
     uaux         = uODE.uaux
     vaux         = uODE.vaux
@@ -58,7 +65,10 @@ function params_setup(sem,
     source_gpu     = gpuAux.source_gpu
     qbdy_gpu       = gpuAux.qbdy_gpu
     uprimitive     = fluxes.uprimitive
-    
+    flux_micro     = gpuMoist.flux_micro
+    source_micro   = gpuMoist.source_micro
+    adjusted       = gpuMoist.adjusted
+    Pm             = gpuMoist.Pm
     #------------------------------------------------------------------------------------
     # filter arrays
     #------------------------------------------------------------------------------------
@@ -163,7 +173,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     mp = allocate_SamMicrophysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
     
-    
+
     #------------------------------------------------------------------------------------
     # Populate solution arrays
     #------------------------------------------------------------------------------------
@@ -234,6 +244,7 @@ function params_setup(sem,
               uprimitive,
               F, G, H, S,
               flux_gpu, source_gpu, qbdy_gpu,
+              flux_micro, source_micro, adjusted, Pm,
               q_t, q_ti, q_tij, fqf, b, B,
               SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
               sem.SOL_VARS_TYPE, 

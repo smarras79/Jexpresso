@@ -131,10 +131,26 @@ function sem_setup(inputs::Dict)
             ω1 = ω
             ω = ω1
             if (inputs[:lfilter])
-                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
-                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
-                if (mesh.nsd >2)
-                    fz = init_filter(mesh.ngl-1,ξ,inputs[:mu_z],mesh,inputs)
+                if (inputs[:backend] == CPU())
+                    fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
+                    fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
+                    if (mesh.nsd >2)
+                        fz = init_filter(mesh.ngl-1,ξ,inputs[:mu_z],mesh,inputs)
+                    end
+                else
+                    ξ_temp = KernelAbstractions.zeros(CPU(), Float64, Int64(mesh.ngl))
+                    KernelAbstractions.copyto!(CPU(),ξ_temp,ξ)
+                    fx_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_x],mesh,inputs)
+                    fy_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_y],mesh,inputs)
+                    fx = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+                    fy = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+                    KernelAbstractions.copyto!(inputs[:backend], fx, fx_1)
+                    KernelAbstractions.copyto!(inputs[:backend], fy, fy_1)
+                    if (mesh.nsd > 2)
+                        fz_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_z],mesh,inputs)
+                        fz = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+                        KernelAbstractions.copyto!(inputs[:backend], fz, fz_1)
+                    end
                 end
             end
             #--------------------------------------------------------
