@@ -353,4 +353,31 @@ function allocate_gpuAux_lag(SD, nelem_semi_inf, nedges_bdy, nfaces_bdy, ngl, ng
     return gpuAux_lag
 end
 
+Base.@kwdef mutable struct St_gpuMoist{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend}
+
+    flux_micro   = KernelAbstractions.zeros(backend, T, dims1)
+    source_micro = KernelAbstractions.zeros(backend, T, dims2)
+    adjusted     = KernelAbstractions.zeros(backend, T, dims3)
+    Pm           = KernelAbstractions.zeros(backend, T, dims4)
+end
+
+function allocate_gpuMoist(SD, npoin, nelem, ngl, T, backend, lmoist; neqs=1)
+
+    if backend == CPU() || lmoist == false
+        dims1 = (1, 1, 1, 1)
+        dims2 = dims1
+        dims3 = (1,1)
+        dims4 = dims3
+    else
+        dims1 = (Int64(nelem),      Int64(ngl), Int64(ngl), Int64(ngl), 4)
+        dims2 = (Int64(nelem),      Int64(ngl), Int64(ngl), Int64(ngl), 4)
+        dims3 = (Int64(npoin), 9)
+        dims4 = (Int64(npoin), 3)
+    end
+
+    gpuMoist = St_gpuMoist{T, dims1, dims2, dims3, dims4, backend}()
+
+    return gpuMoist
+end
+
 

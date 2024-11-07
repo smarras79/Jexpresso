@@ -35,30 +35,31 @@ function do_micro_physics!(mp::St_SamMicrophysics, npoin, uaux, z, qe, ::TOTAL)
     return nothing
 end
 
-@kernel function do_micro_physics_gpu_3D!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, Pr, Ps, Pg, S_micro, PhysConst, MicroConst, lpert, neq, npoin, z)
-    ie = @index(Group, Linear)
-    i = @index(Local, Linear)
-    ip = connijk[ie,i,1]
+@kernel function do_micro_physics_gpu_3D!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, Pr, Ps, Pg, S_micro, PhysConst, MicroConst, lpert, neq, npoin, z, adjusted, Pm)
+    ip = @index(Global, Linear)
 
     T = eltype(uaux)
     uip = @view(uaux[ip,1:neq])
     qeip = @view(qe[ip,1:neq+1])
 
-    Tip, Pip, qnip, qiip, qcip, qrip, qsip, qgip, qsatt = saturation_adjustment_sam_microphysics_gpu!(uip,qeip,
-                                                                                                        z[ip],MicroConst,PhysConst,lpert)
-    KernelAbstractions.@atomic Tabs[ip] = Tip
-    KernelAbstractions.@atomic uaux[ip,end] = Pip
-    KernelAbstractions.@atomic qn[ip] = qnip
-    KernelAbstractions.@atomic qi[ip] = qiip
-    KernelAbstractions.@atomic qc[ip] = qcip
-    KernelAbstractions.@atomic qr[ip] = qrip
-    KernelAbstractions.@atomic qs[ip] = qsip
-    KernelAbstractions.@atomic qg[ip] = qgip
+    adjusted[ip,:] .= saturation_adjustment_sam_microphysics_gpu(uip,qeip,z[ip],MicroConst,PhysConst,lpert)
+    Tabs[ip] = adjusted[ip,1]
+    uaux[ip,end] = adjusted[ip,2]
+    qn[ip] = adjusted[ip,3]
+    qi[ip] = adjusted[ip,4]
+    qc[ip] = adjusted[ip,5]
+    qr[ip] = adjusted[ip,6]
+    qs[ip] = adjusted[ip,7]
+    qg[ip] = adjusted[ip,8]
+    qsatt = adjusted[ip,9]
 
-    #KernelAbstractions.@atomic Pr[ip], Ps[ip], Pg[ip] = compute_Pm_gpu(uip, qeip, qr[ip], qs[ip], qg[ip], MicroConst,lpert)
-    
-    #KernelAbstraction.@atomic S_micro[ip] = compute_dqpdt_sam_micro_gpu(uip, qeip, Tabs[ip], uaux[ip,end], qr[ip], qs[ip], qg[ip], qsatt, MicroConst, PhysConst, lpert) 
+    Pm[ip,:] .= compute_Pm_gpu(uip, qeip, qr[ip], qs[ip], qg[ip], MicroConst,lpert)
 
+    Pr[ip] = Pm[ip,1]
+    Ps[ip] = Pm[ip,2]
+    Pg[ip] = Pm[ip,3]
+    S = compute_dqpdt_sam_micro_gpu(uip, qeip, Tabs[ip], qn[ip], qc[ip], qi[ip], qr[ip], qs[ip], qg[ip], qsatt, MicroConst, PhysConst, lpert) 
+    S_micro[ip] = S
 end
 
 function do_micro_physics!(mp::St_SamMicrophysics, npoin, uaux, z, qe, ::PERT)
@@ -222,6 +223,19 @@ function compute_precipitation_derivatives(mp::St_SamMicrophysics,ρ,ρe,hl,nele
     H[:,:,:,:] .= 0.0
 end
 
+function precipitation_flux_gpu(u,qe,MicroConst,lpert,Pr,Ps,Pg,qi)
+    T= eltype(u)
+    if (lpert)
+        ρ = u[1] + qe[1]
+    else
+        ρ = u[1]
+    end
+    Lc = MicroConst.Lc
+    Ls = MicroConst.Ls
+
+    return T(0.0), T(Lc*Pr +Ls*(Ps+Pg)), T(0.0), T(0.0) #T(qi*ρ*T(0.4)), T(Pr + Ps + Pg) 
+end
+
 function add_micro_precip_sources!(mp::St_SamMicrophysics,T,S_micro,S,q,qn,qe,::TOTAL)
 
     PhysConst = PhysicalConst{TFloat}()
@@ -249,6 +263,25 @@ function add_micro_precip_sources!(mp::St_SamMicrophysics,T,S_micro,S,q,qn,qe,::
     S[7] += ρ*S_micro
 
 end
+
+function precipitation_source_gpu(u,qe,lpert,qn,S_micro,PhysConst,MicroConst)
+    T = eltype(u)
+    if (lpert)
+        ρ = u[1] + qe[1]
+        qt = (u[6] + qe[6])/ρ
+        qp = (u[7] + qe[7])/ρ
+        qv = qt - qn - qe[6]/qe[1]
+    else
+        ρ = u[1]
+        qt = u[6]/ρ
+        qp = u[7]/ρ
+        qv = qt - qn
+    end
+
+    return T(-u[1]*PhysConst.g*(T(0.608)*qv-qn-qp)), T(0.0), T(-ρ*S_micro), T(ρ*S_micro) 
+
+end
+
 
 
 
@@ -354,12 +387,18 @@ function compute_dqpdt_sam_micro(ρ,T,P,hl,qt,qn,qc,qi,qp,qr,qs,qg,qsatt,MicroCo
     return dqpdt 
 end
 
-function compute_dqpdt_sam_micro_gpu(u,qe,T,P,qt,qn,qc,qi,qp,qr,qs,qg,qsatt,MicroConst,PhysConst,lpert)
+function compute_dqpdt_sam_micro_gpu(u,qe,T,qn,qc,qi,qr,qs,qg,qsatt,MicroConst,PhysConst,lpert)
     FT = eltype(u)
     if (lpert)
         ρ = u[1] + qe[1]
+        qt = (u[6] + qe[6])/ρ
+        qp = (u[7] + qe[7])/ρ
+        P = u[end]
     else
         ρ = u[1]
+        qt = u[6]/ρ
+        qp = u[7]/ρ
+        P = u[end]
     end
 
     a_rain = MicroConst.a_rain #Constant in fall speed for rain
