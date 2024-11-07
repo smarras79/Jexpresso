@@ -28,7 +28,7 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                          OUTPUT_DIR, inputs,
                          params.qp.qvars,
                          inputs[:outformat];
-                         nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
+                         nvar=params.qp.neqs, qexact=params.qp.qe, case="")
         end
         
     else

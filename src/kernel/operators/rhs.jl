@@ -387,7 +387,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
                        params.CL, params.SOL_VARS_TYPE;
                        neqs=params.neqs, ip=ip)
             
-            if lsource
+            if lsource                
                 user_source!(@view(params.S[i,:]),
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),          #ρref 
@@ -395,11 +395,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
                              neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin)
             end
         end
-
-       # _compute_duds!(dudx_el, u, params.mesh.ngl, params.basis.dψ, dξdx, dξdy, dηdx, dηdy, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal; coeff=1.0)
         
-        #_expansion_inviscid!(u, params.neqs, params.mesh.ngl, params.basis.dψ, params.ω, params.F, params.S, params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
-
         _expansion_inviscid!(u,
                              params.neqs, params.mesh.ngl,
                              params.basis.dψ, params.ω,
@@ -414,18 +410,26 @@ end
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
     
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    u2uaux!(@view(params.qp.qn[:,:]), u, params.neqs, params.mesh.npoin)
+    #u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
-    xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
 
+      #=  _compute_duds!(params.dudx_el[iel,:,:], params.dudy_el[iel,:,:],
+                       params.uaux[:,end], #npoin, ieq
+                       params.mesh.ngl,
+                       params.basis.dψ,
+                       dξdx, dξdy, dηdx, dηdy,
+                       iel, connijk,
+                       params.CL, pararm.SD, params.AD; coeffx=1.0, coeffy=1.0)                
+        =#
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
             
-            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.qp.qn[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
 
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
-                       @view(params.uaux[ip,:]),
+                       @view(params.qp.qn[ip,:]), #@view(params.uaux[ip,:])
                        @view(qe[ip,:]),
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
@@ -433,10 +437,12 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
             
             if lsource
                 user_source!(@view(params.S[i,j,:]),
-                             @view(params.uaux[ip,:]),
+                             @view(params.qp.qn[ip,:]),
                              @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=x[ip], y=y[ip], xmax=xmax, xmin=xmin, ymax=ymax)
+                             neqs=params.neqs,
+                             x=0, y=0, xmax=1.0, xmin=1.0, ymax=1.0)
+                             #x=dudx[iel,i,j], y=dudz[iel,i,j], xmax=1.0, xmin=1.0, ymax=1.0)
             end
         end
 
@@ -1148,10 +1154,20 @@ function _compute_duds!(dudx_el, u, ngl, dψ, dξdx, dξdy, dηdx, dηdy, iel, :
 end
 
 
-function _compute_duds!(dudx_el, dudy_el, u, ngl, dψ, dξdx, dξdy, dηdx, dηdy, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal; coeffx=1.0, coeffy=1.0)
+function _compute_duds!(dudx_el, dudy_el, u, ngl, dψ, dξdx, dξdy, dηdx, dηdy, iel, connijk, ::CL, SD::NSD_2D, AD::ContGal; coeffx=1.0, coeffy=1.0)
+
+    uij = @SMatrix zeros(ngl,ngl)
     
     for j=1:ngl
         for i=1:ngl
+            ip = connijk[iel,i,j]
+            uij[i,j] = uaux[ip]
+        end
+    end
+
+    for j=1:ngl
+        for i=1:ngl
+    
             dudξ = 0.0
             dudη = 0.0
             @turbo for k = 1:ngl
@@ -1175,7 +1191,7 @@ function _compute_duds!(dudx_el, dudy_el, u, ngl, dψ, dξdx, dξdy, dηdx, dηd
     
 end
 
-function _compute_duds!(dudx_el, dudy_el, dudz, u, ngl, dψ, dξdx, dξdy, dηdx, dηdy, iel, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal; coeffx=1.0, coeffy=1.0, coeffz=1.0)
+function _compute_duds!(dudx_el, dudy_el, dudz_el, u, ngl, dψ, dξdx, dξdy, dηdx, dηdy, iel, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal; coeffx=1.0, coeffy=1.0, coeffz=1.0)
     
     for k=1:ngl
         for j=1:ngl
