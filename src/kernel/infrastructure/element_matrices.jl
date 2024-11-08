@@ -708,27 +708,6 @@ end
     end
 end
 
-function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
-
-    for iel=1:mesh.nelem
-
-        for i=1:mesh.ngl
-            for j=1:mesh.ngl
-                ip = mesh.connijk[iel,i,j]
-                for k =1:mesh.ngl
-                    jp = mesh.connijk[iel,k,j]
-                    L[ip,jp] += metrics.dξdx[iel,i,k]*Lel[i,k]*ω[j]*metrics.dydη[iel,i,k]
-                end
-
-                for l = 1:mesh.ngl
-                    jp = mesh.connijk[iel,i,l]
-                    L[ip,jp] += metrics.dηdy[iel,i,l]*Lel[j,l]*ω[i]*metrics.dxdξ[iel,i,l]
-                end
-            end
-        end
-    end
-end
-
 function DSS_laplace_Laguerre!(L, SD::NSD_2D, Lel::AbstractArray, Lel_lag::AbstractArray, ω, ω_lag, mesh, metrics, metrics_lag, N, T; llump=false)
 
     for iel=1:mesh.nelem
