@@ -341,7 +341,7 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, params.mesh.bdy_edge_type, params.mesh.bdy_face_type,
                                params.ω, neqs, params.inputs, AD, SD)
     
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y,lsource, SD)
+    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qn, params.qp.qe, params.mesh.x, params.mesh.y,lsource, SD)
     
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
@@ -408,9 +408,9 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
+function inviscid_rhs_el!(u, params, connijk, qn, qe, x, y, lsource, SD::NSD_2D)
     
-    u2uaux!(@view(params.qp.qn[:,:]), u, params.neqs, params.mesh.npoin)
+    u2uaux!(@view(qn[:,:]), u, params.neqs, params.mesh.npoin)
     #u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     for iel = 1:params.mesh.nelem
@@ -426,10 +426,10 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
             
-            user_primitives!(@view(params.qp.qn[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+            user_primitives!(@view(qn[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
 
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
-                       @view(params.qp.qn[ip,:]), #@view(params.uaux[ip,:])
+                       @view(qn[ip,:]), #@view(params.uaux[ip,:])
                        @view(qe[ip,:]),
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
@@ -437,7 +437,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
             
             if lsource
                 user_source!(@view(params.S[i,j,:]),
-                             @view(params.qp.qn[ip,:]),
+                             @view(qn[ip,:]),
                              @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs,
