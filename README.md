@@ -24,13 +24,13 @@ If you use Jexpresso please drop us a line to let us know. We'd like to add a li
 Please cite Jexpresso using:
 
 ```
-@misc{tissaoui2024,
-      title={Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions}, 
-      author={Yassine Tissaoui and James F. Kelly and Simone Marras},
-      year={2024},
-      eprint={2401.05624},
-      archivePrefix={arXiv},
-      primaryClass={math.NA}
+@article{tissaoui2024,
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
+  volume ={487},
+  pages={129080},
+  year = {2024},
+  journal = {App. Math. Comput.},
 }
 ```
 
@@ -184,41 +184,19 @@ If you are interested in contributing, please get in touch:
 
 To install and run the code assume Julia 1.10
 
-## Setup 
+## Setup with CPUs
 
-After cloning Jexpresso do the following:
-
-1.
-```bashx
+```bash
 >> cd $JEXPRESSO_HOME
->> julia --project=.
+>> julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
 ```
-
-If on Apple, add Metal to the dependencies and continue to point 2:
-
-1.apple
-```
-julia> ]
-pkg> add Metal
-```
-
-2.
-```
-pkg> instantiate
-```
-```
-pkg> precompile
-```
-
-Notice that points 1. and 2. are for all, but 1.apple is required only for Apple users.
-
-To run Jexpresso, do as follows:
+followed by the following:
 
 Push problem name to ARGS
 You need to do this only when you run a new problem
 ```bash
-julia> push!(empty!(ARGS), EQUATIONS::String, EQUATIONS_CASE_NAME::String);
-julia> include("./src/Jexpresso.jl")
+push!(empty!(ARGS), EQUATIONS::String, EQUATIONS_CASE_NAME::String);
+include("./src/Jexpresso.jl")
 ```
 
 * PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/problems/equations/problem_name
@@ -227,16 +205,20 @@ julia> include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
+Example of cloud simulations (please contact us to run this because its branch has not been merged into master yet)
+
+<img src="assets/bomex.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+
+Examples available in this branch:
+
 Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
-julia> push!(empty!(ARGS), "CompEuler", "thetaTracers");
-julia> include("./src/Jexpresso.jl")
+push!(empty!(ARGS), "CompEuler", "thetaTracers");
+include("./src/Jexpresso.jl")
 ```
-
-<img src="assets/rtbHole.gif"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
-
 
 <img src="assets/thetaTracersMeshUnstr.png"
      alt="Markdown icon"
@@ -245,8 +227,8 @@ julia> include("./src/Jexpresso.jl")
 
 Example 2: to solve the 3D Euler equations with buyoancy defined in `problems/equations/CompEuler/3d` you would do the following:
 ```bash
-julia> push!(empty!(ARGS), "CompEuler", "3d");
-julia> include("./src/Jexpresso.jl")
+push!(empty!(ARGS), "CompEuler", "3d");
+include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/rtb3d.png"
@@ -254,20 +236,10 @@ julia> include("./src/Jexpresso.jl")
      style="float: left; margin-right: 5px;" />
 
 
-Example 3: to solve the 2D Euler equations leading to a density current defined in `problems/equations/CompEuler/dc` you would do the following:
+Example 3: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
 ```bash
-julia> push!(empty!(ARGS), "CompEuler", "dc");
-julia> include("./src/Jexpresso.jl")
-```
-
-<img src="assets/dc.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Example 4: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
-```bash
-julia> push!(empty!(ARGS), "CompEuler", "wave1d");
-julia> include("./src/Jexpresso.jl")
+push!(empty!(ARGS), "CompEuler", "wave1d");
+include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/wave1d-v.png"
@@ -291,10 +263,11 @@ This section contains instructions to run all of the test cases presented in
 ```
 @article{tissaoui2024,
   author = {Y. Tissaoui and J. F. Kelly and S. Marras}
-  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions},
-  url = {https://arxiv.org/abs/2401.05624},
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
+  volume ={487},
+  pages={129080},
   year = {2024},
-  journal = {arXiv:2401.05624 [math.NA]},
+  journal = {App. Math. Comput.},
 }
 ```
 
@@ -303,8 +276,8 @@ Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
 The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
-julia> push!(empty!(ARGS), "CompEuler", "wave1d_lag");
-julia> include("./src/Jexpresso.jl")
+push!(empty!(ARGS), "CompEuler", "wave1d_lag");
+include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/wave_v_4.png"
@@ -316,21 +289,22 @@ Test 2: 1D wave train for linearized shallow water equations
 The problem is defined in [`problems/equations/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
-julia> push!(empty!(ARGS), "AdvDiff", "Wave_Train");
-julia> include("./src/Jexpresso.jl")
+push!(empty!(ARGS), "AdvDiff", "Wave_Train");
+include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/Wave_Train_final.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
+
 Test 3: 2D advection-diffusion equation
 
 The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
-julia> push!(empty!(ARGS), "AdvDiff", "2D_laguerre");
-julia> include("./src/Jexpresso.jl")
+push!(empty!(ARGS), "AdvDiff", "2D_laguerre");
+include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/ad2d-4s-line.png"
@@ -342,8 +316,8 @@ Test 4: 2D Helmholtz equation
 The problem is defined in [`problems/equations/Helmholtz/case1`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1) and by default output will be written to `output/Helmholtz/case1`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
-julia> push!(empty!(ARGS), "Helmholtz", "case1");
-julia> include("./src/Jexpresso.jl")
+push!(empty!(ARGS), "Helmholtz", "case1");
+include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/Helmholtz_from_jexpresso-line.png"
@@ -355,8 +329,8 @@ Test 5: Rising thermal bubble
 The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
-julia> push!(empty!(ARGS), "CompEuler", "theta_laguerre");
-julia> include("./src/Jexpresso.jl")
+push!(empty!(ARGS), "CompEuler", "theta_laguerre");
+include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/48.png"
@@ -365,11 +339,11 @@ julia> include("./src/Jexpresso.jl")
 
 Test 6: Hydrostatic linear mountain waves
 
-The problem is defined in [`problems/equations/CompEuler/HSmount_Lag_working`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag_working) and by default output will be written to `output/CompEuler/HSmount_Lag_working`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
 
 ```bash      
-julia> push!(empty!(ARGS), "CompEuler", "HSmount_Lag_working");
-julia> include("./src/Jexpresso.jl")
+push!(empty!(ARGS), "CompEuler", "HSmount_Lag");
+include("./src/Jexpresso.jl")
 ```
 
 <img src="assets/wvelo.png"

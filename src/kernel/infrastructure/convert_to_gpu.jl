@@ -1,4 +1,8 @@
 function convert_mesh_arrays!(::NSD_1D, mesh, backend, inputs)
+    # Ensure mesh.x, mesh.y, mesh.z are of type TFloat (e.g., Float32)
+    mesh.x = convert_to_typed_array(mesh.x, TFloat)
+    mesh.y = convert_to_typed_array(mesh.y, TFloat)
+    mesh.z = convert_to_typed_array(mesh.z, TFloat)
 
     aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.x))
     KernelAbstractions.copyto!(backend, aux, mesh.x)
@@ -30,6 +34,10 @@ function convert_mesh_arrays!(::NSD_1D, mesh, backend, inputs)
 end
 
 function convert_mesh_arrays!(::NSD_2D, mesh, backend, inputs)
+    # Ensure mesh.x, mesh.y, mesh.z are of type TFloat (e.g., Float32)
+    mesh.x = convert_to_typed_array(mesh.x, TFloat)
+    mesh.y = convert_to_typed_array(mesh.y, TFloat)
+    mesh.z = convert_to_typed_array(mesh.z, TFloat)
 
     aux = KernelAbstractions.allocate(backend, TFloat, size(mesh.x))
     KernelAbstractions.copyto!(backend, aux, mesh.x)
@@ -65,20 +73,24 @@ function convert_mesh_arrays!(::NSD_2D, mesh, backend, inputs)
 end
 
 function convert_mesh_arrays!(::NSD_3D, mesh, backend, inputs)
-
-    aux = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
+    # Ensure mesh.x, mesh.y, mesh.z are of type TFloat (e.g., Float32)
+    mesh.x = convert_to_typed_array(mesh.x, TFloat)
+    mesh.y = convert_to_typed_array(mesh.y, TFloat)
+    mesh.z = convert_to_typed_array(mesh.z, TFloat)
+    npoin = size(mesh.x, 1)
+    aux = KernelAbstractions.allocate(backend, TFloat, npoin)
     KernelAbstractions.copyto!(backend, aux, mesh.x)
-    mesh.x = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
+    mesh.x = KernelAbstractions.allocate(backend, TFloat, npoin)
     mesh.x .= aux
 
-    aux = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
+    aux = KernelAbstractions.allocate(backend, TFloat, npoin)
     KernelAbstractions.copyto!(backend, aux, mesh.y)
-    mesh.y = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
+    mesh.y = KernelAbstractions.allocate(backend, TFloat, npoin)
     mesh.y .= aux
 
-    aux = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
+    aux = KernelAbstractions.allocate(backend, TFloat, npoin)
     KernelAbstractions.copyto!(backend, aux, mesh.z)
-    mesh.z = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
+    mesh.z = KernelAbstractions.allocate(backend, TFloat, npoin)
     mesh.z .= aux
 
     aux = KernelAbstractions.allocate(backend, TInt, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
@@ -160,19 +172,20 @@ end
 
 function convert_mesh_arrays_to_cpu!(::NSD_3D, mesh, inputs)
 
-    aux = KernelAbstractions.allocate(CPU(), TFloat, mesh.npoin)
+    npoin = size(mesh.x,1)
+    aux = KernelAbstractions.allocate(CPU(), TFloat, npoin)
     KernelAbstractions.copyto!(CPU(), aux, mesh.x)
-    mesh.x = KernelAbstractions.allocate(CPU(), TFloat, mesh.npoin)
+    mesh.x = KernelAbstractions.allocate(CPU(), TFloat, npoin)
     mesh.x .= aux
 
-    aux = KernelAbstractions.allocate(CPU(), TFloat, mesh.npoin)
+    aux = KernelAbstractions.allocate(CPU(), TFloat, npoin)
     KernelAbstractions.copyto!(CPU(), aux, mesh.y)
-    mesh.y = KernelAbstractions.allocate(CPU(), TFloat, mesh.npoin)
+    mesh.y = KernelAbstractions.allocate(CPU(), TFloat, npoin)
     mesh.y .= aux
 
-    aux = KernelAbstractions.allocate(CPU(), TFloat, mesh.npoin)
+    aux = KernelAbstractions.allocate(CPU(), TFloat, npoin)
     KernelAbstractions.copyto!(CPU(), aux, mesh.z)
-    mesh.z = KernelAbstractions.allocate(CPU(), TFloat, mesh.npoin)
+    mesh.z = KernelAbstractions.allocate(CPU(), TFloat, npoin)
     mesh.z .= aux
 
     aux = KernelAbstractions.allocate(CPU(), TInt, mesh.nelem, mesh.ngl, mesh.ngl, mesh.ngl)
@@ -184,4 +197,9 @@ function convert_mesh_arrays_to_cpu!(::NSD_3D, mesh, inputs)
     KernelAbstractions.copyto!(CPU(), aux, mesh.poin_in_bdy_face)
     mesh.poin_in_bdy_face = KernelAbstractions.allocate(CPU(), TInt, mesh.nfaces_bdy, mesh.ngl, mesh.ngl)
     mesh.poin_in_bdy_face .= aux
+end
+
+# Helper function to convert arrays to the desired type
+function convert_to_typed_array(arr, T)
+    return T.(arr)
 end

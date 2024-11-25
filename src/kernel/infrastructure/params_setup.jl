@@ -85,7 +85,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------  
     # B.C. arrays
     #------------------------------------------------------------------------------------
-    gradu    = KernelAbstractions.zeros(backend, T, 2, 1, 1) #KernelAbstractions.zeros(2,Int64(sem.mesh.npoin),nvars)
+    gradu    = KernelAbstractions.zeros(backend, T, 2, 1, 1)
     ubdy     = KernelAbstractions.zeros(backend, T, Int64(qp.neqs))
     bdy_flux = KernelAbstractions.zeros(backend, T, Int64(qp.neqs),1)    
 
@@ -175,6 +175,12 @@ function params_setup(sem,
     
 
     #------------------------------------------------------------------------------------
+    # Allocate Thermodynamic params for bomex case
+    #------------------------------------------------------------------------------------
+    thermo_params = create_updated_TD_Parameters(TFloat(101325.0))
+    
+
+    #------------------------------------------------------------------------------------
     # Populate solution arrays
     #------------------------------------------------------------------------------------
     for i=1:qp.neqs
@@ -253,7 +259,7 @@ function params_setup(sem,
               visc_coeff, ivisc_equations,
               sem.matrix.M, sem.matrix.Minv,tspan,
               Δt, xmax, xmin, ymax, ymin, zmin, zmax,
-              qp, mp, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false)
+              qp, mp, sem.fx, sem.fy, fy_t, sem.fz, fz_t, thermo_params, laguerre=false)
     end
 
     println(" # Build arrays and params ................................ DONE")
