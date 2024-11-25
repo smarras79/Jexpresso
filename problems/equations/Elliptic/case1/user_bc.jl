@@ -24,29 +24,18 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray)
-    c =2.0
-    
-    qbdy[1] = sinpi(c*x)*sinpi(c*y)
-     
-    return qbdy
-end
+function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-   
-    flux = zeros(size(q,2),1)
-    return flux 
+    L = 5.0
     
-end
-
-
-function user_bc_robin!(q::AbstractFloat, gradq::AbstractFloat, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
-    
-    if (tag === "heat_flux")
-        gradq[1] = 400.0
-    elseif (tag === "fix_temperature")
-        qibdy[1] = 0.0
+    if (tag == "bottom")
+        qbdy[1] = 100.0
+    elseif (tag == "right") 
+        qbdy[1] = 100.0
+    elseif (tag == "top") #top
+        qbdy[1] = 100 + 20.0*sin(π*x/L)
+    elseif (tag == "left") #left
+        qbdy[1] = 100.0
     end
-
-    return gradq, qibdy
+    
 end
