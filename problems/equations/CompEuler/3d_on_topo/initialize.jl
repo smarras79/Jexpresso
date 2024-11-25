@@ -43,7 +43,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             # INITIAL STATE from scratch:
             #
             xc = (maximum(mesh.x) + minimum(mesh.x))/2
-            zc = 2500.0 #m
+            yc = (maximum(mesh.y) + minimum(mesh.y))/2
+            zc = 3500.0 #m
             r0 = 2000.0 #m
         
             θref = 300.0 #K
@@ -52,7 +53,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
             
-                r = sqrt( (x - xc)^2 + (z - zc)^2 )
+                r = sqrt( (x - xc)^2 + (y - yc)^2 + (z - zc)^2 )
             
                 Δθ = 0.0 #K
                 if r < r0
@@ -63,7 +64,6 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 pref = PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θref))^(PhysConst.cpoverR)
                 ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θ,    Press=p)    #kg/m³
                 ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θref, Press=pref) #kg/m³
-
                 u = 0.0
                 v = 0.0
                 w = 0.0
