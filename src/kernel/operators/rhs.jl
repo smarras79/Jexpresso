@@ -144,11 +144,11 @@ function rhs!(du, u, params, time)
             
             if (inputs[:lmoist])
                 k_moist = do_micro_physics_gpu_3D!(backend)
-                k_moist(params.uaux, params.qp.qe, params.mp.Tabs, params.mp.qn, params.mp.qi, params.mp.qc,
+                k_moist(@view(params.uaux[:,:]), params.qp.qe, params.mp.Tabs, params.mp.qn, params.mp.qi, params.mp.qc,
                         params.mp.qr, params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
                         params.mp.S_micro, PhysConst, MicroConst, lpert, params.neqs, params.mesh.npoin, params.mesh.z, params.adjusted, params.Pm; ndrange = (params.mesh.npoin))
                 k_precip = _build_precipitation_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-                k_precip(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk,
+                k_precip(params.RHS, @view(params.uaux[:,:]), params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk,
                          params.metrics.dξdz, params.metrics.dηdz, params.metrics.dζdz, params.metrics.Je,
                          params.basis.dψ, params.ω, params.Minv, params.flux_micro, params.source_micro,
                          params.mesh.ngl, TInt(params.neqs), PhysConst, params.mesh.xmax, params.mesh.xmin,
@@ -337,10 +337,13 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, params.mesh.bdy_edge_type,
                                params.ω, neqs, params.inputs, AD, SD)
     if (params.inputs[:lmoist])
-        do_micro_physics!(params.mp, params.mesh.npoin, params.uaux, params.mesh.z, params.qp.qe, params.SOL_VARS_TYPE)
+        do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+                                params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg, params.mp.S_micro,
+                                params.mp.qsatt, params.mesh.npoin, params.uaux, params.mesh.z, params.qp.qe, params.SOL_VARS_TYPE)
         if (params.inputs[:lprecip])
-            compute_precipitation_derivatives(params.mp, params.uaux[:,1], params.qp.qe[:,1], 
-                                              params.uaux[:,5], params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
+            compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
+                                                    params.mp.Pg, params.mp.Tabs, params.mp.qi, @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
+                                                    @view(params.uaux[:,5]), params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
                                               params.metrics, params.ω, params.basis.dψ, params.SOL_VARS_TYPE)
             params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt
             params.rhs_el[:,:,:,:,6] .+= params.mp.dqtdt

@@ -45,6 +45,7 @@ Base.@kwdef mutable struct St_SamMicrophysics{T <:AbstractFloat, dims1, dims2, d
     Ps      = KernelAbstractions.zeros(backend,  T, dims1) #snow precipitation flux
     Pg      = KernelAbstractions.zeros(backend,  T, dims1) #graupel precipitation flux
     S_micro = KernelAbstractions.zeros(backend,  T, dims1)  #microphysical source term
+    qsatt   = KernelAbstractions.zeros(backend,  T, dims1)  #saturation vapor fraction
     dhldt   = KernelAbstractions.zeros(backend,  T, dims2, dims3, dims3, dims3) #Storage for preciptation source contributions to hl
     dqtdt   = KernelAbstractions.zeros(backend,  T, dims2, dims3, dims3, dims3) #Storage preciptation source contributions to qt
     dqpdt   = KernelAbstractions.zeros(backend,  T, dims2, dims3, dims3, dims3) #Storage preciptation source contributions to qp
