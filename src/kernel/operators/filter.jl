@@ -242,6 +242,133 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
   ## store Dimension of MxM object
 
   ## Loop through the elements
+   
+
+  for e=1:params.mesh.nelem
+    for k=1:params.mesh.ngl
+      for j=1:params.mesh.ngl
+        for i=1:params.mesh.ngl
+          ip = connijk[e,i,j,k]
+          for m =1:params.neqs
+              params.q_t[m,i,j,k] = uaux[ip,m]
+          end
+        end
+      end
+    end
+
+  ### Construct local derivatives for prognostic variables
+   ### this section accouns for 1/3 of the allocations and more than half in terms of storage size 
+   ##(159.84 k allocations: 22.544 MiB) current function total, killed 1/3 of allocations thanks to loop unroll
+    for m=1:params.neqs
+      #this loop unroll works well for both matmuls allocations now: (108.00 k allocations: 9.888 MiB)
+      #=for i=1:params.mesh.ngl
+        for j=1:params.mesh.ngl
+          for k=1:params.mesh.ngl
+            params.q_ti[i,j,k] = 0.0
+            for l=1:params.mesh.ngl
+              params.q_ti[i,j,k] += params.fx[i,l] * params.q_t[m,l,j,k]
+            end
+          end
+        end
+      end=#
+      params.q_ti .= 0.0
+        for j=1:params.mesh.ngl
+            for k=1:params.mesh.ngl
+                for i=1:params.mesh.ngl
+                    for l = 1:params.mesh.ngl
+                        params.q_ti[i,j,k] += params.fx[i,l] * params.q_t[m,l,j,k]
+                    end
+                end
+            end
+        end
+    ## ETA Derivative
+      ## this is very likely wrong, work out on paper
+      #params.fqf[m,:,:] .= params.q_ti * params.fy_t
+      #=for i=1:params.mesh.ngl
+        for j=1:params.mesh.ngl
+          for k=1:params.mesh.ngl
+            params.q_tij[i,j,k] = 0.0
+            for l=1:params.mesh.ngl
+                params.q_tij[i,j,k] += params.q_ti[i,l,k] * params.fy_t[l,j]
+            end
+          end
+        end
+      end=#
+      params.q_tij .= 0.0
+      for k=1:params.mesh.ngl
+          for j=1:params.mesh.ngl
+              for i=1:params.mesh.ngl
+                  for l=1:params.mesh.ngl
+                      params.q_tij[i,j,k] += params.q_ti[i,l,k] * params.fy_t[l,j]
+                  end
+              end
+          end
+      end
+      #params.q_tij .= params.q_ti
+      #=for i=1:params.mesh.ngl
+          for j=1:params.mesh.ngl
+              for k =1:params.mesh.ngl
+                  params.fqf[m,i,j,k] = 0.0
+                  for l=1:params.mesh.ngl
+                      params.fqf[m,i,j,k] += params.q_tij[i,j,l] * params.fz_t[l,k]
+                  end
+              end
+          end
+      end=#
+      params.fqf[m,:,:,:] .= 0.0
+      for k =1:params.mesh.ngl
+          for i=1:params.mesh.ngl
+              for j=1:params.mesh.ngl
+                  for l=1:params.mesh.ngl
+                      params.fqf[m,i,j,k] += params.q_tij[i,j,l] * params.fz_t[l,k]
+                  end
+              end
+          end
+      end
+    end
+
+  ## Do Numerical Integration
+    for j=1:params.mesh.ngl
+      for i=1:params.mesh.ngl
+          for k=1:params.mesh.ngl
+            for m=1:params.neqs
+                params.b[e,i,j,k,m] += params.fqf[m,i,j,k] * params.ω[i]*params.ω[j]*params.ω[k]*Je[e,i,j,k]
+            end
+        end
+      end
+    end
+  end
+
+  DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
+
+
+  for ieq=1:params.neqs
+       divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
+  end
+  uaux[:,params.neqs] .= params.B[:,params.neqs]
+
+  #=if (params.laguerre)
+
+    @time uaux .= params.B
+
+  end=#
+
+
+  uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
+end
+
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1))
+
+  u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
+
+  #fy_t = transpose(params.fy)
+  ## Subtract background velocity
+  #qv = copy(q)
+  #params.uaux[:,2:4] .= params.uaux[:,2:4] .- params.qe[:,2:4]
+  ## store Dimension of MxM object
+          
+  ## Loop through the elements
+  uaux[:,2:4] .= uaux[:,2:4] .- params.qp.qe[:,2:4]
 
   for e=1:params.mesh.nelem
     for k=1:params.mesh.ngl
@@ -253,7 +380,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
           end
         end
       end
-    end
+    end   
 
   ### Construct local derivatives for prognostic variables
    ### this section accouns for 1/3 of the allocations and more than half in terms of storage size 
@@ -271,8 +398,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
         end
       end
 
-
-    ## ETA Derivative
+      ## ETA Derivative
       ## this is very likely wrong, work out on paper
       #params.fqf[m,:,:] .= params.q_ti * params.fy_t
       for i=1:params.mesh.ngl
@@ -314,79 +440,12 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
 
   DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
 
-  if (params.laguerre)
-
-    for e=1:params.mesh.nelem_semi_inf
-      for j=1:params.mesh.ngr
-        for i=1:params.mesh.ngl
-          ip = connijk_lag[e,i,j]
-          for m =1:params.neqs
-            params.q_t_lag[m,i,j] = uaux[ip,m]
-          end
-        end
-      end
-
-  ### Construct local derivatives for prognostic variables
-   ### this section accouns for 1/3 of the allocations and more than half in terms of storage size
-   ##(159.84 k allocations: 22.544 MiB) current function total, killed 1/3 of allocations thanks to loop unroll
-      for m=1:params.neqs
-        #this loop unroll works well for both matmuls allocations now: (108.00 k allocations: 9.888 MiB)
-        for i=1:params.mesh.ngl
-          for j=1:params.mesh.ngr
-            params.q_ti_lag[i,j] = 0.0
-            for k=1:params.mesh.ngl
-              params.q_ti_lag[i,j] += params.fx[i,k] * params.q_t_lag[m,k,j]
-            end
-          end
-        end
-
-        for i=1:params.mesh.ngl
-          for j=1:params.mesh.ngr
-            params.fqf_lag[m,i,j] = 0.0
-            for k=1:params.mesh.ngr
-              params.fqf_lag[m,i,j] += params.q_ti_lag[i,k] * params.fy_t_lag[k,j]
-              #if (k == j)
-               # params.fqf_lag[m,i,j] += params.q_ti_lag[i,k] * 1.0
-              #else
-              #  params.fqf_lag[m,i,j] += params.q_ti_lag[i,k] * 0.0
-              #end
-            end
-          end
-        end
-
-      end
-
-      for j=1:params.mesh.ngr
-        for i=1:params.mesh.ngl
-          for m=1:params.neqs
-            params.b_lag[e,i,j,m] += params.fqf_lag[m,i,j] * params.ω[i]*params.ω_lag[j]*Je_lag[e,i,j]
-          end
-        end
-      end
-    end
-
-    DSS_rhs_laguerre!(params.B_lag, params.b_lag, connijk_lag, params.mesh.nelem_semi_inf, params.mesh.ngl, params.mesh.ngr, params.neqs, SD, params.AD)
-    #for ip=1:params.mesh.npoin
-      #if !(ip in params.mesh.poin_in_bdy_edge)
-    params.B .+= params.B_lag
-
-      #else
-        #if (ip in params.mesh.poin_in_bdy_edge && params.mesh.y[ip] > 14000.0 && abs(params.mesh.x[ip]) < 10000.0)
-        #@info  t, params.B[ip,:], params.B_lag[ip,:],ip, params.mesh.x[ip],params.mesh.y[ip]
-        #end
-      #end
-    #end
-  end
-
-  #@info "before div"
-  #@info params.B[3247,:]
-
   for ieq=1:params.neqs
        divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
   end
 
   uaux[:,params.neqs] .= params.B[:,params.neqs]
-
+  uaux[:,2:4] .= uaux[:,2:4] .+ params.qp.qe[:,2:4]
   #=if (params.laguerre)
 
     @time uaux .= params.B
@@ -396,6 +455,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
 
   uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
 end
+
 
 @kernel function filter_gpu_2d!(u, qe, B, fx, fy_t, Je, ω_x, ω_y, connijk, Minv, n_x, n_y, neqs,lpert)
     ie = @index(Group, Linear)
