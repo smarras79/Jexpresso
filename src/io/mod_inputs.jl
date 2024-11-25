@@ -37,6 +37,10 @@ function mod_inputs_user_inputs!(inputs)
       inputs[:llinsolve] = false
     end
 
+    if(!haskey(inputs, :lsparse))
+      inputs[:lsparse] = false
+    end
+
     if(!haskey(inputs, :plot_vlines))
       inputs[:plot_vlines] = "empty"
     end
@@ -546,9 +550,6 @@ function mod_inputs_user_inputs!(inputs)
     end
     if(!haskey(inputs, :lsource))
         inputs[:lsource] = false
-    end
-    if(!haskey(inputs, :lbomex))
-        inputs[:lbomex] = false
     end
 
     if(!haskey(inputs, :ldss_differentiation))

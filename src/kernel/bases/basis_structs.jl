@@ -740,7 +740,8 @@ function GaussRadauLaguerreNodesAndWeights!(Laguerre::St_Laguerre, gr::St_gr, no
     ξ = Float128.(xi.values)
     ngr = length(gr.ξ)
     thresh = 1e-13
-    if (backend == MetalBackend())
+    if (backend != CPU())
+    #if (backend == MetalBackend())
         thresh = 1e-5
     end
         

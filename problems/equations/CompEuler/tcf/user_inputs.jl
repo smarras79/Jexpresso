@@ -4,36 +4,36 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.4,
+        :Δt                   => 0.001,
         :tinit                => 0.0,
-        :tend                 => 10.0,
+        :tend                 => 1.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
-        :restart_input_file_path => "./output/CompEuler/theta/output",
-        :ndiagnostics_outputs => 2,
+        :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
+        #:ndiagnostics_outputs => 2,
         :case                 => "rtb",
+        :diagnostics_at_times => [0,0.1, 0.2, 0.3, 0.5], #range(0,10,20),
         :lsource              => true, 
-        #:backend              => CUDABackend(),
+        #:backend              => MetalBackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 4,      # Polynomial order
+        :nop                 => 5,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc               => true, #false by default
-        :ivisc_equations     => [1, 2, 3, 4, 5],
-        :μ                   => [0.0, 20.0, 20.0, 20.0, 60.0],
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        :ivisc_equations      => [1, 2, 3, 4, 5],
+        :μ                   => [0.0, 20.0, 20.0, 20.0, 60.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-10x10x12.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-20x10x3.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-2x2x2.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -46,7 +46,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",
+        :loverwrite_output   => true,
         :loutput_pert        => true,  #this is only implemented for VTK for now
+        #:lvolume3d          => true,
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

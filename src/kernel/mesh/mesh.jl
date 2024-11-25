@@ -79,6 +79,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     cell_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))    
     cell_face_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nelem), zeros(1))
     face_edge_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nfaces), zeros(1))
+    facet_cell_ids::Table{Int64,Vector{Int64},Vector{Int64}}    = Gridap.Arrays.Table(zeros(nfaces), zeros(1))
 
     connijk_lag = KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
     connijk =  KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
@@ -258,6 +259,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
     mesh.face_edge_ids     = get_faces(topology,mesh.nsd-1, 1)
+    mesh.facet_cell_ids     = get_faces(topology,mesh.nsd-1, mesh.nsd)
+    # @info mesh.facet_cell_ids
     mesh.edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
 
 
@@ -447,18 +450,19 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
                 for igl = 1:mesh.ngl
                     mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
                     mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
+                    mesh.bdy_edge_in_elem[iedge_bdy] = mesh.facet_cell_ids[iedge][1]
+                    if (size(mesh.facet_cell_ids[iedge],1) ≠ 1)
+                        s = """
+                        Check boundary elements! size(mesh.facet_cell_ids[iedge],1) ≠ 1 
+                            """
+                
+                        @error s
+                    end
                 end
                 if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
                     n_semi_inf += 1
                 end
                 iedge_bdy += 1
-            end
-        end
-        for iel = 1:mesh.nelem
-            for iedge_bdy = 1:mesh.nedges_bdy
-                if issubset(mesh.poin_in_bdy_edge[iedge_bdy, :], mesh.connijk[iel, :, :])
-                    mesh.bdy_edge_in_elem[iedge_bdy] = iel
-                end
             end
         end
         # build mesh data structs for Laguerre semi-infinite elements
@@ -615,18 +619,19 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
                     for jgl = 1:mesh.ngl
                         mesh.poin_in_bdy_face[iface_bdy, igl,jgl] = mesh.poin_in_face[iface, igl,jgl]
                         mesh.bdy_face_type[iface_bdy] = mesh.face_type[iface]
+                        mesh.bdy_face_in_elem[iface_bdy] = mesh.facet_cell_ids[iface][1]
+                        if (size(mesh.facet_cell_ids[iface],1) ≠ 1)
+                            s = """
+                            Check boundary elements! size(mesh.facet_cell_ids[iface],1) ≠ 1 
+                                """
+                    
+                            @error s
+                        end
                         #@info "face point number", mesh.poin_in_face[iface,igl,jgl],iface,igl,jgl
                     end
                 end
                 iface_bdy += 1
             # end
-        end
-        for iel = 1:mesh.nelem
-            for iface_bdy = 1:mesh.nfaces_bdy
-                if issubset(mesh.poin_in_bdy_face[iface_bdy, :,:], mesh.connijk[iel, :, :, :])
-                    mesh.bdy_face_in_elem[iface_bdy] = iel
-                end
-            end
         end
         #=for iface =1:mesh.nfaces_bdy
             for i=1:mesh.ngl
@@ -670,33 +675,27 @@ println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"
 #writevtk(model,"gmsh_grid")
 end
 
-function determine_colinearity(vec1,vec2)
-    if (size(vec1,1) < 3)
-
-        match = false
-        if (AlmostEqual(vec1[1],0.0) && AlmostEqual(vec2[1],0.0))
-            match = (abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7)
-        elseif (AlmostEqual(vec1[2],0.0) && AlmostEqual(vec2[2],0.0))
-            match = (abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7)
-        elseif (abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7) && (abs(vec1[1]) > 1e-7 && abs(vec2[1] > 1e-7))
-
-            rat1 = (vec[1]+1e-16) / (per1[1]+1e-16)
-            rat2 = (vec[2]+1e-16) / (per1[2]+1e-16)
-            rat3 = (vec[1]+1e-16) / (per2[1]+1e-16)
-            rat4 = (vec[2]+1e-16) / (per2[2]+1e-16)
-            match = (AlmostEqual(rat1,rat2) || AlmostEqual(rat3,rat4))
+function determine_colinearity(vec1, vec2)
+    # For 2D vectors
+    if size(vec1, 1) < 3
+        if AlmostEqual(vec1[1], 0.0) && AlmostEqual(vec2[1], 0.0)
+            return abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7
+        elseif AlmostEqual(vec1[2], 0.0) && AlmostEqual(vec2[2], 0.0)
+            return abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7
+        elseif abs(vec1[2]) > 1e-7 && abs(vec2[2]) > 1e-7 && abs(vec1[1]) > 1e-7 && abs(vec2[1]) > 1e-7
+            return AlmostEqual((vec1[1] + 1e-16) / (vec2[1] + 1e-16), (vec1[2] + 1e-16) / (vec2[2] + 1e-16))
+        else
+            return false
         end
+
+    # For 3D vectors
     else
-        match = false
-        s1 = vec1[2]*vec2[3] - vec1[3]*vec2[2]
-        s2 = vec1[3]*vec2[1] - vec1[1]*vec2[3]
-        s3 = vec1[1]*vec2[2] - vec1[2]*vec2[1]
-        if (abs(s1) < 1e-7 && abs(s2) < 1e-7 && abs(s3) < 1e-7)
-            match = true
-        end
+        return abs(vec1[2] * vec2[3] - vec1[3] * vec2[2]) < 1e-7 &&
+               abs(vec1[3] * vec2[1] - vec1[1] * vec2[3]) < 1e-7 &&
+               abs(vec1[1] * vec2[2] - vec1[2] * vec2[1]) < 1e-7
     end
-    return match
 end
+
 function populate_conn_edge_el!(mesh::St_mesh, SD::NSD_2D)
     
     for iel = 1:mesh.nelem

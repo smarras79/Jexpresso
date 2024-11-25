@@ -73,7 +73,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------  
     # B.C. arrays
     #------------------------------------------------------------------------------------
-    gradu    = KernelAbstractions.zeros(backend, T, 2, 1, 1) #KernelAbstractions.zeros(2,Int64(sem.mesh.npoin),nvars)
+    gradu    = KernelAbstractions.zeros(backend, T, 2, 1, 1)
     ubdy     = KernelAbstractions.zeros(backend, T, Int64(qp.neqs))
     bdy_flux = KernelAbstractions.zeros(backend, T, Int64(qp.neqs),1)    
 

@@ -39,7 +39,7 @@ function time_loop!(inputs, params, u)
                      inputs[:output_dir], inputs,
                      params.qp.qvars,
                      inputs[:outformat];
-                     nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
+                     nvar=params.qp.neqs, qexact=params.qp.qe, case=inputs[:case])
 
     
     end

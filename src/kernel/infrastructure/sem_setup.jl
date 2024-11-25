@@ -112,21 +112,28 @@ function sem_setup(inputs::Dict)
                     KernelAbstractions.copyto!(inputs[:backend], fy_lag, fy_lag_1)
                 end
             end
-            #@time periodicity_restructure!(mesh,inputs)
+            
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end
-            metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat; backend = inputs[:backend])
-            metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
+            @info " Build metrics ......"
+            @time metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat; backend = inputs[:backend])
+            @time metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
             metrics = (metrics1, metrics2)
-            @time periodicity_restructure!(mesh,inputs,inputs[:backend])
-            
+            @info " Build metrics ...... DONE"
+            @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
+                                           mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
+                                           mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
+                                           mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
+                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
+
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
                                              ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
             
         else
-            
+            @info " Build interpolation bases ......"
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
+            @info " Build interpolation bases ...... END"
             ω1 = ω
             ω = ω1
             if (inputs[:lfilter])
@@ -139,11 +146,26 @@ function sem_setup(inputs::Dict)
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end
-            @info " metrics"
+            @info " Build metrics ......"
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
-            @time periodicity_restructure!(mesh,inputs,inputs[:backend]) 
+            @info " Build metrics ...... END"
+            
+            @info " Build periodicity infrastructure ......"
+            @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
+                                           mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
+                                           mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
+                                           mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
+                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
+            @info " Build periodicity infrastructure ...... DONE"
+
+#@mystop(" L 152 sem_setup")
+            
             #warp_mesh!(mesh,inputs)
+            
+            @info " Matrix wrapper ......"
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            @info " Matrix wrapper ...... END"
+            
         end
     else
         
@@ -159,9 +181,11 @@ function sem_setup(inputs::Dict)
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-            metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat;backend = inputs[:backend])
-            metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat;backend = inputs[:backend])
-            metrics = (metrics1, metrics2) 
+             @info " Build metrics ......"
+             @time metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat;backend = inputs[:backend])
+             @time metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat;backend = inputs[:backend])
+            metrics = (metrics1, metrics2)
+             @info " Build metrics ...... DONE"
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
         else
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
@@ -171,10 +195,14 @@ function sem_setup(inputs::Dict)
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-            metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
+             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
 
             if (inputs[:lperiodic_1d])
-                periodicity_restructure!(mesh,inputs,inputs[:backend])
+                @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
+                                           mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
+                                           mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
+                                           mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
+                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
             end
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
         end

@@ -1,6 +1,6 @@
-nelemx = 16;
-nelemy = 16;
-nelemz = 19;
+nelemx = 5;
+nelemy = 5;
+nelemz = 2;
 
 xmin =  0;
 xmax =	6400;
@@ -52,9 +52,9 @@ surfaceVector = Extrude {0,(ymax-ymin),0} {
      [4] - top surface (belonging to 3rd line in "Line Loop (6)")
      [5] - left surface (belonging to 4th line in "Line Loop (6)")
     */
-    Physical Surface("free_slip") = {12,34};
+    Physical Surface("periodic3") = {12,34};
     Physical Volume("internal") = {1};
-    Physical Surface("periodic2") = {25,33};
+    Physical Surface("not_periodic2") = {25,33};
     Physical Surface("periodic1") = {21,29};
     // from Plane Surface (6) ...
   //+
