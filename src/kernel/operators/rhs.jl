@@ -476,9 +476,11 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs,
                              x=x[ip], y=y[ip], z=z[ip], xmax=xmax, xmin=xmin, zmax=zmax)
                 if (params.inputs[:lmoist])
+                    @info params.S[i,j,k,4]
                     add_micro_precip_sources!(params.mp, params.mp.Tabs[ip], params.mp.S_micro[ip],
                                               @view(params.S[i,j,k,:]), @view(params.uaux[ip,:]),
                                               params.mp.qn[ip], @view(qe[ip,:]), params.SOL_VARS_TYPE)
+                    @info params.S[i,j,k,4]
                 end
             end
         end
