@@ -60,4 +60,37 @@ function warp_mesh!(mesh,inputs)
    end=#
 end
 
+function warp_mesh_3D!(mesh,inputs)
+    if (inputs[:mount_type] == "real topography")
+        # find surface heights by reading and interpolating real data onto grid
+        fname = inputs[:topo_database]
+        fname2 = inputs[:topo_geoid]
+        lat_min = inputs[:read_topo_latmin]
+        lat_max = inputs[:read_topo_latmax]
+        lon_min = inputs[:read_topo_lonmin]
+        lon_max = inputs[:read_topo_lonmax]
+        zone = inputs[:read_topo_zone]
+        xmin = minimum(mesh.x)
+        xmax = maximum(mesh.x)
+        ymin = minimum(mesh.y)
+        ymax = maximum(mesh.y)
+        lat, lon, z_topo = extract_region_topography_from_global_data(fname, fname2, lat_max, lon_max, lat_min, lon_min)
+        
+        x_topo, y_topo = Map_lat_lon_onto_simulation_domain(lat,lon,xmin,xmax,ymin,ymax,zone)
+        z_surf = zeros(mesh.npoin)
+        
+        interpolate_topography_onto_grid!(mesh.x, mesh.y, z_surf, x_topo, y_topo, z_topo)
+        ### sigma coordinate topography
+        ztop = maximum(mesh.z)
+        sigma = zeros(mesh.npoin)
+        for ip = 1:mesh.npoin
+            sigma[ip] = mesh.z[ip]
+            z_new = (ztop - z_surf[ip])/ztop * sigma[ip] + z_surf[ip]
+            mesh.z[ip] = z_new
+        end
 
+    end
+end
+
+
+    

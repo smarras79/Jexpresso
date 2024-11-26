@@ -143,8 +143,14 @@ function sem_setup(inputs::Dict)
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-            if (inputs[:lwarp])
-                warp_mesh!(mesh,inputs)
+            if (mesh.nsd > 2)
+                if (inputs[:lwarp])
+                    warp_mesh_3D!(mesh,inputs)
+                end
+            else
+                if (inputs[:lwarp])
+                    warp_mesh!(mesh,inputs)
+                end
             end
             @info " Build metrics ......"
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])

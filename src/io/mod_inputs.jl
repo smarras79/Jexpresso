@@ -33,6 +33,30 @@ function mod_inputs_user_inputs!(inputs)
         end
     end
 
+    if(!haskey(inputs, :topo_database))
+       inputs[:topo_database] = "empty"
+    end
+
+    if(!haskey(inputs, :read_topo_latmin))
+        inputs[:read_topo_latmin] = -89.99
+    end
+
+    if(!haskey(inputs, :read_topo_latmax))
+        inputs[:read_topo_latmax] = 89.99
+    end
+    
+    if(!haskey(inputs, :read_topo_lonmin))
+        inputs[:read_topo_lonmin] = -179.99
+    end
+
+    if(!haskey(inputs, :read_topo_lonmax))
+        inputs[:read_topo_lonmax] = 179.99
+    end
+
+    if(!haskey(inputs, :read_topo_zone))
+        inputs[:read_topo_zone] = 20
+    end
+
     if(!haskey(inputs, :llinsolve))
       inputs[:llinsolve] = false
     end
