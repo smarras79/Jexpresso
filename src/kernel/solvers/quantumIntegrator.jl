@@ -34,8 +34,6 @@ include("quantumIntegrator/Calcf0.jl");
 
 using Makie
 
-#TODO: Note: next step is to create values for derivatives of driver function.
-
 function quantumIntegrator(u, params, inputs)
     t_steps = 1400
     N, delta1, n, k = InitParms(16, 0.005, 0.005, t_steps) #all from qns_inputdata in jqc (user inputs)
@@ -81,6 +79,7 @@ function quantumIntegrator(u, params, inputs)
     #U2_in[1, :] .= In_Mass_Flow
     #InitVal, Delta_t, In_Mass_Flow_Noisy = SetInCond(shock_flag, In_Mass_Flow, gamma, x, Del_x, A, d, Mrho_E, Temp_E, ICMFlowErrScale, ICrhoErrScale, ICtempErrScale)
     b =  t_steps*Delta_t#inputs[:Δt]
+    @info b
     t, hbar = IPrtn(a, b, n, N)
     #ff0_throat_in = zeros(Float64, d, n)
     #ff1_throat_in = zeros(Float64, d, n)
@@ -95,10 +94,15 @@ function quantumIntegrator(u, params, inputs)
     AvMinusSDevRelTempErr, AvRelMachErr, AvPlusSDevRelMachErr, AvMinusSDevRelMachErr, 
     AvRelMrhoErr, AvPlusSDevRelMrhoErr, AvMinusSDevRelMrhoErr, AvRelPressErr, 
     AvPlusSDevRelPressErr, AvMinusSDevRelPressErr, AvU2,=# #=ff0_throat, ff1_throat, 
-    ff2_throat, =#FinalVal, allTimestepValues = IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, 
-    Tot_X_Pts, Shock_Flag, Exit_Pressure, ithroat, a, delta1, rho, InitVal#=?=#, A, 
+    ff2_throat, =#
+    #for i in LinRange(0, 30, 30)
+    #    print(i)
+    FinalVal, allTimestepValues = IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, 
+    Tot_X_Pts, Shock_Flag, Exit_Pressure, ithroat, a, delta1, rho, InitVal, A, 
     t, #=U2_in,=# #=ff0_throat_in, ff1_throat_in, ff2_throat_in,=# #=Mach_E, Mrho_E, Press_E, 
     Temp_E, Vel_E, In_Mass_Flow,=# params)
+    #    InitVal .= FinalVal
+    #end
     #finalU = zeros(Float64, d*Tot_X_Pts)
     for ieq=1:2 #TODO: change back to d later
         for ip=1:Tot_X_Pts

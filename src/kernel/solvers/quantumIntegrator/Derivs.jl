@@ -104,8 +104,8 @@ for ip=1:Tot_X_Pts
 end
 
 # replace with call to _build_rhs
-#build_rhs!(params.RHS, u, params, 0.0)
-inviscid_rhs_el!(u, params, params.inputs[:lsource], NSD_1D(), params.inputs[:AD])
+build_rhs!(params.RHS, u, params, 0.0)
+#inviscid_rhs_el!(u, params, params.inputs[:lsource], NSD_1D(), params.inputs[:AD])
 # for m=1:d
 #     U[m,1] = params.uaux[1,m]
 #     U[m,Tot_X_Pts] = params.uaux[Tot_X_Pts, m]
@@ -136,10 +136,10 @@ end
 #                       at nozzle entrance [exit] in column 1 [2].
 
 ff_Bvals = zeros(Float64, d, 2)
-ff_Bvals[1, 1] = ff_vals[1, 1]
-ff_Bvals[1, 2] = ff_vals[1, Tot_X_Pts]
-ff_Bvals[2, 1] = ff_vals[2, 1]
-ff_Bvals[2, 2] = ff_vals[2, Tot_X_Pts]
+ff_Bvals[1, 1] = params.RHS[1, 1]
+ff_Bvals[1, 2] = params.RHS[Tot_X_Pts, 1]
+ff_Bvals[2, 1] = params.RHS[1, 2]
+ff_Bvals[2, 2] = params.RHS[Tot_X_Pts, 2]
 #= TODO: uncomment if necessary
 if Shock_Flag .== 0
     ff_Bvals = CalcfBvalsmSW(InitVal,Gamma,ff_vals,d,Tot_Int_Pts)

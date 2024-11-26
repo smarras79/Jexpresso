@@ -154,7 +154,7 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
   ###### looping over all subintervals as defined in paper######
   @info InitVal
-  readline();
+  #readline();
   for i = 1:n
     #build Taylor polynomials l^{s}_[i](t)for subinterval i at all()
     #   interior grid-points; store polynomial coefficients in 
@@ -347,7 +347,7 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
     end
 
     npoin = Tot_X_Pts
-    fig, ax, plt = CairoMakie.scatter(range(params.inputs[:xmin], params.inputs[:xmax], length=Tot_X_Pts), InitVal[2, 1:npoin];
+    fig, ax, plt = CairoMakie.scatter(range(params.inputs[:xmin], params.inputs[:xmax], length=Tot_X_Pts), InitVal[1, 1:npoin];
                                       markersize = 10, markercolor="Blue",
                                       xlabel = "x", ylabel = "q(x)",
                                       fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = "u", xlabel = "x")
@@ -364,12 +364,14 @@ function IntegrateODE(d, n, N, hbar, r, Del_x, Gamma, Tot_Int_Pts, k, Tot_X_Pts,
 
   end
 
-  return #=U2=# #=Mach_D, Mrho_D, Press_D, Temp_D, Vel_D, Rel_MachErr,
+  @info "done"
+
+  return InitVal, allTimestepValues #=U2=# #=Mach_D, Mrho_D, Press_D, Temp_D, Vel_D, Rel_MachErr,
     Rel_MrhoErr, Rel_PressErr, Rel_TempErr, Rel_VelErr,=#
     #= AvRelTempErr, AvPlusSDevRelTempErr, AvMinusSDevRelTempErr,
     AvRelMachErr, AvPlusSDevRelMachErr, AvMinusSDevRelMachErr,
     AvRelMrhoErr, AvPlusSDevRelMrhoErr, AvMinusSDevRelMrhoErr,
     AvRelPressErr, AvPlusSDevRelPressErr, AvMinusSDevRelPressErr,
     AvU2,=#
-    #=ff0_throat, ff1_throat, ff2_throat, =# InitVal, allTimestepValues
+    #=ff0_throat, ff1_throat, ff2_throat, =# 
 end

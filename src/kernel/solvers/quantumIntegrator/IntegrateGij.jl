@@ -52,7 +52,7 @@ function IntegrateGij(StoreLz, StoreTimes4i, Start,
   rmaxp1 = r + 2       # number of terms/coefficients in Taylor 
   #  polynomial l^{s}_[i](t)
 
-  Tolerance = 10^(-12)  # used to test for division by zero below
+  Tolerance = 10^(-12) #12  # used to test for division by zero below
 
   # define array ti store integral result for subsubint j at each interior 
   #   grid-point
@@ -87,7 +87,7 @@ function IntegrateGij(StoreLz, StoreTimes4i, Start,
 
 
     ###### set values of gij at interior grid pts ######
-    Gij .= FuncOrc(t[:], StoreLz[:, :, :, Int(j)], d, rmaxp1, N,
+    Gij .= FuncOrc(t, StoreLz[:, :, :, Int(j)], d, rmaxp1, N,
       rho, Tot_Int_Pts, A, Gamma,
       Del_x, Shock_Flag, Exit_Pressure, params)
     # GijVals stores values of Gij [viz. driver function f] at N knot times
@@ -106,7 +106,6 @@ function IntegrateGij(StoreLz, StoreTimes4i, Start,
         for knot = 1:Int(N)
           global GijVals[knot] = Gij[k, ll, knot]
         end
-
         #@info GijVals
 
         # introduce gijVals which is a shifted & rescaled version() 
@@ -160,13 +159,11 @@ function IntegrateGij(StoreLz, StoreTimes4i, Start,
           global IntegralValue[k, ll] = hbar * aEstimate[1]
         elseif DelGij <= Tolerance
           global IntegralValue[k, ll] = 0.0
-
-          # print("DelGij .< Tolerance! Beware dividing by 0!")
-          # print(GijMin)
-          # print(GijMax)
-          # print(DelGij)
-          # print("   Press any key to continue calculation...")
-          # readline()
+          #print(GijMin)
+          #print(GijMax)
+          #print(DelGij)
+          #print("   Press any key to continue calculation...")
+          #readline()
           # TODO: chagne later or not
         end
 

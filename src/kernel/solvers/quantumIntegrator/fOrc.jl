@@ -121,7 +121,9 @@ function fOrc(t, Start, TCoeffs, d,
             rhs[j, i] = params.RHS[i+1, j]
         end
     end
-    #@info rhs
+    #@info "rhs"
+    #@info rhs[1, :]
+    #readline()
 
     
     #f_Loc = rhs
