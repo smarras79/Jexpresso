@@ -32,9 +32,9 @@ Fac2 = (ff_Bvals[2,1])^(2)/U[1,1]
 
 dffdt_Bvals[1,1] = 0
 
-dffdt_Bvals[2,1] = 2*dffdt_vals[2,1] - dffdt_vals[2,2]
+dffdt_Bvals[2,1] = 0#2*dffdt_vals[2,1] - dffdt_vals[2,2] #TODO: change back later
 
-dffdt_Bvals[3,1] = Gamma*( (Fac1*dffdt_Bvals[2,1]) + Fac2 )
+dffdt_Bvals[3,1] = 0#Gamma*( (Fac1*dffdt_Bvals[2,1]) + Fac2 ) #TODO: change back later
 
 # nozzle exit calculations
 

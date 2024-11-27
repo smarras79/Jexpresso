@@ -27,6 +27,7 @@ function Calc_d2Fdt2(U,dffdt_vals,dffdt_Bvals,ff_vals,
 
 d2Fdt2 = zeros(d, Tot_X_Pts)
 
+#= #TODO: again, just testing
 TotXPtm1 = Tot_X_Pts - 1
 
 fac4 = Gamma - 1
@@ -158,6 +159,16 @@ for ll = 2:TotXPtm1
                               +6*fac12*(ff_vals[2,IPLabel])^(2) 
                               +6*fac16*(ff_vals[1,IPLabel])^(2) 
                          -12*fac11*ff_vals[1,IPLabel]*ff_vals[2,IPLabel] )
+end
+=#
+d2Fdt2[1, 1] = dffdt_Bvals[2, 1]
+d2Fdt2[2, 1] = dffdt_Bvals[1, 1]
+d2Fdt2[1, Tot_X_Pts] = dffdt_Bvals[2, 2]
+d2Fdt2[2, Tot_X_Pts] = dffdt_Bvals[1, 2]
+
+for i=1:Tot_X_Pts-2
+     d2Fdt2[1, i+1] = dffdt_vals[2, i]
+     d2Fdt2[2, i+1] = dffdt_vals[1, i]
 end
 
 

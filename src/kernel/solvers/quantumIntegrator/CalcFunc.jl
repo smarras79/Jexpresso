@@ -1,4 +1,4 @@
-function CalcFunc( F, J, Del_x, d, Tot_Int_Pts )
+function CalcFunc( Del_x, d, Tot_Int_Pts, params )
     #CALCFUNC evaluates the ODE driver function for 1D Nav.-Stokes dynamics
     #   CalcFunc evaluates ODE driver function for 1D compressible; inviscid
     #       Navier-Stokes flow through a nozzle.
@@ -19,7 +19,7 @@ function CalcFunc( F, J, Del_x, d, Tot_Int_Pts )
     
     ff_vals = zeros(d,Tot_Int_Pts)
     
-    Fac1 = (-1)/(2*Del_x)
+    Fac1 = (-1)/(2*params.mesh.Δx[1])
     
     # evaluate ODE driver function; loop over interior grid-points
     #   NOTE: 1. gridLabel gives grid-point label for each interior grid-point
@@ -32,9 +32,9 @@ function CalcFunc( F, J, Del_x, d, Tot_Int_Pts )
     for i = 1:Tot_Int_Pts
         gridLabel = i + 1
         ###### finite difference equation
-        global ff_vals[1,i] = Fac1*( F[1,gridLabel + 1] - F[1,gridLabel - 1])
-        global ff_vals[2,i] = Fac1*( (F[2,gridLabel+1] - F[2,gridLabel-1]) - J[i] )
-        global ff_vals[3,i] = Fac1*( F[3,gridLabel + 1] - F[3,gridLabel - 1] )
+        global ff_vals[1,i] = Fac1*( params.F[gridLabel + 1, 1] - params.F[gridLabel - 1, 1])
+        global ff_vals[2,i] = Fac1*( (params.F[gridLabel+1, 2] - params.F[gridLabel-1, 2]) - params.S[i] )
+        #global ff_vals[3,i] = 0 TODO: change later if 3 equation added
     end
     
     return ff_vals

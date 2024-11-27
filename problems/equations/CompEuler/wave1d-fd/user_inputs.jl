@@ -7,18 +7,19 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver           => ABM54(),
         :tend                 => 3.0,
-        :Δt                   => 1.0e-5,
+        :Δt                   => 1.0e-3,
         :ndiagnostics_outputs => 10, #these are steps, not seconds
         :output_dir           => "./",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        #:AD                  => FD(),
+        :AD                  => FD(),
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 4,     # Polynomial order
         :lexact_integration  => false,
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
+        #:lquantum            => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -37,9 +38,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
-        :xmin          =>   0.0,
-        :xmax          =>   5.0,
-        :nelx          =>   50, #200,
+        :xmin          =>   1.0,
+        :xmax          =>   3.0,
+        :nelx          =>   100,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter

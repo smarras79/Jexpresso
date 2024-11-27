@@ -18,7 +18,8 @@ function Calc_dFdt(U, ff_vals, ff_Bvals, Gamma, d, Tot_X_Pts)
   #                       flow fluxes at all grid-points
 
   dFdt = zeros(d, Tot_X_Pts)
-
+#TODO: change back later
+  #=
   TotXPtm1 = Tot_X_Pts - 1
 
   fac4 = Gamma - 1
@@ -102,6 +103,17 @@ function Calc_dFdt(U, ff_vals, ff_Bvals, Gamma, d, Tot_X_Pts)
                     -
                     2 * fac1 * ff_vals[1, IPLabel])
 
+  end
+=#
+
+  dFdt[1, 1] = ff_Bvals[2, 1]
+  dFdt[2, 1] = ff_Bvals[1, 1]
+  dFdt[1, Tot_X_Pts] = ff_Bvals[2, 2]
+  dFdt[2, Tot_X_Pts] = ff_Bvals[1, 2]
+
+  for i=1:Tot_X_Pts-2
+    dFdt[1, i+1] = ff_vals[1, i]
+    dFdt[2, i+1] = ff_vals[2, i]
   end
 
   return dFdt

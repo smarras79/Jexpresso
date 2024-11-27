@@ -19,8 +19,8 @@ function BldTMat(f,d,r,InVal,Tot_Int_Pts,Tot_X_Pts)
     #                       page of mat stores the Taylor polynomial
     #                       coefficients at an interior grid-point.
     
-    rmax = r + 1;       # degree of Taylor polynomials
-    rmaxp1 = rmax + 1;  # number of terms in Taylor polynomials
+    rmax = r + 1;   # = 3    # degree of Taylor polynomials
+    rmaxp1 = rmax + 1;  # = 4# number of terms in Taylor polynomials
     
     # for given subsubinterval mat will return the Taylor polynomial 
     #  coefficients for each component of approximation to ODE driver 
