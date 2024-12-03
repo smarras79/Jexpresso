@@ -45,11 +45,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        #:lfilter             => true,
+        :lfilter             => true,
         :mu_x                => 0.05,
         :mu_y                => 0.05,
         :mu_z                => 0.05,
-        :filter_type         => "erf",
+        :filter_type         => "erf", #use "erf" for Boyd-Vandeven, "exp" for exponential filter, or "quad" for quadratic filter
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
