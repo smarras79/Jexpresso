@@ -292,7 +292,9 @@ function add_micro_precip_sources!(mp::St_SamMicrophysics,T,S_micro,S,q,qn,qe,::
     qt = q[6]/ρ
     qp = q[7]/ρ
     qv = qt - qn
-    S[4] += -ρ*PhysConst.g*(0.608*qv-qn-qp) #moisture buoyancy contribution
+    ρqv_pert = ρ*qv - qe[6]
+     S[4] += -PhysConst.g*(0.608*ρqv_pert -ρ*(qn+qp))
+    #S[4] += -ρ*PhysConst.g*(0.608*qv-qn-qp) #moisture buoyancy contribution
     S[6] += -ρ*S_micro
     S[7] += ρ*S_micro
 

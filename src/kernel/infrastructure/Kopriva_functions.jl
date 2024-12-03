@@ -759,7 +759,7 @@ function D3CoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
     Tx = PolynomialInterpolationMatrix(x,w_x,ξ)
     for i=1:M_o
         for j=1:P_o
-            F̅[:,i,j] = InterpolateToNewPoints(T,f[:,i,j])
+            F̅[:,i,j] = InterpolateToNewPoints(Tx,f[:,i,j])
         end
     end
     w_y = BarycentricWeights(y)

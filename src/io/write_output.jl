@@ -1338,12 +1338,12 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
     end
     if (inputs[:lmoist])
         if (inputs[:backend] == CPU())
-            vtkfile[string("T"), VTKPointData()] =  @view(mp.Tabs[:])
-            vtkfile[string("qi"), VTKPointData()] =  @view(mp.qi[:])
-            vtkfile[string("qc"), VTKPointData()] =  @view(mp.qc[:])
-            vtkfile[string("qr"), VTKPointData()] =  @view(mp.qr[:])
-            vtkfile[string("qs"), VTKPointData()] =  @view(mp.qs[:])
-            vtkfile[string("qg"), VTKPointData()] =  @view(mp.qg[:])
+            #vtkfile[string("T"), VTKPointData()] =  @view(mp.Tabs[:])
+            #vtkfile[string("qi"), VTKPointData()] =  @view(mp.qi[:])
+            #vtkfile[string("qc"), VTKPointData()] =  @view(mp.qc[:])
+            #vtkfile[string("qr"), VTKPointData()] =  @view(mp.qr[:])
+            #vtkfile[string("qs"), VTKPointData()] =  @view(mp.qs[:])
+            #vtkfile[string("qg"), VTKPointData()] =  @view(mp.qg[:])
         else
             Tabs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
             KernelAbstractions.copyto!(inputs[:backend], Tabs, mp.Tabs)

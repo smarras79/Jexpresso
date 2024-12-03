@@ -395,7 +395,6 @@ function _build_rhs!(RHS, u, params, time)
     end
 
     inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, SD)
-    
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
     #@info maximum(params.RHS[:,7]), maximum(params.RHS[:,6])
     #-----------------------------------------------------------------------------------
@@ -518,11 +517,9 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs,
                              x=x[ip], y=y[ip], z=z[ip], xmax=xmax, xmin=xmin, zmax=zmax)
                 if (params.inputs[:lmoist])
-                    @info params.S[i,j,k,4]
                     add_micro_precip_sources!(params.mp, params.mp.Tabs[ip], params.mp.S_micro[ip],
                                               @view(params.S[i,j,k,:]), @view(params.uaux[ip,:]),
                                               params.mp.qn[ip], @view(qe[ip,:]), params.SOL_VARS_TYPE)
-                    @info params.S[i,j,k,4]
                 end
             end
         end
@@ -547,7 +544,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
 
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]),params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
         end
 
         for ieq in params.ivisc_equations
@@ -578,7 +575,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
         for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j,k]
 
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,k,:]),params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,k,:]), params.SOL_VARS_TYPE)
         end
         for ieq in params.ivisc_equations
             _expansion_visc!(params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el, params.uprimitive, 
@@ -712,8 +709,8 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, H, S, Je, dξdx, dξd
                     dFdz = dFdξ*dξdz_ij + dFdη*dηdz_ij + dFdζ*dζdz_ij
                     dGdz = dGdξ*dξdz_ij + dGdη*dηdz_ij + dGdζ*dζdz_ij
                     dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
-                    #if (ieq == 7)
-                    #    @info dFdx, dGdy, dHdz, S[i,j,k,ieq]
+                    #if (ieq == 4)
+                     #   @info dHdz, S[i,j,k,ieq]
                     #end
                     auxi = ωJac*((dFdx + dGdy + dHdz) - S[i,j,k,ieq])
                     rhs_el[iel,i,j,k,ieq] -= auxi
