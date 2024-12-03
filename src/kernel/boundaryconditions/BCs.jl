@@ -308,7 +308,7 @@ function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                     ip = poin_in_bdy_face[iface,i,j]
                     user_bc_dirichlet!(@view(uaux[ip,:]),
                                        x[ip], y[ip], z[ip],
-                                       t, 0, qbdy,
+                                       t, bdy_face_type[iface], qbdy,
                                        nx[iface,i,j], ny[iface,i,j], nz[iface,i,j],
                                        xmin, xmax,
                                        ymin, ymax,
