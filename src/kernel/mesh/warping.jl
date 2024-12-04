@@ -89,7 +89,29 @@ function warp_mesh_3D!(mesh,inputs)
             mesh.z[ip] = z_new
         end
 
+  elseif (inputs[:mount_type] == "agnesi")
+    am = inputs[:a_mount]
+    hm = inputs[:h_mount]
+    xc = inputs[:c_mount]
+    for ip = 1:mesh.npoin
+      x = mesh.x[ip]
+      zsurf[ip] = hm/(1+ ((x-xc)/am)^2)
     end
+  elseif (inputs[:mount_type] == "schar")
+    ac = inputs[:a_mount]
+    hc = inputs[:h_mount]
+    lambdac = inputs[:lambda_mount]
+    for ip = 1:mesh.npoin
+      x = mesh.x[ip]
+      zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2
+    end
+  end
+
+  for ip = 1:mesh.npoin
+    sigma[ip] = mesh.z[ip]
+      z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+      mesh.z[ip] = z
+  end
 end
 
 
