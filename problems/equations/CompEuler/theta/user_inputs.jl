@@ -6,14 +6,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         #:Δt                   => 0.02,
-        :Δt                   => 0.4,
+        :Δt                   => 0.05,
         :tinit                => 0.0,
         :tend                 => 1000.0,
+        # :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (100, 200, 300, 400, 500, 600, 700, 800, 900, 1000),
+        :diagnostics_at_times => (50:50:1000),
         :case                 => "rtb",
         :lsource              => true, 
         # :backend              => CUDABackend(),
@@ -28,7 +29,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => (1, 2, 3, 4),
-        :μ                   => (0.0, 20.0, 20.0, 60.0), #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

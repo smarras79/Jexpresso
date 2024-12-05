@@ -15,7 +15,11 @@ function driver(nparts,
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
-    test_projection_solutions(sem.mesh, qp, partitioned_model, inputs, nparts, distribute)
+    # test_projection_solutions(sem.mesh, qp, partitioned_model, inputs, nparts, distribute)
+    @info "start conformity4ncf_q!"
+    @time conformity4ncf_q!(qp.qn, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+    @time conformity4ncf_q!(qp.qe, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+    @info "end conformity4ncf_q!"
 
     params, u =  params_setup(sem,
                               qp,

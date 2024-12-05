@@ -8,6 +8,7 @@ using Gridap.Geometry
 using Gridap.Fields
 using Gridap.ReferenceFEs
 using Gridap.CellData
+using Gridap.Visualization
 using Gridap.Geometry: GridMock
 using GridapDistributed
 using GridapDistributed: GenericDistributedDiscreteModel
@@ -110,7 +111,34 @@ function GridapGmsh.GmshDiscreteModel(gmsh::Module)
     UnstructuredDiscreteModel(grid,grid_topology,labeling)
 end
 
+const DistributedVisualizationData = GridapDistributed.DistributedVisualizationData
 
+
+function Visualization.visualization_data(
+    model::GenericDistributedDiscreteModel{Dc},
+    filebase::AbstractString;
+    labels=get_face_labeling(model)) where Dc
+  
+    cell_gids = get_cell_gids(model)
+    fact_gids = get_face_gids(model,Dc-1)
+    vd = map(local_views(model),partition(cell_gids), partition(fact_gids),labels.labels) do model,gids,fgids,labels
+      part = part_id(gids)
+      vd = visualization_data(model,filebase;labels=labels)
+      vd_cells = vd[end]
+      vd_facets = vd[Dc]
+      # @info part, size(vd)
+      push!(vd_cells.celldata, "gid" => local_to_global(gids))
+      push!(vd_facets.celldata, "fgid" => local_to_global(fgids))
+      push!(vd_cells.celldata, "part" => local_to_owner(gids))
+      # @info part, vd[end].celldata, vd_facets.celldata
+      vd
+    end
+    r = []
+    for i in 0:Dc
+      push!(r,DistributedVisualizationData(map(x->x[i+1],vd)))
+    end
+    r
+  end
 
 
 
@@ -1394,9 +1422,6 @@ function get_boundary_faces(model,nsd,dim)
   # @info facet_to_tag, labels.tag_to_name,  length(findall(x -> x>0, facet_to_tag))
   findall(x -> x>0, facet_to_tag)
 end
-
-
-
 
 
 

@@ -31,7 +31,7 @@ function time_loop!(inputs, params, u)
         println(" #  t=", integrator.t)
 
         #CFL
-      @time  computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD; visc=inputs[:μ])
+    #   @time  computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD; visc=inputs[:μ])
 
         #Write results to file
         write_output(params.SD, integrator.u, integrator.t, idx,
