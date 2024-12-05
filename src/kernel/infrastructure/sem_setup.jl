@@ -44,6 +44,7 @@ function sem_setup(inputs::Dict, nparts, distribute)
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
     ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])    
+    interp, project = build_projection_1d(ξω.ξ)
     ξ,ω = ξω.ξ, ξω.ω    
     if lexact_integration
         #
@@ -143,7 +144,7 @@ function sem_setup(inputs::Dict, nparts, distribute)
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
             
             #warp_mesh!(mesh,inputs)
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
         end
     else
         
@@ -180,9 +181,10 @@ function sem_setup(inputs::Dict, nparts, distribute)
         end
     end
 
+
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
     
-    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag), partitioned_model
+    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, interp, project), partitioned_model
 end

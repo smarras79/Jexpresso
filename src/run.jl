@@ -127,8 +127,10 @@ if cpu == false
     end
 end
 
-
-nparts = 4
+MPI.Init()
+comm = MPI.COMM_WORLD
+rank = MPI.Comm_rank(comm)
+nparts = MPI.Comm_size(comm)
 with_mpi() do distribute
     
     #main_ex4(nparts,distribute)

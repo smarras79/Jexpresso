@@ -112,7 +112,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
 
     ip2gip              = KernelAbstractions.zeros(backend, TInt, 0)
-    gip2owner              = KernelAbstractions.zeros(backend, TInt, 0)
+    gip2owner           = KernelAbstractions.zeros(backend, TInt, 0)
+    gip2ip              = KernelAbstractions.zeros(backend, TInt, 0)
     parts               = 1
     nparts              = 1
     
@@ -138,6 +139,16 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     # for AMR
     ad_lvl = KernelAbstractions.zeros(backend, TInt, 0)
+    num_hanging_facets::Union{TInt, Missing} = 0
+    non_conforming_facets                = Vector{Vector{TInt}}(undef,num_hanging_facets)
+    non_conforming_facets_parents_ghost  = Vector{Vector{TInt}}(undef,num_hanging_facets)
+    non_conforming_facets_children_ghost = Vector{Vector{TInt}}(undef,num_hanging_facets)
+
+    pgip_ghost = KernelAbstractions.zeros(backend, TInt, 0)
+    pgip_owner = KernelAbstractions.zeros(backend, TInt, 0)
+    cgip_ghost = KernelAbstractions.zeros(backend, TInt, 0)
+    cgip_owner = KernelAbstractions.zeros(backend, TInt, 0)
+
     # hangingfacets
     # partitioned_model::VoidOctreeDistributedDiscreteModel{nsd,nsd,parts,C,D}
 end
@@ -183,11 +194,19 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
             flags=zeros(Cint,length(indices))
             flags.=nothing_flag
             # @info flags
-            if rank == 2
-                # flags[10:5:end] .= refine_flag
-                flags .= refine_flag
+            # flags[2] = refine_flag
+            # if rank == 2
+                flags[10:5:end] .= refine_flag
+                # flags[201:3:300] .= refine_flag
+                # flags[196:10:375] .= refine_flag
+                # flags[146:148] .= refine_flag
+                # flags[236:245] .= nothing_flag
+                # flags[4] = refine_flag
+                # flags[3] = refine_flag
+                # flags[23] = refine_flag
+                # flags[1] = refine_flag
                 # flags[1:5] .= refine_flag
-            end
+            # end
             flags
         end
         partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags);
@@ -242,7 +261,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
     model_coarse  = DiscreteModelPortion(cmodel, own_to_local(cell_gids_c))
     topology      = get_grid_topology(model)
-    gtopology      = get_grid_topology(model)
+    dtopology      = get_grid_topology(dmodel)
     mesh.nsd      = num_cell_dims(model)
     
     POIN_flg = 0
@@ -292,8 +311,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     # Write the partitioned model to a VTK file
     # vtk_directory = "./coarse/" 
     # writevtk(partitioned_model_coarse, vtk_directory)
-    # vtk_directory = "./refine/" 
-    # writevtk(partitioned_model, vtk_directory)
+    vtk_directory = "./refine/" 
+    writevtk(partitioned_model.dmodel, vtk_directory)
 
 
 
@@ -302,10 +321,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     # Mesh elements, nodes, faces, edges
     #
 
-
-    p2pp = Geometry.get_face_to_parent_face(model,0)
-    # edge2pedge = Geometry.get_face_to_parent_face(model,1)
-    # face2pface = Geometry.get_face_to_parent_face(model,2)
+    p2pp = Geometry.get_face_to_parent_face(model,POIN_flg)
+    eg2peg = Geometry.get_face_to_parent_face(model,EDGE_flg)
+    f2pf = Geometry.get_face_to_parent_face(model,FACE_flg)
+    e2pe = Geometry.get_face_to_parent_face(model,ELEM_flg)
     # @info point2ppoint, edge2pedge, face2pface
 
     pgids = local_views(partition(get_face_gids(partitioned_model,POIN_flg))).item_ref[]
@@ -314,10 +333,16 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     elgids = local_views(partition(get_face_gids(partitioned_model,ELEM_flg))).item_ref[]
     # @info rank, own_to_local(pgids), "a ", local_to_own(pgids),  "a ", local_to_global(pgids), "a ", p2pp
     point2ppoint = local_to_global(pgids)[p2pp]
-    edge2pedge = local_to_global(edgids)
-    face2pface = local_to_global(fgids)
-    elm2pelm = local_to_global(elgids)
+    edge2pedge = local_to_global(edgids)[eg2peg]
+    face2pface = local_to_global(fgids)[f2pf]
+    elm2pelm = local_to_global(elgids)[e2pe]
     # @info rank, p2pp, point2ppoint
+    hanging_vert_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[1]
+    hanging_facet_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[mesh.nsd]
+    num_regular_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_regular_faces[mesh.nsd]
+    num_hanging_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_hanging_faces[mesh.nsd]
+    # @info rank, hanging_vert_glue, local_to_global(elgids), "a", hanging_facet_glue,num_hanging_facets
+
 
 
     mesh.gnpoin_linear = num_faces(partitioned_model.dmodel,POIN_flg)    
@@ -430,8 +455,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
     mesh.face_edge_ids     = get_faces(topology,mesh.nsd-1, 1)
+    # vertex_facet_ids     = get_faces(topology,0, mesh.nsd-1)
     mesh.edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
-    # @info rank,node_global
+
+    
 
     #
     # element refinement level
@@ -452,7 +479,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
             end
         end
     end
-    @info rank, mesh.ad_lvl
+    # @info rank, mesh.ad_lvl
 
 
     if (mesh.nsd == 1)
@@ -468,10 +495,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
             mesh.conn[iel, 4] = mesh.cell_node_ids[iel][3]
 
             #
-            # 3-----4
+            # 1-----3
             # |     |
             # |     |
-            # 1-----2
+            # 2-----4
             #
             mesh.connijk[iel, 1,      1] = mesh.cell_node_ids[iel][2]
             mesh.connijk[iel, 1,    ngl] = mesh.cell_node_ids[iel][1]
@@ -599,9 +626,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     #         
     add_high_order_nodes_volumes!(mesh, lgl, mesh.SD, elm2pelm)
 
-    mesh.gnpoin = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
-    # @info mesh.gnpoin
-    mesh.gip2owner = find_gip_owner(mesh.ip2gip)
     
     for ip = mesh.npoin_linear+1:mesh.npoin
         mesh.x[ip] = mesh.x_ho[ip]
@@ -627,6 +651,114 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
         end
     end
 
+
+
+    cell_fecet_ids = get_faces(dtopology, mesh.nsd, mesh.nsd-1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
+    facet_cell_ids = get_faces(dtopology, mesh.nsd-1, mesh.nsd) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
+    gpelm_ghost = KernelAbstractions.zeros(backend, TInt, 0)
+    gpfacets_ghost = KernelAbstractions.zeros(backend, TInt, 0)
+    gpfacets_owner = KernelAbstractions.zeros(backend, TInt, 0)
+    gcelm_ghost = KernelAbstractions.zeros(backend, TInt, 0)
+    gcfacets_ghost = KernelAbstractions.zeros(backend, TInt, 0)
+    gcfacets_owner = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.num_hanging_facets = num_hanging_facets
+    pedge2edge = Dict(val => idx for (idx, val) in enumerate(edge2pedge))
+    pface2face = Dict(val => idx for (idx, val) in enumerate(face2pface))
+    pelm2elm = Dict(val => idx for (idx, val) in enumerate(elm2pelm))
+    # mesh.non_conforming_facets = [KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0) for _ in 1:num_hanging_facets]
+    if mesh.nsd == 2
+        offset = 4
+        for idx in 1: num_hanging_facets
+            cfacet = idx+num_regular_facets
+            cid = facet_cell_ids[cfacet][1]
+            pid, lfacetid, half = hanging_facet_glue[idx]
+            pfacet = cell_fecet_ids[pid][lfacetid-offset]
+            gfacet_p = local_to_global(edgids)[pfacet]
+            gfacet_c = local_to_global(edgids)[cfacet]
+            if (lfacetid == 7) || (lfacetid == 8)
+                half = 3-half
+            end
+            # own child facet, ghost parent facet 
+            if (cfacet ∈ eg2peg) && (pfacet ∉ eg2peg)
+                # add ghost ip
+                gpid = local_to_global(elgids)[pid]
+                # push!(gpfacets_ghost, gfacet_p)
+                push!(gpelm_ghost, gpid)
+                push!(gpfacets_ghost, lfacetid - offset)
+                push!(gpfacets_owner, local_to_owner(edgids)[pfacet]-1)
+                pfacet = -pfacet
+                push!(mesh.non_conforming_facets_parents_ghost, [cid, lfacetid - offset, half])
+                continue
+            end
+            # ghost child facet, own parent facet
+            if (cfacet ∉ eg2peg) && (pfacet ∈ eg2peg)
+                gcid = local_to_global(elgids)[cid]
+                push!(gcelm_ghost, gcid)
+                push!(gcfacets_ghost, lfacetid - offset)
+                # push!(gcfacets_ghost, gfacet_c)
+                push!(gcfacets_owner, local_to_owner(edgids)[cfacet]-1)
+                cfacet = -cfacet
+                push!(mesh.non_conforming_facets_children_ghost, [pid, lfacetid - offset, half])
+                continue
+            end
+            # ghost child facet, ghost parent facet
+            if (cfacet ∉ eg2peg) && (pfacet ∉ eg2peg)
+                pfacet = -pfacet
+                cfacet = -cfacet
+                continue
+            end
+            # @info rank, cfacet, pfacet, [pid, lfacetid, half], gfacet_c, gfacet_p
+            # mesh.non_conforming_facets[idx] = [cfacet, pfacet, lfacetid-offset, half]
+            push!(mesh.non_conforming_facets, [cfacet, cid, pfacet, pid, lfacetid - offset, half])
+        end
+        # reorder mesh.non_conforming_facets_parents_ghost and mesh.non_conforming_facets_children_ghost in rank orders\
+        sorted_idx = sortperm(gpfacets_owner)
+        sort!(gpfacets_owner)
+        gpelm_ghost    .= gpelm_ghost[sorted_idx]
+        gpfacets_ghost .= gpfacets_ghost[sorted_idx]
+        mesh.non_conforming_facets_parents_ghost .= mesh.non_conforming_facets_parents_ghost[sorted_idx]
+
+        sorted_idx = sortperm(gcfacets_owner)
+        sort!(gcfacets_owner)
+        gcelm_ghost    .= gcelm_ghost[sorted_idx]
+        gcfacets_ghost .= gcfacets_ghost[sorted_idx]
+        mesh.non_conforming_facets_children_ghost .= mesh.non_conforming_facets_children_ghost[sorted_idx]
+        @info "edge2pedge", rank, edge2pedge
+        ghost_p_or_c = 1
+        mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm)
+        ghost_p_or_c = 2
+        mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm)
+
+    elseif mesh.nsd == 3
+        offset = 20
+        for idx in 1: num_hanging_facets
+            cfacet     = idx+num_regular_facets
+            facet_glue = hanging_facet_glue[idx]
+            pfacet     = cell_fecet_ids[facet_glue[1]][facet_glue[2]-offset]
+            gfacet_p   = local_to_global(fgids)[pfacet]
+            gfacet_c   = local_to_global(fgids)[cfacet]
+            if (cfacet ∈ f2pf) && (pfacet ∉ f2pf)
+                pfacet = -pfacet
+            end
+            if (cfacet ∉ f2pf) && (pfacet ∈ f2pf)
+                cfacet = -cfacet
+            end
+            if (cfacet ∉ f2pf) && (pfacet ∉ f2pf)
+                pfacet = -pfacet
+                cfacet = -cfacet
+            end
+            @info rank, cfacet, pfacet, facet_glue, gfacet_c, gfacet_p
+        end
+    end
+
+
+    mesh.gnpoin    = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
+    mesh.gip2owner = find_gip_owner(mesh.ip2gip)
+    mesh.gip2ip    = KernelAbstractions.zeros(backend, TInt, mesh.gnpoin)
+
+    for (ip, gip) in enumerate(mesh.ip2gip)
+        mesh.gip2ip[gip] = ip
+    end
     #----------------------------------------------------------------------
     # Extract boundary edges and faces nodes:
     #----------------------------------------------------------------------
@@ -939,7 +1071,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     # @test collect(v) == [20.0, 20.0, 20.0, 20.0, 30.0, 10.0, 30.0, 20.0, 10.0, 30.0]
     # @info collect(v)
 
-    write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./", parts, nparts)
+    # write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./", parts, nparts)
 
     #
     # gridapDistributed test on gmsh
@@ -1289,6 +1421,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
         iedge_g = edge_ids[iedge_el]
         ip1 = mesh.conn_unique_edges[iedge_g][1]
         ip2 = mesh.conn_unique_edges[iedge_g][2]
+        # @info ip1, ip2, iedge_el, iedge_g, iel
         if (mesh.conn[iel,1] == ip1)
             starter = 2
             ender = ngl-1
@@ -1308,6 +1441,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
         iedge_g = edge_ids[iedge_el]
         ip1 = mesh.conn_unique_edges[iedge_g][1]
         ip2 = mesh.conn_unique_edges[iedge_g][2]
+        # @info ip1, ip2, iedge_el, iedge_g, iel
         if (mesh.conn[iel,2] == ip1)
             starter = 2
             ender = ngl-1
@@ -1327,6 +1461,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
         iedge_g = edge_ids[iedge_el] 
         ip1 = mesh.conn_unique_edges[iedge_g][1]
         ip2 = mesh.conn_unique_edges[iedge_g][2]
+        # @info ip1, ip2, iedge_el, iedge_g, iel
         if (mesh.conn[iel,3] == ip1)
             starter = 2
             ender = ngl-1
@@ -1345,6 +1480,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
         iedge_g = edge_ids[iedge_el]
         ip1 = mesh.conn_unique_edges[iedge_g][1]
         ip2 = mesh.conn_unique_edges[iedge_g][2]
+        # @info ip1, ip2, iedge_el, iedge_g, iel
         if (mesh.conn[iel,4] == ip1)
             starter = 2
             ender = ngl-1
@@ -2798,3 +2934,130 @@ function get_bdy_poin_in_face_on_edges!(mesh::St_mesh, isboundary_face, SD::NSD_
     end
 end
 
+function send_and_receive(data2send, send_targets, comm)
+    size = MPI.Comm_size(comm)
+    rank = MPI.Comm_rank(comm)
+
+    T = eltype(data2send)
+
+    # Validate inputs
+    if length(data2send) != length(send_targets)
+        @info rank, data2send, send_targets
+        error("data2send and send_targets must have the same size")
+    end
+
+    # Organize data to send
+    send_data = Dict(i => T[] for i in 0:size-1)
+    send_data_order = Dict(i => T[] for i in 0:size-1)
+    for (data, owner) in zip(data2send, send_targets)
+        if owner < 0 || owner >= size
+            error("send_targets contains invalid rank")
+        end
+        push!(send_data[owner], data)
+    end
+
+    # Prepare send sizes and receive sizes
+    send_sizes = [length(send_data[i]) for i in 0:size-1]
+    recv_sizes = MPI.Alltoall(MPI.UBuffer(send_sizes, 1), comm)
+
+    # Prepare buffers for sending and receiving data
+    send_buffers = [send_data[i] for i in 0:size-1]
+    recv_buffers = [Vector{T}(undef, recv_sizes[i+1]) for i in 0:size-1]
+
+    # Communicate data
+    requests = MPI.Request[]
+    for i in 0:size-1
+        if send_sizes[i+1] > 0
+            push!(requests, MPI.Isend(send_buffers[i+1], i, 0, comm))
+        end
+        if recv_sizes[i+1] > 0
+            push!(requests, MPI.Irecv!(recv_buffers[i+1], i, 0, comm))
+        end
+    end
+
+    # Wait for all communication to complete
+    MPI.Waitall!(requests)
+
+    # Combine received data into a single vector
+    combined_recv_data = T[]
+    original_senders   = Int[]
+    for i in 0:size-1
+        if recv_sizes[i+1] > 0
+            append!(combined_recv_data, recv_buffers[i+1])
+            append!(original_senders, fill(i, recv_sizes[i+1]))
+        end
+    end
+
+    # # Output the combined data and source list
+    # println("Processor $rank received combined data: ", combined_recv_data)
+    # println("Processor $rank data sources: ", original_senders)
+
+    return combined_recv_data, original_senders
+end
+
+function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm, ip2gip, ngl, ghost_p_or_c, comm)
+    rank = MPI.Comm_rank(comm)
+    @info "gfacets_ghost, gfacets_owner", rank, gfacets_ghost, gfacets_owner
+    gelm_recv, original_senders = send_and_receive(gelm_ghost, gfacets_owner, comm)
+    gfacets_recv = send_and_receive(gfacets_ghost, gfacets_owner, comm)[1]
+    @info "gfacets_recv, original_senders", rank,  gfacets_recv, original_senders
+    # println("Rank $rank gfacets_recv: $gfacets_recv")
+    lcells = [pelm2elm[x] for x in gelm_recv]
+    @info "lcells", rank, lcells 
+    lfacets = gfacets_recv
+    @info "lfacets", rank, lfacets 
+    # lfacets = global_to_local(facetsids)[vcat(gfacets_recv...)]
+    nlfacets    = size(lfacets,1)
+    ips_send    = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl)
+    ips_targets = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl)
+    IP          = KernelAbstractions.zeros(CPU(), TInt, ngl)
+    cnt = 1
+    for (i, (lfacet, lcell)) in enumerate(zip(lfacets, lcells))
+
+        if (lfacet == 1)
+            m = ngl
+            n = 1:ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, 1, n]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, ngl, n]
+            end
+        elseif (lfacet == 2)
+            m = 1
+            n = 1:ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, ngl, n]
+            elseif ghost_p_or_c == 2
+                @info rank, IP, conn, lcell, m 
+                IP .= conn[lcell, 1, n]
+            end
+        elseif (lfacet == 3)
+            m = 1:ngl
+            n = 1
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, m, ngl]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, m, 1]
+            end
+        elseif (lfacet == 4)
+            m = 1:ngl
+            n = ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, m, 1]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, m, ngl]
+            end
+        end
+        for ip in IP
+            @info rank, ip, cnt,i, lfacet, lcell
+            ips_send[cnt] = ip2gip[ip]
+            ips_targets[cnt] = original_senders[i]
+            cnt += 1
+        end
+    end
+    @info "ips_send, ips_targets", rank, ips_send, ips_targets
+    ips_recv, ips_owner  = send_and_receive(ips_send, ips_targets, comm)
+    @info "ips_recv, ips_owner", rank, ips_recv, ips_owner
+
+    return ips_recv, ips_owner
+end

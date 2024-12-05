@@ -247,7 +247,8 @@ function params_setup(sem,
               visc_coeff, ivisc_equations,
               sem.matrix.M, sem.matrix.Minv,tspan,
               Δt, xmax, xmin, ymax, ymin, zmin, zmax,
-              qp, mp, sem.fx, sem.fy, fy_t, laguerre=false)
+              qp, mp, sem.fx, sem.fy, fy_t, laguerre=false,
+              interp = sem.interp, project = sem.project)
     end
 
     println(" # Build arrays and params ................................ DONE")
