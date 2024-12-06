@@ -294,7 +294,14 @@ function mod_inputs_user_inputs!(inputs)
         #default are LGL
         inputs[:quadrature_nodes] = LGL()
     end
-    
+
+    #
+    # Element learning (el)
+    #
+    if(!haskey(inputs, :lel))
+        inputs[:lel] = false
+    end
+
     #
     # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines
     # https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
@@ -402,6 +409,8 @@ function mod_inputs_user_inputs!(inputs)
     if(!haskey(inputs, :lneumann))
         inputs[:lneumann] = false
     end
+
+
 
     #
     # Correct quantities based on a hierarchy of input variables

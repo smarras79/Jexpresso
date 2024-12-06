@@ -56,6 +56,16 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
             for ip = 1:sem.mesh.npoin
                 sem.matrix.L[ip,ip] += inputs[:rconst][1]
             end
+
+            #
+            # Element-learning infrastructure
+            #
+            if inputs[:lel]
+                skeleton_Axb(sem.mesh.npoin, sem.matrix.L, RHS)
+            end
+            #
+            # END Element-learning infrastructure
+            #
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
                                                  params.mesh.x, params.mesh.y, params.mesh.z,
