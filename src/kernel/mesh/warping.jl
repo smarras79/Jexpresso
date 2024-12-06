@@ -77,19 +77,22 @@ function warp_mesh_3D!(mesh,inputs)
         lat, lon, z_topo = extract_region_topography_from_global_data(fname, fname2, lat_max, lon_max, lat_min, lon_min)
         
         x_topo, y_topo = Map_lat_lon_onto_simulation_domain(lat,lon,xmin,xmax,ymin,ymax,zone)
-        z_surf = zeros(mesh.npoin)
+        zsurf = zeros(mesh.npoin)
         
-        interpolate_topography_onto_grid!(mesh.x, mesh.y, z_surf, x_topo, y_topo, z_topo)
+        interpolate_topography_onto_grid!(mesh.x, mesh.y, zsurf, x_topo, y_topo, z_topo)
         ### sigma coordinate topography
         ztop = maximum(mesh.z)
         sigma = zeros(mesh.npoin)
         for ip = 1:mesh.npoin
             sigma[ip] = mesh.z[ip]
-            z_new = (ztop - z_surf[ip])/ztop * sigma[ip] + z_surf[ip]
+            z_new = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
             mesh.z[ip] = z_new
         end
 
   elseif (inputs[:mount_type] == "agnesi")
+    zsurf = zeros(mesh.npoin)
+    sigma = zeros(mesh.npoin)
+    ztop = maximum(mesh.z)
     am = inputs[:a_mount]
     hm = inputs[:h_mount]
     xc = inputs[:c_mount]

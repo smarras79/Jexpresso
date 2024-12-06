@@ -6,7 +6,7 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.2,
         :tinit                => 0.0,
-        :tend                 => 1.0,
+        :tend                 => 2000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
@@ -38,6 +38,14 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_periodic.msh",
+        #---------------------------------------------------------------------------
+        # Mountain parameters
+        #---------------------------------------------------------------------------
+        :lwarp               => true,
+        :mount_type          => "agnesi",
+        :a_mount             => 10000.0,
+        :h_mount             => 100.0,
+        :c_mount             => 0.0,
         #---------------------------------------------------------------------------
         # Soundings and data files
         #---------------------------------------------------------------------------
