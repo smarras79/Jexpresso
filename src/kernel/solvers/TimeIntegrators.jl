@@ -1,5 +1,3 @@
-using BenchmarkTools
-
 function time_loop!(inputs, params, u)
 
     println(" # Solving ODE  ................................ ")
