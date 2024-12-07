@@ -3,9 +3,6 @@ module solnCompare
 export run_example
 
 using Test
-using HDF5
-
-
 
 function find_hdf5_files(directory::String)
     files = readdir(directory, join=true)  # List all files with full paths
