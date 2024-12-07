@@ -1,6 +1,4 @@
 using ArgParse
-#using Profile
-#using PProf
 
 #--------------------------------------------------------
 # The problem name is a command line argument:
@@ -122,6 +120,7 @@ end
 if cpu == false
     if Sys.isapple()
         using Metal
+        using CUDA
     elseif Sys.islinux()
         using CUDA
     end
