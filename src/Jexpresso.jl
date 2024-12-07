@@ -6,13 +6,6 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
-if Sys.isapple()
-    using Metal
-    using CUDA
-elseif Sys.islinux()
-    using CUDA
-end
-
 using KernelAbstractions
 using Revise
 using BenchmarkTools
@@ -24,12 +17,14 @@ using ElasticArrays
 using InternedStrings
 using LinearAlgebra
 using StaticArrays
-using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
+using StaticArrays: SVector, MVector
 using DiffEqBase
 using DiffEqDevTools
 using OrdinaryDiffEq
-using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
+using OrdinaryDiffEq: solve
 using SnoopCompile
+using LinearSolve
+###using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
                  SplitODEProblem

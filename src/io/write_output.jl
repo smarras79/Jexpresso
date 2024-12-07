@@ -1,7 +1,4 @@
-using LinearSolve
-using SnoopCompile
 using WriteVTK
-using HDF5
 
 include("./plotting/jeplots.jl")
 
