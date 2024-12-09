@@ -1,5 +1,3 @@
-using LinearSolve
-using SnoopCompile
 using WriteVTK
 using HDF5
 

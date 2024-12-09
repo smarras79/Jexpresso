@@ -1,6 +1,5 @@
 using LinearSolve
 using LinearSolve: solve
-using SnoopCompile
 
 function solveAx(L, RHS, linear_solver...)
     
