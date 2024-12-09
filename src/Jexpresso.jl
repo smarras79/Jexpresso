@@ -6,13 +6,6 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
-if Sys.isapple()
-    using Metal
-    using CUDA
-elseif Sys.islinux()
-    using CUDA
-end
-
 using KernelAbstractions
 using Revise
 using BenchmarkTools
@@ -24,7 +17,6 @@ using ElasticArrays
 using Geodesy
 using InternedStrings
 using LinearAlgebra
-using NetCDF
 using SpecialFunctions
 using StaticArrays
 using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
