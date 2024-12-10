@@ -420,7 +420,7 @@ function _build_rhs!(RHS, u, params, time)
     #@info maximum(params.RHS[:,7]), maximum(params.RHS[:,6])
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
+function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_1D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -453,7 +453,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
+function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     

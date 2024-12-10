@@ -4,14 +4,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.2,
+        :Δt                   => 0.25,
         :tinit                => 0.0,
-        :tend                 => 2000.0,
+        :tend                 => 7500.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (10, 20, 30, 40, 50, 100, 200, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000, 6000, 6500, 7000, 7500),
+        :diagnostics_at_times => (700, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000, 6000, 6500, 7000, 7500, 8000),
         :case                 => "rtb",
         :lsource              => true, 
         :lmoist               => true,
@@ -34,7 +34,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_periodic_stretched.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_coarse.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_periodic_stretched.msh",
         #---------------------------------------------------------------------------
         # Mountain parameters
         #---------------------------------------------------------------------------
