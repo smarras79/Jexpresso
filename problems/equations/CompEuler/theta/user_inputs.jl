@@ -14,7 +14,7 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (50:50:1000),
+        :diagnostics_at_times => (100:100:1000),
         :case                 => "rtb",
         :lsource              => true, 
         # :backend              => CUDABackend(),
@@ -38,6 +38,10 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/plate_hole.msh", #for nop=4
         # :gmsh_filename       => "./meshes/gmsh_grids/2x2.msh", #for nop=4
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
+        #---------------------------------------------------------------------------
+        # AMR
+        #---------------------------------------------------------------------------
+        :ladapt              => true,
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
