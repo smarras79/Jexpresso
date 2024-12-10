@@ -33,7 +33,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_periodic_stretched.msh",
         #---------------------------------------------------------------------------
         # Mountain parameters
         #---------------------------------------------------------------------------
@@ -58,7 +59,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk", #"hdf5",
-        :output_dir          => "./output_filter_test/",
+        :output_dir          => "./output/",
         :loverwrite_output   => true,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

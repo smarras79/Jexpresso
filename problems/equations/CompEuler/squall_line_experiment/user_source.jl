@@ -19,9 +19,9 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
 
     #
     # clateral
-    zs = 18000.0#ymax - 16000.0
-    xr = 30000.0
-    xl = -30000.0
+    zs =  13000.0#ymax - 16000.0
+    xr =  20000.0
+    xl = -20000.0
     if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betay_coe =  sinpi(0.5*(z-zs)/(zmax-zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
@@ -77,9 +77,9 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     # clateral
     nsponge_points = 8
 
-    zs = 18000.0#ymax - 20000.0
-    xr = 30000.0
-    xl = -30000.0
+    zs = 13000.0#ymax - 20000.0
+    xr = 20000.0
+    xl = -20000.0
     
     if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betay_coe =  sinpi(0.5*(z-zs)/(zmax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
@@ -129,9 +129,9 @@ function user_source_gpu(q,qe,x,y,z,PhysConst,xmax,xmin,ymax,ymin,zmax,zmin,lper
 
     T = eltype(x)
     # distance from the boundary. xs in Restelli's thesis
-    zs = T(18000.0)#ymax - 20000.0
-    xr = T(30000.0)
-    xl = T(-30000.0)
+    zs = T(13000.0)#ymax - 20000.0
+    xr = T(20000.0)
+    xl = T(-20000.0)
 
     if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betaz_coe =  T(sinpi(T(0.5)*(z-zs)/(zmax-zs))^2)#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
