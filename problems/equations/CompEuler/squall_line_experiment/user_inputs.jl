@@ -11,7 +11,7 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (100, 200, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000, 6000, 6500, 7000, 7500),
+        :diagnostics_at_times => (10, 20, 30, 40, 50, 100, 200, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000, 6000, 6500, 7000, 7500),
         :case                 => "rtb",
         :lsource              => true, 
         :lmoist               => true,
@@ -37,7 +37,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mountain parameters
         #---------------------------------------------------------------------------
-        :lwarp               => true,
+        #:lwarp               => true,
         :mount_type          => "agnesi",
         :a_mount             => 10000.0,
         :h_mount             => 100.0,
