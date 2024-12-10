@@ -149,8 +149,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     cgip_ghost = KernelAbstractions.zeros(backend, TInt, 0)
     cgip_owner = KernelAbstractions.zeros(backend, TInt, 0)
 
-    # hangingfacets
-    # partitioned_model::VoidOctreeDistributedDiscreteModel{nsd,nsd,parts,C,D}
 end
 
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
@@ -169,25 +167,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     parts  = distribute(LinearIndices((nparts,)))
     mesh.parts = distribute(LinearIndices((nparts,)))
     mesh.nparts = nparts
-    ladpative = 1
-    if ladpative == 0
-        gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+    ladaptive = 0
+    gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+    if ladaptive == 0
         partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
-        # smodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-        # g = GridapDistributed.compute_cell_graph(smodel)
-        # cell_to_part = Metis.partition(g,4)
-        # @info cell_to_part
-        # coarse_discrete_model = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-        # num_uniform_refinements = 1
-        # partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts,
-        #                                                    coarse_discrete_model,
-        #                                                    num_uniform_refinements)
-
-        # model = local_views(partitioned_model).item_ref[]
-    elseif ladpative == 1
-        gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-        # gmodel_type = typeof(gmodel)
-        # @info gmodel_type.parameters
+        model = local_views(partitioned_model).item_ref[]
+    elseif ladaptive == 1
         partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
 
         ref_coarse_flags=map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
@@ -196,7 +181,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
             # @info flags
             # flags[2] = refine_flag
             # if rank == 2
-                flags[10:5:end] .= refine_flag
+                # flags[1:3:end] .= refine_flag
                 # flags[201:3:300] .= refine_flag
                 # flags[196:10:375] .= refine_flag
                 # flags[146:148] .= refine_flag
@@ -210,58 +195,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
             flags
         end
         partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags);
-        # ref_coarse_flags=map(parts,partition(get_cell_gids(partitioned_model.dmodel))) do rank,indices
-        #     flags=zeros(Cint,length(indices))
-        #     flags.=nothing_flag
-        #     # @info flags
-        #     if rank == 2
-        #         # flags[10:5:end] .= refine_flag
-        #         flags[1:end] .= refine_flag
-        #     end
-        #     flags
-        # end
-        # partitioned_model,glue=Gridap.Adaptivity.adapt(partitioned_model,ref_coarse_flags);
-        # partitioned_model, glue_redistribute = redistribute(partitioned_model)
-        # map(parts, glue_adapt, partition(get_cell_gids(partitioned_model.dmodel)), partition(get_cell_gids(partitioned_model_coarse.dmodel)), ref_coarse_flags) do part, glue, indices_f, indices_c, r_c_flags
-        #     # @info typeof(glue)
-        #     rrs = glue.refinement_rules
-        #     d_to_face_to_parent_face, d_to_face_to_parent_face_dim = get_d_to_face_to_parent_face(rrs[2])
-            
-        #     @info part, d_to_face_to_parent_face
-        #     @info part, glue.n2o_cell_to_child_id
-        #     @info part, glue.n2o_faces_map[3], local_to_global(indices_f), local_to_global(indices_c), glue.is_refined, glue.o2n_faces_map, r_c_flags
-        #     # @info rank, glue.hanging_faces_glue[1], "  abc  ", glue.hanging_faces_glue[2]
-        # end
-        # domain = Triangulation(partitioned_model.dmodel)
-        # cell_gids = get_cell_gids(partitioned_model)
-        # remove_ghost_cells(domain, cell_gids)
-        
-        # num_cell = map(partition(cell_gids)) do gids
-        #     # @info global_to_own(gids)
-        #     num_cells = own_length(gids)
-        # end
 
-        # dmodel = map(parts, partitioned_model.dmodel.models, partition(cell_gids)) do part, model, gids
-        #     # cell_id = own_to_global(gids)
-        #     # @info part, cell_id
-        #     cell_id2 = global_to_own(gids)
-        #     dmodel = DiscreteModelPortion(model, filter(x -> x > 0, cell_id2))
-        # end
-        # part_model = GridapDistributed.GenericDistributedDiscreteModel(dmodel, cell_gids)
+        cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
+        dmodel = local_views(partitioned_model.dmodel.models).item_ref[]
+        cmodel = local_views(partitioned_model_coarse.dmodel.models).item_ref[]
+        cell_gids_c = local_views(partition(get_cell_gids(partitioned_model_coarse))).item_ref[]
+        # @info rank, own_to_local(cell_gids), local_to_own(cell_gids), local_to_global(cell_gids)
+        model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
+        model_coarse  = DiscreteModelPortion(cmodel, own_to_local(cell_gids_c))
+        dtopology      = get_grid_topology(dmodel)
     end
-
-
-    # MyGeometry.get_boundary_cells(model,mesh.nsd)
-
-    cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
-    dmodel = local_views(partitioned_model.dmodel.models).item_ref[]
-    cmodel = local_views(partitioned_model_coarse.dmodel.models).item_ref[]
-    cell_gids_c = local_views(partition(get_cell_gids(partitioned_model_coarse))).item_ref[]
-    # @info rank, own_to_local(cell_gids), local_to_own(cell_gids), local_to_global(cell_gids)
-    model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
-    model_coarse  = DiscreteModelPortion(cmodel, own_to_local(cell_gids_c))
     topology      = get_grid_topology(model)
-    dtopology      = get_grid_topology(dmodel)
     mesh.nsd      = num_cell_dims(model)
     
     POIN_flg = 0
@@ -311,8 +255,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     # Write the partitioned model to a VTK file
     # vtk_directory = "./coarse/" 
     # writevtk(partitioned_model_coarse, vtk_directory)
-    vtk_directory = "./refine/" 
-    writevtk(partitioned_model.dmodel, vtk_directory)
+    vtk_directory = "./refine/"
+    if ladaptive == 1 
+        writevtk(partitioned_model.dmodel, vtk_directory)
+    end
 
 
 
@@ -320,32 +266,41 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     #
     # Mesh elements, nodes, faces, edges
     #
+    if ladaptive == 1 
+        p2pp = Geometry.get_face_to_parent_face(model,POIN_flg)
+        eg2peg = Geometry.get_face_to_parent_face(model,EDGE_flg)
+        f2pf = Geometry.get_face_to_parent_face(model,FACE_flg)
+        e2pe = Geometry.get_face_to_parent_face(model,ELEM_flg)
+        # @info point2ppoint, edge2pedge, face2pface
 
-    p2pp = Geometry.get_face_to_parent_face(model,POIN_flg)
-    eg2peg = Geometry.get_face_to_parent_face(model,EDGE_flg)
-    f2pf = Geometry.get_face_to_parent_face(model,FACE_flg)
-    e2pe = Geometry.get_face_to_parent_face(model,ELEM_flg)
-    # @info point2ppoint, edge2pedge, face2pface
-
-    pgids = local_views(partition(get_face_gids(partitioned_model,POIN_flg))).item_ref[]
-    edgids = local_views(partition(get_face_gids(partitioned_model,EDGE_flg))).item_ref[]
-    fgids = local_views(partition(get_face_gids(partitioned_model,FACE_flg))).item_ref[]
-    elgids = local_views(partition(get_face_gids(partitioned_model,ELEM_flg))).item_ref[]
-    # @info rank, own_to_local(pgids), "a ", local_to_own(pgids),  "a ", local_to_global(pgids), "a ", p2pp
-    point2ppoint = local_to_global(pgids)[p2pp]
-    edge2pedge = local_to_global(edgids)[eg2peg]
-    face2pface = local_to_global(fgids)[f2pf]
-    elm2pelm = local_to_global(elgids)[e2pe]
+        pgids = local_views(partition(get_face_gids(partitioned_model,POIN_flg))).item_ref[]
+        edgids = local_views(partition(get_face_gids(partitioned_model,EDGE_flg))).item_ref[]
+        fgids = local_views(partition(get_face_gids(partitioned_model,FACE_flg))).item_ref[]
+        elgids = local_views(partition(get_face_gids(partitioned_model,ELEM_flg))).item_ref[]
+        # @info rank, own_to_local(pgids), "a ", local_to_own(pgids),  "a ", local_to_global(pgids), "a ", p2pp
+        point2ppoint = local_to_global(pgids)[p2pp]
+        edge2pedge = local_to_global(edgids)[eg2peg]
+        face2pface = local_to_global(fgids)[f2pf]
+        elm2pelm = local_to_global(elgids)[e2pe]
+    else
+        point2ppoint = Geometry.get_face_to_parent_face(model,POIN_flg)
+        edge2pedge = Geometry.get_face_to_parent_face(model,EDGE_flg)
+        face2pface = Geometry.get_face_to_parent_face(model,FACE_flg)
+        elm2pelm = Geometry.get_face_to_parent_face(model,ELEM_flg)
+    end
     # @info rank, p2pp, point2ppoint
-    hanging_vert_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[1]
-    hanging_facet_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[mesh.nsd]
-    num_regular_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_regular_faces[mesh.nsd]
-    num_hanging_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_hanging_faces[mesh.nsd]
+    if ladaptive == 1 
+        hanging_vert_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[1]
+        hanging_facet_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[mesh.nsd]
+        num_regular_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_regular_faces[mesh.nsd]
+        num_hanging_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_hanging_faces[mesh.nsd]
+    else
+        num_hanging_facets = 0
+    end
     # @info rank, hanging_vert_glue, local_to_global(elgids), "a", hanging_facet_glue,num_hanging_facets
 
 
-
-    mesh.gnpoin_linear = num_faces(partitioned_model.dmodel,POIN_flg)    
+    mesh.gnpoin_linear = num_faces(partitioned_model,POIN_flg)    
     mesh.gnpoin        = mesh.gnpoin_linear         #This will be updated for the high order grid
     mesh.gnedges       = num_faces(partitioned_model,EDGE_flg)
     mesh.gnfaces       = num_faces(partitioned_model,FACE_flg)   
@@ -360,15 +315,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
 
 
     
-    if (ladpative == 1)
+    # if (ladaptive == 1)
         mesh.nelem_bdy    = length(MyGeometry.get_boundary_cells(model,mesh.nsd))
         mesh.nfaces_bdy   = length(MyGeometry.get_boundary_faces(model,mesh.nsd,FACE_flg))
         mesh.nedges_bdy   = length(MyGeometry.get_boundary_faces(model,mesh.nsd,EDGE_flg))
-    else 
-        mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
-        mesh.nfaces_bdy   = count(get_isboundary_face(topology,mesh.nsd-1))
-        mesh.nedges_bdy   = count(get_isboundary_face(topology,mesh.nsd-2))
-    end
+    # else 
+        # mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
+        # mesh.nfaces_bdy   = count(get_isboundary_face(topology,FACE_flg))
+        # mesh.nedges_bdy   = count(get_isboundary_face(topology,EDGE_flg))
+    # end
     mesh.nelem_int    = mesh.nelem - mesh.nelem_bdy
     mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
     mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
@@ -464,18 +419,20 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     # element refinement level
     #
     mesh.ad_lvl = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem))
-    nelem_c        = num_faces(model_coarse,ELEM_flg)
+    if ladaptive == 1
+        nelem_c        = num_faces(model_coarse,ELEM_flg)
 
-    glue = local_views(glue_adapt).item_ref[]
-    r_c_flags = local_views(ref_coarse_flags).item_ref[]
-    for i in 1:nelem_c
-        elem_idx = glue.o2n_faces_map[i]
-        for j in elem_idx
-            mesh.ad_lvl[j] = 0
-            if r_c_flags[i] == 1
-                mesh.ad_lvl[j] += 1
-            elseif r_c_flags[i] == 2
-                mesh.ad_lvl[j] -= 1
+        glue = local_views(glue_adapt).item_ref[]
+        r_c_flags = local_views(ref_coarse_flags).item_ref[]
+        for i in 1:nelem_c
+            elem_idx = glue.o2n_faces_map[i]
+            for j in elem_idx
+                mesh.ad_lvl[j] = 0
+                if r_c_flags[i] == 1
+                    mesh.ad_lvl[j] += 1
+                elseif r_c_flags[i] == 2
+                    mesh.ad_lvl[j] -= 1
+                end
             end
         end
     end
@@ -653,8 +610,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
 
 
 
-    cell_fecet_ids = get_faces(dtopology, mesh.nsd, mesh.nsd-1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
-    facet_cell_ids = get_faces(dtopology, mesh.nsd-1, mesh.nsd) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     gpelm_ghost = KernelAbstractions.zeros(backend, TInt, 0)
     gpfacets_ghost = KernelAbstractions.zeros(backend, TInt, 0)
     gpfacets_owner = KernelAbstractions.zeros(backend, TInt, 0)
@@ -666,88 +621,93 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute)
     pface2face = Dict(val => idx for (idx, val) in enumerate(face2pface))
     pelm2elm = Dict(val => idx for (idx, val) in enumerate(elm2pelm))
     # mesh.non_conforming_facets = [KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0) for _ in 1:num_hanging_facets]
-    if mesh.nsd == 2
-        offset = 4
-        for idx in 1: num_hanging_facets
-            cfacet = idx+num_regular_facets
-            cid = facet_cell_ids[cfacet][1]
-            pid, lfacetid, half = hanging_facet_glue[idx]
-            pfacet = cell_fecet_ids[pid][lfacetid-offset]
-            gfacet_p = local_to_global(edgids)[pfacet]
-            gfacet_c = local_to_global(edgids)[cfacet]
-            if (lfacetid == 7) || (lfacetid == 8)
-                half = 3-half
+    if ladaptive == 1 
+     
+        if mesh.nsd == 2
+            cell_fecet_ids = get_faces(dtopology, mesh.nsd, mesh.nsd-1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
+            facet_cell_ids = get_faces(dtopology, mesh.nsd-1, mesh.nsd) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
+            offset = 4
+            for idx in 1: num_hanging_facets
+                cfacet = idx+num_regular_facets
+                cid = facet_cell_ids[cfacet][1]
+                pid, lfacetid, half = hanging_facet_glue[idx]
+                pfacet = cell_fecet_ids[pid][lfacetid-offset]
+                gfacet_p = local_to_global(edgids)[pfacet]
+                gfacet_c = local_to_global(edgids)[cfacet]
+                if (lfacetid == 7) || (lfacetid == 8)
+                    half = 3-half
+                end
+                # own child facet, ghost parent facet 
+                if (cfacet ∈ eg2peg) && (pfacet ∉ eg2peg)
+                    # add ghost ip
+                    gpid = local_to_global(elgids)[pid]
+                    # push!(gpfacets_ghost, gfacet_p)
+                    push!(gpelm_ghost, gpid)
+                    push!(gpfacets_ghost, lfacetid - offset)
+                    push!(gpfacets_owner, local_to_owner(edgids)[pfacet]-1)
+                    pfacet = -pfacet
+                    push!(mesh.non_conforming_facets_parents_ghost, [cid, lfacetid - offset, half])
+                    continue
+                end
+                # ghost child facet, own parent facet
+                if (cfacet ∉ eg2peg) && (pfacet ∈ eg2peg)
+                    gcid = local_to_global(elgids)[cid]
+                    push!(gcelm_ghost, gcid)
+                    push!(gcfacets_ghost, lfacetid - offset)
+                    # push!(gcfacets_ghost, gfacet_c)
+                    push!(gcfacets_owner, local_to_owner(edgids)[cfacet]-1)
+                    cfacet = -cfacet
+                    push!(mesh.non_conforming_facets_children_ghost, [pid, lfacetid - offset, half])
+                    continue
+                end
+                # ghost child facet, ghost parent facet
+                if (cfacet ∉ eg2peg) && (pfacet ∉ eg2peg)
+                    pfacet = -pfacet
+                    cfacet = -cfacet
+                    continue
+                end
+                # @info rank, cfacet, pfacet, [pid, lfacetid, half], gfacet_c, gfacet_p
+                # mesh.non_conforming_facets[idx] = [cfacet, pfacet, lfacetid-offset, half]
+                push!(mesh.non_conforming_facets, [cfacet, cid, pfacet, pid, lfacetid - offset, half])
             end
-            # own child facet, ghost parent facet 
-            if (cfacet ∈ eg2peg) && (pfacet ∉ eg2peg)
-                # add ghost ip
-                gpid = local_to_global(elgids)[pid]
-                # push!(gpfacets_ghost, gfacet_p)
-                push!(gpelm_ghost, gpid)
-                push!(gpfacets_ghost, lfacetid - offset)
-                push!(gpfacets_owner, local_to_owner(edgids)[pfacet]-1)
-                pfacet = -pfacet
-                push!(mesh.non_conforming_facets_parents_ghost, [cid, lfacetid - offset, half])
-                continue
-            end
-            # ghost child facet, own parent facet
-            if (cfacet ∉ eg2peg) && (pfacet ∈ eg2peg)
-                gcid = local_to_global(elgids)[cid]
-                push!(gcelm_ghost, gcid)
-                push!(gcfacets_ghost, lfacetid - offset)
-                # push!(gcfacets_ghost, gfacet_c)
-                push!(gcfacets_owner, local_to_owner(edgids)[cfacet]-1)
-                cfacet = -cfacet
-                push!(mesh.non_conforming_facets_children_ghost, [pid, lfacetid - offset, half])
-                continue
-            end
-            # ghost child facet, ghost parent facet
-            if (cfacet ∉ eg2peg) && (pfacet ∉ eg2peg)
-                pfacet = -pfacet
-                cfacet = -cfacet
-                continue
-            end
-            # @info rank, cfacet, pfacet, [pid, lfacetid, half], gfacet_c, gfacet_p
-            # mesh.non_conforming_facets[idx] = [cfacet, pfacet, lfacetid-offset, half]
-            push!(mesh.non_conforming_facets, [cfacet, cid, pfacet, pid, lfacetid - offset, half])
-        end
-        # reorder mesh.non_conforming_facets_parents_ghost and mesh.non_conforming_facets_children_ghost in rank orders\
-        sorted_idx = sortperm(gpfacets_owner)
-        sort!(gpfacets_owner)
-        gpelm_ghost    .= gpelm_ghost[sorted_idx]
-        gpfacets_ghost .= gpfacets_ghost[sorted_idx]
-        mesh.non_conforming_facets_parents_ghost .= mesh.non_conforming_facets_parents_ghost[sorted_idx]
+            # reorder mesh.non_conforming_facets_parents_ghost and mesh.non_conforming_facets_children_ghost in rank orders\
+            sorted_idx = sortperm(gpfacets_owner)
+            sort!(gpfacets_owner)
+            gpelm_ghost    .= gpelm_ghost[sorted_idx]
+            gpfacets_ghost .= gpfacets_ghost[sorted_idx]
+            mesh.non_conforming_facets_parents_ghost .= mesh.non_conforming_facets_parents_ghost[sorted_idx]
 
-        sorted_idx = sortperm(gcfacets_owner)
-        sort!(gcfacets_owner)
-        gcelm_ghost    .= gcelm_ghost[sorted_idx]
-        gcfacets_ghost .= gcfacets_ghost[sorted_idx]
-        mesh.non_conforming_facets_children_ghost .= mesh.non_conforming_facets_children_ghost[sorted_idx]
-        @info "edge2pedge", rank, edge2pedge
-        ghost_p_or_c = 1
-        mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm)
-        ghost_p_or_c = 2
-        mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm)
+            sorted_idx = sortperm(gcfacets_owner)
+            sort!(gcfacets_owner)
+            gcelm_ghost    .= gcelm_ghost[sorted_idx]
+            gcfacets_ghost .= gcfacets_ghost[sorted_idx]
+            mesh.non_conforming_facets_children_ghost .= mesh.non_conforming_facets_children_ghost[sorted_idx]
+            @info "edge2pedge", rank, edge2pedge
+            ghost_p_or_c = 1
+            mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm)
+            ghost_p_or_c = 2
+            mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm)
 
-    elseif mesh.nsd == 3
-        offset = 20
-        for idx in 1: num_hanging_facets
-            cfacet     = idx+num_regular_facets
-            facet_glue = hanging_facet_glue[idx]
-            pfacet     = cell_fecet_ids[facet_glue[1]][facet_glue[2]-offset]
-            gfacet_p   = local_to_global(fgids)[pfacet]
-            gfacet_c   = local_to_global(fgids)[cfacet]
-            if (cfacet ∈ f2pf) && (pfacet ∉ f2pf)
-                pfacet = -pfacet
+        elseif mesh.nsd == 3
+            offset = 20
+            for idx in 1: num_hanging_facets
+                cfacet     = idx+num_regular_facets
+                facet_glue = hanging_facet_glue[idx]
+                pfacet     = cell_fecet_ids[facet_glue[1]][facet_glue[2]-offset]
+                gfacet_p   = local_to_global(fgids)[pfacet]
+                gfacet_c   = local_to_global(fgids)[cfacet]
+                if (cfacet ∈ f2pf) && (pfacet ∉ f2pf)
+                    pfacet = -pfacet
+                end
+                if (cfacet ∉ f2pf) && (pfacet ∈ f2pf)
+                    cfacet = -cfacet
+                end
+                if (cfacet ∉ f2pf) && (pfacet ∉ f2pf)
+                    pfacet = -pfacet
+                    cfacet = -cfacet
+                end
+                @info rank, cfacet, pfacet, facet_glue, gfacet_c, gfacet_p
             end
-            if (cfacet ∉ f2pf) && (pfacet ∈ f2pf)
-                cfacet = -cfacet
-            end
-            if (cfacet ∉ f2pf) && (pfacet ∉ f2pf)
-                pfacet = -pfacet
-                cfacet = -cfacet
-            end
-            @info rank, cfacet, pfacet, facet_glue, gfacet_c, gfacet_p
         end
     end
 

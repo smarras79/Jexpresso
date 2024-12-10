@@ -551,6 +551,10 @@ function mod_inputs_user_inputs!(inputs)
         inputs[:δvisc] = 0.0
     end
 
+    # AMR
+    if(!haskey(inputs, :ladapt))
+        inputs[:ladapt] = false
+    end
 
     return inputs
 end
