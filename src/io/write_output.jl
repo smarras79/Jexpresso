@@ -333,7 +333,7 @@ end
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     outvars = varnames
     nvars = length(outvars)
