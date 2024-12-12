@@ -12,7 +12,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     # 
     #---------------------------------------------------------------------------------
     qvars = ("q")
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
     
     σ = Float64(64.0)
@@ -30,8 +30,12 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
         end
     end
 
-    varnames = ["q1"]
-    write_output(NSD_1D(), q.qn, mesh, OUTPUT_DIR, inputs, varnames, PNG())
+    if (inputs[:lwrite_initial] == true)
+        for ivar=1:length(qvars)
+            plot_initial(SD, mesh.x, q.qn[:,ivar], ivar, OUTPUT_DIR)
+        end
+    end
+
     
     @info " Initialize fields for 1D adv diff ........................ DONE "
     

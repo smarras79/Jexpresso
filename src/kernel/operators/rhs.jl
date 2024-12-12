@@ -53,6 +53,12 @@ function reset_laguerre_filters!(params)
     fill!(params.B_lag, zero(params.T))
 end
 
+function resetRHSToZero_viscous!(params, SD::NSD_1D)
+    fill!(params.rhs_diff_el,  zero(params.T))
+    fill!(params.rhs_diffξ_el, zero(params.T))
+    fill!(params.RHS_visc,     zero(params.T))
+end
+
 function resetRHSToZero_viscous!(params, SD::NSD_2D)
     fill!(params.rhs_diff_el,  zero(params.T))
     fill!(params.rhs_diffξ_el, zero(params.T))
@@ -344,11 +350,6 @@ function _build_rhs!(RHS, u, params, time)
     inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y,lsource, SD)
     
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
-
-    #-----------------------------------------------------------------------------------
-    # Kessler:
-    #-----------------------------------------------------------------------------------
-    #kessler(params.mp, params, @view(params.uaux[:,:]), params.qp.qe, params.mesh)
     
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
@@ -378,7 +379,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_1D)
         for i=1:params.mesh.ngl
             ip = connijk[iel,i,1]
             
-            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,:]), params.SOL_VARS_TYPE)
+           # user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,:]), params.SOL_VARS_TYPE)
 
             user_flux!(@view(params.F[i,:]), @view(params.G[i,:]), SD,
                        @view(params.uaux[ip,:]),
@@ -476,6 +477,38 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
                              params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD) 
     end
+end
+
+
+
+function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
+    
+    for iel=1:params.mesh.nelem
+        
+        for i=1:params.mesh.ngl
+            ip = connijk[iel,i]
+
+            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,:]),params.SOL_VARS_TYPE)
+        end
+      
+        #for ieq in params.ivisc_equations
+        ieq=1
+        _expansion_visc!(connijk,
+                         params.rhs_diffξ_el,
+                         params.uprimitive,
+                         params.visc_coeff,
+                         params.ω,
+                         params.mesh.ngl,
+                         params.basis.dψ,
+                         params.metrics.Je,
+                         params.metrics.dξdx,
+                         params.inputs, iel, ieq, params.QT, SD, params.AD)
+       # end
+        
+    end
+    
+    params.rhs_diff_el .= @views params.rhs_diffξ_el
+    
 end
 
 
@@ -862,6 +895,82 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
                           mesh, basis, metrics, inputs, iel, ieq, QT::Inexact, SD::NSD_2D, ::FD)
     nothing
 end
+
+function _expansion_visc!(connijk, rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je, dξdx, inputs, iel, ieq, QT::Inexact, SD::NSD_1D, ::ContGal)
+    
+    ρel = zeros(ngl)
+    uel = zeros(ngl)
+    Tel = zeros(ngl)
+    Eel = zeros(ngl)
+    
+    γ = 1.4
+    Pr = 0.1
+    μ = 0.005
+    ν = 0.0 #Pr*μ/maximum(ρel[:])
+    κ = Pr*μ/(γ - 1.0)
+        
+    for k = 1:ngl
+        ωJac = ω[k]*Je[iel,k]
+        
+        #dqdξ = 0.0
+        dρdξ = 0.0
+        dudξ = 0.0
+        dTdξ = 0.0
+        dEdξ = 0.0
+        @turbo for ii = 1:ngl
+            #dqdξ += dψ[ii,k]*uprimitiveieq[ii,ieq]
+            dρdξ += dψ[ii,k]*uprimitiveieq[ii,1] #ρel[ii]
+            dudξ += dψ[ii,k]*uprimitiveieq[ii,2] #uel[ii]
+            dTdξ += dψ[ii,k]*uprimitiveieq[ii,3] #Tel[ii]
+            dEdξ += dψ[ii,k]*uprimitiveieq[ii,4] #Eel[ii]
+        end
+        dξdx_k = dξdx[iel,k]
+           
+        #dqdx    = visc_coeffieq[ieq]*dqdξ*dξdx_k
+        dρdx =  ν*dρdξ*dξdx_k
+        dudx =  μ*dudξ*dξdx_k
+        dTdx = (μ*dudξ*dξdx_k*uel[k] + κ*dTdξ*dξdx_k)
+        
+        #∇ξ∇u_k = dξdx_k*dqdx
+        ∇ξ∇ρ_k = dρdx*dξdx_k
+        ∇ξ∇u_k = dudx*dξdx_k
+        ∇ξ∇T_k = dTdx*dξdx_k
+        @turbo for i = 1:ngl
+            dhdξ_ik = dψ[i,k]
+                
+            #rhs_diffξ_el[iel,i,ieq] -= ωJac*dhdξ_ik*∇ξ∇u_k
+            rhs_diffξ_el[iel,i,1] -= ωJac*dhdξ_ik*∇ξ∇ρ_k
+            rhs_diffξ_el[iel,i,2] -= ωJac*dhdξ_ik*∇ξ∇u_k
+            rhs_diffξ_el[iel,i,3] -= ωJac*dhdξ_ik*∇ξ∇T_k
+        end  
+    end
+end
+
+function _expansion_visc_or!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je, dξdx, inputs, iel, ieq, QT::Inexact, SD::NSD_1D, ::ContGal)
+    
+    
+    for k = 1:ngl
+        ωJac = ω[k]*Je[iel,k]
+        
+        dqdξ = 0.0
+        @turbo for ii = 1:ngl
+            dqdξ += dψ[ii,k]*uprimitiveieq[ii,ieq]
+        end
+        dξdx_kl = dξdx[iel,k]
+           
+        dqdx    = visc_coeffieq[ieq]*dqdξ*dξdx_kl            
+        ∇ξ∇u_kl = dξdx_kl*dqdx
+                    
+        @turbo for i = 1:ngl
+            dhdξ_ik = dψ[i,k]
+                
+            rhs_diffξ_el[iel,i,ieq] -= ωJac*dhdξ_ik*∇ξ∇u_kl
+        end  
+    end
+end
+
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, dξdy, dηdx, dηdy, inputs, iel, ieq, QT::Inexact, SD::NSD_2D, ::ContGal)
