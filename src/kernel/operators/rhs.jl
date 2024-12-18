@@ -274,8 +274,7 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D, ::FD)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmax = params.xmax
-    xmin = params.xmin
-    ymax = params.ymax    
+    xmin = params.xmin  
     
     for ip=1:params.mesh.npoin
         
@@ -296,10 +295,8 @@ function inviscid_rhs_el!(u, params, lsource, SD::NSD_1D, ::FD)
                          params.SOL_VARS_TYPE;
                          neqs=params.neqs,
                          x=params.mesh.x[ip],
-                         y=params.mesh.y[ip],
-                         xmax=xmax,
-                         xmin=xmin,
-                         ymax=ymax)
+                         y=0.0,
+                         xmax=xmax, xmin=xmin,ymax=0.0)
         end
     end
     

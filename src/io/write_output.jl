@@ -15,7 +15,6 @@ function write_output(SD::NSD_1D, q::Matrix, mesh::St_mesh, OUTPUT_DIR::String, 
     
     nvar = length(varnames)
     for ivar = 1:nvar
-        #plot_results(SD, mesh, q[1:mesh.npoin,ivar], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
         plot_results(SD, mesh, q[ivar,1:mesh.npoin], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
     end
 end
