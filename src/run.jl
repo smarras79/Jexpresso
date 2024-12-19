@@ -117,7 +117,7 @@ end
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------
-#=if cpu == false
+if cpu == false
     if Sys.isapple()
         using Metal
         using CUDA
@@ -125,7 +125,6 @@ end
         using CUDA
     end
 end
-=#
 
 driver(inputs, # input parameters from src/user_input.jl
        OUTPUT_DIR,
