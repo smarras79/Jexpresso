@@ -20,22 +20,22 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     #
     # clateral
     zs =  13000.0#ymax - 16000.0
-    xr =  20000.0
-    xl = -20000.0
-    if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betay_coe =  sinpi(0.5*(z-zs)/(zmax-zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+    xr =  25000.0
+    xl = -25000.0
+    if (z >= zs)
+        betay_coe = sinpi(0.5*(z-zs)/(zmax-zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betay_coe = 0.0
     end
     ctop= 1.0*betay_coe
    
-    if (x >= xr)#nsponge_points * dsy) #&& dbl >= 0.0)
+    if (x >= xr)
         betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxr_coe = 0.0
     end
    
-    if (x <= xl)#nsponge_points * dsy) #&& dbl >= 0.0)
+    if (x <= xl)
         betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxl_coe = 0.0

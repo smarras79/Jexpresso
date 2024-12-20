@@ -4,18 +4,18 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.25,
+        :Δt                   => 0.2,
         :tinit                => 0.0,
         :tend                 => 7500.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (700, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000, 6000, 6500, 7000, 7500, 8000),
+        :diagnostics_at_times => (100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,1250, 1500,1750, 2000,2250, 2500,2750, 3000,3250, 3500,3750, 4000,4250, 5000, 6000, 6500, 7000, 7500),
         :case                 => "rtb",
         :lsource              => true, 
         :lmoist               => true,
-        :lprecip              => true,
+        #:lprecip              => true,
         :SOL_VARS_TYPE        => PERT(),
         #:backend              => MetalBackend(),
         #---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
-        :μ                   => [0.0, 400.0, 400.0, 400.0, 600.0, 600.0, 600.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 600.0, 600.0, 600.0, 600.0, 600.0, 600.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        :lfilter             => false,
         :mu_x                => 0.05,
         :mu_y                => 0.05,
         :mu_z                => 0.05,
@@ -61,7 +61,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",
-        :loverwrite_output   => true,
+        :loverwrite_output   => false,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
