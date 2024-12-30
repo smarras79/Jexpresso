@@ -158,6 +158,8 @@ end
 
 function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
         write_vtk(SD, mesh, u, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
@@ -171,7 +173,7 @@ function write_output(SD, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, 
         write_vtk(SD, mesh, u, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE") )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 

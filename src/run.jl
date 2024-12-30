@@ -46,6 +46,12 @@ function parse_commandline()
     return parse_args(s)
 end
 
+
+MPI.Init()
+comm = MPI.COMM_WORLD
+rank = MPI.Comm_rank(comm)
+nparts = MPI.Comm_size(comm)
+
 #--------------------------------------------------------
 # Parse command line args:
 #--------------------------------------------------------
@@ -82,11 +88,11 @@ include(user_primitives_file)
 #--------------------------------------------------------
 # Read User Inputs:
 #--------------------------------------------------------
-mod_inputs_print_welcome()
+mod_inputs_print_welcome(rank)
 inputs = Dict{}()
 
 inputs = user_inputs()
-mod_inputs_user_inputs!(inputs)
+mod_inputs_user_inputs!(inputs, rank)
 
 #--------------------------------------------------------
 # Create output directory if it doesn't exist:
@@ -127,10 +133,6 @@ if cpu == false
     end
 end
 
-MPI.Init()
-comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
-nparts = MPI.Comm_size(comm)
 with_mpi() do distribute
     
     #main_ex4(nparts,distribute)

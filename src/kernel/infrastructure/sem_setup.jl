@@ -1,7 +1,10 @@
 include("../mesh/restructure_for_periodicity.jl")
 include("../mesh/warping.jl")
 
-function sem_setup(inputs::Dict, nparts, distribute)
+function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, partitioned_model_coarse = nothing, omesh = nothing)
+    
+    comm = distribute.comm
+    rank = MPI.Comm_rank(comm)
     
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
@@ -22,7 +25,11 @@ function sem_setup(inputs::Dict, nparts, distribute)
     # ξ = ND.ξ.ξ
     # ω = ND.ξ.ω
     #--------------------------------------------------------
-    mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
+    if isnothing(adapt_flags)
+        mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
+    else
+        mesh, partitioned_model, n2o_ele_map = mod_mesh_mesh_driver(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, omesh)
+    end
     
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
@@ -140,7 +147,9 @@ function sem_setup(inputs::Dict, nparts, distribute)
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end
-            @info " metrics"
+            if rank == 0
+                @info " metrics"
+            end
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
             
             #warp_mesh!(mesh,inputs)
@@ -185,6 +194,10 @@ function sem_setup(inputs::Dict, nparts, distribute)
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
+    if isnothing(adapt_flags)
+        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, interp, project, partitioned_model, nparts, distribute)
+    else
+        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, interp, project, partitioned_model, nparts, distribute), n2o_ele_map
+    end
     
-    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, interp, project), partitioned_model
 end

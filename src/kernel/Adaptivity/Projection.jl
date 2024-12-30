@@ -161,33 +161,6 @@ end
 
 using Test
 
-function test_create_2d_projection_matrices_numa2d()
-    # Test parameters
-    nglx = 2
-    ngly = 2
-    nglz = 2
-    plane = 1  # Testing for plane 1 (X-Y plane)
-    
-    # Initialize Psg to be an empty array
-    Psg = zeros(Float64, 0, 0, 0)  # Will be resized inside the function
-    
-    # Call the function with test parameters
-    Psg = scatter_gather_projection!(plane, nglx, ngly, nglz)
-    
-    # Test if the output matrix has the correct dimensions
-    nngl = nglx * ngly
-    @test size(Psg) == (nngl, nngl, 8)
-
-    # Test if the matrix contains non-zero values
-    @test count(!iszero, Psg) > 0  # Ensure that there are non-zero values in Psg
-
-    # Check specific properties of the Psg matrix if known (e.g., symmetry, positive values)
-    # For simplicity, we can check that none of the values in Psg are NaN or Inf
-    @test all(isfinite, Psg)  # Ensure no NaN or Inf values in Psg
-    @info Psg
-
-    println("All tests for create_2d_projection_matrices_numa2d passed successfully!")
-end
 
 function build_interpolation(ra, rb, wa)
     Nra = length(ra)
@@ -315,15 +288,15 @@ function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n
     interp_y, project_y = build_projection_1d(lgl.ξ)
     interp_z, project_z = build_projection_1d(lgl.ξ)
     # end
-    @info "interp_x", interp_x[:,:,1], interp_x[:,:,1]
-    @info "project_x", project_x[:,:,1], project_x[:,:,1]
+    # @info "interp_x", interp_x[:,:,1], interp_x[:,:,1]
+    # @info "project_x", project_x[:,:,1], project_x[:,:,1]
 
     # Initialize source and destination element indices
     k_dst, o_dst = 1, 0
     k_src, o_src = 1, 0
     ip_dst = 0
     ip_src = 0
-    @info n2o_ele_map
+    # @info n2o_ele_map
     # Main transfer loop
     if typeof(n2o_ele_map) == Vector
         while k_dst <= num_elem
@@ -520,7 +493,7 @@ end
 
 
 
-function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n2o_ele_map, SD::NSD_2D)
+function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n2o_ele_map, interp, project, SD::NSD_2D)
 
     # Dimensions of the source and destination grids (global variables nglx, ngly, nglz are assumed defined)
     nx = mesh_dst.ngl
@@ -535,13 +508,16 @@ function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n
     qx = zeros(Float64, np, nf)
     # qxy = zeros(Float64, np, nf)
 
-    lgl = basis_structs_ξ_ω!(LGL(), mesh_dst.nop, CPU())
+    # lgl = basis_structs_ξ_ω!(LGL(), mesh_dst.nop, CPU())
 
     # Ensure the interpolation matrices are computed
     # if !@isdefined(interp_x)
         # global interp_x, project_x, interp_y, project_y
-    interp_x, project_x = build_projection_1d(lgl.ξ)
-    interp_y, project_y = build_projection_1d(lgl.ξ)
+    interp_x  = interp
+    interp_y  = interp
+    project_x = project
+    project_y = project
+    # project_y = build_projection_1d(lgl.ξ)
     # end
 
     # Initialize source and destination element indices
@@ -550,10 +526,11 @@ function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n
     ip_dst = 0
     ip_src = 0
     # Main transfer loop
-    if typeof(n2o_ele_map) == Vector
+    # @info "typeof(n2o_ele_map) == Vector", (n2o_ele_map)
+    if typeof(n2o_ele_map) == Vector{Int64}
         while k_dst <= num_elem
             k_src = n2o_ele_map[k_dst]
-            
+            # @info k_dst, lvl_src[k_src] , lvl_dst[k_dst]
             # Source and Destination are at the same level
             if lvl_src[k_src] == lvl_dst[k_dst]
                 for j=1:mesh_dst.ngl, i=1:mesh_dst.ngl
@@ -611,16 +588,21 @@ function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n
                     #         end
                     #     end
                     # end
-                    k_dst += 1
+                    # @info k_dst, k_src
                     k_src = n2o_ele_map[k_dst]
+                    k_dst += 1
                 end
                 # k_src += 1
+            else
+                # @info lvl_dst
             end
         end
     else
+        # @info lvl_src
         while k_dst <= num_elem
             k_src_vec = n2o_ele_map[k_dst]
             k_src = k_src_vec[1]
+            # @info k_dst, k_src, lvl_src[k_src], lvl_dst[k_dst]
             # Source and Destination are at the same level
             if lvl_src[k_src] == lvl_dst[k_dst]
                 for j=1:mesh_dst.ngl, i=1:mesh_dst.ngl
@@ -679,8 +661,8 @@ function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n
                     #         end
                     #     end
                     # end
-                    k_dst += 1
                     k_src = n2o_ele_map[k_dst][1]
+                    k_dst += 1
                 end
                 # k_src += 1
             else
@@ -965,7 +947,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
             end
         end
     end
-    @info rank, mesh.ad_lvl
+    # @info rank, mesh.ad_lvl
 
 
     if (mesh.nsd == 1)
@@ -1394,7 +1376,7 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     #show(stdout, "text/plain", mesh.conn')
     println(" # POPULATE GRID with SPECTRAL NODES ............................ DONE")
     # @info glue.n2o_cell_to_child_id
-    @info rank, glue.o2n_faces_map, glue.n2o_cell_to_child_id
+    # @info rank, glue.o2n_faces_map, glue.n2o_cell_to_child_id
     return partitioned_model, glue.n2o_faces_map[mesh.nsd+1]
 end
 
@@ -1535,7 +1517,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_2D, QT::Inexact, Mel::AbstractArra
         end
         Mg .= TFloat(0.0)
         M_gatter_tmp .= TFloat(0.0)
-        @info "non_conforming_facets_parents_ghost", rank, [(mesh.x[ip], mesh.y[ip], ip) for ip in IPc]
+        # @info "non_conforming_facets_parents_ghost", rank, [(mesh.x[ip], mesh.y[ip], ip) for ip in IPc]
         @turbo for l = 1:ngl
             I = Imn[l]
             for j = 1:ngl
@@ -1552,7 +1534,7 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_2D, QT::Inexact, Mel::AbstractArra
             ipp = gip_gather_ghost[(idx-1) * ngl + i]
             if ipc == ipp
                 # M_gatter_tmp[i] -= Mg[i]
-                @info rank, "gip_gather_ghost", gip_gather_ghost
+                # @info rank, "gip_gather_ghost", gip_gather_ghost
                 continue
             end
             for j = 1:ngl
@@ -1567,10 +1549,10 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_2D, QT::Inexact, Mel::AbstractArra
         # end
     end
 
-    @info "gip_gather_owner", rank, gip_gather_owner
+    # @info "gip_gather_owner", rank, gip_gather_owner
     M_local = send_and_receive(M_gather_ghost, gip_gather_owner, comm)[1]
     gip_local = send_and_receive(gip_gather_ghost, gip_gather_owner, comm)[1]
-    @info "M_local", rank, [(mesh.x[gip2ip[gip]], mesh.y[gip2ip[gip]], gip) for gip in gip_local]
+    # @info "M_local", rank, [(mesh.x[gip2ip[gip]], mesh.y[gip2ip[gip]], gip) for gip in gip_local]
 
     for (gip, m_value) in zip(gip_local, M_local)
         M[gip2ip[gip]] += m_value
@@ -2046,7 +2028,7 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
                 end
             end
         end
-        @info "ref_coarse_flags", rank, flags
+        # @info "ref_coarse_flags", rank, flags
         flags
     end
 
@@ -2062,4 +2044,58 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
 
     MPI.Barrier(comm)
     @mystop("my stop at mesh.jl L135")
+end
+
+
+function amr_strategy!(inputs, params, u, t)
+    # @info size(params.uaux), size(u)
+    # @info u
+    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    ref_coarse_flags = user_get_adapt_flags(inputs, params.mesh.ad_lvl, params.uaux, params.qp.qe, params.mesh.connijk, params.mesh.nelem, params.mesh.ngl)
+    # @info ref_coarse_flags
+    # re - sem, init, and params_setup
+    
+    sem, n2o_ele_map = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, params.partitioned_model, params.mesh)
+    if sem.mesh == params.mesh
+        @info "sem.mesh === params.mesh"
+    end
+    uaux_new = KernelAbstractions.zeros(CPU(),  TFloat, (sem.mesh.npoin, size(params.uaux, 2)))
+    p8est_transfer_q!(uaux_new, params.uaux, params.mesh.ad_lvl, sem.mesh.ad_lvl, sem.mesh, params.mesh, n2o_ele_map, params.interp, params.project, sem.mesh.SD)
+    
+    # if (inputs[:backend] != CPU())
+    #     convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
+    # end
+
+    qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+
+    if rank == 0
+        @info "start conformity4ncf_q!"
+    end
+    @time conformity4ncf_q!(qp.qn, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+    @time conformity4ncf_q!(qp.qe, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+    MPI.Barrier(comm)
+    if rank == 0
+        @info "end conformity4ncf_q!"
+    end
+    
+    amr_freq = inputs[:amr_freq]
+    Δt_amr   = amr_freq * inputs[:Δt]
+    tspan    = [t, t + Δt_amr]
+    nparams, nu =  params_setup(sem,
+                              qp,
+                              inputs,
+                              OUTPUT_DIR,
+                              TFloat,
+                              tspan)
+    # resize!(integrator, length(u))
+    # integrator.p = merge(integrator.p, (uaux = params.uaux,))
+    uaux2u!(nu, uaux_new, nparams.neqs, nparams.mesh.npoin)
+    prob = ODEProblem(rhs!,
+                    nu,
+                    nparams.tspan,
+                    nparams);
+    # @info "u3",  size(nu,1), prob.p.mesh.npoin
+    
+    return prob
+    # GC.gc()
 end
