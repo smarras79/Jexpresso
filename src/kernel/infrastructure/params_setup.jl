@@ -2,11 +2,15 @@ function params_setup(sem,
                       qp::St_SolutionVars,
                       inputs::Dict,
                       OUTPUT_DIR::String,
-                      T)
+                      T,
+                      tspan = [T(inputs[:tinit]), T(inputs[:tend])])
 
-    
-    println(" # Build arrays and params ................................ ")
-    @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    println_rank(" # Build arrays and params ................................ "; msg_rank = rank)
+    if rank == 0
+        @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
+    end
 
     backend = inputs[:backend]
     
@@ -182,7 +186,7 @@ function params_setup(sem,
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
-    tspan = [T(inputs[:tinit]), T(inputs[:tend])]
+    # tspan = [T(inputs[:tinit]), T(inputs[:tend])]
     if (backend == CPU())
         visc_coeff = inputs[:μ]
     else
@@ -248,10 +252,11 @@ function params_setup(sem,
               sem.matrix.M, sem.matrix.Minv,tspan,
               Δt, xmax, xmin, ymax, ymin, zmin, zmax,
               qp, mp, sem.fx, sem.fy, fy_t, laguerre=false,
-              interp = sem.interp, project = sem.project)
+              OUTPUT_DIR,
+              sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end
 
-    println(" # Build arrays and params ................................ DONE")
+    println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank)
 
     return params, u
     

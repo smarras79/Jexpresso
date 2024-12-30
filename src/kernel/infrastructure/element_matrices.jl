@@ -938,6 +938,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false
 
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+
     if typeof(SD) == NSD_1D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, Int64(mesh.nelem))
     elseif typeof(SD) == NSD_2D
@@ -965,14 +968,17 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         Minv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     end
     if (backend == CPU() || SD == NSD_1D())
-        @info "start DSS_mass"
+        if rank == 0
+            @info "start DSS_mass"
+        end
         @time DSS_nc_gather_mass!(M, mesh, SD, QT, Me, mesh.connijk, mesh.poin_in_edge,
                                 mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
                                 mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, N, interp)
-        M1 = copy(M)
         DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
-        M2 = copy(M)
-        @info "end DSS_mass"
+        MPI.Barrier(comm)
+        if rank == 0
+            @info "end DSS_mass"
+        end
         # @info [ [mesh.x[i], mesh.y[i], v] for (i, v) in enumerate(M) ]
     elseif (SD == NSD_2D())
         k = DSS_Mass_gpu_2D!(backend,(N+1,N+1))
@@ -986,15 +992,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         k(M,Me,connijk,mesh.nelem, mesh.npoin, N;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
     end
     DSS_global_mass!(M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
-    M3 = copy(M)
     @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
     mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, N, interp)
-    M4 = copy(M)
 
-    comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
-    # @info rank, [(x, y, m_i, m1_i, m2_i, m3_i, m4_i-m3_i) for (x, y, m_i, m1_i, m2_i, m3_i, m4_i) in zip(mesh.x, mesh.y, M, M1, M2, M3, M4)]
-    # @info rank, [(mesh.x[mesh.connijk[iel,i,j]], mesh.y[mesh.connijk[iel,i,j]], M[mesh.connijk[iel,i,j]], M1[mesh.connijk[iel,i,j]]) for j in 1: mesh.ngl, i in 1: mesh.ngl, iel in 1: mesh.nelem]
     # @mystop("my stop at DSS_global_mass!")
 
     mass_inverse!(Minv, M, QT)

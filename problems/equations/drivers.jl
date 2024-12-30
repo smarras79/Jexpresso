@@ -5,8 +5,9 @@ function driver(nparts,
                 inputs::Dict,
                 OUTPUT_DIR::String,
                 TFloat) 
-    
-    sem, partitioned_model = sem_setup(inputs, nparts, distribute)
+    comm  = distribute.comm
+    rank = MPI.Comm_rank(comm)
+    sem = sem_setup(inputs, nparts, distribute)
     
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
@@ -15,17 +16,28 @@ function driver(nparts,
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
-    # test_projection_solutions(sem.mesh, qp, partitioned_model, inputs, nparts, distribute)
-    @info "start conformity4ncf_q!"
-    @time conformity4ncf_q!(qp.qn, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
-    @time conformity4ncf_q!(qp.qe, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
-    @info "end conformity4ncf_q!"
+    # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
+    if inputs[:ladapt] == true
+        if rank == 0
+            @info "start conformity4ncf_q!"
+        end
+        @time conformity4ncf_q!(qp.qn, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+        @time conformity4ncf_q!(qp.qe, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+        MPI.Barrier(comm)
+        if rank == 0
+            @info "end conformity4ncf_q!"
+        end
+    end
 
+    amr_freq = inputs[:amr_freq]
+    Δt_amr   = amr_freq * inputs[:Δt]
+    tspan    = [inputs[:tinit], inputs[:tinit] + Δt_amr]
     params, u =  params_setup(sem,
                               qp,
                               inputs,
                               OUTPUT_DIR,
-                              TFloat)
+                              TFloat,
+                              tspan)
     
     if !inputs[:llinsolve]
         
