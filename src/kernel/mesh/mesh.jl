@@ -1,4 +1,5 @@
 using MPI
+using .MyGeometry
 using Gridap
 using Gridap.Arrays
 using Gridap.Arrays: Table
@@ -13,7 +14,6 @@ using PartitionedArrays
 using GridapGmsh
 using GridapP4est
 using Metis
-using .MyGeometry
 using Test
 
 export St_mesh
@@ -169,7 +169,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.parts = distribute(LinearIndices((nparts,)))
     mesh.nparts = nparts
     ladaptive = 1
-    gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
     lamr_mesh = !isnothing(adapt_flags)
     if isnothing(adapt_flags)
     
@@ -177,6 +176,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             model = local_views(partitioned_model).item_ref[]
         elseif ladaptive == 1
+            gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
             partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
 
             ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
@@ -184,18 +184,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 flags.=nothing_flag
                 # @info flags
                 # flags[2] = refine_flag
-                if rank == 2
-                    flags[1:3:end] .= refine_flag
-                    # flags[201:3:300] .= refine_flag
-                    # flags[196:10:375] .= refine_flag
-                    # flags[146:148] .= refine_flag
-                    # flags[236:245] .= nothing_flag
-                    # flags[4] = refine_flag
-                    # flags[3] = refine_flag
-                    # flags[23] = refine_flag
+                # if rank == 2
+                    # flags[1:3:end] .= refine_flag
                     # flags[1] = refine_flag
-                    # flags[1:5] .= refine_flag
-                end
+                # end
                 flags
             end
             partitioned_model, glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags);
