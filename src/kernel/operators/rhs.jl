@@ -301,7 +301,9 @@ function _build_rhs!(RHS, u, params, time)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     # @info "start conformity4ncf_q!"
-    conformity4ncf_q!(params.uaux, SD, QT, params.mesh.connijk, params.mesh, params.Minv, params.metrics.Je, params.ω, AD, neqs, params.interp)
+    if inputs[:ladapt] == true
+        conformity4ncf_q!(params.uaux, SD, QT, params.mesh.connijk, params.mesh, params.Minv, params.metrics.Je, params.ω, AD, neqs, params.interp)
+    end
     # @info "end conformity4ncf_q!"
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
                                params.mesh.x, params.mesh.y, params.mesh.z, params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
