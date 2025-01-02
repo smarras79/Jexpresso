@@ -83,15 +83,17 @@ function time_loop!(inputs, params, u)
                            adaptive=inputs[:ode_adaptive_solver],
                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
     # @info fieldnames(typeof(prob))
-    while solution.t[end] < inputs[:tend]
-        prob = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end])
-        
-        @time solution = solve(prob,
-                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                            callback = cb_amr, tstops = dosetimes,
-                            save_everystep = false,
-                            adaptive=inputs[:ode_adaptive_solver],
-                            saveat = []);
+    if inputs[:ladapt] == true
+        while solution.t[end] < inputs[:tend]
+            prob = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end])
+            
+            @time solution = solve(prob,
+                                inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                                callback = cb_amr, tstops = dosetimes,
+                                save_everystep = false,
+                                adaptive=inputs[:ode_adaptive_solver],
+                                saveat = []);
+        end
     end
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)

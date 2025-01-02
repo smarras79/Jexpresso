@@ -29,9 +29,13 @@ function driver(nparts,
         end
     end
 
-    amr_freq = inputs[:amr_freq]
-    Δt_amr   = amr_freq * inputs[:Δt]
-    tspan    = [inputs[:tinit], inputs[:tinit] + Δt_amr]
+    if inputs[:ladapt] == true
+        amr_freq = inputs[:amr_freq]
+        Δt_amr   = amr_freq * inputs[:Δt]
+        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
+    else
+        tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+    end
     params, u =  params_setup(sem,
                               qp,
                               inputs,

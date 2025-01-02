@@ -168,14 +168,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     parts  = distribute(LinearIndices((nparts,)))
     mesh.parts = distribute(LinearIndices((nparts,)))
     mesh.nparts = nparts
-    ladaptive = 1
+    ladaptive = inputs[:ladapt]
     lamr_mesh = !isnothing(adapt_flags)
     if isnothing(adapt_flags)
     
-        if ladaptive == 0
+        if ladaptive == false
             partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             model = local_views(partitioned_model).item_ref[]
-        elseif ladaptive == 1
+        elseif ladaptive == true
             gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
             partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
 
@@ -267,7 +267,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # vtk_directory = "./coarse/" 
     # writevtk(partitioned_model_coarse, vtk_directory)
     vtk_directory = "./refine/"
-    if ladaptive == 1 
+    if ladaptive == true
         # writevtk(partitioned_model.dmodel, vtk_directory)
     end
 
@@ -277,7 +277,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #
     # Mesh elements, nodes, faces, edges
     #
-    if ladaptive == 1 
+    if ladaptive == true
         p2pp = Geometry.get_face_to_parent_face(model,POIN_flg)
         eg2peg = Geometry.get_face_to_parent_face(model,EDGE_flg)
         f2pf = Geometry.get_face_to_parent_face(model,FACE_flg)
@@ -300,7 +300,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         elm2pelm = Geometry.get_face_to_parent_face(model,ELEM_flg)
     end
     # @info rank, p2pp, point2ppoint
-    if ladaptive == 1 
+    if ladaptive == true
         hanging_vert_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[1]
         hanging_facet_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[mesh.nsd]
         num_regular_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_regular_faces[mesh.nsd]
@@ -446,7 +446,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # element refinement level
     #
     mesh.ad_lvl = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem))
-    if ladaptive == 1
+    if ladaptive == true
         nelem_c        = num_faces(model_coarse,ELEM_flg)
 
         glue = local_views(glue_adapt).item_ref[]
@@ -662,7 +662,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     pface2face = Dict(val => idx for (idx, val) in enumerate(face2pface))
     pelm2elm = Dict(val => idx for (idx, val) in enumerate(elm2pelm))
     # mesh.non_conforming_facets = [KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0) for _ in 1:num_hanging_facets]
-    if ladaptive == 1 
+    if ladaptive == true
      
         if mesh.nsd == 2
             cell_fecet_ids = get_faces(dtopology, mesh.nsd, mesh.nsd-1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
