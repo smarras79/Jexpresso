@@ -1944,7 +1944,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, con
 end
 
 
-function conformity4ncf_q!(q, SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, interp)
+function conformity4ncf_q!(q, pM, SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, interp)
     nelem = mesh.nelem
     npoin = mesh.npoin
     ngl = mesh.ngl
@@ -1965,7 +1965,7 @@ function conformity4ncf_q!(q, SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh
     end
     DSS_nc_gather_rhs!(q_tmp, SD, QT, q_el_tmp, conn, mesh.poin_in_edge, mesh.non_conforming_facets,
                        mesh.non_conforming_facets_parents_ghost, mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, ngl-1, neqs, interp)
-    DSS_global_RHS!(@view(q_tmp[:,:]), mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin, neqs)
+    DSS_global_RHS!(@view(q_tmp[:,:]), pM, neqs)
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(q_tmp[:,ieq]), vaux, Minv, neqs, npoin, AD)
         DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT, q_el_tmp[:,:,:,ieq], conn, mesh.poin_in_edge, mesh.non_conforming_facets,
@@ -2071,8 +2071,8 @@ function amr_strategy!(inputs, params, u, t)
     if rank == 0
         @info "start conformity4ncf_q!"
     end
-    @time conformity4ncf_q!(qp.qn, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
-    @time conformity4ncf_q!(qp.qe, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+    @time conformity4ncf_q!(qp.qn, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+    @time conformity4ncf_q!(qp.qe, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
     MPI.Barrier(comm)
     if rank == 0
         @info "end conformity4ncf_q!"
