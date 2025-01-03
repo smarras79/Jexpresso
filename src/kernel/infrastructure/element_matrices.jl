@@ -894,11 +894,38 @@ function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, 
     
 end
 
-function DSS_global_RHS!(RHS, ip2gip, gip2owner, parts, npoin, gnpoin, neqs)
+function DSS_global_RHS!(RHS, pM, neqs)
     for i = 1:neqs
-        DSS_global_mass!(@view(RHS[:,i]), ip2gip, gip2owner, parts, npoin, gnpoin)
+       DSS_global_RHS_v0!(@view(RHS[:,i]), pM)
     end
 end
+
+function DSS_global_RHS_v0!(M, pM)
+    # # @info ip2gip
+
+    # pM = pvector(values->@view(M[:]), row_partition)
+    sizeM = length(M)
+    # pM = map(parts, local_values(pM)) do part, localpM
+    #     @info part, length(localpM), sizeM
+    #     localpM = copy(M)
+    # end
+
+    map( partition(pM)) do values
+        for i = 1:sizeM
+            values[i] = M[i]
+        end
+    end
+
+
+    assemble!(pM) |> wait
+    consistent!(pM) |> wait
+    map(local_values(pM)) do values
+        for i = 1:sizeM
+            M[i] = values[i]
+        end
+    end
+end
+
 
 function DSS_global_mass!(M, ip2gip, gip2owner, parts, npoin, gnpoin)
     # @info ip2gip
@@ -930,6 +957,7 @@ function DSS_global_mass!(M, ip2gip, gip2owner, parts, npoin, gnpoin)
         M = values
         M
     end
+    return pM
 end
 
 function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
@@ -991,7 +1019,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         k(M,Me,connijk,mesh.nelem, mesh.npoin, N;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
     end
-    DSS_global_mass!(M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    pM = DSS_global_mass!(M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
     mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, N, interp)
 
@@ -1031,7 +1059,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    return (; Me, De, Le, M, Minv, D, L)
+    return (; Me, De, Le, M, Minv, pM, D, L)
 end
 
 
