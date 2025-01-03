@@ -165,16 +165,23 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #
     # Read GMSH grid from file
     #      
-    parts  = distribute(LinearIndices((nparts,)))
-    mesh.parts = distribute(LinearIndices((nparts,)))
-    mesh.nparts = nparts
-    ladaptive = inputs[:ladapt]
-    lamr_mesh = !isnothing(adapt_flags)
+    parts           = distribute(LinearIndices((nparts,)))
+    mesh.parts      = distribute(LinearIndices((nparts,)))
+    mesh.nparts     = nparts
+    ladaptive       = inputs[:ladapt]
+    linitial_refine = inputs[:linitial_refine]
+    lamr_mesh       = !isnothing(adapt_flags)
     if isnothing(adapt_flags)
     
-        if ladaptive == false
+        if ladaptive == false && linitial_refine == false
             partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             model = local_views(partitioned_model).item_ref[]
+        elseif linitial_refine == true
+            gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+            partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
+            cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
+            dmodel = local_views(partitioned_model).item_ref[]
+            model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
         elseif ladaptive == true
             gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
             partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
