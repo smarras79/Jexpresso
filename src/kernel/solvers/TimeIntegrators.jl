@@ -13,6 +13,22 @@ function time_loop!(inputs, params, u)
     dosetimes = inputs[:diagnostics_at_times]
     idx_ref   = Ref{Int}(0)
     c         = Float64(0.0)
+    rad_time  = inputs[:radiation_time_step]
+    lnew_mesh = true   
+    function two_stream_condition(u, t, integrator)
+        if (rem(t,rad_time) < 1e-3)
+            return true
+        else
+            return false
+        end
+    end
+
+    function do_radiation!(integrator)
+        println(" doing two stream radiation heat flux calculations at t=", integrator.t)
+        @info "doing rad test"
+        compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
+    end
+    
     function condition(u, t, integrator)
         idx  = findfirst(x -> x == t, dosetimes)
         
@@ -41,7 +57,8 @@ function time_loop!(inputs, params, u)
 
     
     end
-    cb = DiscreteCallback(condition, affect!)    
+    cb = DiscreteCallback(condition, affect!)
+    cb_rad = DiscreteCallback(two_stream_condition, do_radiation!)
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------

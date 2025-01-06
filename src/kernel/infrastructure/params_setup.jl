@@ -259,6 +259,7 @@ function params_setup(sem,
               visc_coeff, ivisc_equations,
               sem.matrix.M, sem.matrix.Minv,tspan,
               Δt, xmax, xmin, ymax, ymin, zmin, zmax,
+              phys_grid = sem.phys_grid, 
               qp, mp, sem.fx, sem.fy, fy_t, sem.fz, fz_t, thermo_params, laguerre=false)
     end
 

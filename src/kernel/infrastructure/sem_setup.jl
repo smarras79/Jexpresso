@@ -12,6 +12,7 @@ function sem_setup(inputs::Dict)
     PT    = inputs[:equations]
     AD    = inputs[:AD]
     CL    = inputs[:CL]
+    phys_grid = zeros(Float64,1,1)
     SOL_VARS_TYPE = inputs[:SOL_VARS_TYPE]
     
     #--------------------------------------------------------
@@ -175,7 +176,9 @@ function sem_setup(inputs::Dict)
             @info " Build metrics ......"
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
             @info " Build metrics ...... END"
-            
+            if (inputs[:lphysics_grid])
+                phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
+            end 
             @info " Build periodicity infrastructure ......"
             @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
                                            mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
@@ -191,7 +194,6 @@ function sem_setup(inputs::Dict)
             @info " Matrix wrapper ......"
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
             @info " Matrix wrapper ...... END"
-            
         end
     else
         
@@ -237,5 +239,5 @@ function sem_setup(inputs::Dict)
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
-    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz)
+    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid)
 end
