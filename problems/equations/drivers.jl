@@ -1,21 +1,47 @@
 using HDF5
 
-function driver(inputs::Dict,        #input parameters from src/user_input.jl
+function driver(nparts,
+                distribute,
+                inputs::Dict,
                 OUTPUT_DIR::String,
                 TFloat) 
-
-    sem = sem_setup(inputs)
+    comm  = distribute.comm
+    rank = MPI.Comm_rank(comm)
+    sem = sem_setup(inputs, nparts, distribute)
     
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
 
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+
+    # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
+    # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
+    if inputs[:ladapt] == true
+        if rank == 0
+            @info "start conformity4ncf_q!"
+        end
+        @time conformity4ncf_q!(qp.qn, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+        @time conformity4ncf_q!(qp.qe, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+        MPI.Barrier(comm)
+        if rank == 0
+            @info "end conformity4ncf_q!"
+        end
+    end
+
+    if inputs[:ladapt] == true
+        amr_freq = inputs[:amr_freq]
+        Δt_amr   = amr_freq * inputs[:Δt]
+        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
+    else
+        tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+    end
     params, u =  params_setup(sem,
                               qp,
                               inputs,
                               OUTPUT_DIR,
-                              TFloat)
+                              TFloat,
+                              tspan)
     
     if !inputs[:llinsolve]
         #

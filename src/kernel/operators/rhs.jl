@@ -77,6 +77,7 @@ function rhs!(du, u, params, time)
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
             params.RHS .= @views(params.RHS .+ params.RHS_lag)
         end
+        # DSS_global_RHS!(@view(params.RHS[:,:]), params.mesh.ip2gip, params.mesh.gip2owner, params.mesh.parts, params.mesh.npoin, params.mesh.gnpoin, params.neqs)
         RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     else
         if (params.SOL_VARS_TYPE == PERT())
@@ -291,6 +292,8 @@ function rhs!(du, u, params, time)
                 @inbounds params.RHS .+= params.RHS_visc
             end
             #@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
+            DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+
             k1 = RHStodu_gpu!(backend)
             k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
             
@@ -316,6 +319,9 @@ function _build_rhs!(RHS, u, params, time)
     ymax    = params.mesh.ymax
     zmin    = params.mesh.zmin
     zmax    = params.mesh.zmax    
+
+    comm    = params.mesh.parts.comm
+    mpisize = MPI.Comm_size(comm)
     
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
@@ -333,6 +339,11 @@ function _build_rhs!(RHS, u, params, time)
     end
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    # @info "start conformity4ncf_q!"
+    if inputs[:ladapt] == true
+        conformity4ncf_q!(params.uaux, params.pM, SD, QT, params.mesh.connijk, params.mesh, params.Minv, params.metrics.Je, params.ω, AD, neqs, params.interp)
+    end
+    # @info "end conformity4ncf_q!"
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
                                params.mesh.x, params.mesh.y, params.mesh.z, params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
                                params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
@@ -343,7 +354,13 @@ function _build_rhs!(RHS, u, params, time)
     
     inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y,lsource, SD)
     
+    # @info "start DSS_rhs_invicid"
+    if inputs[:ladapt] == true
+        DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
+                            params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+    end
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+    # @info "end DSS_rhs_invicid"
 
     #-----------------------------------------------------------------------------------
     # Kessler:
@@ -359,12 +376,40 @@ function _build_rhs!(RHS, u, params, time)
         
         viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
+        # @info "start DSS_rhs_viscous"
+        if inputs[:ladapt] == true
+            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
+                            params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+        end
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+        # if mpisize > 1
+        #     DSS_global_RHS!(@view(params.RHS_visc[:,:]), params.pM, params.neqs)
+        # end
+        # # DSS_nc_rhs!(params.RHS_visc, SD, QT, params.mesh.poin_in_edge, params.mesh.non_conforming_facets, ngl-1, neqs)
+        # for ieq=1:neqs
+        #     divide_by_mass_matrix!(@view(params.RHS_visc[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
+        #     # @info "ieq", ieq
+        #     if inputs[:ladapt] == true
+        #         DSS_nc_scatter_rhs!(@view(params.RHS_visc[:,ieq]), SD, QT, params.rhs_diff_el[:,:,:,ieq], params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
+        #                         params.mesh.non_conforming_facets_children_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, ngl-1, params.interp)
+        #     end
+        # end
+        # @info "end DSS_rhs_viscous"
         
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
+    # @info rank, [(params.mesh.x[params.mesh.connijk[iel,i,j]], params.mesh.y[params.mesh.connijk[iel,i,j]], params.RHS[params.mesh.connijk[iel,i,j],1]) for j in 1: params.mesh.ngl, i in 1: params.mesh.ngl, iel in 1: params.mesh.nelem]
+
+    if mpisize > 1
+        DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+    end
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
+        # @info "ieq", ieq
+        if inputs[:ladapt] == true
+            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, params.rhs_el[:,:,:,ieq], params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
+                            params.mesh.non_conforming_facets_children_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, ngl-1, params.interp)
+        end
     end
 end
 
@@ -403,7 +448,7 @@ end
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
     
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    # u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
