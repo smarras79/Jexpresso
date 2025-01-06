@@ -11,7 +11,7 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (100, 200, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000, 6000, 6500, 7000, 7500),
+        :diagnostics_at_times => (100, 200, 500, 1000, 1100, 1200, 1300, 1400, 1500, 2000, 2500, 3000, 3500, 4000),
         :case                 => "rtb",
         :lsource              => true, 
         :lmoist               => true,
@@ -28,16 +28,17 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
-        :μ                   => [0.0, 400.0, 400.0, 400.0, 600.0, 600.0, 600.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 400.0, 400.0, 400.0, 700.0, 700.0, 700.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_coarse.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line.msh",
         #---------------------------------------------------------------------------
         # Mountain parameters
         #---------------------------------------------------------------------------
-        :lwarp               => true,
+        :lwarp               => false,
         :mount_type          => "agnesi",
         :a_mount             => 10000.0,
         :h_mount             => 100.0,
@@ -50,9 +51,9 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.05,
-        :mu_y                => 0.05,
-        :mu_z                => 0.05,
+        :mu_x                => 0.1,
+        :mu_y                => 0.1,
+        :mu_z                => 0.1,
         :filter_type         => "erf", #use "erf" for Boyd-Vandeven, "exp" for exponential filter, or "quad" for quadratic filter
         #---------------------------------------------------------------------------
         # Plotting parameters

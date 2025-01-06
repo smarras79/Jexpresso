@@ -33,6 +33,30 @@ function mod_inputs_user_inputs!(inputs)
         end
     end
 
+    if(!haskey(inputs, :nlay_pg))
+       inputs[:nlay_pg] = 10
+    end
+
+    if(!haskey(inputs, :nx_pg))
+       inputs[:nx_pg] = 10
+    end
+
+    if(!haskey(inputs, :ny_pg))
+       inputs[:ny_pg] = 10
+    end
+
+    if(!haskey(inputs, :ltwo_stream_radiation))
+       inputs[:ltwo_stream_radiation] = false
+    end
+
+    if(!haskey(inputs, :lphysics_grid))
+       inputs[:lphysics_grid] = false
+    end
+
+    if(!haskey(inputs, :radiation_time_step))
+        inputs[:radiation_time_step] = inputs[:Δt]*100
+    end
+
     if(!haskey(inputs, :sounding_file))
        inputs[:sounding_file] = "empty"
     end

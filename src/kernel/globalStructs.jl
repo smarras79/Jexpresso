@@ -191,12 +191,10 @@ function allocate_filter(SD, nelem, npoin, ngl, T, backend; neqs=1, lfilter=fals
             dims3 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs))
             dims4 = (Int64(npoin), Int64(neqs))
         elseif SD == NSD_3D()
-            # WARNING Allocate only 1 because there is no 3D filter yet
             dims1 = (Int64(neqs), Int64(ngl), Int64(ngl), Int64(ngl))
             dims2 = (Int64(ngl), Int64(ngl), Int64(ngl))
             dims3 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
             dims4 = (Int64(npoin), Int64(neqs))
-            #warning( " 3D filter not implemented yet")
         end
     else
         if SD == NSD_1D()
