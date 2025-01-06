@@ -1,7 +1,10 @@
 include("../mesh/restructure_for_periodicity.jl")
 include("../mesh/warping.jl")
 
-function sem_setup(inputs::Dict)
+function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, partitioned_model_coarse = nothing, omesh = nothing)
+    
+    comm = distribute.comm
+    rank = MPI.Comm_rank(comm)
     
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
@@ -22,7 +25,11 @@ function sem_setup(inputs::Dict)
     # ξ = ND.ξ.ξ
     # ω = ND.ξ.ω
     #--------------------------------------------------------
-    mesh = mod_mesh_mesh_driver(inputs)
+    if isnothing(adapt_flags)
+        mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
+    else
+        mesh, partitioned_model, n2o_ele_map = mod_mesh_mesh_driver(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, omesh)
+    end
     
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
@@ -44,6 +51,7 @@ function sem_setup(inputs::Dict)
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
     ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])    
+    interp, project = build_projection_1d(ξω.ξ)
     ξ,ω = ξω.ξ, ξω.ω    
     if lexact_integration
         #
@@ -146,7 +154,9 @@ function sem_setup(inputs::Dict)
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end
-            @info " Build metrics ......"
+            if rank == 0
+                @info " Build metrics ......"
+            end
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
             @info " Build metrics ...... END"
             
@@ -163,7 +173,7 @@ function sem_setup(inputs::Dict)
             #warp_mesh!(mesh,inputs)
             
             @info " Matrix wrapper ......"
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
             @info " Matrix wrapper ...... END"
             
         end
@@ -208,9 +218,14 @@ function sem_setup(inputs::Dict)
         end
     end
 
+
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
+    if isnothing(adapt_flags)
+        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, interp, project, partitioned_model, nparts, distribute)
+    else
+        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, interp, project, partitioned_model, nparts, distribute), n2o_ele_map
+    end
     
-    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end

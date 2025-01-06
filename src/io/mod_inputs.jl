@@ -1,16 +1,18 @@
 using Crayons.Box
 using PrettyTables
 
-function mod_inputs_user_inputs!(inputs)
+function mod_inputs_user_inputs!(inputs, rank = 0)
 
     error_flag::Int8 = 0
     
     #Store parsed arguments xxx into inputs[:xxx]
     _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
     
-    print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")))
-    pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
-    print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")))
+    print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
+    if rank == 0
+        pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")
+    end
+    print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")); msg_rank = rank)
     
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
@@ -568,6 +570,14 @@ function mod_inputs_user_inputs!(inputs)
         inputs[:δvisc] = 0.0
     end
 
+    # AMR
+    if(!haskey(inputs, :ladapt))
+        inputs[:ladapt] = false
+    end
+    
+    if(!haskey(inputs, :amr_max_level))
+        inputs[:amr_max_level] = 0
+    end
 
     return inputs
 end
@@ -618,11 +628,12 @@ function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
 
 end
 
-function mod_inputs_print_welcome()
-
-    print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
-    print(BLUE_FG(" # Welcome to ", RED_FG("jexpresso\n")))
-    print(BLUE_FG(" # A Julia code to solve conservation laws with continuous spectral elements\n"))
-    print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
+function mod_inputs_print_welcome(rank = 0)
+    if rank == 0
+        print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
+        print(BLUE_FG(" # Welcome to ", RED_FG("jexpresso\n")))
+        print(BLUE_FG(" # A Julia code to solve conservation laws with continuous spectral elements\n"))
+        print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
+    end
 
 end
