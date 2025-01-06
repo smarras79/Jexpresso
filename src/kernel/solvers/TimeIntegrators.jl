@@ -43,7 +43,7 @@ function time_loop!(inputs, params, u)
         idx  = idx_ref[]
 
         println(" #  t=", integrator.t)
-
+        
         #CFL
         #computeCFL(params.mesh.npoin, params.neqs, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD; visc=inputs[:μ])
         
@@ -62,6 +62,7 @@ function time_loop!(inputs, params, u)
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------
+
     
     @time solution = solve(prob,
                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
