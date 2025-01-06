@@ -823,12 +823,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
     poin_bdy .= mesh.poin_in_bdy_face
     qe_temp = similar(qexact)
     if (inputs[:lmoist])
-        T_temp = copy(mp.Tabs)
-        qc_temp = copy(mp.qc)
-        qi_temp = copy(mp.qi)
-        qr_temp = copy(mp.qr)
-        qs_temp = copy(mp.qs)
-        qg_temp = copy(mp.qg)
+        T_temp     = copy(mp.Tabs)
+        qc_temp    = copy(mp.qc)
+        qi_temp    = copy(mp.qi)
+        qr_temp    = copy(mp.qr)
+        qs_temp    = copy(mp.qs)
+        qg_temp    = copy(mp.qg)
+        qsatt_temp = copy(mp.qsatt)
     end
     #=new_size = npoin
     iter = 1=#
@@ -837,18 +838,21 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         diff = new_size-npoin
         q_new = zeros(new_size*nvar)
         if (inputs[:lmoist])
-            T_new = zeros(new_size)
-            qc_new = zeros(new_size)
-            qi_new = zeros(new_size)
-            qr_new = zeros(new_size)
-            qs_new = zeros(new_size)
-            qg_new = zeros(new_size)
-            T_new[1:npoin] .= mp.Tabs
-            qc_new[1:npoin] .= mp.qc
-            qi_new[1:npoin] .= mp.qi
-            qr_new[1:npoin] .= mp.qr
-            qs_new[1:npoin] .= mp.qs
-            qg_new[1:npoin] .= mp.qg
+            T_new     = zeros(new_size)
+            qc_new    = zeros(new_size)
+            qi_new    = zeros(new_size)
+            qr_new    = zeros(new_size)
+            qs_new    = zeros(new_size)
+            qg_new    = zeros(new_size)
+            qsatt_new = zeros(new_size)
+            
+            T_new[1:npoin]     .= mp.Tabs
+            qc_new[1:npoin]    .= mp.qc
+            qi_new[1:npoin]    .= mp.qi
+            qr_new[1:npoin]    .= mp.qr
+            qs_new[1:npoin]    .= mp.qs
+            qg_new[1:npoin]    .= mp.qg
+            qsatt_new[1:npoin] .= mp.qsatt
         end
 
         for ieq = 1:nvars
@@ -963,12 +967,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
                                 ivar = new_size*(ieq-1)
                                 q_new[ivar+ip_new] = q[ivar+ip]
                                 if (inputs[:lmoist])
-                                    T_new[ip_new] = mp.Tabs[ip]
-                                    qc_new[ip_new] = mp.qc[ip]
-                                    qi_new[ip_new] = mp.qi[ip]
-                                    qr_new[ip_new] = mp.qr[ip]
-                                    qs_new[ip_new] = mp.qs[ip]
-                                    qg_new[ip_new] = mp.qg[ip]
+                                    T_new[ip_new]     = mp.Tabs[ip]
+                                    qc_new[ip_new]    = mp.qc[ip]
+                                    qi_new[ip_new]    = mp.qi[ip]
+                                    qr_new[ip_new]    = mp.qr[ip]
+                                    qs_new[ip_new]    = mp.qs[ip]
+                                    qg_new[ip_new]    = mp.qg[ip]
+                                    qsatt_new[ip_new] = mp.qsatt[ip]
                                 end
                             end
                             q_exact1[ip_new,:] .= qexact[ip,:]
@@ -980,12 +985,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         npoin += iter-1;
         q = q_new
         if (inputs[:lmoist])
-            mp.Tabs = T_new
-            mp.qc = qc_new
-            mp.qi = qi_new
-            mp.qr = qr_new
-            mp.qs = qs_new
-            mp.qg = qg_new
+            mp.Tabs  = T_new
+            mp.qc    = qc_new
+            mp.qi    = qi_new
+            mp.qr    = qr_new
+            mp.qs    = qs_new
+            mp.qg    = qg_new
+            mp.qsatt = qsatt_new
         end
         qexact = q_exact1
     end
@@ -999,18 +1005,21 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         q_exact1 = zeros(new_size,nvar+1)
         q_exact1[1:npoin,:] .= qexact[1:npoin,:]
         if (inputs[:lmoist])
-            T_new = zeros(new_size)
-            qc_new = zeros(new_size)
-            qi_new = zeros(new_size)
-            qr_new = zeros(new_size)
-            qs_new = zeros(new_size)
-            qg_new = zeros(new_size)
-            T_new[1:npoin] .= mp.Tabs
-            qc_new[1:npoin] .= mp.qc
-            qi_new[1:npoin] .= mp.qi
-            qr_new[1:npoin] .= mp.qr
-            qs_new[1:npoin] .= mp.qs
-            qg_new[1:npoin] .= mp.qg
+            T_new     = zeros(new_size)
+            qc_new    = zeros(new_size)
+            qi_new    = zeros(new_size)
+            qr_new    = zeros(new_size)
+            qs_new    = zeros(new_size)
+            qg_new    = zeros(new_size)
+            qsatt_new = zeros(new_size)
+
+            T_new[1:npoin]     .= mp.Tabs
+            qc_new[1:npoin]    .= mp.qc
+            qi_new[1:npoin]    .= mp.qi
+            qr_new[1:npoin]    .= mp.qr
+            qs_new[1:npoin]    .= mp.qs
+            qg_new[1:npoin]    .= mp.qg
+            qsatt_new[1:npoin] .= mp.qsatt
         end
         for ieq = 1:nvars
             ivar = new_size*(ieq-1)
@@ -1108,12 +1117,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
                                 ivar = new_size*(ieq-1)
                                 q_new[ivar+ip_new] = q[ivar+ip]
                                 if (inputs[:lmoist])
-                                    T_new[ip_new] = mp.Tabs[ip]
-                                    qc_new[ip_new] = mp.qc[ip]
-                                    qi_new[ip_new] = mp.qi[ip]
-                                    qr_new[ip_new] = mp.qr[ip]
-                                    qs_new[ip_new] = mp.qs[ip]
-                                    qg_new[ip_new] = mp.qg[ip]
+                                    T_new[ip_new]     = mp.Tabs[ip]
+                                    qc_new[ip_new]    = mp.qc[ip]
+                                    qi_new[ip_new]    = mp.qi[ip]
+                                    qr_new[ip_new]    = mp.qr[ip]
+                                    qs_new[ip_new]    = mp.qs[ip]
+                                    qg_new[ip_new]    = mp.qg[ip]
+                                    qsatt_new[ip_new] = mp.qsatt[ip]
                                 end
                             end
                             q_exact1[ip_new,:] .= qexact[ip,:]
@@ -1125,12 +1135,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         npoin += iter-1;
         q = q_new
         if (inputs[:lmoist])
-            mp.Tabs = T_new
-            mp.qc = qc_new
-            mp.qi = qi_new
-            mp.qr = qr_new
-            mp.qs = qs_new
-            mp.qg = qg_new
+            mp.Tabs  = T_new
+            mp.qc    = qc_new
+            mp.qi    = qi_new
+            mp.qr    = qr_new
+            mp.qs    = qs_new
+            mp.qg    = qg_new
+            mp.qsatt = qsatt_new
         end
         qexact = q_exact1
     end
@@ -1144,18 +1155,21 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         q_exact1 = zeros(new_size,nvar+1)
         q_exact1[1:npoin,:] .= qexact[1:npoin,:]
         if (inputs[:lmoist])
-            T_new = zeros(new_size)
-            qc_new = zeros(new_size)
-            qi_new = zeros(new_size)
-            qr_new = zeros(new_size)
-            qs_new = zeros(new_size)
-            qg_new = zeros(new_size)
-            T_new[1:npoin] .= mp.Tabs
-            qc_new[1:npoin] .= mp.qc
-            qi_new[1:npoin] .= mp.qi
-            qr_new[1:npoin] .= mp.qr
-            qs_new[1:npoin] .= mp.qs
-            qg_new[1:npoin] .= mp.qg
+            T_new     = zeros(new_size)
+            qc_new    = zeros(new_size)
+            qi_new    = zeros(new_size)
+            qr_new    = zeros(new_size)
+            qs_new    = zeros(new_size)
+            qg_new    = zeros(new_size)
+            qsatt_new = zeros(new_size)
+
+            T_new[1:npoin]     .= mp.Tabs
+            qc_new[1:npoin]    .= mp.qc
+            qi_new[1:npoin]    .= mp.qi
+            qr_new[1:npoin]    .= mp.qr
+            qs_new[1:npoin]    .= mp.qs
+            qg_new[1:npoin]    .= mp.qg
+            qsatt_new[1:npoin] .= mp.qsatt
         end
         for ieq = 1:nvars
             ivar = new_size*(ieq-1)
@@ -1253,12 +1267,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
                                 ivar = new_size*(ieq-1)
                                 q_new[ivar+ip_new] = q[ivar+ip]
                                 if (inputs[:lmoist])
-                                    T_new[ip_new] = mp.Tabs[ip]
-                                    qc_new[ip_new] = mp.qc[ip]
-                                    qi_new[ip_new] = mp.qi[ip]
-                                    qr_new[ip_new] = mp.qr[ip]
-                                    qs_new[ip_new] = mp.qs[ip]
-                                    qg_new[ip_new] = mp.qg[ip]
+                                    T_new[ip_new]     = mp.Tabs[ip]
+                                    qc_new[ip_new]    = mp.qc[ip]
+                                    qi_new[ip_new]    = mp.qi[ip]
+                                    qr_new[ip_new]    = mp.qr[ip]
+                                    qs_new[ip_new]    = mp.qs[ip]
+                                    qg_new[ip_new]    = mp.qg[ip]
+                                    qsatt_new[ip_new] = mp.qsatt[ip]
                                 end
                             end
                             q_exact1[ip_new,:] .= qexact[ip,:]
@@ -1270,12 +1285,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         npoin += iter-1;
         q = q_new
         if (inputs[:lmoist])
-            mp.Tabs = T_new
-            mp.qc = qc_new
-            mp.qi = qi_new
-            mp.qr = qr_new
-            mp.qs = qs_new
-            mp.qg = qg_new
+            mp.Tabs  = T_new
+            mp.qc    = qc_new
+            mp.qi    = qi_new
+            mp.qr    = qr_new
+            mp.qs    = qs_new
+            mp.qg    = qg_new
+            mp.qsatt = qsatt_new
         end
         qexact = q_exact1
     end
@@ -1439,6 +1455,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
             vtkfile[string("qr"), VTKPointData()] =  @view(mp.qr[:])
             vtkfile[string("qs"), VTKPointData()] =  @view(mp.qs[:])
             vtkfile[string("qg"), VTKPointData()] =  @view(mp.qg[:])
+            vtkfile[string("qsatt"), VTKPointData()] =  @view(mp.qsatt[:])
         else
             Tabs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
             KernelAbstractions.copyto!(inputs[:backend], Tabs, mp.Tabs)
@@ -1470,12 +1487,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
     mesh.poin_in_bdy_face .= poin_bdy
     qexact = copy(qe_temp)
     if (inputs[:lmoist])
-        mp.Tabs = copy(T_temp)
-        mp.qc = copy(qc_temp)
-        mp.qi = copy(qi_temp)
-        mp.qr = copy(qr_temp)
-        mp.qs = copy(qs_temp)
-        mp.qg = copy(qg_temp)
+        mp.Tabs  = copy(T_temp)
+        mp.qc    = copy(qc_temp)
+        mp.qi    = copy(qi_temp)
+        mp.qr    = copy(qr_temp)
+        mp.qs    = copy(qs_temp)
+        mp.qg    = copy(qg_temp)
+        mp.qsatt = copy(qsatt_temp)
     end
 end
 

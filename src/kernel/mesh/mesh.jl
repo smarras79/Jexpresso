@@ -86,6 +86,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     conn_edgesijk::Array{Int64,2} = KernelAbstractions.zeros(backend, TInt, 0, 0)    # edge analogue of connijk
     conn_facesijk::Array{Int64,2} = KernelAbstractions.zeros(backend, TInt, 0, 0)    # face analogue of connijk
 
+    el_min = KernelAbstractions.zeros(backend,TFloat, 0, 0)
+    el_max = KernelAbstractions.zeros(backend,TFloat, 0, 0)
+
     conn::Array{TInt,2}  = KernelAbstractions.zeros(backend, TInt, 0, 0)
     conn_unique_edges    = Array{TInt}(undef,  1, 2)
     conn_unique_edges1   = Array{Int64}(undef,  1, 2)
@@ -115,7 +118,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     Δelem_l      = 0.0
     Δeffective_s = 0.0
     Δeffective_l = 0.0
-    
+        
     SD::AbstractSpaceDimensions
 end
 
@@ -248,7 +251,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
     mesh.conn = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
-    
+    mesh.el_max = KernelAbstractions.zeros(backend,TFloat, Int64(mesh.nelem), 3)
+    mesh.el_min = KernelAbstractions.zeros(backend,TFloat, Int64(mesh.nelem), 3)
     #
     # Connectivity matrices
     #

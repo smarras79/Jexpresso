@@ -384,8 +384,8 @@ function _build_rhs!(RHS, u, params, time)
                                 params.mp.qsatt, params.mesh.npoin, params.uaux, params.mesh.z, params.qp.qe, params.SOL_VARS_TYPE)
         if (params.inputs[:lprecip])
             compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
-                                                    params.mp.Pg, params.mp.Tabs, params.mp.qi, @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
-                                                    @view(params.uaux[:,5]), params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
+                                                     params.mp.Pg, params.mp.Tabs, params.mp.qi, @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
+                                                    params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
                                               params.metrics, params.ω, params.basis.dψ, params.SOL_VARS_TYPE)
             params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt
             params.rhs_el[:,:,:,:,6] .+= params.mp.dqtdt
@@ -1141,7 +1141,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
     end
 end
 
-function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω,dψ)
+function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ)
         for k=1:ngl
             for j=1:ngl
                 for i=1:ngl
@@ -1150,9 +1150,9 @@ function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζ
                     dHdη = 0.0
                     dHdζ = 0.0
                     @turbo for m = 1:ngl
-                        dHdξ += dψ[m,i]*q[m,j,k,1]
-                        dHdη += dψ[m,j]*q[i,m,k,1]
-                        dHdζ += dψ[m,k]*q[i,j,m,1]
+                        dHdξ += dψ[m,i]*q[m,j,k]
+                        dHdη += dψ[m,j]*q[i,m,k]
+                        dHdζ += dψ[m,k]*q[i,j,m]
                     end
                     dξdz_ij = dξdz[iel,i,j,k]
 
