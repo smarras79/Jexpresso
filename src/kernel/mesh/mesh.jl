@@ -1,5 +1,5 @@
 using MPI
-using .MyGeometry
+using .JeGeometry
 using Gridap
 using Gridap.Arrays
 using Gridap.Arrays: Table
@@ -111,7 +111,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     face_in_elem         = Array{TInt}(undef, 0, 0, 0)
 
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
-
+    
+    #MPI variables
+    rank                = 0
     ip2gip              = KernelAbstractions.zeros(backend, TInt, 0)
     gip2owner           = KernelAbstractions.zeros(backend, TInt, 0)
     gip2ip              = KernelAbstractions.zeros(backend, TInt, 0)
@@ -166,17 +168,25 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #
     # Read GMSH grid from file
     #      
-    parts  = distribute(LinearIndices((nparts,)))
-    mesh.parts = distribute(LinearIndices((nparts,)))
-    mesh.nparts = nparts
-    ladaptive = inputs[:ladapt]
-    lamr_mesh = !isnothing(adapt_flags)
+    parts           = distribute(LinearIndices((nparts,)))
+    mesh.parts      = distribute(LinearIndices((nparts,)))
+    mesh.nparts     = nparts
+    mesh.rank       = rank
+    ladaptive       = inputs[:ladapt]
+    linitial_refine = inputs[:linitial_refine]
+    lamr_mesh       = !isnothing(adapt_flags)
     if isnothing(adapt_flags)
     
-        if ladaptive == false
+        if ladaptive == false && linitial_refine == false
             partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
             model = local_views(partitioned_model).item_ref[]
-        elseif ladaptive == true
+        elseif linitial_refine == true
+            gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+            partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
+            cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
+            dmodel = local_views(partitioned_model).item_ref[]
+            model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
+        elseif ladaptive == true && linitial_refine == false
             gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
             partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
 
@@ -279,30 +289,30 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # Mesh elements, nodes, faces, edges
     #
     if ladaptive == true
-        p2pp = Geometry.get_face_to_parent_face(model,POIN_flg)
+        p2pp   = Geometry.get_face_to_parent_face(model,POIN_flg)
         eg2peg = Geometry.get_face_to_parent_face(model,EDGE_flg)
-        f2pf = Geometry.get_face_to_parent_face(model,FACE_flg)
-        e2pe = Geometry.get_face_to_parent_face(model,ELEM_flg)
+        f2pf   = Geometry.get_face_to_parent_face(model,FACE_flg)
+        e2pe   = Geometry.get_face_to_parent_face(model,ELEM_flg)
         # @info point2ppoint, edge2pedge, face2pface
 
-        pgids = local_views(partition(get_face_gids(partitioned_model,POIN_flg))).item_ref[]
+        pgids  = local_views(partition(get_face_gids(partitioned_model,POIN_flg))).item_ref[]
         edgids = local_views(partition(get_face_gids(partitioned_model,EDGE_flg))).item_ref[]
-        fgids = local_views(partition(get_face_gids(partitioned_model,FACE_flg))).item_ref[]
+        fgids  = local_views(partition(get_face_gids(partitioned_model,FACE_flg))).item_ref[]
         elgids = local_views(partition(get_face_gids(partitioned_model,ELEM_flg))).item_ref[]
         # @info rank, own_to_local(pgids), "a ", local_to_own(pgids),  "a ", local_to_global(pgids), "a ", p2pp
         point2ppoint = local_to_global(pgids)[p2pp]
-        edge2pedge = local_to_global(edgids)[eg2peg]
-        face2pface = local_to_global(fgids)[f2pf]
-        elm2pelm = local_to_global(elgids)[e2pe]
+        edge2pedge   = local_to_global(edgids)[eg2peg]
+        face2pface   = local_to_global(fgids)[f2pf]
+        elm2pelm     = local_to_global(elgids)[e2pe]
     else
         point2ppoint = Geometry.get_face_to_parent_face(model,POIN_flg)
-        edge2pedge = Geometry.get_face_to_parent_face(model,EDGE_flg)
-        face2pface = Geometry.get_face_to_parent_face(model,FACE_flg)
-        elm2pelm = Geometry.get_face_to_parent_face(model,ELEM_flg)
+        edge2pedge   = Geometry.get_face_to_parent_face(model,EDGE_flg)
+        face2pface   = Geometry.get_face_to_parent_face(model,FACE_flg)
+        elm2pelm    = Geometry.get_face_to_parent_face(model,ELEM_flg)
     end
     # @info rank, p2pp, point2ppoint
     if ladaptive == true
-        hanging_vert_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[1]
+        hanging_vert_glue  = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[1]
         hanging_facet_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[mesh.nsd]
         num_regular_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_regular_faces[mesh.nsd]
         num_hanging_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_hanging_faces[mesh.nsd]
@@ -328,9 +338,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
     
     # if (ladaptive == 1)
-        mesh.nelem_bdy    = length(MyGeometry.get_boundary_cells(model,mesh.nsd))
-        mesh.nfaces_bdy   = length(MyGeometry.get_boundary_faces(model,mesh.nsd,FACE_flg))
-        mesh.nedges_bdy   = length(MyGeometry.get_boundary_faces(model,mesh.nsd,EDGE_flg))
+        mesh.nelem_bdy    = length(JeGeometry.get_boundary_cells(model,mesh.nsd))
+        mesh.nfaces_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,FACE_flg))
+        mesh.nedges_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,EDGE_flg))
     # else 
         # mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
         # mesh.nfaces_bdy   = count(get_isboundary_face(topology,FACE_flg))
@@ -350,7 +360,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         MPI.Barrier(comm)
         for i = 0 : mpi_size
             if i == rank
-                println("     # Rank                     : ", rank)
+                println("   # Rank                       : ", rank)
                 println("     # N. points                : ", mesh.npoin_linear)
                 println("     # N. elements              : ", mesh.nelem)
                 println("     # N. edges                 : ", mesh.nedges)
@@ -386,7 +396,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         MPI.Barrier(comm)
         for i = 0 : mpi_size
             if i == rank
-                println("     # Rank                       : ", rank)
+                println("   # Rank                         : ", rank)
                 println("     # N. edges internal points   : ", tot_edges_internal_nodes)
                 println("     # N. faces internal points   : ", tot_faces_internal_nodes)
                 println("     # N. volumes internal points : ", tot_vol_internal_nodes)
@@ -586,7 +596,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         #
         # Rewrite coordinates in RCM order:
         #
-        open("./COORDS_LO_$rank.dat", "w") do f
+        # open("./COORDS_LO_$rank.dat", "w") do f
             #open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
@@ -594,9 +604,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 mesh.z[ip] = get_node_coordinates(get_grid(model))[ip][3]
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
-                @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip, point2ppoint[ip])
+                # @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip, point2ppoint[ip])
             end
-        end #f
+        # end #f
     end
 
 
@@ -771,6 +781,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     if mesh.nsd == 2
         # isboundary_edge = compute_isboundary_face(topology, EDGE_flg)
         isboundary_edge = fill(false, mesh.nedges)  
+        boundary_edges  = findall(x -> size(x,1) == 1, mesh.facet_cell_ids)
+        isboundary_edge[boundary_edges] .= true
         
         # @info isboundary_edge
         #
@@ -787,7 +799,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             #
             for idx in idx_edges_inflow
                 mesh.edge_type[idx] = ilabel
-                isboundary_edge[idx] = true
             end
             # @info mesh.edge_type
         end
@@ -802,13 +813,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
                     mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
                     mesh.bdy_edge_in_elem[iedge_bdy] = mesh.facet_cell_ids[iedge][1]
-                    if (size(mesh.facet_cell_ids[iedge],1) ≠ 1)
-                        s = """
-                        Check boundary elements! size(mesh.facet_cell_ids[iedge],1) ≠ 1 
-                            """
+                    # if (size(mesh.facet_cell_ids[iedge],1) ≠ 1)
+                    #     s = """
+                    #     Check boundary elements! size(mesh.facet_cell_ids[iedge],1) ≠ 1 
+                    #         """
                 
-                        @error s
-                    end
+                    #     @error s
+                    # end
                 end
                 if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
                     n_semi_inf += 1
@@ -948,23 +959,31 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
     elseif mesh.nsd > 2
         # isboundary_face = compute_isboundary_face(topology, FACE_flg)
-        isboundary_face = fill(false, mesh.nfaces)  
+        isboundary_face = fill(false, mesh.nfaces)
+        # boundary_faces  = findall(x -> size(x,1) == 1, mesh.facet_cell_ids)
+        # isboundary_face[boundary_faces] .= true
         #
         # Get labels contained in the current GMSH grid:
         #
         labels = get_face_labeling(model)
+        # @info labels.tag_to_name, labels.tag_to_entities, labels.d_to_dface_to_entity
         for ilabel in labels.tag_to_name
+            if ilabel == "internal"
+                continue
+            end
             faces_to_tag  = get_face_tag_index(labels,ilabel,FACE_flg)
+            # @info "faces_to_tag", faces_to_tag
             idx_faces_inflow = findall( x -> x == 1, faces_to_tag)
             #    
             # Tag the boundary edge with its type as defined in the user-provided GMSH file:
             #
             for idx in idx_faces_inflow
-                mesh.face_type[idx] = ilabel
+                mesh.face_type[idx]  = ilabel
                 isboundary_face[idx] = true
             end
         end
         get_bdy_poin_in_face_on_edges!(mesh, @view(isboundary_face[:]), mesh.SD)
+        # @info isboundary_face
         iface_bdy = 1
         for iface in findall(x -> x == true, isboundary_face) #total nedges
             # if isboundary_face[iface] == true
@@ -977,10 +996,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                             s = """
                             Check boundary elements! size(mesh.facet_cell_ids[iface],1) ≠ 1 
                                 """
-                    
+                            @info iface_bdy, iface, mesh.x[mesh.poin_in_face[iface, igl,jgl]], mesh.y[mesh.poin_in_face[iface, igl,jgl]], mesh.z[mesh.poin_in_face[iface, igl,jgl]]
                             @error s
                         end
-                        #@info "face point number", mesh.poin_in_face[iface,igl,jgl],iface,igl,jgl
+                        # @info "face point number", mesh.poin_in_face[iface,igl,jgl],iface,igl,jgl
                     end
                 end
                 iface_bdy += 1
@@ -1023,59 +1042,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
 
     # =#
-    # n = 10
-    # row_partition = map(parts) do part
-    #     if part == 1
-    #         LocalIndices(n,part,[1,2,3,5,7,8],Int32[1,1,1,1,1,1])
-    #     elseif part == 2
-    #         LocalIndices(n,part,[2,4,5,10],Int32[2,2,2,2])
-    #     elseif part == 3
-    #         LocalIndices(n,part,[6,7,8,5,4,9,10],Int32[3,3,3,3,3,3,3])
-    #     else
-    #         LocalIndices(n,part,[1,3,7,9,10],Int32[4,4,4,4,4])
-    #     end
-    # end
-    # v = pzeros(row_partition)
-    # # map(parts,partition(v),row_partition) do part, values, indices
-    # #     local_index_to_owner = local_to_owner(indices)
-    # #     for lid in 1:length(local_index_to_owner)
-    # #         owner = local_index_to_owner[lid]
-    # #         if owner == part
-    # #             values[lid] = 10*part
-    # #         end
-    # #     end
-    # # end
-    # # consistent!(v) |> wait
-
-    # # map(partition(v),row_partition) do values, indices
-    # #     local_index_to_owner = local_to_owner(indices)
-    # #     for lid in 1:length(local_index_to_owner)
-    # #         owner = local_index_to_owner[lid]
-    # #         @test values[lid] == 10*owner
-    # #         @info values[lid]
-    # #     end
-    # # end
-
-    # map(local_values(v)) do values
-    #     fill!(values,10.0)
-    # end
-
-    # # assemble!(v) |> wait
-    # consistent!(v) |> wait
-    # # map(parts,local_values(v)) do part,values
-    # #     if part == 1
-    # #         @test values == [20.0, 20.0, 20.0, 0.0, 0.0, 0.0]
-    # #     # elseif part == 2
-    # #         # @test values == [0.0, 20.0, 30.0, 0.0]
-    # #     # elseif part == 3
-    # #         # @test values == [10.0, 30.0, 20.0, 0.0, 0.0, 0.0]
-    # #     elseif part == 4
-    # #         @test values == [0.0, 0.0, 0.0, 10.0, 30.0]
-    # #     end
-    # # end
-    # @test collect(v) == [20.0, 20.0, 20.0, 20.0, 30.0, 10.0, 30.0, 20.0, 10.0, 30.0]
-    # @info collect(v)
-
+   
     # write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./", parts, nparts)
 
     #
@@ -2454,6 +2421,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+    gip::Int64  = 0
     open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_vol.dat", "w") do f
         ip  = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + 1

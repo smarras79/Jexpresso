@@ -76,7 +76,7 @@ function time_loop!(inputs, params, u)
     # END runtime callbacks
     #------------------------------------------------------------------------
     
-    @time solution = solve(prob,
+    solution = solve(prob,
                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                            callback = cb, tstops = dosetimes,
                            save_everystep = false,
@@ -87,7 +87,7 @@ function time_loop!(inputs, params, u)
         while solution.t[end] < inputs[:tend]
             prob = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end])
             
-            @time solution = solve(prob,
+            solution = solve(prob,
                                 inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                                 callback = cb_amr, tstops = dosetimes,
                                 save_everystep = false,

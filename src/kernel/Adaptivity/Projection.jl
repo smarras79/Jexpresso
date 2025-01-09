@@ -832,9 +832,9 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
 
     
     if (ladpative == 1)
-        mesh.nelem_bdy    = length(MyGeometry.get_boundary_cells(model,mesh.nsd))
-        mesh.nfaces_bdy   = length(MyGeometry.get_boundary_faces(model,mesh.nsd,FACE_flg))
-        mesh.nedges_bdy   = length(MyGeometry.get_boundary_faces(model,mesh.nsd,EDGE_flg))
+        mesh.nelem_bdy    = length(JeGeometry.get_boundary_cells(model,mesh.nsd))
+        mesh.nfaces_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,FACE_flg))
+        mesh.nedges_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,EDGE_flg))
     else 
         mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
         mesh.nfaces_bdy   = count(get_isboundary_face(topology,mesh.nsd-1))
