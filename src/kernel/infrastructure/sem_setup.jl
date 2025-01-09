@@ -158,23 +158,33 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                 @info " Build metrics ......"
             end
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
-            @info " Build metrics ...... END"
+            if rank == 0
+                @info " Build metrics ...... END"
+            end
             
-            @info " Build periodicity infrastructure ......"
+            if rank == 0
+                @info " Build periodicity infrastructure ......"
+            end
             @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
                                            mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
                                            mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
                                            mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
                                            mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
-            @info " Build periodicity infrastructure ...... DONE"
+            if rank == 0
+                @info " Build periodicity infrastructure ...... DONE"
+            end
 
 #@mystop(" L 152 sem_setup")
             
             #warp_mesh!(mesh,inputs)
             
-            @info " Matrix wrapper ......"
+            if rank == 0
+                @info " Matrix wrapper ......"
+            end
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
-            @info " Matrix wrapper ...... END"
+            if rank == 0
+                @info " Matrix wrapper ...... END"
+            end
             
         end
     else

@@ -1344,16 +1344,22 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     end
 
     #Solution:
-    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")
-    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells)
-    for ivar = 1:nvars
-        idx = (ivar - 1)*npoin
-        vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+    fout_name = string(OUTPUT_DIR, "/iter_", iout)
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        for ivar = 1:nvar
+            idx = (ivar - 1)*npoin
+            vtkf[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+        end
+
+        if (inputs[:case] == "bomex")
+            vtkfile["theta", VTKPointData()] =  @view(θ[:])
+        end
+        vtkf
     end
-    if (inputs[:case] == "bomex")
-        vtkfile["theta", VTKPointData()] =  @view(θ[:])
-    end
-    outfiles = vtk_save(vtkfile)
+    outfiles = map(vtk_save, vtkfile)
     mesh.npoin = npoin1
     mesh.x .= xx
     mesh.y .= yy

@@ -21,8 +21,8 @@ function driver(nparts,
         if rank == 0
             @info "start conformity4ncf_q!"
         end
-        @time conformity4ncf_q!(qp.qn, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
-        @time conformity4ncf_q!(qp.qe, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+        @time conformity4ncf_q!(qp.qn, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+        @time conformity4ncf_q!(qp.qe, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
         MPI.Barrier(comm)
         if rank == 0
             @info "end conformity4ncf_q!"
@@ -47,7 +47,7 @@ function driver(nparts,
         #
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
         #
-        solution = time_loop!(inputs, params, u)
+        @time solution = time_loop!(inputs, params, u)
         
         if (inputs[:ndiagnostics_outputs] > 0)
             write_output(sem.mesh.SD, solution,  sem.mesh,
