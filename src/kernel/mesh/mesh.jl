@@ -288,7 +288,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #
     # Mesh elements, nodes, faces, edges
     #
-    if ladaptive == true
+    if (ladaptive == true) || (linitial_refine == true) 
         p2pp   = Geometry.get_face_to_parent_face(model,POIN_flg)
         eg2peg = Geometry.get_face_to_parent_face(model,EDGE_flg)
         f2pf   = Geometry.get_face_to_parent_face(model,FACE_flg)
