@@ -811,42 +811,33 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
         fac2 = fac_fus*ap
         ag = 1/(T0g - T00g)
         ωp = max(0,min(1,ap*T-bp))
-        T1 = T + (fac_cond + (1-ωp)*fac_fus)*qp #+ fac1*qp/(1+fac2*qp)
+        T1 = Tabs[ip] + (fac_cond + (1-ωp)*fac_fus)*qp #+ fac1*qp/(1+fac2*qp)
         P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
         #if (qp > 1e-8) 
         #    @info qp, T, T1, fac1*qp/(1+fac2*qp), fac1*qp, (1+fac2*qp)
         #end
-    
-        if (T1 >= T0n)
-
+        if (T1 >= T0p)
             T1 = T + fac_cond*qp
             P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-            qsatt[ip] = max(0.0,qsatw(T1, P/100))
-
-        elseif (T1 <= T00n)
-
+        elseif (T1 <= T00p)
             T1 = T + fac_sub*qp
             P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-            qsatt[ip] = max(0.0,qsati(T1, P/100))
-
         else
             ωp = max(0,min(1,ap*T1-bp))
             T1 = T + (fac_cond + (1-ωp)*fac_fus)*qp
+            P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
+        end
+        if (T1 >= T0n)
+
+            qsatt[ip] = max(0.0,qsatw(T1, P/100))
+        elseif (T1 <= T00n)
+
+            qsatt[ip] = max(0.0,qsati(T1, P/100))
+        else
             ωn = max(0,min(1,an*T1-bn))
             qsatt[ip] = max(0.0,ωn*qsatw(T1,P/100)+(1-ωn)*qsati(T1,P/100))
-            if (T1 >= T0n)
-
-                T1 = T + fac_cond*qp
-                P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-                qsatt[ip] = max(0.0,qsatw(T1, P/100))
-
-            elseif (T1 <= T00n)
-
-                T1 = T + fac_sub*qp
-                P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-                qsatt[ip] = max(0.0,qsati(T1, P/100))
-            end
         end
+        Tabs[ip] = T1
 
         if (qt > qsatt[ip])
 
@@ -876,7 +867,7 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
                     ωn = max(0,min(1,an*T1-bn))
                     dωn = an
                     lstarn = fac_cond+(1-ωn)*fac_fus
-                    dlstarn = dωn*fac_cond - dωn * fac_fus 
+                    dlstarn = -dωn*fac_fus#dωn*fac_cond - dωn * fac_fus 
                     qsatt[ip] = max(0.0,ωn*qsatw(T1,P/100) + (1-ωn)*qsati(T1,P/100))
                     dqsat = ωn*dtqsati(T1,P/100) + (1-ωn)*dtqsati(T1,P/100) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
                 end
@@ -897,7 +888,7 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
 
                     ωp = max(0,min(1,ap*T1-bp))
                     lstarp = fac_cond + (1-ωp)*fac_fus
-                    dlstarp=ap*fac_cond - ap*fac_fus#ap*fac_fus
+                    dlstarp= -ap*fac_fus#ap*fac_cond - ap*fac_fus#ap*fac_fus
 
                 end
 
@@ -906,6 +897,7 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
                 dT = -fff/dfff
                 niter = niter + 1
                 T1 = T1 + dT
+                P = moistPressure(PhysConst; ρ = ρ, Temp = T1, qv = min(qt,qsatt[ip]))
             end
             #=if (T1 >=T0p)
                 qsatt[ip] = max(qsatw(T1,P/100),0.0)

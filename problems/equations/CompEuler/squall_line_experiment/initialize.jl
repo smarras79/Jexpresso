@@ -108,7 +108,11 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     Δθ = θc*cospi(r/2)^2
                 end
                 θ_ref = background[ip,1]
-                qv_ref = background[ip,2]/1000
+                if (z>=8000)
+                    qv_ref = background[ip,2]/1000*exp(-(z-8000)/10000)
+                else
+                    qv_ref = background[ip,2]/1000
+                end
                 u_ref = background[ip,3]
                 v_ref = background[ip,4]
                 pref = background[ip,5]
