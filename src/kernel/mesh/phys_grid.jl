@@ -240,6 +240,8 @@ end
 end
 
 function interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,nlay,ncol,P,T,qc,qi,ρ,lpert)
+
+    PhysConst = PhysicalConst{Float64}()
     A = KernelAbstractions.zeros(CPU(), TFloat, mesh.npoin,6)
     ω = KernelAbstractions.zeros(CPU(), TFloat,mesh.ngl,mesh.ngl,mesh.ngl)
     B = KernelAbstractions.zeros(CPU(), TFloat, 6)
@@ -274,9 +276,9 @@ function interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,nlay,ncol,P,T,qc,qi,ρ
             phys_grid.p[ilay,icol] = B[2]
             phys_grid.ρ[ilay,icol] = B[1]
             phys_grid.t[ilay,icol] = B[3]
-            phys_grid.qc[ilay,icol] = B[4]
-            phys_grid.qi[ilay,icol] = B[5]
-            phys_grid.qv[ilay,icol] = B[6]
+            phys_grid.qc[ilay,icol] = B[4] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air 
+            phys_grid.qi[ilay,icol] = B[5] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
+            phys_grid.qv[ilay,icol] = B[6] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
         end
     end
     @info maximum(A[:,2]), minimum(A[:,2]), maximum(phys_grid.p), minimum(phys_grid.p)
@@ -457,6 +459,10 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
     end=#
     if (backend == CPU())
         interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,phys_grid.nlev-1,phys_grid.ncol,@view(uaux[:,end]),mp.Tabs,mp.qc,mp.qi,@view(uaux[:,1]),true)
+        
+        #compute_col_gas!(device, phys_grid.p, col_dry, param_set, phys_grid.qv, lat)
+        #compute_relative_humidity!(device, rel_hum, phys_grid.p_lay, phys_grid.t_lay, param_set, phys_grid.qv)
+        
         flux = zeros(TFloat,phys_grid.nlev,phys_grid.ncol)
         for ilay = 1:phys_grid.nlev
             for icol =1:phys_grid.ncol
