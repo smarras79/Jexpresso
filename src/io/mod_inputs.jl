@@ -568,7 +568,6 @@ function mod_inputs_user_inputs!(inputs)
         inputs[:δvisc] = 0.0
     end
 
-
     return inputs
 end
 
