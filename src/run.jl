@@ -123,14 +123,6 @@ end
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------
-# if cpu == false
-#     if Sys.isapple()
-#         using Metal
-#     elseif Sys.islinux()
-#         using CUDA
-#     end
-# end
-
 with_mpi() do distribute
     
     #main_ex4(nparts,distribute)
