@@ -4,14 +4,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.4,
+        :Δt                   => 0.1,
         :tinit                => 0.0,
-        :tend                 => 10.0,
+        :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output",
-        :ndiagnostics_outputs => 2,
+        :diagnostics_at_times => (100:100:1000),
         :case                 => "rtb",
         :lsource              => true, 
         #:backend              => CUDABackend(),
@@ -31,9 +31,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
+        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -44,8 +44,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
+        #---------------------------------------------------------------------------
+        # init_refinement
+        #---------------------------------------------------------------------------
+        :linitial_refine     => true,
+        :init_refine_lvl     => 1,
+        #---------------------------------------------------------------------------
         :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",
+        :loverwrite_output   => true,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
