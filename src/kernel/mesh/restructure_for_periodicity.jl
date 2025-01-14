@@ -1247,5 +1247,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         end
     end
     mesh.npoin = npoin
-    @info " periodicity_restructure!"
+    if mesh.rank == 0
+        @info " periodicity_restructure!"
+    end
 end

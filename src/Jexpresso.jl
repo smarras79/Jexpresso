@@ -6,6 +6,14 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
+# if Sys.isapple()
+#     using Metal
+#     using CUDA
+# elseif Sys.islinux()
+#     using CUDA
+# end
+
+>>>>>>> 78c8d19db891b7cef89a016e9f6602301b7c16c6
 using KernelAbstractions
 using Revise
 using BenchmarkTools
@@ -61,6 +69,8 @@ include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 
 include(joinpath( "kernel", "physics", "constitutiveLaw.jl"))
 
+include(joinpath( "kernel", "mesh", "Geom.jl"))
+
 include(joinpath( "kernel", "mesh", "mesh.jl"))
 
 include(joinpath( "kernel", "bases", "basis_structs.jl"))
@@ -93,7 +103,11 @@ include(joinpath("kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
+include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
+
 include(joinpath( "io", "mod_inputs.jl"))
+
+include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))
 
@@ -103,4 +117,6 @@ include(joinpath( "auxiliary", "checks.jl"))
 
 include("./run.jl")
 
+# Run the test
+# test_create_2d_projection_matrices_numa2d()
 end
