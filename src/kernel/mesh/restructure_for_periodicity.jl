@@ -632,13 +632,8 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
                     p2_idx = i
                 end
             end=#
-            @info x_dest, y_dest, z_dest
-            #@info x[target_idx], y[target_idx],z[target_idx]
-            #=if !(plane2[1] == target_idx)
-                aux = plane2[1]
-                plane2[1] = target_idx
-                plane2[p2_idx] = aux
-            end=#
+            #@info x_dest, y_dest, z_dest
+
             interval = [0, 0, 0]
             for i =1:3
                 interval[i] = plane2[i+1]

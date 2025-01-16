@@ -456,15 +456,13 @@ end
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
     
-    # u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
 
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
             
-            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+            #user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
 
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
@@ -495,6 +493,43 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_2D)
 end
 
 
+function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
+    
+    #xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
+    for iel = 1:params.mesh.nelem
+
+        for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
+            ip = connijk[iel,i,j,k]
+            
+            user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
+                       @view(params.uaux[ip,:]),
+                       @view(qe[ip,:]),         #pref
+                       params.mesh,
+                       params.CL, params.SOL_VARS_TYPE;
+                       neqs=params.neqs, ip=ip)
+            
+            if lsource
+                user_source!(@view(params.S[i,j,k,:]),
+                             @view(params.uaux[ip,:]),
+                             @view(qe[ip,:]),          #ρref 
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
+                             neqs=params.neqs)
+            end
+        end
+
+        _expansion_inviscid!(u,
+                             params.neqs, params.mesh.ngl,
+                             params.basis.dψ, params.ω,
+                             params.F, params.G, params.H, params.S,
+                             params.metrics.Je,
+                             params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                             params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                             params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                             params.rhs_el, iel, params.CL, params.QT, SD, params.AD) 
+    end
+end
+
+#=
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
@@ -531,6 +566,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
     end
 end
 
+=#
 
 function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
     
