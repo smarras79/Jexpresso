@@ -13,7 +13,6 @@ module Jexpresso
 #     using CUDA
 # end
 
->>>>>>> 78c8d19db891b7cef89a016e9f6602301b7c16c6
 using KernelAbstractions
 using Revise
 using BenchmarkTools
