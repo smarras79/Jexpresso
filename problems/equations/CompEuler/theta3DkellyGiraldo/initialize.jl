@@ -49,12 +49,15 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             comm = MPI.COMM_WORLD
             max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
             min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+            max_y = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
+            min_y = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
             xc = (max_x + min_x)/2
-            zc = 2500.0 #m
-            r0 = 2000.0 #m
+            yc = (max_y + min_y)/2
+            zc = 260.0 #m
+            r0 = 250.0 #m
         
             θref = 300.0 #K
-            θc   =   2.0 #K
+            θc   =   0.5 #K
             for ip = 1:mesh.npoin
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
@@ -63,7 +66,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             
                 Δθ = 0.0 #K
                 if r < r0
-                    Δθ = θc*(1.0 - r/r0)
+                    #Δθ = θc*(1.0 - r/r0)
+                    Δθ = θc*(1.0 + cospi(r/r0)
                 end
                 θ = θref + Δθ
                 p    = PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
@@ -145,8 +149,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         end
         PhysConst = PhysicalConst{TFloat}()
         xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
-        zc = TFloat(2500.0) #m
-        rθ = TFloat(2000.0) #m
+        yc = TFloat((maximum(mesh.y) + minimum(mesh.y))/2)
+        zc = TFloat(260.0) #m
+        rθ = TFloat(250.0) #m
 
         θref = TFloat(300.0) #K
         θc   =   TFloat(2.0) #K
