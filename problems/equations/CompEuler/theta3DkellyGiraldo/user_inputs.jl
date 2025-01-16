@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.4,
+        :Δt                   => 0.01,
         :tinit                => 0.0,
         :tend                 => 1000.0,
         #:tinit                => 100.0,
@@ -18,21 +18,19 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 4,      # Polynomial order
+        :nop                 => 8,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc               => true, #false by default
         :ivisc_equations     => [1, 2, 3, 4, 5],
-        :μ                   => [0.0, 20.0, 20.0, 20.0, 60.0],
+        :μ                   => [0.0, 0.5, 0.5, 0.5, 0.5],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_8x8x8.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
