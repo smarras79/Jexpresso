@@ -137,7 +137,7 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, nelem, Je, Δx,
     
     MN = N + 1
     QN = Q + 1
-    for iel=1:nelem
+    @inbounds for iel=1:nelem
         
         for l = 1:Q+1
             for k = 1:Q+1
@@ -171,7 +171,7 @@ function build_mass_matrix!(Me, SD::NSD_3D, QT::Inexact, ψ, ω, nelem, Je, Δx,
     
     MN = N + 1
     QN = Q + 1
-    for iel=1:nelem
+    @inbounds for iel=1:nelem
         
         for o = 1:Q+1
             for n = 1:Q+1

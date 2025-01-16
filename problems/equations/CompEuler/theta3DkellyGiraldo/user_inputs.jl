@@ -6,19 +6,21 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.01,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        # :tend                 => 1000.0,
+        :tend                 => 400,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output",
-        :diagnostics_at_times => (0:100:1000),
+        # :ndiagnostics_outputs => 1,
+        :diagnostics_at_times => (0.01, 200, 400),
         :lsource              => true,
         #:backend              => CUDABackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 8,      # Polynomial order
+        :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -44,8 +46,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => false,
-        :init_refine_lvl     => 1,
+        :linitial_refine     => true,
+        :init_refine_lvl     => 2,
         #---------------------------------------------------------------------------
         :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",

@@ -62,12 +62,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
             
-                r = sqrt( (x - xc)^2 + (z - zc)^2 )
+                r = sqrt( (x - xc)^2 + (y - yc)^2 + (z - zc)^2 )
             
                 Δθ = 0.0 #K
                 if r < r0
                     #Δθ = θc*(1.0 - r/r0)
-                    Δθ = θc*(1.0 + cospi(r/r0)
+                    Δθ = θc*(1.0 + cospi(r/r0))
                 end
                 θ = θref + Δθ
                 p    = PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θ))^(PhysConst.cpoverR) #Pa
