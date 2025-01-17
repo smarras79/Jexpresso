@@ -3,28 +3,28 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.01,
+        :ode_solver           => SSPRK53(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        :Δt                   => 0.02,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 400.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output",
-        :diagnostics_at_times => (0:100:1000),
+        :diagnostics_at_times => (0:10:400),
         :lsource              => true,
         #:backend              => CUDABackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 8,      # Polynomial order
+        :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc               => true, #false by default
         :ivisc_equations     => [1, 2, 3, 4, 5],
-        :μ                   => [0.0, 0.5, 0.5, 0.5, 0.5],
+        :μ                   => [0.0, 2.0, 2.0, 2.0, 2.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
