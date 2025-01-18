@@ -6,12 +6,12 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
-if Sys.isapple()
-    using Metal
-    using CUDA
-elseif Sys.islinux()
-    using CUDA
-end
+#if Sys.isapple()
+#    using Metal
+#    using CUDA
+#elseif Sys.islinux()
+#    using CUDA
+#end
 
 using KernelAbstractions
 using Revise
