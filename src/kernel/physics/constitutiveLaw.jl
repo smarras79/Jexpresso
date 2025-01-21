@@ -11,7 +11,7 @@ end
 
 function perfectGasLaw_TPtoρ(PhysConst::PhysicalConst; Temp=300.0, Press=100000.0)
     
-    return  Press/(ρ*PhysConst.Rair) #ρ
+    return  Press/(Temp*PhysConst.Rair) #ρ
 end
 
 function perfectGasLaw_ρθtoP(PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
