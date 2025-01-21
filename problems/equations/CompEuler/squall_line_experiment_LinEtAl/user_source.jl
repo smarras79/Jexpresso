@@ -19,9 +19,9 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
 
     #
     # clateral
-    zs = 15000.0#ymax - 16000.0
-    xr = 12500.0
-    xl = -12500.0
+    zs= 15000.0 #ymax - 16000.0
+    xr= 23000.0 #12500.0
+    xl=-23000.0 #-12500.0
     if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betay_coe =  sinpi(0.5*(z-zs)/(zmax-zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
