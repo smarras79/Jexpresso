@@ -6,12 +6,12 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.2,
         :tinit                => 0.0,
-        :tend                 => 7000.0,
+        :tend                 => 4000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (100, 200, 500, 1000, 1100, 1200, 1300, 1400, 1500, 1800, 2000, 2500, 3000, 3500, 4000, 4250, 4500, 4750, 5000),
+        :diagnostics_at_times => [100, 200, 500, 1000, 1100, 1200, 1300, 1400, 1500, 1800, 2000, 2500, 3000, 3500, 4000],
         :case                 => "rtb",
         :lsource              => true, 
         :lmoist               => true,
@@ -33,9 +33,9 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_coarse.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_coarse.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_LinEtAl.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_LinEtAl.msh",
         #---------------------------------------------------------------------------
         # Mountain parameters
         #---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Soundings and data files
         #---------------------------------------------------------------------------
-        :sounding_file       => "./data_files/test_sounding.data",
+        :sounding_file  => "./data_files/sounding-SAM-new.dat",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk", #"hdf5",
-        :output_dir          => "./output_filter_test/",
+        :output_dir          => "./output/",
         :loverwrite_output   => true,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

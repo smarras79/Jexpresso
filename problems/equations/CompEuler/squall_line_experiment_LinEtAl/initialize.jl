@@ -54,49 +54,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #rebalance hydrostatic state
             diff = 100000.0
             niter = 0
-            #=while (diff > 0.1 && niter < 50)
-                for e=1:mesh.nelem
-                    for i=1:mesh.ngl
-                        for j=1:mesh.ngl
-                            for k=1:mesh.ngl
-                                ip = mesh.connijk[e,i,j,k]
-                                if (k < mesh.ngl)
-                                    ip1 = mesh.connijk[e,i,j,k+1]
-                                else
-                                    ip1 = mesh.connijk[e,i,j,k-1]
-                                end
-                                if (k > 1 && k < mesh.ngl)
-                                    ip2 = mesh.connijk[e,i,j,k-1]
-                                    dz = (abs(mesh.z[ip] - mesh.z[ip1]) + abs(mesh.z[ip] -mesh.z[ip2]))/2
-                                    balanced[ip] = abs((-2*background[ip,5] + background[ip2,5] + background[ip1,5]))/(2*dz*PhysConst.g)
-                                else
-                                    if (balanced[ip] == 0)
-                                        balanced[ip] = abs(background[ip,5] - background[ip1,5])/(PhysConst.g *abs(mesh.z[ip]-mesh.z[ip1]))
-                                    else
-                                        balanced[ip] = (abs(background[ip,5] - background[ip1,5])/(PhysConst.g *abs(mesh.z[ip]-mesh.z[ip1])) + balanced[ip])/2
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-                @info maximum(balanced), minimum(balanced)
-                for ip=1:mesh.nelem
-                    if (mesh.z[ip] < 24000.0 -1)
-                    T = background[ip,1] / (PhysConst.pref/background[ip,5])^(PhysConst.Rair/PhysConst.cp)
-                    old = background[ip,5]
-                    background[ip,5] = balanced[ip]*PhysConst.Rair*T
-                    if (ip ==1)
-                        diff = abs(background[ip,5] - old)/old
-                    else
-                        diff = max(abs(background[ip,5] - old)/old,diff)
-                    end
-                    end
-                end
-                @info maximum(background[:,5]), minimum(background[:,5]), diff
-                niter += 1
-            end
-            @info diff=#
+            
             for ip = 1:mesh.npoin
             
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
