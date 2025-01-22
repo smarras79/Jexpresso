@@ -47,7 +47,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Soundings and data files
         #---------------------------------------------------------------------------
-        :sounding_file       => "./data_files/lin_higher_moisture.data",
+        :sounding_file  => "./data_files/sounding-SAM.dat",
+        #:sounding_file  => "./data_files/lin_higher_moisture.data",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk", #"hdf5",
-        :output_dir          => "./output_filter_test/",
+        :output_dir          => "./output/",
         :loverwrite_output   => true,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
