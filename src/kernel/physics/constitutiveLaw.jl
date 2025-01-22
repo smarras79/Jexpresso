@@ -82,10 +82,10 @@ function perfectGasLaw_θPtoρ(PhysConst::PhysicalConst; θ=300.0, Press=100000.
     
 end
 
-function moistPressure(PhysConst::PhysicalConst; ρ=1.25, Temp=300.0, qv = 0.0)
-    T = typeof(Temp)
+function moistPressure(PhysConst::PhysicalConst; ρ=1.25, Tv=300.0, qv = 0.0)
+    T = typeof(Tv)
     #@info ρ*Temp*PhysConst.Rair + ρ*Temp*qv*PhysConst.Rvap, Temp, qv, ρ, PhysConst.Rvap
-    return (T(ρ*Temp*PhysConst.Rair + ρ*Temp*qv*PhysConst.Rvap))
+    return (T(ρ*Tv*PhysConst.Rair))
 end
 
 # Function to update p_ref_theta
