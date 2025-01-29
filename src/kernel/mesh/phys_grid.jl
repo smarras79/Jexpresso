@@ -460,15 +460,33 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
     if (backend == CPU())
         interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,phys_grid.nlev-1,phys_grid.ncol,@view(uaux[:,end]),mp.Tabs,mp.qc,mp.qi,@view(uaux[:,1]),true)
         
-        #compute_col_gas!(device, phys_grid.p, col_dry, param_set, phys_grid.qv, lat)
-        #compute_relative_humidity!(device, rel_hum, phys_grid.p_lay, phys_grid.t_lay, param_set, phys_grid.qv)
+        col_dry = zeros(phys_grid.nlay, phys_grid.ncol)
+        rel_hum = zeros(phys_grid.nlay, phys_grid.ncol)
+        lon = nothing # This example skips latitude dependent gravity computation
+        lat = nothing
+        compute_col_gas!(CPU(), phys_grid.p, col_dry, param_set, phys_grid.qv, lat)
+        compute_relative_humidity!(CPU(), rel_hum, phys_grid.p_lay, phys_grid.t_lay, param_set, phys_grid.qv)
         
+        layerdata = zeros(4, phys_grid.nlay, phys_grid.ncol)
+        layerdata[1, :, :] .= col_dry
+        layerdata[2, :, :] .= phys_grid.p_lay
+        layerdata[3, :, :] .= phys_grid.t_lay
+        layerdata[4, :, :] .= rel_hum
+        t_sfc = read_data
+        as = AtmosphericState(lon, lat, layerdata, phys_grid.p, phys_grid.t, t_sfc, vmr, nothing, nothing),
+        sfc_emis,
+        sfc_alb,
+        cos_zenith,
+        irrad,
+        bot_at_1,
+
         flux = zeros(TFloat,phys_grid.nlev,phys_grid.ncol)
         for ilay = 1:phys_grid.nlev
             for icol =1:phys_grid.ncol
                 flux[ilay,icol] = icol + ilay
             end
         end
+
         flux_interp = KernelAbstractions.zeros(backend,TFloat, 1, mesh.npoin)
         interpolate_from_phys_grid_cpu!(mesh.x,mesh.y,mesh.z,mesh.connijk,phys_grid,flux,flux_interp,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
         @info maximum(flux), minimum(flux), maximum(flux_interp), minimum(flux_interp)

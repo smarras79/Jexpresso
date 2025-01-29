@@ -4,14 +4,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.4,
+        :Δt                   => 0.1,
         :tinit                => 0.0,
         :tend                 => 7000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (100, 200, 500, 1000, 1100, 1200, 1300, 1400, 1500, 1800, 2000, 2500, 3000, 3500, 4000, 4250, 4500, 4750, 5000, 7000),
+        :diagnostics_at_times => (0.2, 10.0, 50.0, 100, 200, 500, 1000, 1100, 1200, 1300, 1400, 1500, 1800, 2000, 2500, 3000, 3500, 4000, 4250, 4500, 4750, 5000, 7000),
         :case                 => "rtb",
         :lsource              => true, 
         :lmoist               => true,
@@ -48,13 +48,14 @@ function user_inputs()
         # Soundings and data files
         #---------------------------------------------------------------------------
         :sounding_file       => "./data_files/test_sounding.data",
+        #:sounding_file       => "./data_files/sounding-SAM-new.dat", 
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.1,
-        :mu_y                => 0.1,
-        :mu_z                => 0.1,
+        :mu_x                => 0.05,
+        :mu_y                => 0.05,
+        :mu_z                => 0.05,
         :filter_type         => "erf", #use "erf" for Boyd-Vandeven, "exp" for exponential filter, or "quad" for quadratic filter
         #---------------------------------------------------------------------------
         # Plotting parameters

@@ -34,7 +34,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_coarse.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_Lin.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_LinEtAl.msh",
         #---------------------------------------------------------------------------
         # Mountain parameters
@@ -47,8 +47,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Soundings and data files
         #---------------------------------------------------------------------------
-        :sounding_file  => "./data_files/sounding-SAM.dat",
-        #:sounding_file  => "./data_files/lin_higher_moisture.data",
+        #:sounding_file  => "./data_files/sounding-SAM.dat",
+        :sounding_file  => "./data_files/lin_higher_moisture.data",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------

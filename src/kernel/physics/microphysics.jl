@@ -311,10 +311,11 @@ function add_micro_precip_sources!(mp::St_SamMicrophysics,T,S_micro,S,q,qn,qe,::
     ρqv_pert = ρ*qv - qe[6]
     #@info S[4], -q[1]*PhysConst.g*(0.608*qv-qn-qp)
     #@info S[4], S[4]-q[1]*PhysConst.g*(0.608*qv-qn-qp), q[end] - qe[end]
-    #S[4] += -q[1]*PhysConst.g*(0.608*qv-qn-qp) #moisture buoyancy contribution
-    #S[4] += -ρ*PhysConst.g*(0.608*qv-qn-qp)
-    #S[4] += -PhysConst.g*(0.608*(q[1]*qv_ref + ρ*qv_pert) -ρ*(qn+qp)) #derived this by searching for perturbation buoyancy
-    S[4] += -PhysConst.g*(0.608*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
+    #S[4] += -q[1]*PhysConst.g*(0.61*qv-qn-qp) #moisture buoyancy contribution
+    #S[4] += -ρ*PhysConst.g*(0.61*qv-qn-qp)
+    #S[4] += -PhysConst.g*(0.61*(q[1]*qv_ref + ρ*qv_pert) -ρ*(qn+qp)) #derived this by searching for perturbation buoyancy
+    S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
+    
     S[6] += -ρ*S_micro
     S[7] += ρ*S_micro
 
@@ -403,8 +404,8 @@ function compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt,
             qp = uaux[ip,7]/uaux[ip,1]
         end
         T = Tabs[ip]
-        e_satw = esatw(T)
-        e_sati = esati(T)
+        e_satw = esatw(T)*100
+        e_sati = esati(T)*100
 
         ### Collection of condensates
         Ar_c = π/4*a_rain*N0_rain*Er_c*γ3br*(ρ0/ρ)^(0.5)*(ρ/(π*ρ_rain*N0_rain))^((3+b_rain)/4)
@@ -502,8 +503,8 @@ function compute_dqpdt_sam_micro_old(ρ,T,P,hl,qt,qn,qc,qi,qp,qr,qs,qg,qsatt,Mic
     Rvap = PhysConst.Rvap
     Rair = PhysConst.Rair
     μ = MicroConst.μ
-    e_satw = esatw(T)
-    e_sati = esati(T)
+    e_satw = esatw(T)*100
+    e_sati = esati(T)*100
 
     ### Collection of condensates
     Ar_c = π/4*a_rain*N0_rain*Er_c*γ3br*(ρ0/ρ)^(0.5)*(ρ/(π*ρ_rain*N0_rain))^((3+b_rain)/4)
@@ -617,8 +618,8 @@ function compute_dqpdt_sam_micro_gpu(u,qe,T,qn,qc,qi,qr,qs,qg,qsatt,MicroConst,P
     Rvap = PhysConst.Rvap
     Rair = PhysConst.Rair
     μ = MicroConst.μ
-    e_satw = esatw(T)
-    e_sati = esati(T)
+    e_satw = esatw(T)*FT(100)
+    e_sati = esati(T)*FT(100)
 
     ### Collection of condensates
     Ar_c = FT(FT(π)/FT(4))*a_rain*N0_rain*Er_c*γ3br*(ρ0/ρ)^(FT(0.5))*FT((ρ/(FT(π)*ρ_rain*N0_rain)))^((FT(3)+FT(b_rain)/FT(4)))
