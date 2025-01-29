@@ -473,13 +473,14 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         layerdata[3, :, :] .= phys_grid.t_lay
         layerdata[4, :, :] .= rel_hum
         t_sfc = read_data
-        as = AtmosphericState(lon, lat, layerdata, phys_grid.p, phys_grid.t, t_sfc, vmr, nothing, nothing),
+        #=as = AtmosphericState(lon, lat, layerdata, phys_grid.p, phys_grid.t, t_sfc, vmr, nothing, nothing),
         sfc_emis,
         sfc_alb,
         cos_zenith,
         irrad,
         bot_at_1,
 
+        =#
         flux = zeros(TFloat,phys_grid.nlev,phys_grid.ncol)
         for ilay = 1:phys_grid.nlev
             for icol =1:phys_grid.ncol
