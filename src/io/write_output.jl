@@ -1163,13 +1163,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
             qg_new    = zeros(new_size)
             qsatt_new = zeros(new_size)
 
-            T_new[1:npoin]     .= mp.Tabs
-            qc_new[1:npoin]    .= mp.qc
-            qi_new[1:npoin]    .= mp.qi
-            qr_new[1:npoin]    .= mp.qr
-            qs_new[1:npoin]    .= mp.qs
-            qg_new[1:npoin]    .= mp.qg
-            qsatt_new[1:npoin] .= mp.qsatt
+            T_new[1:npoin]     .= mp.Tabs[1:npoin]
+            qc_new[1:npoin]    .= mp.qc[1:npoin]
+            qi_new[1:npoin]    .= mp.qi[1:npoin]
+            qr_new[1:npoin]    .= mp.qr[1:npoin]
+            qs_new[1:npoin]    .= mp.qs[1:npoin]
+            qg_new[1:npoin]    .= mp.qg[1:npoin]
+            qsatt_new[1:npoin] .= mp.qsatt[1:npoin]
         end
         for ieq = 1:nvars
             ivar = new_size*(ieq-1)

@@ -1,13 +1,13 @@
-nelemx = 24;
+nelemx = 60;
 nelemy = 1;
 nelemz = 24;
 
-xmin =  -9600;
-xmax =	 9600;
+xmin =  -30000;
+xmax =	 30000;
 ymin =  -6000;
 ymax =   6000;
 zmin =      0;
-zmax =  19200;
+zmax =  24000;
 gridsize = (xmax-xmin) / nelemx;
 
 Point(1) = {xmin, ymin, zmin, gridsize};
