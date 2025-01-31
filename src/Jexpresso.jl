@@ -36,8 +36,26 @@ import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
 
+import ClimaComms
+@static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
+
+using RRTMGP
+using RRTMGP.Vmrs
+using RRTMGP.LookUpTables
+using RRTMGP.AtmosphericStates
+using RRTMGP.Optics
+using RRTMGP.Sources
+using RRTMGP.BCs
+using RRTMGP.Fluxes
+using RRTMGP.AngularDiscretizations
+using RRTMGP.RTE
+using RRTMGP.RTESolver
+import RRTMGP.Parameters.RRTMGPParameters
+using RRTMGP.ArtifactPaths
+
 using UnicodePlots
 using Printf
+using NCDatasets
 
 TInt   = Int64
 TFloat = Float64
