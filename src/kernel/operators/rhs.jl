@@ -413,7 +413,7 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
     
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y,lsource, SD)
+    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, SD)
     
     # @info "start DSS_rhs_invicid"
     if inputs[:ladapt] == true
@@ -534,7 +534,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
 end
 
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
+#=function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
     
     #xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
@@ -568,10 +568,10 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                              params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD) 
     end
-end
+end=#
 
-#=
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
+
+function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmin = params.xmin; xmax = params.xmax; zmax = params.zmax 
@@ -613,7 +613,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
     end
 end
 
-=#
+
 
 function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
     
