@@ -1,7 +1,10 @@
 include("../mesh/restructure_for_periodicity.jl")
 include("../mesh/warping.jl")
 
-function sem_setup(inputs::Dict)
+function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, partitioned_model_coarse = nothing, omesh = nothing)
+    
+    comm = distribute.comm
+    rank = MPI.Comm_rank(comm)
     
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
@@ -24,7 +27,11 @@ function sem_setup(inputs::Dict)
     # ξ = ND.ξ.ξ
     # ω = ND.ξ.ω
     #--------------------------------------------------------
-    mesh = mod_mesh_mesh_driver(inputs)
+    if isnothing(adapt_flags)
+        mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
+    else
+        mesh, partitioned_model, n2o_ele_map = mod_mesh_mesh_driver(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, omesh)
+    end
     
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
@@ -46,6 +53,7 @@ function sem_setup(inputs::Dict)
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
     ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])    
+    interp, project = build_projection_1d(ξω.ξ)
     ξ,ω = ξω.ξ, ξω.ω    
     if lexact_integration
         #
@@ -173,27 +181,40 @@ function sem_setup(inputs::Dict)
                     warp_mesh!(mesh,inputs)
                 end
             end
-            @info " Build metrics ......"
+            if rank == 0
+                @info " Build metrics ......"
+            end
             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
-            @info " Build metrics ...... END"
+            if rank == 0
+                @info " Build metrics ...... END"
+            end
             if (inputs[:lphysics_grid])
                 phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
             end 
-            @info " Build periodicity infrastructure ......"
+            if rank == 0
+                @info " Build periodicity infrastructure ......"
+            end
             @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
                                            mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
                                            mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
                                            mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
                                            mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
-            @info " Build periodicity infrastructure ...... DONE"
+            if rank == 0
+                @info " Build periodicity infrastructure ...... DONE"
+            end
 
 #@mystop(" L 152 sem_setup")
             
             #warp_mesh!(mesh,inputs)
             
-            @info " Matrix wrapper ......"
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
-            @info " Matrix wrapper ...... END"
+            if rank == 0
+                @info " Matrix wrapper ......"
+            end
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
+            if rank == 0
+                @info " Matrix wrapper ...... END"
+            end
+            
         end
     else
         
@@ -236,8 +257,14 @@ function sem_setup(inputs::Dict)
         end
     end
 
+
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
-    return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid)
+    if isnothing(adapt_flags)
+        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, interp, project, partitioned_model, nparts, distribute)
+    else
+        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, interp, project, partitioned_model, nparts, distribute), n2o_ele_map
+    end
+    
 end

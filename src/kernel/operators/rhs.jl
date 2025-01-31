@@ -53,6 +53,14 @@ function reset_laguerre_filters!(params)
     fill!(params.B_lag, zero(params.T))
 end
 
+
+function resetRHSToZero_viscous!(params, SD::NSD_1D)
+    fill!(params.rhs_diff_el,  zero(params.T))
+    fill!(params.rhs_diffξ_el, zero(params.T))
+    fill!(params.RHS_visc,     zero(params.T))
+end
+
+
 function resetRHSToZero_viscous!(params, SD::NSD_2D)
     fill!(params.rhs_diff_el,  zero(params.T))
     fill!(params.rhs_diffξ_el, zero(params.T))
@@ -77,6 +85,7 @@ function rhs!(du, u, params, time)
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
             params.RHS .= @views(params.RHS .+ params.RHS_lag)
         end
+        # DSS_global_RHS!(@view(params.RHS[:,:]), params.mesh.ip2gip, params.mesh.gip2owner, params.mesh.parts, params.mesh.npoin, params.mesh.gnpoin, params.neqs)
         RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     else
         if (params.SOL_VARS_TYPE == PERT())
@@ -329,6 +338,8 @@ function rhs!(du, u, params, time)
                 @inbounds params.RHS .+= params.RHS_visc
             end
             #@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
+            DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+
             k1 = RHStodu_gpu!(backend)
             k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
             
@@ -354,6 +365,9 @@ function _build_rhs!(RHS, u, params, time)
     ymax    = params.mesh.ymax
     zmin    = params.mesh.zmin
     zmax    = params.mesh.zmax    
+
+    comm    = params.mesh.parts.comm
+    mpisize = MPI.Comm_size(comm)
     
     #-----------------------------------------------------------------------------------
     # Inviscid rhs:
@@ -371,6 +385,11 @@ function _build_rhs!(RHS, u, params, time)
     end
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    # @info "start conformity4ncf_q!"
+    if inputs[:ladapt] == true
+        conformity4ncf_q!(params.uaux, params.pM, SD, QT, params.mesh.connijk, params.mesh, params.Minv, params.metrics.Je, params.ω, AD, neqs, params.interp)
+    end
+    # @info "end conformity4ncf_q!"
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
                                params.mesh.x, params.mesh.y, params.mesh.z, params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
                                params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
@@ -393,9 +412,17 @@ function _build_rhs!(RHS, u, params, time)
         end
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
-
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, SD)
+    
+    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y,lsource, SD)
+    
+    # @info "start DSS_rhs_invicid"
+    if inputs[:ladapt] == true
+        DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
+                            params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+    end
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+    # @info "end DSS_rhs_invicid"
+
     #@info maximum(params.RHS[:,7]), maximum(params.RHS[:,6])
     #-----------------------------------------------------------------------------------
     # Kessler:
@@ -411,11 +438,26 @@ function _build_rhs!(RHS, u, params, time)
         
         viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
+        # @info "start DSS_rhs_viscous"
+        if inputs[:ladapt] == true
+            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
+                            params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+        end
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
+    # @info rank, [(params.mesh.x[params.mesh.connijk[iel,i,j]], params.mesh.y[params.mesh.connijk[iel,i,j]], params.RHS[params.mesh.connijk[iel,i,j],1]) for j in 1: params.mesh.ngl, i in 1: params.mesh.ngl, iel in 1: params.mesh.nelem]
+
+    if mpisize > 1
+        DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+    end
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
+        # @info "ieq", ieq
+        if inputs[:ladapt] == true
+            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, params.rhs_el[:,:,:,ieq], params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
+                            params.mesh.non_conforming_facets_children_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, ngl-1, params.interp)
+        end
     end
     #@info maximum(params.RHS[:,7]), maximum(params.RHS[:,6])
 end
@@ -455,15 +497,13 @@ end
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
     
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
 
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
             
-            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+            #user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
 
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
@@ -495,6 +535,43 @@ end
 
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
+    
+    #xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
+    for iel = 1:params.mesh.nelem
+
+        for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
+            ip = connijk[iel,i,j,k]
+            
+            user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
+                       @view(params.uaux[ip,:]),
+                       @view(qe[ip,:]),         #pref
+                       params.mesh,
+                       params.CL, params.SOL_VARS_TYPE;
+                       neqs=params.neqs, ip=ip)
+            
+            if lsource
+                user_source!(@view(params.S[i,j,k,:]),
+                             @view(params.uaux[ip,:]),
+                             @view(qe[ip,:]),          #ρref 
+                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
+                             neqs=params.neqs)
+            end
+        end
+
+        _expansion_inviscid!(u,
+                             params.neqs, params.mesh.ngl,
+                             params.basis.dψ, params.ω,
+                             params.F, params.G, params.H, params.S,
+                             params.metrics.Je,
+                             params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
+                             params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
+                             params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
+                             params.rhs_el, iel, params.CL, params.QT, SD, params.AD) 
+    end
+end
+
+#=
+function inviscid_rhs_el!(u, params, connijk, qe, x, y, lsource, SD::NSD_3D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmin = params.xmin; xmax = params.xmax; zmax = params.zmax 
@@ -536,6 +613,35 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
     end
 end
 
+=#
+
+function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
+    
+    for iel=1:params.mesh.nelem
+        
+        for i=1:params.mesh.ngl
+            ip = connijk[iel,i]
+
+            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,:]), params.SOL_VARS_TYPE)
+        end
+
+        for ieq in params.ivisc_equations
+            _expansion_visc!(params.rhs_diffξ_el,
+                             params.uprimitive,
+                             params.visc_coeff,
+                             params.ω,
+                             params.mesh.ngl,
+                             params.basis.dψ,
+                             params.metrics.Je,
+                             params.metrics.dξdx,
+                             params.inputs, iel, ieq, params.QT, SD, params.AD)
+        end
+        
+    end
+    
+    params.rhs_diff_el .= @views (params.rhs_diffξ_el)
+    
+end
 
 function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
     
@@ -913,6 +1019,31 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Exact, SD::NSD_2D, AD::
                 end
             end
             
+        end
+    end
+end
+
+
+function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je, dξdx, inputs, iel, ieq, QT::Inexact, SD::NSD_1D, ::ContGal)
+
+    for k = 1:ngl
+        ωJac = ω[k]*Je[iel,k]
+        
+        dqdξ = 0.0
+        @turbo for ii = 1:ngl
+            dqdξ += dψ[ii,k]*uprimitiveieq[ii,ieq]
+        end
+
+        dξdx_kl = dqdξ*dξdx[iel,k]
+        dqdx = visc_coeffieq[ieq]*dξdx_kl
+        
+        ∇ξ∇u_kl = dξdx_kl*dqdx*ωJac
+        
+        @turbo for i = 1:ngl
+            dhdξ_ik = dψ[i,k]
+                
+            rhs_diffξ_el[iel,i,ieq] -= dhdξ_ik * ∇ξ∇u_kl
         end
     end
 end
