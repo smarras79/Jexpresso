@@ -1,0 +1,4 @@
+.github/workflows/CI.yml
+docs/build/
+plotnodes.py
+Manifest.toml
