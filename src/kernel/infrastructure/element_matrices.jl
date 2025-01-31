@@ -137,7 +137,7 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, nelem, Je, Δx,
     
     MN = N + 1
     QN = Q + 1
-    for iel=1:nelem
+    @inbounds for iel=1:nelem
         
         for l = 1:Q+1
             for k = 1:Q+1
@@ -171,7 +171,7 @@ function build_mass_matrix!(Me, SD::NSD_3D, QT::Inexact, ψ, ω, nelem, Je, Δx,
     
     MN = N + 1
     QN = Q + 1
-    for iel=1:nelem
+    @inbounds for iel=1:nelem
         
         for o = 1:Q+1
             for n = 1:Q+1
@@ -894,13 +894,82 @@ function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, 
     
 end
 
+function DSS_global_RHS!(RHS, pM, neqs)
+    for i = 1:neqs
+       DSS_global_RHS_v0!(@view(RHS[:,i]), pM)
+    end
+end
+
+function DSS_global_RHS_v0!(M, pM)
+    # # @info ip2gip
+
+    # pM = pvector(values->@view(M[:]), row_partition)
+    sizeM = length(M)
+    # pM = map(parts, local_values(pM)) do part, localpM
+    #     @info part, length(localpM), sizeM
+    #     localpM = copy(M)
+    # end
+
+    map( partition(pM)) do values
+        for i = 1:sizeM
+            values[i] = M[i]
+        end
+    end
+
+
+    assemble!(pM) |> wait
+    consistent!(pM) |> wait
+    map(local_values(pM)) do values
+        for i = 1:sizeM
+            M[i] = values[i]
+        end
+    end
+end
+
+
+function DSS_global_mass!(M, ip2gip, gip2owner, parts, npoin, gnpoin)
+    # @info ip2gip
+    row_partition = map(parts) do part
+        row_partition = LocalIndices(gnpoin,part,ip2gip,gip2owner)
+        # gM = M
+        row_partition
+    end
+    pM = pvector(values->@view(M[:]), row_partition)
+    # map(parts,local_values(pM)) do part,values
+    #     # if part == 1
+    #         @info values
+    # #     end
+    # end
+
+    # map(partition(pM),row_partition) do values, indices
+    #     local_index_to_owner = local_to_owner(indices)
+    #     @info local_index_to_owner
+    #     # for lid in 1:length(local_index_to_owner)
+    #     #     owner = local_index_to_owner[lid]
+    #     #     @test values[lid] == 10*owner
+    #     # end
+    # end
+
+
+    assemble!(pM) |> wait
+    consistent!(pM) |> wait
+    M = map(local_values(pM)) do values
+        M = values
+        M
+    end
+    return pM
+end
+
 function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
-        ldss_laplace=false, ldss_differentiation=false, backend = CPU())
+        ldss_laplace=false, ldss_differentiation=false, backend = CPU(), interp)
 
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false
     if (ldss_differentiation) lbuild_differentiation_matrix = true end
     if (ldss_laplace) lbuild_laplace_matrix = true end
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
 
     if typeof(SD) == NSD_1D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, Int64(mesh.nelem))
@@ -949,6 +1018,14 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             k(M,Me,connijk,mesh.nelem, mesh.npoin, N;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
         end
     end
+    pM = DSS_global_mass!(M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    if (inputs[:ladapt] == true)
+        @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
+                                   mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, N, interp)
+    end
+
+    # @mystop("my stop at DSS_global_mass!")
+
     mass_inverse!(Minv, M, QT)
     Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
@@ -988,7 +1065,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    return (; Me, De, Le, M, Minv, D, L)
+    return (; Me, De, Le, M, Minv, pM, D, L)
 end
 
 
@@ -1049,7 +1126,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
             build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[1].ψ, basis[2].ψ, ω[1], ω[2], mesh, metrics[2], N, Q, TFloat)
         end
         
-        DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
+        @time DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
     else
         if (typeof(SD) == NSD_1D)
             k = build_mass_matrix_1d_gpu!(backend)

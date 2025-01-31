@@ -328,7 +328,10 @@ function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop, ba
           using Algorithm 23 of Kopriva's book valid for nop ≤  200
     """
 
-    println( " # Compute LG nodes ........................")
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    
+    println_rank( " # Compute LG nodes ........................"; msg_rank = rank)
     NITER = 100
     TOL = 4*eps(TFloat)
     Δ::TFloat=0.0
@@ -365,10 +368,10 @@ function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop, ba
 
     
     for j=1:nop+1       
-        println( " # ξ, ω =: ", " ", lg.ξ[j], " " , lg.ω[j])
+        println_rank( " # ξ, ω =: ", " ", lg.ξ[j], " " , lg.ω[j]; msg_rank = rank)
     end
     
-    println(" # Compute LG nodes ........................ DONE")
+    println_rank(" # Compute LG nodes ........................ DONE"; msg_rank = rank)
     
 end
 
@@ -376,7 +379,9 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
      """
           Compute the Nodes and Weights for the Legendre-Gauss-Lobatto Quadrature
      """
-
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    
     NITER = 100
     TOL = 4*eps()
     
@@ -394,7 +399,7 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
     Δ  ::TFloat=0.0
     ξ = zeros(TFloat,nop+1)
     ω = zeros(TFloat,nop+1)
-    println( " # Compute LGL nodes ........................")
+    println_rank( " # Compute LGL nodes ........................"; msg_rank = rank)
     
     for j=1:nop+1
 	ξ[j] = 0.0;
@@ -463,10 +468,10 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
         KernelAbstractions.copyto!(backend,lgl.ω,ω)
     end
     for j=1:nop+1       
-        println( " # ξ, ω =: ", " ", ξ[j], " " , ω[j])
+        println_rank( " # ξ, ω =: ", " ", ξ[j], " " , ω[j]; msg_rank = rank)
     end
     
-    println(" # Compute LGL nodes ........................ DONE")
+    println_rank(" # Compute LGL nodes ........................ DONE"; msg_rank = rank)
     
 end
 
