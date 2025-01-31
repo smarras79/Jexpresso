@@ -1459,7 +1459,36 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
             idx = (ivar - 1)*npoin
             vtkf[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
         end
-
+        if (inputs[:lmoist])
+            if (inputs[:backend] == CPU())
+                vtkf[string("Temp"), VTKPointData()] =  @view(mp.Tabs[:])
+                vtkf[string("qi"), VTKPointData()] =  @view(mp.qi[:])
+                vtkf[string("qc"), VTKPointData()] =  @view(mp.qc[:])
+                vtkf[string("qr"), VTKPointData()] =  @view(mp.qr[:])
+                vtkf[string("qs"), VTKPointData()] =  @view(mp.qs[:])
+                vtkf[string("qg"), VTKPointData()] =  @view(mp.qg[:])
+                vtkf[string("qsatt"), VTKPointData()] =  @view(mp.qsatt[:])
+            else
+                Tabs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], Tabs, mp.Tabs)
+                qi = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qi, mp.qi)
+                qc = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qc, mp.qc)
+                qr = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qr, mp.qr)
+                qs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qs, mp.qs)
+                qg = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qg, mp.qg)
+                vtkf[string("T"), VTKPointData()] =  @view(Tabs[:])
+                vtkf[string("qi"), VTKPointData()] =  @view(qi[:])
+                vtkf[string("qc"), VTKPointData()] =  @view(qc[:])
+                vtkf[string("qr"), VTKPointData()] =  @view(qr[:])
+                vtkf[string("qs"), VTKPointData()] =  @view(qs[:])
+                vtkf[string("qg"), VTKPointData()] =  @view(qg[:])
+            end
+        end
         if (inputs[:case] == "bomex")
             vtkfile["theta", VTKPointData()] =  @view(θ[:])
         end
@@ -1467,36 +1496,6 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
     end
     if (inputs[:case] == "bomex")
         vtkfile["theta", VTKPointData()] =  @view(θ[:])
-    end
-    if (inputs[:lmoist])
-        if (inputs[:backend] == CPU())
-            vtkfile[string("T"), VTKPointData()] =  @view(mp.Tabs[:])
-            vtkfile[string("qi"), VTKPointData()] =  @view(mp.qi[:])
-            vtkfile[string("qc"), VTKPointData()] =  @view(mp.qc[:])
-            vtkfile[string("qr"), VTKPointData()] =  @view(mp.qr[:])
-            vtkfile[string("qs"), VTKPointData()] =  @view(mp.qs[:])
-            vtkfile[string("qg"), VTKPointData()] =  @view(mp.qg[:])
-            vtkfile[string("qsatt"), VTKPointData()] =  @view(mp.qsatt[:])
-        else
-            Tabs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-            KernelAbstractions.copyto!(inputs[:backend], Tabs, mp.Tabs)
-            qi = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-            KernelAbstractions.copyto!(inputs[:backend], qi, mp.qi)
-            qc = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-            KernelAbstractions.copyto!(inputs[:backend], qc, mp.qc)
-            qr = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-            KernelAbstractions.copyto!(inputs[:backend], qr, mp.qr)
-            qs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-            KernelAbstractions.copyto!(inputs[:backend], qs, mp.qs)
-            qg = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-            KernelAbstractions.copyto!(inputs[:backend], qg, mp.qg)
-            vtkfile[string("T"), VTKPointData()] =  @view(Tabs[:])
-            vtkfile[string("qi"), VTKPointData()] =  @view(qi[:])
-            vtkfile[string("qc"), VTKPointData()] =  @view(qc[:])
-            vtkfile[string("qr"), VTKPointData()] =  @view(qr[:])
-            vtkfile[string("qs"), VTKPointData()] =  @view(qs[:])
-            vtkfile[string("qg"), VTKPointData()] =  @view(qg[:])
-        end
     end
          
     #outfiles = vtk_save(vtkfile)
