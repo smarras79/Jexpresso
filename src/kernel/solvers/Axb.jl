@@ -1,6 +1,3 @@
-using LinearSolve
-using LinearSolve: solve
-
 function solveAx(L, RHS, linear_solver...)
     
     @info linear_solver

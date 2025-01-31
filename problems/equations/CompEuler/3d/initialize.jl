@@ -2,7 +2,11 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     """
 
             """
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    if rank == 0
+        @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+    end
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -42,7 +46,10 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # INITIAL STATE from scratch:
             #
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            comm = MPI.COMM_WORLD
+            max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
+            min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+            xc = (max_x + min_x)/2
             zc = 2500.0 #m
             r0 = 2000.0 #m
         
@@ -146,7 +153,11 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, mesh.y, mesh.z, xc, rθ, zc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
+    if rank == 0
+        @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
+    end
+    # @mystop("my stop at mesh.jl L135")
+    
     return q
 end
 
