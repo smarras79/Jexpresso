@@ -1,5 +1,6 @@
 using Artifacts
 import RRTMGP: get_artifact_path
+import Infiltrator
 
 Base.@kwdef mutable struct phys_grid{T <: AbstractFloat, dims1, dims2, dims3, dims4, dims5, dims6, dims7, backend}
 
@@ -553,6 +554,10 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         vmrat[idx_gases["cf4"]] = Float64(ds_lw_in["cf4_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc23_GM"].attrib["units"])
     
         vmr = VmrGM(phys_grid.qv_lay, vmr_o3, FTA1D(vmrat))
+        SLVLW = NoScatLWRTE
+        #SLVLW = TwoStreamLWRTE
+        SLVSW = TwoStreamSWRTE
+
         deg2rad = Float64(π) / Float64(180)
         # all bands use same emissivity
         sfc_emis = repeat(reshape(Array{Float64}(Array(ds_lw_in["surface_emissivity"])), 1, :), nbnd_lw, 1)
@@ -569,6 +574,22 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
 
 
         as = AtmosphericState(lon, lat, layerdata, phys_grid.p, phys_grid.t, t_sfc, vmr, nothing, nothing)
+                
+        ##set up longwave problem
+        inc_flux = nothing
+        slv_lw = SLVLW(Float64, DA, context, param_set, phys_grid.nlev-1, phys_grid.ncol, sfc_emis, inc_flux)
+        
+        ##set up shortwave problem
+        sfc_alb_diffuse = DA{Float64, 2}(deepcopy(sfc_alb))
+        inc_flux_diffuse = nothing
+        swbcs = (cos_zenith, irrad, sfc_alb, inc_flux_diffuse, sfc_alb_diffuse)
+        slv_sw = SLVSW(Float64, DA, context, phys_grid.nlev-1, phys_grid.ncol, swbcs...)
+        exfiltrate = false
+        # calling longwave and shortwave solvers
+        exfiltrate && Infiltrator.@exfiltrate
+        solve_lw!(slv_lw, as, lookup_lw)
+
+        solve_sw!(slv_sw, as, lookup_sw)
 
         flux = zeros(TFloat,phys_grid.nlev,phys_grid.ncol)
         for ilay = 1:phys_grid.nlev
