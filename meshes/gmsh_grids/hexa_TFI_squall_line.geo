@@ -56,7 +56,7 @@ surfaceVector = Extrude {0,(ymax-ymin),0} {
     Physical Volume("internal") = {1};
     Physical Surface("bottom") = {25};
     Physical Surface("top") = {33};
-    Physical Surface("periodic1") = {21,29}; // from Plane Surface (6) ...
+    Physical Surface("sides") = {21,29}; // from Plane Surface (6) ...
   //+
 Show "*";
 //+
