@@ -1,5 +1,3 @@
-using BenchmarkTools
-
 d1 = 10000
 d2 = 10000
 

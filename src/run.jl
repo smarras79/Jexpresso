@@ -1,6 +1,4 @@
 using ArgParse
-#using Profile
-#using PProf
 
 #--------------------------------------------------------
 # The problem name is a command line argument:
@@ -46,6 +44,12 @@ function parse_commandline()
     return parse_args(s)
 end
 
+
+MPI.Init()
+comm = MPI.COMM_WORLD
+rank = MPI.Comm_rank(comm)
+nparts = MPI.Comm_size(comm)
+
 #--------------------------------------------------------
 # Parse command line args:
 #--------------------------------------------------------
@@ -82,11 +86,11 @@ include(user_primitives_file)
 #--------------------------------------------------------
 # Read User Inputs:
 #--------------------------------------------------------
-mod_inputs_print_welcome()
+mod_inputs_print_welcome(rank)
 inputs = Dict{}()
 
 inputs = user_inputs()
-mod_inputs_user_inputs!(inputs)
+mod_inputs_user_inputs!(inputs, rank)
 
 #--------------------------------------------------------
 # Create output directory if it doesn't exist:
@@ -113,20 +117,20 @@ end
 # Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
 if Sys.iswindows() == false
-    run(`$cp $user_input_file $OUTPUT_DIR`)
+    run(`$cp -f $user_input_file $OUTPUT_DIR`)
 end
 
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------
-if cpu == false
-    if Sys.isapple()
-        using Metal
-    elseif Sys.islinux()
-        using CUDA
-    end
-end
+with_mpi() do distribute
+    
+    #main_ex4(nparts,distribute)
 
-driver(inputs, # input parameters from src/user_input.jl
-       OUTPUT_DIR,
-       TFloat)
+    driver(nparts,
+           distribute, 
+           inputs, # input parameters from src/user_input.jl
+           OUTPUT_DIR,
+           TFloat)
+    
+end

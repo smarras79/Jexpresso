@@ -1,16 +1,18 @@
 using Crayons.Box
 using PrettyTables
 
-function mod_inputs_user_inputs!(inputs)
+function mod_inputs_user_inputs!(inputs, rank = 0)
 
     error_flag::Int8 = 0
     
     #Store parsed arguments xxx into inputs[:xxx]
     _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
     
-    print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")))
-    pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")    
-    print(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")))
+    print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
+    if rank == 0
+        pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")
+    end
+    print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")); msg_rank = rank)
     
     #
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
@@ -31,6 +33,58 @@ function mod_inputs_user_inputs!(inputs)
             global TFloat = Float32
             global cpu = false
         end
+    end
+
+    if(!haskey(inputs, :nlay_pg))
+       inputs[:nlay_pg] = 10
+    end
+
+    if(!haskey(inputs, :nx_pg))
+       inputs[:nx_pg] = 10
+    end
+
+    if(!haskey(inputs, :ny_pg))
+       inputs[:ny_pg] = 10
+    end
+
+    if(!haskey(inputs, :ltwo_stream_radiation))
+       inputs[:ltwo_stream_radiation] = false
+    end
+
+    if(!haskey(inputs, :lphysics_grid))
+       inputs[:lphysics_grid] = false
+    end
+
+    if(!haskey(inputs, :radiation_time_step))
+        inputs[:radiation_time_step] = inputs[:Δt]*100
+    end
+
+    if(!haskey(inputs, :sounding_file))
+       inputs[:sounding_file] = "empty"
+    end
+
+    if(!haskey(inputs, :topo_database))
+       inputs[:topo_database] = "empty"
+    end
+
+    if(!haskey(inputs, :read_topo_latmin))
+        inputs[:read_topo_latmin] = -89.99
+    end
+
+    if(!haskey(inputs, :read_topo_latmax))
+        inputs[:read_topo_latmax] = 89.99
+    end
+    
+    if(!haskey(inputs, :read_topo_lonmin))
+        inputs[:read_topo_lonmin] = -179.99
+    end
+
+    if(!haskey(inputs, :read_topo_lonmax))
+        inputs[:read_topo_lonmax] = 179.99
+    end
+
+    if(!haskey(inputs, :read_topo_zone))
+        inputs[:read_topo_zone] = 20
     end
 
     if(!haskey(inputs, :llinsolve))
@@ -107,6 +161,10 @@ function mod_inputs_user_inputs!(inputs)
 
     if(!haskey(inputs,:mu_y))
         inputs[:mu_y] = 0.0
+    end
+
+    if(!haskey(inputs,:mu_z))
+        inputs[:mu_z] = 0.0
     end
 
     if(!haskey(inputs,:lwarp))
@@ -500,6 +558,10 @@ function mod_inputs_user_inputs!(inputs)
     if(!haskey(inputs, :lmoist))
         inputs[:lmoist] = false
     end
+
+    if(!haskey(inputs, :lprecip))
+        inputs[:lprecip] = false
+    end
     
     if(!haskey(inputs, :energy_equation))
         inputs[:energy_equation] = "theta"
@@ -568,6 +630,18 @@ function mod_inputs_user_inputs!(inputs)
         inputs[:δvisc] = 0.0
     end
 
+    # AMR
+    if(!haskey(inputs, :ladapt))
+        inputs[:ladapt] = false
+    end
+
+    if(!haskey(inputs, :linitial_refine))
+        inputs[:linitial_refine] = false
+    end
+        
+    if(!haskey(inputs, :amr_max_level))
+        inputs[:amr_max_level] = 0
+    end
 
     return inputs
 end
@@ -618,11 +692,12 @@ function mod_inputs_check(inputs::Dict, key, value, error_or_warning::String)
 
 end
 
-function mod_inputs_print_welcome()
-
-    print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
-    print(BLUE_FG(" # Welcome to ", RED_FG("jexpresso\n")))
-    print(BLUE_FG(" # A Julia code to solve conservation laws with continuous spectral elements\n"))
-    print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
+function mod_inputs_print_welcome(rank = 0)
+    if rank == 0
+        print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
+        print(BLUE_FG(" # Welcome to ", RED_FG("jexpresso\n")))
+        print(BLUE_FG(" # A Julia code to solve conservation laws with continuous spectral elements\n"))
+        print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
+    end
 
 end
