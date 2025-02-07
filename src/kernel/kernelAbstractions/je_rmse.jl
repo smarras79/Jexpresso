@@ -1,7 +1,3 @@
-using Metal
-using KernelAbstractions
-using BenchmarkTools
-
 @kernel function ka_rmse_kernel(C, A, B)
     i = @index(Global)
 

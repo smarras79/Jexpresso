@@ -6,12 +6,12 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
-if Sys.isapple()
-    using Metal
-    using CUDA
-elseif Sys.islinux()
-    using CUDA
-end
+# if Sys.isapple()
+#     using Metal
+#     using CUDA
+# elseif Sys.islinux()
+#     using CUDA
+# end
 
 using KernelAbstractions
 using Revise
@@ -21,15 +21,19 @@ using DelimitedFiles
 using DataStructures
 using LoopVectorization
 using ElasticArrays
+using Geodesy
 using InternedStrings
 using LinearAlgebra
+using SpecialFunctions
 using StaticArrays
-using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
+using StaticArrays: SVector, MVector
 using DiffEqBase
 using DiffEqDevTools
 using OrdinaryDiffEq
-using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
+using OrdinaryDiffEq: solve
 using SnoopCompile
+using LinearSolve
+###using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
                  SplitODEProblem
@@ -41,8 +45,26 @@ import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
 
+import ClimaComms
+@static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
+
+using RRTMGP
+using RRTMGP.Vmrs
+using RRTMGP.LookUpTables
+using RRTMGP.AtmosphericStates
+using RRTMGP.Optics
+using RRTMGP.Sources
+using RRTMGP.BCs
+using RRTMGP.Fluxes
+using RRTMGP.AngularDiscretizations
+using RRTMGP.RTE
+using RRTMGP.RTESolver
+import RRTMGP.Parameters.RRTMGPParameters
+using RRTMGP.ArtifactPaths
+
 using UnicodePlots
 using Printf
+using NCDatasets
 
 TInt   = Int64
 TFloat = Float64
@@ -60,11 +82,17 @@ include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
+include(joinpath( "kernel", "physics", "microphysics.jl"))
+
+include(joinpath( "kernel", "physics", "saturation.jl"))
+
 include(joinpath( "kernel", "physics", "soundSpeed.jl"))
 
 include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 
 include(joinpath( "kernel", "physics", "constitutiveLaw.jl"))
+
+include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
 
@@ -73,6 +101,8 @@ include(joinpath( "kernel", "bases", "basis_structs.jl"))
 include(joinpath( "kernel", "mesh", "metric_terms.jl"))
 
 include(joinpath( "kernel", "infrastructure", "element_matrices.jl"))
+
+include(joinpath( "kernel", "mesh", "phys_grid.jl"))
 
 include(joinpath( "kernel", "infrastructure", "params_setup.jl"))
 
@@ -98,14 +128,24 @@ include(joinpath("kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
+include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
+
 include(joinpath( "io", "mod_inputs.jl"))
+
+include(joinpath( "io", "mod_print_io.jl"))
 
 include(joinpath( "io", "write_output.jl"))
 
 include(joinpath( "io", "diagnostics.jl"))
 
+include(joinpath( "io", "Extract_topo.jl"))
+
+include(joinpath( "io", "soundings.jl"))
+
 include(joinpath( "auxiliary", "checks.jl"))
 
 include("./run.jl")
 
+# Run the test
+# test_create_2d_projection_matrices_numa2d()
 end

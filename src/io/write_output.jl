@@ -1,7 +1,4 @@
-using LinearSolve
-using SnoopCompile
 using WriteVTK
-using HDF5
 
 include("./plotting/jeplots.jl")
 
@@ -158,22 +155,20 @@ end
 #
 # VTK 2D/3D
 #
-function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
-    #
-    # 2D/3D VTK of q(t) from dq/dt = RHS
-    #    
+function write_output(SD, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+ 
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, sol.u[iout][:], sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
+            write_vtk(SD, mesh, sol.u[iout][:], mp, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
         else
-            u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
+            u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
             KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
             u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
             KernelAbstractions.copyto!(CPU(),u_exact,qexact)
             convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, u, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+            write_vtk(SD, mesh, u, mp, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
         end
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
@@ -203,24 +198,24 @@ function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_D
     
 end
 
-function write_output(SD, u, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
-        write_vtk(SD, mesh, u, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
+        write_vtk(SD, mesh, u_sol, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
     else
         #VERIFY THIS on GPU
-        u_gpu = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
-        KernelAbstractions.copyto!(CPU(),u_gpu, u)
+        u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
+        KernelAbstractions.copyto!(CPU(),u, u_sol)
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-        write_vtk(SD, mesh, u_gpu, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
-        convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
-
+        write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
-    println(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE") )
+    println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
@@ -339,7 +334,7 @@ end
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     outvars = varnames
     nvars = length(outvars)
@@ -792,13 +787,24 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     #
     # Write solution:
     #
-    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")
-    vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*TFloat(0.0), cells)
-    for ivar = 1:nvar
-        idx = (ivar - 1)*npoin
-        vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+    fout_name = string(OUTPUT_DIR, "/iter_", iout)
+    # vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*TFloat(0.0), cells)
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
+                        part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        for ivar = 1:nvar
+            idx = (ivar - 1)*npoin
+            vtkf[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+        end
+        vtkf
     end
-    outfiles = vtk_save(vtkfile)
+    # for ivar = 1:nvar
+    #     idx = (ivar - 1)*npoin
+    #     vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+    # end
+    outfiles = map(vtk_save, vtkfile)
+    # outfiles = vtk_save(vtkfile)
     mesh.x .= xx
     mesh.y .= yy
     mesh.connijk .= conn
@@ -809,7 +815,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     end
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
     outvars = varnames
     nvars = length(outvars)
     npoin = mesh.npoin
@@ -828,12 +834,39 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_face
     qe_temp = similar(qexact)
+    if (inputs[:lmoist])
+        T_temp     = copy(mp.Tabs)
+        qc_temp    = copy(mp.qc)
+        qi_temp    = copy(mp.qi)
+        qr_temp    = copy(mp.qr)
+        qs_temp    = copy(mp.qs)
+        qg_temp    = copy(mp.qg)
+        qsatt_temp = copy(mp.qsatt)
+    end
     #=new_size = npoin
     iter = 1=#
     if ("periodic1" in mesh.bdy_face_type || "periodic2" in mesh.bdy_face_type || "periodic3" in mesh.bdy_face_type)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
         q_new = zeros(new_size*nvar)
+        if (inputs[:lmoist])
+            T_new     = zeros(new_size)
+            qc_new    = zeros(new_size)
+            qi_new    = zeros(new_size)
+            qr_new    = zeros(new_size)
+            qs_new    = zeros(new_size)
+            qg_new    = zeros(new_size)
+            qsatt_new = zeros(new_size)
+            
+            T_new[1:npoin]     .= mp.Tabs
+            qc_new[1:npoin]    .= mp.qc
+            qi_new[1:npoin]    .= mp.qi
+            qr_new[1:npoin]    .= mp.qr
+            qs_new[1:npoin]    .= mp.qs
+            qg_new[1:npoin]    .= mp.qg
+            qsatt_new[1:npoin] .= mp.qsatt
+        end
+
         for ieq = 1:nvars
             ivar = new_size*(ieq-1)
             ivar1 = npoin*(ieq-1)
@@ -945,6 +978,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                             for ieq=1:nvars
                                 ivar = new_size*(ieq-1)
                                 q_new[ivar+ip_new] = q[ivar+ip]
+                                if (inputs[:lmoist])
+                                    T_new[ip_new]     = mp.Tabs[ip]
+                                    qc_new[ip_new]    = mp.qc[ip]
+                                    qi_new[ip_new]    = mp.qi[ip]
+                                    qr_new[ip_new]    = mp.qr[ip]
+                                    qs_new[ip_new]    = mp.qs[ip]
+                                    qg_new[ip_new]    = mp.qg[ip]
+                                    qsatt_new[ip_new] = mp.qsatt[ip]
+                                end
                             end
                             q_exact1[ip_new,:] .= qexact[ip,:]
                         end
@@ -954,6 +996,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         end
         npoin += iter-1;
         q = q_new
+        if (inputs[:lmoist])
+            mp.Tabs  = T_new
+            mp.qc    = qc_new
+            mp.qi    = qi_new
+            mp.qr    = qr_new
+            mp.qs    = qs_new
+            mp.qg    = qg_new
+            mp.qsatt = qsatt_new
+        end
         qexact = q_exact1
     end
     
@@ -965,7 +1016,23 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         q_new = zeros(new_size*nvar)
         q_exact1 = zeros(new_size,nvar+1)
         q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+        if (inputs[:lmoist])
+            T_new     = zeros(new_size)
+            qc_new    = zeros(new_size)
+            qi_new    = zeros(new_size)
+            qr_new    = zeros(new_size)
+            qs_new    = zeros(new_size)
+            qg_new    = zeros(new_size)
+            qsatt_new = zeros(new_size)
 
+            T_new[1:npoin]     .= mp.Tabs
+            qc_new[1:npoin]    .= mp.qc
+            qi_new[1:npoin]    .= mp.qi
+            qr_new[1:npoin]    .= mp.qr
+            qs_new[1:npoin]    .= mp.qs
+            qg_new[1:npoin]    .= mp.qg
+            qsatt_new[1:npoin] .= mp.qsatt
+        end
         for ieq = 1:nvars
             ivar = new_size*(ieq-1)
             q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
@@ -1061,6 +1128,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                             for ieq=1:nvar
                                 ivar = new_size*(ieq-1)
                                 q_new[ivar+ip_new] = q[ivar+ip]
+                                if (inputs[:lmoist])
+                                    T_new[ip_new]     = mp.Tabs[ip]
+                                    qc_new[ip_new]    = mp.qc[ip]
+                                    qi_new[ip_new]    = mp.qi[ip]
+                                    qr_new[ip_new]    = mp.qr[ip]
+                                    qs_new[ip_new]    = mp.qs[ip]
+                                    qg_new[ip_new]    = mp.qg[ip]
+                                    qsatt_new[ip_new] = mp.qsatt[ip]
+                                end
                             end
                             q_exact1[ip_new,:] .= qexact[ip,:]
                         end
@@ -1070,6 +1146,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         end
         npoin += iter-1;
         q = q_new
+        if (inputs[:lmoist])
+            mp.Tabs  = T_new
+            mp.qc    = qc_new
+            mp.qi    = qi_new
+            mp.qr    = qr_new
+            mp.qs    = qs_new
+            mp.qg    = qg_new
+            mp.qsatt = qsatt_new
+        end
         qexact = q_exact1
     end
     
@@ -1081,7 +1166,23 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         q_new = zeros(new_size*nvar)
         q_exact1 = zeros(new_size,nvar+1)
         q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+        if (inputs[:lmoist])
+            T_new     = zeros(new_size)
+            qc_new    = zeros(new_size)
+            qi_new    = zeros(new_size)
+            qr_new    = zeros(new_size)
+            qs_new    = zeros(new_size)
+            qg_new    = zeros(new_size)
+            qsatt_new = zeros(new_size)
 
+            T_new[1:npoin]     .= mp.Tabs[1:npoin]
+            qc_new[1:npoin]    .= mp.qc[1:npoin]
+            qi_new[1:npoin]    .= mp.qi[1:npoin]
+            qr_new[1:npoin]    .= mp.qr[1:npoin]
+            qs_new[1:npoin]    .= mp.qs[1:npoin]
+            qg_new[1:npoin]    .= mp.qg[1:npoin]
+            qsatt_new[1:npoin] .= mp.qsatt[1:npoin]
+        end
         for ieq = 1:nvars
             ivar = new_size*(ieq-1)
             q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
@@ -1177,6 +1278,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
                             for ieq=1:nvar
                                 ivar = new_size*(ieq-1)
                                 q_new[ivar+ip_new] = q[ivar+ip]
+                                if (inputs[:lmoist])
+                                    T_new[ip_new]     = mp.Tabs[ip]
+                                    qc_new[ip_new]    = mp.qc[ip]
+                                    qi_new[ip_new]    = mp.qi[ip]
+                                    qr_new[ip_new]    = mp.qr[ip]
+                                    qs_new[ip_new]    = mp.qs[ip]
+                                    qg_new[ip_new]    = mp.qg[ip]
+                                    qsatt_new[ip_new] = mp.qsatt[ip]
+                                end
                             end
                             q_exact1[ip_new,:] .= qexact[ip,:]
                         end
@@ -1186,6 +1296,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
         end
         npoin += iter-1;
         q = q_new
+        if (inputs[:lmoist])
+            mp.Tabs  = T_new
+            mp.qc    = qc_new
+            mp.qi    = qi_new
+            mp.qr    = qr_new
+            mp.qs    = qs_new
+            mp.qg    = qg_new
+            mp.qsatt = qsatt_new
+        end
         qexact = q_exact1
     end
     
@@ -1331,16 +1450,56 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     end
 
     #Solution:
-    fout_name = string(OUTPUT_DIR, "/iter_", iout, ".vtu")
-    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells)
-    for ivar = 1:nvars
-        idx = (ivar - 1)*npoin
-        vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+    fout_name = string(OUTPUT_DIR, "/iter_", iout)
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        for ivar = 1:nvar
+            idx = (ivar - 1)*npoin
+            vtkf[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+        end
+        if (inputs[:lmoist])
+            if (inputs[:backend] == CPU())
+                vtkf[string("Temp"), VTKPointData()] =  @view(mp.Tabs[:])
+                vtkf[string("qi"), VTKPointData()] =  @view(mp.qi[:])
+                vtkf[string("qc"), VTKPointData()] =  @view(mp.qc[:])
+                vtkf[string("qr"), VTKPointData()] =  @view(mp.qr[:])
+                vtkf[string("qs"), VTKPointData()] =  @view(mp.qs[:])
+                vtkf[string("qg"), VTKPointData()] =  @view(mp.qg[:])
+                vtkf[string("qsatt"), VTKPointData()] =  @view(mp.qsatt[:])
+            else
+                Tabs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], Tabs, mp.Tabs)
+                qi = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qi, mp.qi)
+                qc = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qc, mp.qc)
+                qr = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qr, mp.qr)
+                qs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qs, mp.qs)
+                qg = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qg, mp.qg)
+                vtkf[string("T"), VTKPointData()] =  @view(Tabs[:])
+                vtkf[string("qi"), VTKPointData()] =  @view(qi[:])
+                vtkf[string("qc"), VTKPointData()] =  @view(qc[:])
+                vtkf[string("qr"), VTKPointData()] =  @view(qr[:])
+                vtkf[string("qs"), VTKPointData()] =  @view(qs[:])
+                vtkf[string("qg"), VTKPointData()] =  @view(qg[:])
+            end
+        end
+        if (inputs[:case] == "bomex")
+            vtkfile["theta", VTKPointData()] =  @view(θ[:])
+        end
+        vtkf
     end
     if (inputs[:case] == "bomex")
         vtkfile["theta", VTKPointData()] =  @view(θ[:])
     end
-    outfiles = vtk_save(vtkfile)
+         
+    #outfiles = vtk_save(vtkfile)
+    outfiles = map(vtk_save, vtkfile)
     mesh.npoin = npoin1
     mesh.x .= xx
     mesh.y .= yy
@@ -1348,6 +1507,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     mesh.connijk .= conn
     mesh.poin_in_bdy_face .= poin_bdy
     qexact = copy(qe_temp)
+    if (inputs[:lmoist])
+        mp.Tabs  = copy(T_temp)
+        mp.qc    = copy(qc_temp)
+        mp.qi    = copy(qi_temp)
+        mp.qr    = copy(qr_temp)
+        mp.qs    = copy(qs_temp)
+        mp.qg    = copy(qg_temp)
+        mp.qsatt = copy(qsatt_temp)
+    end
 end
 
 
@@ -1412,7 +1580,21 @@ function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, O
         vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
     end
     outfiles = vtk_save(vtkfile)
+
+
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+
+        for ivar = 1:length(outvarsref)
+            vtkf[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+        end
+        vtkf
+    end
+    outfiles = map(vtk_save, vtkfile)
 end
+
 
 
 function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
@@ -1461,4 +1643,132 @@ function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, O
         vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
     end
     outfiles = vtk_save(vtkfile)
+
+
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+
+        for ivar = 1:length(outvarsref)
+            vtkf[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+        end
+        vtkf
+    end
+    outfiles = map(vtk_save, vtkfile)
+end
+
+
+function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
+    
+    #nothing
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+    cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                ip1 = mesh.connijk[iel,i,j]
+                ip2 = mesh.connijk[iel,i+1,j]
+                ip3 = mesh.connijk[iel,i+1,j+1]
+                ip4 = mesh.connijk[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+    end
+    
+    for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngr-1
+                ip1 = mesh.connijk_lag[iel,i,j]
+                ip2 = mesh.connijk_lag[iel,i+1,j]
+                ip3 = mesh.connijk_lag[iel,i+1,j+1]
+                ip4 = mesh.connijk_lag[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+        #end
+    end
+    
+    #Reference values only (definied in initial conditions)
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
+    
+    # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    vtkfile = map(parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf
+    end
+
+    
+    outfiles = map(vtk_save, vtkfile)
+end
+
+
+
+function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
+
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
+    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+        
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                for k = 1:mesh.ngl-1
+                    ip1 = mesh.connijk[iel,i,j,k]
+                    ip2 = mesh.connijk[iel,i+1,j,k]
+                    ip3 = mesh.connijk[iel,i+1,j+1,k]
+                    ip4 = mesh.connijk[iel,i,j+1,k]
+                    
+                    ip5 = mesh.connijk[iel,i,j,k+1]
+                    ip6 = mesh.connijk[iel,i+1,j,k+1]
+                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
+                    ip8 = mesh.connijk[iel,i,j+1,k+1]
+
+                    subelem[isel, 1] = ip1
+                    subelem[isel, 2] = ip2
+                    subelem[isel, 3] = ip3
+                    subelem[isel, 4] = ip4
+                    subelem[isel, 5] = ip5
+                    subelem[isel, 6] = ip6
+                    subelem[isel, 7] = ip7
+                    subelem[isel, 8] = ip8
+                    
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+                    
+                    isel = isel + 1
+                end
+            end
+        end
+    end
+    
+    #Reference values only (definied in initial conditions)
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
+    
+    # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    vtkfile = map(parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf
+    end
+    outfiles = map(vtk_save, vtkfile)
+    # outfiles = vtk_save(vtkfile)
 end

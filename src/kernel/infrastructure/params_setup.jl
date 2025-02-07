@@ -2,11 +2,15 @@ function params_setup(sem,
                       qp::St_SolutionVars,
                       inputs::Dict,
                       OUTPUT_DIR::String,
-                      T)
+                      T,
+                      tspan = [T(inputs[:tinit]), T(inputs[:tend])])
 
-    
-    println(" # Build arrays and params ................................ ")
-    @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    println_rank(" # Build arrays and params ................................ "; msg_rank = rank)
+    if rank == 0
+        @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
+    end
 
     backend = inputs[:backend]
     
@@ -36,6 +40,13 @@ function params_setup(sem,
                              T, backend;
                              neqs=qp.neqs)
 
+    gpuMoist = allocate_gpuMoist(sem.mesh.SD,
+                             sem.mesh.npoin,
+                             sem.mesh.nelem,
+                             sem.mesh.ngl,
+                             T, backend, inputs[:lmoist];
+                             neqs=qp.neqs)
+
     u            = uODE.u
     uaux         = uODE.uaux
     vaux         = uODE.vaux
@@ -51,6 +62,13 @@ function params_setup(sem,
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
 
+    # row_partition = map(sem.mesh.parts) do part
+    #     row_partition = LocalIndices(sem.mesh.gnpoin * qp.neqs,part,repeat(sem.mesh.ip2gip,qp.neqs),repeat(sem.mesh.gip2owner,qp.neqs))
+    #     # gM = M
+    #     row_partition
+    # end
+    # gM           = pvector(values->u, row_partition)
+
     #------------------------------------------------------------------------------------
     # GPU arrays
     #------------------------------------------------------------------------------------
@@ -58,14 +76,19 @@ function params_setup(sem,
     source_gpu     = gpuAux.source_gpu
     qbdy_gpu       = gpuAux.qbdy_gpu
     uprimitive     = fluxes.uprimitive
-    
+    flux_micro     = gpuMoist.flux_micro
+    source_micro   = gpuMoist.source_micro
+    adjusted       = gpuMoist.adjusted
+    Pm             = gpuMoist.Pm
     #------------------------------------------------------------------------------------
     # filter arrays
     #------------------------------------------------------------------------------------
     filter = allocate_filter(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs, lfilter=inputs[:lfilter])
     fy_t   = transpose(sem.fy)
+    fz_t   = transpose(sem.fz)
     q_t    = filter.q_t
     q_ti   = filter.q_ti
+    q_tij  = filter.q_tij
     fqf    = filter.fqf
     b      = filter.b
     B      = filter.B
@@ -159,7 +182,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Allocate micophysics arrays
     #------------------------------------------------------------------------------------
-    mp = allocate_Microphysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
+    mp = allocate_SamMicrophysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
     
 
     #------------------------------------------------------------------------------------
@@ -167,6 +190,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     thermo_params = create_updated_TD_Parameters(TFloat(101325.0))
     
+
     #------------------------------------------------------------------------------------
     # Populate solution arrays
     #------------------------------------------------------------------------------------
@@ -180,7 +204,7 @@ function params_setup(sem,
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
-    tspan = [T(inputs[:tinit]), T(inputs[:tend])]
+    # tspan = [T(inputs[:tinit]), T(inputs[:tend])]
     if (backend == CPU())
         visc_coeff = inputs[:μ]
     else
@@ -205,7 +229,7 @@ function params_setup(sem,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
                   uprimitive,
                   flux_gpu, source_gpu, qbdy_gpu,
-                  q_t, q_ti, fqf, b, B,
+                  q_t, q_ti, q_tij, fqf, b, B,
                   q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag, flux_lag_gpu, source_lag_gpu,
                   qbdy_lag_gpu,
                   RHS, RHS_visc,
@@ -224,7 +248,7 @@ function params_setup(sem,
                   inputs, visc_coeff, ivisc_equations,
                   sem.matrix.M, sem.matrix.Minv,tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
-                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
+                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
         
     else
           params = (backend,
@@ -237,18 +261,22 @@ function params_setup(sem,
               uprimitive,
               F, G, H, S,
               flux_gpu, source_gpu, qbdy_gpu,
-              q_t, q_ti, fqf, b, B,
+              flux_micro, source_micro, adjusted, Pm,
+              q_t, q_ti, q_tij, fqf, b, B,
               SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
               sem.SOL_VARS_TYPE, 
               neqs=qp.neqs,
               sem.basis, sem.ω, sem.mesh, sem.metrics,
               visc_coeff, ivisc_equations,
-              sem.matrix.M, sem.matrix.Minv,tspan,
-              Δt, xmax, xmin, ymax, ymin, zmin, zmax,
-              qp, mp, sem.fx, sem.fy, fy_t, thermo_params, laguerre=false)
+              sem.matrix.M, sem.matrix.Minv, sem.matrix.pM,
+              tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
+              phys_grid = sem.phys_grid,
+              qp, mp, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
+              OUTPUT_DIR,
+              sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end
 
-    println(" # Build arrays and params ................................ DONE")
+    println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank)
 
     return params, u
     

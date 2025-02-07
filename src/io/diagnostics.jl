@@ -1,5 +1,3 @@
-using LinearSolve
-
 # ASCII
 function solution_norms(sol::ODESolution, OUTPUT_DIR::String, inputs::Dict;)
     
