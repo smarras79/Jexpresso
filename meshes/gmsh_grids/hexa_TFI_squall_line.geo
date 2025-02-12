@@ -1,9 +1,9 @@
-nelemx = 41;
+nelemx = 60;
 nelemy = 1;
-nelemz = 20;
+nelemz = 24;
 
-xmin =  -40000;
-xmax =	 40000;
+xmin =  -30000;
+xmax =	 30000;
 ymin =  -6000;
 ymax =   6000;
 zmin =      0;

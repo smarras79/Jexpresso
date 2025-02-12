@@ -108,24 +108,29 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     Δθ = θc*cospi(r/2)^2
                 end
                 θ_ref = background[ip,1]
+                #if (z>=8000)
+                #    qv_ref = background[ip,2]/1000*exp(-(z-8000)/10000)
+                #else
                 qv_ref = background[ip,2]/1000
+                #end
                 u_ref = background[ip,3]
                 v_ref = background[ip,4]
                 pref = background[ip,5]
-                θv_ref = θ_ref*(1 + 0.608*qv_ref)
-                θ = θ_ref + Δθ
-                θv = θv_ref + Δθ
-                p    = PhysConst.pref*(1.0 - PhysConst.g*z/(PhysConst.cp*θv))^(PhysConst.cpoverR) #Pa
+                θ_ref2 = θ_ref/(1+0.61*qv_ref)
+                θ1 = θ_ref + Δθ
+                θ2 = θ_ref2 + Δθ
                 Tref = θ_ref / (PhysConst.pref/pref)^(PhysConst.Rair/PhysConst.cp)
-                T = θ / (PhysConst.pref/pref)^(PhysConst.Rair/PhysConst.cp)
-                ρ    = perfectGasLaw_θPtoρ(PhysConst; θ=θv,    Press=pref)    #kg/m³
-                ρref = perfectGasLaw_θPtoρ(PhysConst; θ=θv_ref, Press=pref) #kg/m³
+                T = θ1 / (PhysConst.pref/pref)^(PhysConst.Rair/PhysConst.cp)
+                Tv = T*(1+0.61*qv_ref) 
+                Tv_ref = Tref*(1+0.61*qv_ref) 
+                ρ    = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
+                ρref = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
                 hl = PhysConst.cp*T + PhysConst.g*z
                 hl_ref = PhysConst.cp*Tref + PhysConst.g*z
                 u = u_ref
                 v = v_ref
                 w = 0.0
-                pref_m = ρref*PhysConst.Rair*Tref + ρref*qv_ref*PhysConst.Rvap*Tref
+                pref_m = ρref*Tv_ref*PhysConst.Rair#ρref*PhysConst.Rair*Tref + ρref*qv_ref*PhysConst.Rvap*Tref
             
                 if inputs[:SOL_VARS_TYPE] == PERT()
                     q.qn[ip,1] = ρ - ρref

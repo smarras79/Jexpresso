@@ -311,10 +311,11 @@ function add_micro_precip_sources!(mp::St_SamMicrophysics,T,S_micro,S,q,qn,qe,::
     ρqv_pert = ρ*qv - qe[6]
     #@info S[4], -q[1]*PhysConst.g*(0.608*qv-qn-qp)
     #@info S[4], S[4]-q[1]*PhysConst.g*(0.608*qv-qn-qp), q[end] - qe[end]
-    #S[4] += -q[1]*PhysConst.g*(0.608*qv-qn-qp) #moisture buoyancy contribution
-    #S[4] += -ρ*PhysConst.g*(0.608*qv-qn-qp)
-    #S[4] += -PhysConst.g*(0.608*(q[1]*qv_ref + ρ*qv_pert) -ρ*(qn+qp)) #derived this by searching for perturbation buoyancy
-    S[4] += -PhysConst.g*(0.608*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
+    #S[4] += -q[1]*PhysConst.g*(0.61*qv-qn-qp) #moisture buoyancy contribution
+    #S[4] += -ρ*PhysConst.g*(0.61*qv-qn-qp)
+    #S[4] += -PhysConst.g*(0.61*(q[1]*qv_ref + ρ*qv_pert) -ρ*(qn+qp)) #derived this by searching for perturbation buoyancy
+    S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
+    
     S[6] += -ρ*S_micro
     S[7] += ρ*S_micro
 
@@ -403,8 +404,8 @@ function compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt,
             qp = uaux[ip,7]/uaux[ip,1]
         end
         T = Tabs[ip]
-        e_satw = esatw(T)
-        e_sati = esati(T)
+        e_satw = esatw(T)*100
+        e_sati = esati(T)*100
 
         ### Collection of condensates
         Ar_c = π/4*a_rain*N0_rain*Er_c*γ3br*(ρ0/ρ)^(0.5)*(ρ/(π*ρ_rain*N0_rain))^((3+b_rain)/4)
@@ -502,8 +503,8 @@ function compute_dqpdt_sam_micro_old(ρ,T,P,hl,qt,qn,qc,qi,qp,qr,qs,qg,qsatt,Mic
     Rvap = PhysConst.Rvap
     Rair = PhysConst.Rair
     μ = MicroConst.μ
-    e_satw = esatw(T)
-    e_sati = esati(T)
+    e_satw = esatw(T)*100
+    e_sati = esati(T)*100
 
     ### Collection of condensates
     Ar_c = π/4*a_rain*N0_rain*Er_c*γ3br*(ρ0/ρ)^(0.5)*(ρ/(π*ρ_rain*N0_rain))^((3+b_rain)/4)
@@ -617,8 +618,8 @@ function compute_dqpdt_sam_micro_gpu(u,qe,T,qn,qc,qi,qr,qs,qg,qsatt,MicroConst,P
     Rvap = PhysConst.Rvap
     Rair = PhysConst.Rair
     μ = MicroConst.μ
-    e_satw = esatw(T)
-    e_sati = esati(T)
+    e_satw = esatw(T)*FT(100)
+    e_sati = esati(T)*FT(100)
 
     ### Collection of condensates
     Ar_c = FT(FT(π)/FT(4))*a_rain*N0_rain*Er_c*γ3br*(ρ0/ρ)^(FT(0.5))*FT((ρ/(FT(π)*ρ_rain*N0_rain)))^((FT(3)+FT(b_rain)/FT(4)))
@@ -812,44 +813,40 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
         ag = 1/(T0g - T00g)
         ωp = max(0,min(1,ap*T-bp))
         T1 = T + (fac_cond + (1-ωp)*fac_fus)*qp #+ fac1*qp/(1+fac2*qp)
-        P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
+        Tv = T1*(1 + 0.61*qt - qp)
+        P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
         #if (qp > 1e-8) 
         #    @info qp, T, T1, fac1*qp/(1+fac2*qp), fac1*qp, (1+fac2*qp)
         #end
-    
-        if (T1 >= T0n)
-
+        if (T1 >= T0p)
             T1 = T + fac_cond*qp
-            P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-            qsatt[ip] = max(0.0,qsatw(T1, P/100))
-
-        elseif (T1 <= T00n)
-
+            Tv = T1*(1 + 0.61*qt - qp)
+            P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+        elseif (T1 <= T00p)
             T1 = T + fac_sub*qp
-            P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-            qsatt[ip] = max(0.0,qsati(T1, P/100))
-
+            Tv = T1*(1 + 0.61*qt - qp)
+            P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
         else
             ωp = max(0,min(1,ap*T1-bp))
             T1 = T + (fac_cond + (1-ωp)*fac_fus)*qp
+            Tv = T1*(1 + 0.61*qt - qp)
+            P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+        end
+        if (T1 >= T0n)
+
+            qsatt[ip] = max(0.0,qsatw(T1, P/100))
+        elseif (T1 <= T00n)
+
+            qsatt[ip] = max(0.0,qsati(T1, P/100))
+        else
             ωn = max(0,min(1,an*T1-bn))
             qsatt[ip] = max(0.0,ωn*qsatw(T1,P/100)+(1-ωn)*qsati(T1,P/100))
-            if (T1 >= T0n)
-
-                T1 = T + fac_cond*qp
-                P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-                qsatt[ip] = max(0.0,qsatw(T1, P/100))
-
-            elseif (T1 <= T00n)
-
-                T1 = T + fac_sub*qp
-                P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-                qsatt[ip] = max(0.0,qsati(T1, P/100))
-            end
         end
+        Tabs[ip] = T1
 
         if (qt > qsatt[ip])
-
+            Tv = T1*(1 + 0.61*min(qt,qsatt[ip]) - qp - max(0,qt-qsatt[ip]))
+            P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
             niter = 0
             dT = 100
             dqsat = 0.0
@@ -876,7 +873,7 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
                     ωn = max(0,min(1,an*T1-bn))
                     dωn = an
                     lstarn = fac_cond+(1-ωn)*fac_fus
-                    dlstarn = dωn*fac_cond - dωn * fac_fus 
+                    dlstarn = -dωn*fac_fus#dωn*fac_cond - dωn * fac_fus 
                     qsatt[ip] = max(0.0,ωn*qsatw(T1,P/100) + (1-ωn)*qsati(T1,P/100))
                     dqsat = ωn*dtqsati(T1,P/100) + (1-ωn)*dtqsati(T1,P/100) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
                 end
@@ -897,7 +894,7 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
 
                     ωp = max(0,min(1,ap*T1-bp))
                     lstarp = fac_cond + (1-ωp)*fac_fus
-                    dlstarp=ap*fac_cond - ap*fac_fus#ap*fac_fus
+                    dlstarp= -ap*fac_fus#ap*fac_cond - ap*fac_fus#ap*fac_fus
 
                 end
 
@@ -906,6 +903,8 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
                 dT = -fff/dfff
                 niter = niter + 1
                 T1 = T1 + dT
+                Tv = T1*(1 + 0.61*min(qt,qsatt[ip]) - qp - max(0,qt-qsatt[ip]))
+                P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
             end
             #=if (T1 >=T0p)
                 qsatt[ip] = max(qsatw(T1,P/100),0.0)
@@ -937,7 +936,7 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
         qr[ip] = max(0.0,ωp*qp)
         qs[ip] = max(0.0,(1-ωp)*(1-ωg)*qp)
         qg[ip] = max(0.0,(1-ωp)*ωg*qp)
-        uaux[ip,end] = moistPressure(PhysConst; ρ = ρ, Temp = Tabs[ip], qv = qt-qn[ip])
+        uaux[ip,end] = moistPressure(PhysConst; ρ = ρ, Tv = Tv, qv = qt-qn[ip])
     end
 end
 
