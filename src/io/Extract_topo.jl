@@ -1,4 +1,5 @@
 
+
 function extract_region_topography_from_global_data(fname,fname2, lat_max,lon_max,lat_min,lon_min)
 
     lat = ncread(fname,"lat")
