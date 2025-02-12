@@ -22,6 +22,7 @@ using StaticArrays
 using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
 using DiffEqBase
 using DiffEqDevTools
+using NetCDF
 using OrdinaryDiffEq
 using OrdinaryDiffEq: SplitODEProblem, solve, IMEXEuler
 using SnoopCompile
