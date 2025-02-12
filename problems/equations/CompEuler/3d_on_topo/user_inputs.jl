@@ -6,8 +6,8 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.4,
         :tinit                => 0.0,
-        :tend                 => 0.8,
-        :diagnostics_at_times => [0.4, 0.8],
+        :tend                 => 0.4,
+        :diagnostics_at_times => [1.0],
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
@@ -23,17 +23,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => [1, 2, 3, 4, 5],
+        :lvisc               => true, #false by default NOTICE: works only for Inexact
+        :ivisc_equations     => [1, 2, 3, 4, 5],
         :μ                   => [0.0, 80.0, 80.0, 80.0, 240.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_DOMEX_coarse.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
@@ -60,6 +56,7 @@ function user_inputs()
         :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",
         :loverwrite_output   => true,
+        :lplot_initial       => true,
         :loutput_pert        => false,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
