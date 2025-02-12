@@ -63,6 +63,14 @@ cpu    = true
 
 using DocStringExtensions
 
+
+if Sys.isapple()
+    using Metal
+    using CUDA
+elseif Sys.islinux()
+    using CUDA
+end
+
 include(joinpath( "..", "problems", "equations", "AbstractEquations.jl"))
 
 include(joinpath( "macros", "je_macros.jl"))
