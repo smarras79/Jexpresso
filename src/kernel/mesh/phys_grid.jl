@@ -1,3 +1,6 @@
+using Artifacts
+import RRTMGP: get_artifact_path
+
 Base.@kwdef mutable struct phys_grid{T <: AbstractFloat, dims1, dims2, dims3, dims4, dims5, dims6, dims7, backend}
 
     x = KernelAbstractions.zeros(backend,T, dims1)
@@ -240,6 +243,8 @@ end
 end
 
 function interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,nlay,ncol,P,T,qc,qi,ρ,lpert)
+
+    PhysConst = PhysicalConst{Float64}()
     A = KernelAbstractions.zeros(CPU(), TFloat, mesh.npoin,6)
     ω = KernelAbstractions.zeros(CPU(), TFloat,mesh.ngl,mesh.ngl,mesh.ngl)
     B = KernelAbstractions.zeros(CPU(), TFloat, 6)
@@ -274,11 +279,12 @@ function interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,nlay,ncol,P,T,qc,qi,ρ
             phys_grid.p[ilay,icol] = B[2]
             phys_grid.ρ[ilay,icol] = B[1]
             phys_grid.t[ilay,icol] = B[3]
-            phys_grid.qc[ilay,icol] = B[4]
-            phys_grid.qi[ilay,icol] = B[5]
-            phys_grid.qv[ilay,icol] = B[6]
+            phys_grid.qc[ilay,icol] = B[4] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air 
+            phys_grid.qi[ilay,icol] = B[5] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
+            phys_grid.qv[ilay,icol] = B[6] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
         end
     end
+    
     @info maximum(A[:,2]), minimum(A[:,2]), maximum(phys_grid.p), minimum(phys_grid.p)
     @info maximum(A[:,1]), minimum(A[:,1]), maximum(phys_grid.ρ), minimum(phys_grid.ρ)
     @info maximum(A[:,3]), minimum(A[:,3]), maximum(phys_grid.t), minimum(phys_grid.t)
@@ -456,13 +462,121 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         end
     end=#
     if (backend == CPU())
+        @info maximum(uaux), maximum(qe), maximum(mp.Tabs), maximum(mp.qc)
         interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,phys_grid.nlev-1,phys_grid.ncol,@view(uaux[:,end]),mp.Tabs,mp.qc,mp.qi,@view(uaux[:,1]),true)
+        populate_layer_data_from_level_data!(phys_grid,phys_grid.nlev-1,phys_grid.ncol)
+        col_dry = zeros(phys_grid.nlev-1, phys_grid.ncol)
+        rel_hum = zeros(phys_grid.nlev-1, phys_grid.ncol)
+        t_sfc = zeros(phys_grid.ncol,1)
+        lon = nothing # This example skips latitude dependent gravity computation
+        lat = nothing
+        overrides = (; grav = 9.80665, molmass_dryair = 0.028964, molmass_water = 0.018016)
+        param_set = RRTMGPParameters(Float64, overrides)
+        context = ClimaComms.context()
+        device = ClimaComms.device(context)
+        DA = ClimaComms.array_type(device)
+        FTA1D = DA{Float64, 1}
+        FTA2D = DA{Float64, 2}
+        compute_col_gas!(device, phys_grid.p, col_dry, param_set, phys_grid.qv_lay, lat)
+        compute_relative_humidity!(device, rel_hum, phys_grid.p_lay, phys_grid.t_lay, param_set, phys_grid.qv_lay)
+        layerdata = zeros(4, phys_grid.nlev-1, phys_grid.ncol)
+        layerdata[1, :, :] .= col_dry
+        layerdata[2, :, :] .= phys_grid.p_lay
+        layerdata[3, :, :] .= phys_grid.t_lay
+        layerdata[4, :, :] .= rel_hum
+        t_sfc .= phys_grid.t[1,:]
+        lw_file = get_lookup_filename(:gas, :lw) # lw lookup tables for gas optics
+        sw_file = get_lookup_filename(:gas, :sw) # sw lookup tables for gas optics
+        input_file = get_input_filename(:gas, :lw) # clear-sky atmos state
+      
+        bot_at_1 = phys_grid.p[1, 1] > phys_grid.p[end, 1]
+
+        lev_ind = bot_at_1 ? (1:phys_grid.nlev) : (phys_grid.nlev:-1:1)
+        lay_ind = bot_at_1 ? (1:phys_grid.nlev-1) : (phys_grid.nlev-1:-1:1)
+
+        # reading longwave lookup data
+        ds_lw = Dataset(lw_file, "r")
+        lookup_lw, idx_gases = LookUpLW(ds_lw, Float64, DA)
+        close(ds_lw)
+
+        # reading shortwave lookup data
+        ds_sw = Dataset(sw_file, "r")
+        lookup_sw, idx_gases = LookUpSW(ds_sw, Float64, DA)
+        close(ds_sw)
+
+        #set up atmospheric state
+        ds_lw_in = Dataset(input_file, "r")
+        ngas = LookUpTables.get_n_gases(lookup_lw)
+        nbnd_lw = LookUpTables.get_n_bnd(lookup_lw) 
+        expt_no = 1
+        ncol_ds = ncol_ds_clear_sky()
+        nrepeat = cld(phys_grid.ncol, ncol_ds)
+
+        vmr_o3 = (Array(ds_lw_in["ozone"])[lay_ind, :, expt_no])       # vary with height
+        vmr_o3 = FTA2D(repeat(vmr_o3, 1, nrepeat)[:, 1:phys_grid.ncol])
+
+        vmrat = zeros(Float64, ngas)
+
+        vmrat[idx_gases["co2"]] =
+            Float64(ds_lw_in["carbon_dioxide_GM"][expt_no]) * parse(Float64, ds_lw_in["carbon_dioxide_GM"].attrib["units"])
+
+        vmrat[idx_gases["n2o"]] =
+            Float64(ds_lw_in["nitrous_oxide_GM"][expt_no]) * parse(Float64, ds_lw_in["nitrous_oxide_GM"].attrib["units"])
+
+        vmrat[idx_gases["co"]] =
+            Float64(ds_lw_in["carbon_monoxide_GM"][expt_no]) * parse(Float64, ds_lw_in["carbon_monoxide_GM"].attrib["units"])
+
+        vmrat[idx_gases["ch4"]] = Float64(ds_lw_in["methane_GM"][expt_no]) * parse(Float64, ds_lw_in["methane_GM"].attrib["units"])
+
+        vmrat[idx_gases["o2"]] = Float64(ds_lw_in["oxygen_GM"][expt_no]) * parse(Float64, ds_lw_in["oxygen_GM"].attrib["units"])
+
+        vmrat[idx_gases["n2"]] = Float64(ds_lw_in["nitrogen_GM"][expt_no]) * parse(Float64, ds_lw_in["nitrogen_GM"].attrib["units"])
+
+        vmrat[idx_gases["ccl4"]] = Float64(ds_lw_in["carbon_tetrachloride_GM"][expt_no]) * parse(Float64, ds_lw_in["carbon_tetrachloride_GM"].attrib["units"])
+
+        vmrat[idx_gases["cfc11"]] = Float64(ds_lw_in["cfc11_GM"][expt_no]) * parse(Float64, ds_lw_in["cfc11_GM"].attrib["units"])
+
+        vmrat[idx_gases["cfc12"]] = Float64(ds_lw_in["cfc12_GM"][expt_no]) * parse(Float64, ds_lw_in["cfc12_GM"].attrib["units"])
+
+        vmrat[idx_gases["cfc22"]] = Float64(ds_lw_in["hcfc22_GM"][expt_no]) * parse(Float64, ds_lw_in["hcfc22_GM"].attrib["units"])
+
+        vmrat[idx_gases["hfc143a"]] = Float64(ds_lw_in["hfc143a_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc143a_GM"].attrib["units"])
+
+        vmrat[idx_gases["hfc125"]] = Float64(ds_lw_in["hfc125_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc125_GM"].attrib["units"])
+
+        vmrat[idx_gases["hfc23"]] = Float64(ds_lw_in["hfc23_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc23_GM"].attrib["units"])
+
+        vmrat[idx_gases["hfc32"]] = Float64(ds_lw_in["hfc32_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc32_GM"].attrib["units"])
+
+        vmrat[idx_gases["hfc134a"]] = Float64(ds_lw_in["hfc134a_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc134a_GM"].attrib["units"])
+
+        vmrat[idx_gases["cf4"]] = Float64(ds_lw_in["cf4_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc23_GM"].attrib["units"])
+    
+        vmr = VmrGM(phys_grid.qv_lay, vmr_o3, FTA1D(vmrat))
+        deg2rad = Float64(π) / Float64(180)
+        # all bands use same emissivity
+        sfc_emis = repeat(reshape(Array{Float64}(Array(ds_lw_in["surface_emissivity"])), 1, :), nbnd_lw, 1)
+        sfc_emis = FTA2D(repeat(sfc_emis, 1, nrepeat)[:, 1:phys_grid.ncol])
+        # all bands use same albedo
+        sfc_alb = repeat(reshape(Array{Float64}(Array(ds_lw_in["surface_albedo"])), 1, :), nbnd_lw, 1)
+        sfc_alb = FTA2D(repeat(sfc_alb, 1, nrepeat)[:, 1:phys_grid.ncol])
+        #--------------------------------------------------------------
+        zenith = Array{Float64, 1}(deg2rad .* Array(ds_lw_in["solar_zenith_angle"]))
+        irrad = Array{Float64, 1}(Array(ds_lw_in["total_solar_irradiance"]))
+
+        cos_zenith = FTA1D(repeat(cos.(zenith), nrepeat)[1:phys_grid.ncol])
+        irrad = FTA1D(repeat(irrad, nrepeat)[1:phys_grid.ncol])
+
+
+        as = AtmosphericState(lon, lat, layerdata, phys_grid.p, phys_grid.t, t_sfc, vmr, nothing, nothing)
+
         flux = zeros(TFloat,phys_grid.nlev,phys_grid.ncol)
         for ilay = 1:phys_grid.nlev
             for icol =1:phys_grid.ncol
                 flux[ilay,icol] = icol + ilay
             end
         end
+
         flux_interp = KernelAbstractions.zeros(backend,TFloat, 1, mesh.npoin)
         interpolate_from_phys_grid_cpu!(mesh.x,mesh.y,mesh.z,mesh.connijk,phys_grid,flux,flux_interp,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
         @info maximum(flux), minimum(flux), maximum(flux_interp), minimum(flux_interp)
@@ -493,4 +607,44 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
 
     end
 
+end
+
+function ncol_ds_clear_sky()
+    flux_file = get_reference_filename(:gas, :lw, :flux_up)
+    ds_comp = Dataset(flux_file, "r")
+    return size(Array(ds_comp["rlu"]), 2)
+end
+
+
+##cite this function as from the RRTMGP package
+function get_reference_filename(problemtype::Symbol, λ::Symbol, flux_up_dn::Symbol)
+    @assert problemtype ∈ (:gas, :gas_clouds, :gas_clouds_aerosols)
+    @assert λ ∈ (:lw, :sw)
+    @assert flux_up_dn ∈ (:flux_up, :flux_dn)
+
+    basedir = get_artifact_path()
+
+    if problemtype == :gas
+        dir = joinpath(basedir, "examples", "rfmip-clear-sky", "reference")
+        if flux_up_dn == :flux_up
+            if λ == :lw
+                return joinpath(dir, "rlu_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc")
+            else # λ == :sw
+                return joinpath(dir, "rsu_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc")
+            end
+        else
+            if λ == :lw
+                return joinpath(dir, "rld_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc")
+            else # λ == :sw
+                return joinpath(dir, "rsd_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc")
+            end
+        end
+    elseif problemtype == :gas_clouds
+        dir = joinpath(basedir, "examples", "all-sky", "reference")
+        return λ == :lw ? joinpath(dir, "rrtmgp-allsky-lw-no-aerosols.nc") :
+               joinpath(dir, "rrtmgp-allsky-sw-no-aerosols.nc")
+    else # :gas_clouds_aerosols
+        dir = joinpath(basedir, "examples", "all-sky", "reference")
+        return λ == :lw ? joinpath(dir, "rrtmgp-allsky-lw.nc") : joinpath(dir, "rrtmgp-allsky-sw.nc")
+    end
 end

@@ -19,9 +19,9 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
 
     #
     # clateral
-    zs= 15000.0 #ymax - 16000.0
-    xr= 23000.0 #12500.0
-    xl=-23000.0 #-12500.0
+    zs = 13000.0#ymax - 16000.0
+    xr = 25000.0
+    xl = -25000.0
     if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betay_coe =  sinpi(0.5*(z-zs)/(zmax-zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
@@ -77,9 +77,9 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     # clateral
     nsponge_points = 8
 
-    zs = 15000.0#ymax - 20000.0
-    xr = 12500.0
-    xl = -12500.0
+    zs = 14000.0#ymax - 20000.0
+    xr = 8000.0
+    xl = -8000.0
     
     if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betay_coe =  sinpi(0.5*(z-zs)/(zmax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
@@ -107,9 +107,9 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betaxl_coe = 0.0
     end
     
-    cxr = 1.0*betaxr_coe#0.25*betaxr_coe
-    cxl = 1.0*betaxl_coe#0.25*betaxl_coe
-    ctop = 1.0*min(ctop,1)
+    cxr = 0.0*betaxr_coe#0.25*betaxr_coe
+    cxl = 0.0*betaxl_coe#0.25*betaxl_coe
+    ctop = 0.5*min(ctop,1)
     cxr  = min(cxr,1)
     cxl  = min(cxl,1)
     cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
@@ -120,8 +120,8 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     S[3] -= (cs)*q[3]
     S[4] -= (cs)*(q[4])
     S[5] -= (cs)*(q[5])
-    #S[6] -= (cs)*(q[6])
-    #S[7] -= (cs)*(q[7])
+    S[6] -= (cs)*(q[6])
+    S[7] -= (cs)*(q[7])
     return  S
 end
 

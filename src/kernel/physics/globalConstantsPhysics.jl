@@ -27,7 +27,10 @@ using Parameters
     ν::T = 0.33                    #Poisson's ratio: -dϵ_transverse/dϵ_axial
     λ::T = (E*ν)/((1+ν)*(1-2*ν)) #Lamé parameters λ, μ
     μ::T = E/(2*(1+ν))
-    
+
+    ## molar masses
+    Mol_mass_air   = 28.9647      #g/mol
+    Mol_mass_water = 18.02        #g/mol
 end
 
 using Parameters
