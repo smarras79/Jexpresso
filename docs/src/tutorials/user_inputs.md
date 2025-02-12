@@ -40,7 +40,29 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh",	
+        #---------------------------------------------------------------------------
+	#
+	# Topography parameters:
+	# Real topography can be extreacted from the ETOPO data by defininging
+	# the domain of interest by means of the lat-lon extrema.
+	#
+	# The user should download the ETOPO global relief model by NOAA:
+	#
+	# https://www.ncei.noaa.gov/products/etopo-global-relief-model
+	#
+	# You need the geoid file *_geoid.nc
+	# 
+        #---------------------------------------------------------------------------
+        :lwarp                => true,
+        :mount_type           => "real topography",
+        :topo_database        => "./topography/ETOPO_2022_v1_30s_N90W180_bed.nc",
+        :topo_geoid           => "./topography/ETOPO_2022_v1_30s_N90W180_geoid.nc",
+        :read_topo_latmin     => 15.194166666,
+        :read_topo_latmax     => 15.654166666,
+        :read_topo_lonmin     => -61.5208333,
+        :read_topo_lonmax     => -61.1208333,
+        :read_topo_zone       => 20,
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
