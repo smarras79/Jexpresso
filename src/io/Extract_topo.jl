@@ -5,8 +5,8 @@ function extract_region_topography_from_global_data(fname,fname2, lat_max,lon_ma
     lat = ncread(fname,"lat")
     lon = ncread(fname,"lon")
     z = ncread(fname, "z")
-    geoid = ncread(fname2, "z")
-
+    geoid = ncread(fname, "z")
+    
     z += geoid
     n_lat = size(lat,1)
     n_lon = size(lon,1)
