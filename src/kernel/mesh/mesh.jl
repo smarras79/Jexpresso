@@ -194,7 +194,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 flags = zeros(Cint,length(indices))
                 flags.=nothing_flag
                 # @info flags
-                # flags[2] = refine_flag
+                # flags[250] = refine_flag
                 # if rank == 2
                     # flags[1:3:end] .= refine_flag
                     # flags[1] = refine_flag
@@ -279,7 +279,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # writevtk(partitioned_model_coarse, vtk_directory)
     vtk_directory = "./refine/"
     if ladaptive == true
-        # writevtk(partitioned_model.dmodel, vtk_directory)
+        writevtk(partitioned_model.dmodel, vtk_directory)
     end
 
 
@@ -676,15 +676,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # mesh.non_conforming_facets = [KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0) for _ in 1:num_hanging_facets]
     if ladaptive == true
      
+        cell_fecet_pids = get_faces(dtopology, mesh.nsd, mesh.nsd-1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
+        facet_cell_pids = get_faces(dtopology, mesh.nsd-1, mesh.nsd) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
         if mesh.nsd == 2
-            cell_fecet_ids = get_faces(dtopology, mesh.nsd, mesh.nsd-1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
-            facet_cell_ids = get_faces(dtopology, mesh.nsd-1, mesh.nsd) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
             offset = 4
             for idx in 1: num_hanging_facets
                 cfacet = idx+num_regular_facets
-                cid = facet_cell_ids[cfacet][1]
+                cid = facet_cell_pids[cfacet][1]
                 pid, lfacetid, half = hanging_facet_glue[idx]
-                pfacet = cell_fecet_ids[pid][lfacetid-offset]
+                pfacet = cell_fecet_pids[pid][lfacetid-offset]
                 gfacet_p = local_to_global(edgids)[pfacet]
                 gfacet_c = local_to_global(edgids)[cfacet]
                 if (lfacetid == 7) || (lfacetid == 8)
@@ -744,9 +744,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         elseif mesh.nsd == 3
             offset = 20
             for idx in 1: num_hanging_facets
+                half_1 = 0
+                half_2 = 0
                 cfacet     = idx+num_regular_facets
-                facet_glue = hanging_facet_glue[idx]
-                pfacet     = cell_fecet_ids[facet_glue[1]][facet_glue[2]-offset]
+                cfacet = idx+num_regular_facets
+                cid = facet_cell_pids[cfacet][1]
+                pid, lfacetid, half = hanging_facet_glue[idx]
+                
+                pfacet     = cell_fecet_pids[pid][lfacetid-offset]
                 gfacet_p   = local_to_global(fgids)[pfacet]
                 gfacet_c   = local_to_global(fgids)[cfacet]
                 if (cfacet ∈ f2pf) && (pfacet ∉ f2pf)
@@ -759,7 +764,106 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     pfacet = -pfacet
                     cfacet = -cfacet
                 end
-                @info rank, cfacet, pfacet, facet_glue, gfacet_c, gfacet_p
+                if (lfacetid-offset == 1) || (lfacetid-offset == 2) 
+                    if half == 1
+                        half_1 = 1
+                        half_2 = 2
+                    elseif half == 2
+                        half_1 = 2
+                        half_2 = 2
+                    elseif half == 3
+                        half_1 = 1
+                        half_2 = 1
+                    elseif half == 4
+                        half_1 = 2
+                        half_2 = 1
+                    end
+                elseif (lfacetid-offset == 3) || (lfacetid-offset == 4) 
+                    if half == 1
+                        half_1 = 1
+                        half_2 = 2
+                    elseif half == 2
+                        half_1 = 2
+                        half_2 = 2
+                    elseif half == 3
+                        half_1 = 1
+                        half_2 = 1
+                    elseif half == 4
+                        half_1 = 2
+                        half_2 = 1
+                    end
+                elseif (lfacetid-offset == 5) || (lfacetid-offset == 6)
+                    if half == 1
+                        half_1 = 2
+                        half_2 = 2
+                    elseif half == 2
+                        half_1 = 2
+                        half_2 = 1
+                    elseif half == 3
+                        half_1 = 1
+                        half_2 = 2
+                    elseif half == 4
+                        half_1 = 1
+                        half_2 = 1
+                    end
+                end
+                push!(mesh.non_conforming_facets, [cfacet, cid, pfacet, pid, lfacetid - offset, half_1, half_2])
+                # @info rank, cfacet, pfacet, facet_glue
+                # comm_ip = intersect(mesh.conn[pid,:], mesh.conn[cid,:])
+                # @info "coords: ",  mesh.x[mesh.conn[pid,1:8]], mesh.y[mesh.conn[pid,1:8]], mesh.z[mesh.conn[pid,1:8]]
+                # @info "comm_coord", mesh.x[comm_ip], mesh.y[comm_ip], mesh.z[comm_ip] 
+                for k = 1:ngl
+                    for j = 1:ngl
+                        for i = 1:ngl
+                            pip = mesh.connijk[pid, k, j, i]
+                            for n = 1:ngl
+                                for m = 1:ngl
+                                    for l = 1:ngl
+                                        cip = mesh.connijk[cid, n, m, l]
+                                        if pip == cip
+                                            if lfacetid-offset == 1
+                                                # @info "front, ", half, (k, i), half_1, half_2
+                                                x1 = k
+                                                x2 = i
+                                            elseif lfacetid-offset == 2
+                                                # @info "back, ", half, (k, i), half_1, half_2
+                                                x1 = k
+                                                x2 = i
+                                            elseif lfacetid-offset == 3
+                                                # @info "bottom, ", half, (k, j), half_1, half_2
+                                                x1 = k
+                                                x2 = j
+                                            elseif lfacetid-offset == 4
+                                                # @info "top, ", half, (k, j), half_1, half_2
+                                                x1 = k
+                                                x2 = j
+                                            elseif lfacetid-offset == 5
+                                                # @info "right, ", half, (j, i), half_1, half_2
+                                                x1 = j
+                                                x2 = i
+                                            elseif lfacetid-offset == 6
+                                                # @info "left, ", half, (j, i), half_1, half_2
+                                                x1 = j
+                                                x2 = i
+                                            end
+                                            if x1==1
+                                                half1 = 2
+                                            else
+                                                half1 = 1
+                                            end
+                                            if x2 == 1
+                                                half2 = 2
+                                            else
+                                                half2 = 1
+                                            end
+                                            @test (half1 == half_1) && (half2 == half_2) 
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
     end
