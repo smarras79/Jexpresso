@@ -1,6 +1,6 @@
 module JeGeometry
 # __init()
-# __precompile__()
+__precompile__(false)
 using MPI
 using Gridap
 using Gridap.Arrays
