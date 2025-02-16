@@ -32,6 +32,10 @@ Please cite Jexpresso using:
 }
 ```
 
+<img src="assets/jexpresso-examples.jpg"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
 # Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
 
