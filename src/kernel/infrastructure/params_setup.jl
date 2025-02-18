@@ -31,6 +31,12 @@ function params_setup(sem,
                              sem.mesh.ngl,
                              T, backend;
                              neqs=qp.neqs)
+
+    ∇f     = allocate_∇f(sem.mesh.SD,
+                         sem.mesh.nelem,
+                         sem.mesh.ngl,
+                         T, backend;
+                         neqs=qp.neqs)
     
     gpuAux = allocate_gpuAux(sem.mesh.SD,
                              sem.mesh.nelem,

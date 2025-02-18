@@ -108,6 +108,29 @@ function allocate_fluxes(SD, npoin, ngl, T, backend; neqs=1)
 end
 
 #-------------------------------------------------------------------------------------------
+# Derivative operators: e.g. gradient(f): ∇f = [∂f∂x, ∂f/∂y, ∂f/∂z]
+#-------------------------------------------------------------------------------------------
+Base.@kwdef mutable struct St_∇f{T <: AbstractFloat, dims1, backend}
+    
+    ∇f = KernelAbstractions.zeros(backend,  T, dims1)
+end
+function allocate_∇f(SD, nelem, ngl, T, backend; neqs=1)
+
+    if SD == NSD_1D()
+        dims1 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
+    elseif SD == NSD_2D()
+        dims1 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) 
+    elseif SD == NSD_3D()
+        dims1 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) 
+    end
+    
+    ∇f = St_∇f{T, dims1, backend}()
+    
+    return ∇f
+end
+
+
+#-------------------------------------------------------------------------------------------
 # rhs Laguerre
 #-------------------------------------------------------------------------------------------
 Base.@kwdef mutable struct St_rhs_lag{T <: AbstractFloat, dims1, dims2, backend}
