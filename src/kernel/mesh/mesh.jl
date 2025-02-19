@@ -344,7 +344,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         mesh.nelem_bdy    = length(JeGeometry.get_boundary_cells(model,mesh.nsd))
         mesh.nfaces_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,FACE_flg))
         mesh.nedges_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,EDGE_flg))
-    # else 
+    # else
         # mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
         # mesh.nfaces_bdy   = count(get_isboundary_face(topology,FACE_flg))
         # mesh.nedges_bdy   = count(get_isboundary_face(topology,EDGE_flg))
@@ -785,8 +785,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     if mesh.nsd == 2
         # isboundary_edge = compute_isboundary_face(topology, EDGE_flg)
         isboundary_edge = fill(false, mesh.nedges)  
-        boundary_edges  = findall(x -> size(x,1) == 1, mesh.facet_cell_ids)
-        isboundary_edge[boundary_edges] .= true
+        # boundary_edges  = findall(x -> size(x,1) == 1, mesh.facet_cell_ids)
+        # isboundary_edge[boundary_edges] .= true
         
         # @info isboundary_edge
         #
@@ -803,10 +803,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             #
             for idx in idx_edges_inflow
                 mesh.edge_type[idx] = ilabel
+                if ilabel != "domain"
+                    isboundary_edge[idx] = true
+                end
             end
             # @info mesh.edge_type
         end
-        # @info rank, isboundary_edge
         iedge_bdy = 1
         for iedge = 1:mesh.nedges #total nedges
             if isboundary_edge[iedge] == true
