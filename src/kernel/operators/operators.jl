@@ -238,29 +238,27 @@ function _∇f!(f, neqs, ngl, dψ, ω, Je, dξdx, dξdy, dηdx, dηdy, rhs_el, i
     #
     # ∇f = [∂f∂x, ∂f/∂y]
     #
-    for ieq=1:neqs
-        for j=1:ngl
-            for i=1:ngl
-                ωJac = ω[i]*ω[j]*Je[iel,i,j]
+    for j=1:ngl
+        for i=1:ngl
+            ωJac = ω[i]*ω[j]*Je[iel,i,j]
+            
+            dFdξ = 0.0
+            dFdη = 0.0
+            @turbo for k = 1:ngl
+                dFdξ += dψ[k,i]*F[k,j,ieq]
+                dFdη += dψ[k,j]*F[i,k,ieq]
                 
-                dFdξ = 0.0
-                dFdη = 0.0
-                @turbo for k = 1:ngl
-                    dFdξ += dψ[k,i]*F[k,j,ieq]
-                    dFdη += dψ[k,j]*F[i,k,ieq]
-                    
-                    dGdξ += dψ[k,i]*G[k,j,ieq]
-                    dGdη += dψ[k,j]*G[i,k,ieq]
-                end
-                dξdx_ij = dξdx[iel,i,j]
-                dξdy_ij = dξdy[iel,i,j]
-                dηdx_ij = dηdx[iel,i,j]
-                dηdy_ij = dηdy[iel,i,j]
-                
-                dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-                dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
-                
+                dGdξ += dψ[k,i]*G[k,j,ieq]
+                dGdη += dψ[k,j]*G[i,k,ieq]
             end
+            dξdx_ij = dξdx[iel,i,j]
+            dξdy_ij = dξdy[iel,i,j]
+            dηdx_ij = dηdx[iel,i,j]
+            dηdy_ij = dηdy[iel,i,j]
+            
+            ∇f[iel,i,j,1]   = dFdξ*dξdx_ij + dFdη*dηdx_ij
+            ∇f[iel,i,j,end] = dFdξ*dξdy_ij + dFdη*dηdy_ij
+            
         end
     end
     
@@ -271,39 +269,38 @@ function _∇f!(f, neqs, ngl, dψ, ω, Je, dξdx, dξdy, dηdx, dηdy, rhs_el, i
     #
     # ∇f = [∂f∂x, ∂f/∂y, ∂f/∂z]
     #
-    for ieq=1:neqs
-        for k=1:ngl
-            for j=1:ngl
-                for i=1:ngl
-                    ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
-                    
-                    dFdξ = 0.0
-                    dFdη = 0.0
-                    dFdζ = 0.0
-                    @turbo for m = 1:ngl
-                        dFdξ += dψ[m,i]*F[m,j,k,ieq]
-                        dFdη += dψ[m,j]*F[i,m,k,ieq]
-                        dFdζ += dψ[m,k]*F[i,j,m,ieq]
-                    end
-                    dξdx_ij = dξdx[iel,i,j,k]
-                    dξdy_ij = dξdy[iel,i,j,k]
-                    dξdz_ij = dξdz[iel,i,j,k]
-                    
-                    dηdx_ij = dηdx[iel,i,j,k]
-                    dηdy_ij = dηdy[iel,i,j,k]
-                    dηdz_ij = dηdz[iel,i,j,k]
-
-                    dζdx_ij = dζdx[iel,i,j,k]
-                    dζdy_ij = dζdy[iel,i,j,k]
-                    dζdz_ij = dζdz[iel,i,j,k]
-                    
-                    dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij + dFdζ*dζdx_ij
-                    dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij + dFdζ*dζdy_ij
-                    dFdz = dFdξ*dξdz_ij + dFdη*dηdz_ij + dFdζ*dζdz_ij
-                    
+    for k=1:ngl
+        for j=1:ngl
+            for i=1:ngl
+                ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                
+                dFdξ = 0.0
+                dFdη = 0.0
+                dFdζ = 0.0
+                @turbo for m = 1:ngl
+                    dFdξ += dψ[m,i]*F[m,j,k,ieq]
+                    dFdη += dψ[m,j]*F[i,m,k,ieq]
+                    dFdζ += dψ[m,k]*F[i,j,m,ieq]
                 end
+                dξdx_ij = dξdx[iel,i,j,k]
+                dξdy_ij = dξdy[iel,i,j,k]
+                dξdz_ij = dξdz[iel,i,j,k]
+                
+                dηdx_ij = dηdx[iel,i,j,k]
+                dηdy_ij = dηdy[iel,i,j,k]
+                dηdz_ij = dηdz[iel,i,j,k]
+
+                dζdx_ij = dζdx[iel,i,j,k]
+                dζdy_ij = dζdy[iel,i,j,k]
+                dζdz_ij = dζdz[iel,i,j,k]
+                
+                ∇f[iel,i,j,k,1]   = dFdξ*dξdx_ij + dFdη*dηdx_ij + dFdζ*dζdx_ij
+                ∇f[iel,i,j,k,2]   = dFdξ*dξdy_ij + dFdη*dηdy_ij + dFdζ*dζdy_ij
+                ∇f[iel,i,j,k,end] = dFdξ*dξdz_ij + dFdη*dηdz_ij + dFdζ*dζdz_ij
+                
             end
         end
-    end
+        end
+    
     
 end
