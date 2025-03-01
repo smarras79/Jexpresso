@@ -117,11 +117,11 @@ end
 function allocate_∇f(SD, nelem, ngl, T, backend; neqs=1)
 
     if SD == NSD_1D()
-        dims1 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
+        dims1 = (Int64(nelem), Int64(ngl), 1) 
     elseif SD == NSD_2D()
-        dims1 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) 
+        dims1 = (Int64(nelem), Int64(ngl), Int64(ngl), 2) 
     elseif SD == NSD_3D()
-        dims1 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) 
+        dims1 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), 3) 
     end
     
     ∇f = St_∇f{T, dims1, backend}()
