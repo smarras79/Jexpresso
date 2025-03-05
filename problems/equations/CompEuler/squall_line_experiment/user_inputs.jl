@@ -4,14 +4,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.1,
+        :Δt                   => 0.01,
         :tinit                => 0.0,
         :tend                 => 7000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (0.2, 10.0, 50.0, 100, 200, 500, 1000, 1100, 1200, 1300, 1400, 1500, 1800, 2000, 2500, 3000, 3500, 4000, 4250, 4500, 4750, 5000, 7000),
+        :diagnostics_at_times => (0.2, 100.0, 200.0, 400.0, 500.0, 600.0, 900.0, 1000.0, 1200.0, 1300, 1400, 1500, 1800, 2000, 2500, 3000, 3500, 4000, 4250, 4500, 4750, 5000, 7000),
         :case                 => "rtb",
         :lsource              => true, 
         :lmoist               => true,
@@ -28,7 +28,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
-        :μ                   => [0.0, 200.0, 200.0, 200.0, 300.0, 300.0, 300.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 50.0, 50.0, 50.0, 75.0, 75.0, 75.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -52,10 +52,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
-        :mu_x                => 0.05,
-        :mu_y                => 0.05,
-        :mu_z                => 0.05,
+        :lfilter             => false,
+        :mu_x                => 0.00,
+        :mu_y                => 0.00,
+        :mu_z                => 0.00,
         :filter_type         => "erf", #use "erf" for Boyd-Vandeven, "exp" for exponential filter, or "quad" for quadratic filter
         #---------------------------------------------------------------------------
         # Plotting parameters
