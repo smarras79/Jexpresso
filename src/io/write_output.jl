@@ -181,7 +181,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_D
     #    
     if (inputs[:backend] == CPU())
         title = @sprintf "Solution"
-        write_vtk(SD, mesh, sol.u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=qexact, case=case)
+        write_vtk(SD, mesh, sol.u, "1", 0, title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=qexact, case="")
     else
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
         KernelAbstractions.copyto!(CPU(),u,sol.u)
