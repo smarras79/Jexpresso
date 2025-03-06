@@ -381,7 +381,6 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
             end
         end
     end 
-    
     #@info size(L)
     #show(stdout, "text/plain", L)
     
@@ -647,14 +646,13 @@ function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, ::NSD_2D)
                 end
             end
         end
-    end    
+    end
     #show(stdout, "text/plain", L)
 end
 
 function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
 
     for iel=1:mesh.nelem
-
         for i=1:mesh.ngl
             for j=1:mesh.ngl
                 ip = mesh.connijk[iel,i,j]
@@ -671,6 +669,8 @@ function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T
         end
     end
 end
+
+include("./sparse_unit.jl")
 
 @kernel function DSS_laplace_gpu!(L, Lel, connijk, ωx, ωy, nx, ny, dξdx, dydη, dηdy, dxdξ)
     ie = @index(Group, Linear)
@@ -955,14 +955,20 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     if lbuild_laplace_matrix
         if (backend == CPU())
             Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
-            L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+            #L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
             
             #@info inputs[:lsparse]
-            #if (inputs[:lsparse])
-            #    DSS_laplace_sparse!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
-            #else
+            if (inputs[:lsparse])
+                
+                L = DSS_laplace_sparse!(SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump]) #(mesh, metrics, Le, ω)
+                println(typeof(L))
+                println(sizeof(L)) #prints the size of A in elements
+                println(Base.summarysize(L)) #prints the size of A in bytes.
+                
+            else
+                L = Float64[]
                 DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
-            #end
+            end
             
         else
             Le = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
