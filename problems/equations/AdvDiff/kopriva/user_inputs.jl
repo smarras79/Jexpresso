@@ -25,15 +25,14 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename         => "./meshes/gmsh_grids/unit_square_20x20.msh",
-        #:gmsh_filename         => "./meshes/gmsh_grids/Wave_Train.msh",
+        :gmsh_filename         => "./meshes/gmsh_grids/kopriva.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #--------------------------------------------------------------------------- 
-        :xscale              => 10.0,
-        :yscale              => 10.0,
-        :xdisp               => 1.0,
-        :ydisp               => 1.0,
+        :xscale              => 1.0,
+        :yscale              => 1.0,
+        :xdisp               => 0.0,
+        :ydisp               => 0.0,
         #---------------------------------------------------------------------------
         # Mountain parameters
         #---------------------------------------------------------------------------
@@ -57,6 +56,7 @@ function user_inputs()
         :loutput_pert      => true,  #this is only implemented for VTK for now
         :output_dir        => "./output/",
         #:plot_hlines      => [10.0],
+        :loutput_pert      => true
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

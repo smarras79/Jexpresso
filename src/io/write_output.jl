@@ -787,22 +787,20 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
     #
     # Write solution:
     #
+    
+    #@info size(qout) npoin sizeof(varnames) mesh.parts
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
-    # vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*TFloat(0.0), cells)
     vtkfile = map(mesh.parts) do part
-        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
-                        part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false; part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
+        
         for ivar = 1:nvar
             idx = (ivar - 1)*npoin
-            vtkf[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+            vtkf[string(varnames[ivar]), VTKPointData()] = @view(qout[idx+1:ivar*npoin])
         end
         vtkf
     end
-    # for ivar = 1:nvar
-    #     idx = (ivar - 1)*npoin
-    #     vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
-    # end
+    
     outfiles = map(vtk_save, vtkfile)
     # outfiles = vtk_save(vtkfile)
     mesh.x .= xx
