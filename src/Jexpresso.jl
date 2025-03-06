@@ -21,8 +21,10 @@ using DelimitedFiles
 using DataStructures
 using LoopVectorization
 using ElasticArrays
+using Geodesy
 using InternedStrings
 using LinearAlgebra
+using NetCDF
 using StaticArrays
 using StaticArrays: SVector, MVector, MArray, SMatrix, @SMatrix
 using DiffEqBase
@@ -37,6 +39,10 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
                   get_proposed_dt, set_proposed_dt!,
                   terminate!, remake
+import ClimaParams as CP
+import Thermodynamics as TD
+import Thermodynamics.Parameters as TP
+
 import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
@@ -103,6 +109,8 @@ include(joinpath( "io", "mod_inputs.jl"))
 include(joinpath( "io", "write_output.jl"))
 
 include(joinpath( "io", "diagnostics.jl"))
+
+include(joinpath( "io", "Extract_topo.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
 
