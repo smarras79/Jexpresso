@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 4.0, #2π,
+        :tend                 => 10.0, #2π,
         :Δt                   => 0.005,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :diagnostics_at_times => [0.5, 1, 2, 4],
@@ -25,7 +25,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename         => "./meshes/gmsh_grids/kopriva.msh",
+        #:gmsh_filename         => "./meshes/gmsh_grids/kopriva.msh",
+        :gmsh_filename         => "./meshes/gmsh_grids/kopriva_periodic.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #--------------------------------------------------------------------------- 
