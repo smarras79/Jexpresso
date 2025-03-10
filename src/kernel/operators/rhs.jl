@@ -650,7 +650,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
 
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
         end
 
         for ieq in params.ivisc_equations

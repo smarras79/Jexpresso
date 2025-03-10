@@ -54,7 +54,7 @@ function driver(nparts,
                          OUTPUT_DIR, inputs,
                          params.qp.qvars,
                          inputs[:outformat];
-                         nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
+                         nvar=params.qp.neqs, qexact=params.qp.qexact, case="rtb")
         end
         
     else
@@ -134,7 +134,7 @@ function driver(nparts,
                      OUTPUT_DIR, inputs,
                      params.qp.qvars,
                      inputs[:outformat];
-                     nvar=params.qp.neqs, qexact=params.qp.qe, case="none")
+                     nvar=params.qp.neqs, qexact=params.qp.qexact, case="none")
         
     end
 end
