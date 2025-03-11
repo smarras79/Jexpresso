@@ -152,6 +152,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     cgip_ghost = KernelAbstractions.zeros(backend, TInt, 0)
     cgip_owner = KernelAbstractions.zeros(backend, TInt, 0)
 
+    msg_suppress::Bool = false
+
 end
 
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
@@ -230,6 +232,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
         model_coarse  = DiscreteModelPortion(cmodel, own_to_local(cell_gids_c))
         dtopology      = get_grid_topology(dmodel)
+
+        mesh.msg_suppress = true
     end
 
     topology      = get_grid_topology(model)
@@ -338,9 +342,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
     
     # if (ladaptive == 1)
-        mesh.nelem_bdy    = length(JeGeometry.get_boundary_cells(model,mesh.nsd))
-        mesh.nfaces_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,FACE_flg))
-        mesh.nedges_bdy   = length(JeGeometry.get_boundary_faces(model,mesh.nsd,EDGE_flg))
+        mesh.nelem_bdy    = length(get_boundary_cells(model,mesh.nsd))
+        mesh.nfaces_bdy   = length(get_boundary_faces(model,mesh.nsd,FACE_flg))
+        mesh.nedges_bdy   = length(get_boundary_faces(model,mesh.nsd,EDGE_flg))
     # else 
         # mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
         # mesh.nfaces_bdy   = count(get_isboundary_face(topology,FACE_flg))
@@ -352,29 +356,31 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
     #get_isboundary_face(topology,mesh.nsd-1)
     if !lamr_mesh
-        println_rank(" # GMSH LINEAR GRID PROPERTIES"; msg_rank = rank)
-        println_rank(" # N. Global points         : ", mesh.gnpoin_linear; msg_rank = rank)
-        println_rank(" # N. Global elements       : ", mesh.gnelem; msg_rank = rank)
-        println_rank(" # N. Global edges          : ", mesh.gnedges; msg_rank = rank)
-        println_rank(" # N. Global faces          : ", mesh.gnfaces; msg_rank = rank)
+        println_rank(" # GMSH LINEAR GRID PROPERTIES"; msg_rank = rank, suppress = mesh.msg_suppress)
+        println_rank(" # N. Global points         : ", mesh.gnpoin_linear; msg_rank = rank, suppress = mesh.msg_suppress)
+        println_rank(" # N. Global elements       : ", mesh.gnelem; msg_rank = rank, suppress = mesh.msg_suppress)
+        println_rank(" # N. Global edges          : ", mesh.gnedges; msg_rank = rank, suppress = mesh.msg_suppress)
+        println_rank(" # N. Global faces          : ", mesh.gnfaces; msg_rank = rank, suppress = mesh.msg_suppress)
         MPI.Barrier(comm)
-        for i = 0 : mpi_size
-            if i == rank
-                println("   # Rank                       : ", rank)
-                println("     # N. points                : ", mesh.npoin_linear)
-                println("     # N. elements              : ", mesh.nelem)
-                println("     # N. edges                 : ", mesh.nedges)
-                println("     # N. faces                 : ", mesh.nfaces)    
-                println("     # N. internal elem         : ", mesh.nelem_int)
-                println("     # N. internal edges        : ", mesh.nedges_int) 
-                println("     # N. internal faces        : ", mesh.nfaces_int)    
-                println("     # N. boundary elem         : ", mesh.nelem_bdy)
-                println("     # N. boundary edges        : ", mesh.nedges_bdy)
-                println("     # N. boundary faces        : ", mesh.nfaces_bdy)
+        if mesh.msg_suppress == false
+            for i = 0 : mpi_size
+                if i == rank
+                    println("   # Rank                       : ", rank)
+                    println("     # N. points                : ", mesh.npoin_linear)
+                    println("     # N. elements              : ", mesh.nelem)
+                    println("     # N. edges                 : ", mesh.nedges)
+                    println("     # N. faces                 : ", mesh.nfaces)    
+                    println("     # N. internal elem         : ", mesh.nelem_int)
+                    println("     # N. internal edges        : ", mesh.nedges_int) 
+                    println("     # N. internal faces        : ", mesh.nfaces_int)    
+                    println("     # N. boundary elem         : ", mesh.nelem_bdy)
+                    println("     # N. boundary edges        : ", mesh.nedges_bdy)
+                    println("     # N. boundary faces        : ", mesh.nfaces_bdy)
+                end
+                MPI.Barrier(comm)
             end
-            MPI.Barrier(comm)
         end
-        println_rank(" # GMSH LINEAR GRID PROPERTIES ...................... END"; msg_rank = rank)
+        println_rank(" # GMSH LINEAR GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
     end
 
     ngl                     = mesh.nop + 1
@@ -392,19 +398,21 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + (mesh.nsd - 2)*tot_vol_internal_nodes
     
     if (mesh.nop > 1) && (!lamr_mesh)
-        println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES"; msg_rank = rank)
+        println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES"; msg_rank = rank, suppress = mesh.msg_suppress)
         MPI.Barrier(comm)
-        for i = 0 : mpi_size
-            if i == rank
-                println("   # Rank                         : ", rank)
-                println("     # N. edges internal points   : ", tot_edges_internal_nodes)
-                println("     # N. faces internal points   : ", tot_faces_internal_nodes)
-                println("     # N. volumes internal points : ", tot_vol_internal_nodes)
-                println("     # N. total high order points : ", mesh.npoin)
+        if mesh.msg_suppress == false
+            for i = 0 : mpi_size
+                if i == rank
+                    println("   # Rank                         : ", rank)
+                    println("     # N. edges internal points   : ", tot_edges_internal_nodes)
+                    println("     # N. faces internal points   : ", tot_faces_internal_nodes)
+                    println("     # N. volumes internal points : ", tot_vol_internal_nodes)
+                    println("     # N. total high order points : ", mesh.npoin)
+                end
+                MPI.Barrier(comm)
             end
-            MPI.Barrier(comm)
         end
-        println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END"; msg_rank = rank)
+        println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
     end
     
     #
@@ -616,7 +624,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # initialize LGL struct and buyild Gauss-Lobatto-xxx points
     lgl = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, backend)
 
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ "; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ "; msg_rank = rank, suppress = mesh.msg_suppress)
     #
     # Edges
     #
@@ -645,14 +653,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             mesh.z[ip] = mesh.z_ho[ip]
         end
     end
-    
-    mesh.xmax = maximum(mesh.x)
-    mesh.xmin = minimum(mesh.x)
-    mesh.ymax = maximum(mesh.y)
-    mesh.ymin = minimum(mesh.y)
+
+    MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
+    mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
+    mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+    mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
+    mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
     if (mesh.nsd > 2)
-        mesh.zmax = maximum(mesh.z)
-        mesh.zmin = minimum(mesh.z)
+        mesh.zmax = MPI.Allreduce(maximum(mesh.z), MPI.MAX, comm)
+        mesh.zmin = MPI.Allreduce(minimum(mesh.z), MPI.MIN, comm)
     end
 
     for ip = 1: mesh.npoin
@@ -885,8 +894,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     if mesh.nsd == 2
         # isboundary_edge = compute_isboundary_face(topology, EDGE_flg)
         isboundary_edge = fill(false, mesh.nedges)  
-        boundary_edges  = findall(x -> size(x,1) == 1, mesh.facet_cell_ids)
-        isboundary_edge[boundary_edges] .= true
+        # boundary_edges  = findall(x -> size(x,1) == 1, mesh.facet_cell_ids)
+        # isboundary_edge[boundary_edges] .= true
         
         # @info isboundary_edge
         #
@@ -903,6 +912,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             #
             for idx in idx_edges_inflow
                 mesh.edge_type[idx] = ilabel
+                isboundary_edge[idx] = true
             end
             # @info mesh.edge_type
         end
@@ -1122,6 +1132,63 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #----------------------------------------------------------------------
     # END Extract boundary edges and faces nodes
     #----------------------------------------------------------------------
+
+
+    #----------------------------------------------------------------------
+    # periodicity_restructure for MPI
+    #----------------------------------------------------------------------
+    if mesh.nsd > 2
+        per1_gip = Int[]
+        per2_gip = Int[]
+        per3_gip = Int[]
+        for iface_bdy =1:size(mesh.bdy_face_type,1)
+            for k=1:ngl
+                for l=1:ngl
+                    ip = mesh.poin_in_bdy_face[iface_bdy,k,l]
+                    if (mesh.bdy_face_type[iface_bdy] == "periodic1")
+                        per1_gip = [per1_gip; mesh.ip2gip[ip]]
+                    elseif (mesh.bdy_face_type[iface_bdy] == "periodic2")
+                        per2_gip = [per2_gip; mesh.ip2gip[ip]]
+                    elseif (mesh.bdy_face_type[iface_bdy] == "periodic3")
+                        per3_gip = [per3_gip; mesh.ip2gip[ip]]
+                    end
+                end
+            end
+        end
+        ### remove duplicates
+        unique!(per1_gip)
+        unique!(per2_gip)
+        unique!(per3_gip)
+    
+        # Gather arrays onto the root processor (rank 0)
+        root = 0
+
+        # Gather per1_gip
+        gathered_per1 = MPI.Gather(per1_gip, root, comm)
+
+        # Gather per2_gip
+        gathered_per2 = MPI.Gather(per2_gip, root, comm)
+
+        # Gather per3_gip
+        gathered_per3 = MPI.Gather(per3_gip, root, comm)
+
+        # On the root processor, combine and remove duplicates
+        if rank == root
+            # Concatenate gathered arrays
+            global_per1_gip = vcat(gathered_per1...)
+            global_per2_gip = vcat(gathered_per2...)
+            global_per3_gip = vcat(gathered_per3...)
+
+            # Print results
+            println("Global per1_gip: ", global_per1_gip)
+            println("Global per2_gip: ", global_per2_gip)
+            println("Global per3_gip: ", global_per3_gip)
+        end
+    end
+    #----------------------------------------------------------------------
+    # END periodicity_restructure for MPI
+    #----------------------------------------------------------------------
+
     #
     #
     # Free memory of obsolete arrays
@@ -1136,7 +1203,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #
     # END Free memory of obsolete arrays
     #
-
+    
     #=open("./COORDS_GLOBAL.dat", "w") do f
         for ip = 1:mesh.npoin
             #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
@@ -1157,7 +1224,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
 
     #show(stdout, "text/plain", mesh.conn')
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
     if isnothing(adapt_flags)
         return partitioned_model
     else
@@ -1426,8 +1493,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank)
-    println_rank(" # ..."; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank, suppress = mesh.msg_suppress)
+    println_rank(" # ..."; msg_rank = rank, suppress = mesh.msg_suppress)
     
     x1, y1 = TFloat(0.0), TFloat(0.0)
     x2, y2 = TFloat(0.0), TFloat(0.0)
@@ -1583,7 +1650,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
     end
     #show(stdout, "text/plain", mesh.conn')
     
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE"; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
     
     return 
 end
@@ -1596,8 +1663,8 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank)
-    println_rank(" # ..."; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank, suppress = mesh.msg_suppress)
+    println_rank(" # ..."; msg_rank = rank, suppress = mesh.msg_suppress)
     
     x1, y1, z1 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
     x2, y2, z2 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
@@ -1914,7 +1981,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     #show(stdout, "text/plain", mesh.conn')
 
 
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE"; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
     return 
 end
 
@@ -1926,8 +1993,8 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank)
-    println_rank(" # ..."; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank, suppress = mesh.msg_suppress)
+    println_rank(" # ..."; msg_rank = rank, suppress = mesh.msg_suppress)
     
     x1, y1 = TFloat(0.0), TFloat(0.0)
     x2, y2 = TFloat(0.0), TFloat(0.0)
@@ -2081,7 +2148,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
         #      show(stdout, "text/plain", mesh.connijk[iel,:,:]')
     end
 
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE"; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
 
 end
 
@@ -2092,7 +2159,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank, suppress = mesh.msg_suppress)
     
     x1, y1, z1 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
     x2, y2, z2 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
@@ -2466,7 +2533,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
         end=#
     end
     #show(stdout, "text/plain", mesh.conn')
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE"; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
 
 end
 
@@ -2481,8 +2548,8 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES"; msg_rank = rank)
-    println_rank(" # ..."; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES"; msg_rank = rank, suppress = mesh.msg_suppress)
+    println_rank(" # ..."; msg_rank = rank, suppress = mesh.msg_suppress)
     
     x1, y1, z1 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
     x2, y2, z2 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
@@ -2665,7 +2732,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
     #    show(stdout, "text/plain", mesh.connijk[iel,:,:,:])
     #end
 
-    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES DONE"; msg_rank = rank)
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
 
 end
 
@@ -2778,7 +2845,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     rank = MPI.Comm_rank(comm)
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
         
-        println_rank(" # Read gmsh grid and populate with high-order points "; msg_rank = rank)
+        println_rank(" # Read gmsh grid and populate with high-order points "; msg_rank = rank, suppress = omesh == !isnothing)
         
         # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
         mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
@@ -2795,7 +2862,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
         end
 
         
-        println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank)
+        println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
     else
         
@@ -2932,11 +2999,11 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     mesh.Δeffective_s = TFloat(mesh.Δelem_s/mesh.nop)
     mesh.Δeffective_l = TFloat(mesh.Δelem_l/mesh.nop)
 
-    println_rank(" # "; msg_rank = rank)
-    println_rank(" # ELEMENT SIZES:"; msg_rank = rank)
-    println_rank(" #   The smallest element has size: ", mesh.Δelem_s, " and effective resolution ", mesh.Δeffective_s; msg_rank = rank)
-    println_rank(" #   The biggest  element has size: ", mesh.Δelem_l, " and effective resolution ", mesh.Δeffective_l; msg_rank = rank)
-    println_rank(" # "; msg_rank = rank)
+    println_rank(" # "; msg_rank = rank, suppress = mesh.msg_suppress)
+    println_rank(" # ELEMENT SIZES:"; msg_rank = rank, suppress = mesh.msg_suppress)
+    println_rank(" #   The smallest element has size: ", mesh.Δelem_s, " and effective resolution ", mesh.Δeffective_s; msg_rank = rank, suppress = mesh.msg_suppress)
+    println_rank(" #   The biggest  element has size: ", mesh.Δelem_l, " and effective resolution ", mesh.Δeffective_l; msg_rank = rank, suppress = mesh.msg_suppress)
+    println_rank(" # "; msg_rank = rank, suppress = mesh.msg_suppress)
 end
 
 #------------------------------------------------------------------------------------

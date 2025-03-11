@@ -1,4 +1,3 @@
-include(joinpath( "..", "bases", "basis_structs.jl"))
 
 # Define a mutable struct to hold the Legendre polynomial and derivatives
 mutable struct LegendrePoly
