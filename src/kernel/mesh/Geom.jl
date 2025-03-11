@@ -139,15 +139,12 @@ function Visualization.visualization_data(
       push!(r,DistributedVisualizationData(map(x->x[i+1],vd)))
     end
     r
-  end
+end
 
 
 
-const _unwrap_ghost_quadrants = GridapP4est._unwrap_ghost_quadrants
-const unsafe_wrap = GridapP4est.unsafe_wrap
-const _unwrap_global_first_quadrant = GridapP4est._unwrap_global_first_quadrant
-const PXestType = GridapP4est.PXestType
 
+end  # End of module JeGeometry
 
 
 function get_boundary_cells(model,nsd)
@@ -170,7 +167,11 @@ function get_boundary_faces(model,nsd,dim)
     return get_boundary_cells(model,nsd)
   end
   labels = get_face_labeling(model)
-  filter!(x -> !(x in ["internal", "hanging"]), labels.tag_to_name)
+  if nsd == 3
+    Base.filter!(x -> !(x in ["internal", "hanging"]), labels.tag_to_name)
+  elseif nsd == 2
+    Base.filter!(x -> x != "hanging", labels.tag_to_name)
+  end
   facet_to_tag = get_face_tag_index(labels,labels.tag_to_name,dim)
   # @info facet_to_tag, labels.tag_to_name,  length(findall(x -> x>0, facet_to_tag))
   findall(x -> x>0, facet_to_tag)
@@ -178,5 +179,3 @@ end
 
 
 
-
-end  # End of module JeGeometry

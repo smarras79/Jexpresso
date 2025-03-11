@@ -7,7 +7,7 @@ function params_setup(sem,
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    println_rank(" # Build arrays and params ................................ "; msg_rank = rank)
+    println_rank(" # Build arrays and params ................................ "; msg_rank = rank, suppress = sem.mesh.msg_suppress)
     if rank == 0
         @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
     end
@@ -261,7 +261,7 @@ function params_setup(sem,
               sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end
 
-    println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank)
+    println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank, suppress = sem.mesh.msg_suppress)
 
     return params, u
     
