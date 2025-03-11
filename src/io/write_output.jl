@@ -126,7 +126,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, t, titl
             end
         end
     end
-    #qx = zeros(Float64, npoin, nvar+1)
     qout = zeros(Float64, npoin, nvar+1)
     u2uaux!(qaux, q, nvar, npoin)
     for ip=1:npoin
