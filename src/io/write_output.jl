@@ -5,12 +5,12 @@ include("./plotting/jeplots.jl")
 #
 # VTK 2D/3D
 #
-function write_output(SD, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, sol::ODESolution, uaux, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
  
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, sol.u[iout][:], mp, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
+            write_vtk(SD, mesh, sol.u[iout][:], mp, sol.t[iout], uaux, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
         else
             u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
             KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
@@ -47,13 +47,13 @@ function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_D
     
 end
 
-function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, u_sol, uaux, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
-        write_vtk(SD, mesh, u_sol, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
+        write_vtk(SD, mesh, u_sol, uaux, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
     else
         #VERIFY THIS on GPU
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
@@ -72,7 +72,7 @@ end
 # VTK writer
 #------------
 
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     outvars = varnames
     nvars   = length(outvars)
@@ -126,15 +126,13 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
             end
         end
     end
-
-    qaux = zeros(Float64, npoin, nvar+1)
+    #qx = zeros(Float64, npoin, nvar+1)
     qout = zeros(Float64, npoin, nvar+1)
     u2uaux!(qaux, q, nvar, npoin)
     for ip=1:npoin
         user_uout!(@view(qout[ip,1:nvar]), @view(qaux[ip,1:nvar]), qexact[ip,1:nvar], inputs[:SOL_VARS_TYPE])
     end    
-    uaux2u!(q, qout, nvar, npoin)
-    
+        
     #
     # Write solution:
     #
@@ -148,11 +146,12 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
                          compress=false;
                          part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
-        
+
         for ivar = 1:nvar
             idx = (ivar - 1)*npoin
-            vtkf[string(varnames[ivar]), VTKPointData()] = @view(q[idx+1:ivar*npoin])
+            vtkf[string(varnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
         end
+        
         vtkf
     end
     

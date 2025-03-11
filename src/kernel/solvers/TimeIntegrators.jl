@@ -65,8 +65,7 @@ function time_loop!(inputs, params, u)
         #   @time  computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD; visc=inputs[:μ])
 
             #Write results to file
-            # @info integrator.p[38].npoin
-            write_output(integrator.p.SD, integrator.u, integrator.t, idx,
+            write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
                         integrator.p.mesh, integrator.p.mp,
                         inputs[:output_dir], inputs,
                         integrator.p.qp.qvars,
