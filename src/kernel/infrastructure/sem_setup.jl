@@ -157,10 +157,6 @@ function sem_setup(inputs::Dict)
                                            mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
                                            mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
             @info " Build periodicity infrastructure ...... DONE"
-
-#@mystop(" L 152 sem_setup")
-            
-            #warp_mesh!(mesh,inputs)
             
             @info " Matrix wrapper ......"
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])

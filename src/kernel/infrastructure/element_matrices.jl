@@ -955,18 +955,15 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     if lbuild_laplace_matrix
         if (backend == CPU())
             Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
-            #L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
             
-            #@info inputs[:lsparse]
             if (inputs[:lsparse])
-                
                 L = DSS_laplace_sparse!(SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump]) #(mesh, metrics, Le, ω)
                 println(typeof(L))
                 println(sizeof(L)) #prints the size of A in elements
                 println(Base.summarysize(L)) #prints the size of A in bytes.
                 
             else
-                L = Float64[]
+                L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
                 DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
             end
             
