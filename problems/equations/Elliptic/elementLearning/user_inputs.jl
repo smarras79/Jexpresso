@@ -17,7 +17,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 10,      # Polynomial order
+        :nop                 => 3,      # Polynomial order
         #:nop_laguerre        => 14,
         #:xfac_laguerre       => 0.25,
         #:yfac_laguerre       => 0.0,
