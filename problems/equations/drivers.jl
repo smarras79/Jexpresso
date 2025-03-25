@@ -41,7 +41,7 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
           
             Minv = diagm(sem.matrix.Minv)
             
-            L_temp = Minv * sem.matrix.L
+            L_temp = Minv * sem.matrix.L ### SM  I can't do this
             sem.matrix.L .= L_temp
             
             for ip =1:sem.mesh.npoin

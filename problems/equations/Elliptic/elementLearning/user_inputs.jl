@@ -17,7 +17,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 4,      # Polynomial order
+        :nop                 => 10,      # Polynomial order
         #:nop_laguerre        => 14,
         #:xfac_laguerre       => 0.25,
         #:yfac_laguerre       => 0.0,
@@ -31,9 +31,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_helmholtz_noLaguerre.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/2x2.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_2x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #---------------------------------------------------------------------------
@@ -47,7 +46,6 @@ function user_inputs()
         :outformat           => "vtk",
         :output_dir          => "./output/",
         :loverwrite_output   => true,
-        :plot_vlines         => [5.0],
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
