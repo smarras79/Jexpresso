@@ -166,7 +166,7 @@ function sem_setup(inputs::Dict)
     else
         
         if(inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
-
+            
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
             ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta], inputs[:backend])
             ξ2,ω2 = ξω2.ξ, ξω2.ω
@@ -207,6 +207,9 @@ function sem_setup(inputs::Dict)
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------
+
+    show(IOContext(stdout, :limit=>false), MIME"text/plain"(), mesh.conn)
+    @mystop
     
     return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end
