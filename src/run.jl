@@ -1,6 +1,4 @@
 using ArgParse
-#using Profile
-#using PProf
 
 #--------------------------------------------------------
 # The problem name is a command line argument:
@@ -114,17 +112,6 @@ end
 #--------------------------------------------------------
 if Sys.iswindows() == false
     run(`$cp $user_input_file $OUTPUT_DIR`)
-end
-
-#--------------------------------------------------------
-# use Metal (for apple) or CUDA (non apple) if we are on GPU
-#--------------------------------------------------------
-if cpu == false
-    if Sys.isapple()
-        using Metal
-    elseif Sys.islinux()
-        using CUDA
-    end
 end
 
 driver(inputs, # input parameters from src/user_input.jl

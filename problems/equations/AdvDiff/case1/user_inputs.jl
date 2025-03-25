@@ -19,7 +19,7 @@ function user_inputs()
         :lexact_integration  => false,
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
-        :backend             => MetalBackend(),
+        #:backend             => MetalBackend(),
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
