@@ -203,13 +203,14 @@ function sem_setup(inputs::Dict)
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
         end
     end
+    
+    #show(IOContext(stdout, :limit=>false), MIME"text/plain"(), mesh.conn)
+    show(IOContext(stdout, :limit=>false), MIME"text/plain"(), mesh.poin_in_edge)
+    @info " "
+    show(IOContext(stdout, :limit=>false), MIME"text/plain"(), mesh.poin_in_bdy_edge)
+    @info " "
 
-    #--------------------------------------------------------
-    # Build matrices
-    #--------------------------------------------------------
-
-    show(IOContext(stdout, :limit=>false), MIME"text/plain"(), mesh.conn)
-    @mystop
+    @mystop("stop in sem_setup.jl")
     
     return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end
