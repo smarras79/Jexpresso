@@ -96,6 +96,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     conn_face_el         = Array{TInt}(undef, 0, 0, 0)
     face_in_elem         = Array{TInt}(undef, 0, 0, 0)
 
+    ∂O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, 0)
+    ∂τ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, 0)
+    
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
     
     #Auxiliary arrays for boundary conditions
@@ -229,15 +232,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.y = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.z = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     
-    mesh.conn_edge_el = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
-    mesh.conn_face_el = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
-    mesh.bdy_edge_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
-    mesh.poin_in_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
-    mesh.poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
-    
-    mesh.poin_in_face = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
-    mesh.edge_type     = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
-    mesh.bdy_edge_type                    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
+    mesh.conn_edge_el              = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
+    mesh.conn_face_el              = KernelAbstractions.zeros(backend, TInt, 4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
+    mesh.bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy))  
+    mesh.poin_in_edge              = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges),     Int64(mesh.ngl))
+    mesh.poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy), Int64(mesh.ngl))
+    mesh.internal_poin_in_edge     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges),     Int64(mesh.ngl-2))
+    mesh.internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy), Int64(mesh.ngl-2))
+        
+    mesh.poin_in_face     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
+    mesh.edge_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
+    mesh.bdy_edge_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
     mesh.bdy_edge_type_id = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
     
     if mesh.nsd > 2
@@ -1358,8 +1363,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend)
         end
     end
     #show(stdout, "text/plain", mesh.conn')
-
-
+    
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
     return 
 end
