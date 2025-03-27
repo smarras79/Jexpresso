@@ -96,6 +96,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     conn_face_el         = Array{TInt}(undef, 0, 0, 0)
     face_in_elem         = Array{TInt}(undef, 0, 0, 0)
 
+    ∂O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, 0)
+    ∂τ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, 0)
+    
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
     
     #Auxiliary arrays for boundary conditions
@@ -229,15 +232,17 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.y = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.z = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     
-    mesh.conn_edge_el = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
-    mesh.conn_face_el = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
-    mesh.bdy_edge_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
-    mesh.poin_in_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
-    mesh.poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
-    
-    mesh.poin_in_face = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
-    mesh.edge_type     = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
-    mesh.bdy_edge_type                    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
+    mesh.conn_edge_el              = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
+    mesh.conn_face_el              = KernelAbstractions.zeros(backend, TInt, 4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
+    mesh.bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy))  
+    mesh.poin_in_edge              = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges),     Int64(mesh.ngl))
+    mesh.poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy), Int64(mesh.ngl))
+    mesh.internal_poin_in_edge     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges),     Int64(mesh.ngl-2))
+    mesh.internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy), Int64(mesh.ngl-2))
+        
+    mesh.poin_in_face     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
+    mesh.edge_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
+    mesh.bdy_edge_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
     mesh.bdy_edge_type_id = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
     
     if mesh.nsd > 2
@@ -303,15 +308,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         #
         # Rewrite coordinates in RCM order:
         #
-        #open("./COORDS_LO.dat", "w") do f
+        open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 
                 mesh.x[ip] = model.grid.node_coordinates[ip][1]
                 mesh.y[ip] = model.grid.node_coordinates[ip][2]
                 
-        #        @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
+                @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x[ip],  mesh.y[ip], ip)
             end
-        #end #f
+        end #f
 
     elseif (mesh.nsd == 3)
         
@@ -366,14 +371,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         #
         # Rewrite coordinates in RCM order:
         #
-        #open("./COORDS_LO.dat", "w") do f
+        open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 mesh.x[ip] = model.grid.node_coordinates[ip][1]
                 mesh.y[ip] = model.grid.node_coordinates[ip][2]
                 mesh.z[ip] = model.grid.node_coordinates[ip][3]
-        #        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+                @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
             end
-        #end #f
+        end #f
     end
 
 
@@ -920,7 +925,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend)
     end
     
     #poin_in_edge::Array{TInt, 2}  = zeros(mesh.nedges, mesh.ngl)
-    #open("./COORDS_HO_edges.dat", "w") do f
+    open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
         #
@@ -946,11 +951,11 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend)
                 mesh.poin_in_edge[iedge_g, l] = ip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-                #@printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
+                @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                 ip = ip + 1
             end
         end
-    #end #do f
+    end #do f
     #show(stdout, "text/plain", poin_in_edge)
     #@info "-----2D edges"
     
@@ -1082,7 +1087,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend)
     #
     edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
-    #open("./COORDS_HO_edges.dat", "w") do f
+    open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
         #
@@ -1112,12 +1117,12 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend)
                 mesh.poin_in_edge[iedge_g, l] = ip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-    #            @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
+                @printf(f, " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 #@printf( " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip = ip + 1
             end
         end
-    #end #end f
+    end #end f
     #show(stdout, "text/plain", mesh.poin_in_edge)
     #@info "-----3D edges"
         
@@ -1358,8 +1363,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend)
         end
     end
     #show(stdout, "text/plain", mesh.conn')
-
-
+    
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
     return 
 end
