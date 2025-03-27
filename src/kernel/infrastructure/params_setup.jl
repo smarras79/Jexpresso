@@ -3,7 +3,6 @@ function params_setup(sem,
                       inputs::Dict,
                       OUTPUT_DIR::String,
                       T)
-
     
     println(" # Build arrays and params ................................ ")
     @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
@@ -227,29 +226,29 @@ function params_setup(sem,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
         
     else
-          params = (backend,
-              T, inputs,
-              uaux, vaux,
-              ubdy, gradu, bdy_flux,                   
-              RHS, RHS_visc,
-              rhs_el, rhs_diff_el,
-              rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
-              uprimitive,
-              F, G, H, S,
-              flux_gpu, source_gpu, qbdy_gpu,
-              q_t, q_ti, fqf, b, B,
-              SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
-              sem.SOL_VARS_TYPE, 
-              neqs=qp.neqs,
-              sem.basis, sem.ω, sem.mesh, sem.metrics,
-              visc_coeff, ivisc_equations,
-              sem.matrix.M, sem.matrix.Minv,tspan,
-              Δt, xmax, xmin, ymax, ymin, zmin, zmax,
-              qp, mp, sem.fx, sem.fy, fy_t, thermo_params, laguerre=false)
+        params = (backend,
+                  T, inputs,
+                  uaux, vaux,
+                  ubdy, gradu, bdy_flux,                   
+                  RHS, RHS_visc,
+                  rhs_el, rhs_diff_el,
+                  rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                  uprimitive,
+                  F, G, H, S,
+                  flux_gpu, source_gpu, qbdy_gpu,
+                  q_t, q_ti, fqf, b, B,
+                  SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
+                  sem.SOL_VARS_TYPE, 
+                  neqs=qp.neqs,
+                  sem.basis, sem.ω, sem.mesh, sem.metrics,
+                  visc_coeff, ivisc_equations,
+                  sem.matrix.M, sem.matrix.Minv,tspan,
+                  Δt, xmax, xmin, ymax, ymin, zmin, zmax,
+                  qp, mp, sem.fx, sem.fy, fy_t, thermo_params, laguerre=false)
     end
 
     println(" # Build arrays and params ................................ DONE")
-
+    
     return params, u
     
 end
