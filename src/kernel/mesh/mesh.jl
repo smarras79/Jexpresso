@@ -86,15 +86,16 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     conn_edgesijk::Array{Int64,2} = KernelAbstractions.zeros(backend, TInt, 0, 0)    # edge analogue of connijk
     conn_facesijk::Array{Int64,2} = KernelAbstractions.zeros(backend, TInt, 0, 0)    # face analogue of connijk
 
-    conn::Array{TInt,2}  = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    conn_unique_edges    = Array{TInt}(undef,  1, 2)
-    conn_unique_edges1   = Array{Int64}(undef,  1, 2)
-    conn_unique_faces    = Array{TInt}(undef,  1, 4)
-    poin_in_edge         = Array{TInt}(undef, 0, 0)
-    conn_edge_el         = Array{TInt}(undef, 0, 0, 0)
-    poin_in_face         = Array{TInt}(undef, 0, 0, 0)
-    conn_face_el         = Array{TInt}(undef, 0, 0, 0)
-    face_in_elem         = Array{TInt}(undef, 0, 0, 0)
+    conn::Array{TInt,2}   = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    conn_unique_edges     = Array{TInt}(undef,  1, 2)
+    conn_unique_edges1    = Array{Int64}(undef,  1, 2)
+    conn_unique_faces     = Array{TInt}(undef,  1, 4)
+    poin_in_edge          = Array{TInt}(undef, 0, 0)
+    internal_poin_in_edge = Array{TInt}(undef, 0, 0)
+    conn_edge_el          = Array{TInt}(undef, 0, 0, 0)
+    poin_in_face          = Array{TInt}(undef, 0, 0, 0)
+    conn_face_el          = Array{TInt}(undef, 0, 0, 0)
+    face_in_elem          = Array{TInt}(undef, 0, 0, 0)
 
     ∂O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, 0)
     ∂τ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, 0)
@@ -103,10 +104,11 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     
     #Auxiliary arrays for boundary conditions
     
-    bdy_edge_in_elem  =  KernelAbstractions.zeros(backend, TInt, 0)
-    poin_in_bdy_edge  =  KernelAbstractions.zeros(backend, TInt, 0, 0)
-    bdy_face_in_elem  =  KernelAbstractions.zeros(backend, TInt, 0)
-    poin_in_bdy_face  =  KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
+    bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
+    poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    bdy_face_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
+    poin_in_bdy_face          = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     face_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
@@ -648,6 +650,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         end=#
     end
 
+#
+# Extract only internal edge points:
+#
+mesh.internal_poin_in_edge[:,1:end] = mesh.poin_in_edge[:,2:end-1]
+mesh.internal_poin_in_bdy_edge[:,1:end] = mesh.poin_in_bdy_edge[:,2:end-1]
+
 #----------------------------------------------------------------------
 # END Extract boundary edges and faces nodes
 #----------------------------------------------------------------------
@@ -658,9 +666,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 mesh.x_ho = zeros(1)
 mesh.y_ho = zeros(1)
 mesh.z_ho = zeros(1)
-#resize!(mesh.x_ho, 1)
-#resize!(mesh.y_ho, 1)
-#resize!(mesh.z_ho, 1)
 GC.gc()
 #
 # END Free memory of obsolete arrays
@@ -1044,7 +1049,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend)
         end
     end
     #show(stdout, "text/plain", mesh.conn')
-    
+
     println(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE")
     
     return 
