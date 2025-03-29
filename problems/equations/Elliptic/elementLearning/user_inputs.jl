@@ -32,6 +32,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_2x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
