@@ -55,10 +55,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
        inputs[:lphysics_grid] = false
     end
 
-    if(!haskey(inputs, :radiation_time_step))
-        inputs[:radiation_time_step] = inputs[:Δt]*100
-    end
-
     if(!haskey(inputs, :sounding_file))
        inputs[:sounding_file] = "empty"
     end
@@ -257,7 +253,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :ndiagnostics_outputs))
         inputs[:ndiagnostics_outputs] = 0
     end
-    mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
+    if(!haskey(inputs, :Δt))
+        inputs[:Δt] = 0.1  #Initial time is 0.0 by default
+    end
+    
+    if(!haskey(inputs, :radiation_time_step))
+        inputs[:radiation_time_step] = inputs[:Δt]*100
+    end
+
+    #mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
     end

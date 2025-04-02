@@ -170,7 +170,7 @@ function get_boundary_faces(model,nsd,dim)
     return get_boundary_cells(model,nsd)
   end
   labels = get_face_labeling(model)
-  filter!(x -> !(x in ["internal", "hanging"]), labels.tag_to_name)
+  Base.filter!(x -> !(x in ["hanging", "domain", "internal"]), labels.tag_to_name)
   facet_to_tag = get_face_tag_index(labels,labels.tag_to_name,dim)
   # @info facet_to_tag, labels.tag_to_name,  length(findall(x -> x>0, facet_to_tag))
   findall(x -> x>0, facet_to_tag)
