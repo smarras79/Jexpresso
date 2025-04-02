@@ -42,7 +42,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # INITIAL STATE from scratch:
             #
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            xc = 0.0#(mesh.xmax + mesh.xmin)/2
             zc = 2000.0 #m
         
             θc   =   3.0 #K
