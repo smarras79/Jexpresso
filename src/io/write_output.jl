@@ -181,7 +181,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_D
     #    
     if (inputs[:backend] == CPU())
         title = @sprintf "Solution"
-        write_vtk(SD, mesh, sol.u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=qexact, case=case)
+        write_vtk(SD, mesh, sol.u, "1", 0, title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=qexact, case="")
     else
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
         KernelAbstractions.copyto!(CPU(),u,sol.u)
@@ -788,23 +788,18 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
     # Write solution:
     #
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
-    # vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*TFloat(0.0), cells)
     vtkfile = map(mesh.parts) do part
-        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
-                        part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false; part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
+        
         for ivar = 1:nvar
             idx = (ivar - 1)*npoin
-            vtkf[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+            vtkf[string(varnames[ivar]), VTKPointData()] = @view(qout[idx+1:ivar*npoin])
         end
         vtkf
     end
-    # for ivar = 1:nvar
-    #     idx = (ivar - 1)*npoin
-    #     vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
-    # end
+    
     outfiles = map(vtk_save, vtkfile)
-    # outfiles = vtk_save(vtkfile)
     mesh.x .= xx
     mesh.y .= yy
     mesh.connijk .= conn

@@ -8,7 +8,7 @@ function user_inputs()
         #:Δt                   => 0.02,
         :Δt                   => 0.4,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 100.0,
         # :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,

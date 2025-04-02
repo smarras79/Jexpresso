@@ -42,7 +42,6 @@ function resetRHSToZero_inviscid!(params)
     fill!(params.RHS,    zero(params.T))
 end
 
-
 function reset_filters!(params)
     fill!(params.b, zero(params.T))
     fill!(params.B, zero(params.T))
@@ -52,7 +51,6 @@ function reset_laguerre_filters!(params)
     fill!(params.b_lag, zero(params.T))
     fill!(params.B_lag, zero(params.T))
 end
-
 
 function resetRHSToZero_viscous!(params, SD::NSD_1D)
     fill!(params.rhs_diff_el,  zero(params.T))
@@ -76,6 +74,15 @@ function resetRHSToZero_viscous!(params, SD::NSD_3D)
     fill!(params.RHS_visc,     zero(params.T))
 end
 
+function reset∇fToZero!(params, SD::NSD_1D)
+    fill!(params.rhs_diff_el,  zero(params.T))
+    fill!(params.rhs_diffξ_el, zero(params.T))
+    fill!(params.RHS_visc,     zero(params.T))
+end
+
+function reset∇fToZero!(params)
+    fill!(params.∇f,  zero(params.T))
+end
 
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
