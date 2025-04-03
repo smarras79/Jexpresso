@@ -8,7 +8,7 @@ function user_inputs()
         #:Δt                   => 0.02,
         :Δt                   => 0.4,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 300.0,
         # :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
@@ -16,9 +16,8 @@ function user_inputs()
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
         :diagnostics_at_times => (1:100:1000),
         :case                 => "rtb",
-        :lsource              => true, 
-        # :backend              => CUDABackend(),
-        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+        :lsource              => true,
+        :luser_function       => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
