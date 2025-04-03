@@ -1,5 +1,5 @@
-nelemx = 3;
-nelemy = 3;
+nelemx = 2;
+nelemy = 2;
 nelemz = 1;
 
 xmin = -1;

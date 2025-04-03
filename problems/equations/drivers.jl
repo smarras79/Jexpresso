@@ -57,15 +57,17 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                 sem.matrix.L[ip,ip] += inputs[:rconst][1]
             end
 
-            #
+            
+            #-----------------------------------------------------
             # Element-learning infrastructure
-            #
-            if inputs[:lel]
-                skeleton_Axb(sem.mesh.npoin, sem.matrix.L, RHS)
+            #-----------------------------------------------------
+            if inputs[:lelementLearning]
+                elementLearning_Axb(sem.mesh, sem.matrix.L, RHS)
             end
-            #
+            #-----------------------------------------------------
             # END Element-learning infrastructure
-            #
+            #-----------------------------------------------------
+
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
                                                  params.mesh.x, params.mesh.y, params.mesh.z,
@@ -121,4 +123,10 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                      nvar=params.qp.neqs, qexact=params.qp.qe, case="none")
         
     end
+end
+
+function elementLearning_Axb(SD, mesh::St_mesh, inputs, neqs)
+
+    elementLearning = allocate_elemLearning(SD, mesh.nelem, mesh.ngl, mesh.length∂O, mesh.length∂τ, TFloat, inputs[:backend]; neqs=neqs)
+
 end
