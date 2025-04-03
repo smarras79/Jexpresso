@@ -256,6 +256,33 @@ function _∇f!(∇f_el, f, ngl, dψ, ω, Je,
     end
 end
 
+function _∇fnew!(∇f_el, f, ngl, dψ, ω, Je,
+              dξdx, dξdy,
+              dηdx, dηdy,
+              iel, i, j, 
+              ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+    #
+    # ∇f = [∂f∂x, ∂f/∂y]
+    #
+    ωJac = ω[i]*ω[j]*Je[iel,i,j]
+    
+    dfdξ = 0.0
+    dfdη = 0.0
+    @turbo for k = 1:ngl
+        dfdξ += dψ[k,i]*f[k,j]
+        dfdη += dψ[k,j]*f[i,k]
+    end
+    dξdx_ij = dξdx[iel,i,j]
+    dξdy_ij = dξdy[iel,i,j]
+    dηdx_ij = dηdx[iel,i,j]
+    dηdy_ij = dηdy[iel,i,j]
+    
+    ∇f_el[iel,i,j,1] = ωJac*(dfdξ*dξdx_ij + dfdη*dηdx_ij)
+    ∇f_el[iel,i,j,2] = ωJac*(dfdξ*dξdy_ij + dfdη*dηdy_ij)
+    
+end
+
+
 
 function _∇f!(∇f_el, f, ngl, dψ, ω, Je,
               dξdx, dξdy,
