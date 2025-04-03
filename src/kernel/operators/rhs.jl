@@ -520,12 +520,14 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              neqs=params.neqs, x=x[ip], y=y[ip], xmax=xmax, xmin=xmin, ymax=ymax)
             end
 
-            build_pressure!(@view(params.fijk[i,j,:]), SD,
-                            @view(params.uaux[ip,:]),
-                            @view(qe[ip,:]),
-                            params.mesh,
-                            params.CL, params.SOL_VARS_TYPE;
-                            neqs=params.neqs, ip=ip)
+            if luser_function
+                user_function!(@view(params.fijk[i,j,:]), SD,
+                               @view(params.uaux[ip,:]),
+                               @view(qe[ip,:]),
+                               params.mesh,
+                               params.CL, params.SOL_VARS_TYPE;
+                               neqs=params.neqs, iel=iel, ip=ip)
+            end            
         end
         
         _∇f!(params.∇f_el, params.fijk,
@@ -534,7 +536,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
              params.metrics.Je,
              params.metrics.dξdx, params.metrics.dξdy,
              params.metrics.dηdx, params.metrics.dηdy,
-             iel, params.CL, params.QT, SD, params.AD)        
+             iel, params.CL, params.QT, SD, params.AD)       
         
         _expansion_inviscid!(u,
                              params.neqs, params.mesh.ngl,
@@ -550,25 +552,6 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
     params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]
 
 end
-
-
-function build_pressure!(f::SubArray{TFloat}, SD::NSD_2D,
-                         q::SubArray{TFloat},
-                         qe::SubArray{TFloat},
-                         mesh::St_mesh,
-                         ::CL, ::TOTAL; neqs=4, ip=1)
-
-    PhysConst = PhysicalConst{Float64}()
-    
-    ρ  = q[1]
-    ρθ = q[4]
-    θ  = ρθ/ρ
-    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-    
-    f[1] = Pressure
-    
-end
-
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
     
