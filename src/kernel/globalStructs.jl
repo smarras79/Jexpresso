@@ -108,14 +108,34 @@ function allocate_fluxes(SD, npoin, ngl, T, backend; neqs=1)
 end
 
 #-------------------------------------------------------------------------------------------
+# Arbitrary ijk-defined quantity f:
+#-------------------------------------------------------------------------------------------
+Base.@kwdef mutable struct St_fijk{T <: AbstractFloat, dims1, backend}
+    fijk = KernelAbstractions.zeros(backend,  T, dims1)
+end
+function allocate_fijk(SD, ngl, T, backend; neqs=1)
+
+    if SD == NSD_1D()
+        dims1 = (Int64(ngl), Int64(neqs))
+    elseif SD == NSD_2D()
+        dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
+    elseif SD == NSD_3D()
+        dims1 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
+    end
+    
+    fijk = St_fijk{T, dims1, backend}()
+    
+    return fijk
+end
+
+#-------------------------------------------------------------------------------------------
 # Derivative operators: e.g. gradient(f): ∇f = [∂f∂x, ∂f/∂y, ∂f/∂z]
 #-------------------------------------------------------------------------------------------
 Base.@kwdef mutable struct St_∇f{T <: AbstractFloat, dims1, backend}
-    
-    ∇f = KernelAbstractions.zeros(backend,  T, dims1)
+    ∇f_el = KernelAbstractions.zeros(backend,  T, dims1)
 end
 function allocate_∇f(SD, nelem, ngl, T, backend; neqs=1)
-
+    
     if SD == NSD_1D()
         dims1 = (Int64(nelem), Int64(ngl), 1) 
     elseif SD == NSD_2D()
