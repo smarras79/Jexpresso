@@ -32,6 +32,11 @@ function params_setup(sem,
                              T, backend;
                              neqs=qp.neqs)
 
+    fijk   = allocate_fijk(sem.mesh.SD,
+                           sem.mesh.ngl,
+                           T, backend;
+                           neqs=qp.neqs)
+
     ∇f     = allocate_∇f(sem.mesh.SD,
                          sem.mesh.nelem,
                          sem.mesh.ngl,
@@ -60,6 +65,8 @@ function params_setup(sem,
     G            = fluxes.G
     H            = fluxes.H
     S            = fluxes.S
+    fijk         = fijk.fijk
+    ∇f_el        = ∇f.∇f_el
     RHS          = rhs.RHS
     RHS_visc     = rhs.RHS_visc
     rhs_el       = rhs.rhs_el
@@ -262,7 +269,7 @@ function params_setup(sem,
                   uaux, vaux,
                   ubdy, gradu, bdy_flux,                   
                   RHS, RHS_visc,
-                  ∇f,
+                  fijk, ∇f_el,
                   rhs_el, rhs_diff_el,
                   rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                   uprimitive,
