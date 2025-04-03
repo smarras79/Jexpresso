@@ -617,6 +617,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lsource))
         inputs[:lsource] = false
     end
+    if(!haskey(inputs, :luser_function))
+        inputs[:luser_function] = false
+    end
 
     if(!haskey(inputs, :ldss_differentiation))
         inputs[:ldss_differentiation] = false
