@@ -97,8 +97,11 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     conn_face_el          = Array{TInt}(undef, 0, 0, 0)
     face_in_elem          = Array{TInt}(undef, 0, 0, 0)
 
-    ∂O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, 0)
-    ∂τ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, 0)
+    # Skeleton arrays needed by "element learning"
+    length∂O = 0
+    length∂τ = 0
+    ∂O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, length∂O)
+    ∂τ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, length∂τ)
     
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
     
