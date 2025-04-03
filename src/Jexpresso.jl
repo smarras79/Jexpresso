@@ -114,6 +114,8 @@ include(joinpath( "kernel", "infrastructure", "convert_to_gpu.jl"))
 
 include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 
+include(joinpath( "kernel", "operators", "operators.jl"))
+
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
