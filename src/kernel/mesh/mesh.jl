@@ -1,4 +1,3 @@
-using MPI
 using .JeGeometry
 using Gridap
 using Gridap.Arrays
@@ -654,7 +653,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         end
     end
 
-    MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
     mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
     mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
     mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
@@ -664,11 +662,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         mesh.zmin = MPI.Allreduce(minimum(mesh.z), MPI.MIN, comm)
     end
 
-    for ip = 1: mesh.npoin
-        if mesh.gip2owner[ip] != rank+1
-            # @info mesh.x[ip], mesh.y[ip], mesh.gip2owner[ip], rank+1
-        end
-    end
+    # for ip = 1: mesh.npoin
+    #     if mesh.gip2owner[ip] != rank+1
+    #         # @info mesh.x[ip], mesh.y[ip], mesh.gip2owner[ip], rank+1
+    #     end
+    # end
 
 
 
@@ -876,7 +874,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             end
         end
     end
-
 
     mesh.gnpoin    = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
     mesh.gip2owner = find_gip_owner(mesh.ip2gip)
@@ -1138,56 +1135,84 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # periodicity_restructure for MPI
     #----------------------------------------------------------------------
     if mesh.nsd > 2
-        per1_gip = Int[]
-        per2_gip = Int[]
-        per3_gip = Int[]
-        for iface_bdy =1:size(mesh.bdy_face_type,1)
-            for k=1:ngl
-                for l=1:ngl
-                    ip = mesh.poin_in_bdy_face[iface_bdy,k,l]
-                    if (mesh.bdy_face_type[iface_bdy] == "periodic1")
-                        per1_gip = [per1_gip; mesh.ip2gip[ip]]
-                    elseif (mesh.bdy_face_type[iface_bdy] == "periodic2")
-                        per2_gip = [per2_gip; mesh.ip2gip[ip]]
-                    elseif (mesh.bdy_face_type[iface_bdy] == "periodic3")
-                        per3_gip = [per3_gip; mesh.ip2gip[ip]]
-                    end
+
+        nor1 = [1.0, 0.0, 0.0]
+        nor2 = [0.0, 1.0, 0.0]
+        nor3 = [0.0, 0.0, 1.0]
+        if ("periodic1" in mesh.bdy_face_type)
+            finder = false
+            iface_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_face_type[iface_bdy] == "periodic1")
+                    ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
+                    ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
+                    ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    s1 = t1[2]*t2[3] - t1[3]*t2[2]
+                    s2 = t1[3]*t2[1] - t1[1]*t2[3]
+                    s3 = t1[1]*t2[2] - t1[2]*t2[1]
+                    mag = sqrt(s1^2 + s2^2 + s3^2)
+                    nor1 .= [s1/mag, s2/mag, s3/mag]
+                    finder = true
+                else
+                    iface_bdy +=1
                 end
             end
         end
-        ### remove duplicates
-        unique!(per1_gip)
-        unique!(per2_gip)
-        unique!(per3_gip)
-    
-        # Gather arrays onto the root processor (rank 0)
-        root = 0
-
-        # Gather per1_gip
-        gathered_per1 = MPI.Gather(per1_gip, root, comm)
-
-        # Gather per2_gip
-        gathered_per2 = MPI.Gather(per2_gip, root, comm)
-
-        # Gather per3_gip
-        gathered_per3 = MPI.Gather(per3_gip, root, comm)
-
-        # On the root processor, combine and remove duplicates
-        if rank == root
-            # Concatenate gathered arrays
-            global_per1_gip = vcat(gathered_per1...)
-            global_per2_gip = vcat(gathered_per2...)
-            global_per3_gip = vcat(gathered_per3...)
-
-            # Print results
-            println("Global per1_gip: ", global_per1_gip)
-            println("Global per2_gip: ", global_per2_gip)
-            println("Global per3_gip: ", global_per3_gip)
+        if ("periodic2" in mesh.bdy_face_type)
+            finder = false
+            iface_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_face_type[iface_bdy] == "periodic2")
+                    ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
+                    ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
+                    ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    s1 = t1[2]*t2[3] - t1[3]*t2[2]
+                    s2 = t1[3]*t2[1] - t1[1]*t2[3]
+                    s3 = t1[1]*t2[2] - t1[2]*t2[1]
+                    mag = sqrt(s1^2 + s2^2 + s3^2)
+                    nor2 = [s1/mag, s2/mag, s3/mag] 
+                    finder = true
+                else
+                    iface_bdy +=1
+                end
+            end
         end
+        if ("periodic3" in mesh.bdy_face_type)
+            finder = false
+            iface_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_face_type[iface_bdy] == "periodic3")
+                    ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
+                    ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
+                    ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    s1 = t1[2]*t2[3] - t1[3]*t2[2]
+                    s2 = t1[3]*t2[1] - t1[1]*t2[3]
+                    s3 = t1[1]*t2[2] - t1[2]*t2[1]
+                    mag = sqrt(s1^2 + s2^2 + s3^2)
+                    nor3 = [s1/mag, s2/mag, s3/mag]
+                    finder = true
+                else
+                    iface_bdy +=1
+                end
+            end
+        end
+        restructure4periodicity_3D(mesh, nor1, "periodic1")
+        # @info mesh.ip2gip
+        restructure4periodicity_3D(mesh, nor2, "periodic2")
+        restructure4periodicity_3D(mesh, nor3, "periodic3")
+        # @info mesh.ip2gip
+
     end
     #----------------------------------------------------------------------
     # END periodicity_restructure for MPI
     #----------------------------------------------------------------------
+
 
     #
     #
@@ -1234,6 +1259,141 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #writevtk(model,"gmsh_grid")
 end
 
+
+function restructure4periodicity_3D(mesh, norm, periodic_direction)
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    rank_sz = MPI.Comm_size(comm)
+    per_ip = Int[]
+    ngl = mesh.ngl
+    for iface_bdy =1:size(mesh.bdy_face_type,1)
+        for k=1:ngl
+            for l=1:ngl
+                ip = mesh.poin_in_bdy_face[iface_bdy,k,l]
+                if (mesh.bdy_face_type[iface_bdy] == periodic_direction)
+                    per_ip = [per_ip; ip]
+                end
+            end
+        end
+    end
+    ### remove duplicates
+    unique!(per_ip)
+    x_local  = mesh.x[per_ip]
+    y_local  = mesh.y[per_ip]
+    z_local  = mesh.z[per_ip]
+    per_gip  = mesh.ip2gip[per_ip]
+    ip_owner = mesh.gip2owner[per_ip]
+    # @info  mesh.x[per_ip]
+
+    # Gather arrays onto the root processor (rank 0)
+    root = 0
+
+    # Gather per_gip
+    buffer_sz::Int32    = size(per_ip, 1)
+    # @info rank, buffer_sz
+    recv_counts  = MPI.Gather(buffer_sz, 0, comm)
+    # total_counts = sum(recv_counts)
+    # if total_counts == 0
+        # return
+    # end
+    # else
+    # if total_counts == 0
+    #     return
+    # end
+    
+    x_gather     = MPI.gather(x_local, comm)
+    y_gather     = MPI.gather(y_local, comm)
+    z_gather     = MPI.gather(z_local, comm)
+    gathered_per = MPI.gather(per_gip, comm)
+    owner_gather = MPI.gather(ip_owner, comm)
+    if mesh.rank == root
+    
+    # On the root processor, combine and remove duplicates
+        # Concatenate gathered arrays
+        x              = vcat(x_gather...)
+        y              = vcat(y_gather...)
+        z              = vcat(z_gather...)
+        global_per_gip = vcat(gathered_per...)
+        owner          = vcat(owner_gather...)
+
+        sz = size(global_per_gip,1)
+        for i = 1:sz
+            i1 = i+1
+            for i1 = (i+1):sz
+                if global_per_gip[i] == global_per_gip[i1]
+                    continue
+                end
+                vec = [x[i] - x[i1], y[i] - y[i1], z[i] - z[i1]]
+                # @info vec, norm
+                if (determine_colinearity(vec, norm))
+                    xt = x[i1]
+                    yt = y[i1]
+                    zt = z[i1]
+                    xi = x[i]
+                    yi = y[i]
+                    zi = z[i]
+                    if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
+                        comp1 = xi < xt
+                    elseif (yi == 0 && yt == 0)
+                        comp1 = xi*abs(zi) < xt*abs(zt)
+                    elseif (zi == 0 && zt == 0)
+                        comp1 = xi*abs(zi) < xt*abs(yt)
+                    else
+                        comp1 = xi*abs(yi*zi) < xt*abs(yt*zt)
+                    end
+                    if (xi ==0 && xt == 0 && zi == 0 && zt ==0)
+                        comp2 = yi < yt
+                    elseif (xi == 0 && xt == 0)
+                        comp2 = yi*abs(zi) < yt*abs(zt)
+                    elseif (zi == 0 && zt == 0)
+                        comp2 = yi*abs(xi) < yt*abs(xt)
+                    else
+                        comp2 = yi*abs(xi*zi) < yt*abs(xt*zt)
+                    end
+                    if (xi == 0 && xt == 0 && yi == 0 && yt ==0)
+                        comp3 = zi < zt
+                    elseif (xi == 0 && xt == 0)
+                        comp3 = zi*abs(yi) < zt*abs(yt)
+                    elseif (yi == 0 && yt == 0)
+                        comp3 = zi*abs(xi) < zt*abs(xt)
+                    else
+                        comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
+                    end
+                    # @info "found", global_per_gip[i], global_per_gip[i1]
+                    if (comp1 || comp2 || comp3)    
+                        global_per_gip[i1] = global_per_gip[i]
+                        if owner[i1] != owner[i]
+                            owner[i1] = owner[i]
+                        end
+                    else
+                        global_per_gip[i] = global_per_gip[i1]
+                        if owner[i1] != owner[i]
+                            owner[i] = owner[i1]
+                        end
+                    end
+                    # break
+                else
+                    continue
+                end
+            end
+        end
+        # do something for global_per_gip
+        s_gip_vbuf   = VBuffer(global_per_gip, recv_counts)
+        s_owner_vbuf = VBuffer(owner, recv_counts)
+    else
+        s_gip_vbuf   = VBuffer(nothing)
+        s_owner_vbuf = VBuffer(nothing)
+    end
+    MPI.Barrier(comm)
+    per_ip_updated = MPI.Scatterv!(s_gip_vbuf,zeros(eltype(per_gip), buffer_sz), 0, comm)
+    owner_updated  = MPI.Scatterv!(s_owner_vbuf,zeros(eltype(ip_owner), buffer_sz), 0, comm)
+    # per_ip_updated = MPI.Scatterv!(global_per_gip,buffer_sz, 0, comm)
+        
+    mesh.ip2gip[per_ip]    .= per_ip_updated
+    mesh.gip2owner[per_ip] .= owner_updated
+end
+
 function find_gip_owner(a)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
@@ -1245,7 +1405,8 @@ function find_gip_owner(a)
     if rank == 0
         # Flatten the gathered list
         flat_elements = vcat(all_elements...)
-        all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
+        # all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
+        all_owners = [i for i in 0:size-1 for _ in 1:length(all_elements[i+1])]
 
         # Create a dictionary to store the smallest rank for each element
         element_owner_map = Dict{Int, Int}()

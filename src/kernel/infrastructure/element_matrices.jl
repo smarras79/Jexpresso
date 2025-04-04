@@ -895,9 +895,10 @@ function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, 
 end
 
 function DSS_global_RHS!(RHS, pM, neqs)
-    for i = 1:neqs
-       DSS_global_RHS_v0!(@view(RHS[:,i]), pM)
-    end
+    assemble_mpi!(@view(RHS[:,:]),pM)
+    # for i = 1:neqs
+    #    DSS_global_RHS_v0!(@view(RHS[:,i]), pM)
+    # end
 end
 
 function DSS_global_RHS_v0!(M, pM)
@@ -929,12 +930,13 @@ end
 
 function DSS_global_mass!(M, ip2gip, gip2owner, parts, npoin, gnpoin)
     # @info ip2gip
-    row_partition = map(parts) do part
-        row_partition = LocalIndices(gnpoin,part,ip2gip,gip2owner)
-        # gM = M
-        row_partition
-    end
-    pM = pvector(values->@view(M[:]), row_partition)
+    # row_partition = map(parts) do part
+    #     row_partition = LocalIndices(gnpoin,part,ip2gip,gip2owner)
+    #     # gM = M
+    #     row_partition
+    # end
+    # pM = pvector(values->@view(M[:]), row_partition)
+    pM = setup_assembler(M, ip2gip, gip2owner)
     # map(parts,local_values(pM)) do part,values
     #     # if part == 1
     #         @info values
@@ -950,13 +952,13 @@ function DSS_global_mass!(M, ip2gip, gip2owner, parts, npoin, gnpoin)
     #     # end
     # end
 
-
-    assemble!(pM) |> wait
-    consistent!(pM) |> wait
-    M = map(local_values(pM)) do values
-        M = values
-        M
-    end
+    # assemble!(pM) |> wait
+    # consistent!(pM) |> wait
+    # M = map(local_values(pM)) do values
+    #     M = values
+    #     M
+    # end
+    @time assemble_mpi!(M,pM)
     return pM
 end
 
