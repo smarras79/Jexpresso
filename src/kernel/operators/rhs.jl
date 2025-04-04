@@ -520,16 +520,17 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              neqs=params.neqs, x=x[ip], y=y[ip], xmax=xmax, xmin=xmin, ymax=ymax)
             end
 
-            if luser_function
+         #=   if luser_function
                 user_function!(@view(params.fijk[i,j,:]), SD,
                                @view(params.uaux[ip,:]),
                                @view(qe[ip,:]),
                                params.mesh,
                                params.CL, params.SOL_VARS_TYPE;
                                neqs=params.neqs, iel=iel, ip=ip)
-            end            
+            end
+            =#
         end
-        
+       #= 
         _∇f!(params.∇f_el, params.fijk,
              params.mesh.ngl,
              params.basis.dψ, params.ω,
@@ -537,7 +538,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
              params.metrics.dξdx, params.metrics.dξdy,
              params.metrics.dηdx, params.metrics.dηdy,
              iel, params.CL, params.QT, SD, params.AD)       
-        
+        =#
         _expansion_inviscid!(u,
                              params.neqs, params.mesh.ngl,
                              params.basis.dψ, params.ω,
@@ -548,8 +549,8 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
     end
 
-    params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
-    params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]
+  #=  params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
+    params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]=#
 
 end
 
