@@ -238,6 +238,7 @@ function params_setup(sem,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
         
     else
+        pM = setup_assembler(RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
           params = (backend,
               T, inputs,
               uaux, vaux,
@@ -254,7 +255,7 @@ function params_setup(sem,
               neqs=qp.neqs,
               sem.basis, sem.ω, sem.mesh, sem.metrics,
               visc_coeff, ivisc_equations,
-              sem.matrix.M, sem.matrix.Minv, sem.matrix.pM,
+              sem.matrix.M, sem.matrix.Minv, pM=pM,
               tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
               qp, mp, sem.fx, sem.fy, fy_t, laguerre=false,
               OUTPUT_DIR,
