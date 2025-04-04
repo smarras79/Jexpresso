@@ -211,15 +211,8 @@ function sem_setup(inputs::Dict)
     @time mesh.∂τ = unroll_positive_unique(mesh.poin_in_bdy_edge)
 
     mesh.∂τ = vcat(mesh.∂τ, mesh.∂O)
+    mesh.length∂O = length(mesh.∂O)
+    mesh.length∂τ = length(mesh.∂τ)
 
-    mesh.length∂O = size(mesh.∂O)
-    mesh.length∂τ = size(mesh.∂τ)
-    
-    #@info "∂O"
-    #println(mesh.∂O)
-    #@info "∂τ"
-    #println(mesh.∂τ)
-    #@info mesh.length∂O mesh.length∂τ
-    
     return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end
