@@ -575,6 +575,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:ladapt] = false
     end
 
+    if(!haskey(inputs, :amr))
+        inputs[:amr] = false
+    end
+
     if(!haskey(inputs, :linitial_refine))
         inputs[:linitial_refine] = false
     end
