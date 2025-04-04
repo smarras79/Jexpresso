@@ -64,3 +64,7 @@ TestingUtilities = "40452611-1178-4e48-bdfc-3af4bebad9c9"
 Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+
+[compat]
+MPI = "0.20.22"
+MPIPreferences = "0.1.11"
