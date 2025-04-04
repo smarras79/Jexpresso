@@ -6,12 +6,12 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.1,
         :tinit                => 0.0,
-        :tend                 => 100.0,
+        :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output",
-        :diagnostics_at_times => (2:2:100),
+        :diagnostics_at_times => (0:100:1000),
         :lsource              => true,
         #:backend              => CUDABackend(),
         #---------------------------------------------------------------------------
@@ -32,7 +32,8 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/2x2x2.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB_periodic3D.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
