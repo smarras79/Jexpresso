@@ -41,7 +41,7 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
           
             Minv = diagm(sem.matrix.Minv)
             
-            L_temp = Minv * sem.matrix.L ### SM  I can't do this
+            L_temp = Minv * sem.matrix.L
             sem.matrix.L .= L_temp
             
             for ip =1:sem.mesh.npoin
@@ -125,8 +125,29 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
     end
 end
 
-function elementLearning_Axb(SD, mesh::St_mesh, inputs, neqs)
+function elementLearning_Axb(mesh::St_mesh, A, RHS)
 
-    elementLearning = allocate_elemLearning(SD, mesh.nelem, mesh.ngl, mesh.length∂O, mesh.length∂τ, TFloat, inputs[:backend]; neqs=neqs)
+    @info "∂Oxdd"
+    println(mesh.∂O)
+    @info "∂τddddd"
+    println(mesh.∂τ)
+    @info mesh.length∂O mesh.length∂τ
+    
+    EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
+                               mesh.length∂O,
+                               mesh.length∂τ,
+                               TFloat, inputs[:backend])
+    
+    
+    for iel=1:mesh.nelem, i=2:mesh.ngl-1, j=2:mesh.ngl-1
+        ip = mesh.connijk[iel, i, j]
 
+        ii = i-1
+        jj = j-1
+        
+        EL.Avv[ii,jj,iel] = A[ip,ip]
+        println(EL.Avv[ii,jj,iel])
+    end
+    
+   
 end

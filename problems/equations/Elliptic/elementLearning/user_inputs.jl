@@ -8,7 +8,7 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
-        #:lsparse              => true,
+        :lelementLearning     => true,
         :rconst               => [0.0],
         #:backend              => MetalBackend(),
         #:CL                   => NCL(), #CL() is defaults
