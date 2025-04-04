@@ -45,6 +45,8 @@ import Thermodynamics.Parameters as TP
 
 using UnicodePlots
 using Printf
+using MPI
+
 
 TInt   = Int64
 TFloat = Float64

@@ -6,7 +6,8 @@ function user_inputs()
         :ode_solver           => SSPRK53(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.02,
         :tinit                => 0.0,
-        :tend                 => 400.0,
+        # :tend                 => 1000.0,
+        :tend                 => 400,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
@@ -44,8 +45,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => false,
-        :init_refine_lvl     => 1,
+        :linitial_refine     => true,
+        :init_refine_lvl     => 2,
         #---------------------------------------------------------------------------
         :outformat           => "vtk", #"hdf5",
         :output_dir          => "./output/",
