@@ -3,3 +3,4 @@ docs/build/
 plotnodes.py
 Manifest.toml
 output/*
+LocalPreferences.toml
