@@ -408,14 +408,13 @@ function _build_rhs!(RHS, u, params, time)
     end
     # @info rank, [(params.mesh.x[params.mesh.connijk[iel,i,j]], params.mesh.y[params.mesh.connijk[iel,i,j]], params.RHS[params.mesh.connijk[iel,i,j],1]) for j in 1: params.mesh.ngl, i in 1: params.mesh.ngl, iel in 1: params.mesh.nelem]
 
-    if mpisize > 1
-        DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
-    end
+    DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
         # @info "ieq", ieq
         if inputs[:ladapt] == true
-            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, params.rhs_el[:,:,:,ieq], params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
+            
+            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, selectdim(params.rhs_el, ndims(params.rhs_el), ieq), params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
                             params.mesh.non_conforming_facets_children_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, ngl-1, params.interp)
         end
     end
