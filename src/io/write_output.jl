@@ -155,22 +155,20 @@ end
 #
 # VTK 2D/3D
 #
-function write_output(SD, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
-    #
-    # 2D/3D VTK of q(t) from dq/dt = RHS
-    #    
+function write_output(SD, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+ 
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, sol.u[iout][:], sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
+            write_vtk(SD, mesh, sol.u[iout][:], mp, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
         else
-            u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
+            u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
             KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
             u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
             KernelAbstractions.copyto!(CPU(),u_exact,qexact)
             convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, u, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+            write_vtk(SD, mesh, u, mp, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
         end
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
@@ -183,7 +181,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_D
     #    
     if (inputs[:backend] == CPU())
         title = @sprintf "Solution"
-        write_vtk(SD, mesh, sol.u, "1", title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=qexact, case=case)
+        write_vtk(SD, mesh, sol.u, "1", 0, title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=qexact, case="")
     else
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
         KernelAbstractions.copyto!(CPU(),u,sol.u)
@@ -200,23 +198,21 @@ function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_D
     
 end
 
-function write_output(SD, u, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
-        write_vtk(SD, mesh, u, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
+        write_vtk(SD, mesh, u_sol, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
     else
         #VERIFY THIS on GPU
-        u_gpu = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
-        KernelAbstractions.copyto!(CPU(),u_gpu, u)
+        u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
+        KernelAbstractions.copyto!(CPU(),u, u_sol)
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-        write_vtk(SD, mesh, u_gpu, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
-        convert_mesh_arrays!(SD, mesh, inputs[:backend], inputs)
-
+        write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
@@ -338,7 +334,7 @@ end
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     outvars = varnames
     nvars = length(outvars)
@@ -792,23 +788,18 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     # Write solution:
     #
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
-    # vtkfile = vtk_grid(fout_name, mesh.x[1:npoin], mesh.y[1:npoin], mesh.y[1:npoin]*TFloat(0.0), cells)
     vtkfile = map(mesh.parts) do part
-        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
-                        part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false; part=part, nparts=mesh.nparts, ismain=(part==1))
         vtkf["part", VTKCellData()] = ones(isel -1) * part
+        
         for ivar = 1:nvar
             idx = (ivar - 1)*npoin
-            vtkf[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+            vtkf[string(varnames[ivar]), VTKPointData()] = @view(qout[idx+1:ivar*npoin])
         end
         vtkf
     end
-    # for ivar = 1:nvar
-    #     idx = (ivar - 1)*npoin
-    #     vtkfile[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
-    # end
+    
     outfiles = map(vtk_save, vtkfile)
-    # outfiles = vtk_save(vtkfile)
     mesh.x .= xx
     mesh.y .= yy
     mesh.connijk .= conn
@@ -819,7 +810,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     end
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
     outvars = varnames
     nvars = length(outvars)
     npoin = mesh.npoin
@@ -838,366 +829,479 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_face
     qe_temp = similar(qexact)
+    if (inputs[:lmoist])
+        T_temp     = copy(mp.Tabs)
+        qc_temp    = copy(mp.qc)
+        qi_temp    = copy(mp.qi)
+        qr_temp    = copy(mp.qr)
+        qs_temp    = copy(mp.qs)
+        qg_temp    = copy(mp.qg)
+        qsatt_temp = copy(mp.qsatt)
+    end
     #=new_size = npoin
     iter = 1=#
-    # if ("periodic1" in mesh.bdy_face_type || "periodic2" in mesh.bdy_face_type || "periodic3" in mesh.bdy_face_type)
-    #     new_size = size(mesh.x,1)
-    #     diff = new_size-npoin
-    #     q_new = zeros(new_size*nvar)
-    #     for ieq = 1:nvars
-    #         ivar = new_size*(ieq-1)
-    #         ivar1 = npoin*(ieq-1)
-    #         q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
-    #     end
-    #     q = q_new
-    # end
-    # if ("periodic1" in mesh.bdy_face_type)
-    #     xmax = mesh.xmax
-    #     nfaces = size(mesh.bdy_face_type,1)
-    #     new_size = size(mesh.x,1)
-    #     diff = new_size-npoin
-    #     q_new = zeros(new_size*nvar)
-    #     q_exact1 = zeros(new_size,nvar+1)
-    #     q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+    if ("periodic1" in mesh.bdy_face_type || "periodic2" in mesh.bdy_face_type || "periodic3" in mesh.bdy_face_type)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        if (inputs[:lmoist])
+            T_new     = zeros(new_size)
+            qc_new    = zeros(new_size)
+            qi_new    = zeros(new_size)
+            qr_new    = zeros(new_size)
+            qs_new    = zeros(new_size)
+            qg_new    = zeros(new_size)
+            qsatt_new = zeros(new_size)
+            
+            T_new[1:npoin]     .= mp.Tabs
+            qc_new[1:npoin]    .= mp.qc
+            qi_new[1:npoin]    .= mp.qi
+            qr_new[1:npoin]    .= mp.qr
+            qs_new[1:npoin]    .= mp.qs
+            qg_new[1:npoin]    .= mp.qg
+            qsatt_new[1:npoin] .= mp.qsatt
+        end
 
-    #     for ieq = 1:nvars
-    #         ivar = new_size*(ieq-1)
-    #         q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
-    #     end
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            ivar1 = npoin*(ieq-1)
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+        end
+        q = q_new
+    end
+    if ("periodic1" in mesh.bdy_face_type)
+        xmax = mesh.xmax
+        nfaces = size(mesh.bdy_face_type,1)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
+        q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
+        end
         
-    #     iter = 1
-    #     for iface = 1:nfaces
+        iter = 1
+        for iface = 1:nfaces
 
-    #         if (mesh.bdy_face_type[iface] == "periodic1")
-    #             e = mesh.bdy_face_in_elem[iface]
-    #             for k=1:mesh.ngl
-    #                 for l=1:mesh.ngl
-    #                     ip = mesh.poin_in_bdy_face[iface,k,l]
-    #                     xface = mesh.x[ip]
-    #                     unwind = 0
-    #                     ll = 0
-    #                     m = 0
-    #                     n = 0
-    #                     dx = abs(mesh.x[mesh.connijk[e,2,1,1]]-mesh.x[mesh.connijk[e,mesh.ngl-1,1,1]])/(mesh.ngl-3)
-    #                     DX = xface + (mesh.ngl)*dx
-    #                     x_spare .= mesh.x .- DX .> 0
-    #                     for i=1:mesh.ngl
-    #                         for j=1:mesh.ngl
-    #                             for kk=1:mesh.ngl
-    #                                 ip1 = mesh.connijk[e,i,j,kk]
-    #                                 if (x_spare[ip1])#xface + (mesh.ngl)*dx)
-    #                                     unwind=1
-    #                                 end
-    #                                 if (ip1 == ip)
-    #                                     ll=i
-    #                                     m=j
-    #                                     n = kk
-    #                                 end
-    #                             end
-    #                         end
-    #                     end
-    #                     rep = 0
-    #                     ip_rep = 0
-    #                     if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
-    #                         connijk_spare .= mesh.connijk .- npoin
-    #                         for ee=1:mesh.nelem
-    #                             for i=1:mesh.ngl
-    #                                 for j=1:mesh.ngl
-    #                                     for kk=1:mesh.ngl
-    #                                         ip1 = mesh.connijk[ee,i,j,kk]
-    #                                         if (connijk_spare[ee,i,j,kk] > 0 && mesh.y[ip1] == mesh.y[ip] && mesh.z[ip1] == mesh.z[ip])
-    #                                             ip_rep = ip1
-    #                                             rep = 1
-    #                                         end
-    #                                     end
-    #                                 end
-    #                             end
-    #                         end
-    #                     end
-    #                     if (rep==1 && unwind==1)
-    #                         ip_new = ip_rep
-    #                         if (ll > 0 && m > 0 && n > 0)
-    #                             mesh.connijk[e,ll,m,n] = ip_new
-    #                         end
-    #                         for iface_1 = 1:nfaces
-    #                             if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
-    #                                 for i=1:mesh.ngl
-    #                                     for j =1:mesh.ngl
-    #                                         if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
-    #                                             mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
-    #                                         end
-    #                                     end
-    #                                 end
-    #                             end
-    #                         end
-    #                         mesh.poin_in_bdy_face[iface,k,l] = ip_new
-    #                     elseif (unwind==1)
-    #                         ip_new = npoin + iter
-    #                         mesh.x[ip_new] = xmax
-    #                         if (ll > 0 && m > 0 && n > 0)
-    #                             mesh.connijk[e,ll,m,n] = ip_new
-    #                         end
-    #                         mesh.y[ip_new] = mesh.y[ip]
-    #                         mesh.z[ip_new] = mesh.z[ip]
-    #                         for iface_1 = 1:nfaces
-    #                             if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
-    #                                 for i=1:mesh.ngl
-    #                                     for j =1:mesh.ngl
-    #                                         if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
-    #                                             mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
-    #                                         end
-    #                                     end 
-    #                                 end 
-    #                             end 
-    #                         end
-    #                         mesh.poin_in_bdy_face[iface,k,l] = ip_new
-    #                         iter += 1
-    #                         for ieq=1:nvars
-    #                             ivar = new_size*(ieq-1)
-    #                             q_new[ivar+ip_new] = q[ivar+ip]
-    #                         end
-    #                         q_exact1[ip_new,:] .= qexact[ip,:]
-    #                     end
-    #                 end
-    #             end
-    #         end
-    #     end
-    #     npoin += iter-1;
-    #     q = q_new
-    #     qexact = q_exact1
-    # end
+            if (mesh.bdy_face_type[iface] == "periodic1")
+                e = mesh.bdy_face_in_elem[iface]
+                for k=1:mesh.ngl
+                    for l=1:mesh.ngl
+                        ip = mesh.poin_in_bdy_face[iface,k,l]
+                        xface = mesh.x[ip]
+                        unwind = 0
+                        ll = 0
+                        m = 0
+                        n = 0
+                        dx = abs(mesh.x[mesh.connijk[e,2,1,1]]-mesh.x[mesh.connijk[e,mesh.ngl-1,1,1]])/(mesh.ngl-3)
+                        DX = xface + (mesh.ngl)*dx
+                        x_spare .= mesh.x .- DX .> 0
+                        for i=1:mesh.ngl
+                            for j=1:mesh.ngl
+                                for kk=1:mesh.ngl
+                                    ip1 = mesh.connijk[e,i,j,kk]
+                                    if (x_spare[ip1])#xface + (mesh.ngl)*dx)
+                                        unwind=1
+                                    end
+                                    if (ip1 == ip)
+                                        ll=i
+                                        m=j
+                                        n = kk
+                                    end
+                                end
+                            end
+                        end
+                        rep = 0
+                        ip_rep = 0
+                        if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
+                            connijk_spare .= mesh.connijk .- npoin
+                            for ee=1:mesh.nelem
+                                for i=1:mesh.ngl
+                                    for j=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            ip1 = mesh.connijk[ee,i,j,kk]
+                                            if (connijk_spare[ee,i,j,kk] > 0 && mesh.y[ip1] == mesh.y[ip] && mesh.z[ip1] == mesh.z[ip])
+                                                ip_rep = ip1
+                                                rep = 1
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        if (rep==1 && unwind==1)
+                            ip_new = ip_rep
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                        elseif (unwind==1)
+                            ip_new = npoin + iter
+                            mesh.x[ip_new] = xmax
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+                            mesh.y[ip_new] = mesh.y[ip]
+                            mesh.z[ip_new] = mesh.z[ip]
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end 
+                                    end 
+                                end 
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                            iter += 1
+                            for ieq=1:nvars
+                                ivar = new_size*(ieq-1)
+                                q_new[ivar+ip_new] = q[ivar+ip]
+                                if (inputs[:lmoist])
+                                    T_new[ip_new]     = mp.Tabs[ip]
+                                    qc_new[ip_new]    = mp.qc[ip]
+                                    qi_new[ip_new]    = mp.qi[ip]
+                                    qr_new[ip_new]    = mp.qr[ip]
+                                    qs_new[ip_new]    = mp.qs[ip]
+                                    qg_new[ip_new]    = mp.qg[ip]
+                                    qsatt_new[ip_new] = mp.qsatt[ip]
+                                end
+                            end
+                            q_exact1[ip_new,:] .= qexact[ip,:]
+                        end
+                    end
+                end
+            end
+        end
+        npoin += iter-1;
+        q = q_new
+        if (inputs[:lmoist])
+            mp.Tabs  = T_new
+            mp.qc    = qc_new
+            mp.qi    = qi_new
+            mp.qr    = qr_new
+            mp.qs    = qs_new
+            mp.qg    = qg_new
+            mp.qsatt = qsatt_new
+        end
+        qexact = q_exact1
+    end
     
-    # if ("periodic2" in mesh.bdy_face_type)
-    #     zmax = mesh.zmax
-    #     nfaces = size(mesh.bdy_face_type,1)
-    #     new_size = size(mesh.x,1)
-    #     diff = new_size-npoin
-    #     q_new = zeros(new_size*nvar)
-    #     q_exact1 = zeros(new_size,nvar+1)
-    #     q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+    if ("periodic2" in mesh.bdy_face_type)
+        zmax = mesh.zmax
+        nfaces = size(mesh.bdy_face_type,1)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
+        q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+        if (inputs[:lmoist])
+            T_new     = zeros(new_size)
+            qc_new    = zeros(new_size)
+            qi_new    = zeros(new_size)
+            qr_new    = zeros(new_size)
+            qs_new    = zeros(new_size)
+            qg_new    = zeros(new_size)
+            qsatt_new = zeros(new_size)
 
-    #     for ieq = 1:nvars
-    #         ivar = new_size*(ieq-1)
-    #         q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
-    #     end
-    #     iter = 1
-    #     for iface = 1:nfaces
+            T_new[1:npoin]     .= mp.Tabs
+            qc_new[1:npoin]    .= mp.qc
+            qi_new[1:npoin]    .= mp.qi
+            qr_new[1:npoin]    .= mp.qr
+            qs_new[1:npoin]    .= mp.qs
+            qg_new[1:npoin]    .= mp.qg
+            qsatt_new[1:npoin] .= mp.qsatt
+        end
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
+        end
+        iter = 1
+        for iface = 1:nfaces
 
-    #         if (mesh.bdy_face_type[iface] == "periodic2")
-    #             e = mesh.bdy_face_in_elem[iface]
-    #             for k=1:mesh.ngl
-    #                 for l=1:mesh.ngl
-    #                     ip = mesh.poin_in_bdy_face[iface,k,l]
-    #                     zface = mesh.z[ip]
-    #                     unwind = 0
-    #                     ll = 0
-    #                     m = 0
-    #                     n = 0
-    #                     dz = abs(mesh.z[mesh.connijk[e,1,1,2]]-mesh.z[mesh.connijk[e,1,1,mesh.ngl-1]])/(mesh.ngl-3)
-    #                     DZ = zface + (mesh.ngl)*dz
-    #                     z_spare .= mesh.z .- DZ .> 0
-    #                     for i=1:mesh.ngl
-    #                         for j=1:mesh.ngl
-    #                             for kk=1:mesh.ngl
-    #                                 ip1 = mesh.connijk[e,i,j,kk]
-    #                                 if (z_spare[ip1])
-    #                                     unwind=1
-    #                                 end
-    #                                 if (ip1 == ip)
-    #                                     ll=i
-    #                                     m=j
-    #                                     n = kk
-    #                                 end
-    #                             end
-    #                         end
-    #                     end
-    #                     rep = 0
-    #                     ip_rep = 0
-    #                     if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
-    #                         connijk_spare .= mesh.connijk .- npoin
-    #                         for ee=1:mesh.nelem
-    #                             for i=1:mesh.ngl
-    #                                 for j=1:mesh.ngl
-    #                                     for kk=1:mesh.ngl
-    #                                         ip1 = mesh.connijk[ee,i,j,kk]
-    #                                         if (connijk_spare[ee,i,j,kk] > 0 && mesh.x[ip1] == mesh.x[ip] && mesh.y[ip1] == mesh.y[ip])
-    #                                             ip_rep = ip1
-    #                                             rep = 1
-    #                                         end
-    #                                     end
-    #                                 end
-    #                             end
-    #                         end
-    #                     end
-    #                     if (rep==1 && unwind==1)
-    #                         ip_new = ip_rep
-    #                         if (ll > 0 && m > 0 && n > 0)
-    #                             mesh.connijk[e,ll,m,n] = ip_new
-    #                         end
-    #                         for iface_1 = 1:nfaces
-    #                             if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
-    #                                 for i=1:mesh.ngl
-    #                                     for j =1:mesh.ngl
-    #                                         if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
-    #                                             mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
-    #                                         end
-    #                                     end
-    #                                 end
-    #                             end
-    #                         end
-    #                         mesh.poin_in_bdy_face[iface,k,l] = ip_new
-    #                     elseif (unwind==1)
-    #                         #@info iter,ip,e,mesh.y[ip]
-    #                         ip_new = npoin + iter
-    #                         mesh.z[ip_new] = zmax
-    #                         if (ll > 0 && m > 0 && n > 0)
-    #                             mesh.connijk[e,ll,m,n] = ip_new
-    #                         end
-    #                         mesh.y[ip_new] = mesh.y[ip]
-    #                         mesh.x[ip_new] = mesh.x[ip]
-    #                         for iface_1 = 1:nfaces
-    #                             if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
-    #                                 for i=1:mesh.ngl
-    #                                     for j =1:mesh.ngl
-    #                                         if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
-    #                                             mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
-    #                                         end
-    #                                     end 
-    #                                 end 
-    #                             end 
-    #                         end
-    #                         mesh.poin_in_bdy_face[iface,k,l] = ip_new
-    #                         iter += 1
-    #                         for ieq=1:nvar
-    #                             ivar = new_size*(ieq-1)
-    #                             q_new[ivar+ip_new] = q[ivar+ip]
-    #                         end
-    #                         q_exact1[ip_new,:] .= qexact[ip,:]
-    #                     end
-    #                 end
-    #             end
-    #         end
-    #     end
-    #     npoin += iter-1;
-    #     q = q_new
-    #     qexact = q_exact1
-    # end
+            if (mesh.bdy_face_type[iface] == "periodic2")
+                e = mesh.bdy_face_in_elem[iface]
+                for k=1:mesh.ngl
+                    for l=1:mesh.ngl
+                        ip = mesh.poin_in_bdy_face[iface,k,l]
+                        zface = mesh.z[ip]
+                        unwind = 0
+                        ll = 0
+                        m = 0
+                        n = 0
+                        dz = abs(mesh.z[mesh.connijk[e,1,1,2]]-mesh.z[mesh.connijk[e,1,1,mesh.ngl-1]])/(mesh.ngl-3)
+                        DZ = zface + (mesh.ngl)*dz
+                        z_spare .= mesh.z .- DZ .> 0
+                        for i=1:mesh.ngl
+                            for j=1:mesh.ngl
+                                for kk=1:mesh.ngl
+                                    ip1 = mesh.connijk[e,i,j,kk]
+                                    if (z_spare[ip1])
+                                        unwind=1
+                                    end
+                                    if (ip1 == ip)
+                                        ll=i
+                                        m=j
+                                        n = kk
+                                    end
+                                end
+                            end
+                        end
+                        rep = 0
+                        ip_rep = 0
+                        if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
+                            connijk_spare .= mesh.connijk .- npoin
+                            for ee=1:mesh.nelem
+                                for i=1:mesh.ngl
+                                    for j=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            ip1 = mesh.connijk[ee,i,j,kk]
+                                            if (connijk_spare[ee,i,j,kk] > 0 && mesh.x[ip1] == mesh.x[ip] && mesh.y[ip1] == mesh.y[ip])
+                                                ip_rep = ip1
+                                                rep = 1
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        if (rep==1 && unwind==1)
+                            ip_new = ip_rep
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                        elseif (unwind==1)
+                            #@info iter,ip,e,mesh.y[ip]
+                            ip_new = npoin + iter
+                            mesh.z[ip_new] = zmax
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+                            mesh.y[ip_new] = mesh.y[ip]
+                            mesh.x[ip_new] = mesh.x[ip]
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end 
+                                    end 
+                                end 
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                            iter += 1
+                            for ieq=1:nvar
+                                ivar = new_size*(ieq-1)
+                                q_new[ivar+ip_new] = q[ivar+ip]
+                                if (inputs[:lmoist])
+                                    T_new[ip_new]     = mp.Tabs[ip]
+                                    qc_new[ip_new]    = mp.qc[ip]
+                                    qi_new[ip_new]    = mp.qi[ip]
+                                    qr_new[ip_new]    = mp.qr[ip]
+                                    qs_new[ip_new]    = mp.qs[ip]
+                                    qg_new[ip_new]    = mp.qg[ip]
+                                    qsatt_new[ip_new] = mp.qsatt[ip]
+                                end
+                            end
+                            q_exact1[ip_new,:] .= qexact[ip,:]
+                        end
+                    end
+                end
+            end
+        end
+        npoin += iter-1;
+        q = q_new
+        if (inputs[:lmoist])
+            mp.Tabs  = T_new
+            mp.qc    = qc_new
+            mp.qi    = qi_new
+            mp.qr    = qr_new
+            mp.qs    = qs_new
+            mp.qg    = qg_new
+            mp.qsatt = qsatt_new
+        end
+        qexact = q_exact1
+    end
     
-    # if ("periodic3" in mesh.bdy_face_type)
-    #     ymax = mesh.ymax
-    #     nfaces = size(mesh.bdy_face_type,1)
-    #     new_size = size(mesh.x,1)
-    #     diff = new_size-npoin
-    #     q_new = zeros(new_size*nvar)
-    #     q_exact1 = zeros(new_size,nvar+1)
-    #     q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+    if ("periodic3" in mesh.bdy_face_type)
+        ymax = mesh.ymax
+        nfaces = size(mesh.bdy_face_type,1)
+        new_size = size(mesh.x,1)
+        diff = new_size-npoin
+        q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
+        q_exact1[1:npoin,:] .= qexact[1:npoin,:]
+        if (inputs[:lmoist])
+            T_new     = zeros(new_size)
+            qc_new    = zeros(new_size)
+            qi_new    = zeros(new_size)
+            qr_new    = zeros(new_size)
+            qs_new    = zeros(new_size)
+            qg_new    = zeros(new_size)
+            qsatt_new = zeros(new_size)
 
-    #     for ieq = 1:nvars
-    #         ivar = new_size*(ieq-1)
-    #         q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
-    #     end
-    #     iter = 1
-    #     for iface = 1:nfaces
+            T_new[1:npoin]     .= mp.Tabs[1:npoin]
+            qc_new[1:npoin]    .= mp.qc[1:npoin]
+            qi_new[1:npoin]    .= mp.qi[1:npoin]
+            qr_new[1:npoin]    .= mp.qr[1:npoin]
+            qs_new[1:npoin]    .= mp.qs[1:npoin]
+            qg_new[1:npoin]    .= mp.qg[1:npoin]
+            qsatt_new[1:npoin] .= mp.qsatt[1:npoin]
+        end
+        for ieq = 1:nvars
+            ivar = new_size*(ieq-1)
+            q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
+        end
+        iter = 1
+        for iface = 1:nfaces
 
-    #         if (mesh.bdy_face_type[iface] == "periodic3")
-    #             e = mesh.bdy_face_in_elem[iface]
-    #             for k=1:mesh.ngl
-    #                 for l=1:mesh.ngl
-    #                     ip = mesh.poin_in_bdy_face[iface,k,l]
-    #                     yface = mesh.y[ip]
-    #                     unwind = 0
-    #                     ll = 0
-    #                     m = 0
-    #                     n = 0
-    #                     dy = abs(mesh.y[mesh.connijk[e,1,2,1]]-mesh.y[mesh.connijk[e,1,mesh.ngl-1,1]])/(mesh.ngl-3)
-    #                     DY = yface + (mesh.ngl)*dy
-    #                     y_spare .= mesh.y .- DY .> 0
-    #                     for i=1:mesh.ngl
-    #                         for j=1:mesh.ngl
-    #                             for kk=1:mesh.ngl
-    #                                 ip1 = mesh.connijk[e,i,j,kk]
-    #                                 if (y_spare[ip1])
-    #                                     unwind=1
-    #                                 end
-    #                                 if (ip1 == ip)
-    #                                     ll=i
-    #                                     m=j
-    #                                     n=kk
-    #                                 end
-    #                             end
-    #                         end
-    #                     end
-    #                     rep = 0
-    #                     ip_rep = 0
-    #                     if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
-    #                         connijk_spare .= mesh.connijk .- npoin
-    #                         for ee=1:mesh.nelem
-    #                             for i=1:mesh.ngl
-    #                                 for j=1:mesh.ngl
-    #                                     for kk=1:mesh.ngl
-    #                                         ip1 = mesh.connijk[ee,i,j,kk]
-    #                                         if (connijk_spare[ee,i,j,kk] > 0 && mesh.x[ip1] == mesh.x[ip] && mesh.z[ip1] == mesh.z[ip])
-    #                                             ip_rep = ip1
-    #                                             rep = 1
-    #                                         end
-    #                                     end
-    #                                 end
-    #                             end
-    #                         end
-    #                     end
-    #                     if (rep==1 && unwind==1)
-    #                         ip_new = ip_rep
-    #                         if (ll > 0 && m > 0 && n > 0)
-    #                             mesh.connijk[e,ll,m,n] = ip_new
-    #                         end
-    #                         for iface_1 = 1:nfaces
-    #                             if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
-    #                                 for i=1:mesh.ngl
-    #                                     for j =1:mesh.ngl
-    #                                         if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
-    #                                             mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
-    #                                         end
-    #                                     end
-    #                                 end
-    #                             end
-    #                         end
-    #                         mesh.poin_in_bdy_face[iface,k,l] = ip_new
-    #                     elseif (unwind==1)
-    #                         ip_new = npoin + iter
-    #                         mesh.y[ip_new] = ymax
-    #                         if (ll > 0 && m > 0 && n > 0)
-    #                             mesh.connijk[e,ll,m,n] = ip_new
-    #                         end
+            if (mesh.bdy_face_type[iface] == "periodic3")
+                e = mesh.bdy_face_in_elem[iface]
+                for k=1:mesh.ngl
+                    for l=1:mesh.ngl
+                        ip = mesh.poin_in_bdy_face[iface,k,l]
+                        yface = mesh.y[ip]
+                        unwind = 0
+                        ll = 0
+                        m = 0
+                        n = 0
+                        dy = abs(mesh.y[mesh.connijk[e,1,2,1]]-mesh.y[mesh.connijk[e,1,mesh.ngl-1,1]])/(mesh.ngl-3)
+                        DY = yface + (mesh.ngl)*dy
+                        y_spare .= mesh.y .- DY .> 0
+                        for i=1:mesh.ngl
+                            for j=1:mesh.ngl
+                                for kk=1:mesh.ngl
+                                    ip1 = mesh.connijk[e,i,j,kk]
+                                    if (y_spare[ip1])
+                                        unwind=1
+                                    end
+                                    if (ip1 == ip)
+                                        ll=i
+                                        m=j
+                                        n=kk
+                                    end
+                                end
+                            end
+                        end
+                        rep = 0
+                        ip_rep = 0
+                        if (k == 1 || k == mesh.ngl || l == 1 || l == mesh.ngl)
+                            connijk_spare .= mesh.connijk .- npoin
+                            for ee=1:mesh.nelem
+                                for i=1:mesh.ngl
+                                    for j=1:mesh.ngl
+                                        for kk=1:mesh.ngl
+                                            ip1 = mesh.connijk[ee,i,j,kk]
+                                            if (connijk_spare[ee,i,j,kk] > 0 && mesh.x[ip1] == mesh.x[ip] && mesh.z[ip1] == mesh.z[ip])
+                                                ip_rep = ip1
+                                                rep = 1
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        if (rep==1 && unwind==1)
+                            ip_new = ip_rep
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                        elseif (unwind==1)
+                            ip_new = npoin + iter
+                            mesh.y[ip_new] = ymax
+                            if (ll > 0 && m > 0 && n > 0)
+                                mesh.connijk[e,ll,m,n] = ip_new
+                            end
 
-    #                         mesh.z[ip_new] = mesh.z[ip]
-    #                         mesh.x[ip_new] = mesh.x[ip]
-    #                         for iface_1 = 1:nfaces
-    #                             if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
-    #                                 for i=1:mesh.ngl
-    #                                     for j =1:mesh.ngl
-    #                                         if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
-    #                                             mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
-    #                                         end
-    #                                     end 
-    #                                 end 
-    #                             end 
-    #                         end
-    #                         mesh.poin_in_bdy_face[iface,k,l] = ip_new
-    #                         iter += 1
-    #                         for ieq=1:nvar
-    #                             ivar = new_size*(ieq-1)
-    #                             q_new[ivar+ip_new] = q[ivar+ip]
-    #                         end
-    #                         q_exact1[ip_new,:] .= qexact[ip,:]
-    #                     end
-    #                 end
-    #             end
-    #         end
-    #     end
-    #     npoin += iter-1;
-    #     q = q_new
-    #     qexact = q_exact1
-    # end
+                            mesh.z[ip_new] = mesh.z[ip]
+                            mesh.x[ip_new] = mesh.x[ip]
+                            for iface_1 = 1:nfaces
+                                if (iface != iface_1 && mesh.bdy_face_in_elem[iface_1] == e)
+                                    for i=1:mesh.ngl
+                                        for j =1:mesh.ngl
+                                            if (mesh.poin_in_bdy_face[iface_1,i,j] == ip)
+                                                mesh.poin_in_bdy_face[iface_1,i,j] = ip_new
+                                            end
+                                        end 
+                                    end 
+                                end 
+                            end
+                            mesh.poin_in_bdy_face[iface,k,l] = ip_new
+                            iter += 1
+                            for ieq=1:nvar
+                                ivar = new_size*(ieq-1)
+                                q_new[ivar+ip_new] = q[ivar+ip]
+                                if (inputs[:lmoist])
+                                    T_new[ip_new]     = mp.Tabs[ip]
+                                    qc_new[ip_new]    = mp.qc[ip]
+                                    qi_new[ip_new]    = mp.qi[ip]
+                                    qr_new[ip_new]    = mp.qr[ip]
+                                    qs_new[ip_new]    = mp.qs[ip]
+                                    qg_new[ip_new]    = mp.qg[ip]
+                                    qsatt_new[ip_new] = mp.qsatt[ip]
+                                end
+                            end
+                            q_exact1[ip_new,:] .= qexact[ip,:]
+                        end
+                    end
+                end
+            end
+        end
+        npoin += iter-1;
+        q = q_new
+        if (inputs[:lmoist])
+            mp.Tabs  = T_new
+            mp.qc    = qc_new
+            mp.qi    = qi_new
+            mp.qr    = qr_new
+            mp.qs    = qs_new
+            mp.qg    = qg_new
+            mp.qsatt = qsatt_new
+        end
+        qexact = q_exact1
+    end
     
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
@@ -1350,12 +1454,46 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
             idx = (ivar - 1)*npoin
             vtkf[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
         end
-
+        if (inputs[:lmoist])
+            if (inputs[:backend] == CPU())
+                vtkf[string("Temp"), VTKPointData()] =  @view(mp.Tabs[:])
+                vtkf[string("qi"), VTKPointData()] =  @view(mp.qi[:])
+                vtkf[string("qc"), VTKPointData()] =  @view(mp.qc[:])
+                vtkf[string("qr"), VTKPointData()] =  @view(mp.qr[:])
+                vtkf[string("qs"), VTKPointData()] =  @view(mp.qs[:])
+                vtkf[string("qg"), VTKPointData()] =  @view(mp.qg[:])
+                vtkf[string("qsatt"), VTKPointData()] =  @view(mp.qsatt[:])
+            else
+                Tabs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], Tabs, mp.Tabs)
+                qi = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qi, mp.qi)
+                qc = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qc, mp.qc)
+                qr = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qr, mp.qr)
+                qs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qs, mp.qs)
+                qg = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qg, mp.qg)
+                vtkf[string("T"), VTKPointData()] =  @view(Tabs[:])
+                vtkf[string("qi"), VTKPointData()] =  @view(qi[:])
+                vtkf[string("qc"), VTKPointData()] =  @view(qc[:])
+                vtkf[string("qr"), VTKPointData()] =  @view(qr[:])
+                vtkf[string("qs"), VTKPointData()] =  @view(qs[:])
+                vtkf[string("qg"), VTKPointData()] =  @view(qg[:])
+            end
+        end
         if (inputs[:case] == "bomex")
             vtkfile["theta", VTKPointData()] =  @view(θ[:])
         end
         vtkf
     end
+    if (inputs[:case] == "bomex")
+        vtkfile["theta", VTKPointData()] =  @view(θ[:])
+    end
+         
+    #outfiles = vtk_save(vtkfile)
     outfiles = map(vtk_save, vtkfile)
     mesh.npoin = npoin1
     mesh.x .= xx
@@ -1364,6 +1502,15 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, t, title::String, OUTPUT
     mesh.connijk .= conn
     mesh.poin_in_bdy_face .= poin_bdy
     qexact = copy(qe_temp)
+    if (inputs[:lmoist])
+        mp.Tabs  = copy(T_temp)
+        mp.qc    = copy(qc_temp)
+        mp.qi    = copy(qi_temp)
+        mp.qr    = copy(qr_temp)
+        mp.qs    = copy(qs_temp)
+        mp.qg    = copy(qg_temp)
+        mp.qsatt = copy(qsatt_temp)
+    end
 end
 
 
