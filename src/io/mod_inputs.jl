@@ -35,6 +35,54 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
+    if(!haskey(inputs, :nlay_pg))
+       inputs[:nlay_pg] = 10
+    end
+
+    if(!haskey(inputs, :nx_pg))
+       inputs[:nx_pg] = 10
+    end
+
+    if(!haskey(inputs, :ny_pg))
+       inputs[:ny_pg] = 10
+    end
+
+    if(!haskey(inputs, :ltwo_stream_radiation))
+       inputs[:ltwo_stream_radiation] = false
+    end
+
+    if(!haskey(inputs, :lphysics_grid))
+       inputs[:lphysics_grid] = false
+    end
+
+    if(!haskey(inputs, :sounding_file))
+       inputs[:sounding_file] = "empty"
+    end
+
+    if(!haskey(inputs, :topo_database))
+       inputs[:topo_database] = "empty"
+    end
+
+    if(!haskey(inputs, :read_topo_latmin))
+        inputs[:read_topo_latmin] = -89.99
+    end
+
+    if(!haskey(inputs, :read_topo_latmax))
+        inputs[:read_topo_latmax] = 89.99
+    end
+    
+    if(!haskey(inputs, :read_topo_lonmin))
+        inputs[:read_topo_lonmin] = -179.99
+    end
+
+    if(!haskey(inputs, :read_topo_lonmax))
+        inputs[:read_topo_lonmax] = 179.99
+    end
+
+    if(!haskey(inputs, :read_topo_zone))
+        inputs[:read_topo_zone] = 20
+    end
+
     if(!haskey(inputs, :llinsolve))
       inputs[:llinsolve] = false
     end
@@ -109,6 +157,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
 
     if(!haskey(inputs,:mu_y))
         inputs[:mu_y] = 0.0
+    end
+
+    if(!haskey(inputs,:mu_z))
+        inputs[:mu_z] = 0.0
     end
 
     if(!haskey(inputs,:lwarp))
@@ -201,7 +253,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :ndiagnostics_outputs))
         inputs[:ndiagnostics_outputs] = 0
     end
-    mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
+    if(!haskey(inputs, :Δt))
+        inputs[:Δt] = 0.1  #Initial time is 0.0 by default
+    end
+    
+    if(!haskey(inputs, :radiation_time_step))
+        inputs[:radiation_time_step] = inputs[:Δt]*100
+    end
+
+    #mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
     end
@@ -502,6 +562,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lmoist))
         inputs[:lmoist] = false
     end
+
+    if(!haskey(inputs, :lprecip))
+        inputs[:lprecip] = false
+    end
     
     if(!haskey(inputs, :energy_equation))
         inputs[:energy_equation] = "theta"
@@ -553,6 +617,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lsource))
         inputs[:lsource] = false
     end
+    if(!haskey(inputs, :luser_function))
+        inputs[:luser_function] = false
+    end
 
     if(!haskey(inputs, :ldss_differentiation))
         inputs[:ldss_differentiation] = false
@@ -573,10 +640,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # AMR
     if(!haskey(inputs, :ladapt))
         inputs[:ladapt] = false
-    end
-
-    if(!haskey(inputs, :amr))
-        inputs[:amr] = false
     end
 
     if(!haskey(inputs, :linitial_refine))
