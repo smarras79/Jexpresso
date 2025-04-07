@@ -222,7 +222,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
 
 #@mystop(" L 152 sem_setup")
             
-            #warp_mesh!(mesh,inputs)
+            warp_mesh!(mesh,inputs)
             
             if rank == 0
                 @info " Matrix wrapper ......"

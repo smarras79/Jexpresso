@@ -23,13 +23,16 @@ function driver(nparts,
         end
         @time conformity4ncf_q!(qp.qn, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
         @time conformity4ncf_q!(qp.qe, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+        
+        # outvarsref = ("rho_ref", "uρ_ref", "vρ_ref", "wρ_ref", "theta_ref", "p_ref")    
+        # write_vtk_ref(sem.mesh.SD, sem.mesh, qp.qn.-qp.qe, "initial_state", inputs[:output_dir]; nvar=length(qp.qn[1,:]), outvarsref=outvarsref)
         MPI.Barrier(comm)
         if rank == 0
             @info "end conformity4ncf_q!"
         end
     end
 
-    if inputs[:ladapt] == true
+    if (inputs[:ladapt] == true) && (inputs[:amr] == true)
         amr_freq = inputs[:amr_freq]
         Δt_amr   = amr_freq * inputs[:Δt]
         tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]

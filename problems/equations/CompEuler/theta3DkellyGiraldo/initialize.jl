@@ -53,7 +53,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             min_y = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
             xc = (max_x + min_x)/2
             yc = (max_y + min_y)/2
-            zc = 260.0 #m
+            zc = 390.0 #m
             r0 = 250.0 #m
         
             θref = 300.0 #K

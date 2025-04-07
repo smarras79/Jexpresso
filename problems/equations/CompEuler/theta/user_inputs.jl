@@ -6,15 +6,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         #:Δt                   => 0.02,
-        :Δt                   => 0.4,
+        :Δt                   => 0.04,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 0.04,
         # :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (1:100:1000),
+        :diagnostics_at_times => (0.04), #100:100:1000),
         :case                 => "rtb",
         :lsource              => true, 
         # :backend              => CUDABackend(),
@@ -34,10 +34,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_20el.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/plate_hole.msh", #for nop=4
-        # :gmsh_filename       => "./meshes/gmsh_grids/2x2.msh", #for nop=4
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_xperiodic.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
