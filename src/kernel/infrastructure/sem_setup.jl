@@ -18,6 +18,12 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     phys_grid = zeros(Float64,1,1)
     SOL_VARS_TYPE = inputs[:SOL_VARS_TYPE]
     
+    connijk_original = zeros(TInt,1,1,1,1)
+    poin_in_bdy_face_original = zeros(TInt,1,1,1)
+    x_original = zeros(1,1)
+    y_original = zeros(1,1)
+    z_original = zeros(1,1)
+
     #--------------------------------------------------------
     # Create/read mesh
     # return mesh::St_mesh
@@ -194,11 +200,22 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             if rank == 0
                 @info " Build periodicity infrastructure ......"
             end
+            connijk_original = zeros(TInt,mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
+            poin_in_bdy_face_original = zeros(TInt,size(mesh.poin_in_bdy_face,1),mesh.ngl,mesh.ngl)
+            connijk_original .= mesh.connijk
+            poin_in_bdy_face_original .= mesh.poin_in_bdy_face
+            x_original = zeros(mesh.npoin,1)
+            y_original = zeros(mesh.npoin,1)
+            z_original = zeros(mesh.npoin,1)
+            x_original .= mesh.x
+            y_original .= mesh.y
+            z_original .= mesh.z
             @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
                                            mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
                                            mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
                                            mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
+                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,
+                                         inputs,inputs[:backend])
             if rank == 0
                 @info " Build periodicity infrastructure ...... DONE"
             end
@@ -253,7 +270,9 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                                            mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
                                            mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
             end
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], 
+                                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                                    ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
         end
     end
 
@@ -262,9 +281,11 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     # Build matrices
     #--------------------------------------------------------
     if isnothing(adapt_flags)
-        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, interp, project, partitioned_model, nparts, distribute)
+        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
+                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, partitioned_model, nparts, distribute)
     else
-        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, interp, project, partitioned_model, nparts, distribute), n2o_ele_map
+        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
+                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, partitioned_model, nparts, distribute), n2o_ele_map
     end
     
 end
