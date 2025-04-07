@@ -3,3 +3,8 @@ docs/build/
 plotnodes.py
 Manifest.toml
 output/*
+LocalPreferences.toml
+meshes/
+*.pvtu
+*.vtu
+*.dat
