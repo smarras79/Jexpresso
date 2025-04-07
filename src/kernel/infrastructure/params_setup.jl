@@ -31,6 +31,17 @@ function params_setup(sem,
                              sem.mesh.ngl,
                              T, backend;
                              neqs=qp.neqs)
+
+    fijk   = allocate_fijk(sem.mesh.SD,
+                           sem.mesh.ngl,
+                           T, backend;
+                           neqs=qp.neqs)
+
+    ∇f     = allocate_∇f(sem.mesh.SD,
+                         sem.mesh.nelem,
+                         sem.mesh.ngl,
+                         T, backend;
+                         neqs=qp.neqs)
     
     gpuAux = allocate_gpuAux(sem.mesh.SD,
                              sem.mesh.nelem,
@@ -54,6 +65,8 @@ function params_setup(sem,
     G            = fluxes.G
     H            = fluxes.H
     S            = fluxes.S
+    fijk         = fijk.fijk
+    ∇f_el        = ∇f.∇f_el
     RHS          = rhs.RHS
     RHS_visc     = rhs.RHS_visc
     rhs_el       = rhs.rhs_el
@@ -61,7 +74,7 @@ function params_setup(sem,
     rhs_diffξ_el = rhs.rhs_diffξ_el
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
-
+        
     # row_partition = map(sem.mesh.parts) do part
     #     row_partition = LocalIndices(sem.mesh.gnpoin * qp.neqs,part,repeat(sem.mesh.ip2gip,qp.neqs),repeat(sem.mesh.gip2owner,qp.neqs))
     #     # gM = M
@@ -178,17 +191,16 @@ function params_setup(sem,
         S_lag            = fluxes_lag.S_lag
         uprimitive_lag   = fluxes_lag.uprimitive_lag
         
-        flux_lag_gpu   = gpuAux_lag.flux_lag_gpu
-        source_lag_gpu = gpuAux_lag.source_lag_gpu
-        qbdy_lag_gpu   = gpuAux_lag.qbdy_lag_gpu
+        flux_lag_gpu     = gpuAux_lag.flux_lag_gpu
+        source_lag_gpu   = gpuAux_lag.source_lag_gpu
+        qbdy_lag_gpu     = gpuAux_lag.qbdy_lag_gpu
         
-        fy_t_lag = transpose(sem.fy_lag)
-        q_t_lag  = filter_lag.q_t_lag
-        q_ti_lag = filter_lag.q_ti_lag
-        fqf_lag  = filter_lag.fqf_lag
-        b_lag    = filter_lag.b_lag
-        B_lag    = filter_lag.B_lag
-        
+        fy_t_lag         = transpose(sem.fy_lag)
+        q_t_lag          = filter_lag.q_t_lag
+        q_ti_lag         = filter_lag.q_ti_lag
+        fqf_lag          = filter_lag.fqf_lag
+        b_lag            = filter_lag.b_lag
+        B_lag            = filter_lag.B_lag
     end
     
     #------------------------------------------------------------------------------------
@@ -244,7 +256,8 @@ function params_setup(sem,
                   uprimitive,
                   flux_gpu, source_gpu, qbdy_gpu,
                   q_t, q_ti, q_tij, fqf, b, B,
-                  q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag, flux_lag_gpu, source_lag_gpu,
+                  q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag,
+                  flux_lag_gpu, source_lag_gpu,
                   qbdy_lag_gpu,
                   RHS, RHS_visc,
                   F_lag, G_lag, S_lag, 
@@ -270,6 +283,7 @@ function params_setup(sem,
               uaux, vaux,
               ubdy, gradu, bdy_flux,                   
               RHS, RHS_visc,
+              fijk, ∇f_el,
               rhs_el, rhs_diff_el,
               rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
               uprimitive,
@@ -292,7 +306,7 @@ function params_setup(sem,
               sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end
 
-    println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank)
+println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank)
 
     return params, u
     

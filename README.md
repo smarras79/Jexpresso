@@ -24,12 +24,12 @@ If you use Jexpresso please drop us a line to let us know. We'd like to add a li
 Please cite Jexpresso using:
 
 ```
-@article{tissaoui2024,
+@article{tissaoui2025,
   author = {Y. Tissaoui and J. F. Kelly and S. Marras}
   title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
   volume ={487},
   pages={129080},
-  year = {2024},
+  year = {2025},
   journal = {App. Math. Comput.},
 }
 ```
@@ -261,12 +261,12 @@ More are already implemented but currently only in individual branches. They wil
 This section contains instructions to run all of the test cases presented in
 
 ```
-@article{tissaoui2024,
+@article{tissaoui2025,
   author = {Y. Tissaoui and J. F. Kelly and S. Marras}
   title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
   volume ={487},
   pages={129080},
-  year = {2024},
+  year = {2025},
   journal = {App. Math. Comput.},
 }
 ```
