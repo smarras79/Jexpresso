@@ -65,6 +65,7 @@ using RRTMGP.ArtifactPaths
 using UnicodePlots
 using Printf
 using NCDatasets
+using MPI
 
 TInt   = Int64
 TFloat = Float64
