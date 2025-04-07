@@ -350,6 +350,85 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
+
+## Setup and Run with MPI
+
+JEXPRESSO supports parallel execution using either OpenMPI or MPICH. Follow these steps to configure and run with your preferred MPI implementation.
+
+### 1. Install MPI Implementation
+
+Choose either OpenMPI or MPICH:
+
+#### OpenMPI Installation
+```bash
+# Ubuntu/Debian
+sudo apt install libopenmpi-dev openmpi-bin
+
+# macOS (Homebrew)
+brew install open-mpi
+
+# Verify installation
+mpiexec --version
+```
+
+#### MPICH Installation
+```bash
+# Ubuntu/Debian
+sudo apt install mpich libmpich-dev
+
+# macOS (Homebrew) 
+brew install mpich
+
+# Verify installation
+mpiexec --version
+```
+
+### 2. Configure MPI Preferences
+
+#### Automatic Configuration (Recommended)
+```bash
+julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary()'
+```
+
+#### Manual Configuration (For Multiple MPI Installations or MPI not in Default Path)
+```bash
+julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary(;extra_paths = ["/where/your/mpi/lib"])'
+```
+
+### 3. Running with MPI
+
+#### Basic Execution
+```bash
+mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<CASE_NAME>"); include("./src/Jexpresso.jl")'
+```
+
+#### Implementation-Specific Examples
+```bash
+mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
+```
+
+
+### Troubleshooting
+
+- **Library conflicts:** Clear existing preferences:
+  ```bash
+  rm -f LocalPreferences.toml
+  ```
+- **Path issues:** Verify paths with:
+  ```bash
+  which mpiexec
+  which mpirun
+  ```
+- **Version mismatches:** Ensure consistent versions:
+  ```bash
+  mpicc --version
+  mpif90 --version
+  ```
+
+
+
+<!-- <img src="assets/mpi_performance_comparison.png" width="700" alt="MPI Performance Comparison"> -->
+
 ## Plotting
 Files can be written to VTK (recommended) or png. For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
 modify ./src/io/plotting/jplots.jl accordinly.
