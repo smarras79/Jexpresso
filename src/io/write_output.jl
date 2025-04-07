@@ -155,12 +155,16 @@ end
 #
 # VTK 2D/3D
 #
-function write_output(SD, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, sol::ODESolution, mesh::St_mesh, mp, 
+        connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+        OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
  
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, sol.u[iout][:], mp, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
+            write_vtk(SD, mesh, sol.u[iout][:], mp, 
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
         else
             u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
             KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
@@ -168,7 +172,9 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::Strin
             KernelAbstractions.copyto!(CPU(),u_exact,qexact)
             convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, u, mp, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+            write_vtk(SD, mesh, u, mp, 
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
         end
     end
     println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
@@ -198,13 +204,17 @@ function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_D
     
 end
 
-function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp, 
+        connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+        OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
-        write_vtk(SD, mesh, u_sol, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
+        write_vtk(SD, mesh, u_sol, mp, 
+                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                  t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
     else
         #VERIFY THIS on GPU
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
@@ -212,7 +222,9 @@ function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String,
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-        write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+        write_vtk(SD, mesh, u, mp, 
+                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                  t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
@@ -815,7 +827,10 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
     end
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, 
+        connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+        t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+
     outvars = varnames
     nvars = length(outvars)
     npoin = mesh.npoin
@@ -834,14 +849,17 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
     poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_face
     qe_temp = similar(qexact)
+    q_temp = copy(q)
     if (inputs[:lmoist])
-        T_temp     = copy(mp.Tabs)
-        qc_temp    = copy(mp.qc)
-        qi_temp    = copy(mp.qi)
-        qr_temp    = copy(mp.qr)
-        qs_temp    = copy(mp.qs)
-        qg_temp    = copy(mp.qg)
-        qsatt_temp = copy(mp.qsatt)
+        T_temp       = copy(mp.Tabs)
+        qc_temp      = copy(mp.qc)
+        qi_temp      = copy(mp.qi)
+        qr_temp      = copy(mp.qr)
+        qs_temp      = copy(mp.qs)
+        qg_temp      = copy(mp.qg)
+        qsatt_temp   = copy(mp.qsatt)
+        flux_lw_temp = copy(mp.flux_lw)
+        flux_sw_temp = copy(mp.flux_sw)
     end
     #=new_size = npoin
     iter = 1=#
@@ -849,15 +867,18 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         new_size = size(mesh.x,1)
         diff = new_size-npoin
         q_new = zeros(new_size*nvar)
+        q_exact1 = zeros(new_size,nvar+1)
         if (inputs[:lmoist])
-            T_new     = zeros(new_size)
-            qc_new    = zeros(new_size)
-            qi_new    = zeros(new_size)
-            qr_new    = zeros(new_size)
-            qs_new    = zeros(new_size)
-            qg_new    = zeros(new_size)
-            qsatt_new = zeros(new_size)
-            
+            T_new        = zeros(new_size)
+            qc_new       = zeros(new_size)
+            qi_new       = zeros(new_size)
+            qr_new       = zeros(new_size)
+            qs_new       = zeros(new_size)
+            qg_new       = zeros(new_size)
+            qsatt_new    = zeros(new_size)
+            flux_lw_new  = zeros(new_size) 
+            flux_sw_new  = zeros(new_size) 
+            #= 
             T_new[1:npoin]     .= mp.Tabs
             qc_new[1:npoin]    .= mp.qc
             qi_new[1:npoin]    .= mp.qi
@@ -865,16 +886,81 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
             qs_new[1:npoin]    .= mp.qs
             qg_new[1:npoin]    .= mp.qg
             qsatt_new[1:npoin] .= mp.qsatt
+            if (inputs[:ltwo_stream_radiation])
+                flux_lw_new        .= mp.flux_lw
+                flux_sw_new        .= mp.flux_sw
+            end=#
         end
 
-        for ieq = 1:nvars
+        #=for ieq = 1:nvars
             ivar = new_size*(ieq-1)
             ivar1 = npoin*(ieq-1)
             q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
+        end=#
+        for e = 1:mesh.nelem
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    for k=1:mesh.ngl
+                        ip = mesh.connijk[e,i,j,k]
+                        ip1 = connijk_original[e,i,j,k]
+                        if (ip == ip1)
+                            for ieq = 1:nvars
+                                ivar = new_size*(ieq-1)
+                                ivar1 = npoin*(ieq-1)
+                                q_new[ivar+ip] = q[ivar1+ip]
+                            end
+                            T_new[ip] = mp.Tabs[ip]
+                            qc_new[ip]    = mp.qc[ip]
+                            qi_new[ip]    = mp.qi[ip]
+                            qr_new[ip]    = mp.qr[ip]
+                            qs_new[ip]    = mp.qs[ip]
+                            qg_new[ip]    = mp.qg[ip]
+                            qsatt_new[ip] = mp.qsatt[ip]
+                            mesh.x[ip1] = x_original[ip]
+                            mesh.y[ip1] = y_original[ip]
+                            mesh.z[ip1] = z_original[ip]
+                            q_exact1[ip] = qexact[ip]
+                        else
+                            for ieq = 1:nvars
+                                ivar = new_size*(ieq-1)
+                                ivar1 = npoin*(ieq-1)
+                                q_new[ivar+ip1] = q[ivar1+ip]
+                            end 
+                            T_new[ip1] = mp.Tabs[ip]
+                            qc_new[ip1]    = mp.qc[ip]
+                            qi_new[ip1]    = mp.qi[ip]
+                            qr_new[ip1]    = mp.qr[ip]
+                            qs_new[ip1]    = mp.qs[ip]
+                            qg_new[ip1]    = mp.qg[ip]
+                            qsatt_new[ip1] = mp.qsatt[ip]
+                            mesh.x[ip1] = x_original[ip1]
+                            mesh.y[ip1] = y_original[ip1]
+                            mesh.z[ip1] = z_original[ip1]
+                            q_exact1[ip1] = qexact[ip]
+                        end
+                    end
+                end
+            end
         end
         q = q_new
+        qexact = q_exact1
+        if (inputs[:lmoist])
+            mp.Tabs  = T_new
+            mp.qc    = qc_new
+            mp.qi    = qi_new
+            mp.qr    = qr_new
+            mp.qs    = qs_new
+            mp.qg    = qg_new
+            mp.qsatt = qsatt_new
+            if (inputs[:ltwo_stream_radiation])
+                mp.flux_lw = flux_lw_new
+                mp.flux_sw = flux_sw_new
+            end
+        end
+        mesh.connijk .= connijk_original
+        npoin = new_size
     end
-    if ("periodic1" in mesh.bdy_face_type)
+    #=if ("periodic1" in mesh.bdy_face_type)
         xmax = mesh.xmax
         nfaces = size(mesh.bdy_face_type,1)
         new_size = size(mesh.x,1)
@@ -890,7 +976,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         
         iter = 1
         for iface = 1:nfaces
-
+            @info iface,nfaces,"periodic1"
             if (mesh.bdy_face_type[iface] == "periodic1")
                 e = mesh.bdy_face_in_elem[iface]
                 for k=1:mesh.ngl
@@ -979,13 +1065,17 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
                                 ivar = new_size*(ieq-1)
                                 q_new[ivar+ip_new] = q[ivar+ip]
                                 if (inputs[:lmoist])
-                                    T_new[ip_new]     = mp.Tabs[ip]
-                                    qc_new[ip_new]    = mp.qc[ip]
-                                    qi_new[ip_new]    = mp.qi[ip]
-                                    qr_new[ip_new]    = mp.qr[ip]
-                                    qs_new[ip_new]    = mp.qs[ip]
-                                    qg_new[ip_new]    = mp.qg[ip]
-                                    qsatt_new[ip_new] = mp.qsatt[ip]
+                                    T_new[ip_new]       = mp.Tabs[ip]
+                                    qc_new[ip_new]      = mp.qc[ip]
+                                    qi_new[ip_new]      = mp.qi[ip]
+                                    qr_new[ip_new]      = mp.qr[ip]
+                                    qs_new[ip_new]      = mp.qs[ip]
+                                    qg_new[ip_new]      = mp.qg[ip]
+                                    qsatt_new[ip_new]   = mp.qsatt[ip]
+                                    if (inputs[:ltwo_stream_radiation])
+                                        flux_lw_new[ip_new] = mp.flux_lw[ip]
+                                        flux_sw_new[ip_new] = mp.flux_sw[ip]
+                                    end
                                 end
                             end
                             q_exact1[ip_new,:] .= qexact[ip,:]
@@ -997,13 +1087,17 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         npoin += iter-1;
         q = q_new
         if (inputs[:lmoist])
-            mp.Tabs  = T_new
-            mp.qc    = qc_new
-            mp.qi    = qi_new
-            mp.qr    = qr_new
-            mp.qs    = qs_new
-            mp.qg    = qg_new
-            mp.qsatt = qsatt_new
+            mp.Tabs    = T_new
+            mp.qc      = qc_new
+            mp.qi      = qi_new
+            mp.qr      = qr_new
+            mp.qs      = qs_new
+            mp.qg      = qg_new
+            mp.qsatt   = qsatt_new
+            if (inputs[:ltwo_stream_radiation]) 
+                mp.flux_lw = flux_lw_new
+                mp.flux_sw = flux_sw_new
+            end
         end
         qexact = q_exact1
     end
@@ -1189,7 +1283,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         end
         iter = 1
         for iface = 1:nfaces
-
+            @info iface, nfaces,"periodic3"
             if (mesh.bdy_face_type[iface] == "periodic3")
                 e = mesh.bdy_face_in_elem[iface]
                 for k=1:mesh.ngl
@@ -1307,7 +1401,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         end
         qexact = q_exact1
     end
-    
+    =#
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
     
@@ -1468,6 +1562,10 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
                 vtkf[string("qs"), VTKPointData()] =  @view(mp.qs[:])
                 vtkf[string("qg"), VTKPointData()] =  @view(mp.qg[:])
                 vtkf[string("qsatt"), VTKPointData()] =  @view(mp.qsatt[:])
+                if (inputs[:ltwo_stream_radiation])
+                    vtkf[string("flux_lw"), VTKPointData()] =  @view(mp.flux_lw[:])
+                    vtkf[string("flux_sw"), VTKPointData()] =  @view(mp.flux_sw[:])
+                end
             else
                 Tabs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
                 KernelAbstractions.copyto!(inputs[:backend], Tabs, mp.Tabs)
@@ -1506,6 +1604,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, t, title::String, OU
     mesh.z .= zz
     mesh.connijk .= conn
     mesh.poin_in_bdy_face .= poin_bdy
+    q = copy(q_temp)
     qexact = copy(qe_temp)
     if (inputs[:lmoist])
         mp.Tabs  = copy(T_temp)

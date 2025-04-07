@@ -92,6 +92,10 @@ include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 
 include(joinpath( "kernel", "physics", "constitutiveLaw.jl"))
 
+include(joinpath( "kernel", "physics", "large_scale.jl"))
+
+include(joinpath( "kernel", "physics", "largescaleStructs.jl"))
+
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
@@ -111,6 +115,8 @@ include(joinpath( "kernel", "infrastructure", "sem_setup.jl"))
 include(joinpath( "kernel", "infrastructure", "Kopriva_functions.jl"))
 
 include(joinpath( "kernel", "infrastructure", "convert_to_gpu.jl"))
+
+include(joinpath( "kernel", "boundaryconditions", "surface_integral.jl"))
 
 include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 

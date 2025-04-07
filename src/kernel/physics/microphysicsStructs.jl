@@ -22,7 +22,7 @@ end
 function allocate_Microphysics(nelem, npoin, ngl, T, backend; lmoist=false)
 
     if lmoist
-        dims1 = (Int64(npoin))
+        dims1 = (Int64(npoin),1)
     else
         dims1 = (Int64(1))        
     end
@@ -49,6 +49,10 @@ Base.@kwdef mutable struct St_SamMicrophysics{T <:AbstractFloat, dims1, dims2, d
     dhldt   = KernelAbstractions.zeros(backend,  T, dims2, dims3, dims3, dims3) #Storage for preciptation source contributions to hl
     dqtdt   = KernelAbstractions.zeros(backend,  T, dims2, dims3, dims3, dims3) #Storage preciptation source contributions to qt
     dqpdt   = KernelAbstractions.zeros(backend,  T, dims2, dims3, dims3, dims3) #Storage preciptation source contributions to qp
+    drad_sw   = KernelAbstractions.zeros(backend,  T, dims2, dims3, dims3, dims3) #Storage longwave flux contributions
+    drad_lw   = KernelAbstractions.zeros(backend,  T, dims2, dims3, dims3, dims3) #Storage shortwave flux contribution
+    flux_lw = KernelAbstractions.zeros(backend,  T, dims1) # storage for longwave flux
+    flux_sw = KernelAbstractions.zeros(backend,  T, dims1) # storage for shortwave flux
 end
 
 function allocate_SamMicrophysics(nelem, npoin, ngl, T, backend; lmoist=false)

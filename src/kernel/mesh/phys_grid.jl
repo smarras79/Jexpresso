@@ -43,42 +43,52 @@ end
 
 function init_phys_grid(mesh,inputs,nlay,nx,ny,xmin,xmax,ymin,ymax,zmin,zmax,backend)
     
-    ncol = nx*ny
-    dims1 = (Int64(nx))
-    dims2 = (Int64(ny))
+    ncol = (nx+1)*(ny+1)
+    dims1 = (Int64(nx+1))
+    dims2 = (Int64(ny+1))
     dims3 = (Int64(ncol))
-    dims4 = (Int64(nlay+1),Int64(ncol))
-    dims5 = (Int64(nlay), Int64(ncol))
-    dims6 = (Int64(nlay+1),Int64(ncol), 8)
-    dims7 = (Int64(nlay+1), Int64(ncol), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl))
+    dims4 = (Int64(nlay+2),Int64(ncol))
+    dims5 = (Int64(nlay+1), Int64(ncol))
+    dims6 = (Int64(nlay+2),Int64(ncol), 8)
+    dims7 = (Int64(nlay+2), Int64(ncol), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl))
     Rad_grid = phys_grid{TFloat, dims1, dims2, dims3, dims4, dims5, dims6, dims7, backend}()
     dx = (xmax - xmin)/nx
     dy = (ymax - ymin)/ny
     dz = (zmax - zmin)/(nlay+1)
-    ξωx  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], nx-1, inputs[:backend])
+    #ξωx  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], nx-1, inputs[:backend])
+    ξωx  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.ngl-1, inputs[:backend])
     ξx = ξωx.ξ
-    ξωy  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], ny-1, inputs[:backend])
+    #ξωy  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], ny-1, inputs[:backend])
+    ξωy  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.ngl-1, inputs[:backend])
     ξy = ξωy.ξ
-    ξωz  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], nlay, inputs[:backend])
+    #ξωz  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], nlay, inputs[:backend])
+    ξωz  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.ngl-1, inputs[:backend])
     ξz = ξωz.ξ
-    scalex = (xmax - xmin)/2
-    scaley = (ymax - ymin)/2
-    scalez = (zmax - zmin)/2
+    scalex = (xmax - xmin)/20
+    scaley = (ymax - ymin)
+    scalez = (zmax - zmin)/20
     if (backend == CPU())
-        for ix=1:nx
-            Rad_grid.x[ix] = scalex*ξx[ix]#xmin + (ix-1)*dx
-            for iy=1:ny
-                Rad_grid.y[iy] = scaley*ξy[iy]#ymin + (iy-1)*dy
-                icol = ix + nx*(iy-1)
-                Rad_grid.x_col[icol] = scalex*ξx[ix]#xmin + (ix-1)*dx
-                Rad_grid.y_col[icol] = scaley*ξy[iy]#ymin + (iy-1)*dy
+        for ix=0:nx
+            stepx = ix ÷ (mesh.ngl-1)
+            iterx = ix % (mesh.ngl-1)
+            Rad_grid.x[ix+1] = xmin + scalex*stepx + scalex*(ξx[iterx+1]+1)/2 #scalex*ξx[ix]#xmin + (ix-1)*dx
+            for iy=0:ny
+                stepy = iy ÷ (mesh.ngl-1)
+                itery = iy % (mesh.ngl-1)
+                Rad_grid.y[iy+1] = ymin + scaley*stepy + scaley*(ξx[itery+1]+1)/2#scaley*ξy[iy]#ymin + (iy-1)*dy
+                icol = (ix+1) + nx*(iy+1-1)
+                Rad_grid.x_col[icol] = xmin + scalex*stepx + scalex*(ξx[iterx+1]+1)/2#scalex*ξx[ix]#xmin + (ix-1)*dx
+                Rad_grid.y_col[icol] = ymin + scaley*stepy + scaley*(ξx[itery+1]+1)/2#scaley*ξy[iy]#ymin + (iy-1)*dy
             end
         end
         for icol = 1:ncol
-            for ilev = 1:nlay+1
-                Rad_grid.z[ilev,icol] = scalez*(ξz[ilev]+1)#zmin + (ilev-1)*dz
+            for ilev = 0:nlay+1
+                stepz = ilev ÷ (mesh.ngl-1)
+                iterz = ilev % (mesh.ngl-1)
+                Rad_grid.z[ilev+1,icol] = zmin + scalez*stepz + scalez*(ξz[iterz+1]+1)/2#zmin + (ilev-1)*dz#scalez*(ξz[ilev]+1)#zmin + (ilev-1)*dz
             end
         end
+        @info maximum(Rad_grid.x), minimum(Rad_grid.x)
         if (inputs[:lwarp])
             warp_phys_grid!(Rad_grid.x_col,Rad_grid.y_col,Rad_grid.z,ncol,nlay)
         end
@@ -280,18 +290,13 @@ function interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,nlay,ncol,P,T,qc,qi,ρ
             phys_grid.p[ilay,icol] = B[2]
             phys_grid.ρ[ilay,icol] = B[1]
             phys_grid.t[ilay,icol] = B[3]
-            phys_grid.qc[ilay,icol] = B[4] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air 
-            phys_grid.qi[ilay,icol] = B[5] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
-            phys_grid.qv[ilay,icol] = B[6] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
+            phys_grid.qc[ilay,icol] = B[4] #* PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air 
+            phys_grid.qi[ilay,icol] = B[5] #* PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
+            phys_grid.qv[ilay,icol] = B[6] #* PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
+            phys_grid.vmr[ilay,icol] = B[6] * PhysConst.Mol_mass_water/ PhysConst.Mol_mass_air
         end
     end
     
-    @info maximum(A[:,2]), minimum(A[:,2]), maximum(phys_grid.p), minimum(phys_grid.p)
-    @info maximum(A[:,1]), minimum(A[:,1]), maximum(phys_grid.ρ), minimum(phys_grid.ρ)
-    @info maximum(A[:,3]), minimum(A[:,3]), maximum(phys_grid.t), minimum(phys_grid.t)
-    @info maximum(A[:,4]), minimum(A[:,4]), maximum(phys_grid.qc), minimum(phys_grid.qc)
-    @info maximum(A[:,5]), minimum(A[:,5]), maximum(phys_grid.qi), minimum(phys_grid.qi)
-    @info maximum(A[:,6]), minimum(A[:,6]), maximum(phys_grid.qv), minimum(phys_grid.qv)
 end
 
 @kernel function interpolate_to_phys_grid_gpu!(x,y,z,connijk,x_c,y_c,z_c,uaux,qe,nlay,ncol,P,Tabs,qc,qi,ρ, P_c,ρ_c,t_c,qc_c,qi_c,qv_c, nvar)
@@ -337,11 +342,13 @@ function populate_layer_data_from_level_data!(phys_grid,nlay,ncol)
                 phys_grid.qc_lay[ilay,icol] = (phys_grid.qc[ilay+1,icol] + phys_grid.qc[ilay,icol])/2
                 phys_grid.qi_lay[ilay,icol] = (phys_grid.qi[ilay+1,icol] + phys_grid.qi[ilay,icol])/2
                 phys_grid.qv_lay[ilay,icol] = (phys_grid.qv[ilay+1,icol] + phys_grid.qv[ilay,icol])/2
+                phys_grid.vmr_lay[ilay,icol] = (phys_grid.vmr[ilay+1,icol] + phys_grid.vmr[ilay,icol])/2
             else
                 phys_grid.t_lay[ilay,icol] = phys_grid.t[ilay+1,icol]
                 phys_grid.qc_lay[ilay,icol] = phys_grid.qc[ilay+1,icol]
                 phys_grid.qi_lay[ilay,icol] = phys_grid.qi[ilay+1,icol]
                 phys_grid.qv_lay[ilay,icol] = phys_grid.qv[ilay+1,icol]
+                phys_grid.vmr_lay[ilay,icol] = phys_grid.vmr[ilay+1,icol]
             end
         end
     end
@@ -406,8 +413,32 @@ function interpolate_from_phys_grid_cpu!(x,y,z,connijk,phys_grid,flux,flux_inter
         for j=1:nlay+1
             F2[:,:,j] .= InterpolateToNewPoints(Ty,F1[:,:,j])
         end
-        Tz = PolynomialInterpolationMatrix(phys_grid.z[:,t_col],phys_grid.ω_z[:,t_col],zz)
-        flux_interp[:,ip] .= InterpolateToNewPoints(Tz,F2[:])
+        #Tz = PolynomialInterpolationMatrix(phys_grid.z[:,t_col],phys_grid.ω_z[:,t_col],zz)
+        #flux_interp[ip,:] .= InterpolateToNewPoints(Tz,F2[:])
+        ilev1 = 1
+        ilev2 = phys_grid.nlev
+        dz1 = abs(phys_grid.z[ilev1,t_col]-zz)
+        dz2 = abs(phys_grid.z[ilev2,t_col]-zz)
+        for ilev=2:phys_grid.nlev-1
+            dz = abs(phys_grid.z[ilev,t_col]-zz)
+            if (dz < dz1 && phys_grid.z[ilev,t_col] < zz)
+                ilev1 = ilev
+                dz1 = dz
+            elseif (dz < dz2 && phys_grid.z[ilev,t_col] >= zz)
+                ilev2 = ilev
+                dz2 = dz
+            end
+        end
+        d = abs(phys_grid.z[ilev1,t_col] - phys_grid.z[ilev2,t_col])
+        ω1 = (d-dz1)/d
+        ω2 = (d-dz2)/d
+        if (zz == phys_grid.z[ilev1,t_col])
+            flux_interp[ip,1] = F2[ilev1]
+        elseif (zz == phys_grid.z[ilev2,t_col])
+            flux_interp[ip,1] = F2[ilev2]
+        else
+            flux_interp[ip,1] = ω1*F2[ilev1]+ω2*F2[ilev2]
+        end
     end
 
 end
@@ -478,8 +509,8 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         DA = ClimaComms.array_type(device)
         FTA1D = DA{Float64, 1}
         FTA2D = DA{Float64, 2}
-        compute_col_gas!(device, phys_grid.p, col_dry, param_set, phys_grid.qv_lay, lat)
-        compute_relative_humidity!(device, rel_hum, phys_grid.p_lay, phys_grid.t_lay, param_set, phys_grid.qv_lay)
+        compute_col_gas!(device, phys_grid.p, col_dry, param_set, phys_grid.vmr_lay, lat)
+        compute_relative_humidity!(device, rel_hum, phys_grid.p_lay, phys_grid.t_lay, param_set, phys_grid.vmr_lay)
         layerdata = zeros(4, phys_grid.nlev-1, phys_grid.ncol)
         layerdata[1, :, :] .= col_dry
         layerdata[2, :, :] .= phys_grid.p_lay
@@ -488,7 +519,9 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         t_sfc .= phys_grid.t[1,:]
         lw_file = get_lookup_filename(:gas, :lw) # lw lookup tables for gas optics
         sw_file = get_lookup_filename(:gas, :sw) # sw lookup tables for gas optics
-        input_file = get_input_filename(:gas, :lw) # clear-sky atmos state
+        lw_cld_file = get_lookup_filename(:cloud, :lw) # lw cloud lookup tables
+        sw_cld_file = get_lookup_filename(:cloud, :sw)    # lw cloud lookup tables
+        input_file = get_input_filename(:gas_clouds, :lw) # all-sky atmos state
       
         bot_at_1 = phys_grid.p[1, 1] > phys_grid.p[end, 1]
 
@@ -504,103 +537,171 @@ function compute_radiative_fluxes!(lnew_mesh, mesh, uaux, qe, mp, phys_grid, bac
         ds_sw = Dataset(sw_file, "r")
         lookup_sw, idx_gases = LookUpSW(ds_sw, Float64, DA)
         close(ds_sw)
-
+        
+        # reading longwave cloud lookup data
+        ds_lw_cld = Dataset(lw_cld_file, "r")
+        lookup_lw_cld = LookUpCld(ds_lw_cld, Float64, DA)
+        close(ds_lw_cld)
+        # reading longwave cloud lookup data
+        ds_sw_cld = Dataset(sw_cld_file, "r")
+        lookup_sw_cld = LookUpCld(ds_sw_cld, Float64, DA)
+        close(ds_sw_cld)
         #set up atmospheric state
-        ds_lw_in = Dataset(input_file, "r")
+        ds_in = Dataset(input_file, "r")
         ngas = LookUpTables.get_n_gases(lookup_lw)
         nbnd_lw = LookUpTables.get_n_bnd(lookup_lw) 
+        nbnd_sw = LookUpTables.get_n_bnd(lookup_sw)
         expt_no = 1
         ncol_ds = ncol_ds_clear_sky()
         nrepeat = cld(phys_grid.ncol, ncol_ds)
 
-        vmr_o3 = (Array(ds_lw_in["ozone"])[lay_ind, :, expt_no])       # vary with height
-        vmr_o3 = FTA2D(repeat(vmr_o3, 1, nrepeat)[:, 1:phys_grid.ncol])
+        
+        vmrat = zeros(Float64, ngas, phys_grid.nlev-1, phys_grid.ncol)
 
-        vmrat = zeros(Float64, ngas)
+        vmrat[idx_gases["o3"], :, 1] .= Float64(1650e-9)
+        vmrat[idx_gases["co2"], :, 1] .= Float64(348e-6)
+        vmrat[idx_gases["ch4"], :, 1] .= Float64(1650e-9)
+        vmrat[idx_gases["n2o"], :, 1] .= Float64(306e-9)
+        vmrat[idx_gases["n2"], :, 1] .= Float64(0.7808)
+        vmrat[idx_gases["o2"], :, 1] .= Float64(0.2095)
+        vmrat[idx_gases["co"], :, 1] .= Float64(0)
 
-        vmrat[idx_gases["co2"]] =
-            Float64(ds_lw_in["carbon_dioxide_GM"][expt_no]) * parse(Float64, ds_lw_in["carbon_dioxide_GM"].attrib["units"])
+        for icol in 2:phys_grid.ncol
+            vmrat[:, :, icol] .= vmrat[:, :, 1]
+        end
+        for ilay = 1:phys_grid.nlev-1
+            for icol = 1:phys_grid.ncol
+                vmrat[idx_gases["h2o"],:,:] .= phys_grid.vmr_lay
+            end
+        end
+        vmr = Vmr(DA(vmrat))
 
-        vmrat[idx_gases["n2o"]] =
-            Float64(ds_lw_in["nitrous_oxide_GM"][expt_no]) * parse(Float64, ds_lw_in["nitrous_oxide_GM"].attrib["units"])
 
-        vmrat[idx_gases["co"]] =
-            Float64(ds_lw_in["carbon_monoxide_GM"][expt_no]) * parse(Float64, ds_lw_in["carbon_monoxide_GM"].attrib["units"])
-
-        vmrat[idx_gases["ch4"]] = Float64(ds_lw_in["methane_GM"][expt_no]) * parse(Float64, ds_lw_in["methane_GM"].attrib["units"])
-
-        vmrat[idx_gases["o2"]] = Float64(ds_lw_in["oxygen_GM"][expt_no]) * parse(Float64, ds_lw_in["oxygen_GM"].attrib["units"])
-
-        vmrat[idx_gases["n2"]] = Float64(ds_lw_in["nitrogen_GM"][expt_no]) * parse(Float64, ds_lw_in["nitrogen_GM"].attrib["units"])
-
-        vmrat[idx_gases["ccl4"]] = Float64(ds_lw_in["carbon_tetrachloride_GM"][expt_no]) * parse(Float64, ds_lw_in["carbon_tetrachloride_GM"].attrib["units"])
-
-        vmrat[idx_gases["cfc11"]] = Float64(ds_lw_in["cfc11_GM"][expt_no]) * parse(Float64, ds_lw_in["cfc11_GM"].attrib["units"])
-
-        vmrat[idx_gases["cfc12"]] = Float64(ds_lw_in["cfc12_GM"][expt_no]) * parse(Float64, ds_lw_in["cfc12_GM"].attrib["units"])
-
-        vmrat[idx_gases["cfc22"]] = Float64(ds_lw_in["hcfc22_GM"][expt_no]) * parse(Float64, ds_lw_in["hcfc22_GM"].attrib["units"])
-
-        vmrat[idx_gases["hfc143a"]] = Float64(ds_lw_in["hfc143a_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc143a_GM"].attrib["units"])
-
-        vmrat[idx_gases["hfc125"]] = Float64(ds_lw_in["hfc125_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc125_GM"].attrib["units"])
-
-        vmrat[idx_gases["hfc23"]] = Float64(ds_lw_in["hfc23_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc23_GM"].attrib["units"])
-
-        vmrat[idx_gases["hfc32"]] = Float64(ds_lw_in["hfc32_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc32_GM"].attrib["units"])
-
-        vmrat[idx_gases["hfc134a"]] = Float64(ds_lw_in["hfc134a_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc134a_GM"].attrib["units"])
-
-        vmrat[idx_gases["cf4"]] = Float64(ds_lw_in["cf4_GM"][expt_no]) * parse(Float64, ds_lw_in["hfc23_GM"].attrib["units"])
-    
-        vmr = VmrGM(phys_grid.qv_lay, vmr_o3, FTA1D(vmrat))
-        SLVLW = NoScatLWRTE
-        #SLVLW = TwoStreamLWRTE
+        SLVLW = TwoStreamLWRTE
         SLVSW = TwoStreamSWRTE
 
         deg2rad = Float64(π) / Float64(180)
+        sfc_emis = DA{Float64, 2}(undef, nbnd_lw, phys_grid.ncol)
+        sfc_alb_direct = DA{Float64, 2}(undef, nbnd_sw, phys_grid.ncol)
+        sfc_alb_diffuse = DA{Float64, 2}(undef, nbnd_sw, phys_grid.ncol)
+        cos_zenith = DA{Float64, 1}(undef, phys_grid.ncol)
+        irrad = DA{Float64, 1}(undef, phys_grid.ncol)
         # all bands use same emissivity
-        sfc_emis = repeat(reshape(Array{Float64}(Array(ds_lw_in["surface_emissivity"])), 1, :), nbnd_lw, 1)
-        sfc_emis = FTA2D(repeat(sfc_emis, 1, nrepeat)[:, 1:phys_grid.ncol])
         # all bands use same albedo
-        sfc_alb = repeat(reshape(Array{Float64}(Array(ds_lw_in["surface_albedo"])), 1, :), nbnd_lw, 1)
-        sfc_alb = FTA2D(repeat(sfc_alb, 1, nrepeat)[:, 1:phys_grid.ncol])
         #--------------------------------------------------------------
-        zenith = Array{Float64, 1}(deg2rad .* Array(ds_lw_in["solar_zenith_angle"]))
-        irrad = Array{Float64, 1}(Array(ds_lw_in["total_solar_irradiance"]))
+        sfc_emis .= Float64(0.98)
+        sfc_alb_direct .= Float64(0.06)
+        sfc_alb_diffuse .= Float64(0.06)
+        cos_zenith .= Float64(0.86)
+        irrad .= Float64(lookup_sw.solar_src_tot)
 
-        cos_zenith = FTA1D(repeat(cos.(zenith), nrepeat)[1:phys_grid.ncol])
-        irrad = FTA1D(repeat(irrad, nrepeat)[1:phys_grid.ncol])
+        cld_frac = zeros(Float64, phys_grid.nlev-1, phys_grid.ncol)
+        cld_mask_lw = zeros(Bool, phys_grid.nlev-1, phys_grid.ncol)
+        cld_mask_sw = zeros(Bool, phys_grid.nlev-1, phys_grid.ncol)
+        cld_r_eff_liq = zeros(Float64, phys_grid.nlev-1, phys_grid.ncol)
+        cld_r_eff_ice = zeros(Float64, phys_grid.nlev-1, phys_grid.ncol)
+        cld_path_liq = zeros(Float64, phys_grid.nlev-1, phys_grid.ncol)
+        cld_path_ice = zeros(Float64, phys_grid.nlev-1, phys_grid.ncol)
 
+        radliq_lwr, radliq_upr, radice_lwr, radice_upr = Array(lookup_lw_cld.bounds)
+        r_eff_liq = (radliq_lwr + radliq_upr) / Float64(2)
+        r_eff_ice = (radice_lwr + radice_upr) / Float64(2)
+        
+        for icol in 1:phys_grid.ncol, ilay in 1:phys_grid.nlev-1
+            if (phys_grid.qc_lay[ilay,icol] + phys_grid.qi_lay[ilay,icol] > 1e-15)
+                cld_frac[ilay,icol] = Float64(1)
+            else
+                cld_frac[ilay,icol] = min(1,phys_grid.qc_lay[ilay,icol] + phys_grid.qi_lay[ilay,icol]/1e-15)
+            end
+            n = phys_grid.nlev-1 - ilay + 1 
+            cld_path_liq[ilay,icol] -= 1000*((phys_grid.p_lay[phys_grid.nlev-1,icol] - phys_grid.p_lay[ilay,icol])/n)*phys_grid.qc_lay[ilay,icol]/9.81/2
+            cld_path_ice[ilay,icol] -= 1000*((phys_grid.p_lay[phys_grid.nlev-1,icol] - phys_grid.p_lay[ilay,icol])/n)*phys_grid.qi_lay[ilay,icol]/9.81/2 
+            cld_path_liq[ilay,icol] -= 1000*((phys_grid.p_lay[phys_grid.nlev-1,icol] - phys_grid.p_lay[ilay,icol])/n)*phys_grid.qc_lay[phys_grid.nlev-1,icol]/9.81/2
+            cld_path_ice[ilay,icol] -= 1000*((phys_grid.p_lay[phys_grid.nlev-1,icol] - phys_grid.p_lay[ilay,icol])/n)*phys_grid.qi_lay[phys_grid.nlev-1,icol]/9.81/2
+            for ilay1 = ilay+1:phys_grid.nlev-2
+                cld_path_liq[ilay,icol] -= 1000*((phys_grid.p_lay[phys_grid.nlev-1,icol] - phys_grid.p_lay[ilay,icol])/n)*phys_grid.qc_lay[ilay1,icol]/9.81/2
+                cld_path_ice[ilay,icol] -= 1000*((phys_grid.p_lay[phys_grid.nlev-1,icol] - phys_grid.p_lay[ilay,icol])/n)*phys_grid.qi_lay[ilay1,icol]/9.81/2
+            end
+            
+            if phys_grid.t_lay[ilay, icol] > Float64(253.15)
+                cld_r_eff_liq[ilay, icol] = r_eff_liq
+                #if (cld_frac[ilay,icol] == 1)
+                #    cld_path_liq[ilay,icol] = 10.0
+                #end
+            end
+            if phys_grid.t_lay[ilay, icol] < Float64(273.16)
+                cld_r_eff_ice[ilay, icol] = r_eff_ice
+                #if (cld_frac[ilay,icol] == 1)
+                #    cld_path_ice[ilay,icol] = 10.0
+                #end
+            end
 
-        as = AtmosphericState(lon, lat, layerdata, phys_grid.p, phys_grid.t, t_sfc, vmr, nothing, nothing)
-                
+        end
+        
+        cld_frac = DA(cld_frac)
+        cld_mask_lw = DA(cld_mask_lw)
+        cld_mask_sw = DA(cld_mask_sw)
+        cld_r_eff_liq = DA(cld_r_eff_liq)
+        cld_r_eff_ice = DA(cld_r_eff_ice)
+        cld_path_liq = DA(cld_path_liq)
+        cld_path_ice = DA(cld_path_ice)
+        ice_rgh = 2 # medium ice roughness
+        @info maximum(cld_frac), minimum(cld_frac), "cloud fraction"
+        @info maximum(cld_path_liq), minimum(cld_path_liq), "cloud_water_path"
+        @info maximum(cld_path_ice), minimum(cld_path_ice), "cloud_ice_path"
+        cloud_state = CloudState(
+            cld_r_eff_liq,
+            cld_r_eff_ice,
+            cld_path_liq,
+            cld_path_ice,
+            cld_frac,
+            cld_mask_lw,
+            cld_mask_sw,
+            MaxRandomOverlap(),
+            ice_rgh,
+        )
+        as = AtmosphericState(lon, lat, layerdata, phys_grid.p, phys_grid.t, t_sfc, vmr, cloud_state, nothing)
+        close(ds_in)                
         ##set up longwave problem
         inc_flux = nothing
         slv_lw = SLVLW(Float64, DA, context, param_set, phys_grid.nlev-1, phys_grid.ncol, sfc_emis, inc_flux)
         
         ##set up shortwave problem
-        sfc_alb_diffuse = DA{Float64, 2}(deepcopy(sfc_alb))
         inc_flux_diffuse = nothing
-        swbcs = (cos_zenith, irrad, sfc_alb, inc_flux_diffuse, sfc_alb_diffuse)
+        swbcs = (cos_zenith, irrad, sfc_alb_direct, inc_flux_diffuse, sfc_alb_diffuse)
         slv_sw = SLVSW(Float64, DA, context, phys_grid.nlev-1, phys_grid.ncol, swbcs...)
         exfiltrate = false
         # calling longwave and shortwave solvers
         exfiltrate && Infiltrator.@exfiltrate
-        solve_lw!(slv_lw, as, lookup_lw)
+        solve_lw!(slv_lw, as, lookup_lw, lookup_lw_cld)
 
-        solve_sw!(slv_sw, as, lookup_sw)
+        solve_sw!(slv_sw, as, lookup_sw, lookup_sw_cld)
 
-        flux = zeros(TFloat,phys_grid.nlev,phys_grid.ncol)
-        for ilay = 1:phys_grid.nlev
-            for icol =1:phys_grid.ncol
-                flux[ilay,icol] = icol + ilay
+        flux_lw = Array(slv_lw.flux.flux_net)
+        flux_sw = Array(slv_sw.flux.flux_net)
+        ##compute pressure derivatives on phys_grid
+        d_flux_lw = zeros(phys_grid.nlev,phys_grid.ncol)
+        d_flux_sw = zeros(phys_grid.nlev,phys_grid.ncol)
+        
+        for ilev = 1:phys_grid.nlev
+            for icol = 1:phys_grid.ncol
+                if (ilev == phys_grid.nlev)
+                    d_flux_lw[ilev,icol] = -(flux_lw[ilev,icol] - flux_lw[ilev-1,icol])/(phys_grid.p[ilev,icol]-phys_grid.p[ilev-1,icol])
+                    d_flux_sw[ilev,icol] = -(flux_sw[ilev,icol] - flux_sw[ilev-1,icol])/(phys_grid.p[ilev,icol]-phys_grid.p[ilev-1,icol])
+                else
+                    d_flux_lw[ilev,icol] = (flux_lw[ilev+1,icol] - flux_lw[ilev,icol])/(phys_grid.p[ilev+1,icol]-phys_grid.p[ilev,icol])
+                    d_flux_sw[ilev,icol] = (flux_sw[ilev+1,icol] - flux_sw[ilev,icol])/(phys_grid.p[ilev+1,icol]-phys_grid.p[ilev,icol])
+                end
             end
         end
-
-        flux_interp = KernelAbstractions.zeros(backend,TFloat, 1, mesh.npoin)
-        interpolate_from_phys_grid_cpu!(mesh.x,mesh.y,mesh.z,mesh.connijk,phys_grid,flux,flux_interp,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
-        @info maximum(flux), minimum(flux), maximum(flux_interp), minimum(flux_interp)
+        @info maximum(d_flux_lw),minimum(d_flux_lw), maximum(d_flux_sw),minimum(d_flux_sw)
+        flux_interp_lw = KernelAbstractions.zeros(backend,TFloat, mesh.npoin,1)
+        interpolate_from_phys_grid_cpu!(mesh.x,mesh.y,mesh.z,mesh.connijk,phys_grid,d_flux_lw,flux_interp_lw,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
+        flux_interp_sw = KernelAbstractions.zeros(backend,TFloat, mesh.npoin,1)
+        interpolate_from_phys_grid_cpu!(mesh.x,mesh.y,mesh.z,mesh.connijk,phys_grid,d_flux_sw,flux_interp_sw,phys_grid.nx,phys_grid.ny,phys_grid.ncol,phys_grid.nlev-1, mesh.npoin)
+        mp.flux_lw .= flux_interp_lw
+        mp.flux_sw .= flux_interp_sw
+        @info maximum(mp.flux_lw), maximum(mp.flux_sw), minimum(mp.flux_sw), minimum(mp.flux_lw)
     else
 
     end

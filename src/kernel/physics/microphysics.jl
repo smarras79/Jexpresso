@@ -209,7 +209,7 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
     #H[:,:,:,:] .= 0.0
 end
 
-function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tabs, qi, ρ, ρe, nelem, ngl, connijk, H, metrics, ω, dψ,::PERT)
+function compute_precipitation_derivatives!(drad_lw, drad_sw, dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tabs, qi, ρ, ρe, nelem, ngl, connijk, H, metrics, ω, dψ, flux_lw, flux_sw, ::PERT)
 
     MicroConst = MicrophysicalConst{Float64}()
     dqpdt .= 0.0
@@ -267,7 +267,32 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
                 end
             end
         end
+        ##compute radiative transfer vertical derivatives
+
+        for i=1:ngl
+            for j=1:ngl
+                for k=1:ngl
+                    ip = connijk[e,i,j,k]
+                    #H[i,j,k,1] = flux_lw[ip]
+                    #drad_lw[e,i,j,k] = flux_lw[ip]
+                end
+            end
+        end
+        #compute_vertical_derivative_q!(drad_lw, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
+
+        for i=1:ngl
+            for j=1:ngl
+                for k=1:ngl
+                    ip = connijk[e,i,j,k]
+                    #H[i,j,k,1] = flux_sw[ip]
+                    #drad_sw[e,i,j,k] = flux_sw[ip]
+                end
+            end
+        end
+        #compute_vertical_derivative_q!(drad_sw, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
     end
+
+
 
     #H[:,:,:,:] .= 0.0
 end
@@ -285,7 +310,7 @@ function precipitation_flux_gpu(u,qe,MicroConst,lpert,Pr,Ps,Pg,qi)
     return T(0.0), T(Lc*Pr +Ls*(Ps+Pg)), T(qi*ρ*T(0.4)), T(Pr + Ps + Pg) 
 end
 
-function add_micro_precip_sources!(mp::St_SamMicrophysics,T,S_micro,S,q,qn,qe,::TOTAL)
+function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe,::TOTAL)
 
     PhysConst = PhysicalConst{Float64}()
     ρ = q[1]
@@ -295,12 +320,13 @@ function add_micro_precip_sources!(mp::St_SamMicrophysics,T,S_micro,S,q,qn,qe,::
     ρqv_pert = ρ*qv - qe[6]
      S[4] += -PhysConst.g*(0.608*ρqv_pert -ρ*(qn+qp))
     #S[4] += -ρ*PhysConst.g*(0.608*qv-qn-qp) #moisture buoyancy contribution
+    S[5] -= ρ*(flux_lw - flux_sw)
     S[6] += -ρ*S_micro
     S[7] += ρ*S_micro
 
 end
 
-function add_micro_precip_sources!(mp::St_SamMicrophysics,T,S_micro,S,q,qn,qe,::PERT)
+function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe,::PERT)
 
     PhysConst = PhysicalConst{Float64}()
     ρ = q[1]+qe[1]
@@ -315,7 +341,7 @@ function add_micro_precip_sources!(mp::St_SamMicrophysics,T,S_micro,S,q,qn,qe,::
     #S[4] += -ρ*PhysConst.g*(0.61*qv-qn-qp)
     #S[4] += -PhysConst.g*(0.61*(q[1]*qv_ref + ρ*qv_pert) -ρ*(qn+qp)) #derived this by searching for perturbation buoyancy
     S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
-    
+    S[5] += ρ*(flux_lw - flux_sw)
     S[6] += -ρ*S_micro
     S[7] += ρ*S_micro
 
