@@ -68,7 +68,19 @@ function params_setup(sem,
     #     row_partition
     # end
     # gM           = pvector(values->u, row_partition)
-
+    #------------------------------------------------------------------------------------
+    # boundary flux arrays
+    #------------------------------------------------------------------------------------
+    bdy_fluxes = allocate_bdy_fluxes(sem.mesh.SD,
+                          sem.mesh.nfaces_bdy,
+                          sem.mesh.npoin,
+                          sem.mesh.ngl,
+                          T, backend;
+                          neqs=qp.neqs)
+    
+    F_surf = bdy_fluxes.F_surf
+    S_face = bdy_fluxes.S_face
+    S_flux = bdy_fluxes.S_flux
     #------------------------------------------------------------------------------------
     # GPU arrays
     #------------------------------------------------------------------------------------
@@ -183,13 +195,15 @@ function params_setup(sem,
     # Allocate micophysics arrays
     #------------------------------------------------------------------------------------
     mp = allocate_SamMicrophysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
-    
-
+    #------------------------------------------------------------------------------------
+    # Allocate large scale tendencies arrays
+    #------------------------------------------------------------------------------------
+    LST = allocate_LargeScaleTendencies(sem.mesh.npoin, sem.mesh, inputs, T, backend; lLST=inputs[:LST]) 
     #------------------------------------------------------------------------------------
     # Allocate Thermodynamic params for bomex case
     #------------------------------------------------------------------------------------
     thermo_params = create_updated_TD_Parameters(TFloat(101325.0))
-    
+        
 
     #------------------------------------------------------------------------------------
     # Populate solution arrays
@@ -260,18 +274,20 @@ function params_setup(sem,
               rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
               uprimitive,
               F, G, H, S,
+              F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv,
               flux_gpu, source_gpu, qbdy_gpu,
               flux_micro, source_micro, adjusted, Pm,
               q_t, q_ti, q_tij, fqf, b, B,
               SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
               sem.SOL_VARS_TYPE, 
               neqs=qp.neqs,
+              sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
               sem.basis, sem.ω, sem.mesh, sem.metrics,
               visc_coeff, ivisc_equations,
               sem.matrix.M, sem.matrix.Minv, sem.matrix.pM,
               tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
               phys_grid = sem.phys_grid,
-              qp, mp, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
+              qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
               OUTPUT_DIR,
               sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end

@@ -76,6 +76,12 @@ function resetRHSToZero_viscous!(params, SD::NSD_3D)
     fill!(params.RHS_visc,     zero(params.T))
 end
 
+function resetbdyfluxToZero!(params)
+    fill!(params.F_surf,  zero(params.T))
+    fill!(params.S_face,  zero(params.T))
+    fill!(params.S_flux,  zero(params.T))
+end
+
 
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
@@ -390,23 +396,27 @@ function _build_rhs!(RHS, u, params, time)
         conformity4ncf_q!(params.uaux, params.pM, SD, QT, params.mesh.connijk, params.mesh, params.Minv, params.metrics.Je, params.ω, AD, neqs, params.interp)
     end
     # @info "end conformity4ncf_q!"
+    resetbdyfluxToZero!(params)
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
                                params.mesh.x, params.mesh.y, params.mesh.z, params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
                                params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
                                params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
                                xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
-                               params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, params.mesh.bdy_edge_type, params.mesh.bdy_face_type,
+                               params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                               params.mesh.connijk, params.metrics.Jef, params.S_face, params.S_flux, params.F_surf, params.M_surf_inv,
+                               params.mp.Tabs, params.mp.qn,
                                params.ω, neqs, params.inputs, AD, SD)
     if (params.inputs[:lmoist])
         do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
                                 params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg, params.mp.S_micro,
                                 params.mp.qsatt, params.mesh.npoin, params.uaux, params.mesh.z, params.qp.qe, params.SOL_VARS_TYPE)
         if (params.inputs[:lprecip])
-            compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
+            compute_precipitation_derivatives!(params.mp.drad_lw, params.mp.drad_sw, params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
                                                      params.mp.Pg, params.mp.Tabs, params.mp.qi, @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
                                                     params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
-                                              params.metrics, params.ω, params.basis.dψ, params.SOL_VARS_TYPE)
-            params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt
+                                              params.metrics, params.ω, params.basis.dψ, params.mp.flux_lw, params.mp.flux_sw, params.SOL_VARS_TYPE)
+            #@info maximum(params.mp.drad_lw), minimum(params.mp.drad_lw), maximum(params.mp.drad_sw), minimum(params.mp.drad_sw), maximum(params.Minv), minimum(params.Minv)
+            params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt #.+ params.mp.drad_lw .- params.mp.drad_sw
             params.rhs_el[:,:,:,:,6] .+= params.mp.dqtdt
             params.rhs_el[:,:,:,:,7] .+= params.mp.dqpdt
         end
@@ -594,10 +604,15 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs,
                              x=x[ip], y=y[ip], z=z[ip], xmax=xmax, xmin=xmin, zmax=zmax)
                 if (params.inputs[:lmoist])
-                    add_micro_precip_sources!(params.mp, params.mp.Tabs[ip], params.mp.S_micro[ip],
+                    add_micro_precip_sources!(params.mp, params.mp.flux_lw[ip], params.mp.flux_sw[ip], params.mp.Tabs[ip], params.mp.S_micro[ip],
                                               @view(params.S[i,j,k,:]), @view(params.uaux[ip,:]),
                                               params.mp.qn[ip], @view(qe[ip,:]), params.SOL_VARS_TYPE)
+                    if (params.inputs[:LST])
+                        large_scale_source!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.S[i,j,k,:]), 
+                                            params.LST.Rad_cool[ip], params.LST.T_adv[ip], params.LST.q_adv[ip],params.SOL_VARS_TYPE)
+                    end
                 end
+
             end
         end
 

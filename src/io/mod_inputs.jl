@@ -35,6 +35,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
+    if(!haskey(inputs, :bulk_fluxes))
+       inputs[:bulk_fluxes] = false
+    end
+
+    if(!haskey(inputs, :bdy_fluxes))
+       inputs[:bdy_fluxes] = false
+    end
+
+    if(!haskey(inputs, :LST))
+       inputs[:LST] = false
+    end
+
+    if(!haskey(inputs, :LST_files))
+        inputs[:LST_files] = ("./data_files/LS_heat_forcing.dat","./data_files/LS_rad_cooling.dat","./data_files/LS_vapor_forcing.dat")
+    end
+
     if(!haskey(inputs, :nlay_pg))
        inputs[:nlay_pg] = 10
     end

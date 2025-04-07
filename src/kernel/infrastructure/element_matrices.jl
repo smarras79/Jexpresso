@@ -1023,6 +1023,13 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
                                    mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, N, interp)
     end
+    if (inputs[:bdy_fluxes])
+        M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
+        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+        mass_inverse!(M_surf_inv, M_surf, QT)
+    else
+        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+    end
 
     # @mystop("my stop at DSS_global_mass!")
 
@@ -1065,7 +1072,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    return (; Me, De, Le, M, Minv, pM, D, L)
+    return (; Me, De, Le, M, Minv, pM, D, L, M_surf_inv)
 end
 
 
