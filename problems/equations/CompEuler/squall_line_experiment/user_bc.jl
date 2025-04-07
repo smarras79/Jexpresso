@@ -36,7 +36,7 @@ function user_bc_dirichlet!(q::SubArray{Float64},
         qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
         qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
         qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
-        if ((z < 0.1 || z > zmax - 10) && ( x < xmin + 10 || x > xmax - 10) ) || (abs(nx) >0.1)
+        if ((z < 0.1 || z > 24000.0 - 10) && ( x < -60000 + 10 || x > 60000 - 10) ) || (abs(nx) >0.1)
         qbdy[1] = 0.0
         qbdy[2] = 0.0
         qbdy[3] = 0.0

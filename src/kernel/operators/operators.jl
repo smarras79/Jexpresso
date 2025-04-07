@@ -19,7 +19,7 @@ function interpolate!(qh, qj, ψ)
 end
 
 function build_gradient(SD::NSD_2D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics,gradq,nvars)
-     
+    
     for iel=1:mesh.nelem
         for i=1:mesh.ngl
             for j=1:mesh.ngl
@@ -46,7 +46,7 @@ end
 function build_gradient(SD::NSD_3D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
     nvar =size(qp.qn,2)
     gradq = zeros(3,mesh.npoin,nvar)
- 
+    
     for iel=1:mesh.nelem
         for i=1:mesh.ngl
             for j=1:mesh.ngl
@@ -71,7 +71,7 @@ function build_gradient(SD::NSD_3D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh,
     end
     #show(stdout, "text/plain", el_matrices.D)
 
-    return dqdx, dqdy, dqdz
+    return gradq
 end
 
 function build_gradient(SD::NSD_1D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
@@ -141,7 +141,7 @@ function build_laplacian(SD::NSD_2D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh
         end
     end
     
-   return Δq
+    return Δq
 end
 
 function build_laplacian(SD::NSD_3D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
@@ -200,7 +200,7 @@ function build_laplacian(SD::NSD_3D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh
         end
     end
 
-   return Δq
+    return Δq
 end
 
 function build_laplacian(SD::NSD_1D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh, metrics::St_metrics)
@@ -231,5 +231,128 @@ function build_laplacian(SD::NSD_1D, QT::Inexact, qp, ψ, dψ, ω, mesh::St_mesh
         end
     end
 
-   return Δq
+    return Δq
 end
+
+
+function _∇f!(∇f_el, f, ngl, dψ, ω, Je,
+              dξdx, dξdy,
+              iel,
+              ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+    #
+    # ∇f = [∂f∂x]
+    #
+    for i=1:ngl
+        ωJac = ω[i]*Je[iel,i]
+        
+        dfdξ = 0.0
+        @turbo for k = 1:ngl
+            dfdξ += dψ[k,i]*f[k]
+        end
+        dξdx_i = dξdx[iel,i]
+        
+        ∇f_el[iel,i] = ωJac*dfdξ*dξdx_i
+        
+    end
+end
+
+function _∇fnew!(∇f_el, f, ngl, dψ, ω, Je,
+              dξdx, dξdy,
+              dηdx, dηdy,
+              iel, i, j, 
+              ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+    #
+    # ∇f = [∂f∂x, ∂f/∂y]
+    #
+    ωJac = ω[i]*ω[j]*Je[iel,i,j]
+    
+    dfdξ = 0.0
+    dfdη = 0.0
+    @turbo for k = 1:ngl
+        dfdξ += dψ[k,i]*f[k,j]
+        dfdη += dψ[k,j]*f[i,k]
+    end
+    dξdx_ij = dξdx[iel,i,j]
+    dξdy_ij = dξdy[iel,i,j]
+    dηdx_ij = dηdx[iel,i,j]
+    dηdy_ij = dηdy[iel,i,j]
+    
+    ∇f_el[iel,i,j,1] = ωJac*(dfdξ*dξdx_ij + dfdη*dηdx_ij)
+    ∇f_el[iel,i,j,2] = ωJac*(dfdξ*dξdy_ij + dfdη*dηdy_ij)
+    
+end
+
+
+
+function _∇f!(∇f_el, f, ngl, dψ, ω, Je,
+              dξdx, dξdy,
+              dηdx, dηdy,
+              iel,
+              ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+    #
+    # ∇f = [∂f∂x, ∂f/∂y]
+    #
+    for j=1:ngl
+        for i=1:ngl
+            ωJac = ω[i]*ω[j]*Je[iel,i,j]
+            
+            dfdξ = 0.0
+            dfdη = 0.0
+            @turbo for k = 1:ngl
+                dfdξ += dψ[k,i]*f[k,j]
+                dfdη += dψ[k,j]*f[i,k]
+            end
+            dξdx_ij = dξdx[iel,i,j]
+            dξdy_ij = dξdy[iel,i,j]
+            dηdx_ij = dηdx[iel,i,j]
+            dηdy_ij = dηdy[iel,i,j]
+            
+            ∇f_el[iel,i,j,1] = ωJac*(dfdξ*dξdx_ij + dfdη*dηdx_ij)
+            ∇f_el[iel,i,j,2] = ωJac*(dfdξ*dξdy_ij + dfdη*dηdy_ij)
+                        
+        end
+    end
+end
+
+function _∇f!(∇f_el, f, ngl, dψ, ω, Je,
+              dξdx, dξdy, dξdz,
+              dηdx, dηdy, dηdz,
+              dζdx, dζdy, dζdz,
+              iel,
+              ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
+    #
+    # ∇f = [∂f∂x, ∂f/∂y, ∂f/∂z]
+    #
+    for k=1:ngl
+        for j=1:ngl
+            for i=1:ngl
+                ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                
+                dfdξ = 0.0
+                dfdη = 0.0
+                dfdζ = 0.0
+                @turbo for m = 1:ngl
+                    dfdξ += dψ[m,i]*f[m,j,k]
+                    dfdη += dψ[m,j]*f[i,m,k]
+                    dfdζ += dψ[m,k]*f[i,j,m]
+                end
+                dξdx_ijk = dξdx[iel,i,j,k]
+                dξdy_ijk = dξdy[iel,i,j,k]
+                dξdz_ijk = dξdz[iel,i,j,k]
+                
+                dηdx_ijk = dηdx[iel,i,j,k]
+                dηdy_ijk = dηdy[iel,i,j,k]
+                dηdz_ijk = dηdz[iel,i,j,k]
+
+                dζdx_ijk = dζdx[iel,i,j,k]
+                dζdy_ijk = dζdy[iel,i,j,k]
+                dζdz_ijk = dζdz[iel,i,j,k]
+                
+                ∇f_el[iel,i,j,k,1]   = ωJac*(dfdξ*dξdx_ijk + dfdη*dηdx_ijk + dfdζ*dζdx_ijk)
+                ∇f_el[iel,i,j,k,2]   = ωJac*(dfdξ*dξdy_ijk + dfdη*dηdy_ijk + dfdζ*dζdy_ijk)
+                ∇f_el[iel,i,j,k,end] = ωJac*(dfdξ*dξdz_ijk + dfdη*dηdz_ijk + dfdζ*dζdz_ijk)
+                
+            end
+        end
+    end
+end 

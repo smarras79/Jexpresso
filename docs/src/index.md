@@ -208,6 +208,7 @@ Pages = [
     "features/performance.md",
     "tutorials/user_inputs.md",
     "tutorials/theta.md",
+    "tutorials/laguerre_paper.md",
     ]
 Depth = 2
 ```
@@ -257,17 +258,15 @@ More are already implemented but currently only in individual branches. They wil
 ## Laguerre semi-infinite element test suite
 This section contains instructions to run all of the test cases presented in
 
+
 ```
-@article{tissaoui2024,
-  doi = {},
-  url = {},
-  year = {2020},
-  volume = {},
-  number = {},
-  pages = {},
-  author = {Yassine Tissaoui and James F. Kelly and Simone Marras}
-  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions},
-  journal = {arXiv},
+@article{tissaoui2025,
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
+  volume ={487},
+  pages={129080},
+  year = {2025},
+  journal = {App. Math. Comput.},
 }
 ```
 
