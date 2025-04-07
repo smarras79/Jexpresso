@@ -1,5 +1,7 @@
 function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_in_bdy_face,poin_in_bdy_edge,ngl,ngr,nelem,npoin,nsd,bdy_edge_type,
-        bdy_face_type,bdy_face_in_elem,bdy_edge_in_elem,connijk,connijk_lag,npoin_linear,nelem_semi_inf,inputs,backend)
+        bdy_face_type,bdy_face_in_elem,bdy_edge_in_elem,connijk,connijk_lag,npoin_linear,nelem_semi_inf,
+        inputs,backend)
+    
     #per1 = inputs[:per1dd]
     #per2 = inputs[:per2]
     #determine boundary vectors

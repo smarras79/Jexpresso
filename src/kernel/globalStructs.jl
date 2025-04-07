@@ -106,7 +106,38 @@ function allocate_fluxes(SD, npoin, ngl, T, backend; neqs=1)
     
     return fluxes
 end
+#-------------------------------------------------------------------------------------------
+# Boundary Fluxes
+#-------------------------------------------------------------------------------------------
+Base.@kwdef mutable struct St_bdy_fluxes{T <: AbstractFloat, dims1, dims2, dims3, backend}
+    
+    F_surf = KernelAbstractions.zeros(backend,  T, dims1)
+    S_face = KernelAbstractions.zeros(backend,  T, dims2)
+    S_flux = KernelAbstractions.zeros(backend,  T, dims3)
 
+end
+
+function allocate_bdy_fluxes(SD, nfaces, npoin, ngl, T, backend; neqs=1)
+
+    if SD == NSD_1D()
+        dims1 = (Int64(1), Int64(1))
+        dims2 = (Int64(1), Int64(1))
+        dims3 = (Int64(1), Int64(1))
+    elseif SD == NSD_2D()
+        dims1 = (Int64(1), Int64(1), Int64(1))
+        dims2 = (Int64(1), Int64(1), Int64(1))
+        dims3 = (Int64(1), Int64(1), Int64(1))
+    elseif SD == NSD_3D()
+        dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
+        dims2 = (Int64(nfaces), Int64(ngl), Int64(ngl), Int64(neqs))
+        dims3 = (Int64(npoin), Int64(neqs))
+    end
+
+    bdy_fluxes = St_bdy_fluxes{T, dims1, dims2, dims3, backend}()
+
+    return bdy_fluxes
+
+end
 #-------------------------------------------------------------------------------------------
 # rhs Laguerre
 #-------------------------------------------------------------------------------------------
