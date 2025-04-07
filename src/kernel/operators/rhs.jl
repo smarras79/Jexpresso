@@ -42,7 +42,6 @@ function resetRHSToZero_inviscid!(params)
     fill!(params.RHS,    zero(params.T))
 end
 
-
 function reset_filters!(params)
     fill!(params.b, zero(params.T))
     fill!(params.B, zero(params.T))
@@ -52,7 +51,6 @@ function reset_laguerre_filters!(params)
     fill!(params.b_lag, zero(params.T))
     fill!(params.B_lag, zero(params.T))
 end
-
 
 function resetRHSToZero_viscous!(params, SD::NSD_1D)
     fill!(params.rhs_diff_el,  zero(params.T))
@@ -82,6 +80,15 @@ function resetbdyfluxToZero!(params)
     fill!(params.S_flux,  zero(params.T))
 end
 
+function reset∇fToZero!(params, SD::NSD_1D)
+    fill!(params.rhs_diff_el,  zero(params.T))
+    fill!(params.rhs_diffξ_el, zero(params.T))
+    fill!(params.RHS_visc,     zero(params.T))
+end
+
+function reset∇fToZero!(params)
+    fill!(params.∇f,  zero(params.T))
+end
 
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
@@ -131,7 +138,7 @@ function rhs!(du, u, params, time)
             MicroConst = MicrophysicalConst{TFloat}()
             k1 = utouaux_gpu!(backend)
             k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.neqs))
-           
+            
             if (params.inputs[:lfilter])
                 params.B .= TFloat(0.0)
                 kf = filter_gpu_3d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngl), Int64(params.mesh.ngl)))
@@ -171,186 +178,184 @@ function rhs!(du, u, params, time)
                          params.mp.Pr, params.mp.Ps, params.mp.Pg, params.mp.qi, params.mp.qn, params.mp.Tabs, params.mp.S_micro, MicroConst;
                          ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
             end
-            KernelAbstractions.synchronize(backend)
-            k = _build_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-            k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
-              params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.metrics.Je,
-              params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu,
-              params.mesh.ngl, TInt(params.neqs), PhysConst, params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, params.mesh.zmax, params.mesh.zmin, lpert;
-              ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
-            if (params.inputs[:case] != "bomex")
-                k = _build_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-                k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
-                params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.metrics.Je,
-                params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu,
-                params.mesh.ngl, TInt(params.neqs), PhysConst, params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, params.mesh.zmax, params.mesh.zmin, lpert;
-                ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
-            else
-                k = _build_rhs_gpu_3D_v1!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-                k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
-                params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.metrics.Je,
-                params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu,
-                params.mesh.ngl, TInt(params.neqs), PhysConst, params.thermo_params, params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, params.mesh.zmax, params.mesh.zmin, lpert;
-                ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
-            end
+KernelAbstractions.synchronize(backend)
+k = _build_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
+k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
+  params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.metrics.Je,
+  params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu,
+  params.mesh.ngl, TInt(params.neqs), PhysConst, params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, params.mesh.zmax, params.mesh.zmin, lpert;
+  ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
+if (params.inputs[:case] != "bomex")
+    k = _build_rhs_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
+    k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
+      params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.metrics.Je,
+      params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu,
+      params.mesh.ngl, TInt(params.neqs), PhysConst, params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, params.mesh.zmax, params.mesh.zmin, lpert;
+      ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
+else
+    k = _build_rhs_gpu_3D_v1!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
+    k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, 
+      params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz, params.metrics.Je,
+      params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu,
+      params.mesh.ngl, TInt(params.neqs), PhysConst, params.thermo_params, params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, params.mesh.zmax, params.mesh.zmin, lpert;
+      ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
+end
 
-            KernelAbstractions.synchronize(backend)
-            if (params.inputs[:lvisc])
-                params.RHS_visc .= TFloat(0.0)
-                params.rhs_diffξ_el .= TFloat(0.0)
-                params.rhs_diffη_el .= TFloat(0.0)
-                params.rhs_diffζ_el .= TFloat(0.0)
-                params.source_gpu .= TFloat(0.0)
+KernelAbstractions.synchronize(backend)
+if (params.inputs[:lvisc])
+    params.RHS_visc     .= TFloat(0.0)
+    params.rhs_diffξ_el .= TFloat(0.0)
+    params.rhs_diffη_el .= TFloat(0.0)
+    params.rhs_diffζ_el .= TFloat(0.0)
+    params.source_gpu   .= TFloat(0.0)
 
-                if inputs[:visc_model] == "av" #Default is artificial viscosity with constant coefficient
+    if inputs[:visc_model] == "av" #Default is artificial viscosity with constant coefficient
 
-                    k = _build_rhs_diff_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-                    k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el, params.uaux, params.qp.qe, params.source_gpu, 
-                    params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, 
-                    params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, 
-                    params.metrics.dζdz, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, params.visc_coeff, params.mesh.ngl, TInt(params.neqs), PhysConst, lpert; 
-                    ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
+        k = _build_rhs_diff_gpu_3D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
+        k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el, params.uaux, params.qp.qe, params.source_gpu, 
+          params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, 
+          params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, 
+          params.metrics.dζdz, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, params.visc_coeff, params.mesh.ngl, TInt(params.neqs), PhysConst, lpert; 
+          ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
 
-                elseif inputs[:visc_model] == "smag"
-                    k = _build_rhs_diff_gpu_3D_v1!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-                    k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el, params.uaux, params.qp.qe, params.source_gpu,
-                    params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, 
-                    params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, 
-                    params.metrics.dζdz, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, params.visc_coeff, params.mesh.ngl, TInt(params.neqs), params.mesh.Δeffective_s, PhysConst, lpert; 
-                    ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
+    elseif inputs[:visc_model] == "smag"
+        k = _build_rhs_diff_gpu_3D_v1!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
+        k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el, params.uaux, params.qp.qe, params.source_gpu,
+          params.mesh.x, params.mesh.y, params.mesh.z, params.mesh.connijk, 
+          params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx, params.metrics.dζdy, 
+          params.metrics.dζdz, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, params.visc_coeff, params.mesh.ngl, TInt(params.neqs), params.mesh.Δeffective_s, PhysConst, lpert; 
+          ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
 
-                end
-                KernelAbstractions.synchronize(backend)
-                if (params.inputs[:case] == "bomex")
-                    # param_set = TP.ThermodynamicsParameters(TFloat)
-                    k_sa = saturation_adjustment_gpu_3D!(backend)
-                    k_sa(params.uaux, params.qp.qe, params.mesh.z, params.mesh.connijk, TInt(params.neqs), params.thermo_params, lpert;
-                    ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
-                    KernelAbstractions.synchronize(backend)
-    
-                    kf = uauxtou_gpu!(backend)
-                    kf(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
-                    KernelAbstractions.synchronize(backend)
-                end
-                # KernelAbstractions.synchronize(backend)
-                #@info maximum(params.flux_gpu[:,:,:,:,3]), minimum(params.flux_gpu[:,:,:,:,3]), maximum(params.flux_gpu[:,:,:,:,4]), minimum(params.flux_gpu[:,:,:,:,4])
-                
-                @inbounds params.RHS .+= params.RHS_visc
-            end
-            KernelAbstractions.synchronize(backend)
-        
-            k1 = RHStodu_gpu!(backend)
-            k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
-            
-        elseif (params.SD == NSD_2D())
-            params.RHS .= TFloat(0.0)
-            PhysConst = PhysicalConst{TFloat}()
-            k1 = utouaux_gpu!(backend)
-            k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl, params.neqs))
-            
-            if (params.inputs[:lfilter])
-                params.B .= TFloat(0.0)
-                kf = filter_gpu_2d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngl)))
-                kf(params.uaux, params.qp.qe, params.B, params.fx, params.fy_t, params.metrics.Je, params.ω, params.ω, params.mesh.connijk, params.Minv, 
-                   params.mesh.ngl, params.mesh.ngl, params.neqs, lpert;
-                   ndrange = (params.mesh.nelem * params.mesh.ngl, params.mesh.ngl), workgroupsize = (params.mesh.ngl, params.mesh.ngl))
-                KernelAbstractions.synchronize(backend)
-                if (params.laguerre)
-                    params.B_lag .= TFloat(0.0)
-                    kf = filter_gpu_2d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngr)))
-                    kf(params.uaux, params.qp.qe, params.B_lag, params.fx, params.fy_t_lag, params.metrics_lag.Je, 
-                       params.ω, params.ω_lag, params.mesh.connijk_lag, params.Minv, params.mesh.ngl, params.mesh.ngr, params.neqs, lpert;
-                       ndrange = (params.mesh.nelem_semi_inf * params.mesh.ngl, params.mesh.ngr), workgroupsize = (params.mesh.ngl, params.mesh.ngr))
-
-                    KernelAbstractions.synchronize(backend)
-
-                    params.B .+= params.B_lag
-                end
-                if (lpert)
-                    params.uaux .= params.B
-                else
-                    params.uaux .= params.B .+ params.qp.qe
-                end
-                kf = uauxtou_gpu!(backend)
-                kf(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
-                KernelAbstractions.synchronize(backend)
-            end
-            k = apply_boundary_conditions_gpu!(backend)
-            k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x,params.mesh.y,TFloat(time),params.metrics.nx,params.metrics.ny,
-              params.mesh.poin_in_bdy_edge,params.qbdy_gpu,params.mesh.ngl,TInt(params.neqs), params.mesh.npoin,lpert;
-              ndrange = (params.mesh.nedges_bdy*params.mesh.ngl), workgroupsize = (params.mesh.ngl))
-            KernelAbstractions.synchronize(backend)
-            if (params.laguerre)
-
-                k = apply_boundary_conditions_lag_gpu!(backend)
-                k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x,params.mesh.y,TFloat(time), params.mesh.connijk_lag,
-                  params.qbdy_lag_gpu, params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), params.mesh.npoin, params.mesh.nelem_semi_inf, 
-                  params.inputs[:lperiodic_laguerre], lpert;
-                  ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
-                KernelAbstractions.synchronize(backend)
-            end
-
-            k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
-            k = _build_rhs_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-            k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.connijk, 
-              params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je,
-              params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu, params.mesh.ngl, TInt(params.neqs), PhysConst,
-              params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, lpert;
-              ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
-            KernelAbstractions.synchronize(backend)
-            if (params.laguerre)
-                params.RHS_lag .= TFloat(0.0)
-
-                
-                k_lag = _build_rhs_lag_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngr)))
-                k_lag(params.RHS_lag, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.connijk_lag, params.metrics_lag.dξdx, params.metrics_lag.dξdy,
-                      params.metrics_lag.dηdx, params.metrics_lag.dηdy, params.metrics_lag.Je, params.basis.dψ, params.basis_lag.dψ, params.ω,
-                      params.ω_lag, params.Minv, params.flux_lag_gpu, params.source_lag_gpu, params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), PhysConst,
-                      params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, lpert;
-                      ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
-                KernelAbstractions.synchronize(backend)
-                @inbounds params.RHS .+= params.RHS_lag
-                if (params.inputs[:lvisc])
-                    params.RHS_visc_lag .= TFloat(0.0)
-                    params.rhs_diffξ_el_lag .= TFloat(0.0)
-                    params.rhs_diffη_el_lag .= TFloat(0.0)
-                    params.source_lag_gpu .= TFloat(0.0)
-
-                    k_diff_lag = _build_rhs_visc_lag_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngr)))
-                    k_diff_lag(params.RHS_visc_lag, params.rhs_diffξ_el_lag, params.rhs_diffη_el_lag, params.uaux, params.qp.qe, params.source_lag_gpu, params.mesh.x,
-                               params.mesh.y, params.mesh.connijk_lag, params.metrics_lag.dξdx, params.metrics_lag.dξdy, params.metrics_lag.dηdx, params.metrics_lag.dηdy,
-                               params.metrics_lag.Je, params.basis.dψ, params.basis_lag.dψ, params.ω, params.ω_lag, params.Minv, params.visc_coeff,
-                               params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), PhysConst, lpert;
-                               ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
-                    
-                    @inbounds params.RHS .+= params.RHS_visc_lag
-                    
-                end
-                
-            end
-
-            if (params.inputs[:lvisc])
-                params.RHS_visc .= TFloat(0.0)
-                params.rhs_diffξ_el .= TFloat(0.0)
-                params.rhs_diffη_el .= TFloat(0.0)
-                params.source_gpu .= TFloat(0.0)
-                
-                k = _build_rhs_diff_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-                k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.uaux, params.qp.qe, params.source_gpu, params.mesh.x, params.mesh.y, params.mesh.connijk, 
-                  params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, 
-                  params.visc_coeff, params.mesh.ngl, TInt(params.neqs), PhysConst, lpert; ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
-                KernelAbstractions.synchronize(backend)
-
-                @inbounds params.RHS .+= params.RHS_visc
-            end
-            #@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
-            DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
-
-            k1 = RHStodu_gpu!(backend)
-            k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
-            
-        end
     end
+    KernelAbstractions.synchronize(backend)
+    if (params.inputs[:case] == "bomex")
+        # param_set = TP.ThermodynamicsParameters(TFloat)
+        k_sa = saturation_adjustment_gpu_3D!(backend)
+        k_sa(params.uaux, params.qp.qe, params.mesh.z, params.mesh.connijk, TInt(params.neqs), params.thermo_params, lpert;
+             ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl,params.mesh.ngl))
+        KernelAbstractions.synchronize(backend)
+        
+        kf = uauxtou_gpu!(backend)
+        kf(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
+        KernelAbstractions.synchronize(backend)
+    end
+    
+    @inbounds params.RHS .+= params.RHS_visc
+end
+KernelAbstractions.synchronize(backend)
+
+k1 = RHStodu_gpu!(backend)
+k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
+
+elseif (params.SD == NSD_2D())
+params.RHS .= TFloat(0.0)
+PhysConst = PhysicalConst{TFloat}()
+k1 = utouaux_gpu!(backend)
+k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl, params.neqs))
+
+if (params.inputs[:lfilter])
+    params.B .= TFloat(0.0)
+    kf = filter_gpu_2d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngl)))
+    kf(params.uaux, params.qp.qe, params.B, params.fx, params.fy_t, params.metrics.Je, params.ω, params.ω, params.mesh.connijk, params.Minv, 
+       params.mesh.ngl, params.mesh.ngl, params.neqs, lpert;
+       ndrange = (params.mesh.nelem * params.mesh.ngl, params.mesh.ngl), workgroupsize = (params.mesh.ngl, params.mesh.ngl))
+    KernelAbstractions.synchronize(backend)
+    if (params.laguerre)
+        params.B_lag .= TFloat(0.0)
+        kf = filter_gpu_2d!(backend,(Int64(params.mesh.ngl), Int64(params.mesh.ngr)))
+        kf(params.uaux, params.qp.qe, params.B_lag, params.fx, params.fy_t_lag, params.metrics_lag.Je, 
+           params.ω, params.ω_lag, params.mesh.connijk_lag, params.Minv, params.mesh.ngl, params.mesh.ngr, params.neqs, lpert;
+           ndrange = (params.mesh.nelem_semi_inf * params.mesh.ngl, params.mesh.ngr), workgroupsize = (params.mesh.ngl, params.mesh.ngr))
+
+        KernelAbstractions.synchronize(backend)
+
+        params.B .+= params.B_lag
+    end
+    if (lpert)
+        params.uaux .= params.B
+    else
+        params.uaux .= params.B .+ params.qp.qe
+    end
+    kf = uauxtou_gpu!(backend)
+    kf(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
+    KernelAbstractions.synchronize(backend)
+end
+k = apply_boundary_conditions_gpu!(backend)
+k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x,params.mesh.y,TFloat(time),params.metrics.nx,params.metrics.ny,
+  params.mesh.poin_in_bdy_edge,params.qbdy_gpu,params.mesh.ngl,TInt(params.neqs), params.mesh.npoin,lpert;
+  ndrange = (params.mesh.nedges_bdy*params.mesh.ngl), workgroupsize = (params.mesh.ngl))
+KernelAbstractions.synchronize(backend)
+if (params.laguerre)
+
+    k = apply_boundary_conditions_lag_gpu!(backend)
+    k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x,params.mesh.y,TFloat(time), params.mesh.connijk_lag,
+      params.qbdy_lag_gpu, params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), params.mesh.npoin, params.mesh.nelem_semi_inf, 
+      params.inputs[:lperiodic_laguerre], lpert;
+      ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
+    KernelAbstractions.synchronize(backend)
+end
+
+k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
+k = _build_rhs_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
+k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.connijk, 
+  params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je,
+  params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu, params.mesh.ngl, TInt(params.neqs), PhysConst,
+  params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, lpert;
+  ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
+KernelAbstractions.synchronize(backend)
+if (params.laguerre)
+    params.RHS_lag .= TFloat(0.0)
+
+    
+    k_lag = _build_rhs_lag_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngr)))
+    k_lag(params.RHS_lag, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.connijk_lag, params.metrics_lag.dξdx, params.metrics_lag.dξdy,
+          params.metrics_lag.dηdx, params.metrics_lag.dηdy, params.metrics_lag.Je, params.basis.dψ, params.basis_lag.dψ, params.ω,
+          params.ω_lag, params.Minv, params.flux_lag_gpu, params.source_lag_gpu, params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), PhysConst,
+          params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, lpert;
+          ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
+    KernelAbstractions.synchronize(backend)
+    @inbounds params.RHS .+= params.RHS_lag
+    if (params.inputs[:lvisc])
+        params.RHS_visc_lag .= TFloat(0.0)
+        params.rhs_diffξ_el_lag .= TFloat(0.0)
+        params.rhs_diffη_el_lag .= TFloat(0.0)
+        params.source_lag_gpu .= TFloat(0.0)
+
+        k_diff_lag = _build_rhs_visc_lag_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngr)))
+        k_diff_lag(params.RHS_visc_lag, params.rhs_diffξ_el_lag, params.rhs_diffη_el_lag, params.uaux, params.qp.qe, params.source_lag_gpu, params.mesh.x,
+                   params.mesh.y, params.mesh.connijk_lag, params.metrics_lag.dξdx, params.metrics_lag.dξdy, params.metrics_lag.dηdx, params.metrics_lag.dηdy,
+                   params.metrics_lag.Je, params.basis.dψ, params.basis_lag.dψ, params.ω, params.ω_lag, params.Minv, params.visc_coeff,
+                   params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), PhysConst, lpert;
+                   ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
+        
+        @inbounds params.RHS .+= params.RHS_visc_lag
+        
+    end
+    
+end
+
+if (params.inputs[:lvisc])
+    params.RHS_visc .= TFloat(0.0)
+    params.rhs_diffξ_el .= TFloat(0.0)
+    params.rhs_diffη_el .= TFloat(0.0)
+    params.source_gpu .= TFloat(0.0)
+    
+    k = _build_rhs_diff_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
+    k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.uaux, params.qp.qe, params.source_gpu, params.mesh.x, params.mesh.y, params.mesh.connijk, 
+      params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, 
+      params.visc_coeff, params.mesh.ngl, TInt(params.neqs), PhysConst, lpert; ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
+    KernelAbstractions.synchronize(backend)
+
+    @inbounds params.RHS .+= params.RHS_visc
+end
+#@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
+DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+
+k1 = RHStodu_gpu!(backend)
+k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
+
+end
+end
 end
 
 function _build_rhs!(RHS, u, params, time)
@@ -406,17 +411,18 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.connijk, params.metrics.Jef, params.S_face, params.S_flux, params.F_surf, params.M_surf_inv,
                                params.mp.Tabs, params.mp.qn,
                                params.ω, neqs, params.inputs, AD, SD)
+    
     if (params.inputs[:lmoist])
         do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
-                                params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg, params.mp.S_micro,
-                                params.mp.qsatt, params.mesh.npoin, params.uaux, params.mesh.z, params.qp.qe, params.SOL_VARS_TYPE)
+                          params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg, params.mp.S_micro,
+                          params.mp.qsatt, params.mesh.npoin, params.uaux, params.mesh.z, params.qp.qe, params.SOL_VARS_TYPE)
+        
         if (params.inputs[:lprecip])
-            compute_precipitation_derivatives!(params.mp.drad_lw, params.mp.drad_sw, params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
-                                                     params.mp.Pg, params.mp.Tabs, params.mp.qi, @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
-                                                    params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
-                                              params.metrics, params.ω, params.basis.dψ, params.mp.flux_lw, params.mp.flux_sw, params.SOL_VARS_TYPE)
-            #@info maximum(params.mp.drad_lw), minimum(params.mp.drad_lw), maximum(params.mp.drad_sw), minimum(params.mp.drad_sw), maximum(params.Minv), minimum(params.Minv)
-            params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt #.+ params.mp.drad_lw .- params.mp.drad_sw
+            compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
+                                               params.mp.Pg, params.mp.Tabs, params.mp.qi, @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
+                                               params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
+                                               params.metrics, params.ω, params.basis.dψ, params.SOL_VARS_TYPE)
+            params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt
             params.rhs_el[:,:,:,:,6] .+= params.mp.dqtdt
             params.rhs_el[:,:,:,:,7] .+= params.mp.dqpdt
         end
@@ -428,16 +434,10 @@ function _build_rhs!(RHS, u, params, time)
     # @info "start DSS_rhs_invicid"
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                            params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
     end
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
     # @info "end DSS_rhs_invicid"
-
-    #@info maximum(params.RHS[:,7]), maximum(params.RHS[:,6])
-    #-----------------------------------------------------------------------------------
-    # Kessler:
-    #-----------------------------------------------------------------------------------
-    #kessler(params.mp, params, @view(params.uaux[:,:]), params.qp.qe, params.mesh)
     
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
@@ -451,25 +451,23 @@ function _build_rhs!(RHS, u, params, time)
         # @info "start DSS_rhs_viscous"
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                            params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+                               params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
         end
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-    # @info rank, [(params.mesh.x[params.mesh.connijk[iel,i,j]], params.mesh.y[params.mesh.connijk[iel,i,j]], params.RHS[params.mesh.connijk[iel,i,j],1]) for j in 1: params.mesh.ngl, i in 1: params.mesh.ngl, iel in 1: params.mesh.nelem]
 
-    if mpisize > 1
-        DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
-    end
-    for ieq=1:neqs
-        divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
-        # @info "ieq", ieq
-        if inputs[:ladapt] == true
-            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, params.rhs_el[:,:,:,ieq], params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
+if mpisize > 1
+    DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+end
+for ieq=1:neqs
+    divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
+    # @info "ieq", ieq
+    if inputs[:ladapt] == true
+        DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, params.rhs_el[:,:,:,ieq], params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
                             params.mesh.non_conforming_facets_children_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, ngl-1, params.interp)
-        end
     end
-    #@info maximum(params.RHS[:,7]), maximum(params.RHS[:,6])
+end
 end
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_1D)
@@ -507,14 +505,14 @@ end
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
     
+    PhysConst = PhysicalConst{Float64}()
+    
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
 
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
             
-            #user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
-
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
                        @view(qe[ip,:]),         #pref
@@ -529,8 +527,26 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=x[ip], y=y[ip], xmax=xmax, xmin=xmin, ymax=ymax)
             end
-        end
 
+         #=   if luser_function
+                user_function!(@view(params.fijk[i,j,:]), SD,
+                               @view(params.uaux[ip,:]),
+                               @view(qe[ip,:]),
+                               params.mesh,
+                               params.CL, params.SOL_VARS_TYPE;
+                               neqs=params.neqs, iel=iel, ip=ip)
+            end
+            =#
+        end
+       #= 
+        _∇f!(params.∇f_el, params.fijk,
+             params.mesh.ngl,
+             params.basis.dψ, params.ω,
+             params.metrics.Je,
+             params.metrics.dξdx, params.metrics.dξdy,
+             params.metrics.dηdx, params.metrics.dηdy,
+             iel, params.CL, params.QT, SD, params.AD)       
+        =#
         _expansion_inviscid!(u,
                              params.neqs, params.mesh.ngl,
                              params.basis.dψ, params.ω,
@@ -539,47 +555,12 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              params.metrics.dξdx, params.metrics.dξdy,
                              params.metrics.dηdx, params.metrics.dηdy,
                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
-        
     end
+
+  #=  params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
+    params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]=#
+
 end
-
-
-#=function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
-    
-    #xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
-    for iel = 1:params.mesh.nelem
-
-        for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
-            ip = connijk[iel,i,j,k]
-            
-            user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
-                       @view(params.uaux[ip,:]),
-                       @view(qe[ip,:]),         #pref
-                       params.mesh,
-                       params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip)
-            
-            if lsource
-                user_source!(@view(params.S[i,j,k,:]),
-                             @view(params.uaux[ip,:]),
-                             @view(qe[ip,:]),          #ρref 
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs)
-            end
-        end
-
-        _expansion_inviscid!(u,
-                             params.neqs, params.mesh.ngl,
-                             params.basis.dψ, params.ω,
-                             params.F, params.G, params.H, params.S,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
-                             params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
-                             params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
-                             params.rhs_el, iel, params.CL, params.QT, SD, params.AD) 
-    end
-end=#
-
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
     
@@ -831,7 +812,7 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, H, S, Je, dξdx, dξd
                     dGdz = dGdξ*dξdz_ij + dGdη*dηdz_ij + dGdζ*dζdz_ij
                     dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
                     #if (ieq == 4)
-                     #   @info dHdz, S[i,j,k,ieq]
+                    #   @info dHdz, S[i,j,k,ieq]
                     #end
                     auxi = ωJac*((dFdx + dGdy + dHdz) - S[i,j,k,ieq])
                     rhs_el[iel,i,j,k,ieq] -= auxi
@@ -1057,7 +1038,7 @@ function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
         
         @turbo for i = 1:ngl
             dhdξ_ik = dψ[i,k]
-                
+            
             rhs_diffξ_el[iel,i,ieq] -= dhdξ_ik * ∇ξ∇u_kl
         end
     end
@@ -1288,29 +1269,28 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
 end
 
 function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ)
-        for k=1:ngl
-            for j=1:ngl
-                for i=1:ngl
-                    ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
-                    dHdξ = 0.0
-                    dHdη = 0.0
-                    dHdζ = 0.0
-                    @turbo for m = 1:ngl
-                        dHdξ += dψ[m,i]*q[m,j,k]
-                        dHdη += dψ[m,j]*q[i,m,k]
-                        dHdζ += dψ[m,k]*q[i,j,m]
-                    end
-                    dξdz_ij = dξdz[iel,i,j,k]
-
-                    dηdz_ij = dηdz[iel,i,j,k]
-
-                    dζdz_ij = dζdz[iel,i,j,k]
-
-                    dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
-
-                    auxi = ωJac*(dHdz)
-                    dqdz[iel,i,j,k] += auxi
+    for k=1:ngl
+        for j=1:ngl
+            for i=1:ngl
+                ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                
+                dHdξ = 0.0
+                dHdη = 0.0
+                dHdζ = 0.0
+                @turbo for m = 1:ngl
+                    dHdξ += dψ[m,i]*q[m,j,k]
+                    dHdη += dψ[m,j]*q[i,m,k]
+                    dHdζ += dψ[m,k]*q[i,j,m]
                 end
+                dξdz_ij = dξdz[iel,i,j,k]
+                dηdz_ij = dηdz[iel,i,j,k]
+                dζdz_ij = dζdz[iel,i,j,k]
+                
+                dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
+
+                auxi = ωJac*dHdz
+                dqdz[iel,i,j,k] += auxi
             end
         end
+    end
 end
