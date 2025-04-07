@@ -1,4 +1,3 @@
-include(joinpath( "..", "bases", "basis_structs.jl"))
 
 # Define a mutable struct to hold the Legendre polynomial and derivatives
 mutable struct LegendrePoly
@@ -263,7 +262,7 @@ end
 
 
 
-function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n2o_ele_map, SD::NSD_3D)
+function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n2o_ele_map, interp, project, SD::NSD_3D)
 
     # Dimensions of the source and destination grids (global variables nglx, ngly, nglz are assumed defined)
     nx = mesh_dst.ngl
@@ -279,14 +278,16 @@ function p8est_transfer_q!(q_dst, q_src, lvl_src, lvl_dst, mesh_dst, mesh_src, n
     qx = zeros(Float64, np, nf)
     qxy = zeros(Float64, np, nf)
 
-    lgl = basis_structs_ξ_ω!(LGL(), mesh_dst.nop, CPU())
 
     # Ensure the interpolation matrices are computed
     # if !@isdefined(interp_x)
     #     global interp_x, project_x, interp_y, project_y, interp_z, project_z
-    interp_x, project_x = build_projection_1d(lgl.ξ)
-    interp_y, project_y = build_projection_1d(lgl.ξ)
-    interp_z, project_z = build_projection_1d(lgl.ξ)
+    interp_x  = interp
+    interp_y  = interp
+    interp_z  = interp
+    project_x = project
+    project_y = project
+    project_z = project
     # end
     # @info "interp_x", interp_x[:,:,1], interp_x[:,:,1]
     # @info "project_x", project_x[:,:,1], project_x[:,:,1]
@@ -1969,6 +1970,690 @@ function conformity4ncf_q!(q, pM, SD::NSD_2D, QT::Inexact, conn::AbstractArray, 
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(q_tmp[:,ieq]), vaux, Minv, neqs, npoin, AD)
         DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT, q_el_tmp[:,:,:,ieq], conn, mesh.poin_in_edge, mesh.non_conforming_facets,
+                            mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, ngl-1, interp)
+        q[:,ieq] .= q_tmp[:,ieq]
+    end
+
+end
+
+
+
+function DSS_nc_gather_mass!(M, mesh, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, conn_facets::AbstractArray,
+                             non_conforming_facets, non_conforming_facets_parents_ghost, ip2gip, gip2ip, gip_gather_ghost, gip_gather_owner, N, interp)
+
+    ngl          = N+1
+    ngl2         = ngl * ngl
+    Mg           = KernelAbstractions.zeros(CPU(),  TFloat, ngl2)
+    Lt_1         = KernelAbstractions.zeros(CPU(),  TFloat, ngl, ngl)
+    Lt_2         = KernelAbstractions.zeros(CPU(),  TFloat, ngl, ngl)
+    M_gatter_tmp = KernelAbstractions.zeros(CPU(),  TFloat, ngl2)
+    Imn          = KernelAbstractions.zeros(CPU(),  TInt,   ngl2)
+
+    # half 1 top, half 2 bottom
+    for ncf in non_conforming_facets
+        facet_ip_child, cell_ip_child, facet_ip_parent, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
+        if (local_parent_facet_id == 1) # front
+            l = 1:ngl
+            m = ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  l, ngl, n]
+            IPp = conn[cell_ip_parent, l, 1,   n]
+        elseif (local_parent_facet_id == 2) # back
+            l = 1:ngl
+            m = 1
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  l, 1,   n]
+            IPp = conn[cell_ip_parent, l, ngl, n]
+        elseif (local_parent_facet_id == 3) # bottom
+            l = 1:ngl
+            m = 1:ngl
+            n = ngl
+            IPc = conn[cell_ip_child,  l, m, ngl]
+            IPp = conn[cell_ip_parent, l, m, 1  ]
+        elseif (local_parent_facet_id == 4) # top
+            l = 1:ngl
+            m = 1:ngl
+            n = 1
+            IPc = conn[cell_ip_child,  l, m, 1  ]
+            IPp = conn[cell_ip_parent, l, m, ngl]
+        elseif (local_parent_facet_id == 5) # right
+            l = 1
+            m = 1:ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  1,   m, n]
+            IPp = conn[cell_ip_parent, ngl, m, n]
+        elseif (local_parent_facet_id == 6) # left
+            l = ngl
+            m = 1:ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  ngl, m, n]
+            IPp = conn[cell_ip_parent, 1,   m, n]
+        end
+        cnt = 1
+        for k in n
+            for j in m
+                for i in l
+                    Imn[cnt] = i + (j -1) * ngl + (k - 1) * ngl2
+                    cnt      += 1
+                end
+            end
+        end
+        Lt_1 .= @view(interp[:,:,half_1])'
+        Lt_2 .= @view(interp[:,:,half_2])'
+        Mg .= TFloat(0.0)
+        M_gatter_tmp .= TFloat(0.0)
+        for q = 1:ngl2
+            I = Imn[q]
+            for k = 1:ngl
+                for j = 1:ngl
+                    for i = 1:ngl
+                        J = i + (j - 1)*ngl + (k - 1)*ngl2
+                        Mg[q] += Mel[I,J,cell_ip_child]
+                    end
+                end
+            end
+        end
+
+
+        for i2 = 1:ngl
+            for i1 = 1:ngl
+                i = i1 + (i2 - 1) * ngl
+                ipc = IPc[i]
+                ipp = IPp[i]
+                if ipc == ipp
+                    # M_gatter_tmp[i] -= Mg[i]
+                    continue
+                end
+                for j2 = 1:ngl
+                    for j1 = 1:ngl
+                        j = j1 + (j2 - 1) * ngl
+                        ipp = IPp[j]
+                        M[ipp] += Lt_1[j1,i1] * Lt_2[j2,i2] * Mg[i]
+                    end
+                end
+            end
+        end
+        # for j = 1:ngl
+        #     ipp = IPp[j]
+        #     M[ipp] += M_gatter_tmp[j]
+        # end
+    end
+
+    # comm = MPI.COMM_WORLD
+    # rank = MPI.Comm_rank(comm)
+    # num_p_ghost = size(non_conforming_facets_parents_ghost, 1)
+    # # if num_p_ghost == 0
+    # #     return
+    # # # end
+    # # if rank == 1
+    # #     gip_gather_ghost = [11, 17, 2, 11, 17, 2, 11, 33, 13, 11, 33, 13]
+    # # end
+    # M_gather_ghost = KernelAbstractions.zeros(CPU(),  TFloat, num_p_ghost * (ngl))
+    # # @info rank , num_p_ghost * (ngl), size(gip_gather_owner,1)
+    
+    # for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
+    #     cell_ip_child, local_parent_facet_id, half = ncf
+    #     if (local_parent_facet_id == 1)
+    #         m = ngl
+    #         n = 1:ngl
+    #         IPc = conn[cell_ip_child, ngl, n]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         Lt .= @view(interp[:,:,half])'
+    #     elseif (local_parent_facet_id == 2)
+    #         m = 1
+    #         n = 1:ngl
+    #         IPc = conn[cell_ip_child, 1, n]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         Lt .= @view(interp[:,:,half])'
+    #     elseif (local_parent_facet_id == 3)
+    #         m = 1:ngl
+    #         n = 1
+    #         IPc = conn[cell_ip_child, m, 1]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         Lt .= @view(interp[:,:,half])'
+    #     elseif (local_parent_facet_id == 4)
+    #         m = 1:ngl
+    #         n = ngl
+    #         IPc = conn[cell_ip_child, m, ngl]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         Lt .= @view(interp[:,:,half])'
+    #     end
+    #     Mg .= TFloat(0.0)
+    #     M_gatter_tmp .= TFloat(0.0)
+    #     # @info "non_conforming_facets_parents_ghost", rank, [(mesh.x[ip], mesh.y[ip], ip) for ip in IPc]
+    #     @turbo for l = 1:ngl
+    #         I = Imn[l]
+    #         for j = 1:ngl
+    #             for i = 1:ngl
+    #                 J = i + (j - 1) * ngl
+    #                 Mg[l] += Mel[I,J,cell_ip_child]
+    #             end
+    #         end
+    #     end
+
+
+    #     for i = 1:ngl
+    #         ipc = ip2gip[IPc[i]]
+    #         ipp = gip_gather_ghost[(idx-1) * ngl + i]
+    #         if ipc == ipp
+    #             # M_gatter_tmp[i] -= Mg[i]
+    #             # @info rank, "gip_gather_ghost", gip_gather_ghost
+    #             continue
+    #         end
+    #         for j = 1:ngl
+    #             ipp = (idx-1) * ngl + j
+    #             M_gather_ghost[ipp] += Lt[j,i] * Mg[i]
+    #         end
+            
+    #     end
+    #     # for j = 1:ngl
+    #     #     ipp = IPp[j]
+    #     #     M[ipp] += M_gatter_tmp[j]
+    #     # end
+    # end
+
+    # # @info "gip_gather_owner", rank, gip_gather_owner
+    # M_local = send_and_receive(M_gather_ghost, gip_gather_owner, comm)[1]
+    # gip_local = send_and_receive(gip_gather_ghost, gip_gather_owner, comm)[1]
+    # # @info "M_local", rank, [(mesh.x[gip2ip[gip]], mesh.y[gip2ip[gip]], gip) for gip in gip_local]
+
+    # for (gip, m_value) in zip(gip_local, M_local)
+    #     M[gip2ip[gip]] += m_value
+    # end
+end
+
+function DSS_nc_scatter_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, conn_facets::AbstractArray,
+                              non_conforming_facets, non_conforming_facets_children_ghost, ip2gip, gip2ip, gip_scatter_ghost, gip_scatter_owner, N, interp)
+    ngl           = N+1
+    ngl2          = ngl * ngl
+    L_1           = KernelAbstractions.zeros(CPU(),  TFloat, ngl, ngl)
+    L_2           = KernelAbstractions.zeros(CPU(),  TFloat, ngl, ngl)
+    Ms            = KernelAbstractions.zeros(CPU(),  TFloat, ngl2)
+    M_scatter_tmp = KernelAbstractions.zeros(CPU(),  TFloat, ngl2)
+    Imn           = KernelAbstractions.zeros(CPU(),  TInt, ngl2)
+
+    # half 1 top, half 2 bottom
+    for ncf in non_conforming_facets
+        facet_ip_child, cell_ip_child, facet_ip_parent, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
+        if (local_parent_facet_id == 1) # front
+            l = 1:ngl
+            m = ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  l, ngl, n]
+            IPp = conn[cell_ip_parent, l, 1,   n]
+        elseif (local_parent_facet_id == 2) # back
+            l = 1:ngl
+            m = 1
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  l, 1,   n]
+            IPp = conn[cell_ip_parent, l, ngl, n]
+        elseif (local_parent_facet_id == 3) # bottom
+            l = 1:ngl
+            m = 1:ngl
+            n = ngl
+            IPc = conn[cell_ip_child,  l, m, ngl]
+            IPp = conn[cell_ip_parent, l, m, 1  ]
+        elseif (local_parent_facet_id == 4) # top
+            l = 1:ngl
+            m = 1:ngl
+            n = 1
+            IPc = conn[cell_ip_child,  l, m, 1  ]
+            IPp = conn[cell_ip_parent, l, m, ngl]
+        elseif (local_parent_facet_id == 5) # right
+            l = 1
+            m = 1:ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  1,   m, n]
+            IPp = conn[cell_ip_parent, ngl, m, n]
+        elseif (local_parent_facet_id == 6) # left
+            l = ngl
+            m = 1:ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  ngl, m, n]
+            IPp = conn[cell_ip_parent, 1,   m, n]
+        end
+        cnt = 1
+        for k in n
+            for j in m
+                for i in l
+                    Imn[cnt] = i + (j -1) * ngl + (k - 1) * ngl2
+                    cnt      += 1
+                end
+            end
+        end
+        L_1 .= @view(interp[:,:,half_1])
+        L_2 .= @view(interp[:,:,half_2])
+
+        Ms            .= TFloat(0.0)
+        M_scatter_tmp .= TFloat(0.0)
+        for j2 = 1:ngl
+            for j1 = 1:ngl
+                j = j1 + (j2 - 1) * ngl
+                ipp = IPp[j]
+                Ms[j] = M[ipp]
+                for i2 = 1:ngl
+                    for i1 = 1:ngl
+                        i = i1 + (i2 - 1) * ngl
+                        M_scatter_tmp[i] += L_1[i1,j1] * L_2[i2,j2] * Ms[j]
+                    end
+                end
+            end
+        end
+        for i = 1:ngl2
+            ipc = IPc[i]
+            M[ipc] = M_scatter_tmp[i]
+        end
+    end
+
+
+
+    # comm = MPI.COMM_WORLD
+    # rank = MPI.Comm_rank(comm)
+    # num_p_ghost = size(non_conforming_facets_children_ghost, 1)
+    # # if num_p_ghost == 0
+    # #     return
+    # # end
+    # M_scatter_ghost = KernelAbstractions.zeros(CPU(),  TFloat, num_p_ghost * (ngl))
+    # # @info rank , num_p_ghost * (ngl), size(gip_scatter_owner,1)
+
+    # for (idx, ncf) in enumerate(non_conforming_facets_children_ghost)
+    #     cell_ip_parent, local_parent_facet_id, half = ncf
+    #     # @info rank, ncf
+    #     Imn = zeros(TInt, ngl)
+    #     if (local_parent_facet_id == 1)
+    #         m = ngl
+    #         n = 1:ngl
+    #         IPp = conn[cell_ip_parent, 1, n]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         L .= @view(interp[:,:,half])
+    #     elseif (local_parent_facet_id == 2)
+    #         m = 1
+    #         n = 1:ngl
+    #         IPp = conn[cell_ip_parent, ngl, n]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         L .= @view(interp[:,:,half])
+    #     elseif (local_parent_facet_id == 3)
+    #         m = 1:ngl
+    #         n = 1
+    #         IPp = conn[cell_ip_parent, m, ngl]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         L .= @view(interp[:,:,half])
+    #     elseif (local_parent_facet_id == 4)
+    #         m = 1:ngl
+    #         n = ngl
+    #         IPp = conn[cell_ip_parent, m, 1]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         L .= @view(interp[:,:,half])
+    #     end
+    #     Ms .= TFloat(0.0)
+    #     M_scatter_tmp .= TFloat(0.0)
+    #     @turbo for j = 1:ngl
+    #         ipp = IPp[j]
+    #         Ms[j] = M[ipp]
+    #         for i = 1:ngl
+    #             M_scatter_tmp[i] += L[i,j] * Ms[j]
+    #         end
+    #     end
+    #     for i = 1:ngl
+    #         ipc = (idx - 1) * ngl + i
+    #         M_scatter_ghost[ipc] = M_scatter_tmp[i]
+    #     end
+    # end
+    # M_local = send_and_receive(M_scatter_ghost, gip_scatter_owner, comm)[1]
+    # gip_local = send_and_receive(gip_scatter_ghost, gip_scatter_owner, comm)[1]
+    # for (gip, m_value) in zip(gip_local, M_local)
+    #     M[gip2ip[gip]] = m_value
+    # end
+
+end
+
+
+function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, conn_facets::AbstractArray,
+                            non_conforming_facets, non_conforming_facets_parents_ghost, ip2gip, gip2ip, gip_gather_ghost, gip_gather_owner, N, neqs, interp)
+    
+    ngl          = N+1
+    ngl2         = ngl * ngl
+    Mg           = KernelAbstractions.zeros(CPU(),  TFloat, ngl2)
+    Lt_1         = KernelAbstractions.zeros(CPU(),  TFloat, ngl, ngl)
+    Lt_2         = KernelAbstractions.zeros(CPU(),  TFloat, ngl, ngl)
+    M_gatter_tmp = KernelAbstractions.zeros(CPU(),  TFloat, ngl2)
+    Imn          = KernelAbstractions.zeros(CPU(),  TInt,   ngl2)
+
+    # half 1 top, half 2 bottom
+    for ncf in non_conforming_facets
+        facet_ip_child, cell_ip_child, facet_ip_parent, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
+        if (local_parent_facet_id == 1) # front
+            l = 1:ngl
+            m = ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  l, ngl, n]
+            IPp = conn[cell_ip_parent, l, 1,   n]
+        elseif (local_parent_facet_id == 2) # back
+            l = 1:ngl
+            m = 1
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  l, 1,   n]
+            IPp = conn[cell_ip_parent, l, ngl, n]
+        elseif (local_parent_facet_id == 3) # bottom
+            l = 1:ngl
+            m = 1:ngl
+            n = ngl
+            IPc = conn[cell_ip_child,  l, m, ngl]
+            IPp = conn[cell_ip_parent, l, m, 1  ]
+        elseif (local_parent_facet_id == 4) # top
+            l = 1:ngl
+            m = 1:ngl
+            n = 1
+            IPc = conn[cell_ip_child,  l, m, 1  ]
+            IPp = conn[cell_ip_parent, l, m, ngl]
+        elseif (local_parent_facet_id == 5) # right
+            l = 1
+            m = 1:ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  1,   m, n]
+            IPp = conn[cell_ip_parent, ngl, m, n]
+        elseif (local_parent_facet_id == 6) # left
+            l = ngl
+            m = 1:ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  ngl, m, n]
+            IPp = conn[cell_ip_parent, 1,   m, n]
+        end
+        cnt = 1
+        for k in n
+            for j in m
+                for i in l
+                    Imn[cnt] = i + (j -1) * ngl + (k - 1) * ngl2
+                    cnt      += 1
+                end
+            end
+        end
+        Lt_1 .= @view(interp[:,:,half_1])'
+        Lt_2 .= @view(interp[:,:,half_2])'
+
+        for ieq = 1:neqs
+            Mg .= TFloat(0.0)
+            M_gatter_tmp .= TFloat(0.0)
+            cnt = 1
+            for k in n
+                for j in m
+                    for i in l
+                        Mg[cnt] = Mel[cell_ip_child,i,j,k,ieq]
+                        cnt    += 1
+                    end
+                end
+            end
+            
+            for i2 = 1:ngl
+                for i1 = 1:ngl
+                    i = i1 + (i2 - 1) * ngl
+                    ipc = IPc[i]
+                    ipp = IPp[i]
+                    if ipc == ipp
+                        continue
+                    # M_gatter_tmp[i] -= Mg[i]
+                    end
+                    for j2 = 1:ngl
+                        for j1 = 1:ngl
+                            j = j1 + (j2 - 1) * ngl
+                            M_gatter_tmp[j] += Lt_1[j1,i1] * Lt_2[j2,i2] * Mg[i]
+                        end
+                    end
+                end
+            end
+            for j2 = 1:ngl
+                for j1 = 1:ngl
+                    j = j1 + (j2 - 1) * ngl
+                    ipp = IPp[j]
+                    M[ipp,ieq] += M_gatter_tmp[j]
+                end
+            end
+        end
+    end
+
+
+    # comm = MPI.COMM_WORLD
+    # rank = MPI.Comm_rank(comm)
+    # num_p_ghost = size(non_conforming_facets_parents_ghost, 1)
+    # # if num_p_ghost == 0
+    # #     return
+    # # end
+    # M_gather_ghost = KernelAbstractions.zeros(CPU(),  TFloat, num_p_ghost * (ngl), neqs)
+    # # @info rank , num_p_ghost * (ngl), size(gip_gather_owner,1)
+    
+    # for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
+    #     cell_ip_child, local_parent_facet_id, half = ncf
+    #     if (local_parent_facet_id == 1)
+    #         m = ngl
+    #         n = 1:ngl
+    #         IPc = conn[cell_ip_child, ngl, n]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         Lt .= @view(interp[:,:,half])'
+    #     elseif (local_parent_facet_id == 2)
+    #         m = 1
+    #         n = 1:ngl
+    #         IPc = conn[cell_ip_child, 1, n]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         Lt .= @view(interp[:,:,half])'
+    #     elseif (local_parent_facet_id == 3)
+    #         m = 1:ngl
+    #         n = 1
+    #         IPc = conn[cell_ip_child, m, 1]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         Lt .= @view(interp[:,:,half])'
+    #     elseif (local_parent_facet_id == 4)
+    #         m = 1:ngl
+    #         n = ngl
+    #         IPc = conn[cell_ip_child, m, ngl]
+    #         Imn = m .+ (n .- 1) .* ngl
+    #         Lt .= @view(interp[:,:,half])'
+    #     end
+
+    #     for ieq = 1:neqs
+    #         Mg .= TFloat(0.0)
+    #         M_gatter_tmp .= TFloat(0.0)
+
+    #         Mg[:] .= Mel[cell_ip_child,m,n,ieq] #if inexact
+
+
+    #         for i = 1:ngl
+    #             ipc = ip2gip[IPc[i]]
+    #             ipp = gip_gather_ghost[(idx-1) * ngl + i]
+    #             if ipc == ipp
+    #                 # M_gatter_tmp[i] -= Mg[i]
+    #                 continue
+    #             end
+    #             for j = 1:ngl
+    #                 ipp = (idx-1) * ngl + j
+    #                 M_gather_ghost[ipp, ieq] += Lt[j,i] * Mg[i]
+    #             end
+                
+    #         end
+    #     end
+    #     # for j = 1:ngl
+    #     #     ipp = IPp[j]
+    #     #     M[ipp] += M_gatter_tmp[j]
+    #     # end
+    # end
+    # for ieq in 1:neqs
+    #     M_local = send_and_receive(@view(M_gather_ghost[:,ieq]), gip_gather_owner, comm)[1]
+    #     gip_local = send_and_receive(gip_gather_ghost, gip_gather_owner, comm)[1]
+    #     for (gip, m_value) in zip(gip_local, M_local)
+    #         M[gip2ip[gip], ieq] += m_value
+    #     end
+    # end
+end
+
+function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, conn_facets::AbstractArray,
+                             non_conforming_facets, non_conforming_facets_children_ghost, ip2gip, gip2ip, gip_scatter_ghost, gip_scatter_owner, N, interp)
+    ngl           = N+1
+    ngl2          = ngl * ngl
+    L_1           = KernelAbstractions.zeros(CPU(),  TFloat, ngl, ngl)
+    L_2           = KernelAbstractions.zeros(CPU(),  TFloat, ngl, ngl)
+    Ms            = KernelAbstractions.zeros(CPU(),  TFloat, ngl2)
+    M_scatter_tmp = KernelAbstractions.zeros(CPU(),  TFloat, ngl2)
+    Imn           = KernelAbstractions.zeros(CPU(),  TInt,   ngl2)
+    
+    # half 1 top, half 2 bottom
+    for ncf in non_conforming_facets
+        facet_ip_child, cell_ip_child, facet_ip_parent, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
+        if (local_parent_facet_id == 1) # front
+            l = 1:ngl
+            m = ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  l, ngl, n]
+            IPp = conn[cell_ip_parent, l, 1,   n]
+        elseif (local_parent_facet_id == 2) # back
+            l = 1:ngl
+            m = 1
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  l, 1,   n]
+            IPp = conn[cell_ip_parent, l, ngl, n]
+        elseif (local_parent_facet_id == 3) # bottom
+            l = 1:ngl
+            m = 1:ngl
+            n = ngl
+            IPc = conn[cell_ip_child,  l, m, ngl]
+            IPp = conn[cell_ip_parent, l, m, 1  ]
+        elseif (local_parent_facet_id == 4) # top
+            l = 1:ngl
+            m = 1:ngl
+            n = 1
+            IPc = conn[cell_ip_child,  l, m, 1  ]
+            IPp = conn[cell_ip_parent, l, m, ngl]
+        elseif (local_parent_facet_id == 5) # right
+            l = 1
+            m = 1:ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  1,   m, n]
+            IPp = conn[cell_ip_parent, ngl, m, n]
+        elseif (local_parent_facet_id == 6) # left
+            l = ngl
+            m = 1:ngl
+            n = 1:ngl
+            IPc = conn[cell_ip_child,  ngl, m, n]
+            IPp = conn[cell_ip_parent, 1,   m, n]
+        end
+        cnt = 1
+        for k in n
+            for j in m
+                for i in l
+                    Imn[cnt] = i + (j -1) * ngl + (k - 1) * ngl2
+                    cnt      += 1
+                end
+            end
+        end
+        L_1 .= @view(interp[:,:,half_1])
+        L_2 .= @view(interp[:,:,half_2])
+
+        Ms            .= TFloat(0.0)
+        M_scatter_tmp .= TFloat(0.0)
+        for j2 = 1:ngl
+            for j1 = 1:ngl
+                j = j1 + (j2 - 1) * ngl
+                ipp = IPp[j]
+                Ms[j] = M[ipp]
+                for i2 = 1:ngl
+                    for i1 = 1:ngl
+                        i = i1 + (i2 - 1) * ngl
+                        M_scatter_tmp[i] += L_1[i1,j1] * L_2[i2,j2] * Ms[j]
+                    end
+                end
+            end
+        end
+        for i = 1:ngl2
+            ipc = IPc[i]
+            M[ipc] = M_scatter_tmp[i]
+        end
+    end
+
+#     # comm = MPI.COMM_WORLD
+#     # rank = MPI.Comm_rank(comm)
+#     # num_p_ghost = size(non_conforming_facets_children_ghost, 1)
+#     # # if num_p_ghost == 0
+#     # #     return
+#     # # end
+#     # M_scatter_ghost = KernelAbstractions.zeros(CPU(),  TFloat, num_p_ghost * (ngl))
+#     # # @info rank , num_p_ghost * (ngl), size(gip_scatter_owner,1)
+
+#     # for (idx, ncf) in enumerate(non_conforming_facets_children_ghost)
+#     #     cell_ip_parent, local_parent_facet_id, half = ncf
+#     #     # @info rank, ncf
+#     #     Imn = zeros(TInt, ngl)
+#     #     if (local_parent_facet_id == 1)
+#     #         m = ngl
+#     #         n = 1:ngl
+#     #         IPp = conn[cell_ip_parent, 1, n]
+#     #         Imn = m .+ (n .- 1) .* ngl
+#     #         L .= @view(interp[:,:,half])
+#     #     elseif (local_parent_facet_id == 2)
+#     #         m = 1
+#     #         n = 1:ngl
+#     #         IPp = conn[cell_ip_parent, ngl, n]
+#     #         Imn = m .+ (n .- 1) .* ngl
+#     #         L .= @view(interp[:,:,half])
+#     #     elseif (local_parent_facet_id == 3)
+#     #         m = 1:ngl
+#     #         n = 1
+#     #         IPp = conn[cell_ip_parent, m, ngl]
+#     #         Imn = m .+ (n .- 1) .* ngl
+#     #         L .= @view(interp[:,:,half])
+#     #     elseif (local_parent_facet_id == 4)
+#     #         m = 1:ngl
+#     #         n = ngl
+#     #         IPp = conn[cell_ip_parent, m, 1]
+#     #         Imn = m .+ (n .- 1) .* ngl
+#     #         L .= @view(interp[:,:,half])
+#     #     end
+#     #     Ms .= TFloat(0.0)
+#     #     M_scatter_tmp .= TFloat(0.0)
+#     #     @turbo for j = 1:ngl
+#     #         ipp = IPp[j]
+#     #         Ms[j] = M[ipp]
+#     #         for i = 1:ngl
+#     #             M_scatter_tmp[i] += L[i,j] * Ms[j]
+#     #         end
+#     #     end
+#     #     for i = 1:ngl
+#     #         ipc = (idx - 1) * ngl + i
+#     #         M_scatter_ghost[ipc] = M_scatter_tmp[i]
+#     #     end
+#     # end
+#     # M_local = send_and_receive(M_scatter_ghost, gip_scatter_owner, comm)[1]
+#     # gip_local = send_and_receive(gip_scatter_ghost, gip_scatter_owner, comm)[1]
+#     # for (gip, m_value) in zip(gip_local, M_local)
+#     #     M[gip2ip[gip]] = m_value
+#     # end
+end
+
+
+function conformity4ncf_q!(q, pM, SD::NSD_3D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, interp)
+    nelem = mesh.nelem
+    npoin = mesh.npoin
+    ngl = mesh.ngl
+    q_el_tmp = KernelAbstractions.zeros(CPU(), TFloat, Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
+    q_tmp = KernelAbstractions.zeros(CPU(), TFloat, Int64(npoin), Int64(neqs))
+    vaux = []
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for i = 1:ngl
+                for j = 1:ngl
+                    for k = 1:ngl
+                        ip = conn[iel,i,j,k]
+                        ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                        q_el_tmp[iel,i,j,k,ieq] = ωJac*q[ip,ieq]
+                        q_tmp[ip,ieq] += ωJac*q[ip,ieq]
+                    end
+                end
+            end
+        end
+    end
+    DSS_nc_gather_rhs!(q_tmp, SD, QT, q_el_tmp, conn, mesh.poin_in_edge, mesh.non_conforming_facets,
+                       mesh.non_conforming_facets_parents_ghost, mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, ngl-1, neqs, interp)
+    DSS_global_RHS!(@view(q_tmp[:,:]), pM, neqs)
+    for ieq=1:neqs
+        divide_by_mass_matrix!(@view(q_tmp[:,ieq]), vaux, Minv, neqs, npoin, AD)
+        DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT, q_el_tmp[:,:,:,:,ieq], conn, mesh.poin_in_edge, mesh.non_conforming_facets,
                             mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, ngl-1, interp)
         q[:,ieq] .= q_tmp[:,ieq]
     end

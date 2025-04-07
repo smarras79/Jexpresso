@@ -3,8 +3,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.01,
+        :ode_solver           => SSPRK53(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        :Δt                   => 0.02,
         :tinit                => 0.0,
         # :tend                 => 1000.0,
         :tend                 => 400,
@@ -12,8 +12,7 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output",
-        # :ndiagnostics_outputs => 1,
-        :diagnostics_at_times => (0.01, 200, 400),
+        :diagnostics_at_times => (0:10:400),
         :lsource              => true,
         #:backend              => CUDABackend(),
         #---------------------------------------------------------------------------
@@ -26,7 +25,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc               => true, #false by default
         :ivisc_equations     => [1, 2, 3, 4, 5],
-        :μ                   => [0.0, 0.5, 0.5, 0.5, 0.5],
+        :μ                   => [0.0, 2.0, 2.0, 2.0, 2.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

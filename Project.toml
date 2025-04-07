@@ -584,3 +584,7 @@ pprof_jll = "cf2c5f97-e748-59fa-a03f-dda3c62118cb"
 x264_jll = "1270edf5-f2f9-52d2-97e9-ab00b5d0237a"
 x265_jll = "dfaa095f-4041-5dcd-9319-2fabd8486b76"
 xkbcommon_jll = "d8fb68d0-12a3-5cfd-a85a-d49703b185fd"
+
+[compat]
+MPI = "0.20.22"
+MPIPreferences = "0.1.11"
