@@ -385,14 +385,20 @@ mpiexec --version
 
 ### 2. Configure MPI Preferences
 
-#### Automatic Configuration (Recommended)
+#### Automatic Configuration (Default Path)
+Use this command when MPI (OpenMPI/MPICH) is installed in standard system paths (`/usr/bin`, `/usr/local/bin`, etc.):
 ```bash
 julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary()'
 ```
 
 #### Manual Configuration (For Multiple MPI Installations or MPI not in Default Path)
+For MPI installations in non-standard locations (e.g., /opt/openmpi, or custom paths):
 ```bash
 julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary(;extra_paths = ["/where/your/mpi/lib"])'
+```
+If MPI is installed via homebrew on macOS, the MPI lib path is:
+```bash
+/opt/homebrew/lib
 ```
 
 ### 3. Running with MPI
