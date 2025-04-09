@@ -258,6 +258,178 @@ Details will be given in the documentation (still WIP). Write us if you need hel
 
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
+## Laguerre semi-infinite element test suite
+This section contains instructions to run all of the test cases presented in
+
+```
+@article{tissaoui2024,
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
+  volume ={487},
+  pages={129080},
+  year = {2024},
+  journal = {App. Math. Comput.},
+}
+```
+
+Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
+
+The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+push!(empty!(ARGS), "CompEuler", "wave1d_lag");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/wave_v_4.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 2: 1D wave train for linearized shallow water equations
+
+The problem is defined in [`problems/equations/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+push!(empty!(ARGS), "AdvDiff", "Wave_Train");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/Wave_Train_final.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+
+Test 3: 2D advection-diffusion equation
+
+The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+push!(empty!(ARGS), "AdvDiff", "2D_laguerre");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/ad2d-4s-line.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 4: 2D Helmholtz equation
+
+The problem is defined in [`problems/equations/Helmholtz/case1`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1) and by default output will be written to `output/Helmholtz/case1`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+push!(empty!(ARGS), "Helmholtz", "case1");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/Helmholtz_from_jexpresso-line.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 5: Rising thermal bubble
+
+The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+push!(empty!(ARGS), "CompEuler", "theta_laguerre");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/48.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 6: Hydrostatic linear mountain waves
+
+The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
+
+```bash      
+push!(empty!(ARGS), "CompEuler", "HSmount_Lag");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/wvelo.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+
+## Setup and Run with MPI
+
+JEXPRESSO supports parallel execution using either OpenMPI or MPICH. Follow these steps to configure and run with your preferred MPI implementation.
+
+### 1. Install MPI Implementation
+
+Choose either OpenMPI or MPICH:
+
+#### OpenMPI Installation
+```bash
+# Ubuntu/Debian
+sudo apt install libopenmpi-dev openmpi-bin
+
+# macOS (Homebrew)
+brew install open-mpi
+
+# Verify installation
+mpiexec --version
+```
+
+#### MPICH Installation
+```bash
+# Ubuntu/Debian
+sudo apt install mpich libmpich-dev
+
+# macOS (Homebrew) 
+brew install mpich
+
+# Verify installation
+mpiexec --version
+```
+
+### 2. Configure MPI Preferences
+
+#### Automatic Configuration (Recommended)
+```bash
+julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary()'
+```
+
+#### Manual Configuration (For Multiple MPI Installations or MPI not in Default Path)
+```bash
+julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary(;extra_paths = ["/where/your/mpi/lib"])'
+```
+
+### 3. Running with MPI
+
+#### Basic Execution
+```bash
+mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<CASE_NAME>"); include("./src/Jexpresso.jl")'
+```
+
+#### Implementation-Specific Examples
+```bash
+mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
+```
+
+
+### Troubleshooting
+
+- **Library conflicts:** Clear existing preferences:
+  ```bash
+  rm -f LocalPreferences.toml
+  ```
+- **Path issues:** Verify paths with:
+  ```bash
+  which mpiexec
+  which mpirun
+  ```
+- **Version mismatches:** Ensure consistent versions:
+  ```bash
+  mpicc --version
+  mpif90 --version
+  ```
+
+
+
+<!-- <img src="assets/mpi_performance_comparison.png" width="700" alt="MPI Performance Comparison"> -->
+
 ## Plotting
 Files can be written to VTK (recommended) or png. For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
 modify ./src/io/plotting/jplots.jl accordinly.
