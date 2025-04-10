@@ -210,7 +210,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             x_original .= mesh.x
             y_original .= mesh.y
             z_original .= mesh.z
-            @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
+            #=@time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
                                            mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
                                            mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
                                            mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
@@ -218,12 +218,14 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                                          inputs,inputs[:backend])
             if rank == 0
                 @info " Build periodicity infrastructure ...... DONE"
-            end
+            end=#
 
 #@mystop(" L 152 sem_setup")
             
-            warp_mesh!(mesh,inputs)
-            
+            if (inputs[:lwarp])
+                warp_mesh!(mesh,inputs)
+            end           
+
             if rank == 0
                 @info " Matrix wrapper ......"
             end
