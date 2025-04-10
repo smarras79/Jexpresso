@@ -209,7 +209,7 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
     #H[:,:,:,:] .= 0.0
 end
 
-function compute_precipitation_derivatives!(drad_lw, drad_sw, dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tabs, qi, ρ, ρe, nelem, ngl, connijk, H, metrics, ω, dψ, flux_lw, flux_sw, ::PERT)
+function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tabs, qi, ρ, ρe, nelem, ngl, connijk, H, metrics, ω, dψ, ::PERT)
 
     MicroConst = MicrophysicalConst{Float64}()
     dqpdt .= 0.0
