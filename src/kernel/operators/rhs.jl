@@ -457,7 +457,9 @@ function _build_rhs!(RHS, u, params, time)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
 
-    DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+    if (mpisize > 1)
+        DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+    end
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
         # @info "ieq", ieq
