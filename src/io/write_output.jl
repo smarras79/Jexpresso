@@ -215,7 +215,6 @@ function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp,
         write_vtk(SD, mesh, u_sol, mp, 
                     connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
-        write_vtk(SD, mesh, u_sol, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
     else
         #VERIFY THIS on GPU
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
@@ -859,7 +858,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp,
     end
     #=new_size = npoin
     iter = 1=#
-    if ("periodic1" in mesh.bdy_face_type || "periodic2" in mesh.bdy_face_type || "periodic3" in mesh.bdy_face_type)
+    #=if ("periodic1" in mesh.bdy_face_type || "periodic2" in mesh.bdy_face_type || "periodic3" in mesh.bdy_face_type)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
         q_new = zeros(new_size*nvar)
@@ -876,6 +875,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp,
                 flux_lw_new  = zeros(new_size) 
                 flux_sw_new  = zeros(new_size) 
             end
+        end
         for e = 1:mesh.nelem
             for i=1:mesh.ngl
                 for j=1:mesh.ngl
@@ -946,7 +946,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp,
         end
         mesh.connijk .= connijk_original
         npoin = new_size
-    end
+    end=#
     
     subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
     cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]

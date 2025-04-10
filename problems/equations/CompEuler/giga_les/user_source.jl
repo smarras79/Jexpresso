@@ -84,7 +84,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     yl = -8000.0
 
     if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betay_coe =  sinpi(0.5*(z-zs)/(zmax-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betay_coe =  sinpi(0.5*(z-zs)/(25000.0-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
         #betay_coe = 0.9/(1+exp((0.4*ymax-y)/(ymax/18)))
         #betay_coe = 25.0/(1+exp((0.9*ymax-y)/(ymax/15))) ### damps too far down
         #betay_coe = 2.0/(1+exp((0.3*(ymax-15000)-y+15000)/((ymax-15000)/18)))
@@ -104,7 +104,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     end
 
     if (y >= yr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betayr_coe =  sinpi(0.5*(y-yr)/(12000.0-yr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betayr_coe =  sinpi(0.5*(y-yr)/(60000.0-yr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betayr_coe = 0.0
     end
@@ -116,7 +116,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     end
 
     if (y <= yl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betayl_coe =  sinpi(0.5*(yl-y)/(yl-(-12000.0)))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betayl_coe =  sinpi(0.5*(yl-y)/(yl-(-60000.0)))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betayl_coe = 0.0
     end
