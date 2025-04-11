@@ -204,15 +204,40 @@ function sem_setup(inputs::Dict)
         end
     end
 
-    @time new_matrix = remove_arrays!(mesh.poin_in_edge, mesh.poin_in_bdy_edge)
+    @time new_matrix      = remove_arrays!(mesh.poin_in_edge, mesh.poin_in_bdy_edge)
     @time new_no_bdy_poin = replace_shared_values!(new_matrix, mesh.poin_in_bdy_edge)
     
     @time mesh.∂O = unroll_positive_unique(new_no_bdy_poin)
-    @time mesh.∂τ = unroll_positive_unique(mesh.poin_in_bdy_edge)
+    @time mesh.Γ  = unroll_positive_unique(mesh.poin_in_bdy_edge)
 
-    mesh.∂τ = vcat(mesh.∂τ, mesh.∂O)
+    mesh.∂τ       = vcat(mesh.Γ, mesh.∂O)
     mesh.length∂O = length(mesh.∂O)
     mesh.length∂τ = length(mesh.∂τ)
-
+    mesh.lengthΓ  = length(mesh.Γ)    
+    mesh.τO       = view(mesh.internal_poin_in_elem, :)
+    mesh.lengthτO = length(mesh.τO)
+    mesh.O        = vcat(mesh.τO, mesh.∂O)
+    
+    println("Γ")
+    println(mesh.Γ)
+    println(mesh.lengthΓ)
+    
+    println("O")
+    println(mesh.O)
+    println(mesh.lengthΓ)
+    
+    println("∂O")
+    println(mesh.∂O)
+    println(mesh.length∂O)
+    
+    println("∂τ")
+    println(mesh.∂τ)
+    println(mesh.length∂τ)
+    
+    println("τO")
+    println(mesh.τO)
+    println(mesh.lengthτO)
+    
+    @mystop
     return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end
