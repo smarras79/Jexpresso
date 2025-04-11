@@ -98,18 +98,24 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     face_in_elem          = Array{TInt}(undef, 0, 0, 0)
 
     # Skeleton arrays needed by "element learning"
-    length∂O = 0
+    lengthΓ  = 0  #non-repeated bdy points from mesh.poin_in_bdy_edge    
+    lengthO  = 0  #all internal, including edges, but without domain's bdy
     length∂τ = 0
-    ∂O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, length∂O)
-    ∂τ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, length∂τ)
+    lengthτO = 0
+    length∂O = 0
+    Γ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, lengthΓ)
+    O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, lengthO)
+    ∂τ::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, length∂τ)
+    τO::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, lengthτO)
+    ∂O::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, length∂O)
     
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
     
     #Auxiliary arrays for boundary conditions
-    
     bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, 0, 0)
     internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    internal_poin_in_elem     = KernelAbstractions.zeros(backend, TInt, 0, 0)
     bdy_face_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_face          = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
@@ -244,7 +250,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy), Int64(mesh.ngl))
     mesh.internal_poin_in_edge     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges),     Int64(mesh.ngl-2))
     mesh.internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy), Int64(mesh.ngl-2))
-        
+    mesh.internal_poin_in_elem     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem*(mesh.ngl-2)^(mesh.nsd)))
+    
     mesh.poin_in_face     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
     mesh.edge_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
     mesh.bdy_edge_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
@@ -256,8 +263,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
         mesh.bdy_face_type = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces_bdy))
         mesh.bdy_face_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces_bdy))
     end
-    mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
-    mesh.conn = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
+    mesh.npoin_el = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
+    mesh.conn     = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
     
     #
     # Connectivity matrices
@@ -656,8 +663,37 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
 #
 # Extract only internal edge points:
 #
-mesh.internal_poin_in_edge[:,1:end] = mesh.poin_in_edge[:,2:end-1]
+mesh.internal_poin_in_edge[:,1:end]     = mesh.poin_in_edge[:,2:end-1]
 mesh.internal_poin_in_bdy_edge[:,1:end] = mesh.poin_in_bdy_edge[:,2:end-1]
+mesh.internal_poin_in_elem              = KernelAbstractions.zeros(backend, TInt, mesh.nelem, (mesh.ngl-2)^mesh.nsd)
+if mesh.nsd == 1
+    for iel=1:mesh.nelem
+        ii = 1
+        for i=2:mesh.ngl-1
+            ip = mesh.connijk[iel, i]
+            mesh.internal_poin_in_elem[iel, ii] = ip
+            ii += 1
+        end
+    end
+elseif mesh.nsd == 2    
+    for iel=1:mesh.nelem
+        ii = 1
+        for i=2:mesh.ngl-1, j=2:mesh.ngl-1
+            ip = mesh.connijk[iel, i, j]
+            mesh.internal_poin_in_elem[iel, ii] = ip
+            ii += 1
+        end
+    end
+elseif mesh.nsd == 3
+    for iel=1:mesh.nelem
+        ii = 1
+        for i=2:mesh.ngl-1, j=2:mesh.ngl-1, k=2:mesh.ngl-1
+            ip = mesh.connijk[iel, i, j, k]
+            mesh.internal_poin_in_elem[iel, ii] = ip
+            ii += 1
+        end
+    end
+end
 
 #----------------------------------------------------------------------
 # END Extract boundary edges and faces nodes
