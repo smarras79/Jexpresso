@@ -1434,6 +1434,9 @@ function find_gip_owner(a)
 end
 
 function determine_colinearity(vec1, vec2)
+    if AlmostEqual(norm(vec1), 0.0)
+        return false
+    end
     # For 2D vectors
     if size(vec1, 1) < 3
         if AlmostEqual(vec1[1], 0.0) && AlmostEqual(vec2[1], 0.0)
