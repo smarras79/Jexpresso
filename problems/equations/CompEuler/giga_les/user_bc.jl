@@ -34,14 +34,15 @@ function user_bc_dirichlet!(q::SubArray{Float64},
                             qe::SubArray{Float64}, ::PERT)
         PhysConst = PhysicalConst{Float64}()
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])
-        qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
-        qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
-        qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
+            qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
+            qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
+            qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
+        #if ((z < 0.1 || z > zmax - 10) && ( x < xmin + 10 || x > xmax - 10) ) || (abs(nx) >0.1)
         #qbdy[4] = 0.0
-        if (tag == "bottom")
+        #=if (tag == "bottom")
             qbdy[5] = 0.0
             qbdy[6] = 0.0
-        end
+        end=#
         #=if ((z < 0.1 || z > zmax - 10) && ( x < xmin + 10 || x > xmax - 10) ) || (abs(nx) >0.1)
         qbdy[1] = 0.0
         qbdy[2] = 0.0
