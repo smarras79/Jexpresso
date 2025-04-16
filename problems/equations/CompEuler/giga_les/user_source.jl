@@ -78,10 +78,10 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     nsponge_points = 8
 
     zs = 18000.0#ymax - 20000.0
-    xr = 8000.0
-    xl = -8000.0
-    yr = 8000.0
-    yl = -8000.0
+    xr = 50000.0
+    xl = -50000.0
+    yr = 50000.0
+    yl = -50000.0
 
     if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betay_coe =  sinpi(0.5*(z-zs)/(25000.0-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
@@ -104,7 +104,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     end
 
     if (y >= yr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betayr_coe =  sinpi(0.5*(y-yr)/(60000.0-yr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betayr_coe =  sinpi(0.5*(y-yr)/(70000.0-yr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betayr_coe = 0.0
     end
@@ -116,15 +116,15 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     end
 
     if (y <= yl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betayl_coe =  sinpi(0.5*(yl-y)/(yl-(-60000.0)))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betayl_coe =  sinpi(0.5*(yl-y)/(yl-(-70000.0)))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betayl_coe = 0.0
     end
     
-    cxr = 0.0*betaxr_coe#0.25*betaxr_coe
-    cxl = 0.0*betaxl_coe#0.25*betaxl_coe
-    cyr = 0.0*betayr_coe#0.25*betaxr_coe
-    cyl = 0.0*betayl_coe#0.25*betaxl_coe
+    cxr = 0.1*betaxr_coe#0.25*betaxr_coe
+    cxl = 0.1*betaxl_coe#0.25*betaxl_coe
+    cyr = 0.1*betayr_coe#0.25*betaxr_coe
+    cyl = 0.1*betayl_coe#0.25*betaxl_coe
 
     ctop = 1.0*min(ctop,1)
     cxr  = min(cxr,1)
