@@ -188,6 +188,24 @@ To install and run the code assume Julia 1.11.2
 
 ## Setup with CPUs
 
+Clone Jexpresso:
+```
+git clone https://github.com/smarras79/Jexpresso.git
+```
+
+Clone JexpressoMeshes
+Some sample meshes used to run the original benchmarks are stored in a separate repository to keep the Jexpresso repo lightweight.
+
+```
+git clone https://github.com/smarras79/JexpressoMeshes.git
+```
+after cloning the meshes
+```
+cd Jexpresso
+ln -s /Path/To/JexpressoMeshes/meshes .
+```
+
+Now you are ready to run the test examples listed below:
 ```bash
 >> cd $JEXPRESSO_HOME
 >> julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
