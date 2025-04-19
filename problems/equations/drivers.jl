@@ -39,9 +39,8 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
 
         if (inputs[:backend] == CPU())
           
-            Minv = diagm(sem.matrix.Minv)
-            
-            L_temp = Minv * sem.matrix.L ### SM  I can't do this
+            Minv          = diagm(sem.matrix.Minv)
+            L_temp        = Minv * sem.matrix.L
             sem.matrix.L .= L_temp
             
             for ip =1:sem.mesh.npoin
