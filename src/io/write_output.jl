@@ -373,7 +373,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
     poin_bdy = zeros(size(mesh.bdy_edge_type,1),mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_edge
     qe_temp = similar(qexact)
-    if ("periodic1" in mesh.bdy_edge_type || "periodic2" in mesh.bdy_edge_type)
+    if ("periodicx" in mesh.bdy_edge_type || "periodicz" in mesh.bdy_edge_type)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
         q_new = zeros(new_size*nvar)
@@ -384,7 +384,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         end
         q = q_new
     end 
-    if ("periodic1" in mesh.bdy_edge_type)
+    if ("periodicx" in mesh.bdy_edge_type)
     	xmin = 1000000000.0
         ymax = -1000000000.0
         for e=1:mesh.nelem
@@ -411,7 +411,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         iter = 1
     	for iedge = 1:nedges
 
-    	    if (mesh.bdy_edge_type[iedge] == "periodic1")
+    	    if (mesh.bdy_edge_type[iedge] == "periodicx")
 		e = mesh.bdy_edge_in_elem[iedge]
 		for k=1:mesh.ngl
                     ip = mesh.poin_in_bdy_edge[iedge,k]
@@ -541,7 +541,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
 	
     end  
 
-    if ("periodic2" in mesh.bdy_edge_type)
+    if ("periodicz" in mesh.bdy_edge_type)
         xmax = 1000000000.0
         ymin = -1000000000.0
         for e=1:mesh.nelem
@@ -568,7 +568,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
         iter = 1
         for iedge = 1:nedges
 
-            if (mesh.bdy_edge_type[iedge] == "periodic2")
+            if (mesh.bdy_edge_type[iedge] == "periodicz")
                 e = mesh.bdy_edge_in_elem[iedge]
                 for k=1:mesh.ngl
                     ip = mesh.poin_in_bdy_edge[iedge,k]
@@ -858,7 +858,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp,
     end
     #=new_size = npoin
     iter = 1=#
-    #=if ("periodic1" in mesh.bdy_face_type || "periodic2" in mesh.bdy_face_type || "periodic3" in mesh.bdy_face_type)
+    #=if ("periodicx" in mesh.bdy_face_type || "periodicz" in mesh.bdy_face_type || "periodicy" in mesh.bdy_face_type)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
         q_new = zeros(new_size*nvar)

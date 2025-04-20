@@ -1142,11 +1142,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         nor1 = [1.0, 0.0, 0.0]
         nor2 = [0.0, 1.0, 0.0]
         nor3 = [0.0, 0.0, 1.0]
-        if ("periodic1" in mesh.bdy_face_type)
+        if ("periodicx" in mesh.bdy_face_type)
             finder = false
             iface_bdy = 1
             while (finder == false)
-                if (mesh.bdy_face_type[iface_bdy] == "periodic1")
+                if (mesh.bdy_face_type[iface_bdy] == "periodicx")
                     ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
@@ -1163,11 +1163,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 end
             end
         end
-        if ("periodic2" in mesh.bdy_face_type)
+        if ("periodicz" in mesh.bdy_face_type)
             finder = false
             iface_bdy = 1
             while (finder == false)
-                if (mesh.bdy_face_type[iface_bdy] == "periodic2")
+                if (mesh.bdy_face_type[iface_bdy] == "periodicz")
                     ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
@@ -1184,11 +1184,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 end
             end
         end
-        if ("periodic3" in mesh.bdy_face_type)
+        if ("periodicy" in mesh.bdy_face_type)
             finder = false
             iface_bdy = 1
             while (finder == false)
-                if (mesh.bdy_face_type[iface_bdy] == "periodic3")
+                if (mesh.bdy_face_type[iface_bdy] == "periodicy")
                     ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
@@ -1205,10 +1205,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 end
             end
         end
-        restructure4periodicity_3D(mesh, nor1, "periodic1")
+        restructure4periodicity_3D(mesh, nor1, "periodicx")
         # @info mesh.ip2gip
-        restructure4periodicity_3D(mesh, nor2, "periodic2")
-        restructure4periodicity_3D(mesh, nor3, "periodic3")
+        restructure4periodicity_3D(mesh, nor2, "periodicz")
+        restructure4periodicity_3D(mesh, nor3, "periodicy")
         # @info mesh.ip2gip
 
     end
@@ -1224,9 +1224,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.x_ho = zeros(1)
     mesh.y_ho = zeros(1)
     mesh.z_ho = zeros(1)
-    #resize!(mesh.x_ho, 1)
-    #resize!(mesh.y_ho, 1)
-    #resize!(mesh.z_ho, 1)
     GC.gc()
     #
     # END Free memory of obsolete arrays
