@@ -346,7 +346,9 @@ end
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, 
+                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     outvars = varnames
     nvars = length(outvars)
@@ -823,8 +825,8 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, t, title::String, OU
 end
 
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, 
-        connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-        t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     outvars = varnames
     nvars = length(outvars)
