@@ -2,10 +2,10 @@ nelemx = 10;
 nelemy = 10;
 nelemz = 10;
 
-xmin =  -70000;
-xmax =	 70000;
-ymin =  -70000;
-ymax =   70000;
+xmin =  -100000;
+xmax =	 100000;
+ymin =  -100000;
+ymax =   100000;
 zmin =      0;
 zmax =  25000;
 gridsize = (xmax-xmin) / nelemx;

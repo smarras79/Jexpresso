@@ -251,7 +251,7 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
             for j=1:ngl
                 for k=1:ngl
                     ip = connijk[e,i,j,k]
-                    H[i,j,k,1] = qi[ip] * (ρ[ip] +ρe[ip])* 0.4
+                    H[i,j,k,1] = -qi[ip] * (ρ[ip] +ρe[ip])* 0.4
                 end
             end
         end
@@ -263,6 +263,9 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
                     ip = connijk[e,i,j,k]
                     T = Tabs[ip]
                     ωn = max(0,min(1,(T-T00n)/(T0n - T00n)))
+                    #=if (qi[ip] > 1e-9)
+                        @info dqtdt[e,i,j,k], qi[ip]
+                    end=#
                     dhldt[e,i,j,k] += (Lc + ωn*Lf)*dqtdt[e,i,j,k]
                 end
             end

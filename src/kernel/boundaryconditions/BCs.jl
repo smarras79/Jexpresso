@@ -116,7 +116,9 @@ end
 
 function build_custom_bcs!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                           connijk, Jef, S_face, S_flux, F_surf, M_surf_inv,
+                           Tabs, qn,
                            neqs, dirichlet!, neumann, inputs)
     ip = 1
     fill!(qbdy, 4325789.0)
@@ -145,7 +147,9 @@ end
 
 function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                           connijk, Jef, S_face, S_flux, F_surf, M_surf_inv,
+                           Tabs, qn,
                            neqs, dirichlet!, neumann, inputs)
     #
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!

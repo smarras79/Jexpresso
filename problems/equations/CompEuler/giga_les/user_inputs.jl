@@ -31,7 +31,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
-        :μ                   => [0.0, 500.0, 500.0, 500.0, 750.0, 750.0, 750.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 1000.0, 1000.0, 1000.0, 1550.0, 1550.0, 1550.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -53,9 +53,9 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.0,
-        :mu_y                => 0.0,
-        :mu_z                => 0.25,
+        :mu_x                => 0.15,
+        :mu_y                => 0.15,
+        :mu_z                => 0.15,
         :filter_type         => "erf", #use "erf" for Boyd-Vandeven, "exp" for exponential filter, or "quad" for quadratic filter
         #---------------------------------------------------------------------------
         # Physics grid and two-stream radiation parameters
