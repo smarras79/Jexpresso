@@ -7,8 +7,7 @@ function apply_boundary_conditions!(u, uaux, t,qe,
                                     connijk, Jef, S_face, S_flux, F_surf, M_surf_inv,
                                     Tabs, qn,
                                     ω, neqs, inputs, AD, SD)
-
-
+    
     if inputs[:lperiodic_1d] && typeof(SD) == NSD_1D
         apply_periodicity!(u, uaux, t,qe,
                            npoin_linear, ψ, dψ,
@@ -120,6 +119,7 @@ function build_custom_bcs!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                            connijk, Jef, S_face, S_flux, F_surf, M_surf_inv,
                            Tabs, qn,
                            neqs, dirichlet!, neumann, inputs)
+    
     ip = 1
     fill!(qbdy, 4325789.0)
     user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], t, "left", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
@@ -151,13 +151,13 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                            connijk, Jef, S_face, S_flux, F_surf, M_surf_inv,
                            Tabs, qn,
                            neqs, dirichlet!, neumann, inputs)
-    #
+    
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
     for iedge = 1:nedges_bdy 
         iel  = bdy_edge_in_elem[iedge]
         
-        if bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" && bdy_edge_type[iedge] != "Laguerre"
+        if bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "Laguerre"
             #if mesh.bdy_edge_type[iedge] == "free_slip"
             
             #tag = mesh.bdy_edge_type[iedge]
@@ -244,8 +244,8 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, np
     
     for iedge = 1:nedges_bdy
 
-        if (bdy_edge_type[iedge] != "periodic1" &&
-            bdy_edge_type[iedge] != "periodic2" &&
+        if (bdy_edge_type[iedge] != "periodicx" &&
+            bdy_edge_type[iedge] != "periodicz" &&
             bdy_edge_type[iedge] != "Laguerre")
             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
@@ -312,7 +312,7 @@ function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
     #for ip = 1:npoin
     PhysConst = PhysicalConst{Float64}()
     for iface = 1:nfaces_bdy
-        if bdy_face_type[iface] != "periodic1" && bdy_face_type[iface] != "periodic2" && bdy_face_type[iface] != "periodic3" 
+        if bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodicy" 
             for i=1:ngl
                 for j=1:ngl
                     fill!(qbdy, 4325789.0)
