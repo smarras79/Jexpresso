@@ -200,16 +200,16 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             if rank == 0
                 @info " Build periodicity infrastructure ......"
             end
-            connijk_original = zeros(TInt,mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
-            poin_in_bdy_face_original = zeros(TInt,size(mesh.poin_in_bdy_face,1),mesh.ngl,mesh.ngl)
-            connijk_original .= mesh.connijk
-            poin_in_bdy_face_original .= mesh.poin_in_bdy_face
-            x_original = zeros(mesh.npoin,1)
-            y_original = zeros(mesh.npoin,1)
-            z_original = zeros(mesh.npoin,1)
-            x_original .= mesh.x
-            y_original .= mesh.y
-            z_original .= mesh.z
+            # connijk_original = zeros(TInt,mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
+            # poin_in_bdy_face_original = zeros(TInt,size(mesh.poin_in_bdy_face,1),mesh.ngl,mesh.ngl)
+            # connijk_original .= mesh.connijk
+            # poin_in_bdy_face_original .= mesh.poin_in_bdy_face
+            # x_original = zeros(mesh.npoin,1)
+            # y_original = zeros(mesh.npoin,1)
+            # z_original = zeros(mesh.npoin,1)
+            # x_original .= mesh.x
+            # y_original .= mesh.y
+            # z_original .= mesh.z
             #=@time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
                                            mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
                                            mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
