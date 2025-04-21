@@ -203,41 +203,44 @@ function sem_setup(inputs::Dict)
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
         end
     end
-
-    @time new_matrix      = remove_arrays!(mesh.poin_in_edge, mesh.poin_in_bdy_edge)
-    @time new_no_bdy_poin = replace_shared_values!(new_matrix, mesh.poin_in_bdy_edge)
     
-    @time mesh.∂O = unroll_positive_unique(new_no_bdy_poin)
-    @time mesh.Γ  = unroll_positive_unique(mesh.poin_in_bdy_edge)
-
-    mesh.∂τ       = vcat(mesh.Γ, mesh.∂O)
-    mesh.length∂O = length(mesh.∂O)
-    mesh.length∂τ = length(mesh.∂τ)
-    mesh.lengthΓ  = length(mesh.Γ)    
-    mesh.τO       = view(mesh.internal_poin_in_elem, :)
-    mesh.lengthτO = length(mesh.τO)
-    mesh.O        = vcat(mesh.τO, mesh.∂O)
-    
-    println("Γ")
-    println(mesh.Γ)
-    println(mesh.lengthΓ)
-    
-    println("O")
-    println(mesh.O)
-    println(mesh.lengthΓ)
-    
-    println("∂O")
-    println(mesh.∂O)
-    println(mesh.length∂O)
-    
-    println("∂τ")
-    println(mesh.∂τ)
-    println(mesh.length∂τ)
-    
-    println("τO")
-    println(mesh.τO)
-    println(mesh.lengthτO)
-    
-    @mystop
+    if inputs[:lelemLearning]
+        #
+        # Element learning
+        #
+        new_matrix      = remove_arrays!(mesh.poin_in_edge, mesh.poin_in_bdy_edge)
+        new_no_bdy_poin = replace_shared_values!(new_matrix, mesh.poin_in_bdy_edge)
+        
+        mesh.∂O       = unroll_positive_unique(new_no_bdy_poin)
+        mesh.Γ        = unroll_positive_unique(mesh.poin_in_bdy_edge)
+        mesh.∂τ       = vcat(mesh.Γ, mesh.∂O)
+        mesh.τO       = view(mesh.internal_poin_in_elem, :)
+        mesh.lengthτO = length(mesh.τO)
+        mesh.O        = vcat(mesh.τO, mesh.∂O)
+        mesh.length∂O = length(mesh.∂O)
+        mesh.length∂τ = length(mesh.∂τ)
+        mesh.lengthΓ  = length(mesh.Γ)
+        
+        println("Γ")
+        println(mesh.Γ)
+        println(mesh.lengthΓ)
+        
+        println("O")
+        println(mesh.O)
+        println(mesh.lengthO)
+        
+        println("∂O")
+        println(mesh.∂O)
+        println(mesh.length∂O)
+        
+        println("∂τ")
+        println(mesh.∂τ)
+        println(mesh.length∂τ)
+        
+        println("τO")
+        println(mesh.τO)
+        println(mesh.lengthτO)
+    end
+@mystop
     return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end

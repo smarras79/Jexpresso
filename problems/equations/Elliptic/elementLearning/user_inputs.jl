@@ -8,19 +8,13 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
-        :lelementLearning     => true,
+        :lelemLearning        => true,
         :rconst               => [0.0],
-        #:backend              => MetalBackend(),
-        #:CL                   => NCL(), #CL() is defaults
-        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
         :nop                 => 3,      # Polynomial order
-        #:nop_laguerre        => 14,
-        #:xfac_laguerre       => 0.25,
-        #:yfac_laguerre       => 0.0,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------

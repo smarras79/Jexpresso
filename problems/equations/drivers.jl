@@ -1,5 +1,3 @@
-using HDF5
-
 function driver(inputs::Dict,        #input parameters from src/user_input.jl
                 OUTPUT_DIR::String,
                 TFloat) 
