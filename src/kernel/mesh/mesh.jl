@@ -538,7 +538,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         # Rewrite coordinates in RCM order:
         #
         # filename = "./COORDS_LO_" + rank + ".dat" 
-        # open("./COORDS_LO_$rank.dat", "w") do f
+        open("./COORDS_LO_$rank.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 
                 mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
@@ -546,9 +546,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
-                # @printf(f, " %.6f %.6f 0.000000 %d %d\n", mesh.x[ip],  mesh.y[ip], ip, point2ppoint[ip])
+                @printf(f, " %.6f %.6f 0.000000 %d %d\n", mesh.x[ip],  mesh.y[ip], ip, point2ppoint[ip])
             end
-        # end #f
+        end #f
 
     elseif (mesh.nsd == 3)
         
@@ -1695,13 +1695,21 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
             
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
-            gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
             
             mesh.poin_in_edge[iedge_g,        1] = ip1
             mesh.poin_in_edge[iedge_g, mesh.ngl] = ip2
             
             x1, y1 = mesh.x[ip1], mesh.y[ip1]
             x2, y2 = mesh.x[ip2], mesh.y[ip2]
+            
+            gip1, gip2 = mesh.ip2gip[ip1], mesh.ip2gip[ip2]
+            if gip1 > gip2
+                gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
+                operator = +
+            else
+                gip = gtot_linear_poin + (edge2pedge[iedge_g]) * (ngl - 2)
+                operator = -
+            end
             
             #@printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
             for l=2:ngl-1
@@ -1717,7 +1725,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
             #    @printf(f, " %.6f %.6f 0.000000 %d %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip, gip, edge2pedge[iedge_g])
                 ip  = ip + 1
-                gip = gip + 1
+                gip = operator(gip , 1)
             end
         end
     # end #do f
@@ -1862,7 +1870,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    open("./COORDS_HO_edges_$rank.dat", "w") do f
+    # open("./COORDS_HO_edges_$rank.dat", "w") do f
     # open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
@@ -1875,11 +1883,20 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
             #
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
-            gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
+
             #ip1 = mesh.conn_edge_el[1, iedge_el, iel]
             #ip2 = mesh.conn_edge_el[2, iedge_el, iel]
             mesh.poin_in_edge[iedge_g,        1] = ip1
             mesh.poin_in_edge[iedge_g, mesh.ngl] = ip2
+
+            gip1, gip2 = mesh.ip2gip[ip1], mesh.ip2gip[ip2]
+            if gip1 > gip2
+                gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
+                operator = +
+            else
+                gip = gtot_linear_poin + (edge2pedge[iedge_g]) * (ngl - 2)
+                operator = -
+            end
             
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
@@ -1896,13 +1913,13 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
                 mesh.ip2gip[ip] = gip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-                @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
+                # @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
                 #@printf( " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip  = ip + 1
-                gip = gip + 1
+                gip = operator(gip , 1)
             end
         end
-    end #end f
+    # end #end f
     #show(stdout, "text/plain", mesh.poin_in_edge)
     #@info "-----3D edges"
         
@@ -2360,7 +2377,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    open("./COORDS_HO_faces_$rank.dat", "w") do f
+    # open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_faces.dat", "w") do f
         #
         # First pass:
@@ -2411,7 +2428,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
                     mesh.poin_in_face[iface_g, l, m] = ip
                     mesh.ip2gip[ip] = gip
                     
-                    @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
+                    # @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
 
                     # mesh.connijk[iel, m, ngl-l+1] = ip #<==== need to build this 
                     
@@ -2420,7 +2437,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
                 end
             end
         end
-    end #do f
+    # end #do f
 
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
@@ -2757,7 +2774,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     gip::Int64  = 0
-    open("./COORDS_HO_faces_$rank.dat", "w") do f
+    # open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_vol.dat", "w") do f
         ip  = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + 1
         for iel = 1:mesh.nelem
@@ -2826,7 +2843,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
                         mesh.connijk[iel,n,l,m] = ip
                         mesh.ip2gip[ip] = gip
 
-                        @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
+                        # @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
 
                         ip = ip + 1
                         gip = gip + 1
@@ -2835,7 +2852,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
                 end
             end
         end
-    end # do f 
+    # end # do f 
     #open("./CONNIJK.dat", "w") do f
         for iel =1:mesh.nelem
             iconn =1
