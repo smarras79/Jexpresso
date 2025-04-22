@@ -11,8 +11,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("ρ", "ρu", "ρv", "ρθ", "qtr", "qtr2")
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
+    qvars    = ("ρ", "ρu", "ρv", "ρθ", "qtr", "qtr2")
+    qoutvars = ("A", "B", "C", "ρθ", "YY", "ZZ")
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, qoutvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())    
         PhysConst = PhysicalConst{Float64}()
