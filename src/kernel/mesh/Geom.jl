@@ -148,6 +148,7 @@ end  # End of module JeGeometry
 
 
 function get_boundary_cells(model,nsd)
+    @info nsd
   facet_dim = 1
   if nsd == 3
     facet_dim = 2
@@ -170,7 +171,7 @@ function get_boundary_faces(model,nsd,dim)
   if nsd == 3
     Base.filter!(x -> !(x in ["internal", "hanging"]), labels.tag_to_name)
   elseif nsd == 2
-    Base.filter!(x -> x != "hanging", labels.tag_to_name)
+    Base.filter!(x -> !(x in ["domain", "hanging"]), labels.tag_to_name)
   end
   facet_to_tag = get_face_tag_index(labels,labels.tag_to_name,dim)
   # @info facet_to_tag, labels.tag_to_name,  length(findall(x -> x>0, facet_to_tag))
