@@ -66,14 +66,26 @@ function time_loop!(inputs, params, u)
 
             #Write results to file
             # @info integrator.p[38].npoin
-            write_output(integrator.p.SD, integrator.u, integrator.t, idx,
-                        integrator.p.mesh, integrator.p.mp,
-                        integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original, integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
-                        inputs[:output_dir], inputs,
-                        integrator.p.qp.qvars,
-                        inputs[:outformat];
-                        nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe, case="rtb")
-
+            #=write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
+                         integrator.p.mesh, integrator.p.mp,
+                         inputs[:output_dir], inputs,
+                         integrator.p.qp.qvars,
+                         integrator.p.qp.qoutvars,
+                         inputs[:outformat];
+                         nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe, case="rtb")
+            =#
+            ###
+            write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
+                         integrator.p.mesh, integrator.p.mp,
+                         integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
+                         integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
+                         inputs[:output_dir], inputs,
+                         integrator.p.qp.qvars,
+                         integrator.p.qp.qoutvars,
+                         inputs[:outformat];
+                         nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe, case="rtb")
+            
+            
         end
 
         # if ret_amrtime == true

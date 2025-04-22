@@ -23,7 +23,7 @@ Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dims1, nvars, bac
 
     qnp1  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁺¹
     qn    = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ
-    qq    = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ
+    qout  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ
     qnm1  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻¹
     qnm2  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻²
     qnm3  = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁻³
@@ -31,16 +31,18 @@ Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dims1, nvars, bac
     press = KernelAbstractions.zeros(backend,  T, dims1) # qⁿ⁺¹   
     zb    = KernelAbstractions.zeros(backend,  T, dims1) # zb #shallow water moving bathymetry 
     
-    qvars = Array{Union{Nothing, String}}(nothing, nvars)
+    qvars    = Array{Union{Nothing, String}}(nothing, nvars)
+    qoutvars = Array{Union{Nothing, String}}(nothing, nvars)
     neqs  = nvars
     
 end
-function define_q(SD, nelem, npoin, ngl, qvars, T, backend; neqs=1)
+function define_q(SD, nelem, npoin, ngl, qvars, T, backend; neqs=1, qoutvars=qvars)
     
     dims1 = (Int64(npoin), Int64(neqs+1))
     
-    q       = St_SolutionVars{T, dims1, neqs, backend}()
-    q.qvars = qvars
+    q          = St_SolutionVars{T, dims1, neqs, backend}()
+    q.qvars    = qvars
+    q.qoutvars = qoutvars
     
     return q
 end
