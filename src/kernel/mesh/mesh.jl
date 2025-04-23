@@ -1739,6 +1739,15 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
             x1, y1 = mesh.x[ip1], mesh.y[ip1]
             x2, y2 = mesh.x[ip2], mesh.y[ip2]
             
+            gip1, gip2 = mesh.ip2gip[ip1], mesh.ip2gip[ip2]
+            if gip1 > gip2
+                gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
+                operator = +
+            else
+                gip = gtot_linear_poin + (edge2pedge[iedge_g]) * (ngl - 2)
+                operator = -
+            end
+
             #@printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
@@ -1753,7 +1762,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
             #    @printf(f, " %.6f %.6f 0.000000 %d %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip, gip, edge2pedge[iedge_g])
                 ip  = ip + 1
-                gip = gip + 1
+                gip = operator(gip , 1)
             end
         end
     # end #do f
