@@ -59,7 +59,7 @@ end
 #
 # PNG 2D
 #
-function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #
     # 2D PNG of q(t) from dq/dt = RHS
     #  
@@ -84,7 +84,7 @@ function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
 end
 
 
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #
     # 2D PNG of q(t) from dq/dt = RHS
     #  
@@ -136,7 +136,7 @@ end
 #
 # ASCII 2D
 #
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::ASCII; nvar=1, PT=nothing)
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::ASCII; nvar=1, PT=nothing)
     #
     # 2D ASCII of q(t) from dq/dt = RHS
     #  
@@ -156,14 +156,12 @@ end
 # VTK 2D/3D
 #
 function write_output(SD, sol::ODESolution, mesh::St_mesh, mp, 
-        connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
         OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
  
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
             write_vtk(SD, mesh, sol.u[iout][:], mp, 
-                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
         else
             u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
@@ -173,7 +171,6 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, mp,
             convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
             write_vtk(SD, mesh, u, mp, 
-                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
         end
     end
@@ -205,7 +202,6 @@ function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_D
 end
 
 function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp, 
-        connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
         OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     
     comm = MPI.COMM_WORLD
@@ -213,7 +209,6 @@ function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp,
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
         write_vtk(SD, mesh, u_sol, mp, 
-                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
     else
         #VERIFY THIS on GPU
@@ -223,7 +218,6 @@ function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp,
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
         write_vtk(SD, mesh, u, mp, 
-                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
@@ -347,7 +341,6 @@ end
 # VTK writer
 #------------
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, 
-                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     outvars = varnames
@@ -825,7 +818,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp,
 end
 
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, 
-                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     outvars = varnames

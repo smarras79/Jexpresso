@@ -68,7 +68,6 @@ function time_loop!(inputs, params, u)
             # @info integrator.p[38].npoin
             write_output(integrator.p.SD, integrator.u, integrator.t, idx,
                         integrator.p.mesh, integrator.p.mp,
-                        integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original, integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
                         inputs[:output_dir], inputs,
                         integrator.p.qp.qvars,
                         inputs[:outformat];

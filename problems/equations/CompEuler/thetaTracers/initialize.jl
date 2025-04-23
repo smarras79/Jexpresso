@@ -18,7 +18,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         PhysConst = PhysicalConst{Float64}()
         if (inputs[:case] === "rtb")
         
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            xc = (mesh.xmax + mesh.xmin)/2
             yc = 2500.0 #m
             r0 = 2000.0 #m
 
