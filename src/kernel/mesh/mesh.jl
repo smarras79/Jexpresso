@@ -74,12 +74,14 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     gnedges::Union{TInt, Missing} = 1       # total number of edges
     gnfaces::Union{TInt, Missing} = 1       # total number of faces
     
-    nsd::Union{TInt, Missing} = 1          # number of space dim
-    nop::Union{TInt, Missing} = 4          # poly order
-    ngl::Union{TInt, Missing} = nop + 1    # number of quad point 
-    ngr::Union{TInt, Missing} = 0          # nop_gr
-    npoin_el::Union{TInt, Missing} = 1     # Total number of points in the reference element
+    nsd::Union{TInt, Missing} = 1              # number of space dim
+    nop::Union{TInt, Missing} = 4              # poly order
+    ngl::Union{TInt, Missing} = nop + 1        # number of quad point 
+    ngr::Union{TInt, Missing} = 0              # nop_gr
+    lLaguerre::Union{Bool, Missing} = false # whether or not Laguerre boundaries are in the mesh
+    npoin_el::Union{TInt, Missing} = 1         # Total number of points in the reference element
     
+
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
     NEDGES_EL::Union{TInt, Missing}  = 12
     NFACES_EL::Union{TInt, Missing}  =  6
@@ -941,8 +943,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 iedge_bdy += 1
             end
         end
+        n_semi_infg = MPI.Allreduce(n_semi_inf, MPI.SUM, comm)
+        if (n_semi_infg > 0) 
+            mesh.lLaguerre = true
+        end
         # build mesh data structs for Laguerre semi-infinite elements
-        if ("Laguerre" in mesh.bdy_edge_type)
+        if (mesh.lLaguerre && n_semi_inf > 0)
+            mesh.gip2ip = KernelAbstractions.zeros(backend, TInt, mesh.gnpoin + n_semi_infg*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
+            ip2gip_new = KernelAbstractions.zeros(backend, TInt, mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
+            ip2gip_new[1:mesh.npoin] .= mesh.ip2gip[:]
             gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend) 
             factorx = inputs[:xfac_laguerre]#0.1
             factory = inputs[:yfac_laguerre]#0.025
@@ -961,11 +970,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     #find tangent and normal vectors to the boundary
                     ip = mesh.poin_in_bdy_edge[iedge,1]
                     ip1 = mesh.poin_in_bdy_edge[iedge,2]
+                    ipend = mesh.poin_in_bdy_edge[iedge,mesh.ngl]
                     #tangent vector 
                     x = mesh.x[ip]
                     x1 = mesh.x[ip1]
                     y = mesh.y[ip]
                     y1 = mesh.y[ip1]
+                    xend = mesh.x[ipend]
+                    yend = mesh.y[ipend]
                     tan = [x-x1, y-y1]
                     # deduce normal vector components
                     if (tan[2] > 1e-7)
@@ -1007,17 +1019,26 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     if (dot(v,nor) > 0.0)
                         nor .= -nor
                     end
+                    
                     bdy_normals[e_iter,:] .= nor
                     bdy_tangents[e_iter,:] .= tan
+                    if (dot(tan,[1,0]) == 0)
+                        ord = Int64(round((max(y,yend)-mesh.ymin)/abs(y-yend)))
+                    else
+                        ord = Int64(round((max(x,xend)-mesh.xmin)/abs(x-xend)))
+                    end
+                    
                     for i=1:mesh.ngl
                         ip = mesh.poin_in_bdy_edge[iedge,i]
                         mesh.connijk_lag[e_iter,i,1] = ip
                         for j=2:mesh.ngr
-			                if (inputs[:xscale]==1.0)
+                            gip = Int64(mesh.gnpoin + (ord-1)*(mesh.ngl-1)*(mesh.ngr-1) + (mesh.ngr-1)*(i-1) + j-1)
+			    #@info ord, gip, mesh.gnpoin, x, xend, mesh.xmax, mesh.xmin
+                            if (inputs[:xscale]==1.0)
                                 x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
                             else
                                 x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx/(inputs[:xscale] * 0.5)
-			                end
+			    end
                             if (inputs[:yscale] == 1.0)
 			                    y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
 			                else 
@@ -1045,14 +1066,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                             else
                                 x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
                                 y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                                ip2gip_new[iter] = gip
                                 mesh.connijk_lag[e_iter,i,j] = iter
+                                mesh.gip2ip[gip] = iter
                                 iter += 1
                                 matched = 1
                             end
                             if (matched == 0)
                                 x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
                                 y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                                ip2gip_new[iter] = gip
                                 mesh.connijk_lag[e_iter,i,j] = iter
+                                mesh.gip2ip[gip] = iter
                                 iter += 1 
                             end
                             
@@ -1065,12 +1090,22 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             #@info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
             mesh.npoin_original = mesh.npoin
             mesh.npoin = iter -1
+            mesh.gnpoin += n_semi_infg*(mesh.ngl-1)*(mesh.ngr-1)
             mesh.x = x_new
             mesh.y = y_new
+            mesh.ip2gip = ip2gip_new
             mesh.z = KernelAbstractions.zeros(backend, TFloat, mesh.npoin)
-            mesh.nelem_semi_inf = n_semi_inf
+           # mesh.nelem_semi_inf = n_semi_inf
         end
-
+        if (mesh.lLaguerre)
+            mesh.nelem_semi_inf = n_semi_inf
+            mesh.gip2owner = find_gip_owner(mesh.ip2gip)
+            for (ip, gip) in enumerate(mesh.ip2gip)
+                mesh.gip2ip[gip] = ip
+            end
+            mesh.gnpoin    = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
+            
+        end
     elseif mesh.nsd > 2
         # isboundary_face = compute_isboundary_face(topology, FACE_flg)
         isboundary_face = fill(false, mesh.nfaces)
