@@ -298,7 +298,7 @@ function mod_inputs_user_inputs!(inputs)
     #
     # Element learning (lelemLearning)
     #
-    if(!haskey(inputs, :lelemLearning))
+    if(!haskey(inputs, :lelemLearning) || !haskey(inputs, :lelemlearning))
         inputs[:lelemLearning] = false
     end
 

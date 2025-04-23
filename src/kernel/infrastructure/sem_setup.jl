@@ -204,7 +204,7 @@ function sem_setup(inputs::Dict)
         end
     end
     
-    if inputs[:lelemLearning]
+    if inputs[:lelemLearning] || inputs[:lelemlearning]
         #
         # Element learning
         #
@@ -241,6 +241,6 @@ function sem_setup(inputs::Dict)
         println(mesh.τO)
         println(mesh.lengthτO)
     end
-@mystop
+
     return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag)
 end

@@ -8,13 +8,16 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
-        :lelemLearning        => true,
+        :lelementLearning     => true,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
         :nop                 => 3,      # Polynomial order
+        #:nop_laguerre        => 14,
+        #:xfac_laguerre       => 0.25,
+        #:yfac_laguerre       => 0.0,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
