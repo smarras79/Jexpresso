@@ -4,6 +4,6 @@ plotnodes.py
 Manifest.toml
 output/*
 LocalPreferences.toml
-meshes/
+./meshes
 *.pvtu
 *.vtu
