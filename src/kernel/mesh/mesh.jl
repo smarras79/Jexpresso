@@ -74,12 +74,14 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     gnedges::Union{TInt, Missing} = 1       # total number of edges
     gnfaces::Union{TInt, Missing} = 1       # total number of faces
     
-    nsd::Union{TInt, Missing} = 1          # number of space dim
-    nop::Union{TInt, Missing} = 4          # poly order
-    ngl::Union{TInt, Missing} = nop + 1    # number of quad point 
-    ngr::Union{TInt, Missing} = 0          # nop_gr
-    npoin_el::Union{TInt, Missing} = 1     # Total number of points in the reference element
+    nsd::Union{TInt, Missing} = 1              # number of space dim
+    nop::Union{TInt, Missing} = 4              # poly order
+    ngl::Union{TInt, Missing} = nop + 1        # number of quad point 
+    ngr::Union{TInt, Missing} = 0              # nop_gr
+    lLaguerre::Union{Bool, Missing} = false # whether or not Laguerre boundaries are in the mesh
+    npoin_el::Union{TInt, Missing} = 1         # Total number of points in the reference element
     
+
     NNODES_EL::Union{TInt, Missing}  =  2^nsd
     NEDGES_EL::Union{TInt, Missing}  = 12
     NFACES_EL::Union{TInt, Missing}  =  6
@@ -98,6 +100,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     connijk =  KernelAbstractions.zeros(backend,TInt, 0, 0, 0, 0)
     conn_edgesijk::Array{Int64,2} = KernelAbstractions.zeros(backend, TInt, 0, 0)    # edge analogue of connijk
     conn_facesijk::Array{Int64,2} = KernelAbstractions.zeros(backend, TInt, 0, 0)    # face analogue of connijk
+
+    el_min = KernelAbstractions.zeros(backend,TFloat, 0, 0)
+    el_max = KernelAbstractions.zeros(backend,TFloat, 0, 0)
 
     conn::Array{TInt,2}  = KernelAbstractions.zeros(backend, TInt, 0, 0)
     conn_unique_edges    = Array{TInt}(undef,  1, 2)
@@ -136,7 +141,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     Δelem_l      = 0.0
     Δeffective_s = 0.0
     Δeffective_l = 0.0
-    
+        
     SD::AbstractSpaceDimensions
 
     # for AMR
@@ -443,8 +448,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         mesh.bdy_face_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces_bdy))
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
-    mesh.conn             = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
-    
+    mesh.conn = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
+    mesh.el_max = KernelAbstractions.zeros(backend,TFloat, Int64(mesh.nelem), 3)
+    mesh.el_min = KernelAbstractions.zeros(backend,TFloat, Int64(mesh.nelem), 3)
     #
     # Connectivity matrices
     #
@@ -913,7 +919,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             end
             # @info mesh.edge_type
         end
-        # @info rank, isboundary_edge
         iedge_bdy = 1
         for iedge = 1:mesh.nedges #total nedges
             if isboundary_edge[iedge] == true
@@ -938,8 +943,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 iedge_bdy += 1
             end
         end
+        n_semi_infg = MPI.Allreduce(n_semi_inf, MPI.SUM, comm)
+        if (n_semi_infg > 0) 
+            mesh.lLaguerre = true
+        end
         # build mesh data structs for Laguerre semi-infinite elements
-        if ("Laguerre" in mesh.bdy_edge_type)
+        if (mesh.lLaguerre && n_semi_inf > 0)
+            mesh.gip2ip = KernelAbstractions.zeros(backend, TInt, mesh.gnpoin + n_semi_infg*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
+            ip2gip_new = KernelAbstractions.zeros(backend, TInt, mesh.npoin + n_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)+mesh.ngr-1)
+            ip2gip_new[1:mesh.npoin] .= mesh.ip2gip[:]
             gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend) 
             factorx = inputs[:xfac_laguerre]#0.1
             factory = inputs[:yfac_laguerre]#0.025
@@ -958,11 +970,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     #find tangent and normal vectors to the boundary
                     ip = mesh.poin_in_bdy_edge[iedge,1]
                     ip1 = mesh.poin_in_bdy_edge[iedge,2]
+                    ipend = mesh.poin_in_bdy_edge[iedge,mesh.ngl]
                     #tangent vector 
                     x = mesh.x[ip]
                     x1 = mesh.x[ip1]
                     y = mesh.y[ip]
                     y1 = mesh.y[ip1]
+                    xend = mesh.x[ipend]
+                    yend = mesh.y[ipend]
                     tan = [x-x1, y-y1]
                     # deduce normal vector components
                     if (tan[2] > 1e-7)
@@ -1004,17 +1019,26 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     if (dot(v,nor) > 0.0)
                         nor .= -nor
                     end
+                    
                     bdy_normals[e_iter,:] .= nor
                     bdy_tangents[e_iter,:] .= tan
+                    if (dot(tan,[1,0]) == 0)
+                        ord = Int64(round((max(y,yend)-mesh.ymin)/abs(y-yend)))
+                    else
+                        ord = Int64(round((max(x,xend)-mesh.xmin)/abs(x-xend)))
+                    end
+                    
                     for i=1:mesh.ngl
                         ip = mesh.poin_in_bdy_edge[iedge,i]
                         mesh.connijk_lag[e_iter,i,1] = ip
                         for j=2:mesh.ngr
-			                if (inputs[:xscale]==1.0)
+                            gip = Int64(mesh.gnpoin + (ord-1)*(mesh.ngl-1)*(mesh.ngr-1) + (mesh.ngr-1)*(i-1) + j-1)
+			    #@info ord, gip, mesh.gnpoin, x, xend, mesh.xmax, mesh.xmin
+                            if (inputs[:xscale]==1.0)
                                 x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
                             else
                                 x_temp = mesh.x[ip] + nor[1]*gr.ξ[j]*factorx/(inputs[:xscale] * 0.5)
-			                end
+			    end
                             if (inputs[:yscale] == 1.0)
 			                    y_temp = mesh.y[ip] + nor[2]*gr.ξ[j]*factory
 			                else 
@@ -1042,14 +1066,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                             else
                                 x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
                                 y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                                ip2gip_new[iter] = gip
                                 mesh.connijk_lag[e_iter,i,j] = iter
+                                mesh.gip2ip[gip] = iter
                                 iter += 1
                                 matched = 1
                             end
                             if (matched == 0)
                                 x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
                                 y_new[iter] = y_temp#mesh.y[ip] + nor[2]*gr.ξ[j]*factory
+                                ip2gip_new[iter] = gip
                                 mesh.connijk_lag[e_iter,i,j] = iter
+                                mesh.gip2ip[gip] = iter
                                 iter += 1 
                             end
                             
@@ -1062,12 +1090,22 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             #@info mesh.npoin, iter - 1, mesh.ngr, n_semi_inf, e_iter - 1
             mesh.npoin_original = mesh.npoin
             mesh.npoin = iter -1
+            mesh.gnpoin += n_semi_infg*(mesh.ngl-1)*(mesh.ngr-1)
             mesh.x = x_new
             mesh.y = y_new
+            mesh.ip2gip = ip2gip_new
             mesh.z = KernelAbstractions.zeros(backend, TFloat, mesh.npoin)
-            mesh.nelem_semi_inf = n_semi_inf
+           # mesh.nelem_semi_inf = n_semi_inf
         end
-
+        if (mesh.lLaguerre)
+            mesh.nelem_semi_inf = n_semi_inf
+            mesh.gip2owner = find_gip_owner(mesh.ip2gip)
+            for (ip, gip) in enumerate(mesh.ip2gip)
+                mesh.gip2ip[gip] = ip
+            end
+            mesh.gnpoin    = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
+            
+        end
     elseif mesh.nsd > 2
         # isboundary_face = compute_isboundary_face(topology, FACE_flg)
         isboundary_face = fill(false, mesh.nfaces)
@@ -1139,11 +1177,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         nor1 = [1.0, 0.0, 0.0]
         nor2 = [0.0, 1.0, 0.0]
         nor3 = [0.0, 0.0, 1.0]
-        if ("periodic1" in mesh.bdy_face_type)
+        if ("periodicx" in mesh.bdy_face_type)
             finder = false
             iface_bdy = 1
             while (finder == false)
-                if (mesh.bdy_face_type[iface_bdy] == "periodic1")
+                if (mesh.bdy_face_type[iface_bdy] == "periodicx")
                     ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
@@ -1160,11 +1198,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 end
             end
         end
-        if ("periodic2" in mesh.bdy_face_type)
+        if ("periodicz" in mesh.bdy_face_type)
             finder = false
             iface_bdy = 1
             while (finder == false)
-                if (mesh.bdy_face_type[iface_bdy] == "periodic2")
+                if (mesh.bdy_face_type[iface_bdy] == "periodicz")
                     ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
@@ -1181,11 +1219,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 end
             end
         end
-        if ("periodic3" in mesh.bdy_face_type)
+        if ("periodicy" in mesh.bdy_face_type)
             finder = false
             iface_bdy = 1
             while (finder == false)
-                if (mesh.bdy_face_type[iface_bdy] == "periodic3")
+                if (mesh.bdy_face_type[iface_bdy] == "periodicy")
                     ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
@@ -1202,10 +1240,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 end
             end
         end
-        restructure4periodicity_3D(mesh, nor1, "periodic1")
+        restructure4periodicity_3D(mesh, nor1, "periodicx")
         # @info mesh.ip2gip
-        restructure4periodicity_3D(mesh, nor2, "periodic2")
-        restructure4periodicity_3D(mesh, nor3, "periodic3")
+        restructure4periodicity_3D(mesh, nor2, "periodicz")
+        restructure4periodicity_3D(mesh, nor3, "periodicy")
         # @info mesh.ip2gip
 
     end
@@ -1221,9 +1259,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.x_ho = zeros(1)
     mesh.y_ho = zeros(1)
     mesh.z_ho = zeros(1)
-    #resize!(mesh.x_ho, 1)
-    #resize!(mesh.y_ho, 1)
-    #resize!(mesh.z_ho, 1)
     GC.gc()
     #
     # END Free memory of obsolete arrays
@@ -1710,7 +1745,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
                 gip = gtot_linear_poin + (edge2pedge[iedge_g]) * (ngl - 2)
                 operator = -
             end
-            
             #@printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
             for l=2:ngl-1
                 ξ = lgl.ξ[l];

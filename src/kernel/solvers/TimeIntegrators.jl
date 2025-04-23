@@ -1,5 +1,3 @@
-using BenchmarkTools
-
 function time_loop!(inputs, params, u)
 
     comm = MPI.COMM_WORLD
@@ -17,6 +15,21 @@ function time_loop!(inputs, params, u)
     dosetimes = inputs[:diagnostics_at_times]
     idx_ref   = Ref{Int}(0)
     c         = Float64(0.0)
+    rad_time  = inputs[:radiation_time_step]
+    lnew_mesh = true   
+    function two_stream_condition(u, t, integrator)
+        if (rem(t,rad_time) < 1e-3)
+            return true
+        else
+            return false
+        end
+    end
+
+    function do_radiation!(integrator)
+        println(" doing two stream radiation heat flux calculations at t=", integrator.t)
+        @info "doing rad test"
+        compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
+    end
     ret_dosetime_ref  = Ref{Bool}(false)
 
     
@@ -54,7 +67,7 @@ function time_loop!(inputs, params, u)
             #Write results to file
             # @info integrator.p[38].npoin
             write_output(integrator.p.SD, integrator.u, integrator.t, idx,
-                        integrator.p.mesh,
+                        integrator.p.mesh, integrator.p.mp,
                         inputs[:output_dir], inputs,
                         integrator.p.qp.qvars,
                         inputs[:outformat];
@@ -70,15 +83,19 @@ function time_loop!(inputs, params, u)
         #     @info "u2",  size(integrator.u,1)
         # end
     end
+    cb_rad = DiscreteCallback(two_stream_condition, do_radiation!)
     cb = DiscreteCallback(condition, affect!)    
-    cb_amr = DiscreteCallback(condition, affect!)    
+    cb_amr = DiscreteCallback(condition, affect!)
+    CallbackSet(cb)#,cb_rad)
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------
+
     
     solution = solve(prob,
                            inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                           callback = cb, tstops = dosetimes,
+                           #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
+                           callback = CallbackSet(cb), tstops = dosetimes,
                            save_everystep = false,
                            adaptive=inputs[:ode_adaptive_solver],
                            saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));

@@ -3,7 +3,7 @@ using HDF5
 function driver(nparts,
                 distribute,
                 inputs::Dict,
-                OUTPUT_DIR::String,
+                    OUTPUT_DIR::String,
                 TFloat) 
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
@@ -12,7 +12,7 @@ function driver(nparts,
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
-
+    
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
@@ -53,7 +53,7 @@ function driver(nparts,
         @time solution = time_loop!(inputs, params, u)
         
         if (inputs[:ndiagnostics_outputs] > 0)
-            write_output(sem.mesh.SD, solution,  sem.mesh,
+            write_output(sem.mesh.SD, solution,  sem.mesh, params.mp,
                          OUTPUT_DIR, inputs,
                          params.qp.qvars,
                          inputs[:outformat];

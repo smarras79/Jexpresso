@@ -34,6 +34,31 @@ Base.@kwdef mutable struct St_metrics{TFloat <: AbstractFloat, dims1, dims2, bac
     ny  = KernelAbstractions.zeros(backend,TFloat, dims2)
     nz  = KernelAbstractions.zeros(backend,TFloat, dims2)
     
+    dxdξ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dxdη_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dxdζ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+
+    dydξ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dydη_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dydζ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+
+    dzdξ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dzdη_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dzdζ_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+
+    dξdx_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dξdy_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dξdz_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+
+    dηdx_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dηdy_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dηdz_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+
+    dζdx_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dζdy_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+    dζdz_f = KernelAbstractions.zeros(backend,TFloat, dims2)
+
+
     #
     # Contravariant arrays
     #
@@ -596,6 +621,33 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
             for i=1:mesh.ngl
                 for j=1:mesh.ngl
                     ip = mesh.poin_in_bdy_face[iface,i,j]
+                    x1 = mesh.x[ip]
+                    y1 = mesh.y[ip]
+                    z1 = mesh.z[ip]
+                    @turbo for k=1:mesh.ngl
+                        for l=1:mesh.ngl
+
+
+                            a = dψ[i,k]*ψ[j,l]
+                            b = ψ[i,k]*dψ[j,l]
+
+                            metrics.dxdξ_f[iface, k, l] += a * x1
+                            metrics.dxdη_f[iface, k, l] += b * x1
+
+                            metrics.dydξ_f[iface, k, l] += a * y1
+                            metrics.dydη_f[iface, k, l] += b * y1
+
+                            metrics.dzdξ_f[iface, k, l] += a * z1
+                            metrics.dzdη_f[iface, k, l] += b * z1
+
+                        end
+                    end
+                        
+                end
+            end
+            for i=1:mesh.ngl
+                for j=1:mesh.ngl
+                    ip = mesh.poin_in_bdy_face[iface,i,j]
                     if (i < N+1)
                         ip1 = mesh.poin_in_bdy_face[iface,i+1,j]
                     else
@@ -626,7 +678,28 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     comp3 = a1*b2 - a2*b1
                     mag    = sqrt(comp1^2 + comp2^2 + comp3^2)
                     maginv = 1.0/mag
-                    metrics.Jef[iface, i, j] = mag/2
+                    # Extract values from memory once per iteration
+                    dxdξ = metrics.dxdξ_f[iface, i, j]
+                    dydη = metrics.dydη_f[iface, i, j]
+                    dydξ = metrics.dydξ_f[iface, i, j]
+                    dxdη = metrics.dxdη_f[iface, i, j]
+                    dzdξ = metrics.dzdξ_f[iface, i, j]
+                    dzdη = metrics.dzdη_f[iface, i, j]
+                    # Compute Je once and reuse its value
+                    metrics.Jef[iface, i, j] = dxdξ * (dydη - dydξ * dzdη) +
+                                             dydξ * (dzdη - dxdη) +
+                                             dzdξ * (dxdη  - dydη) 
+
+                    # Use the precomputed Je value for the other calculations
+                    Jinv = 1.0/metrics.Jef[iface, i, j]
+
+                    metrics.dξdx_f[iface, i, j] = (dydη - dydξ*dzdη)*Jinv
+                    metrics.dξdy_f[iface, i, j] = (dzdη - dxdη*dzdη)*Jinv
+                    metrics.dξdz_f[iface, i, j] = (dxdη - dydη)*Jinv
+                    metrics.dηdx_f[iface, i, j] = (dzdξ - dydξ)*Jinv
+                    metrics.dηdy_f[iface, i, j] = (dxdξ - dzdξ)*Jinv
+                    metrics.dηdz_f[iface, i, j] = (dydξ - dxdξ)*Jinv
+
                     metrics.nx[iface, i, j] = comp1*maginv
                     metrics.ny[iface, i, j] = comp2*maginv
                     metrics.nz[iface, i, j] = comp3*maginv
@@ -644,7 +717,6 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
         KernelAbstractions.copyto!(backend, z, mesh.z)
         KernelAbstractions.copyto!(backend, connijk, mesh.connijk)
         k = build_3D_gpu_metrics!(backend,(N+1,N+1,N+1))
-        #@info typeof(metrics.dxdξ), typeof(metrics.dydξ)
         k(metrics.dxdξ,metrics.dxdη,metrics.dxdζ,metrics.dydξ,metrics.dydη,metrics.dydζ,metrics.dzdξ,metrics.dzdη,metrics.dzdζ, ψ, dψ, x, y, z, connijk, Q;
           ndrange = (mesh.nelem*(N+1),mesh.ngl,mesh.ngl), workgroupsize = (N+1,N+1,N+1))
         metrics.Je .= metrics.dxdξ.*(metrics.dydη.*metrics.dzdζ .- metrics.dydξ.*metrics.dzdη)

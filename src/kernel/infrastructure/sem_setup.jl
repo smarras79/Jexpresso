@@ -8,14 +8,22 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
+    fz = zeros(Float64,1,1)
     fy_lag = zeros(Float64,1,1)
     Nξ    = inputs[:nop]
     lexact_integration = inputs[:lexact_integration]    
     PT    = inputs[:equations]
     AD    = inputs[:AD]
     CL    = inputs[:CL]
+    phys_grid = zeros(Float64,1,1)
     SOL_VARS_TYPE = inputs[:SOL_VARS_TYPE]
     
+    connijk_original = zeros(TInt,1,1,1,1)
+    poin_in_bdy_face_original = zeros(TInt,1,1,1)
+    x_original = zeros(1,1)
+    y_original = zeros(1,1)
+    z_original = zeros(1,1)
+
     #--------------------------------------------------------
     # Create/read mesh
     # return mesh::St_mesh
@@ -30,7 +38,6 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     else
         mesh, partitioned_model, n2o_ele_map = mod_mesh_mesh_driver(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, omesh)
     end
-    
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xscale] != 1.0)
@@ -87,7 +94,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     #--------------------------------------------------------
     if (mesh.nsd > 1)
         #@info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
-        if ("Laguerre" in mesh.bdy_edge_type[:])
+        if (mesh.lLaguerre)
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
             ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta], inputs[:backend])
             ξ2,ω2 = ξω2.ξ, ξω2.ω
@@ -129,11 +136,11 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             @time metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
             metrics = (metrics1, metrics2)
             @info " Build metrics ...... DONE"
-            @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
-                                           mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
-                                           mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
-                                           mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
+            #@time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
+            #                               mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
+            #                               mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
+            #                               mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
+            #                               mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
 
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
                                              ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
@@ -145,14 +152,39 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             ω1 = ω
             ω = ω1
             if (inputs[:lfilter])
-                fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
-                fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
+                if (inputs[:backend] == CPU())
+                    fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
+                    fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
+                    if (mesh.nsd >2)
+                        fz = init_filter(mesh.ngl-1,ξ,inputs[:mu_z],mesh,inputs)
+                    end
+                else
+                    ξ_temp = KernelAbstractions.zeros(CPU(), Float64, Int64(mesh.ngl))
+                    KernelAbstractions.copyto!(CPU(),ξ_temp,ξ)
+                    fx_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_x],mesh,inputs)
+                    fy_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_y],mesh,inputs)
+                    fx = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+                    fy = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+                    KernelAbstractions.copyto!(inputs[:backend], fx, fx_1)
+                    KernelAbstractions.copyto!(inputs[:backend], fy, fy_1)
+                    if (mesh.nsd > 2)
+                        fz_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_z],mesh,inputs)
+                        fz = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+                        KernelAbstractions.copyto!(inputs[:backend], fz, fz_1)
+                    end
+                end
             end
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-            if (inputs[:lwarp])
-                warp_mesh!(mesh,inputs)
+            if (mesh.nsd > 2)
+                if (inputs[:lwarp])
+                    warp_mesh_3D!(mesh,inputs)
+                end
+            else
+                if (inputs[:lwarp])
+                    warp_mesh!(mesh,inputs)
+                end
             end
             if rank == 0
                 @info " Build metrics ......"
@@ -161,23 +193,28 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             if rank == 0
                 @info " Build metrics ...... END"
             end
-            
-            # if rank == 0
-            #     @info " Build periodicity infrastructure ......"
-            # end
-            # @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
-            #                                mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
-            #                                mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
-            #                                mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-            #                                mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
-            # if rank == 0
-            #     @info " Build periodicity infrastructure ...... DONE"
-            # end
+            if (inputs[:lphysics_grid])
+                phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
+            end 
+            if rank == 0
+                @info " Build periodicity infrastructure ......"
+            end
+            #=@time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
+                                           mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
+                                           mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
+                                           mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
+                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,
+                                         inputs,inputs[:backend])
+            if rank == 0
+                @info " Build periodicity infrastructure ...... DONE"
+            end=#
 
 #@mystop(" L 152 sem_setup")
             
-            #warp_mesh!(mesh,inputs)
-            
+            if (inputs[:lwarp])
+                warp_mesh!(mesh,inputs)
+            end           
+
             if rank == 0
                 @info " Matrix wrapper ......"
             end
@@ -224,7 +261,8 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                                            mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
                                            mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
             end
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], 
+                                    ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
         end
     end
 
@@ -233,9 +271,11 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     # Build matrices
     #--------------------------------------------------------
     if isnothing(adapt_flags)
-        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, interp, project, partitioned_model, nparts, distribute)
+        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
+                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, partitioned_model, nparts, distribute)
     else
-        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, interp, project, partitioned_model, nparts, distribute), n2o_ele_map
+        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
+                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, partitioned_model, nparts, distribute), n2o_ele_map
     end
     
 end

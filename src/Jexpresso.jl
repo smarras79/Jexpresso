@@ -21,8 +21,10 @@ using DelimitedFiles
 using DataStructures
 using LoopVectorization
 using ElasticArrays
+using Geodesy
 using InternedStrings
 using LinearAlgebra
+using SpecialFunctions
 using StaticArrays
 using StaticArrays: SVector, MVector
 using DiffEqBase
@@ -43,10 +45,27 @@ import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
 
+import ClimaComms
+@static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
+
+using RRTMGP
+using RRTMGP.Vmrs
+using RRTMGP.LookUpTables
+using RRTMGP.AtmosphericStates
+using RRTMGP.Optics
+using RRTMGP.Sources
+using RRTMGP.BCs
+using RRTMGP.Fluxes
+using RRTMGP.AngularDiscretizations
+using RRTMGP.RTE
+using RRTMGP.RTESolver
+import RRTMGP.Parameters.RRTMGPParameters
+using RRTMGP.ArtifactPaths
+
 using UnicodePlots
 using Printf
+using NCDatasets
 using MPI
-
 
 TInt   = Int64
 TFloat = Float64
@@ -64,11 +83,19 @@ include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
+include(joinpath( "kernel", "physics", "microphysics.jl"))
+
+include(joinpath( "kernel", "physics", "saturation.jl"))
+
 include(joinpath( "kernel", "physics", "soundSpeed.jl"))
 
 include(joinpath( "kernel", "physics", "globalConstantsPhysics.jl"))
 
 include(joinpath( "kernel", "physics", "constitutiveLaw.jl"))
+
+include(joinpath( "kernel", "physics", "large_scale.jl"))
+
+include(joinpath( "kernel", "physics", "largescaleStructs.jl"))
 
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
@@ -80,6 +107,8 @@ include(joinpath( "kernel", "mesh", "metric_terms.jl"))
 
 include(joinpath( "kernel", "infrastructure", "element_matrices.jl"))
 
+include(joinpath( "kernel", "mesh", "phys_grid.jl"))
+
 include(joinpath( "kernel", "infrastructure", "params_setup.jl"))
 
 include(joinpath( "kernel", "infrastructure", "sem_setup.jl"))
@@ -88,7 +117,11 @@ include(joinpath( "kernel", "infrastructure", "Kopriva_functions.jl"))
 
 include(joinpath( "kernel", "infrastructure", "convert_to_gpu.jl"))
 
+include(joinpath( "kernel", "boundaryconditions", "surface_integral.jl"))
+
 include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
+
+include(joinpath( "kernel", "operators", "operators.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
@@ -113,6 +146,10 @@ include(joinpath( "io", "mod_print_io.jl"))
 include(joinpath( "io", "write_output.jl"))
 
 include(joinpath( "io", "diagnostics.jl"))
+
+include(joinpath( "io", "Extract_topo.jl"))
+
+include(joinpath( "io", "soundings.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
 

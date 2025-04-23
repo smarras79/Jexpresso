@@ -572,19 +572,35 @@ function  BarycentricWeights(x)
     """
     N=size(x,1)-1
     w=zeros(Float64,N+1)
+    mini = minimum(x)
+    maxi = maximum(x)
+    scale = (maxi - mini)/2
     for j=1:N+1
         w[j]=1
     end
     for j=2:N+1
         for k=1:j-1
-            w[k] = w[k]*(x[k]-x[j])
-            w[j] = w[j]*(x[j]-x[k])
+            w[k] = w[k]*(x[k]-x[j])/scale
+            w[j] = w[j]*(x[j]-x[k])/scale
         end
     end
     for j=1:N+1
         w[j]=1/w[j]
     end
     return w
+end
+
+function BarycentricWeights_gpu!(x,N,ω)
+    j = @index(Global, Linear)
+    T = eltype(x)
+    ω[j] = T(1)
+    for k=1:N+1
+        if (k ≠ j)
+            ω[j] = ω[j]*(x[j] - x[k])
+        end
+    end
+    ω[j] = T(1)/ω[j]
+
 end
 
 
@@ -626,6 +642,9 @@ function PolynomialInterpolationMatrix(x,w,ξ)
     """
     M=size(ξ,1)
     N=size(x,1)
+    mini = minimum(x)
+    maxi = maximum(x)
+    scale = (maxi - mini)/2
     T = zeros(Float64,M,N)
     for k=1:M
         rowHasMatch = false
@@ -759,7 +778,7 @@ function D3CoarseToFineInterpolation(x,y,z,f,ξ,η,ζ)
     Tx = PolynomialInterpolationMatrix(x,w_x,ξ)
     for i=1:M_o
         for j=1:P_o
-            F̅[:,i,j] = InterpolateToNewPoints(T,f[:,i,j])
+            F̅[:,i,j] = InterpolateToNewPoints(Tx,f[:,i,j])
         end
     end
     w_y = BarycentricWeights(y)

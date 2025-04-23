@@ -3,10 +3,11 @@ include("custom_bcs.jl")
 function apply_boundary_conditions!(u, uaux, t,qe,
                                     x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ψ, dψ,
                                     xmax, ymax, zmax, xmin, ymin, zmin, RHS, rhs_el, ubdy,
-                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type,
+                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                    connijk, Jef, S_face, S_flux, F_surf, M_surf_inv,
+                                    Tabs, qn,
                                     ω, neqs, inputs, AD, SD)
-
-
+    
     if inputs[:lperiodic_1d] && typeof(SD) == NSD_1D
         apply_periodicity!(u, uaux, t,qe,
                            npoin_linear, ψ, dψ,
@@ -15,7 +16,9 @@ function apply_boundary_conditions!(u, uaux, t,qe,
     else
         build_custom_bcs!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                           xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
-                          connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
+                          connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                          connijk, Jef, S_face, S_flux, F_surf, M_surf_inv,
+                          Tabs, qn,
                           neqs, dirichlet!, neumann, inputs)
     end
 end
@@ -112,8 +115,11 @@ end
 
 function build_custom_bcs!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                           connijk, Jef, S_face, S_flux, F_surf, M_surf_inv,
+                           Tabs, qn,
                            neqs, dirichlet!, neumann, inputs)
+    
     ip = 1
     fill!(qbdy, 4325789.0)
     user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], t, "left", qbdy, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
@@ -141,15 +147,17 @@ end
 
 function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                           connijk, Jef, S_face, S_flux, F_surf, M_surf_inv,
+                           Tabs, qn,
                            neqs, dirichlet!, neumann, inputs)
-    #
+    
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
     for iedge = 1:nedges_bdy 
         iel  = bdy_edge_in_elem[iedge]
         
-        if bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" && bdy_edge_type[iedge] != "Laguerre"
+        if bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "Laguerre"
             #if mesh.bdy_edge_type[iedge] == "free_slip"
             
             #tag = mesh.bdy_edge_type[iedge]
@@ -236,8 +244,8 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, np
     
     for iedge = 1:nedges_bdy
 
-        if (bdy_edge_type[iedge] != "periodic1" &&
-            bdy_edge_type[iedge] != "periodic2" &&
+        if (bdy_edge_type[iedge] != "periodicx" &&
+            bdy_edge_type[iedge] != "periodicz" &&
             bdy_edge_type[iedge] != "Laguerre")
             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
@@ -294,27 +302,29 @@ end
 
 function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                           connijk, Jef, S_face, S_flux, F_surf, M_surf_inv,
+                           Tabs, qn,
                            neqs, dirichlet!, neumann, inputs)
     #
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
     #for ip = 1:npoin
+    PhysConst = PhysicalConst{Float64}()
     for iface = 1:nfaces_bdy
-        if bdy_face_type[iface] != "periodic1" && bdy_face_type[iface] != "periodic2" && bdy_face_type[iface] != "periodic3" 
+        if bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodicy" 
             for i=1:ngl
                 for j=1:ngl
                     fill!(qbdy, 4325789.0)
                     ip = poin_in_bdy_face[iface,i,j]
                     user_bc_dirichlet!(@view(uaux[ip,:]),
                                        x[ip], y[ip], z[ip],
-                                       t, 0, qbdy,
+                                       t, bdy_face_type[iface], qbdy,
                                        nx[iface,i,j], ny[iface,i,j], nz[iface,i,j],
                                        xmin, xmax,
                                        ymin, ymax,
                                        zmin, zmax,
                                        @view(qe[ip,:]), inputs[:SOL_VARS_TYPE])
-                
                     for ieq =1:neqs
                         if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
                             uaux[ip,ieq] = qbdy[ieq]
@@ -323,6 +333,44 @@ function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                     end
                 end
             end
+        end
+        if (inputs[:bdy_fluxes])
+            if (inputs[:bulk_fluxes])
+                if (z[poin_in_bdy_face[iface,3,3]] == zmin)
+                    for i = 1:ngl
+                        for j = 1:ngl
+                            ip  = poin_in_bdy_face[iface,i,j]
+                            e   = bdy_face_in_elem[iface]
+                            ip1 = connijk[e,i,j,2]
+                            if (Tabs[ip] < 1)
+                                θ = 0.0
+                                θ1 = 0.0
+                            else
+                                θ = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
+                                θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
+                            end
+                            bulk_surface_flux!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, qn[ip], qn[ip1])                        
+                            #@info F_surf[i,j,:]
+                        end
+                    end
+                end
+            
+            else
+                #user_bc_neumann!
+            end
+            #@info F_surf
+            compute_surface_integral!(S_face, F_surf, ω, Jef, iface, ngl)            
+        end
+
+    end
+    #@info maximum(S_face[:,:,:,2]), maximum(S_face[:,:,:,5]), maximum(S_face[:,:,:,6])
+    #@info minimum(S_face[:,:,:,2]), minimum(S_face[:,:,:,5]), minimum(S_face[:,:,:,6])
+    if (inputs[:bdy_fluxes])
+        DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces_bdy, ngl, z, zmin, connijk, poin_in_bdy_face, bdy_face_in_elem)
+        #@info maximum(S_flux[:,2]), maximum(S_flux[:,5]), maximum(S_flux[:,6])
+        #@info minimum(S_flux[:,2]), minimum(S_flux[:,5]), minimum(S_flux[:,6])
+        for ieq = 1:neqs
+            RHS[:, ieq] .+= S_flux[:,ieq]
         end
     end
     

@@ -31,6 +31,17 @@ function params_setup(sem,
                              sem.mesh.ngl,
                              T, backend;
                              neqs=qp.neqs)
+
+    fijk   = allocate_fijk(sem.mesh.SD,
+                           sem.mesh.ngl,
+                           T, backend;
+                           neqs=qp.neqs)
+
+    ∇f     = allocate_∇f(sem.mesh.SD,
+                         sem.mesh.nelem,
+                         sem.mesh.ngl,
+                         T, backend;
+                         neqs=qp.neqs)
     
     gpuAux = allocate_gpuAux(sem.mesh.SD,
                              sem.mesh.nelem,
@@ -40,6 +51,13 @@ function params_setup(sem,
                              T, backend;
                              neqs=qp.neqs)
 
+    gpuMoist = allocate_gpuMoist(sem.mesh.SD,
+                             sem.mesh.npoin,
+                             sem.mesh.nelem,
+                             sem.mesh.ngl,
+                             T, backend, inputs[:lmoist];
+                             neqs=qp.neqs)
+
     u            = uODE.u
     uaux         = uODE.uaux
     vaux         = uODE.vaux
@@ -47,6 +65,8 @@ function params_setup(sem,
     G            = fluxes.G
     H            = fluxes.H
     S            = fluxes.S
+    fijk         = fijk.fijk
+    ∇f_el        = ∇f.∇f_el
     RHS          = rhs.RHS
     RHS_visc     = rhs.RHS_visc
     rhs_el       = rhs.rhs_el
@@ -54,14 +74,26 @@ function params_setup(sem,
     rhs_diffξ_el = rhs.rhs_diffξ_el
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
-
+        
     # row_partition = map(sem.mesh.parts) do part
     #     row_partition = LocalIndices(sem.mesh.gnpoin * qp.neqs,part,repeat(sem.mesh.ip2gip,qp.neqs),repeat(sem.mesh.gip2owner,qp.neqs))
     #     # gM = M
     #     row_partition
     # end
     # gM           = pvector(values->u, row_partition)
-
+    #------------------------------------------------------------------------------------
+    # boundary flux arrays
+    #------------------------------------------------------------------------------------
+    bdy_fluxes = allocate_bdy_fluxes(sem.mesh.SD,
+                          sem.mesh.nfaces_bdy,
+                          sem.mesh.npoin,
+                          sem.mesh.ngl,
+                          T, backend;
+                          neqs=qp.neqs)
+    
+    F_surf = bdy_fluxes.F_surf
+    S_face = bdy_fluxes.S_face
+    S_flux = bdy_fluxes.S_flux
     #------------------------------------------------------------------------------------
     # GPU arrays
     #------------------------------------------------------------------------------------
@@ -69,14 +101,19 @@ function params_setup(sem,
     source_gpu     = gpuAux.source_gpu
     qbdy_gpu       = gpuAux.qbdy_gpu
     uprimitive     = fluxes.uprimitive
-    
+    flux_micro     = gpuMoist.flux_micro
+    source_micro   = gpuMoist.source_micro
+    adjusted       = gpuMoist.adjusted
+    Pm             = gpuMoist.Pm
     #------------------------------------------------------------------------------------
     # filter arrays
     #------------------------------------------------------------------------------------
     filter = allocate_filter(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs, lfilter=inputs[:lfilter])
     fy_t   = transpose(sem.fy)
+    fz_t   = transpose(sem.fz)
     q_t    = filter.q_t
     q_ti   = filter.q_ti
+    q_tij  = filter.q_tij
     fqf    = filter.fqf
     b      = filter.b
     B      = filter.B
@@ -98,7 +135,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Laguerre arrays
     #------------------------------------------------------------------------------------
-    if ( "Laguerre" in sem.mesh.bdy_edge_type ||
+    if ( sem.mesh.lLaguerre ||
         inputs[:llaguerre_1d_right] == true   ||
         inputs[:llaguerre_1d_left]  == true )
         
@@ -154,30 +191,32 @@ function params_setup(sem,
         S_lag            = fluxes_lag.S_lag
         uprimitive_lag   = fluxes_lag.uprimitive_lag
         
-        flux_lag_gpu   = gpuAux_lag.flux_lag_gpu
-        source_lag_gpu = gpuAux_lag.source_lag_gpu
-        qbdy_lag_gpu   = gpuAux_lag.qbdy_lag_gpu
+        flux_lag_gpu     = gpuAux_lag.flux_lag_gpu
+        source_lag_gpu   = gpuAux_lag.source_lag_gpu
+        qbdy_lag_gpu     = gpuAux_lag.qbdy_lag_gpu
         
-        fy_t_lag = transpose(sem.fy_lag)
-        q_t_lag  = filter_lag.q_t_lag
-        q_ti_lag = filter_lag.q_ti_lag
-        fqf_lag  = filter_lag.fqf_lag
-        b_lag    = filter_lag.b_lag
-        B_lag    = filter_lag.B_lag
-        
+        fy_t_lag         = transpose(sem.fy_lag)
+        q_t_lag          = filter_lag.q_t_lag
+        q_ti_lag         = filter_lag.q_ti_lag
+        fqf_lag          = filter_lag.fqf_lag
+        b_lag            = filter_lag.b_lag
+        B_lag            = filter_lag.B_lag
     end
     
     #------------------------------------------------------------------------------------
     # Allocate micophysics arrays
     #------------------------------------------------------------------------------------
-    mp = allocate_Microphysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
-    
-
+    mp = allocate_SamMicrophysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
+    #------------------------------------------------------------------------------------
+    # Allocate large scale tendencies arrays
+    #------------------------------------------------------------------------------------
+    LST = allocate_LargeScaleTendencies(sem.mesh.npoin, sem.mesh, inputs, T, backend; lLST=inputs[:LST]) 
     #------------------------------------------------------------------------------------
     # Allocate Thermodynamic params for bomex case
     #------------------------------------------------------------------------------------
     thermo_params = create_updated_TD_Parameters(TFloat(101325.0))
-    
+        
+
     #------------------------------------------------------------------------------------
     # Populate solution arrays
     #------------------------------------------------------------------------------------
@@ -205,10 +244,10 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
-    if ("Laguerre" in sem.mesh.bdy_edge_type ||
+    if (sem.mesh.lLaguerre ||
         inputs[:llaguerre_1d_right] ||
         inputs[:llaguerre_1d_left])
-
+        pM = setup_assembler(RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
                   uaux, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
@@ -216,11 +255,13 @@ function params_setup(sem,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
                   uprimitive,
                   flux_gpu, source_gpu, qbdy_gpu,
-                  q_t, q_ti, fqf, b, B,
-                  q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag, flux_lag_gpu, source_lag_gpu,
+                  q_t, q_ti, q_tij, fqf, b, B,
+                  q_t_lag, q_ti_lag, fqf_lag, b_lag, B_lag,
+                  flux_lag_gpu, source_lag_gpu,
                   qbdy_lag_gpu,
                   RHS, RHS_visc,
                   F_lag, G_lag, S_lag, 
+                  F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv,
                   rhs_el_lag,
                   rhs_diff_el_lag,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
@@ -233,9 +274,9 @@ function params_setup(sem,
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, visc_coeff, ivisc_equations,
-                  sem.matrix.M, sem.matrix.Minv,tspan,
+                  sem.matrix.M, sem.matrix.Minv, pM=pM, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
-                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, laguerre=true)
+                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
         
     else
         pM = setup_assembler(RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -244,20 +285,25 @@ function params_setup(sem,
               uaux, vaux,
               ubdy, gradu, bdy_flux,                   
               RHS, RHS_visc,
+              fijk, ∇f_el,
               rhs_el, rhs_diff_el,
               rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
               uprimitive,
               F, G, H, S,
+              F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv,
               flux_gpu, source_gpu, qbdy_gpu,
-              q_t, q_ti, fqf, b, B,
+              flux_micro, source_micro, adjusted, Pm,
+              q_t, q_ti, q_tij, fqf, b, B,
               SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
               sem.SOL_VARS_TYPE, 
               neqs=qp.neqs,
+              sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
               sem.basis, sem.ω, sem.mesh, sem.metrics,
               visc_coeff, ivisc_equations,
               sem.matrix.M, sem.matrix.Minv, pM=pM,
               tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
-              qp, mp, sem.fx, sem.fy, fy_t, laguerre=false,
+              phys_grid = sem.phys_grid,
+              qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
               OUTPUT_DIR,
               sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end

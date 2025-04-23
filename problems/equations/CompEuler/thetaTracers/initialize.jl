@@ -17,7 +17,6 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     if (inputs[:backend] == CPU())    
         PhysConst = PhysicalConst{Float64}()
         if (inputs[:case] === "rtb")
-        
             comm = MPI.COMM_WORLD
             max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
             min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)

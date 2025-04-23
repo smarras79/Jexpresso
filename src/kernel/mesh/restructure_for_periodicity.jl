@@ -1,5 +1,7 @@
 function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_in_bdy_face,poin_in_bdy_edge,ngl,ngr,nelem,npoin,nsd,bdy_edge_type,
-        bdy_face_type,bdy_face_in_elem,bdy_edge_in_elem,connijk,connijk_lag,npoin_linear,nelem_semi_inf,inputs,backend)
+        bdy_face_type,bdy_face_in_elem,bdy_edge_in_elem,connijk,connijk_lag,npoin_linear,nelem_semi_inf,
+        inputs,backend)
+    
     #per1 = inputs[:per1dd]
     #per2 = inputs[:per2]
     #determine boundary vectors
@@ -79,11 +81,11 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
             end
             npoin -= (ngr-1)
         end  
-        if ("periodic1" in bdy_edge_type)
+        if ("periodicx" in bdy_edge_type)
             finder = false
             iedge_bdy = 1
             while (finder == false)
-                if (bdy_edge_type[iedge_bdy] == "periodic1")
+                if (bdy_edge_type[iedge_bdy] == "periodicx")
                     ip = poin_in_bdy_edge[iedge_bdy,1]
                     ip1 = poin_in_bdy_edge[iedge_bdy,2]
                     per1 = [x[ip] - x[ip1],y[ip] - y[ip1]]
@@ -95,11 +97,11 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         else
             per1 = [0.0, 1.0]
         end
-        if ("periodic2" in bdy_edge_type)
+        if ("periodicz" in bdy_edge_type)
             finder = false
             iedge_bdy = 1
             while (finder == false)
-                if (bdy_edge_type[iedge_bdy] == "periodic2")
+                if (bdy_edge_type[iedge_bdy] == "periodicz")
                     ip = poin_in_bdy_edge[iedge_bdy,1]
                     ip1 = poin_in_bdy_edge[iedge_bdy,2]
                     per2 = [x[ip] - x[ip1],y[ip] - y[ip1]]
@@ -119,7 +121,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         poin_bdy .=poin_in_bdy_edge
         interval = [2,3,4]
         for iedge_bdy =1:size(bdy_edge_type,1)
-            if ("periodic2" in bdy_edge_type && "periodic1" in bdy_edge_type)
+            if ("periodicz" in bdy_edge_type && "periodicx" in bdy_edge_type)
                 iel = bdy_edge_in_elem[iedge_bdy]
                 for k=1:ngl
                     ip = poin_in_bdy_edge[iedge_bdy,k]
@@ -188,7 +190,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         end
         # New periodicity interface
         for iedge_bdy =1:size(bdy_edge_type,1)
-            if (bdy_edge_type[iedge_bdy] == "periodic1" || bdy_edge_type[iedge_bdy] == "periodic2")
+            if (bdy_edge_type[iedge_bdy] == "periodicx" || bdy_edge_type[iedge_bdy] == "periodicz")
                 iel = bdy_edge_in_elem[iedge_bdy]
                 for k =1:ngl
                     ip = poin_bdy[iedge_bdy, k]
@@ -329,11 +331,11 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         end
         mesh.npoin = npoin
     elseif (nsd == 3)
-        if ("periodic1" in bdy_face_type)
+        if ("periodicx" in bdy_face_type)
             finder = false
             iface_bdy = 1
             while (finder == false)
-                if (bdy_face_type[iface_bdy] == "periodic1")
+                if (bdy_face_type[iface_bdy] == "periodicx")
                     ip = poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = poin_in_bdy_face[iface_bdy,2,1]
@@ -352,11 +354,11 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         else
             nor1 = [1.0, 0.0, 0.0]
         end
-        if ("periodic2" in bdy_face_type)
+        if ("periodicz" in bdy_face_type)
             finder = false
             iface_bdy = 1
             while (finder == false)
-                if (bdy_face_type[iface_bdy] == "periodic2")
+                if (bdy_face_type[iface_bdy] == "periodicz")
                     ip = poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = poin_in_bdy_face[iface_bdy,2,1]
@@ -375,11 +377,11 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         else
             nor2 = [0.0, 1.0, 0.0]
         end
-        if ("periodic3" in bdy_face_type)
+        if ("periodicy" in bdy_face_type)
             finder = false
             iface_bdy = 1
             while (finder == false)
-                if (bdy_face_type[iface_bdy] == "periodic3")
+                if (bdy_face_type[iface_bdy] == "periodicy")
                     ip = poin_in_bdy_face[iface_bdy,1,1]
                     ip1 = poin_in_bdy_face[iface_bdy,1,2]
                     ip2 = poin_in_bdy_face[iface_bdy,2,1]
@@ -401,7 +403,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
 
         ### triple periodicity for corners 
         interval = [2,3,4,5,6,7,8]
-        if ("periodic1" in bdy_face_type && "periodic2" in bdy_face_type && "periodic3" in bdy_face_type)    
+        if ("periodicx" in bdy_face_type && "periodicz" in bdy_face_type && "periodicy" in bdy_face_type)    
             for iface_bdy =1:size(bdy_face_type,1)
                 iel = bdy_face_in_elem[iface_bdy]
                 for k=1:ngl
@@ -473,15 +475,15 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         double1 = [0, 0, 0]
         double2 = [0, 0, 0]
         double3 = [0, 0, 0]
-        if ("periodic1" in bdy_face_type)
+        if ("periodicx" in bdy_face_type)
             nperiodic +=1
             double1 = nor1*(xmax - xmin)
         end
-        if ("periodic2" in bdy_face_type)
+        if ("periodicz" in bdy_face_type)
             nperiodic +=1
             double2 = nor2*(zmax - zmin)
         end
-        if ("periodic3" in bdy_face_type)
+        if ("periodicy" in bdy_face_type)
             nperiodic +=1
             if (double1 == [0 ,0 ,0])
                 double1 = nor3*(ymax-ymin)
@@ -708,11 +710,11 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
             for k=1:ngl
                 for l=1:ngl
                     ip = poin_in_bdy_face[iface_bdy,k,l]
-                    if (bdy_face_type[iface_bdy] == "periodic1")
+                    if (bdy_face_type[iface_bdy] == "periodicx")
                         per1_points = [per1_points; ip]
-                    elseif (bdy_face_type[iface_bdy] == "periodic2")
+                    elseif (bdy_face_type[iface_bdy] == "periodicz")
                         per2_points = [per2_points; ip]
-                    elseif (bdy_face_type[iface_bdy] == "periodic3")
+                    elseif (bdy_face_type[iface_bdy] == "periodicy")
                         per3_points = [per3_points; ip]
                     end
                 end
@@ -722,7 +724,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         unique!(per1_points)
         unique!(per2_points)
         unique!(per3_points)
-        ### work single periodicity on the periodic1 boundaries if applicable
+        ### work single periodicity on the periodicx boundaries if applicable
         if (size(per1_points,1) > 1) 
             for i=1:size(per1_points,1)
                 found = false
@@ -882,7 +884,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         unique!(per1_points)
         unique!(per2_points)
         unique!(per3_points)
-        ### work on single periodicity on the periodic2 boundaries if applicable
+        ### work on single periodicity on the periodicz boundaries if applicable
         if (size(per2_points,1) > 1)    
             for i=1:size(per2_points,1)
                 found = false
@@ -1041,7 +1043,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
         unique!(per1_points)
         unique!(per2_points)
         unique!(per3_points)
-        ### work on single periodicity on the periodic3 boundaries if applicable
+        ### work on single periodicity on the periodicy boundaries if applicable
         if (size(per3_points,1) > 1)
             for i=1:size(per3_points,1)
                 found = false
