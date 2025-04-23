@@ -1069,8 +1069,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                                 ip2gip_new[iter] = gip
                                 mesh.connijk_lag[e_iter,i,j] = iter
                                 mesh.gip2ip[gip] = iter
+                                @info gip, iter, rank, x_temp, y_temp, rank
                                 iter += 1
                                 matched = 1
+                                
                             end
                             if (matched == 0)
                                 x_new[iter] = x_temp#mesh.x[ip] + nor[1]*gr.ξ[j]*factorx
@@ -1078,6 +1080,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                                 ip2gip_new[iter] = gip
                                 mesh.connijk_lag[e_iter,i,j] = iter
                                 mesh.gip2ip[gip] = iter
+                                @info gip, iter, x_temp, y_temp,rank
                                 iter += 1 
                             end
                             

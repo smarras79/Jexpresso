@@ -209,17 +209,11 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
         #end
     end
 
-#@info "before div"
-#@info params.B[3247,:]
 
-for ieq=1:params.neqs
-    divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
-end
-#@info "after div"
-#@info params.B[3247,:]
-#@info "before filtering"
-#@info params.uaux[3247,:]
-uaux .= params.B
+    for ieq=1:params.neqs
+        divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
+    end
+    uaux[:,params.neqs] .= params.B[:,params.neqs]
 
 #=if (params.laguerre)
 
