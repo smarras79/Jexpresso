@@ -9,7 +9,6 @@ function user_inputs()
         :lsource              => true, 
         :llinsolve            => true,
         :lelementLearning     => true,
-        :rconst               => [0.0],
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

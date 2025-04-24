@@ -1,7 +1,7 @@
 #-------------------------------------------------------------------------------------------
 # Element learning matrices
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, dims1, dims2, dims3, backend}
+Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend}
 
     Avv   = KernelAbstractions.zeros(backend, T, dims1)
     Hvv   = KernelAbstractions.zeros(backend, T, dims1)
@@ -19,7 +19,7 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, T, backend)
     dims2 = (Int64(length∂O), Int64(length∂τ))
     dims3 = (Int64(length∂O), Int64(ngl-2)*Int64(ngl-2))
     dims4 = (Int64(ngl-2)*Int64(ngl-2), Int64(length∂τ))
-
+    
     elemLearning = St_elemLearning{T, dims1, dims2, dims3, dims4, backend}()
     
     return elemLearning

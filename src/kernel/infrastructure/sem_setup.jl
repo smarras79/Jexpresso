@@ -204,7 +204,7 @@ function sem_setup(inputs::Dict)
         end
     end
     
-    if inputs[:lelemLearning] || inputs[:lelemlearning]
+    if inputs[:lelementLearning]
         #
         # Element learning
         #
