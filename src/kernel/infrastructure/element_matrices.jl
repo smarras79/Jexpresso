@@ -1122,8 +1122,14 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     else
         nothing
     end
-
-
+    
+    if (inputs[:bdy_fluxes])
+        M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
+        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+        mass_inverse!(M_surf_inv, M_surf, QT)
+    else
+        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+    end
     if typeof(SD) == NSD_1D
         M_lag = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngr*mesh.ngr), Int64(mesh.nelem_semi_inf))
     elseif typeof(SD) == NSD_2D
@@ -1144,6 +1150,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
         
         @time DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
+        pM = DSS_global_mass!(M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     else
         if (typeof(SD) == NSD_1D)
             k = build_mass_matrix_1d_gpu!(backend)
@@ -1230,7 +1237,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
     end
 
-    return (; Me, De, Le, M, Minv, D, L)
+    return (; Me, De, Le, M, Minv, M_surf_inv, pM, D, L)
 end
 
 function mass_inverse!(Minv, M::AbstractVector, QT)

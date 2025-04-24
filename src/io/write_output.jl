@@ -50,6 +50,101 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
+#
+# PNG 2D
+#
+function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+    #
+    # 2D PNG of q(t) from dq/dt = RHS
+    #  
+    if inputs[:lplot_surf3d]
+        for iout = 1:size(sol.t[:], 1)
+            title = @sprintf "final solution at t=%6.4f" t
+            plot_surf3d(SD, mesh, u[:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
+        end
+    else
+
+        title = @sprintf "final solution at t=%6.4f" t
+        if (inputs[:backend] == CPU())
+            plot_triangulation(SD, mesh, u[:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+        else
+            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+            KernelAbstractions.copyto!(CPU(),u, u[:])
+            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+        end
+    end
+    println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
+end
+
+
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+    #
+    # 2D PNG of q(t) from dq/dt = RHS
+    #  
+    if inputs[:lplot_surf3d]
+        for iout = 1:size(sol.t[:], 1)
+            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
+            plot_surf3d(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
+        end
+    else
+        for iout = 1:size(sol.t[:],1)
+            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
+            if (inputs[:backend] == CPU())
+                plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+            else
+                u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(CPU(),u, sol.u[iout][:])
+                convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+                plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
+            end
+        end
+    end
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
+end
+
+
+function write_output(SD::NSD_2D, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+    #
+    # 2D PNG write x from Ax=b
+    #
+    if inputs[:lplot_surf3d]
+        title = @sprintf " Solution"
+        plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
+    else
+        title = @sprintf " Solution"
+        if (inputs[:backend] == CPU())
+            plot_triangulation(SD, mesh, sol.u, title,  OUTPUT_DIR, inputs; iout=1, nvar=nvar)
+        else
+            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+            KernelAbstractions.copyto!(CPU(),u, sol.u)
+            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=1, nvar=nvar)
+        end
+    end
+    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
+end
+
+
+###
+#
+# ASCII 2D
+#
+function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::ASCII; nvar=1, PT=nothing)
+    #
+    # 2D ASCII of q(t) from dq/dt = RHS
+    #  
+    for iout = 1:size(sol.t[:],1)
+        #Write out data at final timestep
+	fname = @sprintf "it-%d.dat" iout
+    	open(string(OUTPUT_DIR, "/", fname), "w") do f
+            for ip = 1:mesh.npoin
+                @printf(f, " %d %.6f %.6f %.6f \n", ip, mesh.x[ip], mesh.y[ip], sol.u[iout][ip])
+            end
+        end #f
+    end
+    println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") ) 
+end
 
 #
 # VTK 2D/3D
@@ -58,7 +153,6 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, mp,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames,
                       outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
-    
     for iout = 1:size(sol.t[:],1)
         if (inputs[:backend] == CPU())
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
@@ -77,6 +171,7 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, mp,
             KernelAbstractions.copyto!(CPU(),u_exact,qexact)
             convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
             title = @sprintf "final solution at t=%6.4f" sol.t[iout]
+
             write_vtk(SD, mesh, u, mp, sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
         end
     end
@@ -112,11 +207,12 @@ function write_output(SD, u_sol, uaux, t, iout,  mesh::St_mesh, mp,
                       varnames, outvarnames,
                       outformat::VTK;
                       nvar=1, qexact=zeros(1,nvar), case="")
-    
+
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
+
         write_vtk(SD, mesh, u_sol, uaux, mp, 
                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs,
@@ -130,7 +226,9 @@ function write_output(SD, u_sol, uaux, t, iout,  mesh::St_mesh, mp,
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
+
         write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+        
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
@@ -147,6 +245,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     
     nvar     = length(varnames)
     noutvar  = max(nvar, length(outvarnames))
+    
     new_size = size(mesh.x,1)
     if (mesh.nelem_semi_inf > 0)
         subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
@@ -228,7 +327,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     outfiles = map(vtk_save, vtkfile)
     
 end
-
 
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,

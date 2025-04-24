@@ -57,7 +57,7 @@ function _build_rhs_laguerre!(RHS, u, params, time)
         
         params.RHS_lag[:,:] .= @view(params.RHS_lag[:,:]) .+ @view(params.RHS_visc_lag[:,:])
     end
-    
+    DSS_global_RHS!(@view(params.RHS_lag[:,:]), params.pM, params.neqs) 
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS_lag[:,ieq]), params.vaux, params.Minv, neqs, npoin, params.AD)
     end

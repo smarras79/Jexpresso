@@ -27,6 +27,12 @@ function user_uout!(uout, u, qe, ::TOTAL)
     uout[2] = u[2]/u[1]
     uout[3] = u[3]/u[1]
     uout[4] = u[4]/u[1]
+
+    θ = uout[4]
+    ρ = uout[1]
+    PhysConst = PhysicalConst{Float64}()
+    p         = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
+    uout[5] = p
 end
 
 function user_uout!(uout, u, qe, ::PERT)
