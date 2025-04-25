@@ -142,10 +142,20 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
 
         ii = i-1
         jj = j-1
-        
+
+
         EL.Avv[ii,jj,iel] = A[ip,ip]
         println(EL.Avv[ii,jj,iel])
     end
-    
-   
+
+    for i=1:length(mesh.∂O)
+        for j=1:length(mesh.∂τ)
+
+            iO = mesh.∂O[i]
+            jτ = mesh.∂τ[j]
+            
+            EL.A∂O∂τ[i,j] = A[iO,jτ]
+        end
+    end
+       
 end
