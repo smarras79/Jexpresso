@@ -18,6 +18,6 @@ end
 
 function user_uout!(uout, u, qe, ::PERT)
 
-    uout[1] = u[1]
+    uout[1] = u[1] + qe[1]
     
 end
