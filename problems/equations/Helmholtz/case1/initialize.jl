@@ -14,8 +14,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     qvars = ("u")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
-
-
+    
     if (inputs[:backend] == CPU())        
         for ip =1:mesh.npoin
             x=mesh.x[ip]
