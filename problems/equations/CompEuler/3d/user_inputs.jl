@@ -6,12 +6,12 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.1,
         :tinit                => 0.0,
-        :tend                 => 300.0,
+        :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output",
-        :diagnostics_at_times => (0:10:300),
+        :diagnostics_at_times => (0:50:1000),
         :lsource              => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -67,7 +67,6 @@ function user_inputs()
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
     #---------------------------------------------------------------------------
-
-    return inputs
     
+    return inputs    
 end
