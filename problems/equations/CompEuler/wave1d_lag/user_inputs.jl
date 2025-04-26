@@ -8,7 +8,7 @@ function user_inputs()
         :ode_solver          => SSPRK33(),
         :tend                 => 9.0,
         :Δt                   => 1.0e-3,
-        :ndiagnostics_outputs => 30, #these are steps, not seconds
+        :diagnostics_at_times => (0:0.25:9),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

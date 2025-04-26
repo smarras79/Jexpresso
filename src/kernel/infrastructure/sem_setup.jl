@@ -38,7 +38,6 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     else
         mesh, partitioned_model, n2o_ele_map = mod_mesh_mesh_driver(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, omesh)
     end
-    
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xscale] != 1.0)
@@ -100,7 +99,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         # 2D/3D grids (from GMSH)
         #
         #@info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
-        if ("Laguerre" in mesh.bdy_edge_type[:])
+        if (mesh.lLaguerre)
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
             ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta], inputs[:backend])
             ξ2,ω2 = ξω2.ξ, ξω2.ω
@@ -142,11 +141,11 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             @time metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
             metrics = (metrics1, metrics2)
             @info " Build metrics ...... DONE"
-            @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
-                                           mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
-                                           mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
-                                           mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
+            #@time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
+            #                               mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
+            #                               mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
+            #                               mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
+            #                               mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
 
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
                                              ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
@@ -259,12 +258,8 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                                                mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
                                                mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
             end
-            
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
                         ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
-            #matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], 
-            #                        connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-            #                        ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
         end
     end
 

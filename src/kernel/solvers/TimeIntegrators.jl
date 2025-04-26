@@ -68,8 +68,6 @@ function time_loop!(inputs, params, u)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
-            
-            
         end
     end
     cb_rad = DiscreteCallback(two_stream_condition, do_radiation!)

@@ -56,6 +56,7 @@ function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp,
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
+
 function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
                       OUTPUT_DIR::String, inputs::Dict,
                       varnames, outvarnames,
@@ -64,6 +65,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+
     #
     # 2D VTK of x from Ax=b
     #    
@@ -92,6 +94,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
     
 end
 
+
 function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs::Dict,
@@ -103,6 +106,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
+
         write_vtk(SD, mesh, sol, uaux, mp, 
                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs,
