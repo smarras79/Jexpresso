@@ -1,4 +1,4 @@
-function user_bc_dirichlet!(q::SubArray{Float64},
+function user_bc_dirichlet!(q,
                             x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
@@ -6,11 +6,11 @@ function user_bc_dirichlet!(q::SubArray{Float64},
                             xmin, xmax,
                             ymin, ymax,
                             zmin, zmax,
-                            qe::SubArray{Float64}, ::TOTAL)
+                            qe, ::TOTAL)
 
 end
 
-function user_bc_dirichlet!(q::SubArray{Float64},
+function user_bc_dirichlet!(q,
                             x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
@@ -18,7 +18,7 @@ function user_bc_dirichlet!(q::SubArray{Float64},
                             xmin, xmax,
                             ymin, ymax,
                             zmin, zmax,
-                            qe::SubArray{Float64}, ::PERT)
+                            qe, ::PERT)
 
 end
 

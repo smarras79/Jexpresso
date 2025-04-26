@@ -1,6 +1,6 @@
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_1D,
-                    q::SubArray{Float64},
-                    qe::SubArray{Float64},
+function user_flux!(F, G, SD::NSD_1D,
+                    q,
+                    qe,
                     mesh::St_mesh,
                     ::CL, ::TOTAL; neqs=4, ip=1)
     γ = 1.4

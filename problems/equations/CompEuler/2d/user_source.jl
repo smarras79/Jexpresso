@@ -1,4 +1,4 @@
-function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, npoin::Int64; neqs=1)
+function user_source!(S, q, npoin::Int64; neqs=1)
 
     PhysConst = PhysicalConst{Float64}()
         

@@ -23,7 +23,7 @@ function apply_boundary_conditions!(u, uaux, t,qe,
     end
 end
 
-function apply_periodicity!(u, uaux, t,qe,
+function apply_periodicity!(u, uaux, t, qe,
                             npoin_linear, ψ, dψ,
                             RHS, rhs_el, ubdy,
                             ω, neqs, inputs, AD::FD, SD::NSD_1D)
@@ -157,7 +157,9 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
     for iedge = 1:nedges_bdy 
         iel  = bdy_edge_in_elem[iedge]
         
-        if bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "Laguerre"
+        if  bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodicz" &&
+            bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" &&
+            bdy_edge_type[iedge] != "Laguerre"
             #if mesh.bdy_edge_type[iedge] == "free_slip"
             
             #tag = mesh.bdy_edge_type[iedge]
@@ -254,8 +256,8 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, np
     
     for iedge = 1:nedges_bdy
 
-        if (bdy_edge_type[iedge] != "periodicx" &&
-            bdy_edge_type[iedge] != "periodicz" &&
+        if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
+            bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "periodic3" &&
             bdy_edge_type[iedge] != "Laguerre")
             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
@@ -322,7 +324,9 @@ function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
     #for ip = 1:npoin
     PhysConst = PhysicalConst{Float64}()
     for iface = 1:nfaces_bdy
-        if bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodicy" 
+        if (bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodic1" &&
+            bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodic2" &&
+            bdy_face_type[iface] != "periodicy" && bdy_face_type[iface] != "periodic3" )
             for i=1:ngl
                 for j=1:ngl
                     fill!(qbdy, 4325789.0)

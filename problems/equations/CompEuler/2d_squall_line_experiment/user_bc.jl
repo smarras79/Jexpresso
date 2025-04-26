@@ -1,4 +1,4 @@
-function user_bc_dirichlet!(q::SubArray{Float64},
+function user_bc_dirichlet!(q,
                             x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
@@ -6,7 +6,7 @@ function user_bc_dirichlet!(q::SubArray{Float64},
                             xmin, xmax,
                             ymin, ymax,
                             zmin, zmax,
-                            qe::SubArray{Float64}, ::TOTAL)
+                            qe, ::TOTAL)
    
         qnl = nx*q[2] + ny*q[3] + nz*q[4]
         qbdy[2] = (q[2] - qnl*nx) #+ qe[2] 
@@ -14,7 +14,7 @@ function user_bc_dirichlet!(q::SubArray{Float64},
     
 end
 
-function user_bc_dirichlet!(q::SubArray{Float64},
+function user_bc_dirichlet!(q,
                             x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
@@ -22,7 +22,7 @@ function user_bc_dirichlet!(q::SubArray{Float64},
                             xmin, xmax,
                             ymin, ymax,
                             zmin, zmax,
-                            qe::SubArray{Float64}, ::PERT)
+                            qe, ::PERT)
     qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])
     qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
     qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
