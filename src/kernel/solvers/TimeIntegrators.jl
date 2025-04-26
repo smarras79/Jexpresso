@@ -81,7 +81,7 @@ function time_loop!(inputs, params, u)
     #
     # Write initial conditions:
     #
-    println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........")
+    if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
     write_output(params.SD, u, params.uaux, inputs[:tinit], 1,
                  params.mesh, params.mp,
                  params.connijk_original, params.poin_in_bdy_face_original,
@@ -90,8 +90,11 @@ function time_loop!(inputs, params, u)
                  params.qp.qvars, params.qp.qoutvars,
                  inputs[:outformat];
                  nvar=params.qp.neqs, qexact=params.qp.qe)
-    println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END")
+    if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     
+    #
+    # Simulation
+    #
     solution = solve(prob,
                      inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                      #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,

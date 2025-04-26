@@ -200,6 +200,10 @@ end
 
 function build_Interpolation_basis!(TP::ScaledLaguerreBasis, ξ, ξq, beta, T, backend)
 
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    if rank == 0 @info "built laguerre basis ..... " end
+    
     Nξ = size(ξ,1)  - 1
     Qξ = size(ξq,1) - 1
 
@@ -207,7 +211,7 @@ function build_Interpolation_basis!(TP::ScaledLaguerreBasis, ξ, ξq, beta, T, b
     Q  = (Qξ + 1)
     basis = St_Lagrange{T, backend}(KernelAbstractions.zeros(backend, TFloat, N,Q), KernelAbstractions.zeros(backend, TFloat, N,Q))
     (basis.ψ, basis.dψ) = LagrangeLaguerreBasis(ξ, ξq, beta,T, backend)
-    @info "built laguerre basis"
+    if rank == 0 @info "built laguerre basis ..... DONE" end
     return basis
 end
 
@@ -242,8 +246,11 @@ end
 
 
 function build_cg!(cg::St_cg, nop, backend)
-    
-    println(" # Compute Chebyshev-Gauss nodes ........................ ")
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    if rank == 0 println(" # Compute Chebyshev-Gauss nodes ........................ ") end
+        
     size::Int8=nop+1
     cg.ξ = KernelAbstractions.zeros(backend, TFloat, size)
     cg.ω = KernelAbstractions.zeros(backend, TFloat, size)
@@ -254,14 +261,15 @@ function build_cg!(cg::St_cg, nop, backend)
     for j=1:size
         println( " # ξ cheby, ω =: ", " ", cg.ξ[j], " " , cg.ω[j])
     end
+    
+    if rank == 0 println(" # Compute Chebyshev-Gauss nodes ........................ END") end
 
-    println(" # Compute Chebyshev-Gauss nodes ........................ DONE")
     return cg
 end
 
 function build_cgl!(cgl::St_cgl, nop, backend)
     
-    println(" # Compute Chebyshev-Gauss-Lobatto nodes ........................ ")
+    if rank == 0 println(" # Compute Chebyshev-Gauss-Lobatto nodes ........................ ") end
     
     size::Int8=nop+1
     cgl.ξ = KernelAbstractions.zeros(backend, TFloat, size)
@@ -274,7 +282,8 @@ function build_cgl!(cgl::St_cgl, nop, backend)
         println( " # ξ cheby, ω =: ", " ", cgl.ξ[j], " " , cgl.ω[j])
     end
     
-    println(" # Compute Chebyshev-Gauss-Lobatto nodes ........................ DONE")
+    if rank == 0 println(" # Compute Chebyshev-Gauss-Lobatto nodes ........................ DONE") end
+    
     return cgl
 end
 
@@ -864,64 +873,4 @@ function scaled_laguerre(x,n,beta,backend)
     Lkx = Real(Laguerre.Laguerre(x))
     y = exp(-(beta*x)/2)*Lkx#exp(-x)*Lkx
     return y
-end 
-  
-#=
-function function_space_wrapper(inputs::Dict, )
-
-    Nξ = inputs[:nop]
-    lexact_integration = inputs[:lexact_integration]    
-    PT    = inputs[:equations]
-    
-    #--------------------------------------------------------
-    # Create/read mesh
-    # return mesh::St_mesh
-    # and Build interpolation nodes
-    #             the user decides among LGL, GL, etc. 
-    # Return:
-    # ξ = ND.ξ.ξ
-    # ω = ND.ξ.ω
-    #--------------------------------------------------------
-    mesh = mod_mesh_mesh_driver(inputs)
-    
-    #--------------------------------------------------------
-    # Build interpolation and quadrature points/weights
-    #--------------------------------------------------------
-    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop)    
-    ξ,ω = ξω.ξ, ξω.ω
-    if lexact_integration
-        #
-        # Exact quadrature:
-        # Quadrature order (Q = N+1) ≠ polynomial order (N)
-        #
-        QT  = Exact() #Quadrature Type
-        QT_String = "Exact"
-        Qξ  = Nξ + 1
-        
-        ξωQ   = basis_structs_ξ_ω!(inputs[:quadrature_nodes], mesh.nop)
-        ξq, ω = ξωQ.ξ, ξωQ.ω
-    else  
-        #
-        # Inexact quadrature:
-        # Quadrature and interpolation orders coincide (Q = N)
-        #
-        QT  = Inexact() #Quadrature Type
-        QT_String = "Inexact"
-        Qξ  = Nξ
-        ξωq = ξω
-        ξq  = ξ
-        ω   = ξω.ω
-    end
-    if (mesh.nsd == 1)
-        SD = NSD_1D()
-    elseif (mesh.nsd == 2)
-        SD = NSD_2D()
-    elseif (mesh.nsd == 3)
-        SD = NSD_3D()
-    else
-        error(" Drivers.jl: Number of space dimnnsions unknow! CHECK Your grid!")
-    end
-    
-    return (; basis, ω, metrics, mesh, SD, QT)
 end
-=#
