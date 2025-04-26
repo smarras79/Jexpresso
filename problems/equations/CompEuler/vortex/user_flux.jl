@@ -1,6 +1,6 @@
-function user_flux!(F::SubArray{TFloat}, G::SubArray{TFloat}, SD::NSD_2D,
-                    q::SubArray{TFloat},
-                    qe::SubArray{TFloat},
+function user_flux!(F, G, SD::NSD_2D,
+                    q,
+                    qe,
                     mesh::St_mesh,
                     ::CL, ::TOTAL; neqs=4, ip=1)
 

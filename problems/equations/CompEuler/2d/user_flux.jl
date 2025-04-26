@@ -1,4 +1,4 @@
-AAfunction user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D, q::SubArray{Float64}, mesh::St_mesh; neqs=4, ip=1)
+AAfunction user_flux!(F, G, SD::NSD_2D, q, mesh::St_mesh; neqs=4, ip=1)
 
     PhysConst = PhysicalConst{Float64}()
                 
