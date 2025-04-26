@@ -181,54 +181,64 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
     end
 
     if(inputs[:llaguerre_bc])
-        for e=1:nelem_semi_inf
-            for i=1:ngl
-                ip = connijk_lag[e,i,ngr]
-                ny_l = 1.0
-                nx_l = 0.0
-                fill!(qbdy, 4325789.0)
-                tag = inputs[:laguerre_tag]
-                user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+        if (nelem_semi_inf >0)
+            for e=1:nelem_semi_inf
+                for i=1:ngl
+                    ip = connijk_lag[e,i,ngr]
+                    ny_l = 1.0
+                    nx_l = 0.0
+                    fill!(qbdy, 4325789.0)
+                    tag = inputs[:laguerre_tag]
+                    user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
                 
-                for ieq =1:neqs
-                    if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                        #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
-                        uaux[ip,ieq] = qbdy[ieq]
-                        RHS[ip, ieq] = 0.0
+                    for ieq =1:neqs
+                        if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                            #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
+                            uaux[ip,ieq] = qbdy[ieq]
+                            RHS[ip, ieq] = 0.0
+                        end
+                    end
+                end
+                ip_test = connijk_lag[e,1,1]
+                if (x[ip_test] == xmin)
+                    for k=1:ngr
+                        ip = connijk_lag[e,1,k]
+                        ny_l = 0.0
+                        nx_l = -1.0
+                        fill!(qbdy, 4325789.0)
+                        tag = inputs[:laguerre_tag]
+                        user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+            
+                        for ieq =1:neqs
+                            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                    #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
+                                uaux[ip,ieq] = qbdy[ieq]
+                                RHS[ip, ieq] = 0.0
+                            end
+                        end
+                    end
+                end
+                ip_test = connijk_lag[e,ngl,1]
+                if (x[ip_test] == xmax)
+                    for k =1:ngr 
+                        ip = connijk_lag[nelem_semi_inf,ngl,k]
+                        ny_l = 0.0
+                        nx_l = 1.0
+                        fill!(qbdy, 4325789.0)     
+                        tag = inputs[:laguerre_tag]
+                        user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+            
+                        for ieq =1:neqs
+                            if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                    #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
+                                uaux[ip,ieq] = qbdy[ieq]
+                                RHS[ip, ieq] = 0.0
+                            end
+                        end
                     end
                 end
             end
         end
-        for k=1:ngr
-            ip = connijk_lag[1,1,k]
-            ny_l = 0.0
-            nx_l = -1.0
-            fill!(qbdy, 4325789.0)
-            tag = inputs[:laguerre_tag]
-            user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-            
-            for ieq =1:neqs
-                if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                    #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
-                    uaux[ip,ieq] = qbdy[ieq]
-                    RHS[ip, ieq] = 0.0
-                end
-            end
-            ip = connijk_lag[nelem_semi_inf,ngl,k]
-            ny_l = 0.0
-            nx_l = 1.0
-            fill!(qbdy, 4325789.0)     
-            user_bc_dirichlet!(@view(uaux[ip,:]), x[ip], y[ip], t, tag, qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
-            
-            for ieq =1:neqs
-                if !AlmostEqual(qbdy[ieq],uaux[ip,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
-                    #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq]
-                    uaux[ip,ieq] = qbdy[ieq]
-                    RHS[ip, ieq] = 0.0
-                end
-            end
-        end
-
     end
     
     #Map back to u after applying b.c.
