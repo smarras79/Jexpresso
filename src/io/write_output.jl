@@ -2,6 +2,21 @@ using WriteVTK
 
 include("./plotting/jeplots.jl")
 
+
+function callback_user_uout!(uout, u, qe, ET)
+    uout .= u
+end
+
+function attempt_call(func_name::Symbol, args::Tuple, callback::Function)
+    if func_name in names(Main; imported=true) && isa(getglobal(Main, func_name), Function)
+        primary_func = getglobal(Main, func_name)
+        return primary_func(args...)
+    else
+        return callback(args...)
+    end
+end
+
+
 function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
     nvar = length(varnames)
@@ -134,6 +149,9 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+
+    if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
+    if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
     
     nvar     = size(varnames, 1)
     noutvar  = max(nvar, size(outvarnames,1))
@@ -191,7 +209,10 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
     for ip=1:npoin
-        user_uout!(@view(qout[ip,1:noutvar]), @view(qaux[ip,1:nvar]), qexact[ip,1:nvar], inputs[:SOL_VARS_TYPE])
+
+        result2 = attempt_call(:user_uout!, (@view(qout[ip,1:noutvar]), @view(qaux[ip,1:nvar]), qexact[ip,1:nvar], inputs[:SOL_VARS_TYPE]), callback_user_uout!)
+        
+        #user_uout!(@view(qout[ip,1:noutvar]), @view(qaux[ip,1:nvar]), qexact[ip,1:nvar], inputs[:SOL_VARS_TYPE])
     end
     
     #
@@ -220,12 +241,14 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     
 end
 
-
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
+    if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
+    if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
+    
     nvar     = size(varnames, 1)
     noutvar  = max(nvar, size(outvarnames,1))
     npoin = mesh.npoin
