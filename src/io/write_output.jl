@@ -2,20 +2,30 @@ using WriteVTK
 
 include("./plotting/jeplots.jl")
 
-
-function callback_user_uout!(uout, u, qe, ET)
-    uout .= u
-end
-
-function attempt_call(func_name::Symbol, args::Tuple, callback::Function)
-    if func_name in names(Main; imported=true) && isa(getglobal(Main, func_name), Function)
-        primary_func = getglobal(Main, func_name)
-        return primary_func(args...)
+#------------------------------------------------------------------
+# Callback for missing user_uout!()
+#------------------------------------------------------------------
+function call_user_uout(uout, u, qe, ET, npoin, nvar, noutvar)
+    
+    if function_exists(@__MODULE__, :user_uout!)
+        for ip=1:npoin
+            user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
+        end
     else
-        return callback(args...)
+        callback_user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
     end
 end
 
+@inline function callback_user_uout!(uout, usol, qe, ET)
+    uout[1:end] = usol[1:end]
+end
+
+function function_exists(module_name::Module, function_name::Symbol)
+    return isdefined(module_name, function_name) && isa(getfield(module_name, function_name), Function)
+end
+#------------------------------------------------------------------
+# END Callback for missing user_uout!()
+#------------------------------------------------------------------
 
 function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
@@ -205,18 +215,17 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
             end
         end
     end
-    
+
+    #
+    # Fetch user-defined diagnostic vars or take them from the solution vars:
+    #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    for ip=1:npoin
+    call_user_uout(qout, qaux, qexact, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
 
-        result2 = attempt_call(:user_uout!, (@view(qout[ip,1:noutvar]), @view(qaux[ip,1:nvar]), qexact[ip,1:nvar], inputs[:SOL_VARS_TYPE]), callback_user_uout!)
-        
-        #user_uout!(@view(qout[ip,1:noutvar]), @view(qaux[ip,1:nvar]), qexact[ip,1:nvar], inputs[:SOL_VARS_TYPE])
-    end
     
     #
-    # Write solution:
+    # Write solution to vtk:
     #
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
@@ -303,11 +312,14 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
         end
     end
     
+    #
+    # Fetch user-defined diagnostic vars or take them from the solution vars:
+    #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    for ip=1:npoin
-        user_uout!(@view(qout[ip,1:noutvar]), @view(qaux[ip,1:nvar]), qexact[ip,1:nvar], inputs[:SOL_VARS_TYPE])
-    end
+    call_user_uout(qout, qaux, qexact, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
+    
+    
     #
     # Write solution:
     #
