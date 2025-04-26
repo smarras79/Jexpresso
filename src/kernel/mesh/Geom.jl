@@ -68,7 +68,7 @@ function Geometry.DiscreteModel(
 
     # Incorporate new_param into the logic if needed
     # if new_param > 1
-        println("New parameter is greater than 1: ", new_param)
+    #println("New parameter is greater than 1: ", new_param)
     # end
 
     GenericDistributedDiscreteModel(models, gids)
