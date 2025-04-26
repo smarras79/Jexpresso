@@ -11,9 +11,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars    = ("ρ", "ρu", "ρv", "ρθ", "qtr", "qtr2")
-    qoutvars = ("A", "B", "C", "ρθ", "YY", "ZZ")
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, qoutvars, TFloat, inputs[:backend]; neqs=length(qvars))
+    qvars    = ["ρ", "ρu", "ρv", "ρθ", "qtr", "qtr2"]
+    qoutvars = ["ρ", "u", "v", "θ", "qtr", "qtr2"]
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())    
         PhysConst = PhysicalConst{Float64}()
@@ -122,17 +122,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
             end
         end
-
-        #
-        # Write reference to VTK:
-        #  
-        if (inputs[:lwrite_initial] == true)
-            outvarsref = Array{Union{Nothing, String}}(nothing, q.neqs)
-            for i = 1:length(outvarsref)
-                outvarsref[i] = string(qvars[i], "_ref")
-            end
-            write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-        end
+        
     else
         if (inputs[:SOL_VARS_TYPE] == PERT())
             lpert = true

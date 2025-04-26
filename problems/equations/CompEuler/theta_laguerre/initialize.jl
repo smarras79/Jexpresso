@@ -97,9 +97,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
             end
         end
-    
-        outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")    
-        write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
+        
     else
         if (inputs[:SOL_VARS_TYPE] == PERT())
             lpert = true

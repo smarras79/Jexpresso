@@ -1,4 +1,3 @@
-#using Metal
 function user_inputs()
     inputs = Dict(
         #---------------------------------------------------------------------------
@@ -9,7 +8,7 @@ function user_inputs()
         :ode_solver          => SSPRK33(),
         :tend                 => 3.0,
         :Δt                   => 1.0e-3,
-        :ndiagnostics_outputs => 30, #these are steps, not seconds
+        :diagnostics_at_times => (0:0.1:3),
         :output_dir          => "./",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -19,7 +18,7 @@ function user_inputs()
         :lexact_integration  => false,
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
-        :backend             => MetalBackend(),
+        #:backend             => MetalBackend(),
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -37,7 +36,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
-        :outformat     => "png", #choice: "png", "ascii" (default is ascii)
+        :outformat           => "png",
+        :loverwrite_output   => true,
+        :output_dir          => "./output",
+        #:output_dir          => "./test/CI-run",
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
