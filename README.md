@@ -1,4 +1,4 @@
-# <img src="https://github.com/smarras79/Jexpresso/blob/master/assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
+# <img src="https://github.com/smarras79/Jexpresso/blob/sm/3d/assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
 
 | **Documentation** |
 |:------------ |
@@ -15,26 +15,24 @@
 # JEXPRESSO
 A CPU and GPU research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this will always be WIP! Contact us to join the team of developers!
 
-Suggested Julia version: 1.11.2
+Suggested Julia version: 1.10.0
+
+Suggested Julia version: 1.10
 
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
 
 Please cite Jexpresso using:
 
 ```
-@article{tissaoui2025,
+@article{tissaoui2024,
   author = {Y. Tissaoui and J. F. Kelly and S. Marras}
   title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
   volume ={487},
   pages={129080},
-  year = {2025},
+  year = {2024},
   journal = {App. Math. Comput.},
 }
 ```
-
-<img src="assets/jexpresso-examples.jpg"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
 
 # Equations:
 Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
@@ -184,7 +182,7 @@ If you are interested in contributing, please get in touch:
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia 1.11.2
+To install and run the code assume Julia 1.10
 
 ## Setup with CPUs
 
@@ -247,6 +245,7 @@ include("./src/Jexpresso.jl")
 <img src="assets/wave1d-v.png"
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
+
 
 
 For ready to run tests, there are the currently available equations names:
@@ -386,14 +385,20 @@ mpiexec --version
 
 ### 2. Configure MPI Preferences
 
-#### Automatic Configuration (Recommended)
+#### Automatic Configuration (Default Path)
+Use this command when MPI (OpenMPI/MPICH) is installed in standard system paths (`/usr/bin`, `/usr/local/bin`, etc.):
 ```bash
 julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary()'
 ```
 
 #### Manual Configuration (For Multiple MPI Installations or MPI not in Default Path)
+For MPI installations in non-standard locations (e.g., /opt/openmpi, or custom paths):
 ```bash
 julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary(;extra_paths = ["/where/your/mpi/lib"])'
+```
+If MPI is installed via homebrew on macOS, the MPI lib path is:
+```bash
+/opt/homebrew/lib
 ```
 
 ### 3. Running with MPI
@@ -420,6 +425,12 @@ mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); inclu
   which mpiexec
   which mpirun
   ```
+  You may have to use the full aboslute path to mpiexec or mpirun and to julia like this if necessary:
+  ```
+  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "theta"); include("./src/Jexpresso.jl")'
+  ```
+
+
 - **Version mismatches:** Ensure consistent versions:
   ```bash
   mpicc --version
@@ -435,14 +446,6 @@ Files can be written to VTK (recommended) or png. For the png plots, we use [Mak
 modify ./src/io/plotting/jplots.jl accordinly.
 
 For non-periodic 2D tests, the output can also be written to VTK files by setting the value "vtk" for the usier_input key :outformat
-
-## Using MPI:
-
-
-
-```
-/opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -np 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("src/Jexpresso.jl")'
-```
 
 ## Contacts
 [Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu), [Hang Wang](mailto:hang.wang@njit.edu)
