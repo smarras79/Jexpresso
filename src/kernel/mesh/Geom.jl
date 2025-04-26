@@ -1,5 +1,4 @@
 module JeGeometry
-# __init()
 __precompile__(false)
 using MPI
 using Gridap
@@ -206,7 +205,10 @@ mutable struct AssemblerCache
 
 end
 
-function setup_assembler(a, index_a, owner_a)
+function setup_assembler(SD, a, index_a, owner_a)
+
+    if SD == NSD_1D() return nothing end
+    
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
@@ -214,7 +216,6 @@ function setup_assembler(a, index_a, owner_a)
     global_max_index = maximum(index_a)
 
     m = size(a, 2)
-
 
     # i_local = Dict{Int,  Vector{Int}}()
     # for (i, idx) in enumerate(index_a)

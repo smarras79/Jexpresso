@@ -60,6 +60,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     #--------------------------------------------------------
     ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])    
     interp, project = build_projection_1d(ξω.ξ)
+    
     ξ,ω = ξω.ξ, ξω.ω    
     if lexact_integration
         #
@@ -94,6 +95,10 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     if (mesh.nsd > 1)
+        
+        #
+        # 2D/3D grids (from GMSH)
+        #
         #@info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
         if ("Laguerre" in mesh.bdy_edge_type[:])
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
@@ -200,18 +205,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             if rank == 0
                 @info " Build periodicity infrastructure ......"
             end
-            #=@time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
-                                           mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
-                                           mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
-                                           mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,
-                                         inputs,inputs[:backend])
-            if rank == 0
-                @info " Build periodicity infrastructure ...... DONE"
-            end=#
 
-#@mystop(" L 152 sem_setup")
-            
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end           
@@ -219,14 +213,17 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             if rank == 0
                 @info " Matrix wrapper ......"
             end
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
+                        ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
             if rank == 0
                 @info " Matrix wrapper ...... END"
             end
             
         end
     else
-        
+        #
+        # 1D grids (native)
+        #
         if(inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
 
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
@@ -244,7 +241,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
              @time metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat;backend = inputs[:backend])
             metrics = (metrics1, metrics2)
              @info " Build metrics ...... DONE"
-            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
         else
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
 
@@ -257,14 +254,17 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
 
             if (inputs[:lperiodic_1d])
                 @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
-                                           mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
-                                           mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
-                                           mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
+                                               mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
+                                               mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
+                                               mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
+                                               mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
             end
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], 
-                                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                                    ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
+                        ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
+            #matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], 
+            #                        connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+            #                        ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
         end
     end
 

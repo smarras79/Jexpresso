@@ -178,15 +178,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             ##
         end
     end
-    
-    if (inputs[:lwrite_initial] == true)
-        outvarsref = ("rho_init", "u_init", "v_init", "e_init", "p_init")
-        write_vtk_ref(SD, mesh, q.qn.-q.qe, "initial_state", inputs[:output_dir]; nvar=length(q.qn[1,:]), outvarsref=outvarsref)
-        
-        outvarsref = ("rho_ref", "u_ref", "v_ref", "e_ref", "p_ref")    
-        write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-    end
-    
+
     @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
 
     return q

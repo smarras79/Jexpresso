@@ -10,10 +10,9 @@ function user_inputs()
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
-        :restart_input_file_path => "./output/CompEuler/theta/output",
-        :diagnostics_at_times => (0:100:1000),
+        #:restart_input_file_path => "./output/CompEuler/theta/output",
+        :diagnostics_at_times => (0:10:300),
         :lsource              => true,
-        #:backend              => CUDABackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

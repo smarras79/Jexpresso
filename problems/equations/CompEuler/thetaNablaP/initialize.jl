@@ -120,14 +120,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
             end
         end
-
-        if (inputs[:lwrite_initial] == true)
-            outvarsref = ("drho_init", "du_init", "dv_init", "dtheta_init", "dp_init")
-            write_vtk_ref(SD, mesh, q.qn.-q.qe, "initial_state", inputs[:output_dir]; nvar=length(q.qn[1,:]), outvarsref=outvarsref)
         
-            outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")    
-            write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-        end
     else
         if (inputs[:SOL_VARS_TYPE] == PERT())
             lpert = true
