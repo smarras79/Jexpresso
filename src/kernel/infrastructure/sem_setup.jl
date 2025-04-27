@@ -52,8 +52,15 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     elseif(inputs[:ydisp] != 0.0)
         mesh.y .= (mesh.y .+ inputs[:ydisp])
     end
-    mesh.ymax = maximum(mesh.y)
-    
+    mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
+    mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+    mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
+    mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
+    if (mesh.nsd > 2)
+        mesh.zmax = MPI.Allreduce(maximum(mesh.z), MPI.MAX, comm)
+        mesh.zmin = MPI.Allreduce(minimum(mesh.z), MPI.MIN, comm)
+    end
+
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------

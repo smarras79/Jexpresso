@@ -3,7 +3,7 @@ function warp_mesh!(mesh,inputs)
   am = inputs[:a_mount]
   hm = inputs[:h_mount]
   xc = inputs[:c_mount]
-  ztop = maximum(mesh.y)#30000.0
+  ztop = mesh.ymax#30000.0
   zsurf = zeros(Float64,mesh.npoin)
   sigma = zeros(Float64,mesh.npoin)
   for i=1:mesh.npoin

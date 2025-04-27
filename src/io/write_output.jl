@@ -368,7 +368,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp,
     poin_bdy = zeros(size(mesh.bdy_edge_type,1),mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_edge
     qe_temp = similar(qexact)
-    if ("periodicx" in mesh.bdy_edge_type || "periodicz" in mesh.bdy_edge_type)
+    #=if ("periodicx" in mesh.bdy_edge_type || "periodicz" in mesh.bdy_edge_type)
         new_size = size(mesh.x,1)
         diff = new_size-npoin
         q_new = zeros(new_size*nvar)
@@ -648,7 +648,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp,
         q = q_new
         qexact = q_exact1
 
-    end
+    end=#
 
 
     for iel = 1:mesh.nelem
@@ -807,14 +807,14 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp,
     end
     
     outfiles = map(vtk_save, vtkfile)
-    mesh.x .= xx
+    #=mesh.x .= xx
     mesh.y .= yy
     mesh.connijk .= conn
     mesh.poin_in_bdy_edge .= poin_bdy
     qexact = copy(qe_temp)
     if ("Laguerre" in mesh.bdy_edge_type)
     	mesh.connijk_lag .= conn_lag 
-    end
+    end=#
 end
 
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, 

@@ -15,7 +15,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())
-        xc = (maximum(mesh.x) + minimum(mesh.x))/2
+        xc = (mesh.xmax + mesh.xmin)/2
         yc = 8.0 #m
         sx = 1.0
         sy = 1.0

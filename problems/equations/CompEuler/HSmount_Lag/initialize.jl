@@ -16,7 +16,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         PhysConst = PhysicalConst{Float64}()
         θref = 250.0 #K
         θ0 = 250.0
-        T0   = θ0
+        T0   = 250.0
         p0   = 100000.0
     
         N    = PhysConst.g/sqrt(PhysConst.cp*T0)

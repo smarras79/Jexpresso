@@ -59,7 +59,6 @@ function driver(nparts,
                          inputs[:outformat];
                          nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
         end
-        
     else
         #
         # Problems that lead to Ax = b

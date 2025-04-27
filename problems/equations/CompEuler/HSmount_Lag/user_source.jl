@@ -102,7 +102,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betay_coe = 0.0
     end
     #if (abs(x) <=xmin)
-      ctop= betay_coe#0.5*betay_coe
+    ctop = betay_coe#0.5*betay_coe
     #else
      # ctop = 0.0
     #end 
@@ -118,7 +118,6 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     else
         betaxl_coe = 0.0
     end
-    
     cxr = 0.01*betaxr_coe#0.25*betaxr_coe
     cxl = 0.01*betaxl_coe#0.25*betaxl_coe
     ctop = 0.1*min(ctop,1)
