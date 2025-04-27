@@ -79,6 +79,8 @@ include(joinpath( "macros", "je_macros.jl"))
 
 include(joinpath( "kernel", "abstractTypes.jl"))
 
+include(joinpath( "kernel", "elementLearningStructs.jl"))
+
 include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))

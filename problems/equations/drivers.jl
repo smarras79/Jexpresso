@@ -74,6 +74,16 @@ function driver(nparts,
             for ip = 1:sem.mesh.npoin
                 sem.matrix.L[ip,ip] += inputs[:rconst][1]
             end
+
+            #-----------------------------------------------------
+            # Element-learning infrastructure
+            #-----------------------------------------------------
+            if inputs[:lelementLearning]
+                elementLearning_Axb(sem.mesh, sem.matrix.L, RHS)
+            end
+            #-----------------------------------------------------
+            # END Element-learning infrastructure
+            #-----------------------------------------------------
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
                                                  params.mesh.x, params.mesh.y, params.mesh.z,
@@ -129,4 +139,41 @@ function driver(nparts,
                      nvar=params.qp.neqs, qexact=params.qp.qe, case="none")
         
     end
+end
+
+function elementLearning_Axb(mesh::St_mesh, A, RHS)
+
+    @info "∂Oxdd"
+    println(mesh.∂O)
+    @info "∂τddddd"
+    println(mesh.∂τ)
+    @info mesh.length∂O mesh.length∂τ
+    
+    EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
+                               mesh.length∂O,
+                               mesh.length∂τ,
+                               TFloat, inputs[:backend])
+    
+    
+    for iel=1:mesh.nelem, i=2:mesh.ngl-1, j=2:mesh.ngl-1
+        ip = mesh.connijk[iel, i, j]
+
+        ii = i-1
+        jj = j-1
+
+
+        EL.Avv[ii,jj,iel] = A[ip,ip]
+        println(EL.Avv[ii,jj,iel])
+    end
+
+    for i=1:length(mesh.∂O)
+        for j=1:length(mesh.∂τ)
+
+            iO = mesh.∂O[i]
+            jτ = mesh.∂τ[j]
+            
+            EL.A∂O∂τ[i,j] = A[iO,jτ]
+        end
+    end
+       
 end
