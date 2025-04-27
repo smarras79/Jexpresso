@@ -12,7 +12,9 @@ function call_user_uout(uout, u, qe, ET, npoin, nvar, noutvar)
             user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
         end
     else
-        callback_user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
+        for ip=1:npoin
+            callback_user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
+        end
     end
 end
 

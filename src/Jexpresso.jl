@@ -153,6 +153,8 @@ include(joinpath( "io", "Extract_topo.jl"))
 
 include(joinpath( "io", "soundings.jl"))
 
+include(joinpath( "auxiliary", "auxiliary_functions.jl"))
+
 include(joinpath( "auxiliary", "checks.jl"))
 
 include("./run.jl")
