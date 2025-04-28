@@ -1,11 +1,9 @@
-#using Plots
 using Dierckx
 using LaTeXStrings
 using ColorSchemes
 using CairoMakie
 using Makie
-using Interpolations
-#Makie.theme(:fonts)
+#using Interpolations
 
 #= CITE Mackie:
 @article{DanischKrumbiegel2021,
