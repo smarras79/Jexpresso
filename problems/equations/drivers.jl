@@ -132,12 +132,6 @@ function driver(nparts,
         
         @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
         
-        #write_output(sem.mesh.SD, solution, params.uaux, sem.mesh,
-        #             OUTPUT_DIR, inputs,
-        #             params.qp.qvars,params.qp.qoutvars,
-        #             inputs[:outformat];
-        #             nvar=params.qp.neqs, qexact=params.qp.qe, case="none")
-
         write_output(params.SD, solution.u, params.uaux, 0.0, 1,
                      sem.mesh, nothing,
                      nothing, nothing,
