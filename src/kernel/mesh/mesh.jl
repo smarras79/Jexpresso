@@ -358,17 +358,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.nfaces       = num_faces(model,FACE_flg)   
     mesh.nelem        = num_faces(model,ELEM_flg)
 
-
+    mesh.nelem_bdy    = length(get_boundary_cells(model,mesh.nsd))
+    mesh.nfaces_bdy   = length(get_boundary_faces(model,mesh.nsd,FACE_flg))
+    mesh.nedges_bdy   = length(get_boundary_faces(model,mesh.nsd,EDGE_flg))
     
-    # if (ladaptive == 1)
-        mesh.nelem_bdy    = length(get_boundary_cells(model,mesh.nsd))
-        mesh.nfaces_bdy   = length(get_boundary_faces(model,mesh.nsd,FACE_flg))
-        mesh.nedges_bdy   = length(get_boundary_faces(model,mesh.nsd,EDGE_flg))
-    # else 
-        # mesh.nelem_bdy    = count(get_isboundary_face(topology,mesh.nsd))
-        # mesh.nfaces_bdy   = count(get_isboundary_face(topology,FACE_flg))
-        # mesh.nedges_bdy   = count(get_isboundary_face(topology,EDGE_flg))
-    # end
     mesh.nelem_int    = mesh.nelem - mesh.nelem_bdy
     mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
     mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
