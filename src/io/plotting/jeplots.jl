@@ -18,7 +18,7 @@ number = {65},
 pages = {3349},
 author = {Simon Danisch and Julius Krumbiegel},
 title = {Makie.jl: Flexible high-performance data visualization for Julia},
-journal = {Journal of Open Source Software}
+journal = {Journal of Open SOurce Software}
 }
 =#
 
@@ -32,29 +32,28 @@ function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
     fig, ax, plt = CairoMakie.scatter(x[1:npoin], q[1:npoin];
                                       markersize = 10, color="Blue",
                                       xlabel = "x", ylabel = "q(x)",
-                                      fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = "u", xlabel = "x")
+                                      fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),
+                                      axis = (; title = "u", xlabel = "x")
                                       )
     
     fout_name = string(OUTPUT_DIR, "/INIT-", ivar, ".png")
-    @info fout_name
+    
     save(string(fout_name), fig)
     fig
 end
 
-function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, PT=nothing)
-    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
-    qmin = minimum(q);      qmax = maximum(q);
-    epsi = 1.1
-    npoin = floor(Int64, size(q, 1)/nvar)
-    #qout = copy(q)
+function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, PT=nothing)
     
+    epsi = 1.1
+    npoin = size(mesh.x[:,1])[1]
     for ivar=1:nvar
+        
         idx = (ivar - 1)*npoin
         
         CairoMakie.activate!(type = "eps")
         fig = Figure(size = (600,400),fontsize=22)
         ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
-        CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin];markersize = 10, color="Blue")
+        CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin]; markersize = 10, color="Blue")
         vlines = inputs[:plot_vlines]
         hlines = inputs[:plot_hlines]
         axis = inputs[:plot_axis]
@@ -74,7 +73,6 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
             idx = (ivar-1)*2
             ylims!(ax, axis[1+idx], axis[2+idx])
         end
-        #ylims!(ax, -0.05, 0.55)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
         save(string(fout_name), fig)
         fig
@@ -83,16 +81,12 @@ end
 
 
 function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, fig=Figure(),color ="Blue",p=[],marker = :circle, PT=nothing)
-    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
-    qmin = minimum(q);      qmax = maximum(q);
+    
     epsi = 1.1
-    npoin = floor(Int64, size(q, 1)/nvar)
-    #qout = copy(q)
-    #ax = Axis(fig[1,1])      
+    npoin = size(mesh.x[:,1])
     
     for ivar=1:1
         idx = (ivar - 1)*npoin
-        #fig, ax, plt =
         CairoMakie.activate!(type = "eps")
         if !(p==[]) 
             ax = Axis(fig[1, 1], title="", xlabel="")
@@ -112,10 +106,9 @@ end
 
 
 function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, varnames; iout=1, nvar=1, PT=nothing)
-    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
-    qmin = minimum(q);      qmax = maximum(q);
+    
     epsi = 1.1
-    npoin = floor(Int64, size(q, 1)/nvar)
+    npoin = size(mesh.x[:,1])
     
     qout = copy(q)
     qe   = range(0,0,npoin)
@@ -268,86 +261,4 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         fig
     end
     
-end
-
-function plot_volume3d(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-3)
-            
-    xmin = minimum(mesh.x); xmax = maximum(mesh.x);
-    ymin = minimum(mesh.y); ymax = maximum(mesh.y);
-    zmin = minimum(mesh.z); zmax = maximum(mesh.z);    
-    nxi = 20
-    nyi = 20
-    nzi = 20
-    npoin = floor(Int64, size(q, 1)/nvar)
-    fout_name = string(OUTPUT_DIR, "/ivar", 1, "-it", iout, ".png")
-    for ivar=1:nvar                   
-        idx = (ivar - 1)*npoin        
-        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-            
-        #Spline3d
-        spl_x = Spline1D(mesh.x[1:npoin], q[idx+1:ivar*npoin]; k=4, s=smoothing_factor)
-        c_x = get_coeffes(spl_x)
-        c_xy = Spline1D(mesh.y[1:npoin], c_x; k=4, s=smoothing_factor)
-        c_xyz = Spline1D(mesh.z[1:npoin], c_z; k=4, s=smoothing_factor)
-        #spl = Interpolations.interpolate(mesh.x, q, (Gridded(Linear())))
-        
-        xg = LinRange(xmin, xmax, nxi); yg = LinRange(ymin, ymax, nyi); zg = LinRange(zmin, zmax, nzi);
-        zspl = evalgrid(spl, xg, yg, zg);
-        #End spline2d
-        
-        #figure: 
-        fig = Figure(size=(1200, 400))    
-        axs = [Axis3(fig[1, i]; aspect=(1, 1, 1), azimuth=-π/2, elevation=π/2) for i = 1:1]
-                                          
-        hm = Makie.volume!(axs[1], xg, yg, zg, zspl) # xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
-        #Colorbar(fig[1, 1], hm, height=Relative(0.5))
-        
-        save(string(fout_name), fig)
-        #display(fig)
-        fig
-    end
-
-end
-
-#
-# ASCII
-#
-function write_ascii(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
-    
-    npoin = floor(Int64, size(q, 1)/nvar)
-    for ivar=1:nvar
-        idx = (ivar - 1)*npoin
-        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".dat")
-        open(fout_name, "w") do f
-            @printf(f, " %f %f \n", mesh.x[1:npoin,1], q[idx+1:ivar*npoin])
-        end
-    end
-end
-
-function write_ascii(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
-    
-    npoin = floor(Int64, size(q, 1)/nvar)
-    for ivar=1:nvar
-        idx = (ivar - 1)*npoin
-        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".dat")
-        open(fout_name, "w") do f
-            @printf(f, " %f %f \n", mesh.x[1:npoin,1], mesh.y[1:npoin,1], q[idx+1:ivar*npoin])
-        end
-    end
-end
-
-function write_ascii(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1)
-    
-    npoin = floor(Int64, size(q, 1)/nvar)
-    for ivar=1:nvar
-        idx = (ivar - 1)*npoin
-        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".dat")
-        open(fout_name, "w") do f
-            @printf(f, " %f %f \n", mesh.x[1:npoin,1], mesh.y[1:npoin,1], mesh.z[1:npoin,1], q[idx+1:ivar*npoin])
-        end
-    end
 end

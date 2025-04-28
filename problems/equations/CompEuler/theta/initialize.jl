@@ -16,8 +16,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("ρ", "ρu", "ρv", "ρθ")
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
+    qvars    = ["ρ", "ρu", "ρv", "ρθ"]
+    qoutvars = ["ρ", "u", "w", "θ", "p"]
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())    
         PhysConst = PhysicalConst{Float64}()
@@ -25,7 +26,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # READ RESTART HDF5:
             #
-            q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
+            q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars), qoutvars=qoutvars)
             PhysConst = PhysicalConst{Float64}()
             for ip=1:mesh.npoin
                 ρ  = q.qn[ip,1]
@@ -121,13 +122,6 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             end
         end
 
-        if (inputs[:lwrite_initial] == true)
-            outvarsref = ("drho_init", "du_init", "dv_init", "dtheta_init", "dp_init")
-            write_vtk_ref(SD, mesh, q.qn.-q.qe, "initial_state", inputs[:output_dir]; nvar=length(q.qn[1,:]), outvarsref=outvarsref)
-        
-            outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")    
-            write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-        end
     else
         if (inputs[:SOL_VARS_TYPE] == PERT())
             lpert = true

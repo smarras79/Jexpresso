@@ -66,6 +66,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     #--------------------------------------------------------
     ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])    
     interp, project = build_projection_1d(ξω.ξ)
+    
     ξ,ω = ξω.ξ, ξω.ω    
     if lexact_integration
         #
@@ -100,6 +101,10 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     # dψ/dξ = basis.dψ[N+1, Q+1]
     #--------------------------------------------------------
     if (mesh.nsd > 1)
+        
+        #
+        # 2D/3D grids (from GMSH)
+        #
         #@info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
         if (mesh.lLaguerre)
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
@@ -143,14 +148,9 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             @time metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
             metrics = (metrics1, metrics2)
             @info " Build metrics ...... DONE"
-            #@time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
-            #                               mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
-            #                               mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
-            #                               mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-            #                               mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
-
+            
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
-                                             ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+                                             ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
             
         else
             @info " Build interpolation bases ......"
@@ -206,18 +206,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             if rank == 0
                 @info " Build periodicity infrastructure ......"
             end
-            #=@time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
-                                           mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
-                                           mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
-                                           mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,
-                                         inputs,inputs[:backend])
-            if rank == 0
-                @info " Build periodicity infrastructure ...... DONE"
-            end=#
 
-#@mystop(" L 152 sem_setup")
-            
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end           
@@ -225,14 +214,17 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             if rank == 0
                 @info " Matrix wrapper ......"
             end
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
+                        ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
             if rank == 0
                 @info " Matrix wrapper ...... END"
             end
             
         end
     else
-        
+        #
+        # 1D grids (native)
+        #
         if(inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
 
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
@@ -250,7 +242,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
              @time metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat;backend = inputs[:backend])
             metrics = (metrics1, metrics2)
              @info " Build metrics ...... DONE"
-            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
         else
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
 
@@ -263,16 +255,53 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
 
             if (inputs[:lperiodic_1d])
                 @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
-                                           mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
-                                           mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
-                                           mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-                                           mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
+                                               mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
+                                               mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
+                                               mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
+                                               mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
             end
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], 
-                                    ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend])
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
+                        ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
         end
     end
 
+    if inputs[:lelementLearning]
+        #
+        # Element learning
+        #
+        new_matrix      = remove_arrays!(mesh.poin_in_edge, mesh.poin_in_bdy_edge)
+        new_no_bdy_poin = replace_shared_values!(new_matrix, mesh.poin_in_bdy_edge)
+        
+        mesh.∂O       = unroll_positive_unique(new_no_bdy_poin)
+        mesh.Γ        = unroll_positive_unique(mesh.poin_in_bdy_edge)
+        mesh.∂τ       = vcat(mesh.Γ, mesh.∂O)
+        mesh.τO       = view(mesh.internal_poin_in_elem, :)
+        mesh.lengthτO = length(mesh.τO)
+        mesh.O        = vcat(mesh.τO, mesh.∂O)
+        mesh.length∂O = length(mesh.∂O)
+        mesh.length∂τ = length(mesh.∂τ)
+        mesh.lengthΓ  = length(mesh.Γ)
+        
+        println("Γ")
+        println(mesh.Γ)
+        println(mesh.lengthΓ)
+        
+        println("O")
+        println(mesh.O)
+        println(mesh.lengthO)
+        
+        println("∂O")
+        println(mesh.∂O)
+        println(mesh.length∂O)
+        
+        println("∂τ")
+        println(mesh.∂τ)
+        println(mesh.length∂τ)
+        
+        println("τO")
+        println(mesh.τO)
+        println(mesh.lengthτO)
+    end
 
     #--------------------------------------------------------
     # Build matrices

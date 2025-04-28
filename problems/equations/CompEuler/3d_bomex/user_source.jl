@@ -1,7 +1,7 @@
 import Thermodynamics as TD
-function user_source!(S::SubArray{Float64},
-                      q::SubArray{Float64}, 
-                      qe::SubArray{Float64},
+function user_source!(S,
+                      q, 
+                      qe,
                       npoin::Int64,
                       ::CL, ::TOTAL;
                       neqs=1)
@@ -21,9 +21,9 @@ function user_source!(S::SubArray{Float64},
    
 end
 
-function user_source!(S::SubArray{Float64},
-                      q::SubArray{Float64}, 
-                      qe::SubArray{Float64},
+function user_source!(S,
+                      q, 
+                      qe,
                       npoin::Int64,
                       ::CL, ::PERT;
                       neqs=1)

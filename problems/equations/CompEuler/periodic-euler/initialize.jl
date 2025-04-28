@@ -34,16 +34,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[ip,1] = 0.0
             end
         end
-    
 
-        #
-        # Write reference to VTK:
-        #
-        outvarsref = Array{Union{Nothing, String}}(nothing, q.neqs)
-        for i = 1:length(outvarsref)
-            outvarsref[i] = string(qvars[i], "_ref")
-        end
-        write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
     else
         xc = TFloat((maximum(mesh.x) + minimum(mesh.x))/2)
         yc = TFloat(8.0)

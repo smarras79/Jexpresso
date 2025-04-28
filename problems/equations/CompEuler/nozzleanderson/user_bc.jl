@@ -1,4 +1,4 @@
-function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, qe::SubArray{Float64},::TOTAL)
+function user_bc_dirichlet!(q, x::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, qe,::TOTAL)
     
     U1in = 0.0
     U2in = 0.0
@@ -56,7 +56,7 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractF
     
 end
 
-function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe::SubArray{Float64},::PERT)
+function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
 #    if (tag == "free_slip")
       
       if (y<=14950) #(abs(x) < 119500.0 && y<= 14950.0)

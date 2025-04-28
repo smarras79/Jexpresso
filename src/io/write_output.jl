@@ -2,12 +2,33 @@ using WriteVTK
 
 include("./plotting/jeplots.jl")
 
-#----------------------------------------------------------------------------------------------------------------------------------------------
-# ∂q/∂t = RHS -> q(x,t)
-#----------------------------------------------------------------------------------------------------------------------------------------------
-#
-# PNG 1D
-#
+#------------------------------------------------------------------
+# Callback for missing user_uout!()
+#------------------------------------------------------------------
+function call_user_uout(uout, u, qe, ET, npoin, nvar, noutvar)
+    
+    if function_exists(@__MODULE__, :user_uout!)
+        for ip=1:npoin
+            user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
+        end
+    else
+        for ip=1:npoin
+            callback_user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
+        end
+    end
+end
+
+@inline function callback_user_uout!(uout, usol, qe, ET)
+    uout[1:end] = usol[1:end]
+end
+
+function function_exists(module_name::Module, function_name::Symbol)
+    return isdefined(module_name, function_name) && isa(getfield(module_name, function_name), Function)
+end
+#------------------------------------------------------------------
+# END Callback for missing user_uout!()
+#------------------------------------------------------------------
+
 function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
     nvar = length(varnames)
@@ -16,7 +37,13 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
-function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs::Dict,
+                      varnames, outvarnames,
+                      outformat::PNG;
+                      nvar=1, qexact=zeros(1,nvar), case="")
+        
     #
     # 1D PNG of q(t) from dq/dt = RHS
     #
@@ -25,166 +52,59 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
         colors = ["Blue","Red","Green","Yellow","Black","Purple","Orange"]
         markers = [:circle, :rect, :diamond,:hexagon,:cross,:xcross,:utriangle,:dtriangle,:pentagon,:star4,:star8]
         p = []
-        for iout = 1:size(sol.t[:], 1)
+        #for iout = 1:size(sol.t[:], 1)
             icolor = mod(iout,size(colors,1))+1
             color = colors[icolor]
             imarker = mod(iout,size(markers,1))+1
             marker = markers[imarker]
-            title = string("sol.u at time ", sol.t[iout])
+            title = string("sol.u at time ", t)
             if (inputs[:backend] == CPU())
-                plot_results!(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
+                plot_results!(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
             else
                 uout = KernelAbstractions.allocate(CPU(),Float32, Int64(mesh.npoin))
-                KernelAbstractions.copyto!(CPU(), uout, sol.u[iout][:])
+                KernelAbstractions.copyto!(CPU(), uout, sol)
                 plot_results!(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
             end
-        end
+        #end
     else
         fig = Figure(size = (1200,800),fontsize=22)
-        for iout = 1:size(sol.t[:], 1)
-            title = string("sol.u at time ", sol.t[iout])
+        #for iout = 1:size(sol.t[:], 1)
+        title = string("sol at time ", t)
             if (inputs[:backend] == CPU())
-                plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
-                KernelAbstractions.copyto!(CPU(), uout, sol.u[iout][:])
+                KernelAbstractions.copyto!(CPU(), uout, sol)
                 convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
                 plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
             end
-        end
+        #end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
-#
-# PNG 2D
-#
-function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
-    #
-    # 2D PNG of q(t) from dq/dt = RHS
-    #  
-    if inputs[:lplot_surf3d]
-        for iout = 1:size(sol.t[:], 1)
-            title = @sprintf "final solution at t=%6.4f" t
-            plot_surf3d(SD, mesh, u[:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
-        end
-    else
 
-        title = @sprintf "final solution at t=%6.4f" t
-        if (inputs[:backend] == CPU())
-            plot_triangulation(SD, mesh, u[:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
-        else
-            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-            KernelAbstractions.copyto!(CPU(),u, u[:])
-            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
-        end
-    end
-    println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
-end
+function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
+                      OUTPUT_DIR::String, inputs::Dict,
+                      varnames, outvarnames,
+                      outformat::VTK;
+                      nvar=1, qexact=zeros(1,nvar), case="")
 
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
 
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
-    #
-    # 2D PNG of q(t) from dq/dt = RHS
-    #  
-    if inputs[:lplot_surf3d]
-        for iout = 1:size(sol.t[:], 1)
-            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            plot_surf3d(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
-        end
-    else
-        for iout = 1:size(sol.t[:],1)
-            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            if (inputs[:backend] == CPU())
-                plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
-            else
-                u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-                KernelAbstractions.copyto!(CPU(),u, sol.u[iout][:])
-                convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-                plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
-            end
-        end
-    end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
-end
-
-
-function write_output(SD::NSD_2D, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
-    #
-    # 2D PNG write x from Ax=b
-    #
-    if inputs[:lplot_surf3d]
-        title = @sprintf " Solution"
-        plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
-    else
-        title = @sprintf " Solution"
-        if (inputs[:backend] == CPU())
-            plot_triangulation(SD, mesh, sol.u, title,  OUTPUT_DIR, inputs; iout=1, nvar=nvar)
-        else
-            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-            KernelAbstractions.copyto!(CPU(),u, sol.u)
-            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=1, nvar=nvar)
-        end
-    end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
-end
-
-
-###
-#
-# ASCII 2D
-#
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::ASCII; nvar=1, PT=nothing)
-    #
-    # 2D ASCII of q(t) from dq/dt = RHS
-    #  
-    for iout = 1:size(sol.t[:],1)
-        #Write out data at final timestep
-	fname = @sprintf "it-%d.dat" iout
-    	open(string(OUTPUT_DIR, "/", fname), "w") do f
-            for ip = 1:mesh.npoin
-                @printf(f, " %d %.6f %.6f %.6f \n", ip, mesh.x[ip], mesh.y[ip], sol.u[iout][ip])
-            end
-        end #f
-    end
-    println(string(" # Writing output to ASCII file:", OUTPUT_DIR, "*.dat ...  DONE ") ) 
-end
-
-#
-# VTK 2D/3D
-#
-function write_output(SD, sol::ODESolution, mesh::St_mesh, mp, 
-        OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
- 
-    for iout = 1:size(sol.t[:],1)
-        if (inputs[:backend] == CPU())
-            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, sol.u[iout][:], mp, 
-                      sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)
-        else
-            u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
-            KernelAbstractions.copyto!(CPU(),u,sol.u[iout][:])
-            u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
-            KernelAbstractions.copyto!(CPU(),u_exact,qexact)
-            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            write_vtk(SD, mesh, u, mp, 
-                      sol.t[iout], title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
-        end
-    end
-    println(string(" # Writing output to VTK file:", OUTPUT_DIR, "*.vtu ... DONE") )
-end
-
-
-function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
     #
     # 2D VTK of x from Ax=b
     #    
     if (inputs[:backend] == CPU())
-        title = @sprintf "Solution"
-        write_vtk(SD, mesh, sol.u, "1", 0, title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=qexact, case="")
+
+        title = @sprintf "Solution-Axb"
+        write_vtk(SD, mesh, sol.u, uaux, nothing, 
+                  nothing, nothing,
+                  0.0, 0.0, 0.0, 0.0, title, OUTPUT_DIR, inputs,
+                  varnames, outvarnames;
+                  iout=1, nvar=nvar, qexact=qexact, case=case) 
+        
     else
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
         KernelAbstractions.copyto!(CPU(),u,sol.u)
@@ -201,15 +121,25 @@ function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_D
     
 end
 
-function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp, 
-        OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs::Dict,
+                      varnames, outvarnames,
+                      outformat::VTK;
+                      nvar=1, qexact=zeros(1,nvar), case="")
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
-        write_vtk(SD, mesh, u_sol, mp, 
-                  t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=qexact, case=case)        
+
+        write_vtk(SD, mesh, sol, uaux, mp, 
+                  connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                  t, title, OUTPUT_DIR, inputs,
+                  varnames, outvarnames;
+                  iout=iout, nvar=nvar, qexact=qexact, case=case) 
+        
     else
         #VERIFY THIS on GPU
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*(nvar+1))
@@ -217,37 +147,319 @@ function write_output(SD, u_sol, t, iout, mesh::St_mesh, mp,
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-        write_vtk(SD, mesh, u, mp, 
-                  t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+        write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
 
 end
 
-# PNG 2D
-#
-function write_output(sol::SciMLBase.LinearSolution, SD::NSD_2D, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, outformat::PNG; nvar=1)
+#------------
+# VTK writer
+#------------
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                   iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+
+    if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
+    if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
     
-    #println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  ") )
-    
-    title = @sprintf "Solution to ∇⋅∇(q) = f"
-    if inputs[:lplot_surf3d]
-        plot_surf3d(SD, mesh, sol.u, title, OUTPUT_DIR; iout=1, nvar=1, smoothing_factor=inputs[:smoothing_factor])
+    nvar     = size(varnames, 1)
+    noutvar  = max(nvar, size(outvarnames,1))
+    new_size = size(mesh.x,1)
+    if (mesh.nelem_semi_inf > 0)
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
     else
-        if (inputs[:backend] == CPU())
-            plot_triangulation(SD, mesh, sol.u, title, OUTPUT_DIR, inputs;)
-        else
-            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-            KernelAbstractions.copyto!(CPU(),u, sol.u[:])
-            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-            #@info u
-            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs;)
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    end
+    isel = 1
+    npoin = mesh.npoin
+    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl)
+    conn .= mesh.connijk
+    
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                ip1 = mesh.connijk[iel,i,j]
+                ip2 = mesh.connijk[iel,i+1,j]
+                ip3 = mesh.connijk[iel,i+1,j+1]
+                ip4 = mesh.connijk[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
         end
     end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE") )
+    
+    for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngr-1
+                ip1 = mesh.connijk_lag[iel,i,j]
+                ip2 = mesh.connijk_lag[iel,i+1,j]
+                ip3 = mesh.connijk_lag[iel,i+1,j+1]
+                ip4 = mesh.connijk_lag[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+    end
+
+    #
+    # Fetch user-defined diagnostic vars or take them from the solution vars:
+    #
+    qout = zeros(Float64, npoin, noutvar)
+    u2uaux!(qaux, q, nvar, npoin)
+    call_user_uout(qout, qaux, qexact, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
+
+    
+    #
+    # Write solution to vtk:
+    #
+    fout_name = string(OUTPUT_DIR, "/iter_", iout)
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(fout_name,
+                         mesh.x[1:mesh.npoin],
+                         mesh.y[1:mesh.npoin],
+                         mesh.y[1:mesh.npoin]*TFloat(0.0),
+                         cells,
+                         compress=false;
+                         part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+
+        for ivar = 1:noutvar
+            idx = (ivar - 1)*npoin
+            vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
+        end
+        
+        vtkf
+    end
+    
+    outfiles = map(vtk_save, vtkfile)
+    
 end
 
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                   iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+
+    if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
+    if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
+    
+    nvar     = size(varnames, 1)
+    noutvar  = max(nvar, size(outvarnames,1))
+    npoin = mesh.npoin
+    
+    xx = zeros(size(mesh.x,1))
+    yy = zeros(size(mesh.x,1))
+    zz = zeros(size(mesh.x,1))
+    xx .= mesh.x 
+    yy .= mesh.y
+    zz .= mesh.z
+    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
+    conn .= mesh.connijk
+    x_spare = zeros(Bool,size(mesh.x,1),1)
+    y_spare = zeros(Bool,size(mesh.y,1),1)
+    z_spare = zeros(Bool,size(mesh.z,1),1)
+    connijk_spare = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
+    poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
+    poin_bdy .= mesh.poin_in_bdy_face
+   
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
+    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+    
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                for k = 1:mesh.ngl-1
+                    ip1 = mesh.connijk[iel,i,j,k]
+                    ip2 = mesh.connijk[iel,i+1,j,k]
+                    ip3 = mesh.connijk[iel,i+1,j+1,k]
+                    ip4 = mesh.connijk[iel,i,j+1,k]
+                    
+                    ip5 = mesh.connijk[iel,i,j,k+1]
+                    ip6 = mesh.connijk[iel,i+1,j,k+1]
+                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
+                    ip8 = mesh.connijk[iel,i,j+1,k+1]
+
+                    subelem[isel, 1] = ip1
+                    subelem[isel, 2] = ip2
+                    subelem[isel, 3] = ip3
+                    subelem[isel, 4] = ip4
+                    subelem[isel, 5] = ip5
+                    subelem[isel, 6] = ip6
+                    subelem[isel, 7] = ip7
+                    subelem[isel, 8] = ip8
+                    
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+                    
+                    isel = isel + 1
+                end
+            end
+        end
+    end
+    
+    #
+    # Fetch user-defined diagnostic vars or take them from the solution vars:
+    #
+    qout = zeros(Float64, npoin, noutvar)
+    u2uaux!(qaux, q, nvar, npoin)
+    call_user_uout(qout, qaux, qexact, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
+    
+    
+    #
+    # Write solution:
+    #
+    fout_name = string(OUTPUT_DIR, "/iter_", iout)
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(fout_name,
+                         mesh.x[1:mesh.npoin],
+                         mesh.y[1:mesh.npoin],
+                         mesh.z[1:mesh.npoin],
+                         cells,
+                         compress=false;
+                         part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+
+        for ivar = 1:noutvar
+            idx = (ivar - 1)*npoin
+            vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
+        end
+        
+        vtkf
+    end
+    
+    outfiles = map(vtk_save, vtkfile)
+    
+end
+
+function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
+    
+    #nothing
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+    cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                ip1 = mesh.connijk[iel,i,j]
+                ip2 = mesh.connijk[iel,i+1,j]
+                ip3 = mesh.connijk[iel,i+1,j+1]
+                ip4 = mesh.connijk[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+    end
+    
+    for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngr-1
+                ip1 = mesh.connijk_lag[iel,i,j]
+                ip2 = mesh.connijk_lag[iel,i+1,j]
+                ip3 = mesh.connijk_lag[iel,i+1,j+1]
+                ip4 = mesh.connijk_lag[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+        #end
+    end
+    
+    #Reference values only (definied in initial conditions)
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
+    
+    vtkfile = map(parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf
+    end
+
+    
+    outfiles = map(vtk_save, vtkfile)
+end
+
+
+
+function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
+
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
+    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+        
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                for k = 1:mesh.ngl-1
+                    ip1 = mesh.connijk[iel,i,j,k]
+                    ip2 = mesh.connijk[iel,i+1,j,k]
+                    ip3 = mesh.connijk[iel,i+1,j+1,k]
+                    ip4 = mesh.connijk[iel,i,j+1,k]
+                    
+                    ip5 = mesh.connijk[iel,i,j,k+1]
+                    ip6 = mesh.connijk[iel,i+1,j,k+1]
+                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
+                    ip8 = mesh.connijk[iel,i,j+1,k+1]
+
+                    subelem[isel, 1] = ip1
+                    subelem[isel, 2] = ip2
+                    subelem[isel, 3] = ip3
+                    subelem[isel, 4] = ip4
+                    subelem[isel, 5] = ip5
+                    subelem[isel, 6] = ip6
+                    subelem[isel, 7] = ip7
+                    subelem[isel, 8] = ip8
+                    
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+                    
+                    isel = isel + 1
+                end
+            end
+        end
+    end
+    
+    #Reference values only (definied in initial conditions)
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
+    
+    # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    vtkfile = map(parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf
+    end
+    outfiles = map(vtk_save, vtkfile)
+    # outfiles = vtk_save(vtkfile)
+end
 
 #------------
 # HDF5 writer/reader
@@ -368,287 +580,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp,
     poin_bdy = zeros(size(mesh.bdy_edge_type,1),mesh.ngl)
     poin_bdy .= mesh.poin_in_bdy_edge
     qe_temp = similar(qexact)
-    #=if ("periodicx" in mesh.bdy_edge_type || "periodicz" in mesh.bdy_edge_type)
-        new_size = size(mesh.x,1)
-        diff = new_size-npoin
-        q_new = zeros(new_size*nvar)
-        for ieq = 1:nvars
-            ivar = new_size*(ieq-1)
-            ivar1 = npoin*(ieq-1)
-            q_new[ivar+1:new_size*ieq-diff] .= q[ivar1+1:npoin*ieq]
-        end
-        q = q_new
-    end 
-    if ("periodicx" in mesh.bdy_edge_type)
-    	xmin = 1000000000.0
-        ymax = -1000000000.0
-        for e=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    ip = mesh.connijk[e,i,j]
-                    ymax = max(ymax,mesh.y[ip])
-                    xmin = min(xmin,mesh.x[ip])
-                end
-            end
-        end
-	xmax = -xmin
-	nedges = size(mesh.bdy_edge_type,1)
-        new_size = size(mesh.x,1)
-        diff = new_size-mesh.npoin 
-	q_new = zeros(new_size*nvar)
-        q_exact1 = zeros(new_size,nvar+1)
-        q_exact1[1:mesh.npoin,:] .= qexact[1:mesh.npoin,:] 
-        for ieq = 1:nvars
-	    ivar = new_size*(ieq-1)
-            #@info ivar,ivar1,new_size*ieq-diff,mesh.npoin*ieq
-	    q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
-	end
-        iter = 1
-    	for iedge = 1:nedges
-
-    	    if (mesh.bdy_edge_type[iedge] == "periodicx")
-		e = mesh.bdy_edge_in_elem[iedge]
-		for k=1:mesh.ngl
-                    ip = mesh.poin_in_bdy_edge[iedge,k]
-		    xedge = mesh.x[ip]
-		    unwind = 0
-                    l = 0
-		    m = 0
-        	    dx = abs(mesh.x[mesh.connijk[e,2,1]]-mesh.x[mesh.connijk[e,mesh.ngl-1,1]])/(mesh.ngl-3)
-		    for i=1:mesh.ngl
-			for j=1:mesh.ngl
-                            ip1 = mesh.connijk[e,i,j]
-			    if (mesh.x[ip1] > xedge + (mesh.ngl)*dx)
-				unwind=1
-			    end
-			    if (ip1 == ip)
-				l=i
-				m=j
-			    end
-			end
-		    end
-		    rep = 0
-                    ip_rep = 0
-        	    if (k == 1 || k == mesh.ngl)
-			for ee=1:mesh.nelem
-			    for i=1:mesh.ngl
-				for j=1:mesh.ngl
-				    ip1 = mesh.connijk[ee,i,j]
-				    if (ip1 > mesh.npoin && mesh.y[ip1] == mesh.y[ip])
-					ip_rep = ip1
-					rep = 1
-				    end
-				end
-			    end
-			end
-		    end
-                    if (rep==1 && unwind==1)
-			#@info iter,ip,e,mesh.y[ip] 
-                        ip_new = ip_rep
-                        if (l > 0 && m >0)
-                            mesh.connijk[e,l,m] = ip_new
-                        end
-                        for iedge_1=1:nedges
-                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
-                                for i=1:mesh.ngl
-                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
-                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
-                                    end
-                                end
-                            end
-                        end
-                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
-		    elseif (unwind==1)
-			#@info iter,ip,e,mesh.y[ip]
-			ip_new = mesh.npoin + iter
-                        mesh.x[ip_new] = xmax
-                        if (l > 0 && m >0)
-                            mesh.connijk[e,l,m] = ip_new
-                        end
-                        mesh.y[ip_new] = mesh.y[ip]
-			for iedge_1=1:nedges
-                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
-                                for i=1:mesh.ngl
-                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
-                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
-                                    end
-                                end
-                            end
-                        end
-                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
-                        iter += 1
-                	for ieq=1:nvar
-        	            ivar = new_size*(ieq-1)
-                            q_new[ivar+ip_new] = q[ivar+ip]
-			end
-			q_exact1[ip_new,:] .= qexact[ip,:]
-		    end
-		end
-	    end
-        end
-        
-        npoin += iter-1;
-        if ("Laguerre" in mesh.bdy_edge_type)
-	    
-            e = mesh.nelem_semi_inf
-	    iter = 1
-            ymax = -1000000000.0
-            for e1=1:mesh.nelem
-                for i=1:mesh.ngl
-                    for j=1:mesh.ngl
-                        ip = mesh.connijk[e1,i,j]
-                        if (mesh.x[ip] == TFloat(xmax))
-                            ymax = max(ymax,mesh.y[ip])
-                        end
-                    end
-                end
-            end
-	    for j=1:mesh.ngr
-		ip = mesh.connijk_lag[e,mesh.ngl,j]
-		if (j==1)
-		    ip1=1
-		    while (ip1 <= npoin)
-                        #@info mesh.x[ip1], TFloat(xmax), mesh.y[ip1], TFloat(ymax)
-                        if(mesh.x[ip1] == TFloat(xmax) && mesh.y[ip1] == TFloat(ymax))
-			    ip_new = ip1
-			end
-			ip1 +=1
-		    end
-                    mesh.connijk_lag[e,mesh.ngl,j] = ip_new
-		else
-		    ip_new = npoin + iter
-                    mesh.x[ip_new] = xmax
-                    mesh.connijk_lag[e,mesh.ngl,j] = ip_new
-                    mesh.y[ip_new] = mesh.y[ip]
-                    iter += 1
-		    for ieq=1:4
-                        ivar = new_size*(ieq-1)
-                        q_new[ivar+ip_new] = q[ivar+ip]
-                    end
-		    q_exact1[ip_new,:] .= qexact[ip,:]
-		end
-	    end
-	    npoin +=iter -1
-
-	end
-        q = q_new
-	qexact = q_exact1
-	
-    end  
-
-    if ("periodicz" in mesh.bdy_edge_type)
-        xmax = 1000000000.0
-        ymin = -1000000000.0
-        for e=1:mesh.nelem
-            for i=1:mesh.ngl
-                for j=1:mesh.ngl
-                    ip = mesh.connijk[e,i,j]
-                    ymin = min(ymin,mesh.y[ip])
-                    xmax = max(xmax,mesh.x[ip])
-                end
-            end
-        end
-        ymax = mesh.ymax
-        nedges = size(mesh.bdy_edge_type,1)
-        new_size = size(mesh.x,1)
-        diff = new_size-npoin
-        q_new = zeros(new_size*nvar)
-        q_exact1 = zeros(new_size,nvar+1)
-        q_exact1[1:npoin,:] .= qexact[1:npoin,:]
-
-        for ieq = 1:nvars
-            ivar = new_size*(ieq-1)
-            q_new[ivar+1:new_size*ieq-diff] .= q[ivar+1:new_size*ieq-diff]
-        end
-        iter = 1
-        for iedge = 1:nedges
-
-            if (mesh.bdy_edge_type[iedge] == "periodicz")
-                e = mesh.bdy_edge_in_elem[iedge]
-                for k=1:mesh.ngl
-                    ip = mesh.poin_in_bdy_edge[iedge,k]
-                    yedge = mesh.y[ip]
-                    unwind = 0
-                    l = 0
-                    m = 0
-                    dy = abs(mesh.y[mesh.connijk[e,1,2]]-mesh.y[mesh.connijk[e,1,mesh.ngl-1]])/(mesh.ngl-3)
-                    for i=1:mesh.ngl
-                        for j=1:mesh.ngl
-                            ip1 = mesh.connijk[e,i,j]
-                            if (mesh.y[ip1] > yedge + (mesh.ngl)*dy)
-                                unwind=1
-                            end
-                             if (ip1 == ip)
-                                l=i
-                                m=j
-                            end
-                        end
-                    end
-                    rep = 0
-                    ip_rep = 0
-                    if (k == 1 || k == mesh.ngl)
-                        for ee=1:mesh.nelem
-                            for i=1:mesh.ngl
-                                for j=1:mesh.ngl
-                                    ip1 = mesh.connijk[ee,i,j]
-                                    if (ip1 > npoin && mesh.x[ip1] == mesh.x[ip])
-                                        ip_rep = ip1
-                                        rep = 1
-                                    end
-                                end
-                            end
-                        end
-                    end
-                    if (rep==1 && unwind==1)
-                        #@info iter,ip,e,mesh.y[ip]
-
-                        ip_new = ip_rep
-                        if (l > 0 && m >0)
-                            mesh.connijk[e,l,m] = ip_new
-                        end
-                        for iedge_1=1:nedges
-                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
-                                for i=1:mesh.ngl
-                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
-                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
-                                    end
-                                end
-                            end
-                        end
-                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
-                    elseif (unwind==1)
-                        #@info iter,ip,e,mesh.y[ip]
-                        ip_new = npoin + iter
-                        mesh.y[ip_new] = ymax
-                        if (l > 0 && m >0)
-                            mesh.connijk[e,l,m] = ip_new
-                        end
-                        mesh.x[ip_new] = mesh.x[ip]
-                        for iedge_1=1:nedges
-                            if (iedge != iedge_1 && mesh.bdy_edge_in_elem[iedge_1] == e)
-                                for i=1:mesh.ngl
-                                    if (mesh.poin_in_bdy_edge[iedge_1,i] == ip)
-                                            mesh.poin_in_bdy_edge[iedge_1,i] = ip_new
-                                    end
-                                end
-                            end
-                        end
-                        mesh.poin_in_bdy_edge[iedge,k] = ip_new
-                        iter += 1
-                        for ieq=1:nvar
-                            ivar = new_size*(ieq-1)
-                            q_new[ivar+ip_new] = q[ivar+ip]
-                        end
-                        q_exact1[ip_new,:] .= qexact[ip,:]
-                    end
-                end
-            end
-        end
-        npoin += iter-1;
-        q = q_new
-        qexact = q_exact1
-
-    end=#
 
 
     for iel = 1:mesh.nelem

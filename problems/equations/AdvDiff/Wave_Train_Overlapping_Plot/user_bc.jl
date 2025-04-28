@@ -24,7 +24,7 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe::SubArray{Float64},::TOTAL)
+function user_bc_dirichlet!(q, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe,::TOTAL)
 
     if (tag == "left")
       qbdy[2] = 0.025*sinpi(2*30*t/5000.0)    
@@ -39,7 +39,7 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractF
     end
 end
 
-function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe::SubArray{Float64},::PERT)
+function user_bc_dirichlet!(q, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe,::PERT)
 
     if (tag == "left")
       qbdy[2] = 0.025*sinpi(2*30*t/5000.0)

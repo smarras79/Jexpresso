@@ -104,16 +104,29 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     el_min = KernelAbstractions.zeros(backend,TFloat, 0, 0)
     el_max = KernelAbstractions.zeros(backend,TFloat, 0, 0)
 
-    conn::Array{TInt,2}  = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    conn_unique_edges    = Array{TInt}(undef,  1, 2)
-    conn_unique_edges1   = Array{Int64}(undef,  1, 2)
-    conn_unique_faces    = Array{TInt}(undef,  1, 4)
-    poin_in_edge         = Array{TInt}(undef, 0, 0)
-    conn_edge_el         = Array{TInt}(undef, 0, 0, 0)
-    poin_in_face         = Array{TInt}(undef, 0, 0, 0)
-    conn_face_el         = Array{TInt}(undef, 0, 0, 0)
-    face_in_elem         = Array{TInt}(undef, 0, 0, 0)
+    conn::Array{TInt,2}   = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    conn_unique_edges     = Array{TInt}(undef,  1, 2)
+    conn_unique_edges1    = Array{Int64}(undef,  1, 2)
+    conn_unique_faces     = Array{TInt}(undef,  1, 4)
+    poin_in_edge          = Array{TInt}(undef, 0, 0)
+    internal_poin_in_edge = Array{TInt}(undef, 0, 0)
+    conn_edge_el          = Array{TInt}(undef, 0, 0, 0)
+    poin_in_face          = Array{TInt}(undef, 0, 0, 0)
+    conn_face_el          = Array{TInt}(undef, 0, 0, 0)
+    face_in_elem          = Array{TInt}(undef, 0, 0, 0)
 
+    # Skeleton arrays needed by "element learning"
+    lengthΓ  = 0  #non-repeated bdy points from mesh.poin_in_bdy_edge    
+    lengthO  = 0  #all internal, including edges, but without domain's bdy
+    length∂τ = 0
+    lengthτO = 0
+    length∂O = 0
+    Γ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, lengthΓ)
+    O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, lengthO)
+    ∂τ::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, length∂τ)
+    τO::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, lengthτO)
+    ∂O::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, length∂O)
+        
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
     
     #MPI variables
@@ -126,10 +139,12 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     
     #Auxiliary arrays for boundary conditions
     
-    bdy_edge_in_elem  =  KernelAbstractions.zeros(backend, TInt, 0)
-    poin_in_bdy_edge  =  KernelAbstractions.zeros(backend, TInt, 0, 0)
-    bdy_face_in_elem  =  KernelAbstractions.zeros(backend, TInt, 0)
-    poin_in_bdy_face  =  KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
+    bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
+    poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    internal_poin_in_elem     = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    bdy_face_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
+    poin_in_bdy_face          = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     face_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
@@ -430,16 +445,19 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
     
     
-    mesh.conn_edge_el     = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
-    mesh.conn_face_el     = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
-    mesh.bdy_edge_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
-    mesh.poin_in_edge     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
-    mesh.poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
+    mesh.conn_edge_el              = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
+    mesh.conn_face_el              = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
+    mesh.bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
+    mesh.poin_in_edge              = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
+    mesh.poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
+    mesh.internal_poin_in_edge     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges),     Int64(mesh.ngl-2))
+    mesh.internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy), Int64(mesh.ngl-2))
+    mesh.internal_poin_in_elem     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem*(mesh.ngl-2)^(mesh.nsd)))
     
-    mesh.poin_in_face     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
-    mesh.edge_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
-    mesh.bdy_edge_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
-    mesh.bdy_edge_type_id = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
+    mesh.poin_in_face              = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
+    mesh.edge_type                 = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
+    mesh.bdy_edge_type             = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
+    mesh.bdy_edge_type_id          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
     
     if mesh.nsd > 2
         mesh.poin_in_bdy_face = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nfaces_bdy), Int64(mesh.ngl), Int64(mesh.ngl))
@@ -1295,6 +1313,43 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # END periodicity_restructure for MPI
     #----------------------------------------------------------------------
 
+    #
+    # Extract only internal edge points:
+    #
+    mesh.internal_poin_in_edge[:,1:end]     = mesh.poin_in_edge[:,2:end-1]
+    mesh.internal_poin_in_bdy_edge[:,1:end] = mesh.poin_in_bdy_edge[:,2:end-1]
+    mesh.internal_poin_in_elem              = KernelAbstractions.zeros(backend, TInt, mesh.nelem, (mesh.ngl-2)^mesh.nsd)
+    if mesh.nsd == 1
+        for iel=1:mesh.nelem
+        ii = 1
+        for i=2:mesh.ngl-1
+            ip = mesh.connijk[iel, i]
+            mesh.internal_poin_in_elem[iel, ii] = ip
+            ii += 1
+        end
+        end
+    elseif mesh.nsd == 2    
+        for iel=1:mesh.nelem
+        ii = 1
+        for i=2:mesh.ngl-1, j=2:mesh.ngl-1
+            ip = mesh.connijk[iel, i, j]
+            mesh.internal_poin_in_elem[iel, ii] = ip
+            ii += 1
+        end
+        end
+    elseif mesh.nsd == 3
+        for iel=1:mesh.nelem
+        ii = 1
+        for i=2:mesh.ngl-1, j=2:mesh.ngl-1, k=2:mesh.ngl-1
+            ip = mesh.connijk[iel, i, j, k]
+            mesh.internal_poin_in_elem[iel, ii] = ip
+            ii += 1
+        end
+        end
+    end
+    #----------------------------------------------------------------------
+    # END Extract boundary edges and faces nodes
+    #----------------------------------------------------------------------
 
     #
     #
@@ -1884,7 +1939,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
     
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_edges_internal_nodes + tot_vol_internal_nodes
-
+    
     if length(mesh.x_ho) < mesh.npoin
         #resize!(mesh.x_ho, (mesh.npoin))
         mesh.x_ho = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
@@ -2081,7 +2136,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    open("./COORDS_HO_edges_$rank.dat", "w") do f
+    #open("./COORDS_HO_edges_$rank.dat", "w") do f
     # open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
@@ -2115,13 +2170,13 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
                 mesh.ip2gip[ip] = gip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-                @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
+                #@printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
                 #@printf( " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip  = ip + 1
                 gip = gip + 1
             end
         end
-    end #end f
+    #end #end f
     #show(stdout, "text/plain", mesh.poin_in_edge)
     #@info "-----3D edges"
         
@@ -2579,7 +2634,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    open("./COORDS_HO_faces_$rank.dat", "w") do f
+    #open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_faces.dat", "w") do f
         #
         # First pass:
@@ -2630,7 +2685,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
                     mesh.poin_in_face[iface_g, l, m] = ip
                     mesh.ip2gip[ip] = gip
                     
-                    @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
+                    #@printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
 
                     # mesh.connijk[iel, m, ngl-l+1] = ip #<==== need to build this 
                     
@@ -2639,7 +2694,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
                 end
             end
         end
-    end #do f
+    #end #do f
 
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
@@ -2976,7 +3031,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     gip::Int64  = 0
-    open("./COORDS_HO_faces_$rank.dat", "w") do f
+    #open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_vol.dat", "w") do f
         ip  = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + 1
         for iel = 1:mesh.nelem
@@ -3045,7 +3100,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
                         mesh.connijk[iel,n,l,m] = ip
                         mesh.ip2gip[ip] = gip
 
-                        @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
+                        #@printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
 
                         ip = ip + 1
                         gip = gip + 1
@@ -3054,7 +3109,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
                 end
             end
         end
-    end # do f 
+    #end # do f 
     #open("./CONNIJK.dat", "w") do f
         for iel =1:mesh.nelem
             iconn =1
@@ -3226,6 +3281,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+    partitioned_model = nothing
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
         
         println_rank(" # Read gmsh grid and populate with high-order points "; msg_rank = rank, suppress = omesh == !isnothing)
@@ -3250,6 +3306,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     else
         
         println(" # Build native grid")
+        
         # Initialize mesh struct for native structured grid:
         if (haskey(inputs, :nsd))
             

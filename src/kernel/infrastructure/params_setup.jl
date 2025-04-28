@@ -245,9 +245,8 @@ function params_setup(sem,
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
     if (sem.mesh.lLaguerre ||
-        inputs[:llaguerre_1d_right] ||
-        inputs[:llaguerre_1d_left])
-        pM = setup_assembler(RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
+        pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
                   uaux, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
@@ -270,6 +269,7 @@ function params_setup(sem,
                   sem.SOL_VARS_TYPE,
                   neqs=qp.neqs,
                   sem.mesh,
+                  sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
 		  basis=sem.basis[1], basis_lag = sem.basis[2],
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
@@ -279,33 +279,33 @@ function params_setup(sem,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
         
     else
-        pM = setup_assembler(RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
-          params = (backend,
-              T, inputs,
-              uaux, vaux,
-              ubdy, gradu, bdy_flux,                   
-              RHS, RHS_visc,
-              fijk, ∇f_el,
-              rhs_el, rhs_diff_el,
-              rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
-              uprimitive,
-              F, G, H, S,
-              F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv,
-              flux_gpu, source_gpu, qbdy_gpu,
-              flux_micro, source_micro, adjusted, Pm,
-              q_t, q_ti, q_tij, fqf, b, B,
-              SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
-              sem.SOL_VARS_TYPE, 
-              neqs=qp.neqs,
-              sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
-              sem.basis, sem.ω, sem.mesh, sem.metrics,
-              visc_coeff, ivisc_equations,
-              sem.matrix.M, sem.matrix.Minv, pM=pM,
-              tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
-              phys_grid = sem.phys_grid,
-              qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
-              OUTPUT_DIR,
-              sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
+        pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        params = (backend,
+                  T, inputs,
+                  uaux, vaux,
+                  ubdy, gradu, bdy_flux,                   
+                  RHS, RHS_visc,
+                  fijk, ∇f_el,
+                  rhs_el, rhs_diff_el,
+                  rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                  uprimitive,
+                  F, G, H, S,
+                  F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv,
+                  flux_gpu, source_gpu, qbdy_gpu,
+                  flux_micro, source_micro, adjusted, Pm,
+                  q_t, q_ti, q_tij, fqf, b, B,
+                  SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
+                  sem.SOL_VARS_TYPE, 
+                  neqs=qp.neqs,
+                  sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
+                  sem.basis, sem.ω, sem.mesh, sem.metrics,
+                  visc_coeff, ivisc_equations,
+                  sem.matrix.M, sem.matrix.Minv, pM=pM,
+                  tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
+                  phys_grid = sem.phys_grid,
+                  qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
+                  OUTPUT_DIR,
+                  sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end
 
     println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank, suppress = sem.mesh.msg_suppress)

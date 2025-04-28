@@ -18,7 +18,7 @@ end
 
 function u2uaux!(uaux, u, neqs, npoin)
 
-    for i=1:neqs+1
+    for i=1:neqs#+1
         idx = (i-1)*npoin
         uaux[:,i] = view(u, idx+1:i*npoin)
     end
@@ -28,7 +28,7 @@ end
 
 function uaux2u!(u, uaux, neqs, npoin)
 
-    for i=1:neqs+1
+    for i=1:neqs#+1
         idx = (i-1)*npoin
         for j=1:npoin
             u[idx+j] = uaux[j,i]
@@ -98,7 +98,7 @@ function rhs!(du, u, params, time)
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
             params.RHS .= @views(params.RHS .+ params.RHS_lag)
         end
-        # DSS_global_RHS!(@view(params.RHS[:,:]), params.mesh.ip2gip, params.mesh.gip2owner, params.mesh.parts, params.mesh.npoin, params.mesh.gnpoin, params.neqs)
+        
         RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
     else
         if (params.SOL_VARS_TYPE == PERT())
@@ -379,7 +379,11 @@ function _build_rhs!(RHS, u, params, time)
     zmin    = params.mesh.zmin
     zmax    = params.mesh.zmax    
 
-    comm    = params.mesh.parts.comm
+    if SD == NSD_1D()
+        comm = MPI.COMM_WORLD
+    else
+        comm    = params.mesh.parts.comm
+    end
     mpisize = MPI.Comm_size(comm)
     
     #-----------------------------------------------------------------------------------
@@ -459,9 +463,8 @@ function _build_rhs!(RHS, u, params, time)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
 
-    # if (mpisize > 1)
-        DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
-    # end
+    DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
         # @info "ieq", ieq
