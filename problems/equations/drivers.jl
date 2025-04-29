@@ -53,7 +53,7 @@ function driver(nparts,
         #
         # Problems that lead to Ax = b
         #
-        RHS = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin), qp.neqs)
+        RHS = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
 
         if (inputs[:backend] == CPU())
           
