@@ -33,7 +33,7 @@ using OrdinaryDiffEq
 using OrdinaryDiffEq: solve
 using SnoopCompile
 using LinearSolve
-###using LinearSolve: solve
+using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
                  SplitODEProblem

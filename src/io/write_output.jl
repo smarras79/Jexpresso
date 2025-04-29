@@ -260,9 +260,9 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
     
-    nvar     = size(varnames, 1)
-    noutvar  = max(nvar, size(outvarnames,1))
-    npoin = mesh.npoin
+    nvar    = size(varnames, 1)
+    noutvar = max(nvar, size(outvarnames,1))
+    npoin   = mesh.npoin
     
     xx = zeros(size(mesh.x,1))
     yy = zeros(size(mesh.x,1))
