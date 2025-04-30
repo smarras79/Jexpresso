@@ -121,17 +121,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
             end
         end
-
-        #
-        # Write reference to VTK:
-        #  
-        if (inputs[:lwrite_initial] == true)
-            outvarsref = Array{Union{Nothing, String}}(nothing, q.neqs)
-            for i = 1:length(outvarsref)
-                outvarsref[i] = string(qvars[i], "_ref")
-            end
-            write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-        end
+        
     else
         if (inputs[:SOL_VARS_TYPE] == PERT())
             lpert = true

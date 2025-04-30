@@ -10,8 +10,8 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     PhysConst = PhysicalConst{Float64}()
     
     qvars = ("dρ", "dρu", "dρv", "dρθ")
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
-    
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
+
     θref = 250.0 #K
     θ0 = 250.0
     T0   = θ0

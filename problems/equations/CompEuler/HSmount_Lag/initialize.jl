@@ -16,7 +16,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
         PhysConst = PhysicalConst{Float64}()
         θref = 250.0 #K
         θ0 = 250.0
-        T0   = θ0
+        T0   = 250.0
         p0   = 100000.0
     
         N    = PhysConst.g/sqrt(PhysConst.cp*T0)
@@ -111,10 +111,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 q.qe[ip,end] = p
             end
         end
-    
-        outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")
-        write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-
+        
     else
         if (inputs[:SOL_VARS_TYPE] == PERT())
             lpert = true

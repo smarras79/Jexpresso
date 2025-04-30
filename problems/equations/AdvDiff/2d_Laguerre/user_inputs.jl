@@ -59,7 +59,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "VTK",
+        :outformat           => "vtk",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         :loverwrite_output   => true,
         :plot_hlines        => [10.0],

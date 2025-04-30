@@ -24,14 +24,14 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
+function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
       qnl = nx*q[2] + ny*q[3]
       qbdy[2] = q[2] - qnl*nx
       qbdy[3] = q[3] - qnl*ny
 
 end
 
-function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe::SubArray{Float64},::PERT)
+function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
       
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
         qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]

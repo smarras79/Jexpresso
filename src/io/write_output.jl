@@ -2,6 +2,33 @@ using WriteVTK
 
 include("./plotting/jeplots.jl")
 
+#------------------------------------------------------------------
+# Callback for missing user_uout!()
+#------------------------------------------------------------------
+function call_user_uout(uout, u, qe, ET, npoin, nvar, noutvar)
+    
+    if function_exists(@__MODULE__, :user_uout!)
+        for ip=1:npoin
+            user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
+        end
+    else
+        for ip=1:npoin
+            callback_user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
+        end
+    end
+end
+
+@inline function callback_user_uout!(uout, usol, qe, ET)
+    uout[1:end] = usol[1:end]
+end
+
+function function_exists(module_name::Module, function_name::Symbol)
+    return isdefined(module_name, function_name) && isa(getfield(module_name, function_name), Function)
+end
+#------------------------------------------------------------------
+# END Callback for missing user_uout!()
+#------------------------------------------------------------------
+
 function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
     #OK
     nvar = length(varnames)
@@ -10,7 +37,13 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
-function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
+function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      OUTPUT_DIR::String, inputs::Dict,
+                      varnames, outvarnames,
+                      outformat::PNG;
+                      nvar=1, qexact=zeros(1,nvar), case="")
+        
     #
     # 1D PNG of q(t) from dq/dt = RHS
     #
@@ -19,89 +52,45 @@ function write_output(SD::NSD_1D, sol::ODESolution, mesh::St_mesh, OUTPUT_DIR::S
         colors = ["Blue","Red","Green","Yellow","Black","Purple","Orange"]
         markers = [:circle, :rect, :diamond,:hexagon,:cross,:xcross,:utriangle,:dtriangle,:pentagon,:star4,:star8]
         p = []
-        for iout = 1:size(sol.t[:], 1)
+        #for iout = 1:size(sol.t[:], 1)
             icolor = mod(iout,size(colors,1))+1
             color = colors[icolor]
             imarker = mod(iout,size(markers,1))+1
             marker = markers[imarker]
-            title = string("sol.u at time ", sol.t[iout])
+            title = string("sol.u at time ", t)
             if (inputs[:backend] == CPU())
-                plot_results!(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
+                plot_results!(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
             else
                 uout = KernelAbstractions.allocate(CPU(),Float32, Int64(mesh.npoin))
-                KernelAbstractions.copyto!(CPU(), uout, sol.u[iout][:])
+                KernelAbstractions.copyto!(CPU(), uout, sol)
                 plot_results!(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar, fig=fig,color = color,p=p,marker=marker,PT=nothing)
             end
-        end
+        #end
     else
         fig = Figure(size = (1200,800),fontsize=22)
-        for iout = 1:size(sol.t[:], 1)
-            title = string("sol.u at time ", sol.t[iout])
+        #for iout = 1:size(sol.t[:], 1)
+        title = string("sol at time ", t)
             if (inputs[:backend] == CPU())
-                plot_results(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
+                plot_results(SD, mesh, sol, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
             else
                 uout = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin*nvar))
-                KernelAbstractions.copyto!(CPU(), uout, sol.u[iout][:])
+                KernelAbstractions.copyto!(CPU(), uout, sol)
                 convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
                 plot_results(SD, mesh, uout, title, OUTPUT_DIR, varnames, inputs; iout=iout, nvar=nvar,PT=nothing)
             end
-        end
+        #end
     end
     println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE ") )
 end
 
-#
-# PNG 2D
-#
-function write_output(SD::NSD_2D, u::Array, t, iout, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
-    #
-    # 2D PNG of q(t) from dq/dt = RHS
-    #  
-    if inputs[:lplot_surf3d]
-        for iout = 1:size(sol.t[:], 1)
-            title = @sprintf "final solution at t=%6.4f" t
-            plot_surf3d(SD, mesh, u[:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
-        end
-    else
+function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
+                      OUTPUT_DIR::String, inputs::Dict,
+                      varnames, outvarnames,
+                      outformat::VTK;
+                      nvar=1, qexact=zeros(1,nvar), case="")
 
-        title = @sprintf "final solution at t=%6.4f" t
-        if (inputs[:backend] == CPU())
-            plot_triangulation(SD, mesh, u[:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
-        else
-            u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-            KernelAbstractions.copyto!(CPU(),u, u[:])
-            convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-            plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
-        end
-    end
-    println(string(" # Writing 2D output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
-end
-
-
-function write_output(SD::NSD_2D, sol::ODESolution, mesh::St_mesh, mp, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
-    #
-    # 2D PNG of q(t) from dq/dt = RHS
-    #  
-    if inputs[:lplot_surf3d]
-        for iout = 1:size(sol.t[:], 1)
-            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            plot_surf3d(SD, mesh, sol.u[iout][:], title, OUTPUT_DIR; iout=iout, nvar=nvar, smoothing_factor=inputs[:smoothing_factor])
-        end
-    else
-        for iout = 1:size(sol.t[:],1)
-            title = @sprintf "final solution at t=%6.4f" sol.t[iout]
-            if (inputs[:backend] == CPU())
-                plot_triangulation(SD, mesh, sol.u[iout][:], title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
-            else
-                u = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
-                KernelAbstractions.copyto!(CPU(),u, sol.u[iout][:])
-                convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-                plot_triangulation(SD, mesh, u, title,  OUTPUT_DIR, inputs; iout=iout, nvar=nvar)
-            end
-        end
-    end
-    println(string(" # Writing output to PNG file:", OUTPUT_DIR, "*.png ...  DONE"))
-end
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
 
 
 function write_output(SD::NSD_2D, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::PNG; nvar=1, qexact=zeros(1,nvar), case="")
@@ -179,12 +168,20 @@ function write_output(SD, sol::ODESolution, mesh::St_mesh, mp,
 end
 
 function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_DIR::String, inputs::Dict, varnames, outformat::VTK; nvar=1, qexact=zeros(1,nvar), case="")
+=======
+>>>>>>> 3ecae276d7a1abebeaf8de50bd9a6dac508bf568
     #
     # 2D VTK of x from Ax=b
     #    
     if (inputs[:backend] == CPU())
-        title = @sprintf "Solution"
-        write_vtk(SD, mesh, sol.u, "1", 0, title, OUTPUT_DIR, inputs, varnames; iout=1, nvar=nvar, qexact=qexact, case="")
+
+        title = @sprintf "Solution-Axb"
+        write_vtk(SD, mesh, sol.u, uaux, nothing, 
+                  nothing, nothing,
+                  0.0, 0.0, 0.0, 0.0, title, OUTPUT_DIR, inputs,
+                  varnames, outvarnames;
+                  iout=1, nvar=nvar, qexact=qexact, case=case) 
+        
     else
         u = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin*nvar)
         KernelAbstractions.copyto!(CPU(),u,sol.u)
@@ -201,7 +198,7 @@ function write_output(SD, sol::SciMLBase.LinearSolution, mesh::St_mesh, OUTPUT_D
     
 end
 
-function write_output(SD, u_sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs::Dict,
                       varnames, outvarnames,
@@ -213,7 +210,7 @@ function write_output(SD, u_sol, uaux, t, iout,  mesh::St_mesh, mp,
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
 
-        write_vtk(SD, mesh, u_sol, uaux, mp, 
+        write_vtk(SD, mesh, sol, uaux, mp, 
                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
@@ -226,9 +223,7 @@ function write_output(SD, u_sol, uaux, t, iout,  mesh::St_mesh, mp,
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-
         write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
-        
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
@@ -242,10 +237,12 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+
+    if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
+    if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
     
-    nvar     = length(varnames)
-    noutvar  = max(nvar, length(outvarnames))
-    
+    nvar     = size(varnames, 1)
+    noutvar  = max(nvar, size(outvarnames,1))
     new_size = size(mesh.x,1)
     if (mesh.nelem_semi_inf > 0)
         subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
@@ -296,14 +293,17 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
             end
         end
     end
+
+    #
+    # Fetch user-defined diagnostic vars or take them from the solution vars:
+    #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    for ip=1:npoin
-        user_uout!(@view(qout[ip,1:noutvar]), @view(qaux[ip,1:nvar]), qexact[ip,1:nvar], inputs[:SOL_VARS_TYPE])
-    end
+    call_user_uout(qout, qaux, qexact, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
+
     
     #
-    # Write solution:
+    # Write solution to vtk:
     #
     fout_name = string(OUTPUT_DIR, "/iter_", iout)
     vtkfile = map(mesh.parts) do part
@@ -333,10 +333,13 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
-    nvar     = length(varnames)
-    noutvar  = max(nvar, length(outvarnames))
-
+    if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
+    if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
+    
+    nvar     = size(varnames, 1)
+    noutvar  = max(nvar, size(outvarnames,1))
     npoin = mesh.npoin
+    
     xx = zeros(size(mesh.x,1))
     yy = zeros(size(mesh.x,1))
     zz = zeros(size(mesh.x,1))
@@ -387,11 +390,14 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
         end
     end
     
+    #
+    # Fetch user-defined diagnostic vars or take them from the solution vars:
+    #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    for ip=1:npoin
-        user_uout!(@view(qout[ip,1:noutvar]), @view(qaux[ip,1:nvar]), qexact[ip,1:nvar], inputs[:SOL_VARS_TYPE])
-    end
+    call_user_uout(qout, qaux, qexact, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
+    
+    
     #
     # Write solution:
     #
@@ -417,145 +423,6 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     outfiles = map(vtk_save, vtkfile)
     
 end
-
-function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
-    
-    #nothing
-    if (mesh.nelem_semi_inf > 0)
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
-    else
-        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
-        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
-    end
-    
-    isel = 1
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngl-1
-                ip1 = mesh.connijk[iel,i,j]
-                ip2 = mesh.connijk[iel,i+1,j]
-                ip3 = mesh.connijk[iel,i+1,j+1]
-                ip4 = mesh.connijk[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-                
-                isel = isel + 1
-            end
-        end
-    end
-    
-    for iel = 1:mesh.nelem_semi_inf
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngr-1
-                ip1 = mesh.connijk_lag[iel,i,j]
-                ip2 = mesh.connijk_lag[iel,i+1,j]
-                ip3 = mesh.connijk_lag[iel,i+1,j+1]
-                ip4 = mesh.connijk_lag[iel,i,j+1]
-                subelem[isel, 1] = ip1
-                subelem[isel, 2] = ip2
-                subelem[isel, 3] = ip3
-                subelem[isel, 4] = ip4
-                
-                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
-                
-                isel = isel + 1
-            end
-        end
-        #end
-    end
-    
-    #Reference values only (definied in initial conditions)
-    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
-    
-    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
-
-    for ivar = 1:length(outvarsref)
-        vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
-    end
-    outfiles = vtk_save(vtkfile)
-
-
-    vtkfile = map(mesh.parts) do part
-        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
-                        part=part, nparts=nparts, ismain=(part==1))
-        vtkf["part", VTKCellData()] = ones(isel -1) * part
-
-        for ivar = 1:length(outvarsref)
-            vtkf[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
-        end
-        vtkf
-    end
-    outfiles = map(vtk_save, vtkfile)
-end
-
-
-
-function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
-
-    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
-    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
-        
-    isel = 1
-    for iel = 1:mesh.nelem
-        for i = 1:mesh.ngl-1
-            for j = 1:mesh.ngl-1
-                for k = 1:mesh.ngl-1
-                    ip1 = mesh.connijk[iel,i,j,k]
-                    ip2 = mesh.connijk[iel,i+1,j,k]
-                    ip3 = mesh.connijk[iel,i+1,j+1,k]
-                    ip4 = mesh.connijk[iel,i,j+1,k]
-                    
-                    ip5 = mesh.connijk[iel,i,j,k+1]
-                    ip6 = mesh.connijk[iel,i+1,j,k+1]
-                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
-                    ip8 = mesh.connijk[iel,i,j+1,k+1]
-
-                    subelem[isel, 1] = ip1
-                    subelem[isel, 2] = ip2
-                    subelem[isel, 3] = ip3
-                    subelem[isel, 4] = ip4
-                    subelem[isel, 5] = ip5
-                    subelem[isel, 6] = ip6
-                    subelem[isel, 7] = ip7
-                    subelem[isel, 8] = ip8
-                    
-                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
-                    
-                    isel = isel + 1
-                end
-            end
-        end
-    end
-    
-    #Reference values only (definied in initial conditions)
-    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
-    
-    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells)
-
-    for ivar = 1:length(outvarsref)
-        vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
-    end
-    outfiles = vtk_save(vtkfile)
-    
-
-    vtkfile = map(mesh.parts) do part
-        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
-                        part=part, nparts=nparts, ismain=(part==1))
-        vtkf["part", VTKCellData()] = ones(isel -1) * part
-
-        for ivar = 1:length(outvarsref)
-            vtkf[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
-        end
-        vtkf
-    end
-    outfiles = map(vtk_save, vtkfile)
-end
-
 
 function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
     
@@ -756,4 +623,690 @@ function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     end
     
     return q, qe
+end
+
+#------------
+# VTK writer
+#------------
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, mp, 
+                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+
+    outvars = varnames
+    nvars = length(outvars)
+    new_size = size(mesh.x,1)
+    if (mesh.nelem_semi_inf > 0)
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
+    else
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    end
+    isel = 1
+    npoin = mesh.npoin
+    xx = zeros(size(mesh.x,1))
+    yy = zeros(size(mesh.x,1))
+    xx .= mesh.x
+    yy .= mesh.y
+    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl)
+    conn .= mesh.connijk
+    if ("Laguerre" in mesh.bdy_edge_type)
+        conn_lag = zeros(mesh.nelem_semi_inf,mesh.ngl,mesh.ngr)
+        conn_lag .= mesh.connijk_lag
+    end
+    poin_bdy = zeros(size(mesh.bdy_edge_type,1),mesh.ngl)
+    poin_bdy .= mesh.poin_in_bdy_edge
+    qe_temp = similar(qexact)
+
+
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                ip1 = mesh.connijk[iel,i,j]
+                ip2 = mesh.connijk[iel,i+1,j]
+                ip3 = mesh.connijk[iel,i+1,j+1]
+                ip4 = mesh.connijk[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+    end
+    
+    for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngr-1
+                ip1 = mesh.connijk_lag[iel,i,j]
+                ip2 = mesh.connijk_lag[iel,i+1,j]
+                ip3 = mesh.connijk_lag[iel,i+1,j+1]
+                ip4 = mesh.connijk_lag[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+    end
+    
+    qout = copy(q)
+
+    if (inputs[:CL] == CL())
+
+        if (inputs[:SOL_VARS_TYPE] == TOTAL())
+            
+            #ρ
+            qout[1:npoin] .= q[1:npoin]
+            
+            if (case == "rtb" || case == "mountain") && nvars >= 4
+                
+                #u = ρu/ρ
+                ivar = 2
+                idx = (ivar - 1)*npoin
+                qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./q[1:npoin]
+
+                #v = ρv/ρ
+                ivar = 3
+                idx = (ivar - 1)*npoin
+                qout[idx+1:3*npoin] .= q[idx+1:3*npoin]./q[1:npoin]
+                if (size(qexact, 1) == npoin)
+
+                    if inputs[:loutput_pert] == true
+                        
+                        #ρ'
+                        qout[1:npoin] .= q[1:npoin] .- qexact[1:npoin,1]
+                        
+                        #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
+                        ivar = 4
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin] .- qexact[1:npoin,4]./qexact[1:npoin,1]
+                    else
+                        
+                        ivar = 4
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:4*npoin] .= q[idx+1:4*npoin]./q[1:npoin]
+
+                    end
+                end
+            end
+        else
+            
+            #ρ
+            qout[1:npoin] .= q[1:npoin]
+
+            for ivar = 2:nvars
+                #u = ρu/ρ
+
+                idx = (ivar - 1)*npoin
+                qout[idx+1:ivar*npoin] .= (q[idx+1:ivar*npoin] .+ qexact[1:npoin,ivar])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,ivar]./qexact[1:npoin,1]
+                
+                if (case == "rtb" || case == "mountain") && nvars >= 4
+                    
+                    if (size(qexact, 1) === npoin)
+                        
+                        ivar = 4
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:4*npoin] .= (q[idx+1:4*npoin] .+ qexact[1:npoin,4])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,4]./qexact[1:npoin,1]
+                    end
+                end
+            end
+        end
+        
+    elseif (inputs[:CL] == NCL())
+        
+        #ρ
+        qout[1:npoin] .= (q[1:npoin])
+        
+        for ivar = 1:nvars
+            
+            idx = (ivar - 1)*npoin
+            qout[idx+1:ivar*npoin] .= (q[idx+1:ivar*npoin])
+
+            if case === "rtb" && nvars >= 4
+                
+                if (inputs[:loutput_pert] == true && size(qexact, 1) === npoin)
+                    outvars = ("dρ", "u", "v", "dθ")
+                    #ρ'
+                    qout[1:npoin] .= (q[1:npoin] .- qexact[1:npoin,1])
+                    
+                    #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
+                    ivar = 4
+                    idx = (ivar - 1)*npoin
+                    qout[idx+1:4*npoin] .= (q[idx+1:4*npoin] .- qexact[1:npoin,4])
+                    
+                else
+                    
+                    #E = ρE/ρ
+                    idx = 4*npoin
+                    qout[idx+1:4*npoin] .= @views((q[2*npoin+1:4*npoin] .- 0.5*(q[npoin+1:2*npoin].*q[npoin+1:2*npoin] .+ q[npoin+1:3*npoin].*q[npoin+1:3*npoin])./q[1:npoin])./q[1:npoin]) #internal energy: p/((γ-1)ρ)
+                end
+            end
+        end
+    end
+    
+    if nvar > 4
+        for ivar = 5:nvar
+            idx = (ivar - 1)*npoin
+            qout[idx+1:ivar*npoin] .= q[idx+1:ivar*npoin]
+        end
+    end
+
+    #
+    # Write solution:
+    #
+    fout_name = string(OUTPUT_DIR, "/iter_", iout)
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false; part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        
+        for ivar = 1:nvar
+            idx = (ivar - 1)*npoin
+            vtkf[string(varnames[ivar]), VTKPointData()] = @view(qout[idx+1:ivar*npoin])
+        end
+        vtkf
+    end
+    
+    outfiles = map(vtk_save, vtkfile)
+    #=mesh.x .= xx
+    mesh.y .= yy
+    mesh.connijk .= conn
+    mesh.poin_in_bdy_edge .= poin_bdy
+    qexact = copy(qe_temp)
+    if ("Laguerre" in mesh.bdy_edge_type)
+    	mesh.connijk_lag .= conn_lag 
+    end=#
+end
+
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, mp, 
+                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames; iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+
+    outvars = varnames
+    nvars = length(outvars)
+    npoin = mesh.npoin
+    xx = zeros(size(mesh.x,1))
+    yy = zeros(size(mesh.x,1))
+    zz = zeros(size(mesh.x,1))
+    xx .= mesh.x 
+    yy .= mesh.y
+    zz .= mesh.z
+    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
+    conn .= mesh.connijk
+    x_spare = zeros(Bool,size(mesh.x,1),1)
+    y_spare = zeros(Bool,size(mesh.y,1),1)
+    z_spare = zeros(Bool,size(mesh.z,1),1)
+    connijk_spare = zeros(mesh.nelem,mesh.ngl,mesh.ngl,mesh.ngl)
+    poin_bdy = zeros(size(mesh.bdy_face_type,1),mesh.ngl,mesh.ngl)
+    poin_bdy .= mesh.poin_in_bdy_face
+    qe_temp = similar(qexact)
+    q_temp = copy(q)
+    if (inputs[:lmoist])
+        T_temp       = copy(mp.Tabs)
+        qc_temp      = copy(mp.qc)
+        qi_temp      = copy(mp.qi)
+        qr_temp      = copy(mp.qr)
+        qs_temp      = copy(mp.qs)
+        qg_temp      = copy(mp.qg)
+        qsatt_temp   = copy(mp.qsatt)
+        flux_lw_temp = copy(mp.flux_lw)
+        flux_sw_temp = copy(mp.flux_sw)
+    end
+    
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
+    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+    
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                for k = 1:mesh.ngl-1
+                    ip1 = mesh.connijk[iel,i,j,k]
+                    ip2 = mesh.connijk[iel,i+1,j,k]
+                    ip3 = mesh.connijk[iel,i+1,j+1,k]
+                    ip4 = mesh.connijk[iel,i,j+1,k]
+                    
+                    ip5 = mesh.connijk[iel,i,j,k+1]
+                    ip6 = mesh.connijk[iel,i+1,j,k+1]
+                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
+                    ip8 = mesh.connijk[iel,i,j+1,k+1]
+
+                    subelem[isel, 1] = ip1
+                    subelem[isel, 2] = ip2
+                    subelem[isel, 3] = ip3
+                    subelem[isel, 4] = ip4
+                    subelem[isel, 5] = ip5
+                    subelem[isel, 6] = ip6
+                    subelem[isel, 7] = ip7
+                    subelem[isel, 8] = ip8
+                    
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+                    
+                    isel = isel + 1
+                end
+            end
+        end
+    end
+
+    npoin1 = mesh.npoin
+    mesh.npoin = npoin
+    #npoin = mesh.npoin
+    qout = copy(q)
+    TF = eltype(q)
+    ρ = zeros(TF, mesh.npoin,1)
+    u = zeros(TF, mesh.npoin,1)
+    v = zeros(TF, mesh.npoin,1)
+    w = zeros(TF, mesh.npoin,1)
+    e_tot = zeros(TF, mesh.npoin,1)
+    qt = zeros(TF, mesh.npoin,1)
+    ql = zeros(TF, mesh.npoin,1)
+    θ = zeros(TF, mesh.npoin,1)
+    param_set = create_updated_TD_Parameters(TF(101325.0))
+    _grav = TF(TP.grav(param_set))
+
+
+    if (inputs[:CL] == CL())
+        if (inputs[:SOL_VARS_TYPE] == TOTAL())
+            #ρ
+            qout[1:mesh.npoin] .= q[1:mesh.npoin]
+            ρ[:] .= q[1:mesh.npoin]
+            
+            if (case == "rtb" || case == "mountain" || case == "bomex") && nvars >= 4
+                #u = ρu/ρ
+                ivar = 2
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                u[:] .= qout[idx+1:ivar*mesh.npoin]
+                #v = ρv/ρ
+                ivar = 3
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                v[:] .= qout[idx+1:ivar*mesh.npoin]
+                
+                #w = ρw/ρ
+                ivar = 4
+                idx = (ivar - 1)*mesh.npoin
+                qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                w[:] .= qout[idx+1:ivar*mesh.npoin]
+                
+                if (size(qexact, 1) == npoin)
+
+                    if inputs[:loutput_pert] == true
+                        #ρ'
+                        qout[1:npoin] .= q[1:npoin] .- qexact[1:npoin,1]
+                        
+                        #θ' = (ρθ - ρθref)/ρ = ρθ/ρ - ρrefθref/ρref
+                        ivar = 5
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:5*npoin] .= q[idx+1:5*npoin]./q[1:npoin] .- qexact[1:npoin,5]./qexact[1:npoin,1]
+                    else
+                        ivar = 5
+                        idx = (ivar - 1)*mesh.npoin
+                        qout[idx+1:5*mesh.npoin] .= q[idx+1:5*mesh.npoin]./q[1:mesh.npoin]
+                        e_tot[:] .= qout[idx+1:ivar*mesh.npoin]
+                    end
+                end
+                
+                if case == "bomex"
+                    #qt = ρqt/ρ
+                    ivar = 6
+                    idx = (ivar - 1)*mesh.npoin
+                    qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                    qt[:] .= qout[idx+1:ivar*mesh.npoin]
+
+
+                    #ql = ρql/ρ
+                    ivar = 7
+                    idx = (ivar - 1)*mesh.npoin
+                    qout[idx+1:ivar*mesh.npoin] .= q[idx+1:ivar*mesh.npoin]./q[1:mesh.npoin]
+                    ql[:] .= qout[idx+1:ivar*mesh.npoin]
+                    
+                    for i = 1:mesh.npoin
+                        e_kin = 0.5 * (u[i]^2 + v[i]^2 + w[i]^2)
+                        e_pot = _grav * mesh.z[i]
+                        e_int::TF = e_tot[i] - e_pot - e_kin
+                        q_pt = TD.PhasePartition(qt[i], ql[i])
+                        Temp = TD.air_temperature(param_set, e_int, q_pt)
+                        θ[i] = TD.virtual_pottemp(param_set, Temp, ρ[i], q_pt)
+                    end
+                end
+            end
+        else
+            qout[1:npoin] .= q[1:npoin]
+
+            for ivar = 2:nvars
+                #u = ρu/ρ
+
+                idx = (ivar - 1)*npoin
+                qout[idx+1:ivar*npoin] .= (q[idx+1:ivar*npoin] .+ qexact[1:npoin,ivar])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,ivar]./qexact[1:npoin,1]
+
+                if (case == "rtb" || case == "mountain") && nvars >= 4
+
+                    if (size(qexact, 1) === npoin)
+
+                        ivar = 5
+                        idx = (ivar - 1)*npoin
+                        qout[idx+1:5*npoin] .= (q[idx+1:5*npoin] .+ qexact[1:npoin,5])./(qout[1:npoin] .+ qexact[1:npoin,1]) .- qexact[1:npoin,5]./qexact[1:npoin,1]
+                    end
+                end
+            end
+
+        end
+    end
+
+    #Solution:
+    fout_name = string(OUTPUT_DIR, "/iter_", iout)
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        for ivar = 1:nvar
+            idx = (ivar - 1)*npoin
+            vtkf[string(varnames[ivar]), VTKPointData()] =  @view(qout[idx+1:ivar*npoin])
+        end
+        if (inputs[:lmoist])
+            if (inputs[:backend] == CPU())
+                vtkf[string("Temp"), VTKPointData()] =  @view(mp.Tabs[:])
+                vtkf[string("qi"), VTKPointData()] =  @view(mp.qi[:])
+                vtkf[string("qc"), VTKPointData()] =  @view(mp.qc[:])
+                vtkf[string("qr"), VTKPointData()] =  @view(mp.qr[:])
+                vtkf[string("qs"), VTKPointData()] =  @view(mp.qs[:])
+                vtkf[string("qg"), VTKPointData()] =  @view(mp.qg[:])
+                vtkf[string("qsatt"), VTKPointData()] =  @view(mp.qsatt[:])
+                if (inputs[:ltwo_stream_radiation])
+                    vtkf[string("flux_lw"), VTKPointData()] =  @view(mp.flux_lw[:])
+                    vtkf[string("flux_sw"), VTKPointData()] =  @view(mp.flux_sw[:])
+                end
+            else
+                Tabs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], Tabs, mp.Tabs)
+                qi = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qi, mp.qi)
+                qc = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qc, mp.qc)
+                qr = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qr, mp.qr)
+                qs = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qs, mp.qs)
+                qg = KernelAbstractions.allocate(CPU(), TFloat, Int64(mesh.npoin))
+                KernelAbstractions.copyto!(inputs[:backend], qg, mp.qg)
+                vtkf[string("T"), VTKPointData()] =  @view(Tabs[:])
+                vtkf[string("qi"), VTKPointData()] =  @view(qi[:])
+                vtkf[string("qc"), VTKPointData()] =  @view(qc[:])
+                vtkf[string("qr"), VTKPointData()] =  @view(qr[:])
+                vtkf[string("qs"), VTKPointData()] =  @view(qs[:])
+                vtkf[string("qg"), VTKPointData()] =  @view(qg[:])
+            end
+        end
+        if (inputs[:case] == "bomex")
+            vtkfile["theta", VTKPointData()] =  @view(θ[:])
+        end
+        vtkf
+    end
+    if (inputs[:case] == "bomex")
+        vtkfile["theta", VTKPointData()] =  @view(θ[:])
+    end
+         
+    #outfiles = vtk_save(vtkfile)
+    outfiles = map(vtk_save, vtkfile)
+end
+
+
+
+function write_vtk_ref(SD::NSD_2D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
+    
+    #nothing
+    if (mesh.nelem_semi_inf > 0)
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
+    else
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    end
+    
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                ip1 = mesh.connijk[iel,i,j]
+                ip2 = mesh.connijk[iel,i+1,j]
+                ip3 = mesh.connijk[iel,i+1,j+1]
+                ip4 = mesh.connijk[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+    end
+    
+    for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngr-1
+                ip1 = mesh.connijk_lag[iel,i,j]
+                ip2 = mesh.connijk_lag[iel,i+1,j]
+                ip3 = mesh.connijk_lag[iel,i+1,j+1]
+                ip4 = mesh.connijk_lag[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+        #end
+    end
+    
+    #Reference values only (definied in initial conditions)
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
+    
+    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+
+    for ivar = 1:length(outvarsref)
+        vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+    end
+    outfiles = vtk_save(vtkfile)
+
+
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+
+        for ivar = 1:length(outvarsref)
+            vtkf[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+        end
+        vtkf
+    end
+    outfiles = map(vtk_save, vtkfile)
+end
+
+
+
+function write_vtk_ref(SD::NSD_3D, mesh::St_mesh, q::Array, file_name::String, OUTPUT_DIR::String; iout=1, nvar=1, qexact=zeros(1,nvar), case="", outvarsref=tuple(("" for _ in 1:nvar)))
+
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
+    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+        
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                for k = 1:mesh.ngl-1
+                    ip1 = mesh.connijk[iel,i,j,k]
+                    ip2 = mesh.connijk[iel,i+1,j,k]
+                    ip3 = mesh.connijk[iel,i+1,j+1,k]
+                    ip4 = mesh.connijk[iel,i,j+1,k]
+                    
+                    ip5 = mesh.connijk[iel,i,j,k+1]
+                    ip6 = mesh.connijk[iel,i+1,j,k+1]
+                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
+                    ip8 = mesh.connijk[iel,i,j+1,k+1]
+
+                    subelem[isel, 1] = ip1
+                    subelem[isel, 2] = ip2
+                    subelem[isel, 3] = ip3
+                    subelem[isel, 4] = ip4
+                    subelem[isel, 5] = ip5
+                    subelem[isel, 6] = ip6
+                    subelem[isel, 7] = ip7
+                    subelem[isel, 8] = ip8
+                    
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+                    
+                    isel = isel + 1
+                end
+            end
+        end
+    end
+    
+    #Reference values only (definied in initial conditions)
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
+    
+    vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells)
+
+    for ivar = 1:length(outvarsref)
+        vtkfile[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+    end
+    outfiles = vtk_save(vtkfile)
+
+
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+
+        for ivar = 1:length(outvarsref)
+            vtkf[string(outvarsref[ivar]), VTKPointData()] =  @view(q[1:mesh.npoin,ivar])
+        end
+        vtkf
+    end
+    outfiles = map(vtk_save, vtkfile)
+end
+
+
+function write_vtk_grid_only(SD::NSD_2D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
+    
+    #nothing
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+    cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                ip1 = mesh.connijk[iel,i,j]
+                ip2 = mesh.connijk[iel,i+1,j]
+                ip3 = mesh.connijk[iel,i+1,j+1]
+                ip4 = mesh.connijk[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+    end
+    
+    for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngr-1
+                ip1 = mesh.connijk_lag[iel,i,j]
+                ip2 = mesh.connijk_lag[iel,i+1,j]
+                ip3 = mesh.connijk_lag[iel,i+1,j+1]
+                ip4 = mesh.connijk_lag[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+        #end
+    end
+    
+    #Reference values only (definied in initial conditions)
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
+    
+    # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    vtkfile = map(parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf
+    end
+
+    
+    outfiles = map(vtk_save, vtkfile)
+end
+
+
+
+function write_vtk_grid_only(SD::NSD_3D, mesh::St_mesh, file_name::String, OUTPUT_DIR::String, parts, nparts)
+
+    subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^3, 8)
+    cells = [MeshCell(VTKCellTypes.VTK_HEXAHEDRON, [1, 2, 3, 4, 5, 6, 7, 8]) for _ in 1:mesh.nelem*(mesh.ngl-1)^3]
+        
+    isel = 1
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                for k = 1:mesh.ngl-1
+                    ip1 = mesh.connijk[iel,i,j,k]
+                    ip2 = mesh.connijk[iel,i+1,j,k]
+                    ip3 = mesh.connijk[iel,i+1,j+1,k]
+                    ip4 = mesh.connijk[iel,i,j+1,k]
+                    
+                    ip5 = mesh.connijk[iel,i,j,k+1]
+                    ip6 = mesh.connijk[iel,i+1,j,k+1]
+                    ip7 = mesh.connijk[iel,i+1,j+1,k+1]
+                    ip8 = mesh.connijk[iel,i,j+1,k+1]
+
+                    subelem[isel, 1] = ip1
+                    subelem[isel, 2] = ip2
+                    subelem[isel, 3] = ip3
+                    subelem[isel, 4] = ip4
+                    subelem[isel, 5] = ip5
+                    subelem[isel, 6] = ip6
+                    subelem[isel, 7] = ip7
+                    subelem[isel, 8] = ip8
+                    
+                    cells[isel] = MeshCell(VTKCellTypes.VTK_HEXAHEDRON, subelem[isel, :])
+                    
+                    isel = isel + 1
+                end
+            end
+        end
+    end
+    
+    #Reference values only (definied in initial conditions)
+    fout_name = string(OUTPUT_DIR, "/", file_name, ".vtu")
+    
+    # vtkfile = vtk_grid(fout_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.y[1:mesh.npoin]*TFloat(0.0), cells)
+    vtkfile = map(parts) do part
+        vtkf = pvtk_grid(file_name, mesh.x[1:mesh.npoin], mesh.y[1:mesh.npoin], mesh.z[1:mesh.npoin], cells, compress=false;
+                        part=part, nparts=nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+        vtkf
+    end
+    outfiles = map(vtk_save, vtkfile)
+    # outfiles = vtk_save(vtkfile)
 end

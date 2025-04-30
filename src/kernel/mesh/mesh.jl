@@ -104,16 +104,29 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     el_min = KernelAbstractions.zeros(backend,TFloat, 0, 0)
     el_max = KernelAbstractions.zeros(backend,TFloat, 0, 0)
 
-    conn::Array{TInt,2}  = KernelAbstractions.zeros(backend, TInt, 0, 0)
-    conn_unique_edges    = Array{TInt}(undef,  1, 2)
-    conn_unique_edges1   = Array{Int64}(undef,  1, 2)
-    conn_unique_faces    = Array{TInt}(undef,  1, 4)
-    poin_in_edge         = Array{TInt}(undef, 0, 0)
-    conn_edge_el         = Array{TInt}(undef, 0, 0, 0)
-    poin_in_face         = Array{TInt}(undef, 0, 0, 0)
-    conn_face_el         = Array{TInt}(undef, 0, 0, 0)
-    face_in_elem         = Array{TInt}(undef, 0, 0, 0)
+    conn::Array{TInt,2}   = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    conn_unique_edges     = Array{TInt}(undef,  1, 2)
+    conn_unique_edges1    = Array{Int64}(undef,  1, 2)
+    conn_unique_faces     = Array{TInt}(undef,  1, 4)
+    poin_in_edge          = Array{TInt}(undef, 0, 0)
+    internal_poin_in_edge = Array{TInt}(undef, 0, 0)
+    conn_edge_el          = Array{TInt}(undef, 0, 0, 0)
+    poin_in_face          = Array{TInt}(undef, 0, 0, 0)
+    conn_face_el          = Array{TInt}(undef, 0, 0, 0)
+    face_in_elem          = Array{TInt}(undef, 0, 0, 0)
 
+    # Skeleton arrays needed by "element learning"
+    lengthΓ  = 0  #non-repeated bdy points from mesh.poin_in_bdy_edge    
+    lengthO  = 0  #all internal, including edges, but without domain's bdy
+    length∂τ = 0
+    lengthτO = 0
+    length∂O = 0
+    Γ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, lengthΓ)
+    O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, lengthO)
+    ∂τ::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, length∂τ)
+    τO::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, lengthτO)
+    ∂O::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, length∂O)
+        
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
     
     #MPI variables
@@ -126,10 +139,12 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     
     #Auxiliary arrays for boundary conditions
     
-    bdy_edge_in_elem  =  KernelAbstractions.zeros(backend, TInt, 0)
-    poin_in_bdy_edge  =  KernelAbstractions.zeros(backend, TInt, 0, 0)
-    bdy_face_in_elem  =  KernelAbstractions.zeros(backend, TInt, 0)
-    poin_in_bdy_face  =  KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
+    bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
+    poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    internal_poin_in_elem     = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    bdy_face_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
+    poin_in_bdy_face          = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     face_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
@@ -430,16 +445,19 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
     
     
-    mesh.conn_edge_el     = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
-    mesh.conn_face_el     = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
-    mesh.bdy_edge_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
-    mesh.poin_in_edge     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
-    mesh.poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
+    mesh.conn_edge_el              = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
+    mesh.conn_face_el              = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
+    mesh.bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
+    mesh.poin_in_edge              = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
+    mesh.poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
+    mesh.internal_poin_in_edge     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges),     Int64(mesh.ngl-2))
+    mesh.internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges_bdy), Int64(mesh.ngl-2))
+    mesh.internal_poin_in_elem     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem*(mesh.ngl-2)^(mesh.nsd)))
     
-    mesh.poin_in_face     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
-    mesh.edge_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
-    mesh.bdy_edge_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
-    mesh.bdy_edge_type_id = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
+    mesh.poin_in_face              = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces), Int64(mesh.ngl), Int64(mesh.ngl))
+    mesh.edge_type                 = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
+    mesh.bdy_edge_type             = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
+    mesh.bdy_edge_type_id          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
     
     if mesh.nsd > 2
         mesh.poin_in_bdy_face = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nfaces_bdy), Int64(mesh.ngl), Int64(mesh.ngl))
@@ -1173,6 +1191,49 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #----------------------------------------------------------------------
     # periodicity_restructure for MPI
     #----------------------------------------------------------------------
+    if mesh.nsd == 2
+
+        nor1 = [1.0, 0.0]
+        nor2 = [0.0, 1.0]
+        if ("periodicx" in mesh.bdy_edge_type)
+            finder = false
+            iedge_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_edge_type[iedge_bdy] == "periodicx")
+                    ip = mesh.poin_in_bdy_edge[iedge_bdy,1]
+                    ip1 = mesh.poin_in_bdy_edge[iedge_bdy,2]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
+                    mag = sqrt(t1[1]^2 + t1[2]^2)
+                    nor1 .= [-t1[2]/mag, t1[1]/mag]
+                    finder = true
+                else
+                    iedge_bdy +=1
+                end
+            end
+        end
+        if ("periodicy" in mesh.bdy_face_type)
+            finder = false
+            iedge_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_edge_type[iedge_bdy] == "periodicy")
+                    ip = mesh.poin_in_bdy_edge[iedge_bdy,1,1]
+                    ip1 = mesh.poin_in_bdy_edge[iedge_bdy,1,2]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
+                    mag = sqrt(t1[1]^2 + t1[2]^2)
+                    nor2 .= [-t1[2]/mag, t1[1]/mag]
+                    finder = true
+                else
+                    iface_bdy +=1
+                end
+            end
+        end
+        restructure4periodicity_2D(mesh, nor1, "periodicx")
+        # @info mesh.ip2gip
+        restructure4periodicity_2D(mesh, nor2, "periodicy")
+        # @info mesh.ip2gip
+
+    end
+
     if mesh.nsd > 2
 
         nor1 = [1.0, 0.0, 0.0]
@@ -1252,6 +1313,43 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # END periodicity_restructure for MPI
     #----------------------------------------------------------------------
 
+    #
+    # Extract only internal edge points:
+    #
+    mesh.internal_poin_in_edge[:,1:end]     = mesh.poin_in_edge[:,2:end-1]
+    mesh.internal_poin_in_bdy_edge[:,1:end] = mesh.poin_in_bdy_edge[:,2:end-1]
+    mesh.internal_poin_in_elem              = KernelAbstractions.zeros(backend, TInt, mesh.nelem, (mesh.ngl-2)^mesh.nsd)
+    if mesh.nsd == 1
+        for iel=1:mesh.nelem
+        ii = 1
+        for i=2:mesh.ngl-1
+            ip = mesh.connijk[iel, i]
+            mesh.internal_poin_in_elem[iel, ii] = ip
+            ii += 1
+        end
+        end
+    elseif mesh.nsd == 2    
+        for iel=1:mesh.nelem
+        ii = 1
+        for i=2:mesh.ngl-1, j=2:mesh.ngl-1
+            ip = mesh.connijk[iel, i, j]
+            mesh.internal_poin_in_elem[iel, ii] = ip
+            ii += 1
+        end
+        end
+    elseif mesh.nsd == 3
+        for iel=1:mesh.nelem
+        ii = 1
+        for i=2:mesh.ngl-1, j=2:mesh.ngl-1, k=2:mesh.ngl-1
+            ip = mesh.connijk[iel, i, j, k]
+            mesh.internal_poin_in_elem[iel, ii] = ip
+            ii += 1
+        end
+        end
+    end
+    #----------------------------------------------------------------------
+    # END Extract boundary edges and faces nodes
+    #----------------------------------------------------------------------
 
     #
     #
@@ -1295,6 +1393,137 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #writevtk(model,"gmsh_grid")
 end
 
+
+function restructure4periodicity_2D(mesh, norm, periodic_direction)
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    rank_sz = MPI.Comm_size(comm)
+    per_ip = Int[]
+    ngl = mesh.ngl
+    for iedge_bdy =1:size(mesh.bdy_edge_type,1)
+        for k=1:ngl
+            ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
+            if (mesh.bdy_edge_type[iedge_bdy] == periodic_direction)
+                per_ip = [per_ip; ip]
+            end
+        end
+    end
+    
+    if (mesh.lLaguerre)
+        e_iter = 1
+        for iedge_bdy =1:size(mesh.bdy_edge_type,1)
+            if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
+                if (mesh.poin_in_bdy_edge[iedge_bdy,1] in per_ip)
+                    for k = 2:mesh.ngr
+                        ip = mesh.connijk_lag[e_iter,1,k]
+                        per_ip = [per_ip; ip]
+                    end
+                elseif (mesh.poin_in_bdy_edge[iedge_bdy,mesh.ngl] in per_ip)
+                    for k = 2:mesh.ngr
+                        ip = mesh.connijk_lag[e_iter,mesh.ngl,k]
+                        per_ip = [per_ip; ip]
+                    end
+                end
+                e_iter += 1
+            end
+        end
+    end
+
+    ### remove duplicates
+    unique!(per_ip)
+    x_local  = mesh.x[per_ip]
+    y_local  = mesh.y[per_ip]
+    per_gip  = mesh.ip2gip[per_ip]
+    ip_owner = mesh.gip2owner[per_ip]
+    # @info  mesh.x[per_ip]
+
+    # Gather arrays onto the root processor (rank 0)
+    root = 0
+
+    # Gather per_gip
+    buffer_sz::Int32    = size(per_ip, 1)
+    # @info rank, buffer_sz
+    recv_counts  = MPI.Gather(buffer_sz, 0, comm)
+    # total_counts = sum(recv_counts)
+    # if total_counts == 0
+        # return
+    # end
+    # else
+    # if total_counts == 0
+    #     return
+    # end
+
+    x_gather     = MPI.gather(x_local, comm)
+    y_gather     = MPI.gather(y_local, comm)
+    gathered_per = MPI.gather(per_gip, comm)
+    owner_gather = MPI.gather(ip_owner, comm)
+    if mesh.rank == root
+
+    # On the root processor, combine and remove duplicates
+        # Concatenate gathered arrays
+        x              = vcat(x_gather...)
+        y              = vcat(y_gather...)
+        global_per_gip = vcat(gathered_per...)
+        owner          = vcat(owner_gather...)
+
+        sz = size(global_per_gip,1)
+        for i = 1:sz
+            i1 = i+1
+            for i1 = (i+1):sz
+                if global_per_gip[i] == global_per_gip[i1]
+                    continue
+                end
+                vec = [x[i] - x[i1], y[i] - y[i1]]
+                # @info vec, norm
+                if (determine_colinearity(vec, norm))
+                    xt = x[i1]
+                    yt = y[i1]
+                    xi = x[i]
+                    yi = y[i]
+                    if (yi == 0 && yt == 0)
+                        comp1 = xi < xt
+                    else
+                        comp1 = xi*abs(yi) < xt*abs(yt)
+                    end
+                    if (xi ==0 && xt == 0)
+                        comp2 = yi < yt
+                    else
+                        comp2 = yi*abs(xi) < yt*abs(xt)
+                    end
+                    # @info "found", global_per_gip[i], global_per_gip[i1]
+                    if (comp1 || comp2)
+                        global_per_gip[i1] = global_per_gip[i]
+                        if owner[i1] != owner[i]
+                            owner[i1] = owner[i]
+                        end
+                    else
+                        global_per_gip[i] = global_per_gip[i1]
+                        if owner[i1] != owner[i]
+                            owner[i] = owner[i1]
+                        end
+                    end
+                    # break
+                else
+                    continue
+                end
+            end
+        end
+        # do something for global_per_gip
+        s_gip_vbuf   = VBuffer(global_per_gip, recv_counts)
+        s_owner_vbuf = VBuffer(owner, recv_counts)
+    else
+        s_gip_vbuf   = VBuffer(nothing)
+        s_owner_vbuf = VBuffer(nothing)
+    end
+    MPI.Barrier(comm)
+    per_ip_updated = MPI.Scatterv!(s_gip_vbuf,zeros(eltype(per_gip), buffer_sz), 0, comm)
+    owner_updated  = MPI.Scatterv!(s_owner_vbuf,zeros(eltype(ip_owner), buffer_sz), 0, comm)
+    # per_ip_updated = MPI.Scatterv!(global_per_gip,buffer_sz, 0, comm)
+
+    mesh.ip2gip[per_ip]    .= per_ip_updated
+    mesh.gip2owner[per_ip] .= owner_updated
+end
 
 function restructure4periodicity_3D(mesh, norm, periodic_direction)
 
@@ -1710,7 +1939,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
     
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_edges_internal_nodes + tot_vol_internal_nodes
-
+    
     if length(mesh.x_ho) < mesh.npoin
         #resize!(mesh.x_ho, (mesh.npoin))
         mesh.x_ho = KernelAbstractions.allocate(backend, TFloat, mesh.npoin)
@@ -1907,7 +2136,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     #poin_in_edge::Array{Int64, 2}  = zeros(mesh.nedges, mesh.ngl)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    open("./COORDS_HO_edges_$rank.dat", "w") do f
+    #open("./COORDS_HO_edges_$rank.dat", "w") do f
     # open("./COORDS_HO_edges.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
@@ -1941,13 +2170,13 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
                 mesh.ip2gip[ip] = gip
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-                @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
+                #@printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
                 #@printf( " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip  = ip + 1
                 gip = gip + 1
             end
         end
-    end #end f
+    #end #end f
     #show(stdout, "text/plain", mesh.poin_in_edge)
     #@info "-----3D edges"
         
@@ -2405,7 +2634,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    open("./COORDS_HO_faces_$rank.dat", "w") do f
+    #open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_faces.dat", "w") do f
         #
         # First pass:
@@ -2456,7 +2685,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
                     mesh.poin_in_face[iface_g, l, m] = ip
                     mesh.ip2gip[ip] = gip
                     
-                    @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
+                    #@printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
 
                     # mesh.connijk[iel, m, ngl-l+1] = ip #<==== need to build this 
                     
@@ -2465,7 +2694,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_3D, face2pface
                 end
             end
         end
-    end #do f
+    #end #do f
 
     #
     # Second pass: populate mesh.conn[1:8+el_edges_internal_nodes+el_faces_internal_nodes, ∀ elem]\n")
@@ -2802,7 +3031,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     gip::Int64  = 0
-    open("./COORDS_HO_faces_$rank.dat", "w") do f
+    #open("./COORDS_HO_faces_$rank.dat", "w") do f
     #open("./COORDS_HO_vol.dat", "w") do f
         ip  = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + 1
         for iel = 1:mesh.nelem
@@ -2871,7 +3100,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
                         mesh.connijk[iel,n,l,m] = ip
                         mesh.ip2gip[ip] = gip
 
-                        @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
+                        #@printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
 
                         ip = ip + 1
                         gip = gip + 1
@@ -2880,7 +3109,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
                 end
             end
         end
-    end # do f 
+    #end # do f 
     #open("./CONNIJK.dat", "w") do f
         for iel =1:mesh.nelem
             iconn =1
@@ -3052,6 +3281,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+    partitioned_model = nothing
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
         
         println_rank(" # Read gmsh grid and populate with high-order points "; msg_rank = rank, suppress = omesh == !isnothing)
@@ -3076,6 +3306,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     else
         
         println(" # Build native grid")
+        
         # Initialize mesh struct for native structured grid:
         if (haskey(inputs, :nsd))
             

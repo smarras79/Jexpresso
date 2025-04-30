@@ -1,5 +1,5 @@
 
-function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{Float64}, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
+function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
    
     PhysConst = PhysicalConst{Float64}()
     
@@ -23,7 +23,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     # distance from the boundary. xs in Restelli's thesis
     dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
     dbl = ymax - y
-    zs = 14000.0#ymax - 16000.0
+    zs = 15000.0#ymax - 16000.0
     dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
     dbx = min(xmax - x,x-xmin) 
     xr = 120000.0
@@ -63,7 +63,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     return  S
 end 
 
-function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{Float64}, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
+function user_source!(S, q, qe, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -87,7 +87,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     # distance from the boundary. xs in Restelli's thesis
     dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
     dbl = ymax - y
-    zs = 14000.0#ymax - 20000.0
+    zs = 15000.0#ymax - 20000.0
     dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
     dbx = min(xmax - x,x-xmin)
     xr = 80000.0

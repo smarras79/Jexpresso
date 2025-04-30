@@ -25,13 +25,17 @@
     
 """
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
-    qbdy[1] = 0
-end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
-    nothing
-end
-
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
-    nothing
+    L = 5.0
+    
+    if (tag == "bottom")
+        qbdy[1] = 100.0
+    elseif (tag == "right") 
+        qbdy[1] = 100.0
+    elseif (tag == "top") #top
+        qbdy[1] = 100 + 20.0*sin(π*x/L)
+    elseif (tag == "left") #left
+        qbdy[1] = 100.0
+    end
+    
 end

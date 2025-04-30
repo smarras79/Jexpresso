@@ -3,11 +3,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 30,#000.0, #2π,
+        :tend                 => 1000.0,#30,#000.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => SSPRK54(),
         #:ndiagnostics_outputs => 10,
-        :diagnostics_at_times => range(0,30,30),
+        :diagnostics_at_times => range(0,1000,30),
         :output_dir           => "./output/",
         :case                 => "rtb",
         #:CL                   => NCL(),
@@ -19,7 +19,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
         :nop                 => 4,      # Polynomial order
-        :nop_laguerre        => 14,
+        :nop_laguerre        => 16,
         :yfac_laguerre       => 300.0,
         :luser_bc            => true,
         :lsource             => true,
@@ -46,7 +46,7 @@ function user_inputs()
         # grid modification parameters
         #---------------------------------------------------------------------------
         :xscale              => 240000.0,
-        :yscale              => 15000.0,
+        :yscale              => 30000.0,
         :xdisp               => 0.0,
         :ydisp               => 1.0,
         #---------------------------------------------------------------------------
@@ -61,13 +61,14 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.25,
-        :mu_y                => 0.25,
+        :mu_x                => 0.05,
+        :mu_y                => 0.05,
         :filter_type         => "erf",  ##default is erf, use either "erf" for Boyd-Vandeven,"exp" for Warburton Exponential filter, or "quad" for Fischer quadratic filter
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
+        :loverwrite_output   => true,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict

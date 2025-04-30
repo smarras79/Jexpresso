@@ -1,5 +1,5 @@
 
-function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{Float64}, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
+function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
    
     PhysConst = PhysicalConst{Float64}()
     
@@ -63,7 +63,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     return  S
 end 
 
-function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{Float64}, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
+function user_source!(S, q, qe, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -102,7 +102,7 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
         betay_coe = 0.0
     end
     #if (abs(x) <=xmin)
-      ctop= betay_coe#0.5*betay_coe
+    ctop = betay_coe#0.5*betay_coe
     #else
      # ctop = 0.0
     #end 
@@ -118,7 +118,6 @@ function user_source!(S::SubArray{Float64}, q::SubArray{Float64}, qe::SubArray{F
     else
         betaxl_coe = 0.0
     end
-    
     cxr = 0.01*betaxr_coe#0.25*betaxr_coe
     cxl = 0.01*betaxl_coe#0.25*betaxl_coe
     ctop = 0.1*min(ctop,1)

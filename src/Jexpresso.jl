@@ -79,6 +79,8 @@ include(joinpath( "macros", "je_macros.jl"))
 
 include(joinpath( "kernel", "abstractTypes.jl"))
 
+include(joinpath( "kernel", "elementLearningStructs.jl"))
+
 include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
@@ -150,6 +152,8 @@ include(joinpath( "io", "diagnostics.jl"))
 include(joinpath( "io", "Extract_topo.jl"))
 
 include(joinpath( "io", "soundings.jl"))
+
+include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
 

@@ -799,11 +799,9 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
         error( " WRONG NSD: This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
     end
     
-
     vtk_directory = "./refine/" 
     writevtk(partitioned_model, vtk_directory)
-
-
+    
 
     p2pp = Geometry.get_face_to_parent_face(model,0)
 
@@ -1365,9 +1363,6 @@ function mod_mesh_adaptive!(partitioned_model_coarse, ref_coarse_flags, omesh, m
     mesh.x_ho = zeros(1)
     mesh.y_ho = zeros(1)
     mesh.z_ho = zeros(1)
-    #resize!(mesh.x_ho, 1)
-    #resize!(mesh.y_ho, 1)
-    #resize!(mesh.z_ho, 1)
     GC.gc()
     #
 
@@ -2689,13 +2684,6 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
     end
 
     q_dst, partitioned_model_refined = projection_solutions(q_src, ref_coarse_flags, partitioned_model, omesh, nmesh, inputs, nparts, distribute)
-    outvarsref = ("rho_ref", "uρ_ref", "vρ_ref", "wρ_ref", "theta_ref", "p_ref")
-    write_vtk_ref(nmesh.SD, nmesh, q_dst, "adapt_initial_state_first", inputs[:output_dir]; nvar=length(qp.qn[1,:]), outvarsref=outvarsref)
-
-    # qp_refined1 = initialize(nmesh.SD, inputs[:equations], nmesh, inputs, inputs[:output_dir], TFloat)
-
-    
-
 
     ref_coarse_flags2=map(nmesh.parts,partition(get_cell_gids(partitioned_model_refined.dmodel))) do rank,indices
         flags=zeros(Cint,length(indices))
@@ -2723,7 +2711,6 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
     SD=NSD_1D())
     q_dst2, partitioned_model_refined2 = projection_solutions(q_dst, ref_coarse_flags2, partitioned_model_refined, nmesh, nmesh2, inputs, nparts, distribute)
     # @info n2o_ele_map2
-    write_vtk_ref(nmesh2.SD, nmesh2, q_dst2, "adapt_initial_state_second", inputs[:output_dir]; nvar=length(qp.qn[1,:]), outvarsref=outvarsref)
     
     comm = MPI.COMM_WORLD
 

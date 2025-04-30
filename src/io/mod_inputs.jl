@@ -372,6 +372,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         #default are LGL
         inputs[:quadrature_nodes] = LGL()
     end
+
+    #
+    # Element learning (lelemLearning)
+    #
+    if (!haskey(inputs, :lelementLearning))
+        inputs[:lelementLearning] = false
+    end
     
     #
     # DifferentialEquations.jl is used to solved the ODEs resulting from the method-of-lines

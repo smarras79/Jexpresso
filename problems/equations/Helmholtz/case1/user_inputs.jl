@@ -9,9 +9,6 @@ function user_inputs()
         :lsource              => true, 
         :llinsolve            => true,
         :rconst               => (10.0),
-        #:backend              => MetalBackend(),
-        #:CL                   => NCL(), #CL() is defaults
-        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

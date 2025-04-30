@@ -1,5 +1,3 @@
-using HDF5
-
 function driver(nparts,
                 distribute,
                 inputs::Dict,
@@ -24,8 +22,6 @@ function driver(nparts,
         @time conformity4ncf_q!(qp.qn, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
         @time conformity4ncf_q!(qp.qe, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
         
-        # outvarsref = ("rho_ref", "uρ_ref", "vρ_ref", "wρ_ref", "theta_ref", "p_ref")    
-        # write_vtk_ref(sem.mesh.SD, sem.mesh, qp.qn.-qp.qe, "initial_state", inputs[:output_dir]; nvar=length(qp.qn[1,:]), outvarsref=outvarsref)
         MPI.Barrier(comm)
         if rank == 0
             @info "end conformity4ncf_q!"
@@ -51,15 +47,8 @@ function driver(nparts,
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
         #
         @time solution = time_loop!(inputs, params, u)
-        
-        if (inputs[:ndiagnostics_outputs] > 0)
-            write_output(sem.mesh.SD, solution,  sem.mesh, params.mp,
-                         OUTPUT_DIR, inputs,
-                         params.qp.qvars,
-                         inputs[:outformat];
-                         nvar=params.qp.neqs, qexact=params.qp.qe, case="rtb")
-        end
-        
+        # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
+    
     else
         #
         # Problems that lead to Ax = b
@@ -85,6 +74,16 @@ function driver(nparts,
             for ip = 1:sem.mesh.npoin
                 sem.matrix.L[ip,ip] += inputs[:rconst][1]
             end
+
+            #-----------------------------------------------------
+            # Element-learning infrastructure
+            #-----------------------------------------------------
+            if inputs[:lelementLearning]
+                elementLearning_Axb(sem.mesh, sem.matrix.L, RHS)
+            end
+            #-----------------------------------------------------
+            # END Element-learning infrastructure
+            #-----------------------------------------------------
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
                                                  params.mesh.x, params.mesh.y, params.mesh.z,
@@ -132,12 +131,49 @@ function driver(nparts,
         end
         
         @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
-
-        write_output(sem.mesh.SD, solution,  sem.mesh,
+        
+        write_output(sem.mesh.SD, solution, params.uaux, sem.mesh,
                      OUTPUT_DIR, inputs,
-                     params.qp.qvars,
+                     params.qp.qvars,params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe, case="none")
         
     end
+end
+
+function elementLearning_Axb(mesh::St_mesh, A, RHS)
+
+    @info "∂Oxdd"
+    println(mesh.∂O)
+    @info "∂τddddd"
+    println(mesh.∂τ)
+    @info mesh.length∂O mesh.length∂τ
+    
+    EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
+                               mesh.length∂O,
+                               mesh.length∂τ,
+                               TFloat, inputs[:backend])
+    
+    
+    for iel=1:mesh.nelem, i=2:mesh.ngl-1, j=2:mesh.ngl-1
+        ip = mesh.connijk[iel, i, j]
+
+        ii = i-1
+        jj = j-1
+
+
+        EL.Avv[ii,jj,iel] = A[ip,ip]
+        println(EL.Avv[ii,jj,iel])
+    end
+
+    for i=1:length(mesh.∂O)
+        for j=1:length(mesh.∂τ)
+
+            iO = mesh.∂O[i]
+            jτ = mesh.∂τ[j]
+            
+            EL.A∂O∂τ[i,j] = A[iO,jτ]
+        end
+    end
+       
 end

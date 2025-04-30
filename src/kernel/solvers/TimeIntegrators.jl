@@ -36,10 +36,6 @@ function time_loop!(inputs, params, u)
     # #------------------------------------------------------------------------
     # # AMR config
     # #------------------------------------------------------------------------
-    # amr_freq        = inputs[:amr_freq]
-    # Δt_amr          = amr_freq * inputs[:Δt]
-    # ret_amrtime_ref = Ref{Bool}(false)
-
     function condition(u, t, integrator)
         idx  = findfirst(x -> x == t, dosetimes)
         if idx !== nothing
@@ -57,15 +53,12 @@ function time_loop!(inputs, params, u)
     function affect!(integrator)
         idx          = idx_ref[]
         ret_dosetime = ret_dosetime_ref[]
-        # ret_amrtime  = ret_amrtime_ref[]
         if ret_dosetime == true
             println_rank(" #  t=", integrator.t; msg_rank = rank)
 
             #CFL
-        #   @time  computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD; visc=inputs[:μ])
-
-            #Write results to file
-            # @info integrator.p[38].npoin
+            #@time  computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD; visc=inputs[:μ])
+            
             write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
@@ -74,34 +67,42 @@ function time_loop!(inputs, params, u)
                          integrator.p.qp.qvars,
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
-                         nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe, case="rtb")
+                         nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
         end
-
-        # if ret_amrtime == true
-        #     println_rank(" # mesh adapt at t=", integrator.t; msg_rank = rank)
-        #     # nothing
-        #     @info "u1",  size(integrator.u,1), integrator.p[38].npoin
-        #     amr_strategy!(inputs,integrator, integrator.p, integrator.u)
-        #     @info "u2",  size(integrator.u,1)
-        # end
     end
     cb_rad = DiscreteCallback(two_stream_condition, do_radiation!)
-    cb = DiscreteCallback(condition, affect!)    
+    cb     = DiscreteCallback(condition, affect!)    
     cb_amr = DiscreteCallback(condition, affect!)
     CallbackSet(cb)#,cb_rad)
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------
 
+    #
+    # Write initial conditions:
+    #
+    if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
+    write_output(params.SD, u, params.uaux, inputs[:tinit], 1,
+                 params.mesh, params.mp,
+                 params.connijk_original, params.poin_in_bdy_face_original,
+                 params.x_original, params.y_original, params.z_original,
+                 inputs[:output_dir], inputs,
+                 params.qp.qvars, params.qp.qoutvars,
+                 inputs[:outformat];
+                 nvar=params.qp.neqs, qexact=params.qp.qe)
+    if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     
+    #
+    # Simulation
+    #
     solution = solve(prob,
-                           inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                           #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                           callback = CallbackSet(cb), tstops = dosetimes,
-                           save_everystep = false,
-                           adaptive=inputs[:ode_adaptive_solver],
-                           saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
-    # @info fieldnames(typeof(prob))
+                     inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                     #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
+                     callback = CallbackSet(cb), tstops = dosetimes,
+                     save_everystep = false,
+                     adaptive=inputs[:ode_adaptive_solver],
+                     saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
+    
     if inputs[:ladapt] == true
         while solution.t[end] < inputs[:tend]
             prob = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end])
