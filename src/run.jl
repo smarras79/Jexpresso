@@ -110,9 +110,7 @@ end
 #--------------------------------------------------------
 # Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
-if Sys.iswindows() == false
-    run(`$cp $user_input_file $OUTPUT_DIR`)
-end
+cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
 
 driver(inputs, # input parameters from src/user_input.jl
        OUTPUT_DIR,
