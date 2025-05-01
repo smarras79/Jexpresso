@@ -213,7 +213,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
     end
-    uaux[:,params.neqs] .= params.B[:,params.neqs]
+    uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
 
 #=if (params.laguerre)
 
@@ -339,7 +339,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
     end
-    uaux[:,params.neqs] .= params.B[:,params.neqs]
+    uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
 
     #=if (params.laguerre)
 
