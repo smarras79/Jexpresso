@@ -151,6 +151,8 @@ include(joinpath( "io", "diagnostics.jl"))
 
 include(joinpath( "io", "Extract_topo.jl"))
 
+include(joinpath( "io", "print_matrix.jl"))
+
 include(joinpath( "io", "soundings.jl"))
 
 include(joinpath( "auxiliary", "auxiliary_functions.jl"))

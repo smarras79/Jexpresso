@@ -159,30 +159,48 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
                                TFloat, inputs[:backend])
 
     nelintpoints = (mesh.ngl-2)*(mesh.ngl-2)
+    nelpoints = size(mesh.conn)[2]
+    intaux = nelpoints - nelintpoints
+    
     for iel=1:mesh.nelem
         
         ii = 1
-        for i = size(mesh.conn[iel,:])-nelintpoints:size(mesh.conn[iel,:])
-            ip = mesh.conn[iel, i]
-            ii += 1
+        for i = intaux+1:nelpoints
+            ipo = mesh.conn[iel, i]
+
+            for i1=1:length(mesh.∂O)
+                
+                iO = mesh.∂O[i1]
+                
+                EL.A∂Ovo[i1, j1, iel] = A[iO, ipo]
+            end
+
+            for i1=1:length(mesh.∂τ)
+                
+                iτ = mesh.∂τ[i1]
+                
+                EL.Avo∂τ[i1, j1, iel] = A[ipo, iτ]
+            end
             
             jj = 1
-            for j = size(mesh.conn[iel,:])-nelintpoints:size(mesh.conn[iel,:])
+            for j = intaux+1:nelpoints
                 
-                jp = mesh.conn[iel, j]
+                jpo = mesh.conn[iel, j]
                 
-                EL.Avv[ii,jj,iel] = A[ip,jp]
-                println(EL.Avv[ii,jj,iel])
+                EL.Avovo[ii,jj,iel] = A[ipo, jpo]
+                println(EL.Avovo[ii, jj, iel])
 
                 jj += 1
                 
             end
+            ii += 1
         end
     end
+    
 
     for j1=1:length(mesh.∂τ)
-
-        jτ1 = mesh.∂τ[j1]        
+        jτ1 = mesh.∂τ[j1]
+        
         for i1=1:length(mesh.∂O)
             
             iO1 = mesh.∂O[i1]
@@ -197,5 +215,11 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
         end
             
     end
-       
+
+    EL.Hvovo = inv(EL.Avovo)
+    @info size(EL.Hvovo)
+    
+    #@info size(EL.A∂O∂τ), size(EL.A∂τ∂τ), size(A)
+    @mystop
+    
 end
