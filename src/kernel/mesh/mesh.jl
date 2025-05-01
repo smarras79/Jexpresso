@@ -1184,6 +1184,49 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #----------------------------------------------------------------------
     # periodicity_restructure for MPI
     #----------------------------------------------------------------------
+    if mesh.nsd == 2 
+            
+        nor1 = [1.0, 0.0]
+        nor2 = [0.0, 1.0]
+        if ("periodicx" in mesh.bdy_edge_type)
+            finder = false
+            iedge_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_edge_type[iedge_bdy] == "periodicx")
+                    ip = mesh.poin_in_bdy_edge[iedge_bdy,1]
+                    ip1 = mesh.poin_in_bdy_edge[iedge_bdy,2]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
+                    mag = sqrt(t1[1]^2 + t1[2]^2)
+                    nor1 .= [-t1[2]/mag, t1[1]/mag]
+                    finder = true
+                else
+                    iedge_bdy +=1
+                end
+            end
+        end 
+        if ("periodicy" in mesh.bdy_face_type)
+            finder = false
+            iedge_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_edge_type[iedge_bdy] == "periodicy")
+                    ip = mesh.poin_in_bdy_edge[iedge_bdy,1,1]
+                    ip1 = mesh.poin_in_bdy_edge[iedge_bdy,1,2]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
+                    mag = sqrt(t1[1]^2 + t1[2]^2)
+                    nor2 .= [-t1[2]/mag, t1[1]/mag]
+                    finder = true
+                else
+                    iface_bdy +=1
+                end
+            end
+        end
+        restructure4periodicity_2D(mesh, nor1, "periodicx")
+        # @info mesh.ip2gip
+        restructure4periodicity_2D(mesh, nor2, "periodicy")
+        # @info mesh.ip2gip
+
+    end
+
     if mesh.nsd > 2
 
         nor1 = [1.0, 0.0, 0.0]
@@ -1343,6 +1386,136 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #writevtk(model,"gmsh_grid")
 end
 
+
+function restructure4periodicity_2D(mesh, norm, periodic_direction)
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    rank_sz = MPI.Comm_size(comm)
+    per_ip = Int[]
+    ngl = mesh.ngl
+    for iedge_bdy =1:size(mesh.bdy_edge_type,1)
+        for k=1:ngl
+            ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
+            if (mesh.bdy_edge_type[iedge_bdy] == periodic_direction)
+                per_ip = [per_ip; ip]
+            end
+        end
+    end
+
+    if (mesh.lLaguerre)
+        e_iter = 1
+        for iedge_bdy =1:size(mesh.bdy_edge_type,1)
+            if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
+                if (mesh.poin_in_bdy_edge[iedge_bdy,1] in per_ip)
+                    for k = 2:mesh.ngr
+                        ip = mesh.connijk_lag[e_iter,1,k]
+                        per_ip = [per_ip; ip]
+                    end
+                elseif (mesh.poin_in_bdy_edge[iedge_bdy,mesh.ngl] in per_ip)
+                    for k = 2:mesh.ngr
+                        ip = mesh.connijk_lag[e_iter,mesh.ngl,k]
+                        per_ip = [per_ip; ip]
+                    end
+                end
+                e_iter += 1
+            end
+        end
+    end
+
+    ### remove duplicates
+    unique!(per_ip)
+    x_local  = mesh.x[per_ip]
+    y_local  = mesh.y[per_ip]
+    per_gip  = mesh.ip2gip[per_ip]
+    ip_owner = mesh.gip2owner[per_ip]
+    # @info  mesh.x[per_ip]
+
+    # Gather arrays onto the root processor (rank 0)
+    root = 0
+	# Gather per_gip
+    buffer_sz::Int32    = size(per_ip, 1)
+    # @info rank, buffer_sz
+    recv_counts  = MPI.Gather(buffer_sz, 0, comm)
+    # total_counts = sum(recv_counts)
+    # if total_counts == 0
+        # return
+    # end
+    # else
+    # if total_counts == 0
+    #     return
+    # end
+
+    x_gather     = MPI.gather(x_local, comm)
+    y_gather     = MPI.gather(y_local, comm)
+    gathered_per = MPI.gather(per_gip, comm)
+    owner_gather = MPI.gather(ip_owner, comm)
+    if mesh.rank == root
+
+    # On the root processor, combine and remove duplicates
+        # Concatenate gathered arrays
+        x              = vcat(x_gather...)
+        y              = vcat(y_gather...)
+        global_per_gip = vcat(gathered_per...)
+        owner          = vcat(owner_gather...)
+
+        sz = size(global_per_gip,1)
+		for i = 1:sz
+            i1 = i+1
+            for i1 = (i+1):sz
+                if global_per_gip[i] == global_per_gip[i1]
+                    continue
+                end
+                vec = [x[i] - x[i1], y[i] - y[i1]]
+                # @info vec, norm
+                if (determine_colinearity(vec, norm))
+                    xt = x[i1]
+                    yt = y[i1]
+                    xi = x[i]
+                    yi = y[i]
+                    if (yi == 0 && yt == 0)
+                        comp1 = xi < xt
+                    else
+                        comp1 = xi*abs(yi) < xt*abs(yt)
+                    end
+                    if (xi ==0 && xt == 0)
+                        comp2 = yi < yt
+                    else
+                        comp2 = yi*abs(xi) < yt*abs(xt)
+                    end
+                    # @info "found", global_per_gip[i], global_per_gip[i1]
+                    if (comp1 || comp2)
+                        global_per_gip[i1] = global_per_gip[i]
+                        if owner[i1] != owner[i]
+                            owner[i1] = owner[i]
+                        end
+                    else
+                        global_per_gip[i] = global_per_gip[i1]
+                        if owner[i1] != owner[i]
+                            owner[i] = owner[i1]
+                        end
+                    end
+                    # break
+                else
+                    continue
+                end
+            end
+        end
+		# do something for global_per_gip
+        s_gip_vbuf   = VBuffer(global_per_gip, recv_counts)
+        s_owner_vbuf = VBuffer(owner, recv_counts)
+    else
+        s_gip_vbuf   = VBuffer(nothing)
+        s_owner_vbuf = VBuffer(nothing)
+    end
+    MPI.Barrier(comm)
+    per_ip_updated = MPI.Scatterv!(s_gip_vbuf,zeros(eltype(per_gip), buffer_sz), 0, comm)
+    owner_updated  = MPI.Scatterv!(s_owner_vbuf,zeros(eltype(ip_owner), buffer_sz), 0, comm)
+    # per_ip_updated = MPI.Scatterv!(global_per_gip,buffer_sz, 0, comm)
+
+    mesh.ip2gip[per_ip]    .= per_ip_updated
+    mesh.gip2owner[per_ip] .= owner_updated
+end
 
 function restructure4periodicity_3D(mesh, norm, periodic_direction)
 
