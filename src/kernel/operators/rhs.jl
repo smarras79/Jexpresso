@@ -18,7 +18,7 @@ end
 
 function u2uaux!(uaux, u, neqs, npoin)
 
-    for i=1:neqs#+1
+    for i=1:neqs
         idx = (i-1)*npoin
         uaux[:,i] = view(u, idx+1:i*npoin)
     end
@@ -28,7 +28,7 @@ end
 
 function uaux2u!(u, uaux, neqs, npoin)
 
-    for i=1:neqs#+1
+    for i=1:neqs
         idx = (i-1)*npoin
         for j=1:npoin
             u[idx+j] = uaux[j,i]
@@ -92,8 +92,10 @@ end
 
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
+    
     if (backend == CPU())
         build_rhs!(@view(params.RHS[:,:]), u, params, time)
+
         if (params.laguerre) 
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
             params.RHS .= @views(params.RHS .+ params.RHS_lag)
@@ -477,7 +479,7 @@ end
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_1D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-
+    
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel=1:params.mesh.nelem
         

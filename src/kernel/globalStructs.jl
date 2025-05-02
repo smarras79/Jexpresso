@@ -10,8 +10,8 @@ Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, back
 end
 function allocate_uODE(SD, npoin, T, backend; neqs=1)
 
-    dims1 = (Int64(npoin)*Int64(neqs+1))
-    dims2 = (Int64(npoin), Int64(neqs+1))
+    dims1 = (Int64(npoin)*Int64(neqs))
+    dims2 = (Int64(npoin), Int64(neqs))
     dims3 = (Int64(npoin))
 
     uODE = St_uODE{T, dims1, dims2, dims3, backend}()
