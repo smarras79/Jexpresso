@@ -145,7 +145,7 @@ function driver(nparts,
     end
 end
 
-function elementLearning_Axb(mesh::St_mesh, A, RHS)
+function elementLearning_Axb(mesh::St_mesh, A, RHS, ub)
 
     @info "∂Oxdd"
     println(mesh.∂O)

@@ -1,21 +1,18 @@
 #-------------------------------------------------------------------------------------------
 # Element learning matrices
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, dims1, dims2, dims3, dims4, dims5, dims6, dims7, backend}
+Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, dims1, dims2, dims3, dims4, dims5, dims6, dims7, dims8, backend}
 
     Avovo = KernelAbstractions.zeros(backend, T, dims1)
     Hvovo = KernelAbstractions.zeros(backend, T, dims1)
-    Avovb = KernelAbstractions.zeros(backend, T, dims7)
-    
+    Avovb = KernelAbstractions.zeros(backend, T, dims7)    
     A∂O∂τ = KernelAbstractions.zeros(backend, T, dims2)
     B∂O∂τ = KernelAbstractions.zeros(backend, T, dims2)
-    
     A∂Ovo = KernelAbstractions.zeros(backend, T, dims3)
     Avo∂O = KernelAbstractions.zeros(backend, T, dims4)
     Avo∂τ = KernelAbstractions.zeros(backend, T, dims5)
-    
     A∂τ∂τ = KernelAbstractions.zeros(backend, T, dims6)
-
+    ub    = KernelAbstractions.zeros(backend, T, dims8)
     
 end
 
@@ -30,8 +27,9 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, T, backend)
     dims5 = (Int64(ngl-2)^2, Int64(length∂τ), Int64(nelem))
     dims6 = (Int64(length∂τ), Int64(length∂τ))
     dims7 = (Int64(ngl-2)^2, elnbdypints, Int64(nelem))
+    dims7 = (Int64(ngl-2)^2, elnbdypints, Int64(nelem))
     
-    elemLearning = St_elemLearning{T, dims1, dims2, dims3, dims4, dims5, dims6, dims7, backend}()
+    elemLearning = St_elemLearning{T, dims1, dims2, dims3, dims4, dims5, dims6, dims7, dims8, backend}()
     
     return elemLearning
 end
