@@ -1226,9 +1226,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         restructure4periodicity_2D(mesh, nor2, "periodicy")
         # @info mesh.ip2gip
 
-    end
-
-    if mesh.nsd > 2
+    elseif mesh.nsd > 2
 
         nor1 = [1.0, 0.0, 0.0]
         nor2 = [0.0, 1.0, 0.0]
