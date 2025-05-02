@@ -14,7 +14,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("ρ", "ρu", "ρv", "ρw", "ρθ", "ρqt", "ρql")
+    qvars = ["ρ", "ρu", "ρv", "ρw", "ρθ", "ρqt", "ρql"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
     
@@ -70,14 +70,6 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 v = 0.0
                 w = 0.0
                 ρref, u, v, w, θref, Δθ, pref, qt_ref, Δqt, ql_ref = initialize_bomex!(z, new_param_set)
-                # @info ρref, u, v, w, θref, Δθ, pref
-                # ρref = params.ρ
-                # u = params.u
-                # v = params.v
-                # w = params.w
-                # θref = params.θ
-                # Δθ = params.Δθ #K
-                # pref = params.P
                 ρ = ρref
                 θ = θref + Δθ
                 p = pref
