@@ -463,9 +463,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lvisc] = false
     end
     if(!haskey(inputs, :visc_model))
-        inputs[:visc_model] = "av" #Default is artificial viscosity with constant coefficient
-    else
-        inputs[:visc_model] = lowercase(inputs[:visc_model])
+        inputs[:visc_model] = AV() #Default is artificial viscosity with constant coefficient
+    end
+
+    #
+    # saturation adjustment:
+    #
+    if(!haskey(inputs, :lsaturation))
+        inputs[:lsaturation] = false
     end
 
     #

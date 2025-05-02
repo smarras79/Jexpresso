@@ -14,8 +14,9 @@ function user_inputs()
         :diagnostics_at_times => (100:100:10000),
         # :ndiagnostics_outputs => 11,
         :case                 => "bomex",
-        :lsource              => true, 
-        :backend              => CUDABackend(),
+        :lsaturation          => true,
+        :lsource              => true,
+        # :backend              => CUDABackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :visc_model           => "smag",
+        :visc_model           => SMAG(),
         :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         :μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587, 0.1587, 0.1587], #horizontal viscosity constant for momentum

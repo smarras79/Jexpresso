@@ -75,12 +75,6 @@ function params_setup(sem,
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
     
-    # row_partition = map(sem.mesh.parts) do part
-    #     row_partition = LocalIndices(sem.mesh.gnpoin * qp.neqs,part,repeat(sem.mesh.ip2gip,qp.neqs),repeat(sem.mesh.gip2owner,qp.neqs))
-    #     # gM = M
-    #     row_partition
-    # end
-    # gM           = pvector(values->u, row_partition)
     #------------------------------------------------------------------------------------
     # boundary flux arrays
     #------------------------------------------------------------------------------------
@@ -273,7 +267,7 @@ function params_setup(sem,
 		  basis=sem.basis[1], basis_lag = sem.basis[2],
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
-                  inputs, visc_coeff, ivisc_equations,
+                  inputs, VT = inputs[:visc_model], visc_coeff, ivisc_equations,
                   sem.matrix.M, sem.matrix.Minv, pM=pM, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
@@ -299,7 +293,7 @@ function params_setup(sem,
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
-                  visc_coeff, ivisc_equations,
+                  thermo_params, VT = inputs[:visc_model], visc_coeff, ivisc_equations,
                   sem.matrix.M, sem.matrix.Minv, pM=pM,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   phys_grid = sem.phys_grid,

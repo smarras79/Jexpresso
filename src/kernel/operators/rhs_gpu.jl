@@ -310,7 +310,7 @@ for ieq =1:neq
 end
 end
 
-@kernel function _build_rhs_diff_gpu_3D_v0!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, u, qe, uprimitive, x, y, z, connijk, 
+@kernel function _build_rhs_diff_gpu_3D_av!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, u, qe, uprimitive, x, y, z, connijk, 
         dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, visc_coeff, ngl, neq, PhysConst, lpert)
 
     ie = @index(Group, Linear)
@@ -479,7 +479,7 @@ end
 end
 
 
-@kernel function _build_rhs_diff_gpu_3D_v1!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, u, qe, uprimitive, x, y, z, connijk, 
+@kernel function _build_rhs_diff_gpu_3D_smag!(RHS_diff, rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, u, qe, uprimitive, x, y, z, connijk, 
     dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, Je, dψ, ω, Minv, visc_coeff, ngl, neq, Δeffective_s, PhysConst, lpert)
 
     ie = @index(Group, Linear)
