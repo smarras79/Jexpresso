@@ -52,10 +52,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mountain parameters
         #---------------------------------------------------------------------------
-        :lwarp               => true,
+        :lwarp               => false,
         :mount_type          => "agnesi",
         :a_mount             => 10000.0,
-        :h_mount             => 1.0,
+        :h_mount             => 0.0, #1.0
         :c_mount             => 0.0,
         #---------------------------------------------------------------------------
         # Filter parameters
@@ -67,8 +67,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
-        :loutput_pert        => true,  #this is only implemented for VTK for now
+        :outformat         => "vtk",
+        :loutput_pert      => true,  #this is only implemented for VTK for now
+        :output_dir        => "./output",
+        :loverwrite_output => true,
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
