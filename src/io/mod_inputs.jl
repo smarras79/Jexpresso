@@ -468,6 +468,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:visc_model] = lowercase(inputs[:visc_model])
     end
 
+    
+
     #
     # Array of user-defined constant with a user-given meaning. For example, this is used in drivers for the elliptic problems
     #
