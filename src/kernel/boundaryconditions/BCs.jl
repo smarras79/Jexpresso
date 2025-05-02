@@ -9,6 +9,7 @@ function apply_boundary_conditions!(u, uaux, t,qe,
                                     ω, neqs, inputs, AD, SD)
     
     if inputs[:lperiodic_1d] && typeof(SD) == NSD_1D
+       
         apply_periodicity!(u, uaux, t,qe,
                            npoin_linear, ψ, dψ,
                            RHS, rhs_el, ubdy,

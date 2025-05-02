@@ -74,7 +74,7 @@ function params_setup(sem,
     rhs_diffξ_el = rhs.rhs_diffξ_el
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
-        
+    
     # row_partition = map(sem.mesh.parts) do part
     #     row_partition = LocalIndices(sem.mesh.gnpoin * qp.neqs,part,repeat(sem.mesh.ip2gip,qp.neqs),repeat(sem.mesh.gip2owner,qp.neqs))
     #     # gM = M
