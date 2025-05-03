@@ -163,7 +163,10 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
     intaux = nelpoints - nelintpoints
     
     for iel=1:mesh.nelem
-        
+
+        #
+        # A∂oᵥₒₜ
+        #
         ii = 1
         for i = intaux+1:nelpoints
             ipo = mesh.conn[iel, i]
@@ -172,19 +175,24 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
                 
                 iO = mesh.∂O[i1]
                 
-                EL.A∂Ovo[i1, j1, iel] = A[iO, ipo]
+                EL.A∂Ovo[i1, ii, iel] = A[iO, ipo]
             end
 
+            #
+            # Aᵥₒ∂τₜ
+            #
             for i1=1:length(mesh.∂τ)
                 
                 iτ = mesh.∂τ[i1]
                 
-                EL.Avo∂τ[i1, j1, iel] = A[ipo, iτ]
+                EL.Avo∂τ[ii, i1, iel] = A[ipo, iτ]
             end
-            
+
+            #
+            # Aᵥₒᵥₒ
+            #
             jj = 1
-            for j = intaux+1:nelpoints
-                
+            for j = intaux+1:nelpoints          
                 jpo = mesh.conn[iel, j]
                 
                 EL.Avovo[ii,jj,iel] = A[ipo, jpo]
@@ -195,9 +203,17 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
             end
             ii += 1
         end
+
+        #
+        # Hᵥₒᵥₒ[iel] = A⁻¹ᵥₒᵥₒ[iel]
+        # 
+        EL.Hvovo[:,:,iel] = inv(EL.Avovo[:,:,iel])
+        
     end
     
-
+    #
+    # A∂O∂τ ⊂ A∂τ∂τ
+    #
     for j1=1:length(mesh.∂τ)
         jτ1 = mesh.∂τ[j1]
         
@@ -215,11 +231,17 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
         end
             
     end
-
-    EL.Hvovo = inv(EL.Avovo)
-    @info size(EL.Hvovo)
     
-    #@info size(EL.A∂O∂τ), size(EL.A∂τ∂τ), size(A)
+    #
+    # B∂O∂τ[:,:] = A∂O∂τ - Sum_{iel} A∂Oᵥₒ[:,:,iel]*A⁻¹ᵥₒᵥ[:,:,iel]*Aᵥₒ∂τ[:,:,iel]
+    #
+    intermediate_product = zeros(mesh.length∂O, mesh.length∂τ, mesh.nelem)
+    for i in 1:size(EL.Avo∂τ, 3)
+        intermediate_product[:,:,i] = EL.A∂Ovo[:,:,i]*EL.Hvovo[:,:,i]*EL.Avo∂τ[:,:,i]
+    end
+    EL.B∂O∂τ = EL.A∂O∂τ - sum(intermediate_product, dims=3)
+    
+    @info size(EL.B∂O∂τ)
     @mystop
     
 end
