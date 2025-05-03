@@ -16,8 +16,9 @@ function user_bc_dirichlet!(q,
         qbdy[2] = 0.0
         qbdy[3] = 0.0
         qbdy[4] = 0.0
-        # @info qe[5], qe[1], qe[5]/qe[1]
-        qbdy[5] = 2.0*qe[1] + qe[5]
+        # e_tot
+        qbdy[5] = 59169*q[1]
+        qbdy[6] = 0.0175*q[1]
     end
     
 end
@@ -47,41 +48,10 @@ function user_bc_dirichlet_gpu(q,qe,x,y,z,t,nx,ny,nz,qbdy,lpert)
     T = eltype(q)
     if (lpert)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])
-        #=if (abs(nx) > T(0.001))
-            u = (q[2]+qe[2] - qnl*nx) - qe[2]
-        else
-            u = qbdy[2]
-        end
-        if (abs(ny) > T(0.001))
-            v = (q[3]+qe[3] - qnl*ny) - qe[3]
-        else
-            v = qbdy[3]
-        end
-        if (abs(nz) > T(0.001))
-            w = (q[4]+qe[4] - qnl*nz) - qe[4]
-        else
-            w = qbdy[4]
-        end=#
-        u = (q[2]+qe[2] - qnl*nx) - qe[2]
         v = (q[3]+qe[3] - qnl*ny) - qe[3]
         w = (q[4]+qe[4] - qnl*nz) - qe[4]
     else
         qnl = nx*(q[2]) + ny*(q[3]) + nz*(q[4])
-        #=if (abs(nx) > T(0.001))
-            u = q[2] - qnl*nx
-        else
-            u = qbdy[2]
-        end
-        if (abs(ny) > T(0.001))
-            v = q[3] - qnl*ny
-        else
-            v = qbdy[3]
-        end
-        if (abs(nz) > T(0.001))
-            w = q[4] - qnl*nz
-        else
-            w = qbdy[4]
-        end=#
         
         u = (q[2] - qnl*nx)
         v = (q[3] - qnl*ny)

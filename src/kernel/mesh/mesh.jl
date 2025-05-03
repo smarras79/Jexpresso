@@ -554,8 +554,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         #
         # Rewrite coordinates in RCM order:
         #
-        # filename = "./COORDS_LO_" + rank + ".dat" 
-        # open("./COORDS_LO_$rank.dat", "w") do f
+        filename = "./COORDS_LO.dat" 
+        #filename = "./COORDS_LO_" + rank + ".dat" 
+        #open("./COORDS_LO_$rank.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 
                 mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
@@ -563,10 +564,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
-                # @printf(f, " %.6f %.6f 0.000000 %d %d\n", mesh.x[ip],  mesh.y[ip], ip, point2ppoint[ip])
+                #@printf(f, " %.6f %.6f 0.000000 %d %d\n", mesh.x[ip],  mesh.y[ip], ip, point2ppoint[ip])
             end
-        # end #f
-
+        #end #f
+        
     elseif (mesh.nsd == 3)
         
         mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl))
@@ -620,7 +621,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         #
         # Rewrite coordinates in RCM order:
         #
-        # open("./COORDS_LO_$rank.dat", "w") do f
+        #open("./COORDS_LO_$rank.dat", "w") do f
             #open("./COORDS_LO.dat", "w") do f
             for ip = 1:mesh.npoin_linear
                 mesh.x[ip] = get_node_coordinates(get_grid(model))[ip][1]
@@ -628,9 +629,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 mesh.z[ip] = get_node_coordinates(get_grid(model))[ip][3]
                 mesh.ip2gip[ip] = point2ppoint[ip]
                 # mesh.gip2owner[ip] = 1
-                # @printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip, point2ppoint[ip])
+                #@printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip, point2ppoint[ip])
             end
-        # end #f
+       #end #f
     end
 
 
@@ -1184,7 +1185,48 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #----------------------------------------------------------------------
     # periodicity_restructure for MPI
     #----------------------------------------------------------------------
-    if mesh.nsd > 2
+    if mesh.nsd == 2 
+            
+        nor1 = [1.0, 0.0]
+        nor2 = [0.0, 1.0]
+        if ("periodicx" in mesh.bdy_edge_type)
+            finder = false
+            iedge_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_edge_type[iedge_bdy] == "periodicx")
+                    ip = mesh.poin_in_bdy_edge[iedge_bdy,1]
+                    ip1 = mesh.poin_in_bdy_edge[iedge_bdy,2]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
+                    mag = sqrt(t1[1]^2 + t1[2]^2)
+                    nor1 .= [-t1[2]/mag, t1[1]/mag]
+                    finder = true
+                else
+                    iedge_bdy +=1
+                end
+            end
+        end 
+        if ("periodicy" in mesh.bdy_face_type)
+            finder = false
+            iedge_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_edge_type[iedge_bdy] == "periodicy")
+                    ip = mesh.poin_in_bdy_edge[iedge_bdy,1,1]
+                    ip1 = mesh.poin_in_bdy_edge[iedge_bdy,1,2]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
+                    mag = sqrt(t1[1]^2 + t1[2]^2)
+                    nor2 .= [-t1[2]/mag, t1[1]/mag]
+                    finder = true
+                else
+                    iface_bdy +=1
+                end
+            end
+        end
+        restructure4periodicity_2D(mesh, nor1, "periodicx")
+        # @info mesh.ip2gip
+        restructure4periodicity_2D(mesh, nor2, "periodicy")
+        # @info mesh.ip2gip
+
+    elseif mesh.nsd > 2
 
         nor1 = [1.0, 0.0, 0.0]
         nor2 = [0.0, 1.0, 0.0]
@@ -1312,17 +1354,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #
     # END Free memory of obsolete arrays
     #
+
+    #open("./COORDS_GLOBAL.dat", "w") do f
+    #    for ip = 1:mesh.npoin
+    #        #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+    #        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+    #    end
+    #end #f
     
-    #=open("./COORDS_GLOBAL.dat", "w") do f
-        for ip = 1:mesh.npoin
-            #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-            @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-        end
-    end #f
-
-
-    # =#
-   
     # write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./", parts, nparts)
 
     #
@@ -1343,6 +1382,136 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #writevtk(model,"gmsh_grid")
 end
 
+
+function restructure4periodicity_2D(mesh, norm, periodic_direction)
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    rank_sz = MPI.Comm_size(comm)
+    per_ip = Int[]
+    ngl = mesh.ngl
+    for iedge_bdy =1:size(mesh.bdy_edge_type,1)
+        for k=1:ngl
+            ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
+            if (mesh.bdy_edge_type[iedge_bdy] == periodic_direction)
+                per_ip = [per_ip; ip]
+            end
+        end
+    end
+
+    if (mesh.lLaguerre)
+        e_iter = 1
+        for iedge_bdy =1:size(mesh.bdy_edge_type,1)
+            if (mesh.bdy_edge_type[iedge_bdy] == "Laguerre")
+                if (mesh.poin_in_bdy_edge[iedge_bdy,1] in per_ip)
+                    for k = 2:mesh.ngr
+                        ip = mesh.connijk_lag[e_iter,1,k]
+                        per_ip = [per_ip; ip]
+                    end
+                elseif (mesh.poin_in_bdy_edge[iedge_bdy,mesh.ngl] in per_ip)
+                    for k = 2:mesh.ngr
+                        ip = mesh.connijk_lag[e_iter,mesh.ngl,k]
+                        per_ip = [per_ip; ip]
+                    end
+                end
+                e_iter += 1
+            end
+        end
+    end
+
+    ### remove duplicates
+    unique!(per_ip)
+    x_local  = mesh.x[per_ip]
+    y_local  = mesh.y[per_ip]
+    per_gip  = mesh.ip2gip[per_ip]
+    ip_owner = mesh.gip2owner[per_ip]
+    # @info  mesh.x[per_ip]
+
+    # Gather arrays onto the root processor (rank 0)
+    root = 0
+	# Gather per_gip
+    buffer_sz::Int32    = size(per_ip, 1)
+    # @info rank, buffer_sz
+    recv_counts  = MPI.Gather(buffer_sz, 0, comm)
+    # total_counts = sum(recv_counts)
+    # if total_counts == 0
+        # return
+    # end
+    # else
+    # if total_counts == 0
+    #     return
+    # end
+
+    x_gather     = MPI.gather(x_local, comm)
+    y_gather     = MPI.gather(y_local, comm)
+    gathered_per = MPI.gather(per_gip, comm)
+    owner_gather = MPI.gather(ip_owner, comm)
+    if mesh.rank == root
+
+    # On the root processor, combine and remove duplicates
+        # Concatenate gathered arrays
+        x              = vcat(x_gather...)
+        y              = vcat(y_gather...)
+        global_per_gip = vcat(gathered_per...)
+        owner          = vcat(owner_gather...)
+
+        sz = size(global_per_gip,1)
+		for i = 1:sz
+            i1 = i+1
+            for i1 = (i+1):sz
+                if global_per_gip[i] == global_per_gip[i1]
+                    continue
+                end
+                vec = [x[i] - x[i1], y[i] - y[i1]]
+                # @info vec, norm
+                if (determine_colinearity(vec, norm))
+                    xt = x[i1]
+                    yt = y[i1]
+                    xi = x[i]
+                    yi = y[i]
+                    if (yi == 0 && yt == 0)
+                        comp1 = xi < xt
+                    else
+                        comp1 = xi*abs(yi) < xt*abs(yt)
+                    end
+                    if (xi ==0 && xt == 0)
+                        comp2 = yi < yt
+                    else
+                        comp2 = yi*abs(xi) < yt*abs(xt)
+                    end
+                    # @info "found", global_per_gip[i], global_per_gip[i1]
+                    if (comp1 || comp2)
+                        global_per_gip[i1] = global_per_gip[i]
+                        if owner[i1] != owner[i]
+                            owner[i1] = owner[i]
+                        end
+                    else
+                        global_per_gip[i] = global_per_gip[i1]
+                        if owner[i1] != owner[i]
+                            owner[i] = owner[i1]
+                        end
+                    end
+                    # break
+                else
+                    continue
+                end
+            end
+        end
+		# do something for global_per_gip
+        s_gip_vbuf   = VBuffer(global_per_gip, recv_counts)
+        s_owner_vbuf = VBuffer(owner, recv_counts)
+    else
+        s_gip_vbuf   = VBuffer(nothing)
+        s_owner_vbuf = VBuffer(nothing)
+    end
+    MPI.Barrier(comm)
+    per_ip_updated = MPI.Scatterv!(s_gip_vbuf,zeros(eltype(per_gip), buffer_sz), 0, comm)
+    owner_updated  = MPI.Scatterv!(s_owner_vbuf,zeros(eltype(ip_owner), buffer_sz), 0, comm)
+    # per_ip_updated = MPI.Scatterv!(global_per_gip,buffer_sz, 0, comm)
+
+    mesh.ip2gip[per_ip]    .= per_ip_updated
+    mesh.gip2owner[per_ip] .= owner_updated
+end
 
 function restructure4periodicity_3D(mesh, norm, periodic_direction)
 
@@ -1769,7 +1938,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
     end
     
     #poin_in_edge::Array{TInt, 2}  = zeros(mesh.nedges, mesh.ngl)
-    # open("./COORDS_HO_edges_$rank.dat", "w") do f
+    #open("./COORDS_HO_edges_$rank.dat", "w") do f
         #
         # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
         #
@@ -1808,12 +1977,12 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
                 # mesh.gip2owner[ip] = 1
                 
                 #@printf(" lgl %d: %d %d ", l, iedge_g, mesh.poin_in_edge[iedge_g, l])
-            #    @printf(f, " %.6f %.6f 0.000000 %d %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip, gip, edge2pedge[iedge_g])
+                #@printf(f, " %.6f %.6f 0.000000 %d %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip, gip, edge2pedge[iedge_g])
                 ip  = ip + 1
                 gip = operator(gip , 1)
             end
         end
-    # end #do f
+    #end #do f
     #show(stdout, "text/plain", poin_in_edge)
     #@info "-----2D edges"
     
@@ -2237,7 +2406,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     end
     #show(stdout, "text/plain", mesh.conn')
 
-
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
     return 
 end
@@ -2329,7 +2497,7 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
                     mesh.ip2gip[ip] = gip
                     #OLD ORDERING
                     #mesh.connijk[iel, m, l] = ip
-      #              @printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
+                    #@printf(f, " %.6f %.6f 0.000000 %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], ip)
                     
 	                ip = ip + 1
 	                gip = gip + 1
