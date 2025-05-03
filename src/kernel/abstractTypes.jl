@@ -60,11 +60,13 @@ abstract type AbstractPert end
 struct PERT  <: AbstractPert end
 struct TOTAL <: AbstractPert end
 
-abstract type AbstractOutFormat end
-struct PNG <: AbstractOutFormat end
-struct ASCII <: AbstractOutFormat end
-struct VTK <: AbstractOutFormat end
-struct HDF5 <: AbstractOutFormat end
+#
+# viscosity type
+#
+abstract type AbstractVT end
+struct AV   <: AbstractVT end
+struct SMAG <: AbstractVT end
+
 
 #
 # Boundary flags/conditions
@@ -76,3 +78,9 @@ struct LinearClaw_1 <: AbstractBC end
 struct LinearClaw_KopRefxmax <: AbstractBC end
 struct DirichletExample <: AbstractBC end
 struct bc_space_function <: AbstractBC end
+
+abstract type AbstractOutFormat end
+struct PNG <: AbstractOutFormat end
+struct ASCII <: AbstractOutFormat end
+struct VTK <: AbstractOutFormat end
+struct HDF5 <: AbstractOutFormat end

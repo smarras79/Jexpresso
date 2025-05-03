@@ -11,7 +11,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     # defines neqs, which is used to allocate all necessary equation-dependent arrays
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("u", "v")
+    qvars = ["u", "v"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU()) 
@@ -33,12 +33,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             
             end
         end
-
-        if (inputs[:lwrite_initial] == true)
-            for ivar=1:length(qvars)
-                plot_initial(SD, mesh.x, q.qn[:,ivar], ivar, OUTPUT_DIR)
-            end
-        end
+        
     else
         σ = TFloat(0.15)
         σ2= σ*σ

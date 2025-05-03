@@ -43,7 +43,8 @@ end
 function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, PT=nothing)
     
     epsi = 1.1
-    npoin = size(mesh.x[:,1])[1]
+    npoin = mesh.npoin
+        
     for ivar=1:nvar
         
         idx = (ivar - 1)*npoin
@@ -81,7 +82,7 @@ end
 function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, fig=Figure(),color ="Blue",p=[],marker = :circle, PT=nothing)
     
     epsi = 1.1
-    npoin = size(mesh.x[:,1])
+    npoin = mesh.npoin
     
     for ivar=1:1
         idx = (ivar - 1)*npoin
@@ -106,7 +107,7 @@ end
 function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, varnames; iout=1, nvar=1, PT=nothing)
     
     epsi = 1.1
-    npoin = size(mesh.x[:,1])
+    npoin = mesh.npoin
     
     qout = copy(q)
     qe   = range(0,0,npoin)
@@ -235,7 +236,7 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
 
     nxi = 500
     nyi = 500
-    npoin = floor(Int64, size(q, 1)/nvar)
+    npoin = mesh.npoin
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         
