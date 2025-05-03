@@ -15,8 +15,6 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, dims1, dims2, dim
     Avo∂τ = KernelAbstractions.zeros(backend, T, dims5)
     
     A∂τ∂τ = KernelAbstractions.zeros(backend, T, dims6)
-
-    
 end
 
 function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, T, backend)
