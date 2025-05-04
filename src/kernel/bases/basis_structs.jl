@@ -604,6 +604,7 @@ function LagrangeInterpolatingPolynomials_classic(ξ, ξq, TFloat, backend)
     from https://github.com/fxgiraldo/Element-based-Galerkin-Methods/blob/master/Projects/Project_01_1D_Interpolation/For_Instructors/julia/lagrange_basis.jl
 
 """
+    
     N = size(ξ,1) - 1
     Q = size(ξq,1) - 1
     

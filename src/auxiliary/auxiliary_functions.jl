@@ -58,3 +58,17 @@ function unroll_positive_unique(A::Matrix{<:Int})
 
     return result
 end
+
+# Function to print the matrix in the desired symbolic format
+function print_symbolic_matrix(matrix::Matrix{Int})
+    rows, cols = size(matrix)  # Get the dimensions of the matrix
+
+    for i in 1:rows
+        for j in 1:cols
+            # Print "A" followed by the row and column indices.
+            # Use @printf for formatted output to ensure consistent spacing.
+            @printf "A%d,%d " i j
+        end
+        println() # Move to the next line after each row is printed.
+    end
+end
