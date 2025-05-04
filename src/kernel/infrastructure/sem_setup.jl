@@ -60,7 +60,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])    
     interp, project = build_projection_1d(ξω.ξ)
     
-    ξ,ω = ξω.ξ, ξω.ω    
+    ξ,ω = ξω.ξ, ξω.ω
     if lexact_integration
         #
         # Exact quadrature:
@@ -98,7 +98,6 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         #
         # 2D/3D grids (from GMSH)
         #
-        #@info "grid size data" "xmax, ymax, xmin, ymin", maximum(mesh.x), maximum(mesh.y), minimum(mesh.x), minimum(mesh.y) 
         if (mesh.lLaguerre)
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
             ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta], inputs[:backend])
