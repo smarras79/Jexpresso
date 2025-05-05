@@ -1,11 +1,10 @@
 function user_flux!(F, G, H,
                     q,
                     qe,
-                    mesh::St_mesh,
+                    mesh::St_mesh, param_set,
                     ::CL, ::TOTAL; neqs=4, ip=1)
 
     PhysConst = PhysicalConst{Float64}()
-    param_set = create_updated_TD_Parameters(Float64(101325.0))
     T  = eltype(q)
     z  = mesh.z[ip]
     ρ  = q[1]
