@@ -583,12 +583,21 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
         for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j,k]
             
-            user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
-                       @view(params.uaux[ip,:]),
-                       @view(qe[ip,:]),         #pref
-                       params.mesh,
-                       params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip)
+            if !(params.inputs[:lsaturation])
+                user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
+                        @view(params.uaux[ip,:]),
+                        @view(qe[ip,:]),         #pref
+                        params.mesh,
+                        params.CL, params.SOL_VARS_TYPE;
+                        neqs=params.neqs, ip=ip)
+            else
+                user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
+                        @view(params.uaux[ip,:]),
+                        @view(qe[ip,:]),         #pref
+                        params.mesh, params.thermo_params,
+                        params.CL, params.SOL_VARS_TYPE;
+                        neqs=params.neqs, ip=ip)
+            end
             
             if lsource
                 user_source!(@view(params.S[i,j,k,:]),
