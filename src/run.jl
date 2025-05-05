@@ -117,7 +117,9 @@ end
 # Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
 if Sys.iswindows() == false
-    run(`$cp -f $user_input_file $OUTPUT_DIR`)
+    if rank == 0
+        run(`$cp -f $user_input_file $OUTPUT_DIR`)
+    end
 end
 
 #--------------------------------------------------------
