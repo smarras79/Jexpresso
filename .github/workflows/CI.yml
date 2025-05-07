@@ -21,7 +21,7 @@
         fail-fast: false
         matrix:
           version:
-            - '1.10.0'
+            - '1.11.2'
           arch:
             - x64
           os:
