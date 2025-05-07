@@ -2,11 +2,11 @@ function user_flux!(F, G, H,
                     q,
                     qe,
                     mesh::St_mesh, param_set,
-                    ::CL, ::TOTAL; neqs=4, ip=1)
+                    ::CL, ::TOTAL; neqs=4, ip=1,
+                    x=0.0, y=0.0, z=0.0)
 
-    PhysConst = PhysicalConst{Float64}()
+    # PhysConst = PhysicalConst{Float64}()
     T  = eltype(q)
-    z  = mesh.z[ip]
     ρ  = q[1]
     ρu = q[2]
     ρv = q[3]
