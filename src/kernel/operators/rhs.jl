@@ -596,7 +596,8 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                         @view(qe[ip,:]),         #pref
                         params.mesh, params.thermo_params,
                         params.CL, params.SOL_VARS_TYPE;
-                        neqs=params.neqs, ip=ip)
+                        neqs=params.neqs, ip=ip,
+                        x=x[ip], y=y[ip], z=z[ip])
             end
             
             if lsource
