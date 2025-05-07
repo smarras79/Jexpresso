@@ -102,7 +102,6 @@ if inputs[:loverwrite_output]
 else        
     outstring = rank == 0 ? string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")) : ""
     outstring = MPI.bcast(outstring, 0, comm)
-    @info outstring
 end
 if user_defined_output_dir == "none"
     OUTPUT_DIR = joinpath(case_name_dir, outstring)
