@@ -592,3 +592,4 @@ xkbcommon_jll = "d8fb68d0-12a3-5cfd-a85a-d49703b185fd"
 [compat]
 MPI = "0.20.22"
 MPIPreferences = "0.1.11"
+Thermodynamics = "0.12.7"

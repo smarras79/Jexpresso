@@ -100,7 +100,9 @@ user_defined_output_dir = inputs[:output_dir]
 if inputs[:loverwrite_output]
     outstring = string("output")
 else        
-    outstring = string("output-",  Dates.format(now(), "dduyyyy-HHMMSS"))
+    outstring = rank == 0 ? string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")) : ""
+    outstring = MPI.bcast(outstring, 0, comm)
+    @info outstring
 end
 if user_defined_output_dir == "none"
     OUTPUT_DIR = joinpath(case_name_dir, outstring)
@@ -117,7 +119,9 @@ end
 # Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
 if Sys.iswindows() == false
-    run(`$cp -f $user_input_file $OUTPUT_DIR`)
+    if rank == 0
+        run(`$cp -f $user_input_file $OUTPUT_DIR`)
+    end
 end
 
 #--------------------------------------------------------
