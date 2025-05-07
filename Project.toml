@@ -1,3 +1,7 @@
+name = "Jexpresso"
+uuid = "b6c1962e-2b89-11f0-398d-4f31b209be71"
+version = "0.1.0" #
+
 [deps]
 ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
 AMRVW = "233ec0c9-6b8d-4766-b9a2-a16e389fc38a"
@@ -585,3 +589,7 @@ pprof_jll = "cf2c5f97-e748-59fa-a03f-dda3c62118cb"
 x264_jll = "1270edf5-f2f9-52d2-97e9-ab00b5d0237a"
 x265_jll = "dfaa095f-4041-5dcd-9319-2fabd8486b76"
 xkbcommon_jll = "d8fb68d0-12a3-5cfd-a85a-d49703b185fd"
+
+[compat]
+# Specify Julia version compatibility, e.g.:
+# "julia" = "1.11.2, 1.11.3, 1.11.4"
