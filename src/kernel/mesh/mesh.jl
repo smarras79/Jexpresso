@@ -1187,8 +1187,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #----------------------------------------------------------------------
     if mesh.nsd == 2 
             
-        nor1 = [1.0, 0.0]
-        nor2 = [0.0, 1.0]
+        norx = [1.0, 0.0]
+        nory = [0.0, 1.0]
         if ("periodicx" in mesh.bdy_edge_type)
             finder = false
             iedge_bdy = 1
@@ -1198,7 +1198,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     ip1 = mesh.poin_in_bdy_edge[iedge_bdy,2]
                     t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
                     mag = sqrt(t1[1]^2 + t1[2]^2)
-                    nor1 .= [-t1[2]/mag, t1[1]/mag]
+                    norx .= [-t1[2]/mag, t1[1]/mag]
                     finder = true
                 else
                     iedge_bdy +=1
@@ -1214,23 +1214,21 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     ip1 = mesh.poin_in_bdy_edge[iedge_bdy,1,2]
                     t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1]]
                     mag = sqrt(t1[1]^2 + t1[2]^2)
-                    nor2 .= [-t1[2]/mag, t1[1]/mag]
+                    nory .= [-t1[2]/mag, t1[1]/mag]
                     finder = true
                 else
                     iface_bdy +=1
                 end
             end
         end
-        restructure4periodicity_2D(mesh, nor1, "periodicx")
-        # @info mesh.ip2gip
-        restructure4periodicity_2D(mesh, nor2, "periodicy")
-        # @info mesh.ip2gip
+        restructure4periodicity_2D(mesh, norx, "periodicx")
+        restructure4periodicity_2D(mesh, nory, "periodicy")
 
     elseif mesh.nsd > 2
 
-        nor1 = [1.0, 0.0, 0.0]
-        nor2 = [0.0, 1.0, 0.0]
-        nor3 = [0.0, 0.0, 1.0]
+        norx = [1.0, 0.0, 0.0]
+        nory = [0.0, 1.0, 0.0]
+        norz = [0.0, 0.0, 1.0]
         if ("periodicx" in mesh.bdy_face_type)
             finder = false
             iface_bdy = 1
@@ -1245,28 +1243,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     s2 = t1[3]*t2[1] - t1[1]*t2[3]
                     s3 = t1[1]*t2[2] - t1[2]*t2[1]
                     mag = sqrt(s1^2 + s2^2 + s3^2)
-                    nor1 .= [s1/mag, s2/mag, s3/mag]
-                    finder = true
-                else
-                    iface_bdy +=1
-                end
-            end
-        end
-        if ("periodicz" in mesh.bdy_face_type)
-            finder = false
-            iface_bdy = 1
-            while (finder == false)
-                if (mesh.bdy_face_type[iface_bdy] == "periodicz")
-                    ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
-                    ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
-                    ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
-                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
-                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
-                    s1 = t1[2]*t2[3] - t1[3]*t2[2]
-                    s2 = t1[3]*t2[1] - t1[1]*t2[3]
-                    s3 = t1[1]*t2[2] - t1[2]*t2[1]
-                    mag = sqrt(s1^2 + s2^2 + s3^2)
-                    nor2 = [s1/mag, s2/mag, s3/mag] 
+                    norx .= [s1/mag, s2/mag, s3/mag]
                     finder = true
                 else
                     iface_bdy +=1
@@ -1287,19 +1264,38 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     s2 = t1[3]*t2[1] - t1[1]*t2[3]
                     s3 = t1[1]*t2[2] - t1[2]*t2[1]
                     mag = sqrt(s1^2 + s2^2 + s3^2)
-                    nor3 = [s1/mag, s2/mag, s3/mag]
+                    nory = [s1/mag, s2/mag, s3/mag] 
                     finder = true
                 else
                     iface_bdy +=1
                 end
             end
         end
-        restructure4periodicity_3D(mesh, nor1, "periodicx")
-        # @info mesh.ip2gip
-        restructure4periodicity_3D(mesh, nor2, "periodicz")
-        restructure4periodicity_3D(mesh, nor3, "periodicy")
-        # @info mesh.ip2gip
-
+        if ("periodicz" in mesh.bdy_face_type)
+            finder = false
+            iface_bdy = 1
+            while (finder == false)
+                if (mesh.bdy_face_type[iface_bdy] == "periodicz")
+                    ip = mesh.poin_in_bdy_face[iface_bdy,1,1]
+                    ip1 = mesh.poin_in_bdy_face[iface_bdy,1,2]
+                    ip2 = mesh.poin_in_bdy_face[iface_bdy,2,1]
+                    t1 = [mesh.x[ip] - mesh.x[ip1],mesh.y[ip] - mesh.y[ip1], mesh.z[ip] - mesh.z[ip1]]
+                    t2 = [mesh.x[ip] - mesh.x[ip2],mesh.y[ip] - mesh.y[ip2], mesh.z[ip] - mesh.z[ip2]]
+                    s1 = t1[2]*t2[3] - t1[3]*t2[2]
+                    s2 = t1[3]*t2[1] - t1[1]*t2[3]
+                    s3 = t1[1]*t2[2] - t1[2]*t2[1]
+                    mag = sqrt(s1^2 + s2^2 + s3^2)
+                    norz = [s1/mag, s2/mag, s3/mag]
+                    finder = true
+                else
+                    iface_bdy +=1
+                end
+            end
+        end
+        restructure4periodicity_3D(mesh, norx, "periodicx")
+        restructure4periodicity_3D(mesh, nory, "periodicy")
+        restructure4periodicity_3D(mesh, norz, "periodicz")
+        
     end
     #----------------------------------------------------------------------
     # END periodicity_restructure for MPI
