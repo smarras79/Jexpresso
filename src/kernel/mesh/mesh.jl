@@ -1227,8 +1227,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     elseif mesh.nsd > 2
 
         norx = [1.0, 0.0, 0.0]
-        norz = [0.0, 1.0, 0.0]
-        nory = [0.0, 0.0, 1.0]
+        nory = [0.0, 1.0, 0.0]
+        norz = [0.0, 0.0, 1.0]
         if ("periodicx" in mesh.bdy_face_type)
             finder = false
             iface_bdy = 1
