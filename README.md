@@ -337,6 +337,15 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
+
+```bash
+push!(empty!(ARGS), "CompEuler", "3d_bomex");
+include("./src/Jexpresso.jl")
+```
+<img src="assets/bomex.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
 ## Setup and Run with MPI
 
 JEXPRESSO supports parallel execution using either OpenMPI or MPICH. Follow these steps to configure and run with your preferred MPI implementation.
