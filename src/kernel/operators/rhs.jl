@@ -540,7 +540,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              neqs=params.neqs, x=x[ip], y=y[ip], xmax=xmax, xmin=xmin, ymax=ymax)
             end
 
-         #=   if luser_function
+         #=  SM  if luser_function
                 user_function!(@view(params.fijk[i,j,:]), SD,
                                @view(params.uaux[ip,:]),
                                @view(qe[ip,:]),
@@ -550,7 +550,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
             end
             =#
         end
-       #= 
+       #= SM
         _∇f!(params.∇f_el, params.fijk,
              params.mesh.ngl,
              params.basis.dψ, params.ω,
@@ -569,7 +569,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
     end
 
-  #=  params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
+  #= SM params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
     params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]=#
 
 end
@@ -584,27 +584,32 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
             ip = connijk[iel,i,j,k]
             
             if !(params.inputs[:lsaturation])
-                user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
-                        @view(params.uaux[ip,:]),
-                        @view(qe[ip,:]),         #pref
-                        params.mesh,
-                        params.CL, params.SOL_VARS_TYPE;
-                        neqs=params.neqs, ip=ip)
+                user_flux!(@view(params.F[i,j,k,:]),
+                           @view(params.G[i,j,k,:]),
+                           @view(params.H[i,j,k,:]),
+                           @view(params.uaux[ip,:]),
+                           @view(qe[ip,:]),
+                           params.mesh,
+                           params.CL, params.SOL_VARS_TYPE;
+                           neqs=params.neqs, ip=ip)
             else
-                user_flux!(@view(params.F[i,j,k,:]), @view(params.G[i,j,k,:]), @view(params.H[i,j,k,:]),
-                        @view(params.uaux[ip,:]),
-                        @view(qe[ip,:]),         #pref
-                        params.mesh, params.thermo_params,
-                        params.CL, params.SOL_VARS_TYPE;
-                        neqs=params.neqs, ip=ip,
-                        x=x[ip], y=y[ip], z=z[ip])
+                user_flux!(@view(params.F[i,j,k,:]),
+                           @view(params.G[i,j,k,:]),
+                           @view(params.H[i,j,k,:]),
+                           @view(params.uaux[ip,:]),
+                           @view(qe[ip,:]),         #pref
+                           params.mesh, params.thermo_params,
+                           params.CL, params.SOL_VARS_TYPE;
+                           neqs=params.neqs, ip=ip,
+                           x=x[ip], y=y[ip], z=z[ip])
             end
             
             if lsource
                 user_source!(@view(params.S[i,j,k,:]),
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),          #ρref 
-                             params.mesh.npoin, params.CL, params.SOL_VARS_TYPE; neqs=params.neqs,
+                             params.mesh.npoin, params.CL,
+                             params.SOL_VARS_TYPE; neqs=params.neqs,
                              x=x[ip], y=y[ip], z=z[ip], xmax=xmax, xmin=xmin, zmax=zmax)
                 if (params.inputs[:lmoist])
                     add_micro_precip_sources!(params.mp, params.mp.flux_lw[ip], params.mp.flux_sw[ip], params.mp.Tabs[ip], params.mp.S_micro[ip],

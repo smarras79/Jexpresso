@@ -1,11 +1,10 @@
 function user_flux!(F, G, H,
                     q,
                     qe,
-                    mesh::St_mesh, param_set,
-                    ::CL, ::TOTAL; neqs=4, ip=1,
-                    x=0.0, y=0.0, z=0.0)
+                    mesh::St_mesh, 
+                    ::CL, ::TOTAL; neqs=4, ip=1)
 
-    # PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{Float64}()
     T      = eltype(q)
     
     ρ      = q[1]
@@ -18,14 +17,13 @@ function user_flux!(F, G, H,
     v     = ρv/ρ
     w     = ρw/ρ
     e_tot = ρe_tot/ρ
-
-    _grav = T(TP.grav(param_set))
-    e_pot = _grav * z
+    
+    e_pot = 0.0 #PhysConst.g * z
     e_kin = T(1 // 2) * (u^2 + v^2 + w^2)
     e_int = e_tot - e_pot - e_kin
-   
-    Temp = TD.air_temperature(param_set, e_int, 0.0)
-    Pressure = TD.air_pressure(param_set,Temp, ρ, 0.0)
+    
+    Temp = e_int/PhysConst.cv
+    Pressure = perfectGasLaw_ρTtoP(PhysConst, ρ=ρ, Temp=Temp)
     
     F[1] = ρu
     F[2] = ρu*u .+ Pressure
