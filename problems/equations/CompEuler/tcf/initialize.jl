@@ -15,8 +15,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
-    qoutvars = ["ρ", "u", "v", "w", "e_tot"]
+    qvars = ["ρ", "ρu", "ρv", "ρw", "ρe"]
+    qoutvars = ["ρ", "u", "v", "w", "e"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
@@ -31,7 +31,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             
             x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
                       
-            u = 0.0
+            u = 2.0
             v = 0.0
             w = 0.0
 
