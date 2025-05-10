@@ -49,7 +49,7 @@ cp ../theta/*.jl .
 ## Step 5: Configure Initial Conditions in initialize.jl
 Open the initialize.jl file in a text editor. In this file, you will need to define and initialize the solution array q. The structure of q depends on the dimensionality of your problem and the number of conserved variables (e.g., density, momentum components, energy).
 
-# Example for the 2D Euler equations density (rho), momentum (rho u), and potential temperature
+### Example of initialization for the 2D Euler equations density (rho), momentum (rho u), and potential temperature
 
 ```
 function initialize(SD::NSD_2D, 
@@ -118,3 +118,73 @@ end
 ```
 
 WARNING: refer to a proper working [code](https://github.com/smarras79/Jexpresso/blob/master/problems/equations/CompEuler/theta/initialize.jl) rather than the simplified version above. The one above was given as an example of what an initialization file may look like.
+
+## Add the fluxes and sources depending on the equations that you are solving
+
+If we were to solve the 2D Euler equations of compressible flows with gravity, where `q` and the fluxes are defined as
+
+$${\bf q}=\begin{bmatrix}
+\rho \\
+\rho u\\
+\rho v\\
+\rho \theta
+\end{bmatrix}\quad {\bf F}1=\begin{bmatrix}
+\rho u\\
+\rho u^2 + p\\
+\rho u v\\
+\rho u \theta
+\end{bmatrix}\quad {\bf F}2=\begin{bmatrix}
+\rho v\\
+\rho v u\\
+\rho v^2 + p\\
+\rho v \theta
+\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
+0\\
+0\\
+-\rho g\\
+0
+\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
+0\\
+u_{xx} + u_{zz}\\
+v_{xx} + v_{zz}\\
+\theta_{xx} + \theta_{zz}
+\end{bmatrix},$$
+
+then the function [user_flux.jl](https://github.com/smarras79/Jexpresso/blob/master/problems/equations/CompEuler/theta/user_flux.jl) is imply:
+
+```
+function user_flux!(F, 
+                    G, 
+                    SD::NSD_2D, 
+                    q, qe,
+                    mesh::St_mesh, 
+                    ::CL, 
+                    ::TOTAL; 
+                    neqs=4, ip=1)
+
+    PhysConst = PhysicalConst{Float64}()
+    
+    ρ  = q[1]
+    ρu = q[2]
+    ρv = q[3]
+    ρθ = q[4]
+    θ  = ρθ/ρ
+    u  = ρu/ρ
+    v  = ρv/ρ
+    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    
+    F[1] = ρu
+    F[2] = ρu*u .+ Pressure
+    F[3] = ρv*u
+    F[4] = ρθ*u
+
+    G[1] = ρv
+    G[2] = ρu*v
+    G[3] = ρv*v .+ Pressure
+    G[4] = ρθ*v
+end
+```
+Notice how there are no loops and the `F` and `G` are exactly defined as you'd write them on paper.
+
+
+

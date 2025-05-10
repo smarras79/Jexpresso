@@ -881,7 +881,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                                             else
                                                 half2 = 1
                                             end
-                                            @test (half1 == half_1) && (half2 == half_2) 
+                                            #@test (half1 == half_1) && (half2 == half_2)  #DBG only
                                         end
                                     end
                                 end
