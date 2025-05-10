@@ -32,7 +32,7 @@ function parse_commandline()
         
         "eqs_case"
         help = "case name in equations directory"
-        default = "theta"
+        default = "wave1d"
         required = false
         
         "CI_MODE"

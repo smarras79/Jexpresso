@@ -249,12 +249,12 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
         for i2=1:length(mesh.∂O)  #column B[i1][i2]
             
             j2 = findall(x->x==mesh.∂O[i2], mesh.∂τ)
-            #findindex(mesh.∂τ, mesh.∂τ[j2] == ∂O[i2])
-            EL.B∂O∂O[i1, i2] = EL.B∂O∂τ[i1, j2]
             
+            EL.B∂O∂O[i1, i2] = EL.B∂O∂τ[i1, j2]
+            @info i1, i2, EL.B∂O∂O[i1, i2]
         end        
     end
-        
+    
     
     @info size(EL.B∂O∂τ)
     @mystop
