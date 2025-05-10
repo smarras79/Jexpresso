@@ -833,62 +833,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     end
                 end
                 push!(mesh.non_conforming_facets, [cfacet, cid, pfacet, pid, lfacetid - offset, half_1, half_2])
-                # @info rank, cfacet, pfacet, facet_glue
-                # comm_ip = intersect(mesh.conn[pid,:], mesh.conn[cid,:])
-                # @info "coords: ",  mesh.x[mesh.conn[pid,1:8]], mesh.y[mesh.conn[pid,1:8]], mesh.z[mesh.conn[pid,1:8]]
-                # @info "comm_coord", mesh.x[comm_ip], mesh.y[comm_ip], mesh.z[comm_ip] 
-                for k = 1:ngl
-                    for j = 1:ngl
-                        for i = 1:ngl
-                            pip = mesh.connijk[pid, k, j, i]
-                            for n = 1:ngl
-                                for m = 1:ngl
-                                    for l = 1:ngl
-                                        cip = mesh.connijk[cid, n, m, l]
-                                        if pip == cip
-                                            if lfacetid-offset == 1
-                                                # @info "front, ", half, (k, i), half_1, half_2
-                                                x1 = k
-                                                x2 = i
-                                            elseif lfacetid-offset == 2
-                                                # @info "back, ", half, (k, i), half_1, half_2
-                                                x1 = k
-                                                x2 = i
-                                            elseif lfacetid-offset == 3
-                                                # @info "bottom, ", half, (k, j), half_1, half_2
-                                                x1 = k
-                                                x2 = j
-                                            elseif lfacetid-offset == 4
-                                                # @info "top, ", half, (k, j), half_1, half_2
-                                                x1 = k
-                                                x2 = j
-                                            elseif lfacetid-offset == 5
-                                                # @info "right, ", half, (j, i), half_1, half_2
-                                                x1 = j
-                                                x2 = i
-                                            elseif lfacetid-offset == 6
-                                                # @info "left, ", half, (j, i), half_1, half_2
-                                                x1 = j
-                                                x2 = i
-                                            end
-                                            if x1==1
-                                                half1 = 2
-                                            else
-                                                half1 = 1
-                                            end
-                                            if x2 == 1
-                                                half2 = 2
-                                            else
-                                                half2 = 1
-                                            end
-                                            @test (half1 == half_1) && (half2 == half_2) 
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
             end
         end
     end
