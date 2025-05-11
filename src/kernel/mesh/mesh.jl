@@ -363,7 +363,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
     #get_isboundary_face(topology,mesh.nsd-1)
     if !lamr_mesh
-        if rank == 1
         println_rank(" # GMSH LINEAR GRID PROPERTIES"; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. Global points         : ", mesh.gnpoin_linear; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. Global elements       : ", mesh.gnelem; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -389,7 +388,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             end
         end
             println_rank(" # GMSH LINEAR GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
-        end
     end
 
     ngl                     = mesh.nop + 1
@@ -407,7 +405,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + (mesh.nsd - 2)*tot_vol_internal_nodes
     
     if (mesh.nop > 1) && (!lamr_mesh)
-        if rank == 1
         println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES"; msg_rank = rank, suppress = mesh.msg_suppress)
         MPI.Barrier(comm)
         if mesh.msg_suppress == false
@@ -423,7 +420,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             end
         end
             println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
-        end
     end
     
     #
