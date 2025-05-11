@@ -293,8 +293,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         error( " WRONG NSD: This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
     end
     
-
-
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
 
     # Write the partitioned model to a VTK file
@@ -304,8 +302,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     if ladaptive == true
         writevtk(partitioned_model.dmodel, vtk_directory)
     end
-
-
 
     #dump(topology)
     #
@@ -331,7 +327,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         point2ppoint = Geometry.get_face_to_parent_face(model,POIN_flg)
         edge2pedge   = Geometry.get_face_to_parent_face(model,EDGE_flg)
         face2pface   = Geometry.get_face_to_parent_face(model,FACE_flg)
-        elm2pelm    = Geometry.get_face_to_parent_face(model,ELEM_flg)
+        elm2pelm     = Geometry.get_face_to_parent_face(model,ELEM_flg)
     end
     # @info rank, p2pp, point2ppoint
     if ladaptive == true
@@ -343,7 +339,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         num_hanging_facets = 0
     end
     # @info rank, hanging_vert_glue, local_to_global(elgids), "a", hanging_facet_glue,num_hanging_facets
-
 
     mesh.gnpoin_linear = num_faces(partitioned_model,POIN_flg)    
     mesh.gnpoin        = mesh.gnpoin_linear         #This will be updated for the high order grid
@@ -368,6 +363,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
     #get_isboundary_face(topology,mesh.nsd-1)
     if !lamr_mesh
+        if rank == 1
         println_rank(" # GMSH LINEAR GRID PROPERTIES"; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. Global points         : ", mesh.gnpoin_linear; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. Global elements       : ", mesh.gnelem; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -392,7 +388,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 MPI.Barrier(comm)
             end
         end
-        println_rank(" # GMSH LINEAR GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
+            println_rank(" # GMSH LINEAR GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
+        end
     end
 
     ngl                     = mesh.nop + 1
@@ -410,6 +407,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.npoin = tot_linear_poin + tot_edges_internal_nodes + tot_faces_internal_nodes + (mesh.nsd - 2)*tot_vol_internal_nodes
     
     if (mesh.nop > 1) && (!lamr_mesh)
+        if rank == 1
         println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES"; msg_rank = rank, suppress = mesh.msg_suppress)
         MPI.Barrier(comm)
         if mesh.msg_suppress == false
@@ -424,7 +422,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 MPI.Barrier(comm)
             end
         end
-        println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
+            println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
+        end
     end
     
     #
