@@ -39,7 +39,7 @@ Navigate into the newly created directory.
 cd Hello
 ```
 
-## Step 4: Copy Essential Files
+## Step 4: Copy Essential Files from and Existing Problem:
 Copy the generic solver files from the theta directory into your new case directory. These files provide the basic structure for your simulation.
 
 ```
@@ -186,5 +186,13 @@ end
 ```
 Notice how there are no loops and the `F` and `G` are exactly defined as you'd write them on paper.
 
+SImilarly, you handle the source through [user_source.jl](https://github.com/smarras79/Jexpresso/blob/master/problems/equations/CompEuler/theta/user_source.jl).
+
+Now you can run it as usual. For example, from the Julia REPL using:
+
+```bash
+push!(empty!(ARGS), "CompEuler", "Hello");
+include("./src/Jexpresso.jl")
+```
 
 
