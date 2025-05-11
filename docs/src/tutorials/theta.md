@@ -10,43 +10,43 @@ Before starting, ensure you have the following:
 * **Jexpresso Repository:** The `Jexpresso.jl` framework needs to be accessible. This tutorial assumes you have the repository cloned locally. If not, you can clone it using Git:
     ```bash
     git clone https://github.com/smarras79/Jexpresso.git
+    ```
+    ```bash
     git clone https://github.com/smarras79/JexpressoMeshes.git
+    ```
+    ```bash
     cd Jexpresso
+    ```
+    ```bash
     ln -s ../JexpressoMeshes/meshes .
     ```
 
-# Creating a New Problem called Hello in, e.g., ```Jexpresso/problems/equations/CompEuler/```
-
-## Step 1: Navigate to the Problems Directory
-
-First, open your terminal and navigate to the `problems/equations/CompEuler` directory within your CompEuler repository.
+## Creating a New Problem called `Hello` in ```Jexpresso/problems/equations/CompEuler/```
 
 ```bash
 cd problems/equations/CompEuler
 ```
 
-## Step 2: Create a New Directory for Your Case
-Next, create a new directory to house the files for your specific problem. Choose a descriptive name for Hello.
+- Step2: Create a New Directory for Your Case
 
 ```
 mkdir Hello
 ```
 
-## Step 3: Enter the New Case Directory
-Navigate into the newly created directory.
+- Step3: Enter the New Case Directory
 
 ```
 cd Hello
 ```
 
-## Step 4: Copy Essential Files
+- Step4: Copy Essential Files
 Copy the generic solver files from the theta directory into your new case directory. These files provide the basic structure for your simulation.
 
 ```
 cp ../theta/*.jl .
 ```
 
-## Step 5: Configure Initial Conditions in initialize.jl
+- Step5: Configure Initial Conditions in initialize.jl
 Open the initialize.jl file in a text editor. In this file, you will need to define and initialize the solution array q. The structure of q depends on the dimensionality of your problem and the number of conserved variables (e.g., density, momentum components, energy).
 
 ### Example of initialization for the 2D Euler equations density (rho), momentum (rho u), and potential temperature
