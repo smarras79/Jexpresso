@@ -147,7 +147,6 @@ end  # End of module JeGeometry
 
 
 function get_boundary_cells(model,nsd)
-    @info nsd
   facet_dim = 1
   if nsd == 3
     facet_dim = 2
