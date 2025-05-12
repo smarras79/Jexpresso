@@ -5,21 +5,29 @@ using Jexpresso
 
 cp("./docs/Project.toml", "./docs/src/assets/Project.toml", force = true)
 
-include("pages.jl")
+pages = [
+        "Home" => "index.md",
+         "Performance" => "features/performance.md",
+         "Best practices" => "features/best-practices.md",
+         "User inputs" => "tutorials/user_inputs.md",
+         "Tutorials" => Any["tutorials/running-jexpresso.md", 
+                            "tutorials/newcase.md",
+                            ],
+        ]
 
-makedocs(sitename = "Jexpresso.jl",
-         authors = "Simone Marras, Yassine Tissaoui, Hang Wang",
-         format = Documenter.HTML(assets = ["assets/favicon.ico"],
-                                  size_threshold=nothing
-                                  ),
-         
-         modules = [Jexpresso],
-         doctest = false,
-         clean = true,
-         pages = pages,
-         warnonly = [:cross_references,:missing_docs],
-         checkdocs = :exports,
-         )
-
-deploydocs(repo="github.com/smarras79/Jexpresso.jl.git";
-           push_preview = true)
+makedocs(
+    sitename = "Jexpresso.jl",
+    authors = "Simone Marras, Yassine Tissaoui, Hang Wang",
+    format = Documenter.HTML(
+      size_threshold=nothing
+    ),
+    modules = [Jexpresso],
+    pages = pages,
+    doctest = false,
+    warnonly = [:cross_references,:missing_docs],
+    checkdocs = :exports,
+    )
+      
+    deploydocs(
+        repo = "github.com/smarras79/Jexpresso.jl.git",
+    )
