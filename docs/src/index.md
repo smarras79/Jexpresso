@@ -177,7 +177,7 @@ If you are interested in contributing, please get in touch:
 
 To install and run the code assume Julia 1.11.0
 
-## Setup with CPUs
+## Setup with CPUs on one core from the Julia REPL:
 
 ```bash
 cd $JEXPRESSO_HOME
@@ -198,6 +198,52 @@ include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
+## Setup an MPI run:
+
+1. Basic Execution
+```bash
+mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<CASE_NAME>"); include("./src/Jexpresso.jl")'
+```
+
+2. Implementation-Specific Examples
+```bash
+mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
+```
+
+### Troubleshooting
+
+- **Library conflicts:** Clear existing preferences:
+  ```bash
+  rm -f LocalPreferences.toml
+  ```
+- **Path issues:** Verify paths with:
+  ```bash
+  which mpiexec
+  which mpirun
+  ```
+  You may have to use the full aboslute path to mpiexec or mpirun and to julia like this if necessary. For example, if your `mpirun` lives in `/opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun`, then you may want to run the code with the full path like this:
+
+  ```
+  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "theta"); include("./src/Jexpresso.jl")'
+  ```
+
+  Important notice: you need to use the Julia version that is correctly linked to the same MPI installation.
+If you have multiple Julia installations on your machine, use the full path to the one linked to the mpirun at hand.
+
+- **Version mismatches:** Ensure consistent versions:
+  ```bash
+  mpicc --version
+  mpif90 --version
+  ```
+
+
+## Performance
+Jexpresso leverages the properties of the Julia language to make it as fast as a compiled code. Some performance, measured against a legacy and massive Fortran 90/Modern Fortran code, are shown in page
+``@contents
+Pages = [
+    "features/performance.md",
+]
+
 ## Tutorials
 
 The following tutorials will introduce you to the functionality of
@@ -205,7 +251,6 @@ Jexpresso.jl.
 
 ```@contents
 Pages = [
-    "features/performance.md",
     "tutorials/user_inputs.md",
     "tutorials/theta.md",
     "tutorials/define_output_variables.md",
@@ -214,9 +259,10 @@ Pages = [
 Depth = 2
 ```
 
-
 ## Manual
 
 ```@contents
-Pages = ["Jexpresso.md"]
+Pages = [
+          Jexpresso.md",
+     ]
 ```
