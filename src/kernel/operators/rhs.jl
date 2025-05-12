@@ -1171,6 +1171,57 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
     end
 end
 
+function vreman_eddy_viscosity(Δ::Real, grad_u::AbstractArray{<:Real, 3})
+    """
+        Calculates the subgrid-scale eddy viscosity using the Vreman model.
+
+        Args:
+            Δ (Real): The filter width (grid scale).
+            grad_u (AbstractArray{<:Real, 3}): The velocity gradient tensor
+                                               (dU_i/dx_j), a 3x3xN array where N is the
+                                               number of grid points.
+
+        Returns:
+            AbstractArray{<:Real, 1}: The subgrid-scale eddy viscosity (ν_t) at each grid point.
+        """
+    n_points = size(grad_u, 3)
+    ν_t = zeros(n_points)
+    C_v = 0.07 # Vreman model constant
+
+    for i in 1:n_points
+        S = @view grad_u[:, :, i] # Velocity gradient tensor at the current point
+
+        # Calculate the necessary invariants
+        α_ij = zeros(3, 3)
+        β_ij = zeros(3, 3)
+
+        for l in 1:3
+            for m in 1:3
+                α_ij[l, m] = sum(S[k, l] * S[k, m] for k in 1:3)
+                β_ij[l, m] = sum(S[l, k] * S[m, k] for k in 1:3)
+            end
+        end
+
+        b_s = 0.0
+        for l in 1:3, m in 1:3
+            b_s += α_ll * β_mm - α_lm * β_ml
+        end
+
+        if b_s > 1e-12 # Avoid division by zero
+            ν_t[i] = C_v * Δ^2 * sqrt(abs(b_s)) / (sum(α_ii for ii in 1:3))
+        else
+            ν_t[i] = 0.0
+        end
+    end
+
+    return ν_t
+end
+
+function _gradientu(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
+                    ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, iel, ieq, QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
+
+end
+
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, iel, ieq, QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
     
@@ -1181,25 +1232,15 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
             for k = 1:ngl
                 ωJac = ω[k]*ω[l]*ω[m]*Je[iel,k,l,m]
 
-                dqdξ = 0.0
-                dqdη = 0.0
-                dqdζ = 0.0
+                dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
                 @turbo for ii = 1:ngl
                     dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
                     dqdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
                     dqdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
                 end
-                dξdx_klm = dξdx[iel,k,l,m]
-                dξdy_klm = dξdy[iel,k,l,m]
-                dξdz_klm = dξdz[iel,k,l,m]
-
-                dηdx_klm = dηdx[iel,k,l,m]
-                dηdy_klm = dηdy[iel,k,l,m]
-                dηdz_klm = dηdz[iel,k,l,m]
-
-                dζdx_klm = dζdx[iel,k,l,m]
-                dζdy_klm = dζdy[iel,k,l,m]
-                dζdz_klm = dζdz[iel,k,l,m]
+                dξdx_klm = dξdx[iel,k,l,m]; dξdy_klm = dξdy[iel,k,l,m]; dξdz_klm = dξdz[iel,k,l,m]
+                dηdx_klm = dηdx[iel,k,l,m]; dηdy_klm = dηdy[iel,k,l,m]; dηdz_klm = dηdz[iel,k,l,m]
+                dζdx_klm = dζdx[iel,k,l,m]; dζdy_klm = dζdy[iel,k,l,m]; dζdz_klm = dζdz[iel,k,l,m]
 
                 # Calculate physical derivatives of velocity
                 dudx = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
@@ -1280,7 +1321,37 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                      dvdx^2 + dvdy^2 + dvdz^2;
                      dwdx^2 + dwdy^2 + dwdz^2]
 
+
+α11 = dudx*dudx + dvdx*dvdx + dwdx*dwdx
+α22 = dudy*dudy + dvdy*dvdy + dwdy*dwdy
+α33 = dudz*dudz + dvdz*dvdz + dwdz*dwdz
+
+α12 = dudx*dudy + dvdx*dvdy + dwdx*dwdy
+α13 = dudx*dudz + dvdx*dvdz + dwdx*dwdz
+α23 = dudy*dudz + dvdy*dvdz + dwdy*dwdz
+
+α21 = α12
+α31 = α13
+α32 = α23
+
+β11 = dudx*dudx + dudy*dudy + dudz*dudz
+β22 = dvdx*dvdx + dvdy*dvdy + dvdz*dvdz
+β33 = dwdx*dwdx + dwdy*dwdy + dwdz*dwdz
+
+β12 = dudx*dvdx + dudy*dvdy + dudz*dvdz
+β13 = dudx*dwdx + dudy*dwdy + dudz*dwdz
+β23 = dvdx*dwdx + dvdy*dwdy + dvdz*dwdz
+
+β21 = β12
+β31 = β13
+β32 = β23
+
+bs = α11*β11 + α22*β22 + α33*β33 - (β13*β13 + β12*β12)
+    
+
                 Cs = 0.094 # Vreman constant
+
+                Δ2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
 
                 h_max_sq = (1/3) * (Je[iel,k,l,m])^(2/3) # Representative filter width squared (proportional to cell volume^(2/3))
 
@@ -1375,8 +1446,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                 S33 = dwdz
                 # |Sij|
                 Sij    = sqrt(2.0 * (S11*S11 + S12*S12 + S13*S13 + S21*S21 + S22*S22 + S23*S23 + S31*S31 + S32*S32 + S33*S33))
-                delta2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
-
+                Δ2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
+                
                 dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
 
                 @turbo for ii = 1:ngl
@@ -1386,13 +1457,13 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                 end
                 
                 auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
-                dqdx = visc_coeffieq[ieq] * Sij * delta2 * auxi
+                dqdx = 2*visc_coeffieq[ieq] * Sij * Δ2 * auxi
                 
                 auxi = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
-                dqdy = visc_coeffieq[ieq] * Sij * delta2 * auxi
+                dqdy = 2*visc_coeffieq[ieq] * Sij * Δ2 * auxi
                 
                 auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
-                dqdz = visc_coeffieq[ieq] * Sij * delta2 * auxi
+                dqdz = 2*visc_coeffieq[ieq] * Sij * Δ2 * auxi
                 
                 ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
                 ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
@@ -1415,70 +1486,6 @@ end
 
 function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Exact, VT, SD::NSD_2D, ::FD)
     nothing
-end
-
-function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Exact, VT::AV, SD::NSD_2D, ::ContGal)
-    
-    N = params.mesh.ngl
-    Q = N + 1
-
-    for l=1:Q
-        for k=1:Q
-            ωJac = params.ω[k]*params.ω[l]*params.metrics.Je[iel,k,l]
-            
-            dqdξ = 0.0; dqdη = 0.0
-            ρkl = 0.0; ukl = 0.0; vkl = 0.0; Skl = 0.0
-            for n=1:N
-                for m=1:N
-                    ψmk = params.basis.ψ[m,k]
-                    ψnl = params.basis.ψ[n,l]
-                    
-                    dψmk_ψnl = params.basis.dψ[m,k]* params.basis.ψ[n,l]
-                    ψmk_dψnl = params.basis.ψ[m,k]*params.basis.dψ[n,l]
-                    
-                    dqdξ += dψmk_ψnl*params.uprimitiveieq[m,n]
-                    dqdη += ψmk_dψnl*params.uprimitiveieq[m,n]
-                    ukl  +=  ψmk*ψnl*params.uprimitiveieq[m,n]
-                    
-                end
-            end
-
-            dξdx_kl = params.metrics.dξdx[iel,k,l]
-            dξdy_kl = params.metrics.dξdy[iel,k,l]
-            dηdx_kl = params.metrics.dηdx[iel,k,l]
-            dηdy_kl = params.metrics.dηdy[iel,k,l]
-            
-            dqdx = dqdξ*dξdx_kl + dqdη*dηdx_kl
-            dqdx = dqdx*visc_coeff[2]
-
-            dqdy = dqdξ*dξdy_kl + dqdη*dηdy_kl
-            dqdy = dqdy*visc_coeff[2]
-            
-            ∇ξ∇u_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
-            ∇η∇u_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
-            
-            ###### W I P ######
-            for j=1:N
-                for i=1:N
-
-                    dhdξ_ik = basis.dψ[i,k]
-                    dhdη_il = basis.dψ[i,l]
-                    
-                    rhs_diffξ_el[i,l] -= dhdξ_ik * ∇ξ∇u_kl
-                    rhs_diffη_el[k,i] -= dhdη_il * ∇η∇u_kl
-                    
-                    #params.rhs_diffξ_el[iel,i,j,2] -=
-                    #params.rhs_diffξ_el[iel,i,j,3] -=
-                    #params.rhs_diffξ_el[iel,i,j,4] -=
-                    
-                    #params.rhs_diffη_el[iel,i,j,2] -=
-                    #params.rhs_diffη_el[iel,i,j,3] -=
-                    #params.rhs_diffη_el[iel,i,j,4] -=
-                end
-            end
-            
-        end
-    end
 end
 
 function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ)
