@@ -1286,45 +1286,29 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                      dvdx^2 + dvdy^2 + dvdz^2;
                      dwdx^2 + dwdy^2 + dwdz^2]
 
+                α11 = dudx; α12 = dudy; α13 = dudz
+                α21 = dvdx; α22 = dvdy; α23 = dvdz
+                α31 = dwdx; α32 = dwdy; α33 = dwdz
 
-                α11 = dudx*dudx + dvdx*dvdx + dwdx*dwdx
-                α22 = dudy*dudy + dvdy*dvdy + dwdy*dwdy
-                α33 = dudz*dudz + dvdz*dvdz + dwdz*dwdz
-                
-                α12 = dudx*dudy + dvdx*dvdy + dwdx*dwdy
-                α13 = dudx*dudz + dvdx*dvdz + dwdx*dwdz
-                α23 = dudy*dudz + dvdy*dvdz + dwdy*dwdz
-                
-                α21 = α12
-                α31 = α13
-                α32 = α23
+                α = [dudx dudy dudz;
+                     dvdx dvdy dvdz;
+                     dwdx dwdy dwdz]
 
-                β11 = dudx*dudx + dudy*dudy + dudz*dudz
-                β22 = dvdx*dvdx + dvdy*dvdy + dvdz*dvdz
-                β33 = dwdx*dwdx + dwdy*dwdy + dwdz*dwdz
+                S = symmetrize(α)
 
-                β12 = dudx*dvdx + dudy*dvdy + dudz*dvdz
-                β13 = dudx*dwdx + dudy*dwdy + dudz*dwdz
-                β23 = dvdx*dwdx + dvdy*dwdy + dvdz*dwdz
-
-                β21 = β12
-                β31 = β13
-                β32 = β23
-
-                bs = α11*β11 + α22*β22 + α33*β33 - (α12*β21 + α13*β31 + α21*β12 + α23*β32 + α31*β13 + α32*β23)    
-
-                Cs = 0.07 # Vreman constant
                 Δ2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
-                #Δ2 = (1/3) * (Je[iel,k,l,m])^(2/3) # Representative filter width squared (proportional to cell volume^(2/3))
+                β = Δ2 * (α' * α)
+                Bβ = principal_invariants(β)[2]
 
-                #if P[1] * P[2] * P[3] > 1e-18 # Avoid division by zero
-                if α11 + α22 + α33 > 1.0e-18
-                    #ν_vreman = Cs * sqrt(minimum(M) / maximum(P)) * Δ2
-                    ν_vreman = Cs * Δ2 * sqrt(abs(bs)) / (α11 + α22 + α33 + 2*eps(Float64))
-                else
-                    ν_vreman = 0.0
-                end
+                ν₀ = 0.23^2 * Float64(2.5) * sqrt(abs(Bβ / (norm2(α) + eps(Float64))))
 
+                ν = ν₀ 
+                #ν_v = k̂ .* dot(ν, k̂)
+                #ν_h = ν₀ .- ν_v
+                #ν_vreman = SDiagonal(ν_h + ν_v .* f_b²)
+                #D_t = diag(ν) * 0.7
+                ν_vreman = ν
+                
                 dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
                 @turbo for ii = 1:ngl
                     dqdξ += dψ[ii,k]*uprimitive[ii,l,m,ieq]
