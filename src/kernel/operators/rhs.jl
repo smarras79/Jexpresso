@@ -1217,14 +1217,11 @@ function vreman_eddy_viscosity(Δ::Real, grad_u::AbstractArray{<:Real, 3})
     return ν_t
 end
 
-function _gradientu(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
-                    ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, iel, ieq, QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
-
-end
-
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, iel, ieq, QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitive, visc_coeffieq, ω,
+                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs,
+                          iel, ieq, QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
     
+
     ν_vreman = 0.0 # Initialize Vreman viscosity
 
     for m = 1:ngl
@@ -1323,11 +1320,18 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                 #if P[1] * P[2] * P[3] > 1e-18 # Avoid division by zero
                 if α11 + α22 + α33 > 1.0e-18
                     #ν_vreman = Cs * sqrt(minimum(M) / maximum(P)) * Δ2
-                    ν_vreman = Cs * Δ2 * sqrt(abs(bs)) / (α11 + α22 + α33 + 2*epsilon())
+                    ν_vreman = Cs * Δ2 * sqrt(abs(bs)) / (α11 + α22 + α33 + 2*eps(Float64))
                 else
                     ν_vreman = 0.0
                 end
 
+                dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
+                @turbo for ii = 1:ngl
+                    dqdξ += dψ[ii,k]*uprimitive[ii,l,m,ieq]
+                    dqdη += dψ[ii,l]*uprimitive[k,ii,m,ieq]
+                    dqdζ += dψ[ii,m]*uprimitive[k,l,ii,ieq]
+                end
+                
                 # Calculate the viscous terms with Vreman viscosity
                 dqdx = ν_vreman * (dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm)
                 dqdy = ν_vreman * (dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dξdy_klm)
@@ -1414,7 +1418,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                 Δ2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
                 
                 dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
-
                 @turbo for ii = 1:ngl
                     dqdξ += dψ[ii,k]*uprimitive[ii,l,m,ieq]
                     dqdη += dψ[ii,l]*uprimitive[k,ii,m,ieq]
