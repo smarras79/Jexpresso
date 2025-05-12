@@ -1118,7 +1118,7 @@ end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, iel, ieq, QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal)
-    
+
     for m = 1:ngl
         for l = 1:ngl
             for k = 1:ngl
@@ -1171,6 +1171,149 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
     end
 end
 
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, iel, ieq, QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
+    
+    ν_vreman = 0.0 # Initialize Vreman viscosity
+
+    for m = 1:ngl
+        for l = 1:ngl
+            for k = 1:ngl
+                ωJac = ω[k]*ω[l]*ω[m]*Je[iel,k,l,m]
+
+                dqdξ = 0.0
+                dqdη = 0.0
+                dqdζ = 0.0
+                @turbo for ii = 1:ngl
+                    dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
+                    dqdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
+                    dqdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
+                end
+                dξdx_klm = dξdx[iel,k,l,m]
+                dξdy_klm = dξdy[iel,k,l,m]
+                dξdz_klm = dξdz[iel,k,l,m]
+
+                dηdx_klm = dηdx[iel,k,l,m]
+                dηdy_klm = dηdy[iel,k,l,m]
+                dηdz_klm = dηdz[iel,k,l,m]
+
+                dζdx_klm = dζdx[iel,k,l,m]
+                dζdy_klm = dζdy[iel,k,l,m]
+                dζdz_klm = dζdz[iel,k,l,m]
+
+                # Calculate physical derivatives of velocity
+                dudx = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
+                dudy = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
+                dudz = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
+
+                # For Vreman model, we need velocity gradients
+                dvdx = 0.0; dvdy = 0.0; dvdz = 0.0
+                dwdx = 0.0; dwdy = 0.0; dwdz = 0.0
+
+                # Assuming uprimitiveieq holds u, v, w in the last dimension (ieq)
+                if ieq == 1 # u-component
+                    dqvdξ = 0.0; dqvdη = 0.0; dqvdζ = 0.0;
+                    dqwdξ = 0.0; dqwdη = 0.0; dqwdζ = 0.0;
+                    @turbo for ii = 1:ngl
+                        dqvdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,2]
+                        dqvdη += dψ[ii,l]*uprimitiveieq[k,ii,m,2]
+                        dqvdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,2]
+                        dqwdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,3]
+                        dqwdη += dψ[ii,l]*uprimitiveieq[k,ii,m,3]
+                        dqwdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,3]
+                    end
+                    dvdx = dqvdξ*dξdx_klm + dqvdη*dηdx_klm + dqvdζ*dζdx_klm
+                    dvdy = dqvdξ*dξdy_klm + dqvdη*dηdy_klm + dqvdζ*dξdy_klm
+                    dvdz = dqvdξ*dξdz_klm + dqvdη*dηdz_klm + dqvdζ*dξdz_klm
+                    dwdx = dqwdξ*dξdx_klm + dqwdη*dηdx_klm + dqwdζ*dξdx_klm
+                    dwdy = dqwdξ*dξdy_klm + dqwdη*dηdy_klm + dqwdζ*dξdy_klm
+                    dwdz = dqwdξ*dξdz_klm + dqwdη*dηdz_klm + dqwdζ*dξdz_klm
+                elseif ieq == 2 # v-component
+                    dudξ_temp = 0.0; dudη_temp = 0.0; dudζ_temp = 0.0;
+                    dqwdξ = 0.0; dqwdη = 0.0; dqwdζ = 0.0;
+                    @turbo for ii = 1:ngl
+                        dudξ_temp += dψ[ii,k]*uprimitiveieq[ii,l,m,1]
+                        dudη_temp += dψ[ii,l]*uprimitiveieq[k,ii,m,1]
+                        dudζ_temp += dψ[ii,m]*uprimitiveieq[k,l,ii,1]
+                        dqwdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,3]
+                        dqwdη += dψ[ii,l]*uprimitiveieq[k,ii,m,3]
+                        dqwdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,3]
+                    end
+                    dudx = dudξ_temp*dξdx_klm + dudη_temp*dηdx_klm + dudζ_temp*dξdx_klm
+                    dudy = dudξ_temp*dξdy_klm + dudη_temp*dηdy_klm + dudζ_temp*dξdy_klm
+                    dudz = dudξ_temp*dξdz_klm + dudη_temp*dηdz_klm + dudζ_temp*dξdz_klm
+                    dwdx = dqwdξ*dξdx_klm + dqwdη*dηdx_klm + dqwdζ*dξdx_klm
+                    dwdy = dqwdξ*dξdy_klm + dqwdη*dηdy_klm + dqwdζ*dξdy_klm
+                    dwdz = dqwdξ*dξdz_klm + dqwdη*dηdz_klm + dqwdζ*dξdz_klm
+                elseif ieq == 3 # w-component
+                    dudξ_temp = 0.0; dudη_temp = 0.0; dudζ_temp = 0.0;
+                    dqvdξ = 0.0; dqvdη = 0.0; dqvdζ = 0.0;
+                    @turbo for ii = 1:ngl
+                        dudξ_temp += dψ[ii,k]*uprimitiveieq[ii,l,m,1]
+                        dudη_temp += dψ[ii,l]*uprimitiveieq[k,ii,m,1]
+                        dudζ_temp += dψ[ii,m]*uprimitiveieq[k,l,ii,1]
+                        dqvdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,2]
+                        dqvdη += dψ[ii,l]*uprimitiveieq[k,ii,m,2]
+                        dqvdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,2]
+                    end
+                    dudx = dudξ_temp*dξdx_klm + dudη_temp*dηdx_klm + dudζ_temp*dξdx_klm
+                    dudy = dudξ_temp*dξdy_klm + dudη_temp*dηdy_klm + dudζ_temp*dξdy_klm
+                    dudz = dudξ_temp*dξdz_klm + dudη_temp*dηdz_klm + dudζ_temp*dξdz_klm
+                    dvdx = dqvdξ*dξdx_klm + dqvdη*dηdx_klm + dqvdζ*dξdx_klm
+                    dvdy = dqvdξ*dξdy_klm + dqvdη*dηdy_klm + dqvdζ*dξdy_klm
+                    dvdz = dqvdξ*dξdz_klm + dqvdη*dηdz_klm + dqvdζ*dξdz_klm
+                end
+
+                # Calculate Vreman coefficient
+                S11 = dudx
+                S12 = 0.5 * (dudy + dvdx)
+                S13 = 0.5 * (dudz + dwdx)
+                S22 = dvdy
+                S23 = 0.5 * (dvdz + dwdy)
+                S33 = dwdz
+
+                M = [S11^2 + S12^2 + S13^2;
+                     S12^2 + S22^2 + S23^2;
+                     S13^2 + S23^2 + S33^2]
+
+                P = [dudx^2 + dudy^2 + dudz^2;
+                     dvdx^2 + dvdy^2 + dvdz^2;
+                     dwdx^2 + dwdy^2 + dwdz^2]
+
+                Cs = 0.094 # Vreman constant
+
+                h_max_sq = (1/3) * (Je[iel,k,l,m])^(2/3) # Representative filter width squared (proportional to cell volume^(2/3))
+
+                if P[1] * P[2] * P[3] > 1e-30 # Avoid division by zero
+                    ν_vreman_local = Cs * sqrt(minimum(M) / maximum(P)) * h_max_sq
+                    ν_vreman = ν_vreman_local # You might want to handle this assignment differently, e.g., averaging
+                else
+                    ν_vreman = 0.0
+                end
+
+                # Calculate the viscous terms with Vreman viscosity
+                dqdx = ν_vreman * (dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm)
+                dqdy = ν_vreman * (dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dξdy_klm)
+                dqdz = ν_vreman * (dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dξdz_klm)
+
+                ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
+                ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
+                ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac
+
+                @turbo for i = 1:ngl
+                    dhdξ_ik = dψ[i,k]
+                    dhdη_il = dψ[i,l]
+                    dhdζ_im = dψ[i,m]
+
+                    rhs_diffξ_el[iel,i,l,m,ieq] -= dhdξ_ik * ∇ξ∇u_klm
+                    rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η∇u_klm
+                    rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ∇u_klm
+                end
+            end
+        end
+    end
+end
+
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitive, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs,
                           iel, ieq, QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal)
@@ -1181,9 +1324,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                 ωJac = ω[k]*ω[l]*ω[m]*Je[iel,k,l,m]
                 
                 dudξ = 0.0; dudη = 0.0; dudζ = 0.0
-                
                 dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
-                
                 dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
 
                 @turbo for ii = 1:ngl
