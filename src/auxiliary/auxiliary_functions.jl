@@ -73,6 +73,59 @@ function print_symbolic_matrix(matrix::Matrix{Int})
     end
 end
 
+
+function norm2(X::SMatrix{3, 3, FT}) where {FT}
+    abs2(X[1, 1]) +
+    abs2(X[2, 1]) +
+    abs2(X[3, 1]) +
+    abs2(X[1, 2]) +
+    abs2(X[2, 2]) +
+    abs2(X[3, 2]) +
+    abs2(X[1, 3]) +
+    abs2(X[2, 3]) +
+    abs2(X[3, 3])
+end
+
+# ### [Pricipal Invariants](@id tensor-invariants)
+# ```math
+# \textit{I}_{1} = \mathrm{tr(X)} \\
+# \textit{I}_{2} = (\mathrm{tr(X)}^2 - \mathrm{tr(X^2)}) / 2 \\
+# \textit{I}_{3} = \mathrm{det(X)} \\
+# ```
+"""
+    principal_invariants(X)
+
+Calculates principal invariants of a tensor `X`. Returns 3 element tuple containing the invariants.
+"""
+function principal_invariants(X)
+    first = tr(X)
+    second = (first^2 - tr(X .^ 2)) / 2
+    third = det(X)
+    return (first, second, third)
+end
+
+# ### [Symmetrize](@id symmetric-tensors)
+# ```math
+# \frac{\mathrm{X} + \mathrm{X}^{T}}{2} \\
+# ```
+"""
+    symmetrize(X)
+
+Given a (3,3) second rank tensor X, compute `(X + X')/2`, returning a
+symmetric `SHermitianCompact` object.
+"""
+function symmetrize(X)
+    SVector(
+        X[1, 1],
+        (X[2, 1] + X[1, 2]) / 2,
+        (X[3, 1] + X[1, 3]) / 2,
+        X[2, 2],
+        (X[3, 2] + X[2, 3]) / 2,
+        X[3, 3],
+    )
+end
+
+
 # Given a tensor X, return the tensor dot product
 # ```math
 # \sum_{i,j} S_{ij}^2
@@ -81,7 +134,7 @@ end
         norm2(X)
     Given a tensor `X`, computes X:X.
     """
-function norm2(X::SMatrix{3, 3, FT}) where {FT}
+function norm2(X)
         abs2(X[1, 1]) +
         abs2(X[2, 1]) +
         abs2(X[3, 1]) +
@@ -99,24 +152,4 @@ function norm2(X::SHermitianCompact{3, FT, 6}) where {FT}
         abs2(X[2, 2]) +
         2 * abs2(X[3, 2]) +
         abs2(X[3, 3])
-end
-
-# ### [Strain-rate Magnitude](@id strain-rate-magnitude)
-# By definition, the strain-rate magnitude, as defined in
-# standard turbulence modelling is computed such that
-# ```math
-# |\mathrm{S}| = \sqrt{2 \sum_{i,j} \mathrm{S}_{ij}^2}
-# ```
-# where
-# ```math
-# \vec{S}(\vec{u}) = \frac{1}{2}  \left(\nabla\vec{u} +  \left( \nabla\vec{u} \right)^T \right)
-# ```
-# \mathrm{S} is the rate-of-strain tensor. (Symmetric component of the velocity gradient). Note that the
-# skew symmetric component (rate-of-rotation) is not currently computed.
-"""
-    strain_rate_magnitude(S)
-    Given the rate-of-strain tensor `S`, computes its magnitude.
-    """
-function strain_rate_magnitude(S::SHermitianCompact{3, FT, 6}) where {FT}
-    return sqrt(2 * norm2(S))
 end

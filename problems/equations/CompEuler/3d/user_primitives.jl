@@ -43,7 +43,7 @@ end
 
 function user_uout!(uout, u, qe, ::PERT)
 
-    uout[1] = u[1]
+    uout[1] = u[1]-qe[1]
     uout[2] = u[2]/u[1]
     uout[3] = u[3]/u[1]
     uout[4] = u[4]/u[1]
