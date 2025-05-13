@@ -22,10 +22,9 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc               => true, #false by default
-        :ivisc_equations     => [1, 2, 3, 4, 5],
         :visc_model           => VREM(), #SMAG(),
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 0.7
-        :μ                    => [0.0, 0.23^2, 0.23^2, 0.23^2, 0.23^2/0.7],
+        :μ                    => [0.0, 0.43^2, 0.43^2, 0.43^2, 0.43^2],
         #:μ                   => [0.0, 60.0, 60.0, 60.0, 60.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
