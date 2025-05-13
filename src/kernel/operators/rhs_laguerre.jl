@@ -135,7 +135,7 @@ function viscous_rhs_el_laguerre!(u, params, connijk_lag, qe, SD::NSD_2D)
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive_lag[i,j,:]),params.SOL_VARS_TYPE)
         end
         
-        for ieq in params.ivisc_equations    
+        for ieq = 1:params.neqs    
               _expansion_visc_laguerre!(params.rhs_diffξ_el_lag, params.rhs_diffη_el_lag, params.uprimitive_lag, params.visc_coeff, params.ω, params.ω_lag, params.mesh.ngl, params.mesh.ngr, 
             params.basis.ψ, params.basis.dψ, params.basis_lag.ψ, params.basis_lag.dψ, params.metrics_lag.Je, params.metrics_lag.dξdx, params.metrics_lag.dξdy, params.metrics_lag.dηdx, 
             params.metrics_lag.dηdy, params.inputs, iel, ieq, params.QT, SD, params.AD)
