@@ -38,7 +38,7 @@ function uaux2u!(u, uaux, neqs, npoin)
 end
 
 function resetRHSToZero_inviscid!(params)
-    fill!(params.rhs_el, zero(params.T))   
+    fill!(params.rhs_el, zero(params.T))
     fill!(params.RHS,    zero(params.T))
 end
 
@@ -668,6 +668,18 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
 end
 
 function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
+
+    compute_viscosity(μ_dsgs,
+                      params.uaux, #[ip,:]
+                      q1, q2,
+                      params.rhs_el,
+                      Δt, npoin,
+                      elem, ngl,
+                      
+                      params.mesh.connijk,
+                      params.metrics.Je,
+                      params.VT,
+                      SD)
     
     for iel=1:params.mesh.nelem
         
@@ -1517,6 +1529,105 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
         end
     end # i
     =#
+end
+
+function compute_viscosity(μdsgs, q, q1, q2, rhs, Δt, npoin, elem, ngl, connijk, sgsmodel::AV, ::NSD_2D) nothing end
+
+function compute_viscosity(μdsgs, q, q1, q2, rhs, Δt, npoin, elem, ngl, connijk, sgsmodel::SMAG, ::NSD_2D) nothing end
+
+function compute_viscosity(μdsgs, q, q1, q2, rhs, Δt, npoin, elem, ngl, connijk, sgsmodel::VREM, ::NSD_2D) nothing end
+
+function compute_viscosity(μdsgs, q, q1, q2, rhs, Δt, npoin, elem, ngl, connijk, sgsmodel::DSGS, ::NSD_2D)
+    
+    #compute domain averages
+    ρ_avg  = 0.0
+    ρu_avg = 0.0
+    ρv_avg = 0.0
+    ρE_avg = 0.0
+    for e=1:nelem
+        for i=1:ngl, j=1:ngl
+            ip = connijk[i,j,e]
+            ρ_avg  += q[ip,1]
+            ρu_avg += q[ip,2]
+            ρv_avg += q[ip,3]
+            ρE_avg += q[ip,4]
+        end
+    end
+    ρ_avg  = ρ_avg  / (npoin)
+    ρu_avg = ρu_avg / (npoin)
+    ρv_avg = ρv_avg / (npoin)
+    ρE_avg = ρE_avg / (npoin)
+
+    #Get denominator infinity norms
+    ρdiff  = zeros(ngl, ngl, nelem)
+    ρudiff = zeros(ngl, ngl, nelem)
+    ρvdiff = zeros(ngl, ngl, nelem)
+    ρEdiff = zeros(ngl, ngl, nelem)
+    for e=1:nelem
+        for i=1:ngl, j=1:ngl
+            ip = connijk[i,j,,e]
+            
+            ρdiff[i, j, e]  = abs(q[ip,1] - ρ_avg)
+            ρudiff[i, j, e] = abs(q[ip,2] - ρu_avg)
+            ρvdiff[i, j, e] = abs(q[ip,3] - ρv_avg)
+            ρEdiff[i, j, e] = abs(q[ip,4] - ρE_avg)
+        end
+    end
+    denom1 = maximum(ρdiff)  + eps(Float64)
+    denom2 = maximum(ρudiff) + eps(Float64)
+    denom3 = maximum(ρvdiff) + eps(Float64)
+    denom4 = maximum(ρEdiff) + eps(Float64)
+    #@info denom1 denom2 denom3
+    PhysConst = PhysicalConst{Float64}()
+    #Get Numerator inifinity norms, μ_max infinity norm 
+    for ie =1:nelem
+        
+        #ρ   = zeros(ngl,ngl)
+        #u   = zeros(ngl,ngl)
+        #v   = zeros(ngl,ngl)
+        #T   = zeros(ngl,ngl)
+        #e   = zeros(ngl,ngl)
+        
+        #Rρ  = zeros(ngl,ngl)
+        #Rρu = zeros(ngl,ngl)
+        #Rρv = zeros(ngl,ngl)
+        #RρE = zeros(ngl,ngl)
+        for j=1:ngl
+            for i=1:ngl
+                ip = connijk[i,j,ie]
+                
+                Δ2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
+                
+                #Rρ[i] = abs((q[ip,1] - q1[ip,1])/Δt + rhs[ip,1]) #abs((3*q[ip,1]-4*q1[ip,1]+q2[ip,1])/(2*Δt)+rhs[ip,1])#rhs[ip,1] #abs((q[ip,1] - q1[ip,1])/Δt + rhs[ip,1])
+                #Rρu[i] = abs((q[ip,2] - q1[ip,2])/Δt + rhs[ip,2])#abs((3*q[ip,2]-4*q1[ip,2]+q2[ip,2])/(2*Δt)+rhs[ip,2])#rhs[ip,2] #(q[ip,2] - q1[ip,2])/Δt + rhs[ip,2]
+                #RρE[i] = abs((q[ip,3] - q1[ip,3])/Δt + rhs[ip,3])#abs((3*q[ip,3]-4*q1[ip,3]+q2[ip,3])/(2*Δt)+rhs[ip,2])#rhs[ip,3] #(q[ip,2] - q1[ip,2])/Δt + rhs[ip,2]
+
+                Rρ[i,j]  = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) + rhs[ip,1])
+                Rρu[i,j] = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) + rhs[ip,2])
+                Rρv[i,j] = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) + rhs[ip,3])
+                RρE[i,j] = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) + rhs[ip,4])
+                
+                ρ[i,j] = q[ip,1]
+                u[i,j] = q[ip,2]/ρ[i,j]
+                v[i,j] = q[ip,3]/ρ[i,j]
+                e[i,j] = q[ip,4]/ρ[i,j]
+                p[i,j] = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ[i,j], θ=e[i,j])
+                #T[i,j] = e[i] - 0.5*(u[i,j]^2 + v[i,j]^2)
+            end
+        end
+        γ = 1.4
+        C1 = 1.0
+        C2 = 0.5
+        numer1 = maximum(Rρ)
+        numer2 = maximum(Rρu)
+        numer3 = maximum(Rρv)
+        numer4 = maximum(RρE)
+        #@info numer1, numer2
+        μ_res = C1*Δ^2*denom1*max(numer1/denom1, numer2/denom2, numer3/denom3, numer4/denom4)
+        μ_max = C2*Δ*maximum(ρ)*maximum(sqrt.(u.*u .+ v.*v) .+ sqrt.(γ*T))
+        μdsgs[i, j, ie] = max(0.0, min(μ_max, μ_res))
+    end
+    
 end
 
 function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, rhs_el, iel, ieq, QT::Exact, VT, SD::NSD_2D, ::FD)

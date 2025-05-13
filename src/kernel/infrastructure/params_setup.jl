@@ -42,6 +42,14 @@ function params_setup(sem,
                          sem.mesh.ngl,
                          T, backend;
                          neqs=qp.neqs)
+
+    μdsgs  = allocate_rhs(sem.mesh.SD,
+                          sem.mesh.nelem,
+                          sem.mesh.npoin,
+                          sem.mesh.ngl,
+                          input[:visc_model],
+                          T, backend;
+                          neqs=qp.neqs)
     
     gpuAux = allocate_gpuAux(sem.mesh.SD,
                              sem.mesh.nelem,
@@ -66,6 +74,8 @@ function params_setup(sem,
     H            = fluxes.H
     S            = fluxes.S
     fijk         = fijk.fijk
+    μdsgsp       = μdsgs.μdsgsp
+    μdsgse       = μdsgs.μdsgse
     ∇f_el        = ∇f.∇f_el
     RHS          = rhs.RHS
     RHS_visc     = rhs.RHS_visc
@@ -252,7 +262,7 @@ function params_setup(sem,
                   flux_lag_gpu, source_lag_gpu,
                   qbdy_lag_gpu,
                   RHS, RHS_visc,
-                  F_lag, G_lag, S_lag, 
+                  F_lag, G_lag, S_lag, μdsgsp, 
                   F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv,
                   rhs_el_lag,
                   rhs_diff_el_lag,
@@ -282,7 +292,7 @@ function params_setup(sem,
                   rhs_el, rhs_diff_el,
                   rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                   uprimitive,
-                  F, G, H, S,
+                  F, G, H, S, μdsgsp,
                   F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv,
                   flux_gpu, source_gpu, qbdy_gpu,
                   flux_micro, source_micro, adjusted, Pm,
