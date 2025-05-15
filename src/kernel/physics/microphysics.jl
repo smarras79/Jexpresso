@@ -1,40 +1,3 @@
-function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, npoin, uaux, z, qe, ::TOTAL)
-
-     PhysConst = PhysicalConst{Float64}()
-     MicroConst = MicrophysicalConst{Float64}()
-
-    #get pressure and perform saturation adjustment
-    for ip=1:npoin
-        uaux[ip,6] = max(0.0,uaux[ip,6])
-        uaux[ip,7] = max(0.0,uaux[ip,7])
-        T,P,qn_1,qc_1,qi_1,qr_1,qs_1,qg_1,qsatt = saturation_adjustment_sam_microphysics(uaux[ip,1],uaux[ip,5]/uaux[ip,1],uaux[ip,6]/uaux[ip,1],uaux[ip,7]/uaux[ip,1],
-                                                                             z[ip],MicroConst,PhysConst)
-        Tabs[ip] = T
-        qn[ip] = qn_1
-        qi[ip] = qi_1
-        qc[ip] = qc_1
-        qr[ip] = qr_1
-        qs[ip] = qs_1
-        qg[ip] = qg_1
-        uaux[ip,end] = P
-
-        ### find Pr, Ps, Pg
-        Pr_1, Ps_1, Pg_1 = compute_Pm(uaux[ip,1], qr_1, qs_1, qg_1, MicroConst)
-        Pr[ip] = Pr_1
-        Ps[ip] = Ps_1
-        Pg[ip] = Pg_1
-        
-        ### compute dqp/dt from microphysical processes
-        
-        S_micro[ip] = compute_dqpdt_sam_micro(uaux[ip,1],T,P,uaux[ip,5]/uaux[ip,1],uaux[ip,6]/uaux[ip,1],qn_1, qc_1, qi_1, uaux[ip,7]/uaux[ip,1],qr_1, qs_1, qg_1, qsatt,MicroConst,PhysConst)
-
-    end
-
-    ### find vertical derivatives for sedimentation processes. 
-    
-    return nothing
-end
-
 @kernel function do_micro_physics_gpu_3D!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, Pr, Ps, Pg, S_micro, PhysConst, MicroConst, lpert, neq, npoin, z, adjusted, Pm)
     ip = @index(Global, Linear)
 
@@ -69,80 +32,37 @@ end
     @inbounds S_micro[ip] = S
 end
 
-function do_micro_physics_old!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, npoin, uaux, z, qe, ::PERT)
+function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qsatt, npoin, uaux, z, qe, NSD, ::PERT)
 
      PhysConst = PhysicalConst{Float64}()
      MicroConst = MicrophysicalConst{Float64}()
 
     #get pressure and perform saturation adjustment
-    for ip=1:npoin
-        ρqt_total = max(0.0,uaux[ip,6]+qe[ip,6])
-        ρqp_total = max(0.0,uaux[ip,7]+qe[ip,7])
-        uaux[ip,6] = ρqt_total - qe[ip,6]
-        uaux[ip,7] = ρqp_total - qe[ip,7]
-        T, P, qn_1, qc_1, qi_1, qr_1, qs_1, qg_1, qsatt = saturation_adjustment_sam_microphysics(uaux[ip,1]+qe[ip,1],(uaux[ip,5]+qe[ip,5])/(uaux[ip,1]+qe[ip,1]),
-                                                                             (uaux[ip,6]+qe[ip,6])/(uaux[ip,1]+qe[ip,1]),
-                                                                             (uaux[ip,7]+qe[ip,7])/(uaux[ip,1]+qe[ip,1]),
-                                                                             z[ip],MicroConst,PhysConst)
-        Tabs[ip] = T
-        qn[ip] = qn_1
-        qi[ip] = qi_1
-        qc[ip] = qc_1
-        qr[ip] = qr_1
-        qs[ip] = qs_1
-        qg[ip] = qg_1
-        uaux[ip,end] = P
-
-        ### find Pr, Ps, Pg
-        Pr_1, Ps_1, Pg_1 = compute_Pm(uaux[ip,1]+qe[ip,1], qr_1, qs_1, qg_1, MicroConst)
-        Pr[ip] = Pr_1
-        Ps[ip] = Ps_1
-        Pg[ip] = Pg_1
-
-        ### compute dqp/dt from microphysical processes
-
-        S_micro[ip] = compute_dqpdt_sam_micro(uaux[ip,1]+qe[ip,1],T,P,(uaux[ip,5]+qe[ip,5])/(uaux[ip,1]+qe[ip,1]),
-                                                 (uaux[ip,6]+qe[ip,6])/(uaux[ip,1]+qe[ip,1]),qn_1,qc_1,qi_1,
-                                                 (uaux[ip,7]+qe[ip,7])/(uaux[ip,1]+qe[ip,1]),qr_1,qs_1,qg_1,qsatt,MicroConst,PhysConst)
-
-    end
-
-    return nothing
-end
-
-function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qsatt, npoin, uaux, z, qe, ::PERT)
-
-     PhysConst = PhysicalConst{Float64}()
-     MicroConst = MicrophysicalConst{Float64}()
-
-    #get pressure and perform saturation adjustment
-    saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, qsatt, z, npoin, MicroConst,PhysConst, true)
+    saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, qsatt, z, npoin, MicroConst, PhysConst, NSD, true)
     
     compute_Pm!(uaux, qe, qr, qs, qg, Pr, Ps, Pg, npoin, MicroConst, true)
 
     ### compute dqp/dt from microphysical processes
-
-    compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt, S_micro, npoin, MicroConst, PhysConst, true)
-
+    compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt, S_micro, npoin, MicroConst, PhysConst, NSD, true)
 
     ### find vertical derivatives for sedimentation processes.
 
     return nothing
 end
 
-function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qsatt, npoin, uaux, z, qe, ::TOTAL)
+function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qsatt, npoin, uaux, z, qe, NSD, ::TOTAL)
 
      PhysConst = PhysicalConst{Float64}()
      MicroConst = MicrophysicalConst{Float64}()
 
     #get pressure and perform saturation adjustment
-    saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, qsatt, z, npoin, MicroConst,PhysConst, false)
+    saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, qsatt, z, npoin, MicroConst,PhysConst, NSD, false)
 
     compute_Pm!(uaux, qe, qr, qs, qg, Pr, Ps, Pg, npoin, MicroConst, false)
 
     ### compute dqp/dt from microphysical processes
 
-    compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt, S_micro, npoin, MicroConst, PhysConst, false)
+    compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt, S_micro, npoin, MicroConst, PhysConst, NSD, false)
 
 
     ### find vertical derivatives for sedimentation processes.
@@ -150,22 +70,25 @@ function do_micro_physics!(Tabs, qn, qc, qi, qr, qs, qg, Pr, Ps, Pg, S_micro, qs
     return nothing
 end
 
-function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tabs, qi, ρ, ρe, nelem,ngl,connijk,H,metrics,ω,dψ,::TOTAL)
+function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tabs, qi, ρ, ρe, nelem, ngl, connijk, H, metrics, ω, dψ, SD::NSD_3D, ::TOTAL)
 
     MicroConst = MicrophysicalConst{Float64}()
     dqpdt .= 0.0
     dqtdt .= 0.0
     dhldt .= 0.0
+    Lc     = MicroConst.Lc
+    Ls     = MicroConst.Ls
+    Lf     = MicroConst.Lf
+    T0n    = MicroConst.T0n
+    T00n   = MicroConst.T00n
+
     for e=1:nelem
         # do precipitation
         for i=1:ngl
             for j=1:ngl
                 for k=1:ngl
-                    ip = connijk[e,i,j,k]
+                    ip         = connijk[e,i,j,k]
                     H[i,j,k,1] = Pr[ip] + Ps[ip] + Pg[ip]
-                    #if H[i,j,k,1] > 0
-                    #    @info mp.Pr[ip], mp.Ps[ip] , mp.Pg[ip]
-                    #end
                 end
             end
         end
@@ -176,12 +99,14 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
         for i=1:ngl
             for j=1:ngl
                 for k=1:ngl
-                    ip = connijk[e,i,j,k]
-                    H[i,j,k,1] = MicroConst.Lc*Pr[ip] + MicroConst.Ls*(Ps[ip] + Pg[ip])
+                    ip         = connijk[e,i,j,k]
+                    H[i,j,k,1] = Lc*Pr[ip] + Ls*(Ps[ip] + Pg[ip])
                 end
             end
         end
+        
         compute_vertical_derivative_q!(dhldt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
+        
         #do cloud ice sedimentation
 
         for i=1:ngl
@@ -192,24 +117,24 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
                 end
             end
         end
+        
         compute_vertical_derivative_q!(dqtdt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
-        #@info maximum(mp.dqtdt), maximum(mp.dhldt), maximum(mp.dqpdt)
+        
         for i=1:ngl
             for j=1:ngl
                 for k=1:ngl
-                    ip = connijk[e,i,j,k]
-                    T = Tabs[ip]
-                    ωn = max(0,min(1,(T-MicroConst.T00n)/(MicroConst.T0n - MicroConst.T00n)))
-                    dhldt[e,i,j,k] += (MicroConst.Lc + ωn*MicroConst.Lf)*dqtdt[e,i,j,k]
+                    ip              = connijk[e,i,j,k]
+                    T               = Tabs[ip]
+                    ωn              = max(0,min(1,(T-T00n)/(T0n - T00n)))
+                    dhldt[e,i,j,k] += (Lc + ωn*Lf)*dqtdt[e,i,j,k]
                 end
             end
         end
     end
 
-    #H[:,:,:,:] .= 0.0
 end
 
-function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tabs, qi, ρ, ρe, nelem, ngl, connijk, H, metrics, ω, dψ, ::PERT)
+function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tabs, qi, ρ, ρe, nelem, ngl, connijk, H, metrics, ω, dψ, SD::NSD_3D, ::PERT)
 
     MicroConst = MicrophysicalConst{Float64}()
     dqpdt .= 0.0
@@ -225,77 +150,163 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
         for i=1:ngl
             for j=1:ngl
                 for k=1:ngl
-                    ip = connijk[e,i,j,k]
+                    ip         = connijk[e,i,j,k]
                     H[i,j,k,1] = Pr[ip] + Ps[ip] + Pg[ip]
-                    #if H[i,j,k,1] > 0
-                    #    @info mp.Pr[ip], mp.Ps[ip] , mp.Pg[ip]
-                    #end
                 end
             end
         end
-        compute_vertical_derivative_q!(dqpdt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz, ω, dψ)
+        compute_vertical_derivative_q!(dqpdt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz, ω, dψ, SD)
 
         # do precipitation effects on hl
+
         for i=1:ngl
             for j=1:ngl
                 for k=1:ngl
-                    ip = connijk[e,i,j,k]
+                    ip         = connijk[e,i,j,k]
                     H[i,j,k,1] = Lc*Pr[ip] + Ls*(Ps[ip] + Pg[ip])
                 end
             end
         end
-        compute_vertical_derivative_q!(dhldt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
+        
+        compute_vertical_derivative_q!(dhldt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ, SD)
+        
         #do cloud ice sedimentation
 
         for i=1:ngl
             for j=1:ngl
                 for k=1:ngl
-                    ip = connijk[e,i,j,k]
+                    ip         = connijk[e,i,j,k]
                     H[i,j,k,1] = qi[ip] * (ρ[ip] +ρe[ip])* 0.4
                 end
             end
         end
-        compute_vertical_derivative_q!(dqtdt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
+
+        compute_vertical_derivative_q!(dqtdt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ, SD)
 
         for i=1:ngl
             for j=1:ngl
                 for k=1:ngl
-                    ip = connijk[e,i,j,k]
-                    T = Tabs[ip]
-                    ωn = max(0,min(1,(T-T00n)/(T0n - T00n)))
+                    ip              = connijk[e,i,j,k]
+                    T               = Tabs[ip]
+                    ωn              = max(0,min(1,(T-T00n)/(T0n - T00n)))
                     dhldt[e,i,j,k] += (Lc + ωn*Lf)*dqtdt[e,i,j,k]
                 end
             end
         end
-        ##compute radiative transfer vertical derivatives
-
-        for i=1:ngl
-            for j=1:ngl
-                for k=1:ngl
-                    ip = connijk[e,i,j,k]
-                    #H[i,j,k,1] = flux_lw[ip]
-                    #drad_lw[e,i,j,k] = flux_lw[ip]
-                end
-            end
-        end
-        #compute_vertical_derivative_q!(drad_lw, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
-
-        for i=1:ngl
-            for j=1:ngl
-                for k=1:ngl
-                    ip = connijk[e,i,j,k]
-                    #H[i,j,k,1] = flux_sw[ip]
-                    #drad_sw[e,i,j,k] = flux_sw[ip]
-                end
-            end
-        end
-        #compute_vertical_derivative_q!(drad_sw, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
     end
 
-
-
-    #H[:,:,:,:] .= 0.0
 end
+
+function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tabs, qi, ρ, ρe, nelem, ngl, connijk, H, metrics, ω, dψ, SD::NSD_2D, ::TOTAL)
+
+    MicroConst = MicrophysicalConst{Float64}()
+    dqpdt .= 0.0
+    dqtdt .= 0.0
+    dhldt .= 0.0
+    Lc = MicroConst.Lc
+    Ls = MicroConst.Ls
+    Lf = MicroConst.Lf
+    T0n = MicroConst.T0n
+    T00n = MicroConst.T00n
+    for e=1:nelem
+        # do precipitation
+        for i=1:ngl
+            for j=1:ngl
+                ip         = connijk[e,i,j]
+                H[i,j,1] = Pr[ip] + Ps[ip] + Pg[ip]
+            end
+        end
+        compute_vertical_derivative_q!(dqpdt, H, e, ngl, metrics.Je, metrics.dξdy, metrics.dηdy, ω, dψ, SD)
+
+        # do precipitation effects on hl
+
+        for i=1:ngl
+            for j=1:ngl
+                ip         = connijk[e,i,j]
+                H[i,j,1] = Lc*Pr[ip] + Ls*(Ps[ip] + Pg[ip])
+            end
+        end
+
+        compute_vertical_derivative_q!(dhldt, H, e, ngl, metrics.Je, metrics.dξdy, metrics.dηdy, ω,dψ, SD)
+
+        #do cloud ice sedimentation
+
+        for i=1:ngl
+            for j=1:ngl
+                ip         = connijk[e,i,j]
+                H[i,j,1] = qi[ip] * (ρ[ip])* 0.4
+            end
+        end
+        compute_vertical_derivative_q!(dqtdt, H, e, ngl, metrics.Je, metrics.dξdy, metrics.dηdy, ω,dψ, SD)
+
+        for i=1:ngl
+            for j=1:ngl
+                ip              = connijk[e,i,j]
+                T               = Tabs[ip]
+                ωn              = max(0,min(1,(T-T00n)/(T0n - T00n)))
+                dhldt[e,i,j] += (Lc + ωn*Lf)*dqtdt[e,i,j]
+            end
+        end
+    end
+
+end
+
+
+function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tabs, qi, ρ, ρe, nelem, ngl, connijk, H, metrics, ω, dψ, SD::NSD_2D, ::PERT)
+
+    MicroConst = MicrophysicalConst{Float64}()
+    dqpdt .= 0.0
+    dqtdt .= 0.0
+    dhldt .= 0.0
+    Lc = MicroConst.Lc
+    Ls = MicroConst.Ls
+    Lf = MicroConst.Lf
+    T0n = MicroConst.T0n
+    T00n = MicroConst.T00n
+    for e=1:nelem
+        # do precipitation
+        for i=1:ngl
+            for j=1:ngl
+                ip         = connijk[e,i,j]
+                H[i,j,1] = Pr[ip] + Ps[ip] + Pg[ip]
+            end
+        end
+        compute_vertical_derivative_q!(dqpdt, H, e, ngl, metrics.Je, metrics.dξdy, metrics.dηdy, ω, dψ, SD)
+
+        # do precipitation effects on hl
+
+        for i=1:ngl
+            for j=1:ngl
+                ip         = connijk[e,i,j]
+                H[i,j,1] = Lc*Pr[ip] + Ls*(Ps[ip] + Pg[ip])
+            end
+        end
+
+        compute_vertical_derivative_q!(dhldt, H, e, ngl, metrics.Je, metrics.dξdy, metrics.dηdy, ω,dψ, SD)
+
+        #do cloud ice sedimentation
+
+        for i=1:ngl
+            for j=1:ngl
+                ip         = connijk[e,i,j]
+                H[i,j,1] = qi[ip] * (ρ[ip] +ρe[ip])* 0.4
+            end
+        end
+
+        compute_vertical_derivative_q!(dqtdt, H, e, ngl, metrics.Je, metrics.dξdy, metrics.dηdy, ω,dψ, SD)
+
+        for i=1:ngl
+            for j=1:ngl
+                ip              = connijk[e,i,j]
+                T               = Tabs[ip]
+                ωn              = max(0,min(1,(T-T00n)/(T0n - T00n)))
+                dhldt[e,i,j] += (Lc + ωn*Lf)*dqtdt[e,i,j]
+            end
+        end
+    end
+
+end
+
 
 function precipitation_flux_gpu(u,qe,MicroConst,lpert,Pr,Ps,Pg,qi)
     T= eltype(u)
@@ -310,36 +321,34 @@ function precipitation_flux_gpu(u,qe,MicroConst,lpert,Pr,Ps,Pg,qi)
     return T(0.0), T(Lc*Pr +Ls*(Ps+Pg)), T(qi*ρ*T(0.4)), T(Pr + Ps + Pg) 
 end
 
-function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe,::TOTAL)
+function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe, ::NSD_3D, ::TOTAL)
 
     PhysConst = PhysicalConst{Float64}()
-    ρ = q[1]
-    qt = q[6]/ρ
-    qp = q[7]/ρ
-    qv = qt - qn
+    
+    ρ        = q[1]
+    qt       = q[6]/ρ
+    qp       = q[7]/ρ
+    qv       = qt - qn
     ρqv_pert = ρ*qv - qe[6]
-     S[4] += -PhysConst.g*(0.608*ρqv_pert -ρ*(qn+qp))
-    #S[4] += -ρ*PhysConst.g*(0.608*qv-qn-qp) #moisture buoyancy contribution
-    S[5] -= ρ*(flux_lw - flux_sw)
+     
+    S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))
+    S[5] += ρ*(flux_lw - flux_sw)
     S[6] += -ρ*S_micro
     S[7] += ρ*S_micro
 
 end
 
-function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe,::PERT)
+function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe, ::NSD_3D,::PERT)
 
     PhysConst = PhysicalConst{Float64}()
-    ρ = q[1]+qe[1]
-    qt = (q[6] + qe[6])/ρ
-    qv_ref = qe[6]/qe[1]
-    qp = q[7]/ρ
-    qv = (qt - qn) #- qe[6]/qe[1]
+    
+    ρ        = q[1]+qe[1]
+    qt       = (q[6] + qe[6])/ρ
+    qv_ref   = qe[6]/qe[1]
+    qp       = (q[7] + qe[7]) /ρ
+    qv       = (qt - qn) #- qe[6]/qe[1]
     ρqv_pert = ρ*qv - qe[6]
-    #@info S[4], -q[1]*PhysConst.g*(0.608*qv-qn-qp)
-    #@info S[4], S[4]-q[1]*PhysConst.g*(0.608*qv-qn-qp), q[end] - qe[end]
-    #S[4] += -q[1]*PhysConst.g*(0.61*qv-qn-qp) #moisture buoyancy contribution
-    #S[4] += -ρ*PhysConst.g*(0.61*qv-qn-qp)
-    #S[4] += -PhysConst.g*(0.61*(q[1]*qv_ref + ρ*qv_pert) -ρ*(qn+qp)) #derived this by searching for perturbation buoyancy
+    
     S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
     S[5] += ρ*(flux_lw - flux_sw)
     S[6] += -ρ*S_micro
@@ -347,29 +356,59 @@ function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_
 
 end
 
+function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe, ::NSD_2D, ::TOTAL)
+    
+    PhysConst = PhysicalConst{Float64}()
+    
+    ρ        = q[1]
+    qt       = q[5]/ρ
+    qp       = q[6]/ρ
+    qv       = qt - qn
+    ρqv_pert = ρ*qv - qe[5]
+
+    S[3] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp)) 
+    S[4] += ρ*(flux_lw - flux_sw)
+    S[5] += -ρ*S_micro
+    S[6] += ρ*S_micro
+
+end 
+    
+function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe, ::NSD_2D,::PERT)
+    
+    PhysConst = PhysicalConst{Float64}()
+    
+    ρ        = q[1]+qe[1]
+    qt       = (q[5] + qe[5])/ρ
+    qv_ref   = qe[5]/qe[1]
+    qp       = (q[6] + qe[6]) /ρ
+    qv       = (qt - qn) #- qe[6]/qe[1]
+    ρqv_pert = ρ*qv - qe[5]
+
+    S[3] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
+    S[4] += ρ*(flux_lw - flux_sw)
+    S[5] += -ρ*S_micro
+    S[6] += ρ*S_micro
+
+end
+
 function precipitation_source_gpu(u,qe,lpert,qn,S_micro,PhysConst,MicroConst)
     T = eltype(u)
     if (lpert)
-        ρ = u[1] + qe[1]
-        qt = (u[6] + qe[6])/ρ
-        qp = (u[7] + qe[7])/ρ
-        #qv = qt - qn - qe[6]/qe[1]
-        #qv = qt - qn
+        ρ   = u[1] + qe[1]
+        qt  = (u[6] + qe[6])/ρ
+        qp  = (u[7] + qe[7])/ρ
         ρqv = ρ*(qt - qn) - qe[6]
     else
-        ρ = u[1]
-        qt = u[6]/ρ
-        qp = u[7]/ρ
-        #qv = qt - qn
+        ρ   = u[1]
+        qt  = u[6]/ρ
+        qp  = u[7]/ρ
         ρqv = ρ*(qt - qn)
     end
-    ### experimenting with formulations for moist buoyancy
-    #return T(-u[1]*PhysConst.g*(T(0.608)*qv-qn-qp)), T(0.0), T(-ρ*S_micro), T(ρ*S_micro) 
-    #return T(-ρ*PhysConst.g*(T(0.608)*qv-qn-qp)), T(0.0), T(-ρ*S_micro), T(ρ*S_micro)
+    
     return T(-PhysConst.g*(T(0.608)*ρqv-ρ*(qn+qp))), T(0.0), T(-ρ*S_micro), T(ρ*S_micro)
 end
 
-function compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt, S_micro, npoin, MicroConst, PhysConst, lpert)
+function compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt, S_micro, npoin, MicroConst, PhysConst, NSD, lpert)
     a_rain = MicroConst.a_rain #Constant in fall speed for rain
     b_rain = MicroConst.b_rain
     N0_rain = MicroConst.N0_rain
@@ -421,13 +460,26 @@ function compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt,
     μ = MicroConst.μ
     for ip=1:npoin
         if (lpert)
-            ρ = uaux[ip,1] + qe[ip,1]
-            qt = (uaux[ip,6] + qe[ip,6])/ρ
-            qp = (uaux[ip,7] + qe[ip,7])/ρ
+            if (NSD == NSD_3D())
+                ρ = uaux[ip,1] + qe[ip,1]
+                qt = (uaux[ip,6] + qe[ip,6])/ρ
+                qp = (uaux[ip,7] + qe[ip,7])/ρ
+            else
+                ρ = uaux[ip,1] + qe[ip,1]
+                qt = (uaux[ip,5] + qe[ip,5])/ρ
+                qp = (uaux[ip,6] + qe[ip,6])/ρ
+            end
         else
-            ρ = uaux[ip,1]
-            qt = uaux[ip,6]/uaux[ip,1]
-            qp = uaux[ip,7]/uaux[ip,1]
+            if (NSD == NSD_3D())
+                ρ = uaux[ip,1]
+                qt = uaux[ip,6]/uaux[ip,1]
+                qp = uaux[ip,7]/uaux[ip,1]
+            else
+                ρ = uaux[ip,1]
+                qt = uaux[ip,5]/uaux[ip,1]
+                qp = uaux[ip,6]/uaux[ip,1]
+            end
+
         end
         T = Tabs[ip]
         e_satw = esatw(T)*100
@@ -478,121 +530,18 @@ function compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt,
 end
 
 
-
-function compute_dqpdt_sam_micro_old(ρ,T,P,hl,qt,qn,qc,qi,qp,qr,qs,qg,qsatt,MicroConst,PhysConst)
-    a_rain = MicroConst.a_rain #Constant in fall speed for rain
-    b_rain = MicroConst.b_rain
-    N0_rain = MicroConst.N0_rain
-    Er_c = MicroConst.Er_c
-    Er_i = MicroConst.Er_i
-    γ3br = MicroConst.γ3br
-    ρ_rain = MicroConst.ρ_rain
-    C_rain = MicroConst.C_rain
-    a_fr   = MicroConst.a_fr
-    b_fr   = MicroConst.b_fr
-    γ5br   = MicroConst.γ5br
-
-    a_snow = MicroConst.a_snow #Constant in fall speed for rain
-    b_snow = MicroConst.b_snow
-    N0_snow = MicroConst.N0_snow
-    Es_c = MicroConst.Es_c
-    Es_i = MicroConst.Es_i
-    γ3bs = MicroConst.γ3bs
-    ρ_snow = MicroConst.ρ_snow
-    C_snow = MicroConst.C_snow
-    a_fs   = MicroConst.a_fs
-    b_fs   = MicroConst.b_fs
-    γ5bs   = MicroConst.γ5bs
-
-    a_graupel = MicroConst.a_graupel #Constant in fall speed for rain
-    b_graupel = MicroConst.b_graupel
-    N0_graupel = MicroConst.N0_graupel
-    Eg_c = MicroConst.Eg_c
-    Eg_i = MicroConst.Eg_i
-    γ3bg = MicroConst.γ3bg
-    ρ_graupel = MicroConst.ρ_graupel
-    C_graupel = MicroConst.C_graupel
-    a_fg   = MicroConst.a_fg
-    b_fg   = MicroConst.b_fg
-    γ5bg   = MicroConst.γ5bg
-
-    ρ0 = MicroConst.ρ0
-    α = MicroConst.α
-    qc0 = MicroConst.qc0
-    β = MicroConst.β
-    qi0 = MicroConst.qi0
-
-    Lc = MicroConst.Lc
-    Ls = MicroConst.Ls
-    Ka = MicroConst.Ka
-    Da = MicroConst.Da
-    Rvap = PhysConst.Rvap
-    Rair = PhysConst.Rair
-    μ = MicroConst.μ
-    e_satw = esatw(T)*100
-    e_sati = esati(T)*100
-
-    ### Collection of condensates
-    Ar_c = π/4*a_rain*N0_rain*Er_c*γ3br*(ρ0/ρ)^(0.5)*(ρ/(π*ρ_rain*N0_rain))^((3+b_rain)/4)
-    Ar_i = exp(0.025*(T-273.16))*π/4*a_rain*N0_rain*Er_i*γ3br*(ρ0/ρ)^(0.5)*(ρ/(π*ρ_rain*N0_rain))^((3+b_rain)/4)
-    As_c = π/4*a_snow*N0_snow*Es_c*γ3bs*(ρ0/ρ)^(0.5)*(ρ/(π*ρ_snow*N0_snow))^((3+b_snow)/4)
-    As_i = exp(0.025*(T-273.16))*π/4*a_snow*N0_snow*Es_i*γ3bs*(ρ0/ρ)^(0.5)*(ρ/(π*ρ_snow*N0_snow))^((3+b_snow)/4)
-    Ag_c = π/4*a_graupel*N0_graupel*Eg_c*γ3bs*(ρ0/ρ)^(0.5)*(ρ/(π*ρ_graupel*N0_graupel))^((3+b_graupel)/4)
-    Ag_i = exp(0.025*(T-273.16))*π/4*a_graupel*N0_graupel*Eg_c*γ3bs*(ρ0/ρ)^(0.5)*(ρ/(π*ρ_graupel*N0_graupel))^((3+b_graupel)/4)
-
-    dqrdt = (Ar_c*qc + Ar_i*qi)*qr^((3+b_rain)/4)
-    dqsdt = (As_c*qc + As_i*qi)*qs^((3+b_snow)/4)
-    dqgdt = (Ag_c*qc + Ag_i*qi)*qg^((3+b_graupel)/4)
-
-    ### Autoconversion
-    
-    Auto = max(0.0, α*(qc - qc0))
-
-    ### Aggregation
-
-    Aggr = max(0.0, β*exp(0.025*(T-273.16))*(qi-qi0))
-
-    ### Evaporation
-
-    S = (qt-qn)/qsatt
-    A_rain = (Lc/(Ka*T))*((Lc/(Rvap*T)) - 1) 
-    A_snow_graupel = (Ls/(Ka*T))*((Ls/(Rvap*T)) - 1)
-    B_rain = Rvap*Rair/(Da*e_satw)
-    B_snow_graupel = Rvap*Rair/(Da*e_sati)
-    A_er = a_fr*(ρ/(π*ρ_rain*N0_rain))^(0.5)
-    A_es = a_fs*(ρ/(π*ρ_snow*N0_snow))^(0.5)
-    A_eg = a_fg*(ρ/(π*ρ_graupel*N0_graupel))^(0.5)
-    B_er = b_fr*(ρ*a_rain/μ)^(0.5)*γ5br*(ρ0/ρ)^(0.25)*(ρ/(π*ρ_rain*N0_rain))^((5+b_rain)/8)
-    B_es = b_fs*(ρ*a_snow/μ)^(0.5)*γ5bs*(ρ0/ρ)^(0.25)*(ρ/(π*ρ_snow*N0_snow))^((5+b_snow)/8)
-    B_eg = b_fg*(ρ*a_graupel/μ)^(0.5)*γ5bg*(ρ0/ρ)^(0.25)*(ρ/(π*ρ_graupel*N0_graupel))^((5+b_graupel)/8)
-    
-    Evap_r = (2*π*C_rain*N0_rain)/(ρ*(A_rain+B_rain))*(A_er*sqrt(qr) + B_er*qr^((5+b_rain)/8))*(S-1)
-    Evap_s = (2*π*C_snow*N0_snow)/(ρ*(A_snow_graupel+B_snow_graupel))*(A_es*sqrt(qs) + B_es*qs^((5+b_snow)/8))*(S-1)
-    Evap_g = (2*π*C_graupel*N0_graupel)/(ρ*(A_snow_graupel+B_snow_graupel))*(A_eg*sqrt(qg) + B_eg*qg^((5+b_graupel)/8))*(S-1)
-
-    ### cloud ice sedimentation is handled as part of the precipitation package, this routine ignores it
-    
-    dqpdt = clamp(dqrdt + dqsdt + dqgdt + Auto + Aggr + Evap_r + Evap_s + Evap_g,-qp,qn)
-
-    #if (qn > 0.001)
-        #@info dqrdt, dqsdt, dqgdt, Auto, Aggr, Evap_r, Evap_s, Evap_g, qn, qc, qi, qp, qr, qs, qg, dqpdt
-    #end
-
-    return dqpdt 
-end
-
 function compute_dqpdt_sam_micro_gpu(u,qe,T,qn,qc,qi,qr,qs,qg,qsatt,MicroConst,PhysConst,lpert)
     FT = eltype(u)
     if (lpert)
-        ρ = u[1] + qe[1]
-        qt = (u[6] + qe[6])/ρ
-        qp = (u[7] + qe[7])/ρ
-        P = u[end]
+            ρ = u[1] + qe[1]
+            qt = (u[6] + qe[6])/ρ
+            qp = (u[7] + qe[7])/ρ
+            P = u[end]
     else
-        ρ = u[1]
-        qt = u[6]/ρ
-        qp = u[7]/ρ
-        P = u[end]
+            ρ = u[1]
+            qt = u[6]/ρ
+            qp = u[7]/ρ
+            P = u[end]
     end
 
     a_rain = MicroConst.a_rain #Constant in fall speed for rain
@@ -721,39 +670,11 @@ function compute_Pm!(uaux, qe, qr, qs, qg, Pr, Ps, Pg, npoin, MicroConst, lpert)
         else
             ρ = uaux[ip,1]
         end
+        #@info ρ,qr[ip],ρ0
         Pr[ip] = (a_rain * γ4br)/6 * (π * ρ_rain * N0_rain)^(-b_rain/4)*(ρ0/ρ)^(0.5)*(ρ*qr[ip])^(1+b_rain/4)
         Ps[ip] = (a_snow * γ4bs)/6 * (π * ρ_snow * N0_snow)^(-b_snow/4)*(ρ0/ρ)^(0.5)*(ρ*qs[ip])^(1+b_snow/4)
         Pg[ip] = (a_graupel * γ4bg)/6 * (π * ρ_graupel * N0_graupel)^(-b_graupel/4)*(ρ0/ρ)^(0.5)*(ρ*qg[ip])^(1+b_graupel/4)
     end
-end
-
-function compute_Pm_old(ρ,qr, qs, qg, MicroConst)
-    a_rain = MicroConst.a_rain #Constant in fall speed for rain
-    γ4br = MicroConst.γ4br
-    ρ_rain = MicroConst.ρ_rain
-    N0_rain = MicroConst.N0_rain
-    b_rain = MicroConst.b_rain
-    ρ0 = MicroConst.ρ0
-
-    a_snow = MicroConst.a_snow #Constant in fall speed for rain
-    γ4bs = MicroConst.γ4bs
-    ρ_snow = MicroConst.ρ_snow
-    N0_snow = MicroConst.N0_snow
-    b_snow = MicroConst.b_snow
-
-    a_graupel = MicroConst.a_graupel #Constant in fall speed for rain
-    γ4bg = MicroConst.γ4bg
-    ρ_graupel = MicroConst.ρ_graupel
-    N0_graupel = MicroConst.N0_graupel
-    b_graupel = MicroConst.b_graupel
-
-    Pr = (a_rain * γ4br)/6 * (π * ρ_rain * N0_rain)^(-b_rain/4)*(ρ0/ρ)^(0.5)*(ρ*qr)^(1+b_rain/4)    
-    Ps = (a_snow * γ4bs)/6 * (π * ρ_snow * N0_snow)^(-b_snow/4)*(ρ0/ρ)^(0.5)*(ρ*qs)^(1+b_snow/4)
-    Pg = (a_graupel * γ4bg)/6 * (π * ρ_graupel * N0_graupel)^(-b_graupel/4)*(ρ0/ρ)^(0.5)*(ρ*qg)^(1+b_graupel/4)
-    #if (Pr > 0)
-    #    @info Pr, Ps, Pg
-    #end
-    return Pr, Ps, Pg
 end
 
 function compute_Pm_gpu(u, qe, qr, qs, qg, MicroConst, lpert)
@@ -792,165 +713,203 @@ function compute_Pm_gpu(u, qe, qr, qs, qg, MicroConst, lpert)
     return FT(Pr), FT(Ps), FT(Pg)
 end
 
-function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, qsatt, z, npoin, MicroConst,PhysConst, lpert)
+function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr, qs, qg, qsatt, z, npoin, MicroConst, PhysConst, NSD, lpert)
 
     T00n = MicroConst.T00n #Temperature threshold for cloud water
-    T0n = MicroConst.T0n #Temperature threshold for ice
+    T0n  = MicroConst.T0n #Temperature threshold for ice
     T00p = MicroConst.T00p #Temperature threshold for rain     
-    T0p = MicroConst.T0p #Temperature threshold for snow/graupel 
+    T0p  = MicroConst.T0p #Temperature threshold for snow/graupel 
     T00g = MicroConst.T00g #Temperature threshold for graupel
-    T0g = MicroConst.T0g #Temperature threshold for graupel
+    T0g  = MicroConst.T0g #Temperature threshold for graupel
+    
     Lc = MicroConst.Lc
     Lf = MicroConst.Lf
     Ls = MicroConst.Ls
-    g=PhysConst.g
+    
+    g  = PhysConst.g
     cp = PhysConst.cp
+    
     fac_cond = Lc/cp
-    fac_fus = Lf/cp
-    fac_sub = Ls/cp
+    fac_fus  = Lf/cp
+    fac_sub  = Ls/cp
+
     for ip=1:npoin
         if (lpert)
-            ρ = uaux[ip,1] + qe[ip,1]
-            hl = (uaux[ip,5] + qe[ip,5])/ρ
-            qt = (uaux[ip,6] + qe[ip,6])/ρ
-            qp = (uaux[ip,7] + qe[ip,7])/ρ
-            qt = max(0.0, qt)
-            qp = max(0.0, qp)
-            uaux[ip,6] = qt*ρ - qe[ip,6]
-            uaux[ip,7] = qp*ρ - qe[ip,7]
+            if (NSD == NSD_3D())
+                ρ  = uaux[ip,1] + qe[ip,1]
+                hl = (uaux[ip,5] + qe[ip,5])/ρ
+                qt = (uaux[ip,6] + qe[ip,6])/ρ
+                qp = (uaux[ip,7] + qe[ip,7])/ρ
+                qt = max(0.0, qt)
+                qp = max(0.0, qp)
+            
+                uaux[ip,6] = qt*ρ - qe[ip,6]
+                uaux[ip,7] = qp*ρ - qe[ip,7]
+            else
+
+                ρ  = uaux[ip,1] + qe[ip,1]
+                hl = (uaux[ip,4] + qe[ip,4])/ρ
+                qt = (uaux[ip,5] + qe[ip,5])/ρ
+                qp = (uaux[ip,6] + qe[ip,6])/ρ
+                qt = max(0.0, qt)
+                qp = max(0.0, qp)
+
+                uaux[ip,5] = qt*ρ - qe[ip,5]
+                uaux[ip,6] = qp*ρ - qe[ip,6]
+
+            end
+        
         else
-            ρ = uaux[ip,1]
-            hl = uaux[ip,5]/ρ
-            qt = max(0.0,uaux[ip,6])/ρ
-            qp = max(0.0,uaux[ip,7])/ρ
-            uaux[ip,6] = max(0.0,uaux[ip,6])
-            uaux[ip,7] = max(0.0,uaux[ip,7])
+            if (NSD == NSD_3D())
+                ρ  = uaux[ip,1]
+                hl = uaux[ip,5]/ρ
+                qt = max(0.0,uaux[ip,6])/ρ
+                qp = max(0.0,uaux[ip,7])/ρ
+            
+                uaux[ip,6] = max(0.0,uaux[ip,6])
+                uaux[ip,7] = max(0.0,uaux[ip,7])
+            else
+                ρ  = uaux[ip,1]
+                hl = uaux[ip,4]/ρ
+                qt = max(0.0,uaux[ip,5])/ρ
+                qp = max(0.0,uaux[ip,6])/ρ
+
+                uaux[ip,5] = max(0.0,uaux[ip,5])
+                uaux[ip,6] = max(0.0,uaux[ip,6])
+            end
         end
+
         # find equilibrium temperature from saturation adjustment
         # initial guess for sensible temperature and pressure assumes no condensates/all vapor
+                
         T =  (hl - g*z[ip])/cp
-        #P = moistPressure(PhysConst; ρ=ρ, Temp=T, qv = qt) 
-        an = 1/(T0n - T00n)
-        bn = T00n * an
-        ap = 1/(T0p - T00p)
-        bp = T00p*ap
+        an   = 1/(T0n - T00n)
+        bn   = T00n * an
+        ap   = 1/(T0p - T00p)
+        bp   = T00p*ap
         fac1 = fac_cond+(1+bp)*fac_fus
         fac2 = fac_fus*ap
-        ag = 1/(T0g - T00g)
-        ωp = max(0,min(1,ap*T-bp))
-        T1 = T + (fac_cond + (1-ωp)*fac_fus)*qp #+ fac1*qp/(1+fac2*qp)
-        Tv = T1*(1 + 0.61*qt - qp)
-        P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
-        #if (qp > 1e-8) 
-        #    @info qp, T, T1, fac1*qp/(1+fac2*qp), fac1*qp, (1+fac2*qp)
-        #end
+        ag   = 1/(T0g - T00g)
+        ωp   = max(0,min(1,ap*T-bp))
+        T1   = T + (fac_cond + (1-ωp)*fac_fus)*qp #+ fac1*qp/(1+fac2*qp)
+        Tv   = T1*(1 + 0.61*qt - qp)
+        P    = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
         if (T1 >= T0p)
+            
             T1 = T + fac_cond*qp
             Tv = T1*(1 + 0.61*qt - qp)
-            P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+            P  = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+        
         elseif (T1 <= T00p)
+            
             T1 = T + fac_sub*qp
             Tv = T1*(1 + 0.61*qt - qp)
-            P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+            P  = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+        
         else
+            
             ωp = max(0,min(1,ap*T1-bp))
             T1 = T + (fac_cond + (1-ωp)*fac_fus)*qp
             Tv = T1*(1 + 0.61*qt - qp)
-            P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+            P  = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+        
         end
         if (T1 >= T0n)
 
             qsatt[ip] = max(0.0,qsatw(T1, P/100))
+        
         elseif (T1 <= T00n)
 
             qsatt[ip] = max(0.0,qsati(T1, P/100))
+        
         else
-            ωn = max(0,min(1,an*T1-bn))
+        
+            ωn        = max(0,min(1,an*T1-bn))
             qsatt[ip] = max(0.0,ωn*qsatw(T1,P/100)+(1-ωn)*qsati(T1,P/100))
+        
         end
+        
         Tabs[ip] = T1
 
         if (qt > qsatt[ip])
             Tv = T1*(1 + 0.61*min(qt,qsatt[ip]) - qp - max(0,qt-qsatt[ip]))
-            P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+            P  = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+            
             niter = 0
-            dT = 100
+            dT    = 100
             dqsat = 0.0
-            while (abs(dT) > 0.000001 && niter < 50)
+            
+            while (abs(dT) > 0.0001 && niter < 50)
 
                 if (T1 >= T0n)
 
-                    ωn=1
-                    lstarn = fac_cond
-                    dlstarn = 0
+                    ωn        = 1
+                    lstarn    = fac_cond
+                    dlstarn   = 0
                     qsatt[ip] = max(qsatw(T1,P/100),0.0)
-                    dqsat = dtqsatw(T1,P/100)
-                    dωn = 0.0
+                    dqsat     = dtqsatw(T1,P/100)
+                    dωn       = 0.0
+                
                 elseif (T1 <= T00n)
 
-                    ωn = 0
-                    lstarn = fac_sub
-                    dlstarn = 0
+                    ωn        = 0
+                    lstarn    = fac_sub
+                    dlstarn   = 0
                     qsatt[ip] = max(qsati(T1,P/100),0.0)
-                    dqsat = dtqsati(T1,P/100)
-                    dωn = 0.0
+                    dqsat     = dtqsati(T1,P/100)
+                    dωn       = 0.0
+                
                 else
 
-                    ωn = max(0,min(1,an*T1-bn))
-                    dωn = an
-                    lstarn = fac_cond+(1-ωn)*fac_fus
-                    dlstarn = -dωn*fac_fus#dωn*fac_cond - dωn * fac_fus 
+                    ωn        = max(0,min(1,an*T1-bn))
+                    dωn       = an
+                    lstarn    = fac_cond+(1-ωn)*fac_fus
+                    dlstarn   = -dωn*fac_fus#dωn*fac_cond - dωn * fac_fus 
                     qsatt[ip] = max(0.0,ωn*qsatw(T1,P/100) + (1-ωn)*qsati(T1,P/100))
-                    dqsat = ωn*dtqsati(T1,P/100) + (1-ωn)*dtqsati(T1,P/100) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
+                    dqsat     = ωn*dtqsati(T1,P/100) + (1-ωn)*dtqsati(T1,P/100) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
+                
                 end
 
                 if (T1 >= T0p)
 
-                    ωp = 1
-                    lstarp = fac_cond
+                    ωp      = 1
+                    lstarp  = fac_cond
                     dlstarp = 0
 
                 elseif (T1 <= T00p)
 
-                    ωp = 0
-                    lstarp = fac_sub
+                    ωp      = 0
+                    lstarp  = fac_sub
                     dlstarp = 0
 
                 else
 
-                    ωp = max(0,min(1,ap*T1-bp))
-                    lstarp = fac_cond + (1-ωp)*fac_fus
-                    dlstarp= -ap*fac_fus#ap*fac_cond - ap*fac_fus#ap*fac_fus
+                    ωp      = max(0,min(1,ap*T1-bp))
+                    lstarp  = fac_cond + (1-ωp)*fac_fus
+                    dlstarp = -ap*fac_fus#ap*fac_cond - ap*fac_fus#ap*fac_fus
 
                 end
 
-                fff = T - T1 + lstarn*(qt - qsatt[ip]) + lstarp*qp
-                dfff = dlstarn*(qt - qsatt[ip]) - lstarn*dqsat - 1 + dlstarp*qp
-                dT = -fff/dfff
+                fff   = T - T1 + lstarn*(qt - qsatt[ip]) + lstarp*qp
+                dfff  = dlstarn*(qt - qsatt[ip]) - lstarn*dqsat - 1 + dlstarp*qp
+                dT    = -fff/dfff
                 niter = niter + 1
-                T1 = T1 + dT
-                Tv = T1*(1 + 0.61*min(qt,qsatt[ip]) - qp - max(0,qt-qsatt[ip]))
-                P = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+                T1    = T1 + dT
+                Tv    = T1*(1 + 0.61*min(qt,qsatt[ip]) - qp - max(0,qt-qsatt[ip]))
+                P     = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+            
             end
-            #=if (T1 >=T0p)
-                qsatt[ip] = max(qsatw(T1,P/100),0.0)
-            elseif (T1 <= T00p)
-                qsatt[ip] = max(qsati(T1,P/100),0.0)
-            else
-                qsatt[ip] = max(0.0,ωn*qsatw(T1,P/100) + (1-ωn)*qsati(T1,P/100))
-            end=#
+            
             qsatt[ip] = qsatt[ip] + dT*dqsat
-            qn[ip]  = max(0.0, qt-qsatt[ip])
+            qn[ip]    = max(0.0, qt-qsatt[ip])
 
         else
+        
             qn[ip] = 0.0
+        
         end
-        Tabs[ip]= T1#= - fac1*qp/(1+fac2*qp)
-        if (T1 >= T0n)
-        T = T1 - fac_cond*qp
-        elseif (T1 <= T00n)
-            T = T1 - fac_sub*qp
-        end=#
+
+        Tabs[ip] = T1
 
         ωn = max(0,min(1,an*Tabs[ip]-bn))
         ωp = max(0,min(1,ap*Tabs[ip]-bp))
@@ -962,295 +921,175 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
         qr[ip] = max(0.0,ωp*qp)
         qs[ip] = max(0.0,(1-ωp)*(1-ωg)*qp)
         qg[ip] = max(0.0,(1-ωp)*ωg*qp)
+        
         uaux[ip,end] = moistPressure(PhysConst; ρ = ρ, Tv = Tv, qv = qt-qn[ip])
     end
 end
 
-function saturation_adjustment_sam_microphysics_old(ρ,hl,qt,qp,z,MicroConst,PhysConst)
-
-    T00n = MicroConst.T00n #Temperature threshold for cloud water
-    T0n = MicroConst.T0n #Temperature threshold for ice
-    T00p = MicroConst.T00p #Temperature threshold for rain     
-    T0p = MicroConst.T0p #Temperature threshold for snow/graupel 
-    T00g = MicroConst.T00g #Temperature threshold for graupel
-    T0g = MicroConst.T0g #Temperature threshold for graupel
-    Lc = MicroConst.Lc
-    Lf = MicroConst.Lf
-    Ls = MicroConst.Ls
-    g=PhysConst.g
-    cp = PhysConst.cp
-    fac_cond = Lc/cp
-    fac_fus = Lf/cp
-    fac_sub = Ls/cp
-    # find equilibrium temperature from saturation adjustment
-    # initial guess for sensible temperature and pressure assumes no condensates/all vapor
-    T =  (hl - g*z)/cp
-    qt = max(0.0,qt)
-    qp = max(0.0,qp)
-    #P = moistPressure(PhysConst; ρ=ρ, Temp=T, qv = qt) 
-    an = 1/(T0n - T00n)
-    bn = T00n * an
-    ap = 1/(T0p - T00p)
-    bp = T00p*ap
-    fac1 = fac_cond+(1+bp)*fac_fus
-    fac2 = fac_fus*ap
-    ag = 1/(T0g - T00g)
-    T1 = T + fac1*qp/(1+fac2*qp)
-    P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-    #if (qp > 1e-8) 
-    #    @info qp, T, T1, fac1*qp/(1+fac2*qp), fac1*qp, (1+fac2*qp)
-    #end
-
-    if (T1 >= T0n)
-
-        T1 = T + fac_cond*qp
-        P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-        qsatt = qsatw(T1, P/100)
-
-    elseif (T1 <= T00n)
-
-        T1 = T + fac_sub*qp
-        P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-        qsatt = qsati(T1, P/100)
-
-    else
-
-        ωn = max(0,min(1,an*T1-bn))
-        qsatt = ωn*qsatw(T1,P/100)+(1-ωn)*qsati(T1,P/100)
-
-    end
-
-    if (qt > qsatt)
-        
-        niter = 0
-        dT = 100
-        dqsat = 0.0
-        while (abs(dT) > 0.001 && niter < 50)
-            
-            if (T1 >= T0n)
-                
-                ωn=1
-                lstarn = fac_cond
-                dlstarn = 0
-                qsatt = qsatw(T1,P/100)
-                dqsat = dtqsatw(T1,P/100)
-
-            elseif (T1 <= T00n)
-                
-                ωn = 0
-                lstarn = fac_sub
-                dlstarn = 0
-                qsatt = qsati(T1,P/100)
-                dqsat = dtqsati(T1,P/100)
-
-            else
-
-                ωn = max(0,min(1,an*T1-bn))
-                lstarn = fac_cond+(1-ωn)*fac_fus
-                dlstarn = an*fac_fus
-                qsatt = ωn*qsatw(T1,P/100) + (1-ωn)*qsati(T1,P/100)
-                dqsat = ωn*dtqsati(T1,P/100) + (1-ωn)*dtqsati(T1,P/100)
-            
-            end
-            
-            if (T1 >= T0p)
-                
-                ωp = 1
-                lstarp = fac_cond
-                dlstarp = 0
-                
-            elseif (T1 <= T00p)
-
-                ωp = 0
-                lstarp = fac_sub
-                dlstarp = 0
-
-            else
-
-                ωp = max(0,min(1,ap*T1-bp))
-                lstarp = fac_cond + (1-ωp)*fac_fus
-                dlstarp=ap*fac_fus
-
-            end
-
-            fff = T - T1 + lstarn*(qt - qsatt) + lstarp*qp
-            dfff = dlstarn*(qt - qsatt) - lstarn*dqsat - 1 + dlstarp*qp
-            dT = -fff/dfff
-            niter = niter + 1
-            T1 = T1 + dT
-        end
-
-        qsatt = qsatt + dqsat * dT
-        qn  = max(0.0, qt-qsatt)
-
-    else
-        qn = 0.0
-    end
-    
-    T = T1#= - fac1*qp/(1+fac2*qp)
-    if (T1 >= T0n)
-        T = T1 - fac_cond*qp
-    elseif (T1 <= T00n)
-        T = T1 - fac_sub*qp
-    end=#
-
-    qp = max(0.0, qp)
-
-    ωn = max(0,min(1,an*T-bn))
-    ωp = max(0,min(1,ap*T-bp))
-    ωg = max(0,min(1,ag*T-T00g*ag))
-
-    qc = max(0.0,ωn*qn)
-    qi = max(0.0,(1-ωn)*qn)
-
-    qr = max(0.0,ωp*qp)
-    qs = max(0.0,(1-ωp)*(1-ωg)*qp)
-    qg = max(0.0,(1-ωp)*ωg*qp)
-    P = moistPressure(PhysConst; ρ = ρ, Temp = T, qv = qt-qn)
-    
-    return T,P,qn,qc,qi,qr,qs,qg,qsatt
-end
 
 function saturation_adjustment_sam_microphysics_gpu(u,qe,z,MicroConst,PhysConst,lpert)
 
     FT = eltype(u)
     if (lpert)
+        
         ρ = u[1] + qe[1]
         hl = (u[5] + qe[5])/ρ
         qt = (u[6] + qe[6])/ρ
         qp = (u[7] + qe[7])/ρ
+    
     else
+    
         ρ = u[1]
         hl = u[5]/ρ
         qt = u[6]/ρ
         qp = u[7]/ρ
+    
     end
 
     T00n = MicroConst.T00n #Temperature threshold for cloud water
-    T0n = MicroConst.T0n #Temperature threshold for ice
+    T0n  = MicroConst.T0n #Temperature threshold for ice
     T00p = MicroConst.T00p #Temperature threshold for rain     
-    T0p = MicroConst.T0p #Temperature threshold for snow/graupel 
+    T0p  = MicroConst.T0p #Temperature threshold for snow/graupel 
     T00g = MicroConst.T00g #Temperature threshold for graupel
-    T0g = MicroConst.T0g #Temperature threshold for graupel
+    T0g  = MicroConst.T0g #Temperature threshold for graupel
+
     Lc = MicroConst.Lc
     Lf = MicroConst.Lf
     Ls = MicroConst.Ls
-    g=PhysConst.g
+    
+    g  =PhysConst.g
     cp = PhysConst.cp
+    
     fac_cond = Lc/cp
-    fac_fus = Lf/cp
-    fac_sub = Ls/cp
+    fac_fus  = Lf/cp
+    fac_sub  = Ls/cp
     # find equilibrium temperature from saturation adjustment
     # initial guess for sensible temperature and pressure assumes no condensates/all vapor
+    
     T =  (hl - g*z)/cp
     qt = FT(max(FT(0.0),qt))
     qp = FT(max(FT(0.0),qp))
     #P = moistPressure(PhysConst; ρ=ρ, Temp=T, qv = qt) 
-    an = FT(1/(T0n - T00n))
-    bn = T00n * an
-    ap = FT(1/(T0p - T00p))
-    bp = T00p*ap
+    
+    an   = FT(1/(T0n - T00n))
+    bn   = T00n * an
+    ap   = FT(1/(T0p - T00p))
+    bp   = T00p*ap
     fac1 = fac_cond+(FT(1)+bp)*fac_fus
     fac2 = fac_fus*ap
-    ag = FT(FT(1)/(T0g - T00g))
-    T1 = T + fac1*qp/(FT(1)+fac2*qp)
-    P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-    #if (qp > 1e-8) 
-    #    @info qp, T, T1, fac1*qp/(1+fac2*qp), fac1*qp, (1+fac2*qp)
-    #end
+    ag   = FT(FT(1)/(T0g - T00g))
+    T1   = T + fac1*qp/(FT(1)+fac2*qp)
+   
+    Tv   = T1*(1 + 0.61*qt - qp)
+    P    = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
 
-    if (T1 >= T0n)
+    if (T1 >= T0p)
 
         T1 = T + fac_cond*qp
-        P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-        qsatt = FT(qsatw(T1, FT(P/FT(100))))
+        Tv = T1*(1 + 0.61*qt - qp)
+        P  = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
 
-    elseif (T1 <= T00n)
+    elseif (T1 <= T00p)
 
         T1 = T + fac_sub*qp
-        P = moistPressure(PhysConst; ρ=ρ, Temp=T1, qv = qt)
-        qsatt = FT(qsati(T1, FT(P/FT(100))))
+        Tv = T1*(1 + 0.61*qt - qp)
+        P  = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
 
     else
 
-        ωn = FT(max(FT(0),FT(min(FT(1),an*T1-bn))))
-        qsatt = ωn*FT(qsatw(T1,FT(P/FT(100))))+(1-ωn)*FT(qsati(T1,FT(P/FT(100))))
+        ωp = max(0,min(1,ap*T1-bp))
+        T1 = T + (fac_cond + (1-ωp)*fac_fus)*qp
+        Tv = T1*(1 + 0.61*qt - qp)
+        P  = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
+
+    end
+
+    if (T1 >= T0n)
+
+        qsatt = FT(max(0.0,qsatw(T1, P/100)))
+
+    elseif (T1 <= T00n)
+
+        qsatt = FT(max(0.0,qsati(T1, P/100)))
+
+    else
+
+        ωn    = FT(max(0,min(1,an*T1-bn)))
+        qsatt = FT(max(0.0,ωn*qsatw(T1,P/100)+(1-ωn)*qsati(T1,P/100)))
 
     end
 
     if (qt > qsatt)
 
         niter = Int32(0)
-        dT = FT(100)
+        dT    = FT(100)
         dqsat = FT(0.0)
+        
         while (abs(dT) > FT(0.001) && niter < FT(50))
 
             if (T1 >= T0n)
 
-                ωn=1
-                lstarn = fac_cond
+                ωn      = 1
+                lstarn  = fac_cond
                 dlstarn = FT(0)
-                qsatt = FT(qsatw(T1,P/100))
-                dqsat = FT(dtqsatw(T1,P/100))
+                qsatt   = FT(qsatw(T1,P/100))
+                dqsat   = FT(dtqsatw(T1,P/100))
 
             elseif (T1 <= T00n)
 
-                ωn = FT(0)
-                lstarn = fac_sub
+                ωn      = FT(0)
+                lstarn  = fac_sub
                 dlstarn = FT(0)
-                qsatt = FT(qsati(T1,P/100))
-                dqsat = FT(dtqsati(T1,P/100))
+                qsatt   = FT(qsati(T1,P/100))
+                dqsat   = FT(dtqsati(T1,P/100))
 
             else
 
-                ωn = FT(max(FT(0),FT(min(FT(1),an*T1-bn))))
-                lstarn = fac_cond+(FT(1)-ωn)*fac_fus
+                ωn      = FT(max(FT(0),FT(min(FT(1),an*T1-bn))))
+                lstarn  = fac_cond+(FT(1)-ωn)*fac_fus
                 dlstarn = an*fac_fus
-                qsatt = ωn*FT(qsatw(T1,P/100)) + (FT(1)-ωn)*FT(qsati(T1,P/100))
-                dqsat = ωn*FT(dtqsati(T1,P/100)) + (FT(1)-ωn)*FT(dtqsati(T1,P/100))
-
+                qsatt   = FT(max(FT(0.0),ωn*FT(qsatw(T1,P/100)) + (FT(1)-ωn)*FT(qsati(T1,P/100))))
+                dqsat   = ωn*FT(dtqsati(T1,P/100)) + (FT(1)-ωn)*FT(dtqsati(T1,P/100)) + dωn * qsatw(T1,P/100) - dωn * qsati(T1,P/100)
             end
 
             if (T1 >= T0p)
 
-                ωp = FT(1)
-                lstarp = fac_cond
+                ωp      = FT(1)
+                lstarp  = fac_cond
                 dlstarp = FT(0)
 
             elseif (T1 <= T00p)
 
-                ωp = FT(0)
-                lstarp = fac_sub
+                ωp      = FT(0)
+                lstarp  = fac_sub
                 dlstarp = FT(0)
 
             else
 
-                ωp = FT(max(FT(0),FT(min(FT(1),ap*T1-bp))))
-                lstarp = fac_cond + (FT(1)-ωp)*fac_fus
-                dlstarp=ap*fac_fus
+                ωp      = FT(max(FT(0),FT(min(FT(1),ap*T1-bp))))
+                lstarp  = fac_cond + (FT(1)-ωp)*fac_fus
+                dlstarp = ap*fac_fus
 
             end
 
-            fff = T - T1 + lstarn*(qt - qsatt) + lstarp*qp
-            dfff = dlstarn*(qt - qsatt) - lstarn*dqsat - FT(1) + dlstarp*qp
-            dT = -fff/dfff
-            niter = niter + FT(1)
-            T1 = T1 + dT
+            fff   = T - T1 + lstarn*(qt - qsatt) + lstarp*qp
+            dfff  = dlstarn*(qt - qsatt) - lstarn*dqsat - FT(1) + dlstarp*qp
+            dT    = -fff/dfff
+            niter = niter + Int32(1)
+            T1    = T1 + dT
+            Tv    = T1*(FT(1) + FT(0.61)*min(qt,qsatt) - qp - max(FT(0),qt-qsatt))
+            P     = moistPressure(PhysConst; ρ=ρ, Tv=Tv, qv = qt)
         end
 
         qsatt = qsatt + dqsat * dT
-        qn  = max(FT(0.0), qt-qsatt)
+        qn    = max(FT(0.0), qt-qsatt)
 
     else
+
         qn = FT(0.0)
     end
 
-    T = T1#= - fac1*qp/(1+fac2*qp)
-    if (T1 >= T0n)
-        T = T1 - fac_cond*qp
-    elseif (T1 <= T00n)
-        T = T1 - fac_sub*qp
-    end=#
+    T = T1
 
     qp = FT(max(FT(0.0), qp))
     ωn = FT(max(FT(0),FT(min(FT(1),an*T-bn))))

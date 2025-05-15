@@ -271,7 +271,9 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 y1 = mesh.y[ip]
                 y2 = mesh.y[ip1]
                 mag = sqrt((x1-x2)^2+(y1-y2)^2)
-                metrics.Jef[iedge, k] = mag/2
+                ip2 = mesh.poin_in_bdy_edge[iedge,1]
+                ip3 = mesh.poin_in_bdy_edge[iedge,N+1]
+                metrics.Jef[iedge, k] = sqrt((mesh.x[ip2]-mesh.x[ip3])^2+(mesh.y[ip2]-mesh.y[ip3])^2)/2
                 comp1 = (x1-x2)/mag
                 comp2 = (y1-y2)/mag
                 metrics.nx[iedge, k] = comp2

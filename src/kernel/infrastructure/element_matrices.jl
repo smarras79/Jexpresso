@@ -125,10 +125,10 @@ end
 function build_mass_matrix!(Me, SD::NSD_1D, QT::Inexact, ψ, ω, nelem, Je, Δx, N, Q, T)
     
     for iel=1:nelem
-        Jac = Δx[iel]/2
+        #Jac = Δx[iel]/2
         
         for i=1:N+1
-            Me[i,iel] += Jac*ω[i]
+            Me[i,iel] += Je[iel,i]*ω[i]
         end
     end
 end
@@ -894,6 +894,8 @@ function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, 
     
 end
 
+
+
 function DSS_global_RHS!(RHS, pM, neqs)
 
     if pM == nothing return end
@@ -1017,11 +1019,23 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             @info "@time DSS_nc_scatter_mass!"
     end
     if (inputs[:bdy_fluxes])
-        M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
-        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-        mass_inverse!(M_surf_inv, M_surf, QT)
+        if SD == NSD_3D()
+            M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_surf,pM)
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_surf_inv, M_surf, QT)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            
+        else
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_edge,pM)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_edge_inv, M_edge, QT)
+        end
     else
         M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+        M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
     end
     
     mass_inverse!(Minv, M, QT)
@@ -1063,7 +1077,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    return (; Me, De, Le, M, Minv, pM, D, L, M_surf_inv)
+    return (; Me, De, Le, M, Minv, pM, D, L, M_surf_inv, M_edge_inv)
 end
 
 
@@ -1106,12 +1120,25 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     end
     
     if (inputs[:bdy_fluxes])
-        M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
-        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
-        mass_inverse!(M_surf_inv, M_surf, QT)
+        if SD == NSD_3D()
+            M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_surf,pM)
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_surf_inv, M_surf, QT)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            
+        else
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_edge,pM)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_edge_inv, M_edge, QT)
+        end
     else
         M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+        M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
     end
+
     if typeof(SD) == NSD_1D
         M_lag = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngr*mesh.ngr), Int64(mesh.nelem_semi_inf))
     elseif typeof(SD) == NSD_2D

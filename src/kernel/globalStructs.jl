@@ -11,7 +11,7 @@ end
 function allocate_uODE(SD, npoin, T, backend; neqs=1)
 
     dims1 = (Int64(npoin)*Int64(neqs))
-    dims2 = (Int64(npoin), Int64(neqs))
+    dims2 = (Int64(npoin), Int64(neqs+1))
     dims3 = (Int64(npoin))
 
     uODE = St_uODE{T, dims1, dims2, dims3, backend}()
@@ -119,16 +119,16 @@ Base.@kwdef mutable struct St_bdy_fluxes{T <: AbstractFloat, dims1, dims2, dims3
 
 end
 
-function allocate_bdy_fluxes(SD, nfaces, npoin, ngl, T, backend; neqs=1)
+function allocate_bdy_fluxes(SD, nfaces, nedges, npoin, ngl, T, backend; neqs=1)
 
     if SD == NSD_1D()
         dims1 = (Int64(1), Int64(1))
         dims2 = (Int64(1), Int64(1))
         dims3 = (Int64(1), Int64(1))
     elseif SD == NSD_2D()
-        dims1 = (Int64(1), Int64(1), Int64(1))
-        dims2 = (Int64(1), Int64(1), Int64(1))
-        dims3 = (Int64(1), Int64(1), Int64(1))
+        dims1 = (Int64(ngl), Int64(neqs))
+        dims2 = (Int64(nedges), Int64(ngl), Int64(neqs))
+        dims3 = (Int64(npoin), Int64(neqs))
     elseif SD == NSD_3D()
         dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
         dims2 = (Int64(nfaces), Int64(ngl), Int64(ngl), Int64(neqs))

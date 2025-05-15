@@ -19,10 +19,7 @@ function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin,
                     e = bdy_face_in_elem[iface]
                     ip = poin_in_bdy_face[iface,i,j]
                     ip1 = connijk[e,i,j,2]
-                #=if (S_face[iface,i,j,2] > 0.0 || S_face[iface,i,j,2] < 0.0)
-                    @info ip, S_face[iface,i,j,:], M_surf_inv[ip]
-                end=#
-                    S_flux[ip1,:] .+= S_face[iface,i,j,:]*M_surf_inv[ip]
+                    S_flux[ip,:] .+= S_face[iface,i,j,:]*M_surf_inv[ip]
                 end
             end
         end
@@ -43,6 +40,43 @@ function build_surface_mass_matrix(nfaces, npoin, ω, ψ, ngl, Jac_face, poin_in
     end
     return M_surface
 end
+
+function compute_segment_integral!(S_edge, F_edge, ω, Jac_edge, iedge, ngl)
+    for i = 1:ngl
+
+        ωJac = ω[i]*Jac_edge[iedge,i]
+        S_edge[iedge,i,:] .+= ωJac*F_edge[i,:]
+    end
+
+end
+
+function DSS_segment_integral!(S_flux, S_edge, M_seg_inv, nedges, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem)
+
+    for iedge = 1:nedges
+        for i = 1:ngl
+            e = bdy_edge_in_elem[iedge]
+            ip = poin_in_bdy_edge[iedge,i]
+            ip1 = connijk[e,i,2]
+            S_flux[ip1,:] .+= S_edge[iedge,i,:]*M_seg_inv[ip]
+        end
+    end
+
+end
+
+function build_segment_mass_matrix(nedges, npoin, ω, ψ, ngl, Jac_edge, poin_in_bdy_edge, T, Δx, inputs)
+
+    Medge = zeros(T, ngl^2, nedges)
+    build_mass_matrix!(Medge, NSD_1D(), Inexact(), ψ, ω, nedges, Jac_edge, Δx, ngl-1, ngl-1, T)
+    M_segment = zeros(T, npoin)
+    DSS_mass!(M_segment, NSD_1D(), Inexact(), Medge, poin_in_bdy_edge, nedges, npoin, ngl-1, T; llump=inputs[:llump])
+    for ip=1:npoin
+        if (abs(M_segment[ip]) < 1e-3)
+            M_segment[ip] = 1.0
+        end
+    end
+    return M_segment
+end
+
 
 function bulk_surface_flux!(F_surf,q,q1,qe,qe1,θ,θ1,qn,qn1)
 

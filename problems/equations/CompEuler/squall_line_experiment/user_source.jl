@@ -78,8 +78,8 @@ function user_source!(S, q, qe, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, z, zmin
     nsponge_points = 8
 
     zs = 18000.0#ymax - 20000.0
-    xr = 55000.0
-    xl = -55000.0
+    xr = 35000.0
+    xl = -35000.0
     
     if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betay_coe =  sinpi(0.5*(z-zs)/(24000.0-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
@@ -96,13 +96,13 @@ function user_source!(S, q, qe, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, z, zmin
     #end 
 
     if (x >= xr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxr_coe =  sinpi(0.5*(x-xr)/(60000.0-xr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betaxr_coe =  sinpi(0.5*(x-xr)/(50000.0-xr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxr_coe = 0.0
     end
 
     if (x <= xl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-(-60000.0)))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-(-50000.0)))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxl_coe = 0.0
     end
