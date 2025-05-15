@@ -15,7 +15,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # 
     #---------------------------------------------------------------------------------
     qvars = ["ρ", "ρu", "ρv", "ρw", "ρθ", "ρqt", "ρql"]
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
+    qoutvars = ["ρ", "u", "v", "w", "e_tot", "qt", "ql"]
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
     if (inputs[:backend] == CPU())
@@ -24,7 +25,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # READ RESTART HDF5:
             #
-            q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
+            q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars), qoutvars=qoutvars)
             PhysConst = PhysicalConst{Float64}()
         
             for ip=1:mesh.npoin

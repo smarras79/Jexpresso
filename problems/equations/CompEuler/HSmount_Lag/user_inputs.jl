@@ -3,16 +3,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 500,#000.0, #2π,
+        :tend                 => 2000.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => SSPRK54(),
         #:ndiagnostics_outputs => 10,
-        :diagnostics_at_times => range(0,500,30),
+        :diagnostics_at_times => range(0,2000,30),
         :output_dir           => "./output/",
         :case                 => "rtb",
-        #:CL                   => NCL(),
-        #:backend              => CUDABackend(),
-        # :backend              => MetalBackend(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

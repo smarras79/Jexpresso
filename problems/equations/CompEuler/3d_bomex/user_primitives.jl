@@ -26,3 +26,15 @@ function user_primitives_gpu(u,qe,lpert)
         return T(u[1]), T(u[2]/u[1]), T(u[3]/u[1]), T(u[4]/u[1]), T(u[5]/u[1]), T(u[6]/u[1]), T(u[7]/u[1])
     end
 end
+
+function user_uout!(uout, u, qe, ::TOTAL)
+
+    uout[1] = u[1]
+    uout[2] = u[2]/u[1]
+    uout[3] = u[3]/u[1]
+    uout[4] = u[4]/u[1]
+    uout[5] = u[5]/u[1]
+    uout[6] = u[6]/u[1]
+    uout[7] = u[7]/u[1]
+
+end
