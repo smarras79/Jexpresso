@@ -319,7 +319,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
+    call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
     
     
     #

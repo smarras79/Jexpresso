@@ -1,5 +1,5 @@
 
-function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, z=0.0, ymin=0.0, zmax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
+function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, z=0.0, ymin=0.0, zmin =0.0, zmax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
    
     PhysConst = PhysicalConst{Float64}()
     
