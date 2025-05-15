@@ -1,12 +1,12 @@
 using Quadmath
 
-function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_2D,::TOTAL)
-    
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1))   
+
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
     ## Subtract background velocity
     #qv = copy(q)
-    uaux[:,2:3] .= uaux[:,2:3] .- params.qe[:,2:3]
+    uaux[:,2:3] .= uaux[:,2:3] .- params.qp.qe[:,2:3]
     ## store Dimension of MxM object
 
     ## Loop through the elements
@@ -66,13 +66,14 @@ function filter!(u, params, t, uaux, connijk, connijk_lag, Je, Je_lag, SD::NSD_2
     end
     
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
-    
+
+    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
     end
     
-    uaux .= params.B
-    uaux[:,2:3] .+= params.qe[:,2:3]
+    uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
+    uaux[:,2:3] .+= params.qp.qe[:,2:3]
 
     uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
@@ -209,7 +210,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
         #end
     end
 
-
+    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
     end
@@ -335,7 +336,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
 
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
 
-
+    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
     end

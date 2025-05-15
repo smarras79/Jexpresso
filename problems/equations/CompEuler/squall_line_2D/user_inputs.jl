@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.1,
+        :Δt                   => 0.05,
         :tinit                => 0.0,
         :tend                 => 7000.0,
         #:tinit                => 100.0,
@@ -27,14 +27,14 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
-        :μ                   => [0.0, 200.0, 200.0, 200.0, 300.0, 300.0, 300.0], #horizontal viscosity constant for momentum
+        :ivisc_equations      => [1, 2, 3, 4, 5, 6],
+        :μ                   => [0.0, 200.0, 200.0, 300.0, 300.0, 300.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_coarse.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_2D.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_LinEtAl.msh",
         #---------------------------------------------------------------------------
         # Mountain parameters
@@ -53,9 +53,8 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.05,
-        :mu_y                => 0.00,
-        :mu_z                => 0.05,
+        :mu_x                => 0.1,
+        :mu_y                => 0.1,
         :filter_type         => "erf", #use "erf" for Boyd-Vandeven, "exp" for exponential filter, or "quad" for quadratic filter
         #---------------------------------------------------------------------------
         # Plotting parameters

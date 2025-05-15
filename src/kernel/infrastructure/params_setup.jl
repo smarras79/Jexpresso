@@ -80,6 +80,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     bdy_fluxes = allocate_bdy_fluxes(sem.mesh.SD,
                           sem.mesh.nfaces_bdy,
+                          sem.mesh.nedges_bdy,
                           sem.mesh.npoin,
                           sem.mesh.ngl,
                           T, backend;
@@ -200,7 +201,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Allocate micophysics arrays
     #------------------------------------------------------------------------------------
-    mp = allocate_SamMicrophysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; lmoist=inputs[:lmoist])
+    mp = allocate_SamMicrophysics(sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend, sem.mesh.SD; lmoist=inputs[:lmoist])
     #------------------------------------------------------------------------------------
     # Allocate large scale tendencies arrays
     #------------------------------------------------------------------------------------
@@ -254,7 +255,7 @@ function params_setup(sem,
                   qbdy_lag_gpu,
                   RHS, RHS_visc,
                   F_lag, G_lag, S_lag, 
-                  F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv,
+                  F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv, M_edge_inv = sem.matrix.M_edge_inv,
                   rhs_el_lag,
                   rhs_diff_el_lag,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
@@ -284,7 +285,7 @@ function params_setup(sem,
                   rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                   uprimitive,
                   F, G, H, S,
-                  F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv,
+                  F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv, M_edge_inv = sem.matrix.M_edge_inv,
                   flux_gpu, source_gpu, qbdy_gpu,
                   flux_micro, source_micro, adjusted, Pm,
                   q_t, q_ti, q_tij, fqf, b, B,

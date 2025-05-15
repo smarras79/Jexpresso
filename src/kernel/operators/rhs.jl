@@ -415,27 +415,38 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
                                xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
                                params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
-                               params.mesh.connijk, params.metrics.Jef, params.S_face, params.S_flux, params.F_surf, params.M_surf_inv,
+                               params.mesh.connijk, params.metrics.Jef, params.S_face, params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
                                params.mp.Tabs, params.mp.qn,
                                params.ω, neqs, params.inputs, AD, SD)
     
     if (params.inputs[:lmoist])
-        do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
-                          params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg, params.mp.S_micro,
-                          params.mp.qsatt, params.mesh.npoin, params.uaux, params.mesh.z, params.qp.qe, params.SOL_VARS_TYPE)
-        
+        if (SD == NSD_3D())
+            do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+                              params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg, params.mp.S_micro,
+                              params.mp.qsatt, params.mesh.npoin, params.uaux, params.mesh.z, params.qp.qe, SD, params.SOL_VARS_TYPE)
+        else
+            do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+                              params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg, params.mp.S_micro,
+                              params.mp.qsatt, params.mesh.npoin, params.uaux, params.mesh.y, params.qp.qe, SD, params.SOL_VARS_TYPE)
+        end
         if (params.inputs[:lprecip])
             compute_precipitation_derivatives!(params.mp.dqpdt, params.mp.dqtdt, params.mp.dhldt, params.mp.Pr, params.mp.Ps,
                                                params.mp.Pg, params.mp.Tabs, params.mp.qi, @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
                                                params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
-                                               params.metrics, params.ω, params.basis.dψ, params.SOL_VARS_TYPE)
-            params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt
-            params.rhs_el[:,:,:,:,6] .+= params.mp.dqtdt
-            params.rhs_el[:,:,:,:,7] .+= params.mp.dqpdt
+                                               params.metrics, params.ω, params.basis.dψ, SD, params.SOL_VARS_TYPE)
+            if (SD == NSD_3D())
+                params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt
+                params.rhs_el[:,:,:,:,6] .+= params.mp.dqtdt
+                params.rhs_el[:,:,:,:,7] .+= params.mp.dqpdt
+            else
+                params.rhs_el[:,:,:,4] .-= params.mp.dhldt
+                params.rhs_el[:,:,:,5] .+= params.mp.dqtdt
+                params.rhs_el[:,:,:,6] .+= params.mp.dqpdt
+            end
         end
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
-
+    
     if(params.inputs[:lsaturation])
         saturation_adjustment(params.uaux, params.qp.qe, params.mesh.z, params.mesh.connijk, params.mesh.nelem, params.mesh.ngl, neqs, params.thermo_params)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
@@ -450,7 +461,6 @@ function _build_rhs!(RHS, u, params, time)
     end
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
     # @info "end DSS_rhs_invicid"
-    
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -468,7 +478,7 @@ function _build_rhs!(RHS, u, params, time)
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-
+    
     DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
 
     for ieq=1:neqs
@@ -538,6 +548,11 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=x[ip], y=y[ip], xmax=xmax, xmin=xmin, ymax=ymax)
+                if (params.inputs[:lmoist])
+                    add_micro_precip_sources!(params.mp, params.mp.flux_lw[ip], params.mp.flux_sw[ip], params.mp.Tabs[ip], params.mp.S_micro[ip],
+                                              @view(params.S[i,j,:]), @view(params.uaux[ip,:]),
+                                              params.mp.qn[ip], @view(qe[ip,:]), SD, params.SOL_VARS_TYPE)
+                end
             end
 
          #=   if luser_function
@@ -599,7 +614,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                 if (params.inputs[:lmoist])
                     add_micro_precip_sources!(params.mp, params.mp.flux_lw[ip], params.mp.flux_sw[ip], params.mp.Tabs[ip], params.mp.S_micro[ip],
                                               @view(params.S[i,j,k,:]), @view(params.uaux[ip,:]),
-                                              params.mp.qn[ip], @view(qe[ip,:]), params.SOL_VARS_TYPE)
+                                              params.mp.qn[ip], @view(qe[ip,:]), SD, params.SOL_VARS_TYPE)
                     if (params.inputs[:LST])
                         large_scale_source!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.S[i,j,k,:]), 
                                             params.LST.Rad_cool[ip], params.LST.T_adv[ip], params.LST.q_adv[ip],params.SOL_VARS_TYPE)
@@ -1325,7 +1340,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
     end
 end
 
-function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ)
+function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ, ::NSD_3D)
     for k=1:ngl
         for j=1:ngl
             for i=1:ngl
@@ -1351,6 +1366,28 @@ function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζ
         end
     end
 end
+
+function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdy, dηdy, ω, dψ, ::NSD_2D)
+    for j=1:ngl
+        for i=1:ngl
+            ωJac = ω[i]*ω[j]*Je[iel,i,j]
+                              
+            dHdξ = 0.0    
+            dHdη = 0.0
+            @turbo for m = 1:ngl
+                dHdξ += dψ[m,i]*q[m,j]
+                dHdη += dψ[m,j]*q[i,m]
+            end
+            dξdy_ij = dξdy[iel,i,j]      
+            dηdy_ij = dηdy[iel,i,j]      
+                
+            dHdz = dHdξ*dξdy_ij + dHdη*dηdy_ij
+                
+            auxi = ωJac*dHdz
+            dqdz[iel,i,j] += auxi
+        end 
+    end     
+end  
 
 function saturation_adjustment(uaux, qe, z, connijk, nelem, ngl, neqs, thermo_params)
     for iel=1:nelem
