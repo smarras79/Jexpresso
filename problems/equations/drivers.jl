@@ -243,6 +243,18 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
         intermediate_product[:,:,i] = EL.A∂Ovo[:,:,i]*EL.Hvovo[:,:,i]*EL.Avo∂τ[:,:,i]
     end
     EL.B∂O∂τ = EL.A∂O∂τ - sum(intermediate_product, dims=3)
+
+
+    for i1=1:length(mesh.∂O)      #row    B[i1][i2]        
+        for i2=1:length(mesh.∂O)  #column B[i1][i2]
+            
+            j2 = findall(x->x==mesh.∂O[i2], mesh.∂τ)
+            
+            EL.B∂O∂O[i1, i2] = EL.B∂O∂τ[i1, j2]
+            @info i1, i2, EL.B∂O∂O[i1, i2]
+        end        
+    end
+    
     
     @info size(EL.B∂O∂τ)
     @mystop

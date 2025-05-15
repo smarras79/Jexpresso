@@ -1,4 +1,4 @@
-# <img src="https://github.com/smarras79/Jexpresso/blob/sm/3d/assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
+# <img src="https://github.com/smarras79/Jexpresso/blob/master/assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
 
 | **Documentation** |
 |:------------ |
@@ -337,19 +337,14 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 6: Hydrostatic linear mountain waves
 
-The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
-
-```bash      
-push!(empty!(ARGS), "CompEuler", "HSmount_Lag");
+```bash
+push!(empty!(ARGS), "CompEuler", "3d_bomex");
 include("./src/Jexpresso.jl")
 ```
-
-<img src="assets/wvelo.png"
+<img src="assets/bomex.png"
      alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
+     style="float: left; margin-right: 3.5px;" />
 
 ## Setup and Run with MPI
 

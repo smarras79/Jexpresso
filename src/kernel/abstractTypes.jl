@@ -66,6 +66,7 @@ struct TOTAL <: AbstractPert end
 abstract type AbstractVT end
 struct AV   <: AbstractVT end
 struct SMAG <: AbstractVT end
+struct VREM <: AbstractVT end
 
 
 #
