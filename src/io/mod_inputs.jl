@@ -475,9 +475,30 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     if(!haskey(inputs, :lvisc))
         inputs[:lvisc] = false
+        inputs[:visc_model] = nothing
     end
-    if(!haskey(inputs, :visc_model))
-        inputs[:visc_model] = AV() #Default is artificial viscosity with constant coefficient
+    if(inputs[:lvisc] == true)
+        if(!haskey(inputs, :visc_model))
+            inputs[:visc_model] = AV() #Default is artificial viscosity with constant coefficient
+        else
+            if( lowercase(inputs[:visc_model]) == "av" ||
+                lowercase(inputs[:visc_model]) == "ad" ||
+                lowercase(inputs[:visc_model]) == "art")
+                inputs[:visc_model] = AV()
+            elseif( lowercase(inputs[:visc_model]) == "smag" ||
+                    lowercase(inputs[:visc_model]) == "smago")
+                inputs[:visc_model] = SMAG()
+            elseif( lowercase(inputs[:visc_model]) == "vrem" ||
+                    lowercase(inputs[:visc_model]) == "vreman")
+                inputs[:visc_model] = VREM()
+            elseif( lowercase(inputs[:visc_model]) == "dsgs" ||
+                    lowercase(inputs[:visc_model]) == "dynsgs")
+                inputs[:visc_model] = DSGS()
+            else
+                inputs[:visc_model] = AV()
+                @warn( " Possible visc_model options are the strings:\n \"av\"\n \"vreman\"\n \"smago\"\n \"dynsgs\" \n   \"av\" will be used by default unless you change your input.")
+            end
+        end
     end
 
     #

@@ -750,14 +750,14 @@ end
 
 
 
-function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::FD)
+function DSS!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::FD)
     nothing
 end
-function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::FD)
+function DSS!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::FD)
     nothing
 end
 
-function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
+function DSS!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
 
     for ieq = 1:neqs
         for iel = 1:nelem
@@ -770,14 +770,12 @@ function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
     
 end
 
-function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
+function DSS!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
 
     for ieq = 1:neqs
         for iel = 1:nelem
             for j = 1:ngl
                 for i = 1:ngl
-                    #I = Ref{Int64}(mesh.connijk[iel,i,j])
-                    #RHS[I[],ieq] += Ref{Float64}(rhs_el[iel,i,j,ieq])[]
                     I = connijk[iel,i,j]
                     RHS[I,ieq] += rhs_el[iel,i,j,ieq]
                 end
@@ -788,7 +786,7 @@ function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
 end
 
 
-function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_3D, ::ContGal)
+function DSS!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_3D, ::ContGal)
 
     for ieq = 1:neqs
         for iel = 1:nelem
@@ -903,21 +901,13 @@ function DSS_global_RHS!(RHS, pM, neqs)
 end
 
 function DSS_global_RHS_v0!(M, pM)
-    # # @info ip2gip
-
-    # pM = pvector(values->@view(M[:]), row_partition)
+    
     sizeM = length(M)
-    # pM = map(parts, local_values(pM)) do part, localpM
-    #     @info part, length(localpM), sizeM
-    #     localpM = copy(M)
-    # end
-
     map( partition(pM)) do values
         for i = 1:sizeM
             values[i] = M[i]
         end
     end
-
 
     assemble!(pM) |> wait
     consistent!(pM) |> wait
@@ -988,7 +978,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             @time DSS_nc_gather_mass!(M, mesh, SD, QT, Me, mesh.connijk, mesh.poin_in_edge,
                                     mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
                                     mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, N, interp)
-            @info "@time DSS_nc_gather_mass!"
+            #@info "@time DSS_nc_gather_mass!"
         end
 
         DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])

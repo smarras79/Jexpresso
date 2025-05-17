@@ -5,20 +5,20 @@ include("./plotting/jeplots.jl")
 #------------------------------------------------------------------
 # Callback for missing user_uout!()
 #------------------------------------------------------------------
-function call_user_uout(uout, u, qe, ET, npoin, nvar, noutvar)
+function call_user_uout(uout, u, qe, μdsgsp, ET, npoin, nvar, noutvar)
     
     if function_exists(@__MODULE__, :user_uout!)
         for ip=1:npoin
-            user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
+            user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], μdsgsp[ip,:], ET)
         end
     else
         for ip=1:npoin
-            callback_user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET)
+            callback_user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], μdsgsp[ip,:], ET)
         end
     end
 end
 
-@inline function callback_user_uout!(uout, usol, qe, ET)
+@inline function callback_user_uout!(uout, usol, qe, μdsgsp, ET)
     uout[1:end] = usol[1:end]
 end
 
@@ -122,8 +122,9 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
 end
 
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
-                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, μdsgs,
+                      connijk_original, poin_in_bdy_face_original,
+                      x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs::Dict,
                       varnames, outvarnames,
                       outformat::VTK;
@@ -134,11 +135,14 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
 
-        write_vtk(SD, mesh, sol, uaux, mp, 
-                  connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+        write_vtk(SD, mesh, sol, uaux, mp, μdsgs,
+                  connijk_original, poin_in_bdy_face_original,
+                  x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
-                  iout=iout, nvar=nvar, qexact=qexact, case=case) 
+                  iout=iout, nvar=nvar,
+                  qexact=qexact,
+                  case=case) 
         
     else
         #VERIFY THIS on GPU
@@ -157,8 +161,9 @@ end
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
-                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, μdsgs,
+                   connijk_original, poin_in_bdy_face_original,
+                   x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
@@ -223,7 +228,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
+    call_user_uout(qout, qaux, qexact, μdsgs.μdsgsp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;)
 
     
     #
@@ -253,7 +258,8 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
 end
 
 function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
-                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                   connijk_original, poin_in_bdy_face_original,
+                   x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
@@ -547,4 +553,104 @@ function read_hdf5(SD, INPUT_DIR::String, inputs::Dict, npoin, nvar)
     end
     
     return q, qe
+end
+
+
+#------------
+# VTK writer
+#------------
+function mywrite_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+                     connijk_original, poin_in_bdy_face_original,
+                     x_original, y_original, z_original,
+                     t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                     iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+    
+    if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
+    if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
+    
+    nvar     = size(varnames, 1)
+    noutvar  = max(nvar, size(outvarnames,1))
+    new_size = size(mesh.x,1)
+    if (mesh.nelem_semi_inf > 0)
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1)]
+    else
+        subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2, 4)
+        cells = [MeshCell(VTKCellTypes.VTK_QUAD, [1, 2, 4, 3]) for _ in 1:mesh.nelem*(mesh.ngl-1)^2]
+    end
+    isel = 1
+    npoin = mesh.npoin
+    conn = zeros(mesh.nelem,mesh.ngl,mesh.ngl)
+    conn .= mesh.connijk
+    
+    for iel = 1:mesh.nelem
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngl-1
+                ip1 = mesh.connijk[iel,i,j]
+                ip2 = mesh.connijk[iel,i+1,j]
+                ip3 = mesh.connijk[iel,i+1,j+1]
+                ip4 = mesh.connijk[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+    end
+    
+    for iel = 1:mesh.nelem_semi_inf
+        for i = 1:mesh.ngl-1
+            for j = 1:mesh.ngr-1
+                ip1 = mesh.connijk_lag[iel,i,j]
+                ip2 = mesh.connijk_lag[iel,i+1,j]
+                ip3 = mesh.connijk_lag[iel,i+1,j+1]
+                ip4 = mesh.connijk_lag[iel,i,j+1]
+                subelem[isel, 1] = ip1
+                subelem[isel, 2] = ip2
+                subelem[isel, 3] = ip3
+                subelem[isel, 4] = ip4
+                
+                cells[isel] = MeshCell(VTKCellTypes.VTK_QUAD, subelem[isel, :])
+                
+                isel = isel + 1
+            end
+        end
+    end
+
+    #
+    # Fetch user-defined diagnostic vars or take them from the solution vars:
+    #
+    qout = zeros(Float64, npoin, noutvar)
+    u2uaux!(qaux, q, nvar, npoin)
+    call_user_uout(qout, qaux, qexact, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;)
+@info size(qout), size(qaux)
+    
+    #
+    # Write solution to vtk:
+    #
+    fout_name = string(OUTPUT_DIR, "/iter_", iout)
+    vtkfile = map(mesh.parts) do part
+        vtkf = pvtk_grid(fout_name,
+                         mesh.x[1:mesh.npoin],
+                         mesh.y[1:mesh.npoin],
+                         mesh.y[1:mesh.npoin]*TFloat(0.0),
+                         cells,
+                         compress=false;
+                         part=part, nparts=mesh.nparts, ismain=(part==1))
+        vtkf["part", VTKCellData()] = ones(isel -1) * part
+
+        for ivar = 1:noutvar
+            idx = (ivar - 1)*npoin
+            vtkf[string(outvarnames[ivar]), VTKPointData()] = @view(qout[1:npoin,ivar])
+        end
+        
+        vtkf
+    end
+    
+    outfiles = map(vtk_save, vtkfile)
+    
 end

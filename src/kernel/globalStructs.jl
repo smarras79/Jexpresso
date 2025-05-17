@@ -189,7 +189,7 @@ Base.@kwdef mutable struct St_rhs_lag{T <: AbstractFloat, dims1, dims2, backend}
     
     RHS_lag          = KernelAbstractions.zeros(backend,  T, dims1)         
     RHS_visc_lag     = KernelAbstractions.zeros(backend,  T, dims1)    
-    rhs_el_lag       = KernelAbstractions.zeros(backend,  T, dims2)     
+    rhs_el_lag       = KernelAbstractions.zeros(backend,  T, dims2)
     rhs_diff_el_lag  = KernelAbstractions.zeros(backend,  T, dims2) 
     rhs_diffξ_el_lag = KernelAbstractions.zeros(backend,  T, dims2)
     rhs_diffη_el_lag = KernelAbstractions.zeros(backend,  T, dims2)
@@ -351,47 +351,6 @@ function allocate_filter_lag(SD, nelem_semi_inf, npoin, ngl, ngr, T, backend; ne
     
     return filter_lag
 end
-
-#-------------------------------------------------------------------------------------------
-# Dynamic viscosity methods:
-#-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_musgs{T <: AbstractFloat, dims1, dims2, backend}
-    
-    μdgsgp = KernelAbstractions.zeros(backend,  T, dims1) #pointwise μdsgs
-    μdgsge = KernelAbstractions.zeros(backend,  T, dims2) #elementwise μdsgs
-    
-end
-function allocate_musgs(SD, nelem, npoin, ngl, visc_model, T, backend; neqs=1)
-
-    if visc_model == DSGS()       
-        if SD == NSD_1D()
-            dims1 = (Int64(npoin), Int64(neqs))
-            dims2 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
-        elseif SD == NSD_2D()
-            dims1 = (Int64(npoin), Int64(neqs))
-            dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) 
-        elseif SD == NSD_3D()
-            dims1 = (Int64(npoin), Int64(neqs))
-            dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) 
-        end
-    else
-        if SD == NSD_1D()
-            dims1 = (1, 1)
-            dims2 = (1, 1, 1) 
-        elseif SD == NSD_2D()
-            dims1 = (1, 1)
-            dims2 = (1, 1, 1, 1)
-        elseif SD == NSD_3D()
-            dims1 = (1, 1)
-            dims2 = (1, 1, 1, 1, 1)
-        end
-    end
-    
-    μsgs = St_musgs{T, dims1, dims2, backend}()
-    
-    return rhs
-end
-
 
 #-------------------------------------------------------------------------------------------
 # GPU auxiliary arrays

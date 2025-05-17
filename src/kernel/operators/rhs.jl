@@ -25,7 +25,6 @@ function u2uaux!(uaux, u, neqs, npoin)
     
 end
 
-
 function uaux2u!(u, uaux, neqs, npoin)
 
     for i=1:neqs
@@ -92,6 +91,8 @@ end
 
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
+
+    ## update solution qnm1, qnm2
     
     if (backend == CPU())
         build_rhs!(@view(params.RHS[:,:]), u, params, time)
@@ -448,7 +449,7 @@ function _build_rhs!(RHS, u, params, time)
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
                            params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
     end
-    DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+    DSS!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
     # @info "end DSS_rhs_invicid"
     
     #-----------------------------------------------------------------------------------
@@ -462,11 +463,21 @@ function _build_rhs!(RHS, u, params, time)
         
         # @info "start DSS_rhs_viscous"
         if inputs[:ladapt] == true
-            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                               params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT,
+                               params.rhs_diff_el,
+                               params.mesh.connijk,
+                               params.mesh.poin_in_edge,
+                               params.mesh.non_conforming_facets,
+                               params.mesh.non_conforming_facets_parents_ghost,
+                               params.mesh.ip2gip,
+                               params.mesh.gip2ip,
+                               params.mesh.pgip_ghost,
+                               params.mesh.pgip_owner,
+                               ngl-1, neqs, params.interp)
         end
-        DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
+        DSS!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
+        
     end
 
     DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
@@ -668,25 +679,36 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
 end
 
 function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
-
-    compute_viscosity(μ_dsgs,
-                      params.uaux, #[ip,:]
-                      q1, q2,
-                      params.rhs_el,
-                      Δt, npoin,
-                      elem, ngl,
-                      
-                      params.mesh.connijk,
-                      params.metrics.Je,
-                      params.VT,
-                      SD)
+    
+    compute_viscosity(params.μdsgs,
+    params.uaux, #[ip,:]
+    params.qp.qnm1,
+    params.qp.qnm2,
+    qe, #[:,ip]
+    params.rhs_el,
+    params.Δt,
+    params.mesh,
+    params.mesh.npoin,
+    params.mesh.nelem,
+    params.mesh.ngl,                      
+    params.mesh.connijk,
+    params.metrics.Je,
+    params.VT, #ViscousType/viscous_model AV(), SMAG(), etc.
+    SD)
+    
+    DSS!(@view(params.μdsgs.μdsgsp[:,:]), params.μdsgs.μdsgse, connijk,
+         params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
+    
     
     for iel=1:params.mesh.nelem
         
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
 
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             @view(params.uprimitive[i,j,:]),
+                             params.SOL_VARS_TYPE)
         end
 
         for ieq = 1:params.neqs
@@ -701,7 +723,9 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
                              params.metrics.Je,
                              params.metrics.dξdx, params.metrics.dξdy,
                              params.metrics.dηdx, params.metrics.dηdy,
-                             params.inputs, params.rhs_el, iel, ieq, params.QT, params.VT, SD, params.AD)
+                             params.inputs, params.rhs_el,
+                             iel, ieq, params.QT, params.VT, SD, params.AD)
+            
         end
         
     end
@@ -738,8 +762,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
                              params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, 
                              params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
                              params.metrics.dζdx,params.metrics.dζdy, params.metrics.dζdz,
-                             params.inputs, params.rhs_el, iel,
-                             ieq, params.QT, params.VT, SD, params.AD)
+                             params.inputs, params.rhs_el,
+                             iel, ieq, params.QT, params.VT, SD, params.AD)
         end
     end
     
@@ -1114,9 +1138,72 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
     nothing
 end
 
+function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω,
+                           mesh, basis, metrics, inputs, rhs_el, iel, ieq,
+                           QT::Exact, VT, SD::NSD_2D, ::FD)
+    nothing
+end
+
+
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, dξdy, dηdx, dηdy, inputs, rhs_el, iel, ieq,
-                          QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal)
+                          ngl, dψ, Je, dξdx, dξdy, dηdx, dηdy, inputs,
+                          rhs_el, iel, ieq, QT::Inexact, VT::DSGS, SD::NSD_2D, ::ContGal)
+
+     for l = 1:ngl
+        for k = 1:ngl
+            ωJac = ω[k]*ω[l]*Je[iel,k,l]
+            
+            dqdξ = 0.0
+            dqdη = 0.0
+            @turbo for ii = 1:ngl
+                dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+            end
+            dξdx_kl = dξdx[iel,k,l]
+            dξdy_kl = dξdy[iel,k,l]
+            dηdx_kl = dηdx[iel,k,l]
+            dηdy_kl = dηdy[iel,k,l]
+            
+            auxi = dqdξ*dξdx_kl + dqdη*dηdx_kl
+            dqdx = visc_coeffieq[ieq]*auxi
+            
+            auxi = dqdξ*dξdy_kl + dqdη*dηdy_kl
+            dqdy = visc_coeffieq[ieq]*auxi
+            
+            ∇ξ∇u_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
+            ∇η∇u_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
+            
+            @turbo for i = 1:ngl
+                dhdξ_ik = dψ[i,k]
+                dhdη_il = dψ[i,l]
+                
+                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇u_kl
+                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇u_kl
+            end
+        end  
+    end
+    #error( " 2D only works with :visc_model => \"AV\"")
+    
+end
+
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je, dξdx, dξdy, dηdx, dηdy, inputs,
+                          rhs_el, iel, ieq, QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal)
+    error( " 2D only works with :visc_model => \"AV\"")
+    
+end
+
+
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je, dξdx, dξdy, dηdx, dηdy, inputs,
+                          rhs_el, iel, ieq, QT::Inexact, VT::VREM, SD::NSD_2D, ::ContGal)
+    error( " 2D only works with :visc_model => \"AV\"")
+    
+end
+
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je, dξdx, dξdy, dηdx, dηdy, inputs, 
+                          rhs_el, iel, ieq, QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal)
     
     for l = 1:ngl
         for k = 1:ngl
@@ -1154,7 +1241,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
 end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, rhs_el, iel, ieq, QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal)
+                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs,
+                          rhs_el, iel, ieq, QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal)
 
     for m = 1:ngl
         for l = 1:ngl
@@ -1211,8 +1299,7 @@ end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitive, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs,
-                          rhs_el, iel, ieq,
-                          QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
+                          rhs_el, iel, ieq, QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
     
 
     ν_vreman = 0.0 # Initialize Vreman viscosity
@@ -1333,8 +1420,7 @@ end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitive, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs,
-                          rhs_el, iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal)
+                          rhs_el, iel, ieq, QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal)
     
     for m = 1:ngl
         for l = 1:ngl
@@ -1531,46 +1617,50 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
     =#
 end
 
-function compute_viscosity(μdsgs, q, q1, q2, rhs, Δt, npoin, elem, ngl, connijk, sgsmodel::AV, ::NSD_2D) nothing end
+function compute_viscosity(μdsgs, q, q1, q2, rhs_el, Δt, npoin, nelem, ngl, connijk, Je, nothing, NSD) nothing end
 
-function compute_viscosity(μdsgs, q, q1, q2, rhs, Δt, npoin, elem, ngl, connijk, sgsmodel::SMAG, ::NSD_2D) nothing end
+function compute_viscosity(μdsgs, q, q1, q2, rhs_el, Δt, npoin, nelem, ngl, connijk, Je, ::AV, ::NSD_2D) nothing end
 
-function compute_viscosity(μdsgs, q, q1, q2, rhs, Δt, npoin, elem, ngl, connijk, sgsmodel::VREM, ::NSD_2D) nothing end
+function compute_viscosity(μdsgs, q, q1, q2, rhs_el, Δt, npoin, nelem, ngl, connijk, Je, ::SMAG, ::NSD_2D) nothing end
 
-function compute_viscosity(μdsgs, q, q1, q2, rhs, Δt, npoin, elem, ngl, connijk, sgsmodel::DSGS, ::NSD_2D)
+function compute_viscosity(μdsgs, q, q1, q2, rhs_el, Δt, npoin, nelem, ngl, connijk, Je, ::VREM, ::NSD_2D) nothing end
+
+function compute_viscosity(μdsgs, q, q1, q2, qe, rhs_el, Δt, mesh, npoin, nelem, ngl, connijk, Je, ::DSGS, ::NSD_2D)
+
+    γ  = 1.4
+    C1 = 1.0
+    C2 = 0.5
     
     #compute domain averages
     ρ_avg  = 0.0
     ρu_avg = 0.0
     ρv_avg = 0.0
     ρE_avg = 0.0
-    for e=1:nelem
-        for i=1:ngl, j=1:ngl
-            ip = connijk[i,j,e]
-            ρ_avg  += q[ip,1]
-            ρu_avg += q[ip,2]
-            ρv_avg += q[ip,3]
-            ρE_avg += q[ip,4]
-        end
+   
+    for ip=1:npoin
+        ρ_avg  += q[ip, 1]
+        ρu_avg += q[ip, 2]/q[ip, 1]
+        ρv_avg += q[ip, 3]/q[ip, 1]
+        ρE_avg += (q[ip, 4]-300)/q[ip, 1]
     end
     ρ_avg  = ρ_avg  / (npoin)
     ρu_avg = ρu_avg / (npoin)
     ρv_avg = ρv_avg / (npoin)
     ρE_avg = ρE_avg / (npoin)
-
+    
     #Get denominator infinity norms
     ρdiff  = zeros(ngl, ngl, nelem)
     ρudiff = zeros(ngl, ngl, nelem)
     ρvdiff = zeros(ngl, ngl, nelem)
     ρEdiff = zeros(ngl, ngl, nelem)
-    for e=1:nelem
-        for i=1:ngl, j=1:ngl
-            ip = connijk[i,j,,e]
+    for ie = 1:nelem
+        for i = 1:ngl, j = 1:ngl
+            ip = connijk[ie,i,j]
             
-            ρdiff[i, j, e]  = abs(q[ip,1] - ρ_avg)
-            ρudiff[i, j, e] = abs(q[ip,2] - ρu_avg)
-            ρvdiff[i, j, e] = abs(q[ip,3] - ρv_avg)
-            ρEdiff[i, j, e] = abs(q[ip,4] - ρE_avg)
+            ρdiff[i, j, ie]  = abs(q[ip, 1] - ρ_avg)
+            ρudiff[i, j, ie] = abs(q[ip, 2] - ρu_avg)
+            ρvdiff[i, j, ie] = abs(q[ip, 3] - ρv_avg)
+            ρEdiff[i, j, ie] = abs(q[ip, 4] - ρE_avg)
         end
     end
     denom1 = maximum(ρdiff)  + eps(Float64)
@@ -1579,59 +1669,61 @@ function compute_viscosity(μdsgs, q, q1, q2, rhs, Δt, npoin, elem, ngl, connij
     denom4 = maximum(ρEdiff) + eps(Float64)
     #@info denom1 denom2 denom3
     PhysConst = PhysicalConst{Float64}()
-    #Get Numerator inifinity norms, μ_max infinity norm 
-    for ie =1:nelem
+    #Get Numerator inifinity norms, μ_max infinity norm
+
+    ρ = zeros(ngl,ngl)
+    u = zeros(ngl,ngl)
+    v = zeros(ngl,ngl)
+    c = zeros(ngl,ngl)
         
-        #ρ   = zeros(ngl,ngl)
-        #u   = zeros(ngl,ngl)
-        #v   = zeros(ngl,ngl)
-        #T   = zeros(ngl,ngl)
-        #e   = zeros(ngl,ngl)
+    Rρ  = zeros(ngl,ngl)
+    Rρu = zeros(ngl,ngl)
+    Rρv = zeros(ngl,ngl)
+    RρE = zeros(ngl,ngl)
+    for ie = 1:nelem
         
-        #Rρ  = zeros(ngl,ngl)
-        #Rρu = zeros(ngl,ngl)
-        #Rρv = zeros(ngl,ngl)
-        #RρE = zeros(ngl,ngl)
-        for j=1:ngl
-            for i=1:ngl
-                ip = connijk[i,j,ie]
-                
-                Δ2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
+        Δ2 = ((2.0 * sqrt(mean(Je[ie,:,:])))/ngl^2)^2
+        
+        for i = 1:ngl
+            for j = 1:ngl
+                ip = connijk[ie,i,j]
                 
                 #Rρ[i] = abs((q[ip,1] - q1[ip,1])/Δt + rhs[ip,1]) #abs((3*q[ip,1]-4*q1[ip,1]+q2[ip,1])/(2*Δt)+rhs[ip,1])#rhs[ip,1] #abs((q[ip,1] - q1[ip,1])/Δt + rhs[ip,1])
                 #Rρu[i] = abs((q[ip,2] - q1[ip,2])/Δt + rhs[ip,2])#abs((3*q[ip,2]-4*q1[ip,2]+q2[ip,2])/(2*Δt)+rhs[ip,2])#rhs[ip,2] #(q[ip,2] - q1[ip,2])/Δt + rhs[ip,2]
                 #RρE[i] = abs((q[ip,3] - q1[ip,3])/Δt + rhs[ip,3])#abs((3*q[ip,3]-4*q1[ip,3]+q2[ip,3])/(2*Δt)+rhs[ip,2])#rhs[ip,3] #(q[ip,2] - q1[ip,2])/Δt + rhs[ip,2]
 
-                Rρ[i,j]  = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) + rhs[ip,1])
-                Rρu[i,j] = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) + rhs[ip,2])
-                Rρv[i,j] = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) + rhs[ip,3])
-                RρE[i,j] = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) + rhs[ip,4])
+                #Rρ[i,j]  = abs((3*q[ip,1] - 4*q1[ip,1] + q2[ip,1])/(2*Δt) + rhs[ip,1])
+                #Rρu[i,j] = abs((3*q[ip,2] - 4*q1[ip,2] + q2[ip,2])/(2*Δt) + rhs[ip,2])
+                #Rρv[i,j] = abs((3*q[ip,3] - 4*q1[ip,3] + q2[ip,3])/(2*Δt) + rhs[ip,3])
+                #RρE[i,j] = abs((3*q[ip,4] - 4*q1[ip,4] + q2[ip,4])/(2*Δt) + rhs[ip,4])
+
+                Rρ[i, j]  = rhs_el[ie, i, j, 1]
+                Rρu[i, j] = rhs_el[ie, i, j, 2]
+                Rρv[i, j] = rhs_el[ie, i, j, 3]
+                RρE[i, j] = rhs_el[ie, i, j, 4]
                 
-                ρ[i,j] = q[ip,1]
-                u[i,j] = q[ip,2]/ρ[i,j]
-                v[i,j] = q[ip,3]/ρ[i,j]
-                e[i,j] = q[ip,4]/ρ[i,j]
-                p[i,j] = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ[i,j], θ=e[i,j])
-                #T[i,j] = e[i] - 0.5*(u[i,j]^2 + v[i,j]^2)
+                ρ[i, j] = q[ip, 1]
+                u[i, j] = q[ip, 2]/q[ip, 1]
+                v[i, j] = q[ip, 3]/q[ip, 1]
+                e       = q[ip, 4]/q[ip, 1]
+                p       = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ[i, j], θ=e)
+                c[i,j]  = sqrt(γ*p/q[ip, 1])
             end
         end
-        γ = 1.4
-        C1 = 1.0
-        C2 = 0.5
+        
         numer1 = maximum(Rρ)
         numer2 = maximum(Rρu)
         numer3 = maximum(Rρv)
         numer4 = maximum(RρE)
         #@info numer1, numer2
-        μ_res = C1*Δ^2*denom1*max(numer1/denom1, numer2/denom2, numer3/denom3, numer4/denom4)
-        μ_max = C2*Δ*maximum(ρ)*maximum(sqrt.(u.*u .+ v.*v) .+ sqrt.(γ*T))
-        μdsgs[i, j, ie] = max(0.0, min(μ_max, μ_res))
+        μ_res = C1*Δ2*denom1*max(numer1/denom1, numer4/denom4)
+        #μ_res = C1*Δ2*denom1*max(numer1/denom1, numer2/denom2, numer3/denom3, numer4/denom4)
+        μ_max = C2*Δ2*maximum(ρ)*maximum(sqrt.(u.*u .+ v.*v) .+ c)
+        #μdsgs.μdsgse[ie,:,:,1] .= min(μ_max, μ_res)
+        μdsgs.μdsgse[ie,:,:,1] .= max(0.0, min(μ_max, μ_res))
+        #@info maximum(ρ), numer1/denom1, numer2/denom2, numer3/denom3, numer4/denom4
     end
     
-end
-
-function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, rhs_el, iel, ieq, QT::Exact, VT, SD::NSD_2D, ::FD)
-    nothing
 end
 
 function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ)

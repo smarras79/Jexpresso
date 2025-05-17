@@ -17,7 +17,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # 
     #---------------------------------------------------------------------------------
     qvars    = ["ρ", "ρu", "ρv", "ρθ"]
-    qoutvars = ["ρ", "u", "w", "θ", "p"]
+    qoutvars = ["ρ", "u", "w", "θ", "μdsgsp"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())    
