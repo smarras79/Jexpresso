@@ -14,9 +14,16 @@ function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFl
     # else
     qnl = nx*q[2] + ny*q[3]
     # end
-    qbdy[2] = q[2] - qnl*nx
-    qbdy[3] = q[3] - qnl*ny
-
+    qbdy[2] = 0.0#q[2] - qnl*nx
+    qbdy[3] = 0.0#q[3] - qnl*ny
+    if (tag == "bottom")
+        qbdy[4] = q[1]*301.0
+    elseif (tag == "top")
+        qbdy[4] = q[1]*299.0
+    end
+    #if (tag == "lateral")
+    #    qbdy[4] = qe[4]
+    #end
     #   else
     #    qbdy[2] = 0.0
     # end
@@ -28,10 +35,12 @@ function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFl
 #    if (tag == "free_slip")
     
     qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
-    qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
-    qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
-    
-      #else 
+    qbdy[2] = 0.0#(q[2]+qe[2] - qnl*nx) - qe[2]
+    qbdy[3] = 0.0#(q[3]+qe[3] - qnl*ny) - qe[3]
+    if (tag == "lateral")
+        qdby[4] = 0.0
+    end
+    #else 
        # qbdy[2] = 0.0
         #qbdy[3] = 0.0
       #end
@@ -44,12 +53,22 @@ function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFl
     
 end
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x, y)
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x, y, ::TOTAL)
 
     if (tag == "bottom")
         F_edge[4] = 0.02*rand()*u[1]
     elseif (tag == "top")
         F_edge[4] = -0.02*rand()*u[1]
+    end
+
+end
+
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x, y, ::PERT)
+
+    if (tag == "bottom")
+        F_edge[4] = 0.02*rand()*(u[1]+qe[1])
+    elseif (tag == "top")
+        F_edge[4] = -0.02*rand()*(u[1]+qe[1])
     end
 
 end

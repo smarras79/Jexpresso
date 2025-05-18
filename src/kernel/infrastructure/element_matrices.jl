@@ -1246,7 +1246,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
     end
 
-    return (; Me, De, Le, M, Minv, M_surf_inv, pM, D, L)
+    return (; Me, De, Le, M, Minv, M_edge_inv, M_surf_inv, pM, D, L)
 end
 
 function mass_inverse!(Minv, M::AbstractVector, QT)
