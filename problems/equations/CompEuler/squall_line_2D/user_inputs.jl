@@ -34,7 +34,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_coarse.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_2D.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_2D.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/squall2d.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_squall_line_LinEtAl.msh",
         #---------------------------------------------------------------------------
         # Mountain parameters
