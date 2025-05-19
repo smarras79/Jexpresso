@@ -663,7 +663,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
             user_primitives!(@view(params.uaux[ip,:]), @view(qe[ip,:]), @view(params.uprimitive[i,:]), params.SOL_VARS_TYPE)
         end
 
-        for ieq in params.ivisc_equations
+        for ieq = 1:params.neqs
             _expansion_visc!(params.rhs_diffξ_el,
                              params.uprimitive,
                              params.visc_coeff,
@@ -691,7 +691,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
         end
 
-        for ieq in params.ivisc_equations
+        for ieq=1:params.neqs
+            
             _expansion_visc!(params.rhs_diffξ_el,
                              params.rhs_diffη_el,
                              params.uprimitive,
@@ -721,7 +722,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
 
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,k,:]), params.SOL_VARS_TYPE)
         end
-        for ieq in params.ivisc_equations
+
+        for ieq=1:params.neqs
             _expansion_visc!(params.rhs_diffξ_el, params.rhs_diffη_el, params.rhs_diffζ_el, params.uprimitive, 
                              params.visc_coeff, params.ω, params.mesh.ngl, params.basis.dψ, params.metrics.Je, params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, 
                              params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz, params.metrics.dζdx,params.metrics.dζdy, params.metrics.dζdz, params.inputs, iel,
@@ -864,8 +866,6 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, H, S, Je, dξdx, dξd
         end
     end
 end
-
-
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
 
