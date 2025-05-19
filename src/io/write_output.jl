@@ -5,20 +5,24 @@ include("./plotting/jeplots.jl")
 #------------------------------------------------------------------
 # Callback for missing user_uout!()
 #------------------------------------------------------------------
-function call_user_uout(uout, u, qe, μdsgsp, ET, npoin, nvar, noutvar)
+function call_user_uout(uout, u, qe, ET, npoin, nvar, noutvar; μdsgsp=1)
+    
+    if size(μdsgsp)[1] == 1
+        μdsgsp = zeros(npoin, nvar)
+    end
     
     if function_exists(@__MODULE__, :user_uout!)
         for ip=1:npoin
-            user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], μdsgsp[ip,:], ET)
+            user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], ET, @view(μdsgsp[ip,:]))
         end
     else
         for ip=1:npoin
-            callback_user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], μdsgsp[ip,:], ET)
+            callback_user_uout!(@view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]))
         end
     end
 end
 
-@inline function callback_user_uout!(uout, usol, qe, μdsgsp, ET)
+@inline function callback_user_uout!(uout, usol)
     uout[1:end] = usol[1:end]
 end
 
@@ -37,12 +41,12 @@ function write_output(SD::NSD_1D, q::Array, t, iout, mesh::St_mesh, OUTPUT_DIR::
     plot_results(SD, mesh, q[:], "initial", OUTPUT_DIR, varnames, inputs; iout=1, nvar=nvar, PT=nothing)
 end
 
-function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh, mp, 
+function write_output(SD::NSD_1D, sol, uaux, t, iout,  mesh::St_mesh,
                       connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs::Dict,
                       varnames, outvarnames,
                       outformat::PNG;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="", mp=(), μdsgs=())
         
     #
     # 1D PNG of q(t) from dq/dt = RHS
@@ -122,27 +126,27 @@ function write_output(SD, sol::SciMLBase.LinearSolution, uaux, mesh::St_mesh,
 end
 
 
-function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, μdsgs,
+function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, 
                       connijk_original, poin_in_bdy_face_original,
                       x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs::Dict,
                       varnames, outvarnames,
                       outformat::VTK;
-                      nvar=1, qexact=zeros(1,nvar), case="")
+                      nvar=1, qexact=zeros(1,nvar), case="", mp=(), μdsgs=())
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     title = @sprintf "final solution at t=%6.4f" iout
     if (inputs[:backend] == CPU())
 
-        write_vtk(SD, mesh, sol, uaux, mp, μdsgs,
+        write_vtk(SD, mesh, sol, uaux,
                   connijk_original, poin_in_bdy_face_original,
                   x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
                   iout=iout, nvar=nvar,
                   qexact=qexact,
-                  case=case) 
+                  case=case, mp=mp, μdsgs=μdsgs)
         
     else
         #VERIFY THIS on GPU
@@ -151,7 +155,7 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, μdsgs,
         u_exact = KernelAbstractions.allocate(CPU(),TFloat,mesh.npoin,nvar+1)
         KernelAbstractions.copyto!(CPU(),u_exact,qexact)
         convert_mesh_arrays_to_cpu!(SD, mesh, inputs)
-        write_vtk(SD, mesh, u, mp, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case)
+        write_vtk(SD, mesh, u, t, title, OUTPUT_DIR, inputs, varnames; iout=iout, nvar=nvar, qexact=u_exact, case=case, mp=mp, μdsgs=μdsgs)
     end
 
     println_rank(string(" # writing ", OUTPUT_DIR, "/iter", iout, ".vtu at t=", t, " s... DONE"); msg_rank = rank )
@@ -161,11 +165,11 @@ end
 #------------
 # VTK writer
 #------------
-function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, μdsgs,
+function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array,
                    connijk_original, poin_in_bdy_face_original,
                    x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
-                   iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                   iout=1, nvar=1, qexact=zeros(1,nvar), case="", mp=(), μdsgs=zeros(1,nvar))
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -228,7 +232,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, μdsgs,
     #
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
-    call_user_uout(qout, qaux, qexact, μdsgs.μdsgsp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar;)
+    call_user_uout(qout, qaux, qexact, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar; μdsgsp=μdsgs.μdsgsp)
 
     
     #
@@ -257,11 +261,11 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, μdsgs,
     
 end
 
-function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array,
                    connijk_original, poin_in_bdy_face_original,
                    x_original, y_original, z_original,
                    t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
-                   iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                   iout=1, nvar=1, qexact=zeros(1,nvar), case="", mp=(), μdsgs=())
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
@@ -559,11 +563,11 @@ end
 #------------
 # VTK writer
 #------------
-function mywrite_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
+function mywrite_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, 
                      connijk_original, poin_in_bdy_face_original,
                      x_original, y_original, z_original,
                      t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
-                     iout=1, nvar=1, qexact=zeros(1,nvar), case="")
+                     iout=1, nvar=1, qexact=zeros(1,nvar), case="", mp=(), μdsgs=())
     
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end

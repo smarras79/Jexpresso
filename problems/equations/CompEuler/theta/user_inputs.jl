@@ -21,8 +21,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :visc_model           => "dsgs", #"av",
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:visc_model           => "dsgs", #"av",
         :μ                    => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:

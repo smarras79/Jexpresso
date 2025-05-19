@@ -21,14 +21,14 @@ function user_primitives_gpu(u,qe,lpert)
     end
 end
 
-function user_uout!(uout, u, qe, ::TOTAL)
+function user_uout!(uout, u, qe, ::TOTAL,...)
     uout[1] = u[1]
     uout[2] = u[2]/u[1]
     uout[3] = u[3]/u[1]
     uout[4] = u[4]/u[1]
 end
 
-function user_uout!(uout, u, qe, ::PERT)
+function user_uout!(uout, u, qe, ::PERT,...)
     uout[1] = u[1]
     uout[2] = u[2]/(u[1] + qe[1])
     uout[3] = u[3]/(u[1] + qe[1])

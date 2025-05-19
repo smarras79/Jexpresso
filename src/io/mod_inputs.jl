@@ -497,8 +497,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
             else
                 inputs[:visc_model] = AV()
                 @warn( " Possible visc_model options are the strings:\n \"av\"\n \"vreman\"\n \"smago\"\n \"dynsgs\" \n   \"av\" will be used by default unless you change your input.")
-            end
-        end
+            end        
+        end 
     end
 
     #
