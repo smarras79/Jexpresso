@@ -21,7 +21,7 @@ function user_primitives_gpu(u, qe, lpert)
     end
 end
 
-function user_uout!(uout, u, qe, TYPE...)
+function user_uout!(ET, ip, uout, u, qe...)
 
     uout[1] = u[1]
     uout[2] = u[2]/u[1]
