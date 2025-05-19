@@ -688,10 +688,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
 
 
-    gpelm_ghost = KernelAbstractions.zeros(backend, TInt, 0)
+    gpelm_ghost    = KernelAbstractions.zeros(backend, TInt, 0)
     gpfacets_ghost = KernelAbstractions.zeros(backend, TInt, 0)
     gpfacets_owner = KernelAbstractions.zeros(backend, TInt, 0)
-    gcelm_ghost = KernelAbstractions.zeros(backend, TInt, 0)
+    gcelm_ghost    = KernelAbstractions.zeros(backend, TInt, 0)
     gcfacets_ghost = KernelAbstractions.zeros(backend, TInt, 0)
     gcfacets_owner = KernelAbstractions.zeros(backend, TInt, 0)
     mesh.num_hanging_facets = num_hanging_facets
@@ -1125,7 +1125,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # END Extract boundary edges and faces nodes
     #----------------------------------------------------------------------
 
-
     #----------------------------------------------------------------------
     # periodicity_restructure for MPI
     #----------------------------------------------------------------------
@@ -1236,10 +1235,20 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 end
             end
         end
-        restructure4periodicity_3D(mesh, norx, "periodicx")
-        restructure4periodicity_3D(mesh, nory, "periodicy")
-        restructure4periodicity_3D(mesh, norz, "periodicz")
+
+        #@info " TEYYYYYYYY NOT - OPTIMIZED"
+        #@time restructure4periodicity_3D(mesh, norx, "periodicx")
+        #restructure4periodicity_3D(mesh, nory, "periodicy")
+        #restructure4periodicity_3D(mesh, norz, "periodicz")
         
+        println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. "; msg_rank = rank, suppress = mesh.msg_suppress)
+        println_rank(" # ... GO HAVE A COFFEE BECAUSE THIS PART IS NOT-OPTIMIZED AND WILL TAKE A WHILE !!! ........ "; msg_rank = rank, suppress = mesh.msg_suppress)    
+        restructure4periodicity_3D_optimized!(mesh, norx, "periodicx")
+        restructure4periodicity_3D_optimized!(mesh, nory, "periodicy")
+        restructure4periodicity_3D_optimized!(mesh, norz, "periodicz")
+        println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
+
+
     end
     #----------------------------------------------------------------------
     # END periodicity_restructure for MPI
@@ -1500,6 +1509,9 @@ function restructure4periodicity_3D(mesh, norm, periodic_direction)
     z_gather     = MPI.gather(z_local, comm)
     gathered_per = MPI.gather(per_gip, comm)
     owner_gather = MPI.gather(ip_owner, comm)
+
+
+    
     if mesh.rank == root
     
     # On the root processor, combine and remove duplicates
@@ -1585,6 +1597,133 @@ function restructure4periodicity_3D(mesh, norm, periodic_direction)
         
     mesh.ip2gip[per_ip]    .= per_ip_updated
     mesh.gip2owner[per_ip] .= owner_updated
+    
+end
+
+function restructure4periodicity_3D_optimized!(mesh, norm, periodic_direction)
+    
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    rank_sz = MPI.Comm_size(comm)
+    ngl = mesh.ngl
+
+    # 1. Identify local periodic indices
+    local_periodic_indices = Int[]
+    for iface_bdy in axes(mesh.bdy_face_type, 1)
+        if mesh.bdy_face_type[iface_bdy] == periodic_direction
+            for k in 1:ngl, l in 1:ngl
+                ip = mesh.poin_in_bdy_face[iface_bdy, k, l]
+                push!(local_periodic_indices, ip)
+            end
+        end
+    end
+    unique!(local_periodic_indices) # Remove duplicates locally
+    local_n = length(local_periodic_indices)
+
+    # Extract local data and create copies for MPI
+    x_local = collect(@view mesh.x[local_periodic_indices])
+    y_local = collect(@view mesh.y[local_periodic_indices])
+    z_local = collect(@view mesh.z[local_periodic_indices])
+    per_gip_local = collect(@view mesh.ip2gip[local_periodic_indices])
+    owner_local = collect(@view mesh.gip2owner[local_periodic_indices])
+
+    # 2. Gather sizes to all processors
+    root = 0
+    recv_counts = MPI.Allgather(local_n, comm)
+
+    gathered_x = eltype(x_local)[]
+    gathered_y = eltype(y_local)[]
+    gathered_z = eltype(z_local)[]
+    gathered_gip = eltype(per_gip_local)[]
+    gathered_owner = eltype(owner_local)[]
+    recv_offsets = zeros(Int, rank_sz)
+
+    if rank == root
+        total_count = sum(recv_counts)
+        gathered_x = Vector{eltype(x_local)}(undef, total_count)
+        gathered_y = Vector{eltype(y_local)}(undef, total_count)
+        gathered_z = Vector{eltype(z_local)}(undef, total_count)
+        gathered_gip = Vector{eltype(per_gip_local)}(undef, total_count)
+        gathered_owner = Vector{eltype(owner_local)}(undef, total_count)
+
+        recv_offsets[2:end] = cumsum(recv_counts[1:end-1])
+    else
+        recv_offsets[2:end] = cumsum(recv_counts[1:end-1])
+    end
+
+    # 3. Use MPI.Gatherv! to gather into pre-allocated buffers
+    MPI.Gatherv!(x_local, MPI.VBuffer(gathered_x, recv_counts, recv_offsets), root, comm)
+    MPI.Gatherv!(y_local, MPI.VBuffer(gathered_y, recv_counts, recv_offsets), root, comm)
+    MPI.Gatherv!(z_local, MPI.VBuffer(gathered_z, recv_counts, recv_offsets), root, comm)
+    MPI.Gatherv!(per_gip_local, MPI.VBuffer(gathered_gip, recv_counts, recv_offsets), root, comm)
+    MPI.Gatherv!(owner_local, MPI.VBuffer(gathered_owner, recv_counts, recv_offsets), root, comm)
+
+    if rank == root
+        sz = length(gathered_gip)
+        updated_global_per_gip = copy(gathered_gip)
+        updated_global_owner = copy(gathered_owner)
+
+        # Use a more efficient approach for finding colinear points
+        for i in 1:sz
+            for j in (i + 1):sz
+                if updated_global_per_gip[i] == updated_global_per_gip[j]
+                    continue
+                end
+                vec = [gathered_x[i] - gathered_x[j], gathered_y[i] - gathered_y[j], gathered_z[i] - gathered_z[j]]
+                if determine_colinearity(vec, norm)
+                    # Determine the "master" point based on lexicographical order
+                    xi, yi, zi = gathered_x[i], gathered_y[i], gathered_z[i]
+                    xj, yj, zj = gathered_x[j], gathered_y[j], gathered_z[j]
+
+                    comp1 = (yi == 0 && yj == 0 && zi == 0 && zj == 0) ? (xi < xj) :
+                        (yi == 0 && yj == 0) ? (xi * abs(zi) < xj * abs(zj)) :
+                        (zi == 0 && zj == 0) ? (xi * abs(yi) < xj * abs(yj)) :
+                        (xi * abs(yi * zi) < xj * abs(yj * zj))
+
+                    comp2 = (xi == 0 && xj == 0 && zi == 0 && zj == 0) ? (yi < yj) :
+                        (xi == 0 && xj == 0) ? (yi * abs(zi) < yj * abs(zj)) :
+                        (zi == 0 && zj == 0) ? (yi * abs(xi) < yj * abs(xj)) :
+                        (yi * abs(xi * zi) < yj * abs(xj * zj))
+
+                    comp3 = (xi == 0 && xj == 0 && yi == 0 && yj == 0) ? (zi < zj) :
+                        (xi == 0 && xj == 0) ? (zi * abs(yi) < zj * abs(yj)) :
+                        (yi == 0 && yj == 0) ? (zi * abs(xi) < zj * abs(xj)) :
+                        (zi * abs(xi * yi) < zj * abs(xj * yj))
+
+                    if comp1 || comp2 || comp3
+                        # j is the slave, i is the master
+                        updated_global_per_gip[j] = updated_global_per_gip[i]
+                        if updated_global_owner[j] != updated_global_owner[i]
+                            updated_global_owner[j] = updated_global_owner[i]
+                        end
+                    else
+                        # i is the slave, j is the master
+                        updated_global_per_gip[i] = updated_global_per_gip[j]
+                        if updated_global_owner[i] != updated_global_owner[j]
+                            updated_global_owner[i] = updated_global_owner[j]
+                        end
+                    end
+                end
+            end
+        end
+
+        # Prepare data for scattering
+        s_gip_vbuf = MPI.VBuffer(updated_global_per_gip, recv_counts)
+        s_owner_vbuf = MPI.VBuffer(updated_global_owner, recv_counts)
+    else
+        s_gip_vbuf = MPI.VBuffer(eltype(per_gip_local)[], recv_counts, recv_offsets)
+        s_owner_vbuf = MPI.VBuffer(eltype(owner_local)[], recv_counts, recv_offsets)
+    end
+
+    MPI.Barrier(comm)
+
+    # 4. Scatter the updated global indices and owners back to the processors
+    per_ip_updated = MPI.Scatterv!(s_gip_vbuf, zeros(eltype(per_gip_local), local_n), root, comm)
+    owner_updated = MPI.Scatterv!(s_owner_vbuf, zeros(eltype(owner_local), local_n), root, comm)
+
+    # 5. Update the mesh data
+    mesh.ip2gip[local_periodic_indices] .= per_ip_updated
+    mesh.gip2owner[local_periodic_indices] .= owner_updated
 end
 
 function find_gip_owner(a)
@@ -1624,6 +1763,7 @@ function find_gip_owner(a)
     element_owners = MPI.scatter(chunked_owners, comm)
 
     return element_owners
+    
 end
 
 function determine_colinearity(vec1, vec2)
@@ -1792,7 +1932,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     if (mesh.nop < 2) return end
     
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ ")
-    println(" # ...")
     
     lgl = basis_structs_ξ_ω!(interpolation_nodes, mesh.nop, backend)
     
@@ -1851,7 +1990,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank, suppress = mesh.msg_suppress)
-    println_rank(" # ..."; msg_rank = rank, suppress = mesh.msg_suppress)
     
     x1, y1 = TFloat(0.0), TFloat(0.0)
     x2, y2 = TFloat(0.0), TFloat(0.0)
@@ -2030,7 +2168,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ EDGES"; msg_rank = rank, suppress = mesh.msg_suppress)
-    println_rank(" # ..."; msg_rank = rank, suppress = mesh.msg_suppress)
     
     x1, y1, z1 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
     x2, y2, z2 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
@@ -2359,7 +2496,6 @@ function  add_high_order_nodes_faces!(mesh::St_mesh, lgl, SD::NSD_2D, face2pface
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ FACES"; msg_rank = rank, suppress = mesh.msg_suppress)
-    println_rank(" # ..."; msg_rank = rank, suppress = mesh.msg_suppress)
     
     x1, y1 = TFloat(0.0), TFloat(0.0)
     x2, y2 = TFloat(0.0), TFloat(0.0)
@@ -2914,7 +3050,7 @@ function  add_high_order_nodes_volumes!(mesh::St_mesh, lgl, SD::NSD_3D, elm2pelm
     rank = MPI.Comm_rank(comm)
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ VOLUMES"; msg_rank = rank, suppress = mesh.msg_suppress)
-    println_rank(" # ..."; msg_rank = rank, suppress = mesh.msg_suppress)
+    
     
     x1, y1, z1 = TFloat(0.0), TFloat(0.0), TFloat(0.0)
     x2, y2, z2 = TFloat(0.0), TFloat(0.0), TFloat(0.0)

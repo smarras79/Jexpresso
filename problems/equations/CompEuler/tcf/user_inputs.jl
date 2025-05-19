@@ -32,8 +32,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh           => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/tcf_dns.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-16x16x19.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/tcf_dns.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-16x16x19.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
