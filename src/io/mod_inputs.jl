@@ -668,6 +668,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     # AMR
+    
+    if(!haskey(inputs, :amr))
+        inputs[:amr] = false
+    end
+
+
     if(!haskey(inputs, :ladapt))
         inputs[:ladapt] = false
     end

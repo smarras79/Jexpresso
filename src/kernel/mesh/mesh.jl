@@ -215,7 +215,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 flags = zeros(Cint,length(indices))
                 flags.=nothing_flag
                 # @info flags
-                # flags[250] = refine_flag
+                flags[1] = refine_flag
                 # if rank == 2
                     # flags[1:3:end] .= refine_flag
                     # flags[1] = refine_flag
@@ -300,8 +300,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # Write the partitioned model to a VTK file
     # vtk_directory = "./coarse/" 
     # writevtk(partitioned_model_coarse, vtk_directory)
-    vtk_directory = "./refine/"
     if ladaptive == true
+        vtk_directory = "./refine/"
         writevtk(partitioned_model.dmodel, vtk_directory)
     end
 
@@ -762,9 +762,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             mesh.non_conforming_facets_children_ghost .= mesh.non_conforming_facets_children_ghost[sorted_idx]
             # @info "edge2pedge", rank, edge2pedge
             ghost_p_or_c = 1
-            mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm)
+            mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
             ghost_p_or_c = 2
-            mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm)
+            mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
 
         elseif mesh.nsd == 3
             offset = 20
@@ -779,16 +779,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 pfacet     = cell_fecet_pids[pid][lfacetid-offset]
                 gfacet_p   = local_to_global(fgids)[pfacet]
                 gfacet_c   = local_to_global(fgids)[cfacet]
-                if (cfacet ∈ f2pf) && (pfacet ∉ f2pf)
-                    pfacet = -pfacet
-                end
-                if (cfacet ∉ f2pf) && (pfacet ∈ f2pf)
-                    cfacet = -cfacet
-                end
-                if (cfacet ∉ f2pf) && (pfacet ∉ f2pf)
-                    pfacet = -pfacet
-                    cfacet = -cfacet
-                end
                 if (lfacetid-offset == 1) || (lfacetid-offset == 2) 
                     if half == 1
                         half_1 = 1
@@ -832,64 +822,65 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                         half_2 = 1
                     end
                 end
+                # own child facet, ghost parent facet 
+                if (cfacet ∈ f2pf) && (pfacet ∉ f2pf)
+                    # add ghost ip
+                    gpid = local_to_global(elgids)[pid]
+                    # push!(gpfacets_ghost, gfacet_p)
+                    push!(gpelm_ghost, gpid)
+                    push!(gpfacets_ghost, lfacetid - offset)
+                    push!(gpfacets_owner, local_to_owner(fgids)[pfacet]-1)
+                    pfacet = -pfacet
+                    push!(mesh.non_conforming_facets_parents_ghost, [cid, lfacetid - offset, half_1, half_2])
+                    continue
+                end
+                # ghost child facet, own parent facet
+                if (cfacet ∉ f2pf) && (pfacet ∈ f2pf)
+                    gcid = local_to_global(elgids)[cid]
+                    push!(gcelm_ghost, gcid)
+                    push!(gcfacets_ghost, lfacetid - offset)
+                    # push!(gcfacets_ghost, gfacet_c)
+                    push!(gcfacets_owner, local_to_owner(fgids)[cfacet]-1)
+                    cfacet = -cfacet
+                    push!(mesh.non_conforming_facets_children_ghost, [pid, lfacetid - offset, half_1, half_2])
+                    continue
+                end
+                # ghost child facet, ghost parent facet
+                if (cfacet ∉ f2pf) && (pfacet ∉ f2pf)
+                    pfacet = -pfacet
+                    cfacet = -cfacet
+                    continue
+                end
                 push!(mesh.non_conforming_facets, [cfacet, cid, pfacet, pid, lfacetid - offset, half_1, half_2])
                 # @info rank, cfacet, pfacet, facet_glue
                 # comm_ip = intersect(mesh.conn[pid,:], mesh.conn[cid,:])
                 # @info "coords: ",  mesh.x[mesh.conn[pid,1:8]], mesh.y[mesh.conn[pid,1:8]], mesh.z[mesh.conn[pid,1:8]]
                 # @info "comm_coord", mesh.x[comm_ip], mesh.y[comm_ip], mesh.z[comm_ip] 
-                for k = 1:ngl
-                    for j = 1:ngl
-                        for i = 1:ngl
-                            pip = mesh.connijk[pid, k, j, i]
-                            for n = 1:ngl
-                                for m = 1:ngl
-                                    for l = 1:ngl
-                                        cip = mesh.connijk[cid, n, m, l]
-                                        if pip == cip
-                                            if lfacetid-offset == 1
-                                                # @info "front, ", half, (k, i), half_1, half_2
-                                                x1 = k
-                                                x2 = i
-                                            elseif lfacetid-offset == 2
-                                                # @info "back, ", half, (k, i), half_1, half_2
-                                                x1 = k
-                                                x2 = i
-                                            elseif lfacetid-offset == 3
-                                                # @info "bottom, ", half, (k, j), half_1, half_2
-                                                x1 = k
-                                                x2 = j
-                                            elseif lfacetid-offset == 4
-                                                # @info "top, ", half, (k, j), half_1, half_2
-                                                x1 = k
-                                                x2 = j
-                                            elseif lfacetid-offset == 5
-                                                # @info "right, ", half, (j, i), half_1, half_2
-                                                x1 = j
-                                                x2 = i
-                                            elseif lfacetid-offset == 6
-                                                # @info "left, ", half, (j, i), half_1, half_2
-                                                x1 = j
-                                                x2 = i
-                                            end
-                                            if x1==1
-                                                half1 = 2
-                                            else
-                                                half1 = 1
-                                            end
-                                            if x2 == 1
-                                                half2 = 2
-                                            else
-                                                half2 = 1
-                                            end
-                                            @test (half1 == half_1) && (half2 == half_2) 
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
+                
             end
+
+            # reorder mesh.non_conforming_facets_parents_ghost and mesh.non_conforming_facets_children_ghost in rank orders\
+            sorted_idx = sortperm(gpfacets_owner)
+            sort!(gpfacets_owner)
+            gpelm_ghost    .= gpelm_ghost[sorted_idx]
+            gpfacets_ghost .= gpfacets_ghost[sorted_idx]
+            mesh.non_conforming_facets_parents_ghost .= mesh.non_conforming_facets_parents_ghost[sorted_idx]
+            @info rank, "mesh.non_conforming_facets_parents_ghost", mesh.non_conforming_facets_parents_ghost
+            @info rank, "gpfacets_ghost", gpfacets_ghost
+            @info rank, "gpfacets_owner", gpfacets_owner
+
+            sorted_idx = sortperm(gcfacets_owner)
+            sort!(gcfacets_owner)
+            gcelm_ghost    .= gcelm_ghost[sorted_idx]
+            gcfacets_ghost .= gcfacets_ghost[sorted_idx]
+            mesh.non_conforming_facets_children_ghost .= mesh.non_conforming_facets_children_ghost[sorted_idx]
+            @info rank, "mesh.non_conforming_facets_children_ghost", mesh.non_conforming_facets_children_ghost
+            # @info "edge2pedge", rank, edge2pedge
+            ghost_p_or_c = 1
+            mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
+            ghost_p_or_c = 2
+            mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
+
         end
     end
 
@@ -3597,15 +3588,15 @@ function send_and_receive(data2send, send_targets, comm)
     return combined_recv_data, original_senders
 end
 
-function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm, ip2gip, ngl, ghost_p_or_c, comm)
+function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm, ip2gip, ngl, ghost_p_or_c, comm, SD::NSD_2D)
     rank = MPI.Comm_rank(comm)
-    # @info "gfacets_ghost, gfacets_owner", rank, gfacets_ghost, gfacets_owner
+    @info "gfacets_ghost, gfacets_owner", rank, gfacets_ghost, gfacets_owner
     gelm_recv, original_senders = send_and_receive(gelm_ghost, gfacets_owner, comm)
     gfacets_recv = send_and_receive(gfacets_ghost, gfacets_owner, comm)[1]
-    # @info "gfacets_recv, original_senders", rank,  gfacets_recv, original_senders
-    # println("Rank $rank gfacets_recv: $gfacets_recv")
+    @info "gfacets_recv, original_senders", rank,  gfacets_recv, original_senders
+    println("Rank $rank gfacets_recv: $gfacets_recv")
     lcells = [pelm2elm[x] for x in gelm_recv]
-    # @info "lcells", rank, lcells 
+    @info "lcells", rank, lcells 
     lfacets = gfacets_recv
     # @info "lfacets", rank, lfacets 
     # lfacets = global_to_local(facetsids)[vcat(gfacets_recv...)]
@@ -3648,6 +3639,95 @@ function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm,
                 IP .= conn[lcell, m, 1]
             elseif ghost_p_or_c == 2
                 IP .= conn[lcell, m, ngl]
+            end
+        end
+        for ip in IP
+            # @info rank, ip, cnt,i, lfacet, lcell
+            ips_send[cnt] = ip2gip[ip]
+            ips_targets[cnt] = original_senders[i]
+            cnt += 1
+        end
+    end
+    # @info "ips_send, ips_targets", rank, ips_send, ips_targets
+    ips_recv, ips_owner  = send_and_receive(ips_send, ips_targets, comm)
+    # @info "ips_recv, ips_owner", rank, ips_recv, ips_owner
+
+    return ips_recv, ips_owner
+end
+
+
+function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm, ip2gip, ngl, ghost_p_or_c, comm, SD::NSD_3D)
+    rank = MPI.Comm_rank(comm)
+    @info "gfacets_ghost, gfacets_owner", rank, gfacets_ghost, gfacets_owner
+    gelm_recv, original_senders = send_and_receive(gelm_ghost, gfacets_owner, comm)
+    gfacets_recv = send_and_receive(gfacets_ghost, gfacets_owner, comm)[1]
+    @info "gfacets_recv, original_senders", rank,  gfacets_recv, original_senders
+    println("Rank $rank gfacets_recv: $gfacets_recv")
+    lcells = [pelm2elm[x] for x in gelm_recv]
+    @info "lcells", rank, lcells 
+    lfacets = gfacets_recv
+    # @info "lfacets", rank, lfacets 
+    # lfacets = global_to_local(facetsids)[vcat(gfacets_recv...)]
+    nlfacets    = size(lfacets,1)
+    ips_send    = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl * ngl)
+    ips_targets = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl * ngl)
+    IP          = KernelAbstractions.zeros(CPU(), TInt, ngl, ngl)
+    cnt = 1
+    for (i, (lfacet, lcell)) in enumerate(zip(lfacets, lcells))
+
+        if (lfacet == 1) #front
+            l = 1:ngl
+            m = 1
+            n = 1:ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, l, 1, n]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, l, ngl, n]
+            end
+        elseif (lfacet == 2) #back
+            l = 1:ngl
+            m = ngl
+            n = 1:ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, l, ngl, n]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, l, 1, n]
+            end
+        elseif (lfacet == 3) #bottom
+            l = 1:ngl
+            m = 1:ngl
+            n = 1
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, l, m, 1]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, l, m, ngl]
+            end
+        elseif (lfacet == 4) #top
+            l = 1:ngl
+            m = 1:ngl
+            n = ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, l, m, ngl]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, l, m, 1]
+            end
+        elseif (lfacet == 5) #right
+            l = ngl
+            m = 1:ngl
+            n = 1:ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, ngl, m, n]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, 1, m, n]
+            end
+        elseif (lfacet == 6) #left
+            l = 1
+            m = 1:ngl
+            n = 1:ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, 1, m, n]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, ngl, m, n]
             end
         end
         for ip in IP
