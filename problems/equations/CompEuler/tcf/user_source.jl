@@ -12,7 +12,7 @@ function user_source!(S,
                       zmin=0.0,zmax=0.0)
     S[1] = 0.0
     S[2] = 0.0
-    S[3] = 0.0
+    S[3] = -0.0042
     S[4] = 0.0
     S[5] = 0.0
 end
