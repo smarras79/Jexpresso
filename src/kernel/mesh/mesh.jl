@@ -1236,18 +1236,19 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             end
         end
 
-        #@info " TEYYYYYYYY NOT - OPTIMIZED"
-        #@time restructure4periodicity_3D(mesh, norx, "periodicx")
-        #restructure4periodicity_3D(mesh, nory, "periodicy")
-        #restructure4periodicity_3D(mesh, norz, "periodicz")
-        
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. "; msg_rank = rank, suppress = mesh.msg_suppress)
-        println_rank(" # ... GO HAVE A COFFEE BECAUSE THIS PART IS NOT-OPTIMIZED AND WILL TAKE A WHILE !!! ........ "; msg_rank = rank, suppress = mesh.msg_suppress)    
-        restructure4periodicity_3D_optimized!(mesh, norx, "periodicx")
-        restructure4periodicity_3D_optimized!(mesh, nory, "periodicy")
-        restructure4periodicity_3D_optimized!(mesh, norz, "periodicz")
-        println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
+        println_rank(" # ... GO HAVE A COFFEE BECAUSE THIS PART IS NOT-OPTIMIZED AND WILL TAKE A WHILE !!! ........ "; msg_rank = rank, suppress = mesh.msg_suppress)
+        
+        #@info " TEYYYYYYYY NOT - OPTIMIZED"
+        restructure4periodicity_3D(mesh, norx, "periodicx")
+        restructure4periodicity_3D(mesh, nory, "periodicy")
+        restructure4periodicity_3D(mesh, norz, "periodicz")
+        
 
+        #restructure4periodicity_3D_optimized!(mesh, norx, "periodicx")
+        #restructure4periodicity_3D_optimized!(mesh, nory, "periodicy")
+        #restructure4periodicity_3D_optimized!(mesh, norz, "periodicz")
+        println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
 
     end
     #----------------------------------------------------------------------
@@ -1601,6 +1602,136 @@ function restructure4periodicity_3D(mesh, norm, periodic_direction)
 end
 
 function restructure4periodicity_3D_optimized!(mesh, norm, periodic_direction)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    rank_sz = MPI.Comm_size(comm)
+    ngl = mesh.ngl
+
+    # 1. Identify local periodic indices
+    local_periodic_indices = Int[]
+    for iface_bdy in axes(mesh.bdy_face_type, 1)
+        if mesh.bdy_face_type[iface_bdy] == periodic_direction
+            for k in 1:ngl, l in 1:ngl
+                ip = mesh.poin_in_bdy_face[iface_bdy, k, l]
+                push!(local_periodic_indices, ip)
+            end
+        end
+    end
+    unique!(local_periodic_indices) # Remove duplicates locally
+    local_n = length(local_periodic_indices)
+
+    # Extract local data and create copies for MPI
+    x_local = collect(@view mesh.x[local_periodic_indices])
+    y_local = collect(@view mesh.y[local_periodic_indices])
+    z_local = collect(@view mesh.z[local_periodic_indices])
+    per_gip_local = collect(@view mesh.ip2gip[local_periodic_indices])
+    owner_local = collect(@view mesh.gip2owner[local_periodic_indices])
+
+    # 2. Gather sizes to all processors
+    root = 0
+    recv_counts = MPI.Allgather(local_n, comm)
+
+    gathered_x = eltype(x_local)[]
+    gathered_y = eltype(y_local)[]
+    gathered_z = eltype(z_local)[]
+    gathered_gip = eltype(per_gip_local)[]
+    gathered_owner = eltype(owner_local)[]
+    recv_offsets = zeros(Int, rank_sz)
+    updated_global_per_gip = eltype(per_gip_local)[] # Define in outer scope
+    updated_global_owner = eltype(owner_local)[]     # Define in outer scope
+    s_gip_vbuf = MPI.VBuffer(nothing)               # Define in outer scope
+    s_owner_vbuf = MPI.VBuffer(nothing)             # Define in outer scope
+    per_ip_updated = zeros(eltype(per_gip_local), local_n) # Define in outer scope
+    owner_updated = zeros(eltype(owner_local), local_n)     # Define in outer scope
+    
+    if rank == root
+        total_count = sum(recv_counts)
+        gathered_x = Vector{eltype(x_local)}(undef, total_count)
+        gathered_y = Vector{eltype(y_local)}(undef, total_count)
+        gathered_z = Vector{eltype(z_local)}(undef, total_count)
+        gathered_gip = Vector{eltype(per_gip_local)}(undef, total_count)
+        gathered_owner = Vector{eltype(owner_local)}(undef, total_count)
+
+        recv_offsets[2:end] = cumsum(recv_counts[1:end-1])
+
+        # Combine coordinates and owner information
+        points = [
+            (gathered_gip[i], gathered_x[i], gathered_y[i], gathered_z[i], gathered_owner[i])
+            for i in 1:length(gathered_gip)
+        ]
+
+        # Sort by the global periodic index
+        sort!(points; by=first)
+
+        sz = length(points)
+        updated_global_per_gip = zeros(eltype(gathered_gip), sz)
+        updated_global_owner = zeros(eltype(gathered_owner), sz)
+
+        i = 1
+        while i <= sz
+            current_gip = points[i][1]
+            j = i + 1
+            while j <= sz && points[j][1] == current_gip
+                # Compare points i and j for colinearity
+                xi, yi, zi = points[i][2], points[i][3], points[i][4]
+                xj, yj, zj = points[j][2], points[j][3], points[j][4]
+                vec = [xi - xj, yi - yj, zi - zj]
+
+                if determine_colinearity(vec, norm)
+                    # Determine the "master" based on lexicographical order
+                    comp1 = (yi == 0 && yj == 0 && zi == 0 && zj == 0) ? (xi < xj) :
+                            (yi == 0 && yj == 0) ? (xi * abs(zi) < xj * abs(zj)) :
+                            (zi == 0 && zj == 0) ? (xi * abs(yi) < xj * abs(yj)) :
+                            (xi * abs(yi * zi) < xj * abs(yj * zj))
+
+                    comp2 = (xi == 0 && xj == 0 && zi == 0 && zj == 0) ? (yi < yj) :
+                            (xi == 0 && xj == 0) ? (yi * abs(zi) < yj * abs(zj)) :
+                            (zi == 0 && zj == 0) ? (yi * abs(xi) < yj * abs(xj)) :
+                            (yi * abs(xi * zi) < yj * abs(xj * zj))
+
+                    comp3 = (xi == 0 && xj == 0 && yi == 0 && yj == 0) ? (zi < zj) :
+                            (xi == 0 && xj == 0) ? (zi * abs(yi) < zj * abs(yj)) :
+                            (yi == 0 && yj == 0) ? (zi * abs(xi) < zj * abs(xj)) :
+                            (zi * abs(xi * yi) < zj * abs(xj * yj))
+
+                    if comp1 || comp2 || comp3
+                        # j is the slave, i is the master
+                        updated_global_per_gip[j] = current_gip
+                        if points[j][5] != points[i][5]
+                            points[j] = (points[j][1], points[j][2], points[j][3], points[j][4], points[i][5])
+                        end
+                    else
+                        # i is the slave, j is the master
+                        updated_global_per_gip[i] = current_gip # Keep the first one as master for now
+                        if points[i][5] != points[j][5]
+                            points[i] = (points[i][1], points[i][2], points[i][3], points[i][4], points[j][5])
+                        end
+                        # Potentially mark the 'i' point as already processed or update later
+                    end
+                end
+                j += 1
+            end
+            updated_global_per_gip[i] = current_gip
+            updated_global_owner[i] = points[i][5]
+            i += 1
+        end
+        s_gip_vbuf = MPI.VBuffer(updated_global_per_gip, recv_counts)
+        s_owner_vbuf = MPI.VBuffer(updated_global_owner, recv_counts)
+    end # End of the 'if rank == root' block
+
+    MPI.Barrier(comm)
+
+    # 4. Scatter the updated global indices and owners back to the processors
+    MPI.Scatterv!(s_gip_vbuf, zeros(eltype(per_gip_local), local_n), root, comm)
+    MPI.Scatterv!(s_owner_vbuf, zeros(eltype(owner_local), local_n), root, comm)
+
+    # 5. Update the mesh data
+    mesh.ip2gip[local_periodic_indices] .= per_ip_updated
+    mesh.gip2owner[local_periodic_indices] .= owner_updated
+end
+
+
+function restructure4periodicity_3D_optimized_old!(mesh, norm, periodic_direction)
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
