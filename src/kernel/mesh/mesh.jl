@@ -12,7 +12,6 @@ using GridapDistributed
 using PartitionedArrays
 using GridapGmsh
 using GridapP4est
-using Metis
 using Test
 
 export St_mesh
