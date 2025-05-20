@@ -405,7 +405,20 @@ mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<C
 ```bash
 mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
 ```
+#### Script
+You can simplify the run steps with a `runjexpresso` script like this:
+```bash
+#!/bin/bash
 
+MPIRUN=/YOUR/PATH/TO/mpirun
+JULIA=/YOUR/PATH/TO/julia
+
+$MPIRUN -np $1 $JULIA --project=. -e 'push!(empty!(ARGS), "'"$2"'", "'"$3"'"); include("./src/Jexpresso.jl")' "$@"
+```
+and run it like this:
+```bash
+./runjexpresso 4 CompEuler theta
+```
 
 ### Troubleshooting
 
