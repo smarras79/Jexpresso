@@ -205,13 +205,13 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Allocate large scale tendencies arrays
     #------------------------------------------------------------------------------------
-    LST = allocate_LargeScaleTendencies(sem.mesh.npoin, sem.mesh, inputs, T, backend; lLST=inputs[:LST]) 
+    LST = allocate_LargeScaleTendencies(sem.mesh.npoin, sem.mesh, inputs, T, backend; lLST=inputs[:LST])
+    
     #------------------------------------------------------------------------------------
     # Allocate Thermodynamic params for bomex case
     #------------------------------------------------------------------------------------
     thermo_params = create_updated_TD_Parameters(TFloat(101325.0))
-        
-
+    
     #------------------------------------------------------------------------------------
     # Populate solution arrays
     #------------------------------------------------------------------------------------
