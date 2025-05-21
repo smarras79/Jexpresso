@@ -212,7 +212,7 @@ Example of cloud simulations (please contact us to run this because its branch h
 
 Examples available in this branch:
 
-Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
+Example 1: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
 push!(empty!(ARGS), "CompEuler", "thetaTracers");
 include("./src/Jexpresso.jl")
@@ -223,7 +223,7 @@ include("./src/Jexpresso.jl")
      style="float: left; margin-right: 5px;" />
 
 
-Example 2: to solve the 3D Euler equations with buyoancy defined in `problems/equations/CompEuler/3d` you would do the following:
+Example 2: to solve the 3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
 ```bash
 push!(empty!(ARGS), "CompEuler", "3d");
 include("./src/Jexpresso.jl")
