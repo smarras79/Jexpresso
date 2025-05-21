@@ -1236,8 +1236,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         end
 
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. "; msg_rank = rank, suppress = mesh.msg_suppress)
-        println_rank(" # ... GO HAVE A COFFEE BECAUSE THIS PART IS NOT-OPTIMIZED AND WILL TAKE A WHILE !!! ........ "; msg_rank = rank, suppress = mesh.msg_suppress)
-        
+                
         #@info " TEYYYYYYYY NOT - OPTIMIZED"
         # restructure4periodicity_3D(mesh, norx, "periodicx")
         # restructure4periodicity_3D(mesh, nory, "periodicy")
@@ -3772,7 +3771,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     #   mesh.Δeffective     --> mesh.Δelem_smallest/mesh.nop
     #
     compute_element_size_driver(mesh, mesh.SD, Float64, CPU())
-    
+
     if isnothing(adapt_flags)
         return mesh, partitioned_model
     else
