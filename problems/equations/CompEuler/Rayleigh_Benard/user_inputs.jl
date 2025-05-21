@@ -23,12 +23,13 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 10.0, 10.0, 15], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 25.0, 25.0, 37.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/Rayleigh_Benard.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/Rayleigh_Benard.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/Rayleigh_Benard80x80.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------

@@ -21,5 +21,6 @@ function user_uout!(ip, ET, uout, u, qe...)
     uout[3] = u[3]/u[1]
     uout[4] = u[4]/u[1]
     uout[5] = u[5]/u[1]
+    uout[6] = u[6]
 
 end
