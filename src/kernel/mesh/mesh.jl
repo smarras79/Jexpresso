@@ -1861,63 +1861,21 @@ function restructure4periodicity_3D_optimized_old!(mesh, norm, periodic_directio
 end
 
 function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
-    
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
+    per_ip = Int[]
     ngl = mesh.ngl
-
-    # 1. Identify local periodic indices
-    local_periodic_indices = Int[]
-    for iface_bdy in axes(mesh.bdy_face_type, 1)
-        if mesh.bdy_face_type[iface_bdy] == periodic_direction
-            for k in 1:ngl, l in 1:ngl
-                ip = mesh.poin_in_bdy_face[iface_bdy, k, l]
-                push!(local_periodic_indices, ip)
+    for iface_bdy =1:size(mesh.bdy_face_type,1)
+        for k=1:ngl
+            for l=1:ngl
+                ip = mesh.poin_in_bdy_face[iface_bdy,k,l]
+                if (mesh.bdy_face_type[iface_bdy] == periodic_direction)
+                    push!(per_ip, ip)
+                end
             end
         end
     end
-    unique!(local_periodic_indices) # Remove duplicates locally
-    local_n = length(local_periodic_indices)
-
-    # Extract local data and create copies for MPI
-    x_local = collect(@view mesh.x[local_periodic_indices])
-    y_local = collect(@view mesh.y[local_periodic_indices])
-    z_local = collect(@view mesh.z[local_periodic_indices])
-    per_gip_local = collect(@view mesh.ip2gip[local_periodic_indices])
-    owner_local = collect(@view mesh.gip2owner[local_periodic_indices])
-
-    # 2. Gather sizes to all processors
-    root = 0
-    recv_counts = MPI.Allgather(local_n, comm)
-
-    gathered_x = eltype(x_local)[]
-    gathered_y = eltype(y_local)[]
-    gathered_z = eltype(z_local)[]
-    gathered_gip = eltype(per_gip_local)[]
-    gathered_owner = eltype(owner_local)[]
-    recv_offsets = zeros(Int, rank_sz)
-
-    if rank == root
-        total_count = sum(recv_counts)
-        gathered_x = Vector{eltype(x_local)}(undef, total_count)
-        gathered_y = Vector{eltype(y_local)}(undef, total_count)
-        gathered_z = Vector{eltype(z_local)}(undef, total_count)
-        gathered_gip = Vector{eltype(per_gip_local)}(undef, total_count)
-        gathered_owner = Vector{eltype(owner_local)}(undef, total_count)
-
-        recv_offsets[2:end] = cumsum(recv_counts[1:end-1])
-    else
-        recv_offsets[2:end] = cumsum(recv_counts[1:end-1])
-    end
-
-    # 3. Use MPI.Gatherv! to gather into pre-allocated buffers
-    MPI.Gatherv!(x_local, MPI.VBuffer(gathered_x, recv_counts, recv_offsets), root, comm)
-    MPI.Gatherv!(y_local, MPI.VBuffer(gathered_y, recv_counts, recv_offsets), root, comm)
-    MPI.Gatherv!(z_local, MPI.VBuffer(gathered_z, recv_counts, recv_offsets), root, comm)
-    MPI.Gatherv!(per_gip_local, MPI.VBuffer(gathered_gip, recv_counts, recv_offsets), root, comm)
-    MPI.Gatherv!(owner_local, MPI.VBuffer(gathered_owner, recv_counts, recv_offsets), root, comm)
-
 
     function sort_coords_by_x3_groups(x1, x2, x3)
         # Find min and max x3 values
@@ -1953,22 +1911,52 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
     end
 
 
-    if rank == root
-        updated_global_per_gip = copy(gathered_gip)
-        updated_global_owner   = copy(gathered_owner)
-        coords = collect(zip(round.(gathered_x; digits=5), round.(gathered_y; digits=5), round.(gathered_z; digits=5)))
+    ### remove duplicates
+    unique!(per_ip)
+    x_local  = mesh.x[per_ip]
+    y_local  = mesh.y[per_ip]
+    z_local  = mesh.z[per_ip]
+    per_gip  = mesh.ip2gip[per_ip]
+    ip_owner = mesh.gip2owner[per_ip]
+    # @info  mesh.x[per_ip]
+
+    # Gather arrays onto the root processor (rank 0)
+    root = 0
+
+    # Gather per_gip
+    buffer_sz::Int32    = size(per_ip, 1)
+    recv_counts  = MPI.Gather(buffer_sz, 0, comm)
+
+    x_gather     = MPI.gather(x_local, comm)
+    y_gather     = MPI.gather(y_local, comm)
+    z_gather     = MPI.gather(z_local, comm)
+    gathered_per = MPI.gather(per_gip, comm)
+    owner_gather = MPI.gather(ip_owner, comm)
+
+
+
+    if mesh.rank == root
+
+    # On the root processor, combine and remove duplicates
+        # Concatenate gathered arrays
+        x              = vcat(x_gather...)
+        y              = vcat(y_gather...)
+        z              = vcat(z_gather...)
+        global_per_gip = vcat(gathered_per...)
+        owner          = vcat(owner_gather...)
+        coords = collect(zip(round.(x; digits=5), round.(y; digits=5), round.(z; digits=5)))
         uniq_idx = unique(i -> coords[i], eachindex(coords))
-        un_gathered_x = collect(@view gathered_x[uniq_idx])
-        un_gathered_y = collect(@view gathered_y[uniq_idx])
-        un_gathered_z = collect(@view gathered_z[uniq_idx])
-        un_updated_global_per_gip = collect(@view updated_global_per_gip[uniq_idx])
-        un_updated_global_owner   = collect(@view updated_global_owner[uniq_idx])
+        un_gathered_x = collect(@view x[uniq_idx])
+        un_gathered_y = collect(@view y[uniq_idx])
+        un_gathered_z = collect(@view z[uniq_idx])
+        un_updated_global_per_gip = collect(@view global_per_gip[uniq_idx])
+        un_updated_global_owner   = collect(@view owner[uniq_idx])
+
 
         changes_ip    = Dict{Int, Int}()
         changes_owner = Dict{Int, Int}()
         sz = length(uniq_idx)
-        if sz >0
-
+        if sz > 0 
             if periodic_direction == "periodicx"
                 results = sort_coords_by_x3_groups(un_gathered_y,un_gathered_z,un_gathered_x)
             elseif periodic_direction == "periodicy"
@@ -1976,47 +1964,60 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
             elseif periodic_direction == "periodicz"
                 results = sort_coords_by_x3_groups(un_gathered_x,un_gathered_y,un_gathered_z)
             end
-            # Use a more efficient approach for finding colinear points
             vec = fill!(similar(norm), 0.0)
-            for i in 1:sz÷2
+            for i = 1:sz÷2
                 idx_i = results.idx_x3min[i]
                 idx_j = results.idx_x3max[i]
                 vec[1] = un_gathered_x[idx_i] - un_gathered_x[idx_j]
                 vec[2] = un_gathered_y[idx_i] - un_gathered_y[idx_j]
                 vec[3] = un_gathered_z[idx_i] - un_gathered_z[idx_j]
-                if determine_colinearity(vec, norm)
-                    # Determine the "master" point based on lexicographical order
-                    xi, yi, zi = un_gathered_x[idx_i], un_gathered_y[idx_i], un_gathered_z[idx_i]
-                    xj, yj, zj = un_gathered_x[idx_j], un_gathered_y[idx_j], un_gathered_z[idx_j]
-
-                    comp1 = (yi == 0 && yj == 0 && zi == 0 && zj == 0) ? (xi < xj) :
-                        (yi == 0 && yj == 0) ? (xi * abs(zi) < xj * abs(zj)) :
-                        (zi == 0 && zj == 0) ? (xi * abs(yi) < xj * abs(yj)) :
-                        (xi * abs(yi * zi) < xj * abs(yj * zj))
-
-                    comp2 = (xi == 0 && xj == 0 && zi == 0 && zj == 0) ? (yi < yj) :
-                        (xi == 0 && xj == 0) ? (yi * abs(zi) < yj * abs(zj)) :
-                        (zi == 0 && zj == 0) ? (yi * abs(xi) < yj * abs(xj)) :
-                        (yi * abs(xi * zi) < yj * abs(xj * zj))
-
-                    comp3 = (xi == 0 && xj == 0 && yi == 0 && yj == 0) ? (zi < zj) :
-                        (xi == 0 && xj == 0) ? (zi * abs(yi) < zj * abs(yj)) :
-                        (yi == 0 && yj == 0) ? (zi * abs(xi) < zj * abs(xj)) :
-                        (zi * abs(xi * yi) < zj * abs(xj * yj))
-
+                if (determine_colinearity(vec, norm))
+                    xt = x[idx_j]
+                    yt = y[idx_j]
+                    zt = z[idx_j]
+                    xi = x[idx_i]
+                    yi = y[idx_i]
+                    zi = z[idx_i]
+                    if (yi == 0 && yt == 0 && zi == 0 && zt == 0)
+                        comp1 = xi < xt
+                    elseif (yi == 0 && yt == 0)
+                        comp1 = xi*abs(zi) < xt*abs(zt)
+                    elseif (zi == 0 && zt == 0)
+                        comp1 = xi*abs(zi) < xt*abs(yt)
+                    else
+                        comp1 = xi*abs(yi*zi) < xt*abs(yt*zt)
+                    end
+                    if (xi ==0 && xt == 0 && zi == 0 && zt ==0)
+                        comp2 = yi < yt
+                    elseif (xi == 0 && xt == 0)
+                        comp2 = yi*abs(zi) < yt*abs(zt)
+                    elseif (zi == 0 && zt == 0)
+                        comp2 = yi*abs(xi) < yt*abs(xt)
+                    else
+                        comp2 = yi*abs(xi*zi) < yt*abs(xt*zt)
+                    end
+                    if (xi == 0 && xt == 0 && yi == 0 && yt ==0)
+                        comp3 = zi < zt
+                    elseif (xi == 0 && xt == 0)
+                        comp3 = zi*abs(yi) < zt*abs(yt)
+                    elseif (yi == 0 && yt == 0)
+                        comp3 = zi*abs(xi) < zt*abs(xt)
+                    else
+                        comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
+                    end
+                    # @info "found", global_per_gip[i], global_per_gip[i1]
                     if comp1 || comp2 || comp3
                         # j is the slave, i is the master
                         changes_ip[un_updated_global_per_gip[idx_j]] = un_updated_global_per_gip[idx_i]
-                        if un_updated_global_owner[idx_j] != un_updated_global_owner[idx_i]
-                            changes_owner[un_updated_global_owner[idx_j]] = un_updated_global_owner[idx_i]
-                        end
+                        changes_owner[un_updated_global_per_gip[idx_j]] = un_updated_global_owner[idx_i]
+                        changes_owner[un_updated_global_per_gip[idx_i]] = un_updated_global_owner[idx_i]
                     else
                         # i is the slave, j is the master
                         changes_ip[un_updated_global_per_gip[idx_i]] = un_updated_global_per_gip[idx_j]
-                        if un_updated_global_owner[idx_i] != un_updated_global_owner[idx_j]
-                            changes_owner[un_updated_global_owner[idx_i]] = un_updated_global_owner[idx_j]
-                        end
+                        changes_owner[un_updated_global_per_gip[idx_i]] = un_updated_global_owner[idx_j]
+                        changes_owner[un_updated_global_per_gip[idx_j]] = un_updated_global_owner[idx_j]
                     end
+                        # break
                 else
                     @info length(changes_ip)
                     @info "vec", vec, norm
@@ -2024,25 +2025,22 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                 end
             end
         end
-        updated_global_per_gip = [get(changes_ip, x, x) for x in updated_global_per_gip]
-        updated_global_owner = [get(changes_owner, x, x) for x in updated_global_owner]
-        # Prepare data for scattering
-        s_gip_vbuf = MPI.VBuffer(updated_global_per_gip, recv_counts)
-        s_owner_vbuf = MPI.VBuffer(updated_global_owner, recv_counts)
+        updated_global_per_gip = [get(changes_ip, x, x) for x in global_per_gip]
+        updated_owner = [get(changes_owner, x, owner[i])  for (i, x) in enumerate(global_per_gip)]
+
+        s_gip_vbuf   = VBuffer(updated_global_per_gip, recv_counts)
+        s_owner_vbuf = VBuffer(updated_owner, recv_counts)
     else
-        s_gip_vbuf = MPI.VBuffer(eltype(per_gip_local)[], recv_counts, recv_offsets)
-        s_owner_vbuf = MPI.VBuffer(eltype(owner_local)[], recv_counts, recv_offsets)
+        s_gip_vbuf   = VBuffer(nothing)
+        s_owner_vbuf = VBuffer(nothing)
     end
-
     MPI.Barrier(comm)
+    per_ip_updated = MPI.Scatterv!(s_gip_vbuf,zeros(eltype(per_gip), buffer_sz), 0, comm)
+    owner_updated  = MPI.Scatterv!(s_owner_vbuf,zeros(eltype(ip_owner), buffer_sz), 0, comm)
+        
+    mesh.ip2gip[per_ip]    .= per_ip_updated
+    mesh.gip2owner[per_ip] .= owner_updated
 
-    # 4. Scatter the updated global indices and owners back to the processors
-    per_ip_updated = MPI.Scatterv!(s_gip_vbuf, zeros(eltype(per_gip_local), local_n), root, comm)
-    owner_updated = MPI.Scatterv!(s_owner_vbuf, zeros(eltype(owner_local), local_n), root, comm)
-
-    # 5. Update the mesh data
-    mesh.ip2gip[local_periodic_indices] .= per_ip_updated
-    mesh.gip2owner[local_periodic_indices] .= owner_updated
 end
 
 function find_gip_owner(a)
