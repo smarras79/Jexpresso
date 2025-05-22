@@ -199,7 +199,7 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
                 jpo = mesh.conn[iel, j]
                 
                 EL.Avovo[ii,jj,iel] = A[ipo, jpo]
-                println(EL.Avovo[ii, jj, iel])
+                #println(EL.Avovo[ii, jj, iel])
 
                 jj += 1
                 
@@ -238,12 +238,21 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
     #
     # B∂O∂τ[:,:] = A∂O∂τ - Sum_{iel} A∂Oᵥₒ[:,:,iel]*A⁻¹ᵥₒᵥ[:,:,iel]*Aᵥₒ∂τ[:,:,iel]
     #
-    intermediate_product = zeros(mesh.length∂O, mesh.length∂τ, mesh.nelem)
-    for i in 1:size(EL.Avo∂τ, 3)
-        intermediate_product[:,:,i] = EL.A∂Ovo[:,:,i]*EL.Hvovo[:,:,i]*EL.Avo∂τ[:,:,i]
-    end
-    EL.B∂O∂τ = EL.A∂O∂τ - sum(intermediate_product, dims=3)
+    dims                 = (mesh.length∂O, mesh.length∂τ, mesh.nelem)
+    intermediate_product = KernelAbstractions.zeros(inputs[:backend], TFloat, dims) #zeros(mesh.length∂O, mesh.length∂τ, mesh.nelem)
+    @info size(EL.Avo∂τ, 3)
+
+    @btime LinearAlgebra.mul!($EL.A∂Ovo[:,:,1], $EL.Hvovo[:,:,1], $EL.Avo∂τ[:,:,1])
+    @mystop
+
     
+   # for i in 1:size(EL.Avo∂τ, 3)
+   #     intermediate_product[:,:,i] = EL.A∂Ovo[:,:,i]*EL.Hvovo[:,:,i]*EL.Avo∂τ[:,:,i]
+   # end
+    
+    #EL.B∂O∂τ = EL.A∂O∂τ - sum(intermediate_product, dims=3)
+    @info typeof(EL.A∂O∂τ), typeof(EL.B∂O∂τ), typeof(EL.B∂O∂O), typeof(sum(intermediate_product, dims=3))
+    @mystop
     for i1=1:length(mesh.∂O)      #row    B[i1][i2]        
         for i2=1:length(mesh.∂O)  #column B[i1][i2]
             
@@ -253,8 +262,13 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
             #@info i1, i2 , EL.B∂O∂O[i1, i2]
         end        
     end
+
+    for iΓ=1:length(mesh.Γ)
+        g1=mesh.Γ[iΓ]
+        EL.B∂O∂Γ[:, iΓ] .= EL.B∂O∂τ[:, g1]
+    end
     
-    @info size(EL.B∂O∂τ), size(EL.B∂O∂O)
+    @info size(EL.B∂O∂τ), size(EL.B∂O∂O), size(EL.B∂O∂Γ)
     @mystop
     
 end
