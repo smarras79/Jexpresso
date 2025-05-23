@@ -553,7 +553,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         #
         # Rewrite coordinates in RCM order:
         #
-        filename = "./COORDS_LO.dat" 
+        #filename = "./COORDS_LO.dat" 
         #filename = "./COORDS_LO_" + rank + ".dat" 
         #open("./COORDS_LO_$rank.dat", "w") do f
             for ip = 1:mesh.npoin_linear

@@ -403,11 +403,11 @@ function _build_rhs!(RHS, u, params, time)
     end
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    # @info "start conformity4ncf_q!"
+    
     if inputs[:ladapt] == true
         conformity4ncf_q!(params.uaux, params.pM, SD, QT, params.mesh.connijk, params.mesh, params.Minv, params.metrics.Je, params.ω, AD, neqs, params.interp)
     end
-    # @info "end conformity4ncf_q!"
+    
     resetbdyfluxToZero!(params)
     apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
                                params.mesh.x, params.mesh.y, params.mesh.z, params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
@@ -454,13 +454,13 @@ function _build_rhs!(RHS, u, params, time)
     
     inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, SD)
     
-    # @info "start DSS_rhs_invicid"
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
                            params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
     end
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
-    # @info "end DSS_rhs_invicid"
+
+
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
