@@ -27,6 +27,7 @@
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
 
     L = 5.0
+    #qbdy[1] = 1.0
     
     if (tag == "bottom")
         qbdy[1] = 100.0

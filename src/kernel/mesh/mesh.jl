@@ -118,12 +118,12 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     lengthΓ  = 0  #non-repeated bdy points from mesh.poin_in_bdy_edge    
     lengthO  = 0  #all internal, including edges, but without domain's bdy
     length∂τ = 0
-    lengthτO = 0
+    lengthIo = 0
     length∂O = 0
     Γ::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, lengthΓ)
     O::Array{TInt, 1}  = KernelAbstractions.zeros(backend, TInt, lengthO)
     ∂τ::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, length∂τ)
-    τO::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, lengthτO)
+    Io::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, lengthIo)
     ∂O::Array{TInt, 1} = KernelAbstractions.zeros(backend, TInt, length∂O)
         
     edge_g_color::Array{Int64, 1} = zeros(Int64, 1)
