@@ -155,6 +155,15 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
 
     mesh.lengthO =  mesh.length∂O +  mesh.lengthτO
     
+    #outfile = "notes.txt"
+    #open(outfile, "w") do f
+    #    for i in A
+    #        println(f, i)
+    #    end
+    #end #
+    #
+    #print_matrix(A)
+    
     @info mesh.lengthΓ, mesh.lengthO, mesh.length∂τ, mesh.lengthτO, mesh.length∂O
     
     EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
@@ -174,7 +183,7 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
         ii = 1
         for i = elnbdypoints+1:nelpoints
             ipo = mesh.conn[iel, i]
-
+            
             for i1=1:length(mesh.∂O)
                 
                 iO = mesh.∂O[i1]
@@ -183,7 +192,7 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
             end
 
             #
-            # Aᵥₒ∂τₜ
+            # Aᵥₒ∂τ
             #
             for i1=1:length(mesh.∂τ)
                 
@@ -220,7 +229,6 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
         # Hᵥₒᵥₒ[iel] = A⁻¹ᵥₒᵥₒ[iel]
         # 
         EL.Hvovo[:,:,iel] = inv(EL.Avovo[:,:,iel])
-        
     end
     
     #
@@ -243,7 +251,6 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
         end
             
     end
-
     
     #------------------------------------------------------------------------
     # Eq. (13)
@@ -259,35 +266,33 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
         LinearAlgebra.mul!(BC[:,:], @view(EL.Hvovo[:,:,iel]), @view(EL.Avo∂τ[:,:,iel]))
         # ABC = A∂Oᵥₒ[:,:,iel]⋅BC
         LinearAlgebra.mul!(ABC[:,:,iel], @view(EL.A∂Ovo[:,:,iel]), @view(BC[:,:]))
-
     end
     
     ∑ = similar(ABC[:,:,1])
     ∑ = sum(ABC, dims=3)
-    EL.B∂O∂τ .= EL.A∂O∂τ .- ∑[:,:,1] 
+    EL.B∂O∂τ .= EL.A∂O∂τ .- ∑[:,:,1]
     for i1=1:length(mesh.∂O)      #row    B[i1][i2]        
         for i2=1:length(mesh.∂O)  #column B[i1][i2]
             
             j2 = findall(x->x==mesh.∂O[i2], mesh.∂τ)[1]
+            #@info "INDEX ∂O ∂τ=" i1, i2, j2
             EL.B∂O∂O[i1, i2] = EL.B∂O∂τ[i1, j2]
         end        
     end
-
+    
     gΓ = zeros(mesh.lengthΓ)
     for iΓ = 1:mesh.lengthΓ
         g1=mesh.Γ[iΓ]
         
-        EL.B∂O∂Γ[:, iΓ] .= EL.B∂O∂τ[:, g1]
+        jτ = findall(x->x==mesh.Γ[iΓ], mesh.∂τ)[1]
+        #@info " jτ ", iΓ, jτ
+        EL.B∂O∂Γ[:, iΓ] .= EL.B∂O∂τ[:, jτ]
 
-        ipbdy = g1
-        gΓ[iΓ] = ubdy[ipbdy, 1]
+        gΓ[iΓ] = ubdy[g1, 1]
+        #@info " gΓ = ", g1, iΓ, gΓ[iΓ]
         
     end
-    pruntln(" BOUNDARY VALUES: gΓ[1:mesh.lengthΓ]")
-    for iΓ = 1:mesh.lengthΓ
-        @info " gΓ = ", iΓ, gΓ[iΓ]
-    end
-
+    
     #------------------------------------------------------------------------
     # Eq. (11)
     #------------------------------------------------------------------------    
@@ -297,6 +302,8 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
     BOΓg = zeros(mesh.length∂O)
     LinearAlgebra.mul!(BOΓg, EL.B∂O∂Γ, gΓ)
 
+    @info eigvals(EL.B∂O∂O)
+  
     u∂O = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(mesh.length∂O))
     invB∂O∂O = similar(EL.B∂O∂O)
     invB∂O∂O = inv(EL.B∂O∂O)
@@ -308,7 +315,7 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
     for i=1:mesh.length∂O
         println(" u∂O = ", u∂O[i,1])
     end
-
+@mystop
     
   #=  for iτ = 1:mesh.length∂τ
 
