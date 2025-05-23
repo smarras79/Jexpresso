@@ -1,8 +1,9 @@
 function driver(nparts,
                 distribute,
                 inputs::Dict,
-                    OUTPUT_DIR::String,
-                TFloat) 
+                OUTPUT_DIR::String,
+                TFloat)
+    
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
     sem = sem_setup(inputs, nparts, distribute)
@@ -100,7 +101,7 @@ function driver(nparts,
             # Element-learning infrastructure
             #-----------------------------------------------------
             if inputs[:lelementLearning]
-                elementLearning_Axb(sem.mesh, sem.matrix.L, RHS)
+                elementLearning_Axb(sem.mesh, sem.matrix.L, RHS, params.uaux)
             end
             #-----------------------------------------------------
             # END Element-learning infrastructure
@@ -132,7 +133,8 @@ function driver(nparts,
         end
         
         @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
-        
+
+        @info size(solution.u), size(params.uaux)
         write_output(params.SD, solution.u, params.uaux, 0.0, 1,
                      sem.mesh, nothing,
                      nothing, nothing,
@@ -146,14 +148,14 @@ function driver(nparts,
     end
 end
 
-function elementLearning_Axb(mesh::St_mesh, A, ubdy)
+function elementLearning_Axb(mesh::St_mesh, A, ubdy, uaux)
 
     @info "∂Oxdd"
     println(mesh.∂O)
     @info "∂τddddd"
     println(mesh.∂τ)
 
-    mesh.lengthO =  mesh.length∂O +  mesh.lengthτO
+    mesh.lengthO =  mesh.length∂O +  mesh.lengthIo
     
     #outfile = "notes.txt"
     #open(outfile, "w") do f
@@ -164,7 +166,7 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
     #
     #print_matrix(A)
     
-    @info mesh.lengthΓ, mesh.lengthO, mesh.length∂τ, mesh.lengthτO, mesh.length∂O
+    @info mesh.lengthΓ, mesh.lengthO, mesh.length∂τ, mesh.lengthIo, mesh.length∂O
     
     EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
                                mesh.length∂O,
@@ -248,16 +250,80 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
             jτ2 = mesh.∂τ[j2]
             
             EL.A∂τ∂τ[j1, j2] = A[jτ1, jτ2]
-        end
-            
+        end            
     end
+
+    #
+    # A∂OIo
+    #
+    for jo=1:mesh.length∂O
+        jo1 = mesh.∂O[jo]
+        
+        for io=1:mesh.lengthIo            
+            io1 = mesh.Io[io]
+            
+            EL.A∂OIo[jo, io] = A[jo1, io1]
+        end
+    end
+    #
+    # AIoIo
+    #
+    for io = 1:mesh.lengthIo
+        io1 = mesh.Io[io]
+        
+        for jo = 1:mesh.lengthIo
+            jo1 = mesh.Io[jo]
+
+            EL.AIoIo[io, jo] = A[io1, jo1]
+        end
+    end
+    #
+    # AIo∂τ
+    #
+    for jτ=1:mesh.length∂τ
+        jτ1 = mesh.∂τ[jτ]
+        
+        for io=1:mesh.lengthIo
+            io1 = mesh.Io[io]
+            
+            EL.AIo∂τ[io, jτ] = A[io1, jτ1]
+        end
+    end
+    invAIoIo = similar(EL.AIoIo)
+    invAIoIo = inv(EL.AIoIo)
+
+    dims = (mesh.lengthIo, mesh.lengthΓ)
+    AIoΓ = similar(EL.AIoIo, dims);
+    
+   #= for iΓ = 1:mesh.lengthΓ
+
+        g1=mesh.Γ[iΓ]
+        
+        jτ = findall(x->x==mesh.Γ[iΓ], mesh.∂τ)[1]
+        
+        AIoΓ[:,iΓ] .= EL.AIo∂τ[:, jτ]
+    end=#
+
     
     #------------------------------------------------------------------------
     # Eq. (13)
     #------------------------------------------------------------------------    
     #  B∂O∂τ[:,:] = A∂O∂τ - Sum_{iel} A∂Oᵥₒ[:,:,iel]*A⁻¹ᵥₒᵥₒ[:,:,iel]*Aᵥₒ∂τ[:,:,iel] -> A∂O∂τ - Sum_{iel}A⋅B⋅C
     #
-    dims = (size(EL.A∂Ovo[:,:,1])[1], size(EL.Avo∂τ[:,:,1])[2], Int64(mesh.nelem))
+    
+    # BC = A⁻¹ᵢₒᵢₒ⋅Aᵢₒ∂τ
+    dims = (mesh.lengthIo, mesh.length∂τ)
+    BC = similar(EL.AIoIo, dims);
+    LinearAlgebra.mul!(BC, invAIoIo, EL.AIo∂τ)
+
+    # ABC = A∂Oᵢₒ⋅BC
+    dims = (mesh.length∂O, mesh.length∂τ)
+    ABC  = similar(EL.AIoIo, dims)
+    LinearAlgebra.mul!(ABC, EL.A∂OIo, BC)
+    
+    EL.B∂O∂τ .= EL.A∂O∂τ .- ABC
+
+    #=dims = (size(EL.A∂Ovo[:,:,1])[1], size(EL.Avo∂τ[:,:,1])[2], Int64(mesh.nelem))
     ABC  = similar(EL.Avo∂τ, dims) 
     for iel = 1:mesh.nelem
         BC = similar(EL.Avo∂τ[:,:,iel]);
@@ -270,7 +336,7 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
     
     ∑ = similar(ABC[:,:,1])
     ∑ = sum(ABC, dims=3)
-    EL.B∂O∂τ .= EL.A∂O∂τ .- ∑[:,:,1]
+    EL.B∂O∂τ .= EL.A∂O∂τ .- ∑[:,:,1]=#
     for i1=1:length(mesh.∂O)      #row    B[i1][i2]        
         for i2=1:length(mesh.∂O)  #column B[i1][i2]
             
@@ -315,6 +381,59 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
     for i=1:mesh.length∂O
         println(" u∂O = ", u∂O[i,1])
     end
+
+    #
+    #  AIo,Γ
+    #
+    AIoΓ = similar(A, (mesh.lengthIo, mesh.lengthΓ))
+    for iΓ = 1:mesh.lengthΓ
+        g1=mesh.Γ[iΓ]        
+        for io = 1:mesh.lengthIo
+            io1 = mesh.Io[io]            
+            AIoΓ[io, iΓ] = A[io1, g1]
+        end
+    end
+
+   
+#
+# Eq (12)
+#
+    AIoΓg = similar(AIoΓ, (mesh.lengthIo))
+    LinearAlgebra.mul!(AIoΓg, AIoΓ, gΓ)
+
+    AIou∂O = similar(AIoΓg)
+    LinearAlgebra.mul!(AIou∂O, transpose(EL.A∂OIo), u∂O)
+
+    dims = (mesh.lengthIo)
+    uIo = similar(u∂O, dims)
+    LinearAlgebra.mul!(uIo, -invAIoIo, (AIou∂O .+ AIoΓg))
+
+u = similar(uIo, mesh.npoin)
+for io = 1:mesh.lengthIo
+    io1 = mesh.Io[io]
+    
+    u[io1] = uIo[io]
+end
+for io = 1:mesh.length∂O
+    io1 = mesh.∂O[io]
+    
+    u[io1] = u∂O[io]
+end
+for io = 1:mesh.lengthΓ
+    io1 = mesh.Γ[io]
+    
+    u[io1] = gΓ[io]
+end
+
+uaux = zeros(mesh.npoin, 2)
+
+write_output(NSD_2D(), u, uaux, 0.0, 1,
+             mesh, nothing,
+             nothing, nothing,
+             0.0, 0.0, 0.0,
+             "./", inputs,
+             1,1, inputs[:outformat];)
+
 @mystop
     
   #=  for iτ = 1:mesh.length∂τ

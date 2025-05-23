@@ -126,7 +126,7 @@ function params_setup(sem,
     xmax = maximum(sem.mesh.x); xmin = minimum(sem.mesh.x)
     ymax = maximum(sem.mesh.y); ymin = minimum(sem.mesh.y)
     zmax = maximum(sem.mesh.z); zmin = minimum(sem.mesh.z)
-    
+
     #------------------------------------------------------------------------------------
     # Laguerre arrays
     #------------------------------------------------------------------------------------

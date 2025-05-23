@@ -271,9 +271,9 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         mesh.∂O       = unroll_positive_unique(new_no_bdy_poin)
         mesh.Γ        = unroll_positive_unique(mesh.poin_in_bdy_edge)
         mesh.∂τ       = vcat(mesh.Γ, mesh.∂O)
-        mesh.τO       = view(mesh.internal_poin_in_elem, :)
-        mesh.lengthτO = length(mesh.τO)
-        mesh.O        = vcat(mesh.τO, mesh.∂O)
+        mesh.Io       = view(mesh.internal_poin_in_elem, :)
+        mesh.lengthIo = length(mesh.Io)
+        mesh.O        = vcat(mesh.Io, mesh.∂O)
         mesh.length∂O = length(mesh.∂O)
         mesh.length∂τ = length(mesh.∂τ)
         mesh.lengthΓ  = length(mesh.Γ)
@@ -294,9 +294,10 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         println(mesh.∂τ)
         println(mesh.length∂τ)
         
-        println("τO")
-        println(mesh.τO)
-        println(mesh.lengthτO)
+        println("Io")
+        println(mesh.Io)
+        println(mesh.lengthIo)
+        
     end
 
     #--------------------------------------------------------
