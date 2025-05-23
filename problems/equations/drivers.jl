@@ -75,15 +75,6 @@ function driver(nparts,
                 sem.matrix.L[ip,ip] += inputs[:rconst][1]
             end
 
-            #-----------------------------------------------------
-            # Element-learning infrastructure
-            #-----------------------------------------------------
-            if inputs[:lelementLearning]
-                elementLearning_Axb(sem.mesh, sem.matrix.L, RHS)
-            end
-            #-----------------------------------------------------
-            # END Element-learning infrastructure
-            #-----------------------------------------------------
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
                                                  params.mesh.x, params.mesh.y, params.mesh.z,
@@ -103,8 +94,18 @@ function driver(nparts,
                                                  params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
                                                  params.mesh.bdy_edge_type,
                                                  params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
-      
-         
+
+            
+            #-----------------------------------------------------
+            # Element-learning infrastructure
+            #-----------------------------------------------------
+            if inputs[:lelementLearning]
+                elementLearning_Axb(sem.mesh, sem.matrix.L, RHS)
+            end
+            #-----------------------------------------------------
+            # END Element-learning infrastructure
+            #-----------------------------------------------------
+            
         else
             k = lin_solve_rhs_gpu_2d!(inputs[:backend])
             k(RHS, qp.qn, qp.qe, sem.mesh.x, sem.mesh.y, qp.neqs; ndrange = sem.mesh.npoin)
@@ -145,7 +146,7 @@ function driver(nparts,
     end
 end
 
-function elementLearning_Axb(mesh::St_mesh, A, RHS)
+function elementLearning_Axb(mesh::St_mesh, A, ubdy)
 
     @info "∂Oxdd"
     println(mesh.∂O)
@@ -159,19 +160,19 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
     EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
                                mesh.length∂O,
                                mesh.length∂τ,
+                               mesh.lengthΓ,
                                TFloat, inputs[:backend])
 
     nelintpoints = (mesh.ngl-2)*(mesh.ngl-2)
     nelpoints = size(mesh.conn)[2]
-    intaux = nelpoints - nelintpoints
-    
+    elnbdypoints = nelpoints - nelintpoints
     for iel=1:mesh.nelem
 
         #
-        # A∂oᵥₒₜ
+        # A∂oᵥₒ
         #
         ii = 1
-        for i = intaux+1:nelpoints
+        for i = elnbdypoints+1:nelpoints
             ipo = mesh.conn[iel, i]
 
             for i1=1:length(mesh.∂O)
@@ -195,15 +196,23 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
             # Aᵥₒᵥₒ
             #
             jj = 1
-            for j = intaux+1:nelpoints          
+            for j = elnbdypoints+1:nelpoints          
                 jpo = mesh.conn[iel, j]
                 
-                EL.Avovo[ii,jj,iel] = A[ipo, jpo]
-                #println(EL.Avovo[ii, jj, iel])
-
+                EL.Avovo[ii, jj, iel] = A[ipo, jpo]
                 jj += 1
-                
             end
+            #
+            # Aᵥₒᵥb
+            #
+            bb = 1
+            for j = 1:elnbdypoints
+                jpb = mesh.conn[iel, j]
+                
+                EL.Avovb[ii, bb, iel] = A[ipo, jpb]
+                bb += 1
+            end
+            
             ii += 1
         end
 
@@ -234,41 +243,100 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
         end
             
     end
-    
-    #
-    # B∂O∂τ[:,:] = A∂O∂τ - Sum_{iel} A∂Oᵥₒ[:,:,iel]*A⁻¹ᵥₒᵥ[:,:,iel]*Aᵥₒ∂τ[:,:,iel]
-    #
-    dims                 = (mesh.length∂O, mesh.length∂τ, mesh.nelem)
-    intermediate_product = KernelAbstractions.zeros(inputs[:backend], TFloat, dims) #zeros(mesh.length∂O, mesh.length∂τ, mesh.nelem)
-    @info size(EL.Avo∂τ, 3)
-
-    @btime LinearAlgebra.mul!($EL.A∂Ovo[:,:,1], $EL.Hvovo[:,:,1], $EL.Avo∂τ[:,:,1])
-    @mystop
 
     
-   # for i in 1:size(EL.Avo∂τ, 3)
-   #     intermediate_product[:,:,i] = EL.A∂Ovo[:,:,i]*EL.Hvovo[:,:,i]*EL.Avo∂τ[:,:,i]
-   # end
+    #------------------------------------------------------------------------
+    # Eq. (13)
+    #------------------------------------------------------------------------    
+    #  B∂O∂τ[:,:] = A∂O∂τ - Sum_{iel} A∂Oᵥₒ[:,:,iel]*A⁻¹ᵥₒᵥₒ[:,:,iel]*Aᵥₒ∂τ[:,:,iel] -> A∂O∂τ - Sum_{iel}A⋅B⋅C
+    #
+    dims = (size(EL.A∂Ovo[:,:,1])[1], size(EL.Avo∂τ[:,:,1])[2], Int64(mesh.nelem))
+    ABC  = similar(EL.Avo∂τ, dims) 
+    for iel = 1:mesh.nelem
+        BC = similar(EL.Avo∂τ[:,:,iel]);
+
+        # BC = A⁻¹ᵥₒᵥₒ[:,:,iel]⋅Aᵥₒ∂τ[:,:,iel]
+        LinearAlgebra.mul!(BC[:,:], @view(EL.Hvovo[:,:,iel]), @view(EL.Avo∂τ[:,:,iel]))
+        # ABC = A∂Oᵥₒ[:,:,iel]⋅BC
+        LinearAlgebra.mul!(ABC[:,:,iel], @view(EL.A∂Ovo[:,:,iel]), @view(BC[:,:]))
+
+    end
     
-    #EL.B∂O∂τ = EL.A∂O∂τ - sum(intermediate_product, dims=3)
-    @info typeof(EL.A∂O∂τ), typeof(EL.B∂O∂τ), typeof(EL.B∂O∂O), typeof(sum(intermediate_product, dims=3))
-    @mystop
+    ∑ = similar(ABC[:,:,1])
+    ∑ = sum(ABC, dims=3)
+    EL.B∂O∂τ .= EL.A∂O∂τ .- ∑[:,:,1] 
     for i1=1:length(mesh.∂O)      #row    B[i1][i2]        
         for i2=1:length(mesh.∂O)  #column B[i1][i2]
             
-            j2 = findall(x->x==mesh.∂O[i2], mesh.∂τ)
-            
+            j2 = findall(x->x==mesh.∂O[i2], mesh.∂τ)[1]
             EL.B∂O∂O[i1, i2] = EL.B∂O∂τ[i1, j2]
-            #@info i1, i2 , EL.B∂O∂O[i1, i2]
         end        
     end
 
-    for iΓ=1:length(mesh.Γ)
+    gΓ = zeros(mesh.lengthΓ)
+    for iΓ = 1:mesh.lengthΓ
         g1=mesh.Γ[iΓ]
+        
         EL.B∂O∂Γ[:, iΓ] .= EL.B∂O∂τ[:, g1]
+
+        ipbdy = g1
+        gΓ[iΓ] = ubdy[ipbdy, 1]
+        
     end
+    pruntln(" BOUNDARY VALUES: gΓ[1:mesh.lengthΓ]"
+    for iΓ = 1:mesh.lengthΓ
+        @info " gΓ = ", iΓ, gΓ[iΓ]
+    end
+
+    #------------------------------------------------------------------------
+    # Eq. (11)
+    #------------------------------------------------------------------------    
+    #
+    # B∂O∂Γ⋅gΓ
+    #
+    BOΓg = zeros(mesh.length∂O)
+    LinearAlgebra.mul!(BOΓg, EL.B∂O∂Γ, gΓ)
+
+    u∂O = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(mesh.length∂O))
+    invB∂O∂O = similar(EL.B∂O∂O)
+    invB∂O∂O = inv(EL.B∂O∂O)
+    #
+    #  u∂O = -B⁻¹∂O∂O⋅(B∂OΓ⋅gΓ)
+    #
+    LinearAlgebra.mul!(u∂O, -invB∂O∂O, BOΓg)
+
+    for i=1:mesh.length∂O
+        println(" u∂O = ", u∂O[i,1])
+    end
+
     
-    @info size(EL.B∂O∂τ), size(EL.B∂O∂O), size(EL.B∂O∂Γ)
-    @mystop
+  #=  for iτ = 1:mesh.length∂τ
+
+        ip = mesh.∂τ[iτ]
+        
+        #ipb = mesh.conn[iel, i]
+
+        u∂τ[iτ] = gΓ[] +  u∂O[]
+    end=#
     
+    uvb = zeros(elnbdypoints, mesh.nelem)
+  #=  @info elnbdypoints
+    for iel=1:mesh.nelem
+        #
+        # u∂τ
+    #
+        ii = 1
+        for i = 1:elnbdypoints
+            
+            ipb = mesh.conn[iel, i]
+
+            u∂τ[] = uΓ
+            uvb[i, iel] =
+            
+        end
+     end
+   =# 
+    
+    #@info size(EL.B∂O∂τ), size(EL.B∂O∂O), size(EL.B∂O∂Γ)
+    @mystop   
 end

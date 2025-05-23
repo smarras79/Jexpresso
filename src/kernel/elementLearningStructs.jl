@@ -1,7 +1,7 @@
 #-------------------------------------------------------------------------------------------
 # Element learning matrices
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, dims1, dims2, dims3, dims4, dims5, dims6, dims7, dims8, backend}
+Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, dims1, dims2, dims3, dims4, dims5, dims6, dims7, dims8, dims9, backend}
 
     Avovo = KernelAbstractions.zeros(backend, T, dims1)
     Hvovo = KernelAbstractions.zeros(backend, T, dims1)
@@ -9,6 +9,7 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, dims1, dims2, dim
     A∂O∂τ = KernelAbstractions.zeros(backend, T, dims2)
     B∂O∂τ = KernelAbstractions.zeros(backend, T, dims2)
     B∂O∂O = KernelAbstractions.zeros(backend, T, dims8)
+    B∂O∂Γ = KernelAbstractions.zeros(backend, T, dims9)
     A∂Ovo = KernelAbstractions.zeros(backend, T, dims3)
     Avo∂O = KernelAbstractions.zeros(backend, T, dims4)
     Avo∂τ = KernelAbstractions.zeros(backend, T, dims5)
@@ -16,7 +17,7 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat, dims1, dims2, dim
     
 end
 
-function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, T, backend)
+function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ, T, backend)
 
     elnbdypoints = 4*Int64(ngl-2) + 4
     
@@ -25,11 +26,12 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, T, backend)
     dims3 = (Int64(length∂O), Int64(ngl-2)^2, Int64(nelem))
     dims4 = (Int64(ngl-2)^2,  Int64(length∂O), Int64(nelem))
     dims5 = (Int64(ngl-2)^2,  Int64(length∂τ), Int64(nelem))
-    dims6 = (Int64(length∂τ), Int64(length∂τ))   
+    dims6 = (Int64(length∂τ), Int64(length∂τ))
     dims7 = (Int64(ngl-2)^2,  elnbdypoints, Int64(nelem))
     dims8 = (Int64(length∂O), Int64(length∂O))
+    dims9 = (Int64(length∂O), Int64(lengthΓ))
     
-    elemLearning = St_elemLearning{T, dims1, dims2, dims3, dims4, dims5, dims6, dims7, dims8, backend}()
+    elemLearning = St_elemLearning{T, dims1, dims2, dims3, dims4, dims5, dims6, dims7, dims8, dims9, backend}()
     
     return elemLearning
 end
