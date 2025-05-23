@@ -283,7 +283,7 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy)
         gΓ[iΓ] = ubdy[ipbdy, 1]
         
     end
-    pruntln(" BOUNDARY VALUES: gΓ[1:mesh.lengthΓ]"
+    pruntln(" BOUNDARY VALUES: gΓ[1:mesh.lengthΓ]")
     for iΓ = 1:mesh.lengthΓ
         @info " gΓ = ", iΓ, gΓ[iΓ]
     end
