@@ -72,3 +72,8 @@ function print_symbolic_matrix(matrix::Matrix{Int})
         println() # Move to the next line after each row is printed.
     end
 end
+
+
+function get_array_pointer(arr)
+    return pointer(arr)
+end

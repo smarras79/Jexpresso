@@ -101,7 +101,7 @@ function driver(nparts,
             # Element-learning infrastructure
             #-----------------------------------------------------
             if inputs[:lelementLearning]
-                elementLearning_Axb(sem.mesh, sem.matrix.L, RHS, params.uaux)
+                elementLearning_Axb(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
             end
             #-----------------------------------------------------
             # END Element-learning infrastructure
@@ -132,10 +132,18 @@ function driver(nparts,
             KernelAbstractions.synchronize(inputs[:backend])
         end
         
-        @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
+        usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
+        args = (params.SD, usol, params.uaux, 0.0, 1,
+                     sem.mesh, nothing,
+                     nothing, nothing,
+                     0.0, 0.0, 0.0,
+                     OUTPUT_DIR, inputs,
+                     params.qp.qvars,
+                     params.qp.qoutvars,
+                     inputs[:outformat])
 
-        @info size(solution.u), size(params.uaux)
-        write_output(params.SD, solution.u, params.uaux, 0.0, 1,
+        write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
+        #=write_output(params.SD, uptr, params.uaux, 0.0, 1,
                      sem.mesh, nothing,
                      nothing, nothing,
                      0.0, 0.0, 0.0,
@@ -143,12 +151,13 @@ function driver(nparts,
                      params.qp.qvars,
                      params.qp.qoutvars,
                      inputs[:outformat];
-                     nvar=params.qp.neqs, qexact=params.qp.qe)
-        
+nvar=params.qp.neqs, qexact=params.qp.qe)
+=#
+
     end
 end
 
-function elementLearning_Axb(mesh::St_mesh, A, ubdy, uaux)
+function elementLearning_Axb(u, uaux, mesh::St_mesh, A, ubdy)
 
     @info "∂Oxdd"
     println(mesh.∂O)
@@ -213,14 +222,6 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy, uaux)
             
             ii += 1
         end
-
-        #
-        # Hᵥₒᵥₒ[iel] = A⁻¹ᵥₒᵥₒ[iel]
-        # 
-        EL.Hvovo[:,:,iel] = inv(EL.Avovo[:,:,iel])
-
-
-        #print_matrix(EL.A∂Ovo[:, :, iel])
     end
     #print_matrix(EL.A∂Ovo)
     #@mystop("now")
@@ -323,28 +324,26 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy, uaux)
     
     #
     # LOCAL VERSION (eq 13)
+    #
     ABC = zeros(mesh.length∂O, mesh.length∂τ, mesh.nelem)
-    #similar(EL.A∂O∂τ, (mesh.length∂O, mesh.length∂τ, mesh.nelem))
     BC  = zeros(size(EL.Avo∂τ)[1], size(EL.Avo∂τ)[2])
-    #similar(EL.Avo∂τ, (size(EL.Avo∂τ)[1], size(EL.Avo∂τ)[2]))
-    @info  " AAAAAAA"
-
-    print_matrix(EL.A∂Ovo)
     for iel = 1:mesh.nelem
         
         # BC = A⁻¹ᵥₒᵥₒ[:,:,iel]⋅Aᵥₒ∂τ[:,:,iel]
         LinearAlgebra.mul!(BC, inv(EL.Avovo[:,:,iel]), EL.Avo∂τ[:,:,iel])
-        #LinearAlgebra.mul!(BC[:,:], EL.Hvovo[:,:,iel], EL.Avo∂τ[:,:,iel])
         
         # ABC = A∂Oᵥₒ[:,:,iel]⋅BC
-        LinearAlgebra.mul!(ABC[:,:,iel], EL.A∂Ovo[:,:,iel], BC)
-
+        LinearAlgebra.mul!(@view(ABC[:,:,iel]), @view(EL.A∂Ovo[:,:,iel]), @view(BC[:,:]))
+        
         print_matrix(EL.A∂Ovo[:,:,iel])
     end
+    @info "BCBC   "
+    print_matrix(ABC)
     @info  " xxxxxxxx"
     DDD = similar(EL.A∂O∂τ)
+    @info "size ddd ", size(DDD)
     DDD = sum(ABC, dims=3)
-    print_matrix(ABC)
+
     EL.B∂O∂τ = EL.A∂O∂τ - DDD
     @info  globalB∂O∂τ == EL.B∂O∂τ
     @info " ------"
@@ -354,7 +353,6 @@ function elementLearning_Axb(mesh::St_mesh, A, ubdy, uaux)
     @info " local "
     print_matrix(EL.B∂O∂τ)
     
-    @mystop
     ######## END LOCAL
     
     for i1=1:length(mesh.∂O)      #row    B[i1][i2]        
@@ -444,44 +442,13 @@ for io = 1:mesh.lengthΓ
     u[io1] = gΓ[io]
 end
 
-uaux = zeros(mesh.npoin, 2)
+#uaux = zeros(mesh.npoin, 2)
+#
+#write_output(NSD_2D(), u, uaux, 0.0, 1,
+#             mesh, nothing,
+#             nothing, nothing,
+#             0.0, 0.0, 0.0,
+#             "/Users/simone", inputs,
+#             1,1, inputs[:outformat];)
 
-write_output(NSD_2D(), u, uaux, 0.0, 1,
-             mesh, nothing,
-             nothing, nothing,
-             0.0, 0.0, 0.0,
-             "./", inputs,
-             1,1, inputs[:outformat];)
-
-@mystop
-    
-  #=  for iτ = 1:mesh.length∂τ
-
-        ip = mesh.∂τ[iτ]
-        
-        #ipb = mesh.conn[iel, i]
-
-        u∂τ[iτ] = gΓ[] +  u∂O[]
-    end=#
-    
-    uvb = zeros(elnbdypoints, mesh.nelem)
-  #=  @info elnbdypoints
-    for iel=1:mesh.nelem
-        #
-        # u∂τ
-    #
-        ii = 1
-        for i = 1:elnbdypoints
-            
-            ipb = mesh.conn[iel, i]
-
-            u∂τ[] = uΓ
-            uvb[i, iel] =
-            
-        end
-     end
-   =# 
-    
-    #@info size(EL.B∂O∂τ), size(EL.B∂O∂O), size(EL.B∂O∂Γ)
-    @mystop   
 end
