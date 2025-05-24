@@ -8,7 +8,6 @@ Base.@kwdef mutable struct St_elemLearning{T <: AbstractFloat,
                                            backend}
 
     Avovo = KernelAbstractions.zeros(backend, T, dims1)
-    Hvovo = KernelAbstractions.zeros(backend, T, dims1)
     Avovb = KernelAbstractions.zeros(backend, T, dims7)    
     A∂O∂τ = KernelAbstractions.zeros(backend, T, dims2)
     B∂O∂τ = KernelAbstractions.zeros(backend, T, dims2)
