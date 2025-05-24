@@ -225,7 +225,6 @@ function params_setup(sem,
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
-    # tspan = [T(inputs[:tinit]), T(inputs[:tend])]
     if (backend == CPU())
         visc_coeff = inputs[:μ]
     else

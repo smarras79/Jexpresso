@@ -8,7 +8,7 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
-        :lelementLearning     => true,
+        #:lelementLearning     => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -27,9 +27,9 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_2x1.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_2x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_2x2.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
@@ -42,7 +42,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output/",
+        :output_dir          => "./output_standard/",
         :loverwrite_output   => true,
         #---------------------------------------------------------------------------
     ) #Dict

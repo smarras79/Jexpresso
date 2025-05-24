@@ -221,8 +221,6 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     #
     # Fetch user-defined diagnostic vars or take them from the solution vars:
     #
-    @info size(qaux), size(q), noutvar, nvar
-    
     qout = zeros(Float64, npoin, noutvar)
     u2uaux!(qaux, q, nvar, npoin)
     call_user_uout(qout, qaux, qexact, mp, inputs[:SOL_VARS_TYPE], npoin, nvar, noutvar)
