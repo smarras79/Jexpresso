@@ -278,26 +278,25 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         mesh.length∂τ = length(mesh.∂τ)
         mesh.lengthΓ  = length(mesh.Γ)
         
-        println("Γ")
-        println(mesh.Γ)
-        println(mesh.lengthΓ)
+        #println("Γ")
+        #println(mesh.Γ)
+        #println(mesh.lengthΓ)
         
-        println("O")
-        println(mesh.O)
-        println(mesh.lengthO)
+        #println("O")
+        #println(mesh.O)
+        #println(mesh.lengthO)
         
-        println("∂O")
-        println(mesh.∂O)
-        println(mesh.length∂O)
+        #println("∂O")
+        #println(mesh.∂O)
+        #println(mesh.length∂O)
         
-        println("∂τ")
-        println(mesh.∂τ)
-        println(mesh.length∂τ)
+        #println("∂τ")
+        #println(mesh.∂τ)
+        #println(mesh.length∂τ)
         
-        println("Io")
-        println(mesh.Io)
-        println(mesh.lengthIo)
-        
+        #println("Io")
+        #println(mesh.Io)
+        #println(mesh.lengthIo)
     end
 
     #--------------------------------------------------------
