@@ -374,22 +374,26 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         println_rank(" # N. Global faces          : ", mesh.gnfaces; msg_rank = rank, suppress = mesh.msg_suppress)
         MPI.Barrier(comm)
         if mesh.msg_suppress == false
+            
             for i = 0 : mpi_size
-                if i == rank
-                    println("   # Rank                       : ", rank)
-                    println("     # N. points                : ", mesh.npoin_linear)
-                    println("     # N. elements              : ", mesh.nelem)
-                    println("     # N. edges                 : ", mesh.nedges)
-                    println("     # N. faces                 : ", mesh.nfaces)    
-                    println("     # N. internal elem         : ", mesh.nelem_int)
-                    println("     # N. internal edges        : ", mesh.nedges_int) 
-                    println("     # N. internal faces        : ", mesh.nfaces_int)    
-                    println("     # N. boundary elem         : ", mesh.nelem_bdy)
-                    println("     # N. boundary edges        : ", mesh.nedges_bdy)
-                    println("     # N. boundary faces        : ", mesh.nfaces_bdy)
-                end
                 MPI.Barrier(comm)
+                    if i == rank
+                        open("./mesh.log", "a+") do f
+                        println(f, "   # Rank                       : ", rank)
+                        println(f, "     # N. points                : ", mesh.npoin_linear)
+                        println(f, "     # N. elements              : ", mesh.nelem)
+                        println(f, "     # N. edges                 : ", mesh.nedges)
+                        println(f, "     # N. faces                 : ", mesh.nfaces)    
+                        println(f, "     # N. internal elem         : ", mesh.nelem_int)
+                        println(f, "     # N. internal edges        : ", mesh.nedges_int) 
+                        println(f, "     # N. internal faces        : ", mesh.nfaces_int)    
+                        println(f, "     # N. boundary elem         : ", mesh.nelem_bdy)
+                        println(f, "     # N. boundary edges        : ", mesh.nedges_bdy)
+                        println(f, "     # N. boundary faces        : ", mesh.nfaces_bdy)
+                    end
+                end              
             end
+            MPI.Barrier(comm)
         end
         println_rank(" # GMSH LINEAR GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
     end
@@ -413,15 +417,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         MPI.Barrier(comm)
         if mesh.msg_suppress == false
             for i = 0 : mpi_size
-                if i == rank
-                    println("   # Rank                         : ", rank)
-                    println("     # N. edges internal points   : ", tot_edges_internal_nodes)
-                    println("     # N. faces internal points   : ", tot_faces_internal_nodes)
-                    println("     # N. volumes internal points : ", tot_vol_internal_nodes)
-                    println("     # N. total high order points : ", mesh.npoin)
-                end
                 MPI.Barrier(comm)
+                if i == rank
+                    open("./mesh.log", "a+") do f
+                        println(f, "   # Rank                         : ", rank)
+                        println(f, "     # N. edges internal points   : ", tot_edges_internal_nodes)
+                        println(f, "     # N. faces internal points   : ", tot_faces_internal_nodes)
+                        println(f, "     # N. volumes internal points : ", tot_vol_internal_nodes)
+                        println(f, "     # N. total high order points : ", mesh.npoin)
+                    end
+                end
             end
+            MPI.Barrier(comm)
         end
         println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
     end
@@ -852,10 +859,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     if mesh.nsd == 2
         # isboundary_edge = compute_isboundary_face(topology, EDGE_flg)
         isboundary_edge = fill(false, mesh.nedges)  
-        # boundary_edges  = findall(x -> size(x,1) == 1, mesh.facet_cell_ids)
-        # isboundary_edge[boundary_edges] .= true
         
-        # @info isboundary_edge
         #
         # Get labels contained in the current GMSH grid:
         #
@@ -1341,6 +1345,7 @@ function restructure4periodicity_2D(mesh, norm, periodic_direction)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
+    
     per_ip = Int[]
     ngl = mesh.ngl
     for iedge_bdy =1:size(mesh.bdy_edge_type,1)

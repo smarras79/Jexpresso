@@ -6,13 +6,7 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
-# if Sys.isapple()
-#     using Metal
-#     using CUDA
-# elseif Sys.islinux()
-#     using CUDA
-# end
-
+using MPI
 using KernelAbstractions
 using Revise
 using BenchmarkTools

@@ -1,3 +1,5 @@
+#using InteractiveUtils
+
 #---------------------------------------------------------------------------
 # Optimized (more coud possibly be done)
 #---------------------------------------------------------------------------
@@ -5,6 +7,8 @@ function build_rhs!(RHS, u, params, time)
     #
     # build_rhs()! is called by TimeIntegrators.jl -> time_loop!() via ODEProblem(rhs!, u, tspan, params)
     #
+    
+    # Apply to your model function
     _build_rhs!(RHS, u, params, time)
     
 end
@@ -383,7 +387,7 @@ function _build_rhs!(RHS, u, params, time)
     if SD == NSD_1D()
         comm = MPI.COMM_WORLD
     else
-        comm    = params.mesh.parts.comm
+        comm = params.mesh.parts.comm
     end
     mpisize = MPI.Comm_size(comm)
     
