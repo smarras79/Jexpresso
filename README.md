@@ -180,7 +180,7 @@ If you are interested in contributing, please get in touch:
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia 1.10
+To install and run the code assume Julia 1.11.2
 
 ## Setup with CPUs
 
