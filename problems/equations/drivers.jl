@@ -150,17 +150,7 @@ function driver(nparts,
                      inputs[:outformat])
 
         write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
-        #=write_output(params.SD, uptr, params.uaux, 0.0, 1,
-                     sem.mesh, nothing,
-                     nothing, nothing,
-                     0.0, 0.0, 0.0,
-                     OUTPUT_DIR, inputs,
-                     params.qp.qvars,
-                     params.qp.qoutvars,
-                     inputs[:outformat];
-nvar=params.qp.neqs, qexact=params.qp.qe)
-=#
-
+        
     end
 end
 
@@ -299,21 +289,6 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     #------------------------------------------------------------------------    
     #  B∂O∂τ[:,:] = A∂O∂τ - Sum_{iel} A∂Oᵥₒ[:,:,iel]*A⁻¹ᵥₒᵥₒ[:,:,iel]*Aᵥₒ∂τ[:,:,iel] -> A∂O∂τ - Sum_{iel}A⋅B⋅C
     #
-    #
-    #= GLOBAL VERSION (eq 10)
-    # BC = A⁻¹ᵢₒᵢₒ⋅Aᵢₒ∂τ
-    dims = (mesh.lengthIo, mesh.length∂τ)
-    BC = similar(EL.AIoIo, dims);
-    LinearAlgebra.mul!(BC, invAIoIo, EL.AIo∂τ)
-
-    # ABC = A∂Oᵢₒ⋅BC
-    dims = (mesh.length∂O, mesh.length∂τ)
-    ABC  = similar(EL.AIoIo, dims)
-    LinearAlgebra.mul!(ABC, EL.A∂OIo, BC)
-    
-    EL.B∂O∂τ .= EL.A∂O∂τ .- ABC
-    globalB∂O∂τ = copy(EL.B∂O∂τ)
-    =#
     
     #
     # LOCAL VERSION (eq 13)
@@ -410,3 +385,20 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     end
 
 end
+
+#
+    #= GLOBAL VERSION (eq 10)
+    # BC = A⁻¹ᵢₒᵢₒ⋅Aᵢₒ∂τ
+    dims = (mesh.lengthIo, mesh.length∂τ)
+    BC = similar(EL.AIoIo, dims);
+    LinearAlgebra.mul!(BC, invAIoIo, EL.AIo∂τ)
+
+    # ABC = A∂Oᵢₒ⋅BC
+    dims = (mesh.length∂O, mesh.length∂τ)
+    ABC  = similar(EL.AIoIo, dims)
+    LinearAlgebra.mul!(ABC, EL.A∂OIo, BC)
+    
+    EL.B∂O∂τ .= EL.A∂O∂τ .- ABC
+    globalB∂O∂τ = copy(EL.B∂O∂τ)
+    =#
+    
