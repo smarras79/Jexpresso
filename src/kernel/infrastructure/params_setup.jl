@@ -225,18 +225,25 @@ function params_setup(sem,
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
-    if (backend == CPU())
-        visc_coeff = zeros(TFloat, qp.neqs)
-        if inputs[:lvisc]
-            visc_coeff .= inputs[:μ]
+    #if (backend == CPU())
+    #    visc_coeff = zeros(TFloat, qp.neqs)
+    #    if inputs[:lvisc]
+    #        visc_coeff .= inputs[:μ]
+    #    end
+    #else
+   
+    if inputs[:lvisc]
+        coeffs = zeros(TFloat, qp.neqs)
+        if size(inputs[:μ]) > size(coeffs)
+            coeffs .= inputs[:μ][1:qp.neqs]
+        elseif size(inputs[:μ]) <= size(coeffs)
+            coeffs .= inputs[:μ]
         end
-    else
-        coeffs     = zeros(TFloat, qp.neqs)
-        if inputs[:lvisc]
-            coeffs    .= inputs[:μ]
-        end
-        visc_coeff = KernelAbstractions.allocate(backend,TFloat,qp.neqs)
+        visc_coeff = KernelAbstractions.allocate(backend,TFloat, qp.neqs)
         KernelAbstractions.copyto!(backend,visc_coeff,coeffs)
+    else
+        visc_coeff = KernelAbstractions.allocate(backend, TFloat, 1)
+        visc_coeff = [0.0]
     end
     
     #------------------------------------------------------------------------------------
