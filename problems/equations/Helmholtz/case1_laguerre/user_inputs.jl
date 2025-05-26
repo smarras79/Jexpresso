@@ -3,40 +3,47 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 10.0,
-        :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :Δt                   => 0.2,
-        :diagnostics_at_times => [1.0, 10.0],
-        :case                 => "rtb",
-        :lsource              => true,
+        :tend                 => 1000.0,
+        :ode_solver           => "BICGSTABLE", #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
+        :ndiagnostics_outputs => 1,
+        :lsource              => true, 
+        :llinsolve            => true,
+        :rconst               => (10.0),
+        #:lelementLearning     => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 4,      # Polynomial order
+        :nop                 => 10,      # Polynomial order
+        :nop_laguerre        => 14,
+        :xfac_laguerre       => 0.25,
+        :yfac_laguerre       => 0.0,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => [1, 2, 3, 4, 5, 6],
-        :μ                    => [0.0, 40.0, 40.0, 60.0, 60.0, 60.0], #horizontal viscosity constant for momentum
-        #---------------------------------------------------------------------------
-        # Microphysics parameters/constants:
-        #---------------------------------------------------------------------------
-        :lmoist             => true,
+        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:ivisc_equations      => (1, 2, 3, 4),
+        #:μ                   => (0.0, 75.0, 75.0, 75.0), #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_20el.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_helmholtz.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_helmholtz_laguerre.msh", #for nop=4
+        #---------------------------------------------------------------------------
+        # grid modification parameters
+        #---------------------------------------------------------------------------
+        :xscale              => 5.0,
+        :yscale              => 3.14,
+        :xdisp               => 1.0,
+        :ydisp               => 0.0,
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk", #"hdf5",
+        :outformat           => "vtk",
+        :output_dir          => "./output/",
         :loverwrite_output   => true,
-        :output_dir          => "./output",
-        :loutput_pert        => true,  #this is only implemented for VTK for now
+        :plot_vlines         => [5.0],
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
