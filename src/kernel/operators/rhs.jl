@@ -695,7 +695,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
                              params.basis.dψ,
                              params.metrics.Je,
                              params.metrics.dξdx,
-                             params.inputs, iel, ieq, params.QT, params.VT, SD, params.AD)
+                             params.inputs, params.rhs_el, iel, ieq, params.QT, params.VT, SD, params.AD)
         end
         
     end
@@ -714,8 +714,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
         end
 
-        for ieq=1:params.neqs
-            
+        for ieq = 1:params.neqs
             _expansion_visc!(params.rhs_diffξ_el,
                              params.rhs_diffη_el,
                              params.uprimitive,
@@ -726,7 +725,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
                              params.metrics.Je,
                              params.metrics.dξdx, params.metrics.dξdy,
                              params.metrics.dηdx, params.metrics.dηdy,
-                             params.inputs, iel, ieq, params.QT, params.VT, SD, params.AD)
+                             params.inputs, params.rhs_el, iel, ieq, params.QT, params.VT, SD, params.AD)
         end
         
     end
@@ -743,21 +742,29 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
         for k = 1:params.mesh.ngl, j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j,k]
 
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,k,:]), params.SOL_VARS_TYPE)
+            user_primitives!(@view(params.uaux[ip,:]),
+                             @view(qe[ip,:]),
+                             @view(params.uprimitive[i,j,k,:]),
+                             params.SOL_VARS_TYPE)
         end
 
-        for ieq=1:params.neqs
+        
+        for ieq = 1:params.neqs
             _expansion_visc!(params.rhs_diffξ_el,
                              params.rhs_diffη_el,
                              params.rhs_diffζ_el,
                              params.uprimitive, 
                              params.visc_coeff,
-                             params.ω, params.mesh.ngl,
-                             params.basis.dψ, params.metrics.Je,
+                             params.ω,
+                             params.mesh.ngl,
+                             params.basis.dψ,
+                             params.metrics.Je,
                              params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, 
                              params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
                              params.metrics.dζdx,params.metrics.dζdy, params.metrics.dζdz,
-                             params.inputs, iel, ieq, params.QT, params.VT, SD, params.AD)        
+                             params.inputs, params.rhs_el, iel,
+                             ieq, params.QT, params.VT, SD, params.AD)
+            
         end
     end
     
@@ -780,7 +787,8 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD:
 end
 
 
-function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, S, rhs_el, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, S,
+                              rhs_el, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
     
     for ieq = 1:neqs
         for i=1:ngl
@@ -796,7 +804,9 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, S, Je, dξdx, dξdy, dηdx, dηdy, rhs_el, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, S,
+                              Je, dξdx, dξdy, dηdx, dηdy,
+                              rhs_el, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
     
     for ieq=1:neqs
         for j=1:ngl
@@ -832,7 +842,9 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, S, Je, dξdx, dξdy, 
     end
 end
 
-function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, H, S, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, rhs_el, iel, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, H, S,
+                              Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
+                              rhs_el, iel, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
     for ieq=1:neqs
         for k=1:ngl
             for j=1:ngl
@@ -1094,7 +1106,8 @@ end
 
 
 function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, inputs, iel, ieq, QT::Inexact, VT::AV, SD::NSD_1D, ::ContGal)
+                          ngl, dψ, Je, dξdx, inputs, rhs_el, iel, ieq,
+                          QT::Inexact, VT::AV, SD::NSD_1D, ::ContGal)
 
     for k = 1:ngl
         ωJac = ω[k]*Je[iel,k]
@@ -1119,12 +1132,14 @@ end
 
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
-                          mesh, basis, metrics, inputs, iel, ieq, QT::Inexact, VT, SD::NSD_2D, ::FD)
+                          mesh, basis, metrics, inputs, rhs_el, iel, ieq,
+                          QT::Inexact, VT, SD::NSD_2D, ::FD)
     nothing
 end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, dξdy, dηdx, dηdy, inputs, iel, ieq, QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal)
+                          ngl, dψ, Je, dξdx, dξdy, dηdx, dηdy, inputs, rhs_el, iel, ieq,
+                          QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal)
     
     for l = 1:ngl
         for k = 1:ngl
@@ -1162,7 +1177,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
 end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, iel, ieq, QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal)
+                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, rhs_el, iel, ieq, QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal)
 
     for m = 1:ngl
         for l = 1:ngl
@@ -1216,9 +1231,13 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
     end
 end
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, iel, ieq, QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
+
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitive, visc_coeffieq, ω,
+                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs,
+                          rhs_el, iel, ieq,
+                          QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
     
+
     ν_vreman = 0.0 # Initialize Vreman viscosity
 
     for m = 1:ngl
@@ -1226,88 +1245,46 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
             for k = 1:ngl
                 ωJac = ω[k]*ω[l]*ω[m]*Je[iel,k,l,m]
 
-                dqdξ = 0.0
-                dqdη = 0.0
-                dqdζ = 0.0
+                dudξ = 0.0; dudη = 0.0; dudζ = 0.0
+                dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
+                dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
+
                 @turbo for ii = 1:ngl
-                    dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
-                    dqdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
-                    dqdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
+                    dudξ += dψ[ii,k]*uprimitive[ii,l,m,2]
+                    dudη += dψ[ii,l]*uprimitive[k,ii,m,2]
+                    dudζ += dψ[ii,m]*uprimitive[k,l,ii,2]
+
+                    dvdξ += dψ[ii,k]*uprimitive[ii,l,m,3]
+                    dvdη += dψ[ii,l]*uprimitive[k,ii,m,3]
+                    dvdζ += dψ[ii,m]*uprimitive[k,l,ii,3]
+
+                    dwdξ += dψ[ii,k]*uprimitive[ii,l,m,4]
+                    dwdη += dψ[ii,l]*uprimitive[k,ii,m,4]
+                    dwdζ += dψ[ii,m]*uprimitive[k,l,ii,4]
                 end
                 dξdx_klm = dξdx[iel,k,l,m]
                 dξdy_klm = dξdy[iel,k,l,m]
                 dξdz_klm = dξdz[iel,k,l,m]
-
+                
                 dηdx_klm = dηdx[iel,k,l,m]
                 dηdy_klm = dηdy[iel,k,l,m]
                 dηdz_klm = dηdz[iel,k,l,m]
-
+                
                 dζdx_klm = dζdx[iel,k,l,m]
                 dζdy_klm = dζdy[iel,k,l,m]
                 dζdz_klm = dζdz[iel,k,l,m]
 
-                # Calculate physical derivatives of velocity
-                dudx = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
-                dudy = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
-                dudz = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
-
-                # For Vreman model, we need velocity gradients
-                dvdx = 0.0; dvdy = 0.0; dvdz = 0.0
-                dwdx = 0.0; dwdy = 0.0; dwdz = 0.0
-
-                # Assuming uprimitiveieq holds u, v, w in the last dimension (ieq)
-                if ieq == 1 # u-component
-                    dqvdξ = 0.0; dqvdη = 0.0; dqvdζ = 0.0;
-                    dqwdξ = 0.0; dqwdη = 0.0; dqwdζ = 0.0;
-                    @turbo for ii = 1:ngl
-                        dqvdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,2]
-                        dqvdη += dψ[ii,l]*uprimitiveieq[k,ii,m,2]
-                        dqvdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,2]
-                        dqwdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,3]
-                        dqwdη += dψ[ii,l]*uprimitiveieq[k,ii,m,3]
-                        dqwdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,3]
-                    end
-                    dvdx = dqvdξ*dξdx_klm + dqvdη*dηdx_klm + dqvdζ*dζdx_klm
-                    dvdy = dqvdξ*dξdy_klm + dqvdη*dηdy_klm + dqvdζ*dξdy_klm
-                    dvdz = dqvdξ*dξdz_klm + dqvdη*dηdz_klm + dqvdζ*dξdz_klm
-                    dwdx = dqwdξ*dξdx_klm + dqwdη*dηdx_klm + dqwdζ*dξdx_klm
-                    dwdy = dqwdξ*dξdy_klm + dqwdη*dηdy_klm + dqwdζ*dξdy_klm
-                    dwdz = dqwdξ*dξdz_klm + dqwdη*dηdz_klm + dqwdζ*dξdz_klm
-                elseif ieq == 2 # v-component
-                    dudξ_temp = 0.0; dudη_temp = 0.0; dudζ_temp = 0.0;
-                    dqwdξ = 0.0; dqwdη = 0.0; dqwdζ = 0.0;
-                    @turbo for ii = 1:ngl
-                        dudξ_temp += dψ[ii,k]*uprimitiveieq[ii,l,m,1]
-                        dudη_temp += dψ[ii,l]*uprimitiveieq[k,ii,m,1]
-                        dudζ_temp += dψ[ii,m]*uprimitiveieq[k,l,ii,1]
-                        dqwdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,3]
-                        dqwdη += dψ[ii,l]*uprimitiveieq[k,ii,m,3]
-                        dqwdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,3]
-                    end
-                    dudx = dudξ_temp*dξdx_klm + dudη_temp*dηdx_klm + dudζ_temp*dξdx_klm
-                    dudy = dudξ_temp*dξdy_klm + dudη_temp*dηdy_klm + dudζ_temp*dξdy_klm
-                    dudz = dudξ_temp*dξdz_klm + dudη_temp*dηdz_klm + dudζ_temp*dξdz_klm
-                    dwdx = dqwdξ*dξdx_klm + dqwdη*dηdx_klm + dqwdζ*dξdx_klm
-                    dwdy = dqwdξ*dξdy_klm + dqwdη*dηdy_klm + dqwdζ*dξdy_klm
-                    dwdz = dqwdξ*dξdz_klm + dqwdη*dηdz_klm + dqwdζ*dξdz_klm
-                elseif ieq == 3 # w-component
-                    dudξ_temp = 0.0; dudη_temp = 0.0; dudζ_temp = 0.0;
-                    dqvdξ = 0.0; dqvdη = 0.0; dqvdζ = 0.0;
-                    @turbo for ii = 1:ngl
-                        dudξ_temp += dψ[ii,k]*uprimitiveieq[ii,l,m,1]
-                        dudη_temp += dψ[ii,l]*uprimitiveieq[k,ii,m,1]
-                        dudζ_temp += dψ[ii,m]*uprimitiveieq[k,l,ii,1]
-                        dqvdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,2]
-                        dqvdη += dψ[ii,l]*uprimitiveieq[k,ii,m,2]
-                        dqvdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,2]
-                    end
-                    dudx = dudξ_temp*dξdx_klm + dudη_temp*dηdx_klm + dudζ_temp*dξdx_klm
-                    dudy = dudξ_temp*dξdy_klm + dudη_temp*dηdy_klm + dudζ_temp*dξdy_klm
-                    dudz = dudξ_temp*dξdz_klm + dudη_temp*dηdz_klm + dudζ_temp*dξdz_klm
-                    dvdx = dqvdξ*dξdx_klm + dqvdη*dηdx_klm + dqvdζ*dξdx_klm
-                    dvdy = dqvdξ*dξdy_klm + dqvdη*dηdy_klm + dqvdζ*dξdy_klm
-                    dvdz = dqvdξ*dξdz_klm + dqvdη*dηdz_klm + dqvdζ*dξdz_klm
-                end
+                dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
+                dvdx = dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm
+                dwdx = dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm
+                
+                dudy = dudξ*dξdy_klm + dudη*dηdy_klm + dudζ*dζdy_klm
+                dvdy = dvdξ*dξdy_klm + dvdη*dηdy_klm + dvdζ*dζdy_klm
+                dwdy = dwdξ*dξdy_klm + dwdη*dηdy_klm + dwdζ*dζdy_klm
+                
+                dudz = dudξ*dξdz_klm + dudη*dηdz_klm + dudζ*dζdz_klm
+                dvdz = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm
+                dwdz = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm
 
                 # Calculate Vreman coefficient
                 S11 = dudx
@@ -1325,17 +1302,35 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                      dvdx^2 + dvdy^2 + dvdz^2;
                      dwdx^2 + dwdy^2 + dwdz^2]
 
-                Cs = 0.094 # Vreman constant
+                α11 = dudx; α12 = dudy; α13 = dudz
+                α21 = dvdx; α22 = dvdy; α23 = dvdz
+                α31 = dwdx; α32 = dwdy; α33 = dwdz
 
-                h_max_sq = (1/3) * (Je[iel,k,l,m])^(2/3) # Representative filter width squared (proportional to cell volume^(2/3))
+                α = [dudx dudy dudz;
+                     dvdx dvdy dvdz;
+                     dwdx dwdy dwdz]
 
-                if P[1] * P[2] * P[3] > 1e-30 # Avoid division by zero
-                    ν_vreman_local = Cs * sqrt(minimum(M) / maximum(P)) * h_max_sq
-                    ν_vreman = ν_vreman_local # You might want to handle this assignment differently, e.g., averaging
-                else
-                    ν_vreman = 0.0
+                S = symmetrize(α)
+
+                Δ2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
+                β = Δ2 * (α' * α)
+                Bβ = principal_invariants(β)[2]
+
+                ν₀ = visc_coeffieq[ieq] * Float64(2.5) * sqrt(abs(Bβ / (norm2(α) + eps(Float64))))
+
+                ν = ν₀ 
+                #ν_v = k̂ .* dot(ν, k̂)
+                #ν_h = ν₀ .- ν_v
+                #ν_vreman = SDiagonal(ν_h + ν_v .* f_b²)
+                #D_t = diag(ν) * 0.7
+                
+                dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
+                @turbo for ii = 1:ngl
+                    dqdξ += dψ[ii,k]*uprimitive[ii,l,m,ieq]
+                    dqdη += dψ[ii,l]*uprimitive[k,ii,m,ieq]
+                    dqdζ += dψ[ii,m]*uprimitive[k,l,ii,ieq]
                 end
-
+                
                 # Calculate the viscous terms with Vreman viscosity
                 dqdx = ν_vreman * (dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm)
                 dqdy = ν_vreman * (dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dξdy_klm)
@@ -1361,7 +1356,8 @@ end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitive, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs,
-                          iel, ieq, QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal)
+                          rhs_el, iel, ieq,
+                          QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal)
     
     for m = 1:ngl
         for l = 1:ngl
@@ -1409,21 +1405,19 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                 dvdz = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm
                 dwdz = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm
 
-                S11 = dudx
+                S11 = dudx;  S22 = dvdy; S33 = dwdz
                 S12 = (dudy + dvdx) * 0.5
                 S13 = (dudz + dwdx) * 0.5
                 S21 = S12
-                S22 = dvdy
                 S23 = (dvdz + dwdy) * 0.5
                 S31 = S13
                 S32 = S23
-                S33 = dwdz
+                
                 # |Sij|
                 Sij    = sqrt(2.0 * (S11*S11 + S12*S12 + S13*S13 + S21*S21 + S22*S22 + S23*S23 + S31*S31 + S32*S32 + S33*S33))
-                delta2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
-
+                Δ2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
+                
                 dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
-
                 @turbo for ii = 1:ngl
                     dqdξ += dψ[ii,k]*uprimitive[ii,l,m,ieq]
                     dqdη += dψ[ii,l]*uprimitive[k,ii,m,ieq]
@@ -1431,13 +1425,13 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                 end
                 
                 auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
-                dqdx = visc_coeffieq[ieq] * Sij * delta2 * auxi
+                dqdx = 2*visc_coeffieq[ieq] * Sij * Δ2 * auxi
                 
                 auxi = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
-                dqdy = visc_coeffieq[ieq] * Sij * delta2 * auxi
+                dqdy = 2*visc_coeffieq[ieq] * Sij * Δ2 * auxi
                 
                 auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
-                dqdz = visc_coeffieq[ieq] * Sij * delta2 * auxi
+                dqdz = 2*visc_coeffieq[ieq] * Sij * Δ2 * auxi
                 
                 ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
                 ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
@@ -1457,8 +1451,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
     end
 end
 
-
-function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Exact, VT, SD::NSD_2D, ::FD)
+function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, rhs_el, iel, ieq, QT::Exact, VT, SD::NSD_2D, ::FD)
     nothing
 end
 
@@ -1527,6 +1520,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
 end
 
 function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ, ::NSD_3D)
+
     for k=1:ngl
         for j=1:ngl
             for i=1:ngl

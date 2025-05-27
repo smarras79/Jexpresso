@@ -1,14 +1,14 @@
 function remove_arrays!(matrix::Matrix{Int64}, rows_to_remove::Matrix{Int64})
     """
-    Removes specific rows from a matrix (Matrix{Int64}).
+        Removes specific rows from a matrix (Matrix{Int64}).
 
-    Args:
-        matrix: The input matrix (Matrix{Int64}).
-        rows_to_remove: A Matrix{Int64} of rows to remove.
+        Args:
+            matrix: The input matrix (Matrix{Int64}).
+            rows_to_remove: A Matrix{Int64} of rows to remove.
 
-    Returns:
-        The modified matrix with the specified rows removed (in-place).
-    """
+        Returns:
+            The modified matrix with the specified rows removed (in-place).
+        """
     rows_to_keep = trues(size(matrix, 1))
 
     for i in 1:size(matrix, 1)
@@ -76,4 +76,84 @@ end
 
 function get_array_pointer(arr)
     return pointer(arr)
+end
+
+function norm2(X::SMatrix{3, 3, FT}) where {FT}
+    abs2(X[1, 1]) +
+    abs2(X[2, 1]) +
+    abs2(X[3, 1]) +
+    abs2(X[1, 2]) +
+    abs2(X[2, 2]) +
+    abs2(X[3, 2]) +
+    abs2(X[1, 3]) +
+    abs2(X[2, 3]) +
+    abs2(X[3, 3])
+end
+
+# ### [Pricipal Invariants](@id tensor-invariants)
+# ```math
+# \textit{I}_{1} = \mathrm{tr(X)} \\
+# \textit{I}_{2} = (\mathrm{tr(X)}^2 - \mathrm{tr(X^2)}) / 2 \\
+# \textit{I}_{3} = \mathrm{det(X)} \\
+# ```
+"""
+    principal_invariants(X)
+
+Calculates principal invariants of a tensor `X`. Returns 3 element tuple containing the invariants.
+"""
+function principal_invariants(X)
+    first = tr(X)
+    second = (first^2 - tr(X .^ 2)) / 2
+    third = det(X)
+    return (first, second, third)
+end
+
+# ### [Symmetrize](@id symmetric-tensors)
+# ```math
+# \frac{\mathrm{X} + \mathrm{X}^{T}}{2} \\
+# ```
+"""
+    symmetrize(X)
+
+Given a (3,3) second rank tensor X, compute `(X + X')/2`, returning a
+symmetric `SHermitianCompact` object.
+"""
+function symmetrize(X)
+    SVector(
+        X[1, 1],
+        (X[2, 1] + X[1, 2]) / 2,
+        (X[3, 1] + X[1, 3]) / 2,
+        X[2, 2],
+        (X[3, 2] + X[2, 3]) / 2,
+        X[3, 3],
+    )
+end
+
+
+# Given a tensor X, return the tensor dot product
+# ```math
+# \sum_{i,j} S_{ij}^2
+# ```
+"""
+        norm2(X)
+    Given a tensor `X`, computes X:X.
+    """
+function norm2(X)
+        abs2(X[1, 1]) +
+        abs2(X[2, 1]) +
+        abs2(X[3, 1]) +
+        abs2(X[1, 2]) +
+        abs2(X[2, 2]) +
+        abs2(X[3, 2]) +
+        abs2(X[1, 3]) +
+        abs2(X[2, 3]) +
+        abs2(X[3, 3])
+end
+function norm2(X::SHermitianCompact{3, FT, 6}) where {FT}
+        abs2(X[1, 1]) +
+        2 * abs2(X[2, 1]) +
+        2 * abs2(X[3, 1]) +
+        abs2(X[2, 2]) +
+        2 * abs2(X[3, 2]) +
+        abs2(X[3, 3])
 end

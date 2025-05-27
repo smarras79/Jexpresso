@@ -128,8 +128,6 @@ end
 #--------------------------------------------------------
 with_mpi() do distribute
     
-    #main_ex4(nparts,distribute)
-
     driver(nparts,
            distribute, 
            inputs, # input parameters from src/user_input.jl

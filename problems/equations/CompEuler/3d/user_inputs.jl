@@ -22,7 +22,6 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc               => true, #false by default
-        :ivisc_equations     => [1, 2, 3, 4, 5],
         :visc_model           => AV(), #VREM(), #SMAG(),
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587],
