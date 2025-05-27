@@ -1606,7 +1606,11 @@ function restructure4periodicity_3D(mesh, norm, periodic_direction)
         
     mesh.ip2gip[per_ip]    .= per_ip_updated
     mesh.gip2owner[per_ip] .= owner_updated
-    
+    # open("./COORDS_$(abs(round(norm[1])))_$(abs(round(norm[2])))_$(abs(round(norm[3])))_$rank.dat", "w") do f
+    #     for ip in per_ip
+    #         @printf(f, " %.6f %.6f %.6f %d %d %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip, mesh.ip2gip[ip], mesh.gip2owner[ip])
+    #     end
+    # end #do f
 end
 
 function restructure4periodicity_3D_optimized!(mesh, norm, periodic_direction)
@@ -1976,6 +1980,11 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                 vec[1] = un_gathered_x[idx_i] - un_gathered_x[idx_j]
                 vec[2] = un_gathered_y[idx_i] - un_gathered_y[idx_j]
                 vec[3] = un_gathered_z[idx_i] - un_gathered_z[idx_j]
+                gip_i = un_updated_global_per_gip[idx_i]
+                gip_j = un_updated_global_per_gip[idx_j]
+                if (get(changes_ip, gip_i, gip_i) == gip_j) || get(changes_ip, gip_j, gip_j) == gip_i
+                    continue
+                end
                 if (determine_colinearity(vec, norm))
                     xt = x[idx_j]
                     yt = y[idx_j]
@@ -2013,14 +2022,24 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                     # @info "found", global_per_gip[i], global_per_gip[i1]
                     if comp1 || comp2 || comp3
                         # j is the slave, i is the master
-                        changes_ip[un_updated_global_per_gip[idx_j]] = un_updated_global_per_gip[idx_i]
-                        changes_owner[un_updated_global_per_gip[idx_j]] = un_updated_global_owner[idx_i]
-                        changes_owner[un_updated_global_per_gip[idx_i]] = un_updated_global_owner[idx_i]
+                        changes_ip[gip_j] = gip_i
+                        if gip_i< 100
+                            @info gip_j, gip_i
+                        end
+                        if un_updated_global_owner[idx_j] != un_updated_global_owner[idx_i]
+                            changes_owner[gip_j] = un_updated_global_owner[idx_i]
+                            changes_owner[gip_i] = un_updated_global_owner[idx_i]
+                        end
                     else
                         # i is the slave, j is the master
-                        changes_ip[un_updated_global_per_gip[idx_i]] = un_updated_global_per_gip[idx_j]
-                        changes_owner[un_updated_global_per_gip[idx_i]] = un_updated_global_owner[idx_j]
-                        changes_owner[un_updated_global_per_gip[idx_j]] = un_updated_global_owner[idx_j]
+                        changes_ip[gip_i] = gip_j
+                        if gip_i< 100
+                            @info gip_i, gip_j
+                        end
+                        if un_updated_global_owner[idx_j] != un_updated_global_owner[idx_i]
+                            changes_owner[gip_i] = un_updated_global_owner[idx_j]
+                            changes_owner[gip_j] = un_updated_global_owner[idx_j]
+                        end
                     end
                         # break
                 else
@@ -2032,7 +2051,6 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
         end
         updated_global_per_gip = [get(changes_ip, x, x) for x in global_per_gip]
         updated_owner = [get(changes_owner, x, owner[i])  for (i, x) in enumerate(global_per_gip)]
-
         s_gip_vbuf   = VBuffer(updated_global_per_gip, recv_counts)
         s_owner_vbuf = VBuffer(updated_owner, recv_counts)
     else
@@ -2045,7 +2063,6 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
         
     mesh.ip2gip[per_ip]    .= per_ip_updated
     mesh.gip2owner[per_ip] .= owner_updated
-
 end
 
 function find_gip_owner(a)
