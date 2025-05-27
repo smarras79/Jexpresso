@@ -10,8 +10,6 @@ function user_inputs()
         :diagnostics_at_times => (0.5, 1, 2, 4),
         :output_dir          => "./output/",
         :case                 => "rtb",
-        #:backend              => MetalBackend(),
-        #:CL                   => NCL(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
