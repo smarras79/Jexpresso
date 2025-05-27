@@ -15,8 +15,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ["ρ", "ρu", "ρv", "ρw", "ρe", "tr1"]
-    qoutvars = ["ρ", "u", "v", "w", "e", "tr1"]
+    qvars = ["ρ", "ρu", "ρv", "ρw", "ρe"]
+    qoutvars = ["ρ", "u", "v", "w", "e"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
@@ -57,7 +57,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             q.qn[ip,3] = ρ*v
             q.qn[ip,4] = ρ*w
             q.qn[ip,5] = ρ*θ
-            q.qn[ip,6] = Δtr
+            #q.qn[ip,6] = Δtr
 
             #Store initial background state for plotting and analysis of pertuebations
             q.qe[ip,1] = ρref
@@ -65,7 +65,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             q.qe[ip,3] = ρref*v
             q.qe[ip,4] = ρref*w
             q.qe[ip,5] = ρref*θref
-            q.qe[ip,6] = 0.0
+            #q.qe[ip,6] = 0.0
         end
     end
     

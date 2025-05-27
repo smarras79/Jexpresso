@@ -57,7 +57,11 @@ function time_loop!(inputs, params, u)
             println_rank(" #  t=", integrator.t; msg_rank = rank)
 
             #CFL
-            #@time  computeCFL(params.mesh.npoin, inputs[:Δt], params.mesh.Δeffective_s, integrator, params.SD; visc=inputs[:μ])
+            computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
+                       inputs[:Δt],
+                       params.mesh.Δeffective_s,
+                       integrator,
+                       params.SD; visc=inputs[:μ])
             
             write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,

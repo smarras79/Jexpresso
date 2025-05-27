@@ -12,7 +12,7 @@ function user_flux!(F, G, H,
     ρv     = q[3]
     ρw     = q[4]
     ρe_tot = q[5]
-    tr     = q[6]
+    #tr     = q[6]
     
     u     = ρu/ρ
     v     = ρv/ρ
@@ -31,21 +31,21 @@ function user_flux!(F, G, H,
     F[3] = ρu*v
     F[4] = ρu*w
     F[5] = ρe_tot*u
-    F[6] = tr*u
+    #F[6] = tr*u
 
     G[1] = ρv
     G[2] = ρv*u
     G[3] = ρv*v .+ Pressure
     G[4] = ρv*w
     G[5] = ρe_tot*v
-    G[6] = tr*v
+    #G[6] = tr*v
     
     H[1] = ρw
     H[2] = ρw*u
     H[3] = ρw*v
     H[4] = ρw*w .+ Pressure
     H[5] = ρe_tot*w
-    H[6] = tr*w
+    #H[6] = tr*w
     
 end
 
