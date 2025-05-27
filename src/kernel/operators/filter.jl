@@ -211,6 +211,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
     end
 
     DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
+
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
     end

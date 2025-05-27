@@ -292,8 +292,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         error( " WRONG NSD: This is not theoretical physics: we only handle 1, 2, or 3 dimensions!")
     end
     
-
-
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
 
     # Write the partitioned model to a VTK file
@@ -303,8 +301,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     if ladaptive == true
         writevtk(partitioned_model.dmodel, vtk_directory)
     end
-
-
 
     #dump(topology)
     #
@@ -330,7 +326,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         point2ppoint = Geometry.get_face_to_parent_face(model,POIN_flg)
         edge2pedge   = Geometry.get_face_to_parent_face(model,EDGE_flg)
         face2pface   = Geometry.get_face_to_parent_face(model,FACE_flg)
-        elm2pelm    = Geometry.get_face_to_parent_face(model,ELEM_flg)
+        elm2pelm     = Geometry.get_face_to_parent_face(model,ELEM_flg)
     end
     # @info rank, p2pp, point2ppoint
     if ladaptive == true
@@ -342,7 +338,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         num_hanging_facets = 0
     end
     # @info rank, hanging_vert_glue, local_to_global(elgids), "a", hanging_facet_glue,num_hanging_facets
-
 
     mesh.gnpoin_linear = num_faces(partitioned_model,POIN_flg)    
     mesh.gnpoin        = mesh.gnpoin_linear         #This will be updated for the high order grid
@@ -395,7 +390,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             end
             MPI.Barrier(comm)
         end
-        println_rank(" # GMSH LINEAR GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
+            println_rank(" # GMSH LINEAR GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
     end
 
     ngl                     = mesh.nop + 1
@@ -430,7 +425,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             end
             MPI.Barrier(comm)
         end
-        println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
+            println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
     end
     
     #
