@@ -32,30 +32,34 @@ function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_2D; visc=[0.0])
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    
-    #u
-    idx  = npoin
-    umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
-    
-    idx  = 2*npoin
-    vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
-  
-    velomax = max(umax, vmax)
-    
-    #speed of sound
-    c     = soundSpeed(npoin, integrator, SD)
-    cfl_u = velomax*dt/Δs #Advective CFL
-    cfl_c = c*dt/Δs       #Acoustic CFL
 
-    Δs2      = Δs*Δs
-    μ        = maximum(visc)
-    λ        = 2.0 #free parameter
-    cfl_visc = dt*λ*μ/Δs2 #Viscous CFL
-
-    println_rank(" #  Advective CFL: ", cfl_u;    msg_rank = rank) #, suppress = mesh.msg_suppress)
-    println_rank(" #  Acoustic  CFL: ", cfl_c;    msg_rank = rank) #, suppress = mesh.msg_suppress)
-    println_rank(" #  Viscous   CFL: ", cfl_visc; msg_rank = rank) #, suppress = mesh.msg_suppress)
-
+    if size(integrator.u) == 3*npoin
+        #u
+        idx  = npoin
+        umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
+        
+        idx  = 2*npoin
+        vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
+        
+        velomax = max(umax, vmax)
+        
+        #speed of sound
+        c     = soundSpeed(npoin, integrator, SD)
+        cfl_u = velomax*dt/Δs #Advective CFL
+        cfl_c = c*dt/Δs       #Acoustic CFL
+        
+        Δs2      = Δs*Δs
+        μ        = maximum(visc)
+        λ        = 2.0 #free parameter
+        cfl_visc = dt*λ*μ/Δs2 #Viscous CFL
+        
+        println_rank(" #  Advective CFL: ", cfl_u;    msg_rank = rank) #, suppress = mesh.msg_suppress)
+        println_rank(" #  Acoustic  CFL: ", cfl_c;    msg_rank = rank) #, suppress = mesh.msg_suppress)
+        println_rank(" #  Viscous   CFL: ", cfl_visc; msg_rank = rank) #, suppress = mesh.msg_suppress)
+    else
+        nothing
+    end
+    
 end
 
 function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_3D; visc=[0.0])
