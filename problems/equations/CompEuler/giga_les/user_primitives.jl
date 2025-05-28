@@ -28,7 +28,7 @@ function user_primitives_gpu(u,qe,lpert)
     end
 end
 
-function user_uout!(ip, ET, uout, u, qe...)
+function user_uout!(ip, ET, uout, u, qe; kwargs...)
 
     if ET == TOTAL()
         uout[1] = u[1]
