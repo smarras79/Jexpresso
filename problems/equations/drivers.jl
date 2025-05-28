@@ -9,7 +9,9 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
-
+    build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je, 
+                                     sem.metrics.dξdx, sem.metrics.dξdy, sem.mesh.extra_mesh, sem.QT, NSD_2D(), sem.AD)
+    #=
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     params, u =  params_setup(sem,
                               qp,
@@ -110,5 +112,5 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe, case="none")
         
-    end
+    end=#
 end

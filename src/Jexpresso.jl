@@ -12,7 +12,7 @@ module Jexpresso
 #elseif Sys.islinux()
 #    using CUDA
 #end
-
+using QuadGK
 using KernelAbstractions
 using Revise
 using BenchmarkTools
@@ -97,6 +97,8 @@ include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
 include(joinpath("kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
+
+include(joinpath("kernel", "operators", "build_rad_2d.jl"))
 
 include(joinpath( "io", "mod_inputs.jl"))
 

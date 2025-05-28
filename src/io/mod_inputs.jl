@@ -33,6 +33,46 @@ function mod_inputs_user_inputs!(inputs)
         end
     end
 
+    if(!haskey(inputs, :extra_dimensions))
+      inputs[:extra_dimensions] = 0
+    end
+    
+    if(!haskey(inputs, :adaptive_extra_meshes))
+      inputs[:adaptive_extra_meshes] = false
+    end
+
+    if(!haskey(inputs, :extra_dimensions_order))
+      inputs[:extra_dimensions_order] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_nelemx))
+      inputs[:extra_dimensions_nelemx] = 2
+    end
+
+    if(!haskey(inputs, :extra_dimensions_nelemy))
+      inputs[:extra_dimensions_nelemy] = 2
+    end
+
+    if(!haskey(inputs, :extra_dimensions_xmin))
+      inputs[:extra_dimensions_xmin] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_xmax))
+        inputs[:extra_dimensions_xmax] = 2*π
+    end
+
+    if(!haskey(inputs, :extra_dimensions_ymin))
+      inputs[:extra_dimensions_ymin] = 0
+    end
+
+    if(!haskey(inputs, :extra_dimensions_ymax))
+        inputs[:extra_dimensions_ymax] = 2*π
+    end
+
+    if(!haskey(inputs, :llinsolve))
+      inputs[:llinsolve] = false
+    end
+
     if(!haskey(inputs, :llinsolve))
       inputs[:llinsolve] = false
     end
