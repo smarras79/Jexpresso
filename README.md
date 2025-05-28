@@ -205,7 +205,7 @@ The path would look like
 
 Example of cloud simulations (please contact us to run this because its branch has not been merged into master yet)
 
-<img src="assets/barbados.jpg""
+<img src="assets/barbados.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
 
