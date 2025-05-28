@@ -19,3 +19,5 @@ rm -rf output
 ./runjexpresso 1 Helmholtz case1
 
 ./runjexpresso 1 Helmholtz case1_laguerre
+
+./runjexpresso 4 compeuler Rayleigh_Benard
