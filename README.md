@@ -354,7 +354,7 @@ Test 7: Shallow cumuli simulation with BOMEX conditions:
 push!(empty!(ARGS), "CompEuler", "3d_bomex");
 include("./src/Jexpresso.jl")
 ```
-<img src="assets/bomex.png"
+<img src="assets/barbados.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
 
