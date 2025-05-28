@@ -203,8 +203,7 @@ include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
-Example of cloud simulations (please contact us to run this because its branch has not been merged into master yet)
-
+Example of cloud simulations (left picture taken from [P. Blossey webpage](https://www.atmos.washington.edu/~bloss/) from U. Washington)
 <img src="assets/barbados.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
