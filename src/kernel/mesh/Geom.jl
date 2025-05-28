@@ -37,12 +37,6 @@ function Gridap.Geometry.DiscreteModel(
         for icell in 1:ncells
             if cell_to_part[icell] == part
                 cell_to_mask[icell] = true
-                # pini = icell_to_jcells_ptrs[icell]
-                # pend = icell_to_jcells_ptrs[icell + 1] - 1
-                # for p in pini:pend
-                #     jcell = icell_to_jcells_data[p]
-                #     cell_to_mask[jcell] = true
-                # end
             end
         end
         lcell_to_cell = findall(cell_to_mask)
