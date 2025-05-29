@@ -5,41 +5,41 @@
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn&#39;t matter
         #---------------------------------------------------------------------------
-        :ode_solver           =&gt; SSPRK54(), #From the suite of solvers of 
-        :Δt                   =&gt; 0.4,
-        :tinit                =&gt; 0.0,
-        :tend                 =&gt; 1000.0,
-        #:tinit                =&gt; 100.0,
-        #:tend                 =&gt; 1000.0,
-        #:lrestart             =&gt; true,
-        :restart_input_file_path =&gt; &quot;./output/CompEuler/theta/&quot;,
-        :diagnostics_at_times =&gt; (0:100:1000),
-        :lsource              =&gt; true, 
-        #:backend              =&gt; MetalBackend(),
-        #:SOL_VARS_TYPE        =&gt; PERT(), #TOTAL() is default
+        :ode_solver              =&gt; SSPRK54(), #From the suite of solvers of DifferentialEquations.jl
+        :Δt                      =&gt; 0.4,
+        :tinit                   =&gt; 0.0,
+        :tend                    =&gt; 1000.0,
+        #:tinit                  =&gt; 100.0,
+        #:tend                   =&gt; 1000.0,
+        #:lrestart               =&gt; true,
+        #:restart_input_file_path =&gt; &quot;./output/CompEuler/theta/&quot;,
+        :diagnostics_at_times    =&gt; (0:100:1000),
+        :lsource                 =&gt; true, 
+        #:backend                =&gt; MetalBackend(),
+        #:SOL_VARS_TYPE          =&gt; PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :interpolation_nodes =&gt;&quot;lgl&quot;,
-        :nop                 =&gt; 4,      # Polynomial order
+        :interpolation_nodes     =&gt;&quot;lgl&quot;,
+        :nop                     =&gt; 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                =&gt; true,                   #false by default
-        :ivisc_equations      =&gt; [1, 2, 3, 4],           # use [], not ()!
-        :μ                   =&gt; [0.0, 20.0, 20.0, 60.0], # use [], not ()!
+        :lvisc                   =&gt; true,                   #false by default
+        :ivisc_equations         =&gt; [1, 2, 3, 4],           # use [], not ()!
+        :μ                       =&gt; [0.0, 20.0, 20.0, 60.0], # use [], not ()!
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        #:lfilter             =&gt; true,
-        #:mu_x                =&gt; 0.01,
-        #:mu_y                =&gt; 0.01,
-        #:filter_type         =&gt; &quot;erf&quot;,
+        #:lfilter                =&gt; true,
+        #:mu_x                   =&gt; 0.01,
+        #:mu_y                   =&gt; 0.01,
+        #:filter_type            =&gt; &quot;erf&quot;,
 	#---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh          =&gt; true, #If false, a 1D problem will be enforced
-        :gmsh_filename       =&gt; &quot;./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh&quot;,
+        :lread_gmsh              =&gt; true, #If false, a 1D problem will be enforced
+        :gmsh_filename           =&gt; &quot;./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh&quot;,
 	#---------------------------------------------------------------------------
 	# init_refinement
 	#---------------------------------------------------------------------------
@@ -48,23 +48,22 @@
 	# E.g. Given a grid of 20x10x3 elements, 
 	#  :init_refine_lvl =&gt; 1 will generate a 40x20x6 grid (octree)
 	#---------------------------------------------------------------------------
-	:linitial_refine     =&gt; false,
-	:init_refine_lvl     =&gt; 1,
+	:linitial_refine         =&gt; false,
+	:init_refine_lvl         =&gt; 1,
 	#---------------------------------------------------------------------------
         # AMR: Adaptive Mesh Refinement (different from initial_refinement)
         #---------------------------------------------------------------------------
-        :ladapt              =&gt; false,
-        :amr_freq            =&gt; 200, #AMR is triggered every :amr_freq steps
-        :amr_max_level       =&gt; 2,   #levels of oct/quadtree subdivisions
+        :ladapt                  =&gt; false,
+        :amr_freq                =&gt; 200, #AMR is triggered every :amr_freq steps
+        :amr_max_level           =&gt; 2,   #levels of oct/quadtree subdivisions
 	#---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           =&gt; &quot;vtk&quot;,
-        :loverwrite_output   =&gt; true,
-        :lwrite_initial      =&gt; false,
-        :output_dir          =&gt; &quot;./output&quot;,
-        #:output_dir          =&gt; &quot;./test/CI-run&quot;,
-        :loutput_pert        =&gt; true,  #this is only implemented for VTK for now
+        :outformat               =&gt; &quot;vtk&quot;,
+        :loverwrite_output       =&gt; true,
+        :lwrite_initial          =&gt; false,
+        :output_dir              =&gt; &quot;./output&quot;,
+        :loutput_pert            =&gt; true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
@@ -73,4 +72,4 @@
 
     return inputs
     
-end</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../features/best-practices/">« Best practices</a><a class="docs-footer-nextpage" href="../running-jexpresso/">- »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Thursday 29 May 2025 14:58">Thursday 29 May 2025</span>. Using Julia version 1.11.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../features/best-practices/">« Best practices</a><a class="docs-footer-nextpage" href="../running-jexpresso/">- »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Thursday 29 May 2025 15:24">Thursday 29 May 2025</span>. Using Julia version 1.11.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
