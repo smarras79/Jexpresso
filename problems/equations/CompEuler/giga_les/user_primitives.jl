@@ -11,7 +11,7 @@ end
 
 function user_primitives!(u,qe,uprimitive,::PERT)
     uprimitive[1] = u[1]+qe[1]
-    uprimitive[2] = u[2]/(u[1]+qe[1])
+    uprimitive[2] = (u[2]+qe[2])/(u[1]+qe[1])-qe[2]/qe[1]
     uprimitive[3] = u[3]/(u[1]+qe[1])
     uprimitive[4] = u[4]/(u[1]+qe[1])
     uprimitive[5] = (u[5]+qe[5])/(u[1]+qe[1])-qe[5]/qe[1]
@@ -28,7 +28,7 @@ function user_primitives_gpu(u,qe,lpert)
     end
 end
 
-function user_uout!(uout, u, qe, ::TOTAL)
+function user_uout!(uout, u, qe, mp, ip, ::TOTAL)
     
     uout[1] = u[1]
     uout[2] = u[2]/u[1]
@@ -40,14 +40,23 @@ function user_uout!(uout, u, qe, ::TOTAL)
         
 end
 
-function user_uout!(uout, u, qe, ::PERT)
+function user_uout!(uout, u, qe, mp, ip, ::PERT)
 
-    uout[1] = u[1]+qe[1]
-    uout[2] = u[2]/(u[1]+qe[1])
-    uout[3] = u[3]/(u[1]+qe[1])
-    uout[4] = u[4]/(u[1]+qe[1])
-    uout[5] = (u[5]+qe[5])/(u[1]+qe[1])-qe[5]/qe[1]
-    uout[6] = (u[6]+qe[6])/(u[1]+qe[1])-qe[6]/qe[1]
-    uout[7] = (u[7]+qe[7])/(u[1]+qe[1])-qe[7]/qe[1]
-        
+    ρ = u[1] + qe[1]
+    uout[1] = u[1]
+    uout[2] = (u[2]+qe[2])/ρ
+    uout[3] = (u[3]+qe[3])/ρ
+    uout[4] = (u[4]+qe[4])/ρ
+    uout[5] = (u[5]+qe[5])/ρ
+    uout[6] = (u[6]+qe[6])/ρ
+    uout[7] = (u[7]+qe[7])/ρ
+
+    uout[8]  = mp.Tabs[ip]
+    uout[9]  = mp.qn[ip]
+    uout[10]  = mp.qc[ip]
+    uout[11] = mp.qi[ip]
+    uout[12] = mp.qr[ip]
+    uout[13] = mp.qs[ip]
+    uout[14] = mp.qg[ip]
 end
+

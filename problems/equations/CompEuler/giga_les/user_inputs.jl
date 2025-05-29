@@ -11,15 +11,15 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (0.2, 1, 10, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1500, 2000, 2500, 3000, 3500, 4000),
+        :diagnostics_at_times => (0.2, 1, 10, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1500, 1600, 1700, 1800, 1900, 2000, 2500, 3000, 3500, 4000),
         :case                 => "rtb",
         :lsource              => true, 
         :lmoist               => true,
         :lprecip              => true,
         :SOL_VARS_TYPE        => PERT(),
         :LST                  => true,
-        #:bdy_fluxes           => true,
-        #:bulk_fluxes          => true,
+        :bdy_fluxes           => true,
+        :bulk_fluxes          => true,
         #:backend              => MetalBackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -31,7 +31,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
-        :μ                   => [0.0, 500.0, 500.0, 500.0, 750.0, 750.0, 750.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 200.0, 200.0, 200.0, 300.0, 300.0, 300.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -53,9 +53,9 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.15,
-        :mu_y                => 0.15,
-        :mu_z                => 0.15,
+        :mu_x                => 0.05,
+        :mu_y                => 0.00,
+        :mu_z                => 0.05,
         :filter_type         => "erf", #use "erf" for Boyd-Vandeven, "exp" for exponential filter, or "quad" for quadratic filter
         #---------------------------------------------------------------------------
         # Physics grid and two-stream radiation parameters

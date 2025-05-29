@@ -111,8 +111,8 @@ function bulk_surface_flux!(F_surf,q,q1,qe,qe1,θ,θ1,qn,qn1)
     ce = cd
     
     
-    F_surf[2] = ρ*cd*u_12*sqrt(u_12^2+v_12^2)
-    F_surf[3] = ρ*cd*v_12*sqrt(u_12^2+v_12^2)
+    F_surf[2] = -ρ*cd*u_12*sqrt(u_12^2+v_12^2)
+    F_surf[3] = -ρ*cd*v_12*sqrt(u_12^2+v_12^2)
     F_surf[5] = PhysConst.cp*ρ*ce*sqrt(u_12^2+v_12^2)*(θ-θ_12)
     F_surf[6] = ρ*ce*sqrt(u_12^2+v_12^2)*(qv-qv_12)
 end

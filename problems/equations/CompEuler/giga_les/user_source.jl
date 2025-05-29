@@ -78,10 +78,10 @@ function user_source!(S, q, qe, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, z, zmin
     nsponge_points = 8
 
     zs = 19000.0#ymax - 20000.0
-    xr = 90000.0
-    xl = -90000.0
-    yr = 90000.0
-    yl = -90000.0
+    xr = 4000.0
+    xl = -4000.0
+    yr = 4000.0
+    yl = -4000.0
 
     if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
         betay_coe =  sinpi(0.5*(z-zs)/(25000.0-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
@@ -98,35 +98,35 @@ function user_source!(S, q, qe, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, z, zmin
     #end 
 
     if (x >= xr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betaxr_coe =  sinpi(0.5*(x-xr)/(5000.0-xr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxr_coe = 0.0
     end
 
     if (y >= yr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betayr_coe =  sinpi(0.5*(y-yr)/(100000.0-yr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betayr_coe =  sinpi(0.5*(y-yr)/(5000.0-yr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betayr_coe = 0.0
     end
 
     if (x <= xl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-(-5000.0)))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betaxl_coe = 0.0
     end
 
     if (y <= yl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betayl_coe =  sinpi(0.5*(yl-y)/(yl-(-100000.0)))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+        betayl_coe =  sinpi(0.5*(yl-y)/(yl-(-5000.0)))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     else
         betayl_coe = 0.0
     end
     
-    cxr = 0.00001*betaxr_coe#0.25*betaxr_coe
-    cxl = 0.00001*betaxl_coe#0.25*betaxl_coe
-    cyr = 0.00001*betayr_coe#0.25*betaxr_coe
-    cyl = 0.00001*betayl_coe#0.25*betaxl_coe
+    cxr = 0.0000*betaxr_coe#0.25*betaxr_coe
+    cxl = 0.0000*betaxl_coe#0.25*betaxl_coe
+    cyr = 0.0000*betayr_coe#0.25*betaxr_coe
+    cyl = 0.0000*betayl_coe#0.25*betaxl_coe
 
-    ctop = 0.005*min(ctop,1)
+    ctop = 1.0*min(ctop,1)
     cxr  = min(cxr,1)
     cxl  = min(cxl,1)
     cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)*(1.0-cyr)*(1.0 - cyl)
@@ -137,8 +137,8 @@ function user_source!(S, q, qe, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, z, zmin
     S[3] -= (cs)*q[3]
     S[4] -= (cs)*(q[4])
     S[5] -= (cs)*(q[5])
-    #S[6] -= (cs)*(q[6])
-    #S[7] -= (cs)*(q[7])
+    S[6] -= (cs)*(q[6])
+    S[7] -= (cs)*(q[7])
     return  S
 end
 

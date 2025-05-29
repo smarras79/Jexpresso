@@ -434,12 +434,12 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
     end
 
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
-
+    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
     end
 
-    uaux[:,params.neqs] .= params.B[:,params.neqs]
+    uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
     uaux[:,2:4] .= uaux[:,2:4] .+ params.qp.qe[:,2:4]
     #=if (params.laguerre)
 
