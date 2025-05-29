@@ -175,7 +175,7 @@ w_{xx} + w_{yy} + w_{zz}\\
 
 
 If you are interested in contributing, please get in touch:
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)
 
 
 # Some notes on using JEXPRESSO
