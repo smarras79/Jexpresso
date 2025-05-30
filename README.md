@@ -182,6 +182,25 @@ If you are interested in contributing, please get in touch:
 
 To install and run the code assume Julia 1.11.2
 
+Start by cloning Jexpresso and JexpressoMeshes:
+
+```bash
+git clone https://github.com/smarras79/Jexpresso.git
+```
+
+```bash
+git clone https://github.com/smarras79/JexpressoMeshes.git
+```
+    
+```bash
+cd Jexpresso
+```
+
+```bash
+ln -s ../JexpressoMeshes/meshes .
+```
+
+
 ## Setup with CPUs
 
 ```bash
