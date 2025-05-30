@@ -1,5 +1,3 @@
-function user_uout!(uout, u, qe, EQTYPE)
-    
+function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[1] = u[1]
-    
 end

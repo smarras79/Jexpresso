@@ -23,15 +23,13 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => [1, 2, 3, 4],
         :μ                   => [0.0, 25.0, 25.0, 37.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/Rayleigh_Benard.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/Rayleigh_Benard.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/Rayleigh_Benard80x80.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -45,7 +43,7 @@ function user_inputs()
         :outformat           => "vtk",
         :loverwrite_output   => true,
         :lwrite_initial      => true,
-        :output_dir          => "./output",
+        :output_dir          => "./output_small_visc/",
         #:output_dir          => "./test/CI-run",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

@@ -1,8 +1,10 @@
 function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
-    """
-
-    """
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+    
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    if rank == 0
+        @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+    end
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -11,7 +13,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("ρ", "ρu", "ρv", "ρθ")
+    qvars = ["ρ", "ρu", "ρv", "ρθ"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
 
@@ -115,8 +117,11 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
-    @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
-    @info maximum(q.qn[:,4]), maximum(q.qe[:,5])
+
+    if rank == 0
+        @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
+    end
+
     return q
 end
 

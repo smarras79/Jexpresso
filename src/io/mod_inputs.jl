@@ -452,9 +452,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:μ] = (Float64(0.0)) #default kinematic viscosity
     end
 
-    if(!haskey(inputs, :ivisc_equations))
-        inputs[:ivisc_equations] = (1)
+#if(!haskey(inputs, :ivisc_equations))
+#        inputs[:ivisc_equations] = [1]
+#    end
+
+    #
+    # DSGS
+    #
+    if(!haskey(inputs, :C1))
+        inputs[:C1] = 0.0
     end
+    if(!haskey(inputs, :C2))
+        inputs[:C2] = 0.0
+    end
+    if(!haskey(inputs, :Pr))
+        inputs[:Pr] = 0.7
+    end
+
 
     #
     # Viscous models:

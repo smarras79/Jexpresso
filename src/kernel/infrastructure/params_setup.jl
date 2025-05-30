@@ -126,7 +126,7 @@ function params_setup(sem,
     xmax = maximum(sem.mesh.x); xmin = minimum(sem.mesh.x)
     ymax = maximum(sem.mesh.y); ymin = minimum(sem.mesh.y)
     zmax = maximum(sem.mesh.z); zmin = minimum(sem.mesh.z)
-    
+
     #------------------------------------------------------------------------------------
     # Laguerre arrays
     #------------------------------------------------------------------------------------
@@ -205,13 +205,13 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Allocate large scale tendencies arrays
     #------------------------------------------------------------------------------------
-    LST = allocate_LargeScaleTendencies(sem.mesh.npoin, sem.mesh, inputs, T, backend; lLST=inputs[:LST]) 
+    LST = allocate_LargeScaleTendencies(sem.mesh.npoin, sem.mesh, inputs, T, backend; lLST=inputs[:LST])
+    
     #------------------------------------------------------------------------------------
     # Allocate Thermodynamic params for bomex case
     #------------------------------------------------------------------------------------
     thermo_params = create_updated_TD_Parameters(TFloat(101325.0))
-        
-
+    
     #------------------------------------------------------------------------------------
     # Populate solution arrays
     #------------------------------------------------------------------------------------
@@ -225,17 +225,26 @@ function params_setup(sem,
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
-    # tspan = [T(inputs[:tinit]), T(inputs[:tend])]
-    if (backend == CPU())
-        visc_coeff = inputs[:μ]
-    else
-        coeffs     = zeros(TFloat,qp.neqs)
-        coeffs    .= inputs[:μ]
-        visc_coeff = KernelAbstractions.allocate(backend,TFloat,qp.neqs)
+    #if (backend == CPU())
+    #    visc_coeff = zeros(TFloat, qp.neqs)
+    #    if inputs[:lvisc]
+    #        visc_coeff .= inputs[:μ]
+    #    end
+    #else
+   
+    if inputs[:lvisc]
+        coeffs = zeros(TFloat, qp.neqs)
+        if size(inputs[:μ]) > size(coeffs)
+            coeffs .= inputs[:μ][1:qp.neqs]
+        elseif size(inputs[:μ]) <= size(coeffs)
+            coeffs .= inputs[:μ]
+        end
+        visc_coeff = KernelAbstractions.allocate(backend,TFloat, qp.neqs)
         KernelAbstractions.copyto!(backend,visc_coeff,coeffs)
+    else
+        visc_coeff = KernelAbstractions.allocate(backend, TFloat, 1)
+        visc_coeff = [0.0]
     end
-    ivisc_equations = inputs[:ivisc_equations]   
-
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
@@ -268,7 +277,7 @@ function params_setup(sem,
 		  basis=sem.basis[1], basis_lag = sem.basis[2],
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
-                  inputs, VT = inputs[:visc_model], visc_coeff, ivisc_equations,
+                  inputs, VT = inputs[:visc_model], visc_coeff,
                   sem.matrix.M, sem.matrix.Minv, pM=pM, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
@@ -294,7 +303,7 @@ function params_setup(sem,
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
-                  thermo_params, VT = inputs[:visc_model], visc_coeff, ivisc_equations,
+                  thermo_params, VT = inputs[:visc_model], visc_coeff,
                   sem.matrix.M, sem.matrix.Minv, pM=pM,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   phys_grid = sem.phys_grid,

@@ -1,6 +1,6 @@
 name = "Jexpresso"
 uuid = "b6c1962e-2b89-11f0-398d-4f31b209be71"
-version = "0.1.0" #
+version = "0.1.0"
 
 [deps]
 ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
@@ -209,7 +209,6 @@ Infiltrator = "5903a43b-9cc3-4c30-8d17-598619ec4e9b"
 Inflate = "d25df0c9-e2be-5dd7-82c8-3ad0b3e990b9"
 InlineStrings = "842dd82b-1e85-43dc-bf29-5d0ee9dffc48"
 IntelOpenMP_jll = "1d5cc7b8-4909-519e-a0f8-d0f5ad9712d0"
-InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 InternedStrings = "7d512f48-7fb1-5a58-b986-67e6dc259f01"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 IntervalArithmetic = "d1acc4aa-44c8-5952-acd4-ba5d80a2a253"
@@ -589,7 +588,3 @@ pprof_jll = "cf2c5f97-e748-59fa-a03f-dda3c62118cb"
 x264_jll = "1270edf5-f2f9-52d2-97e9-ab00b5d0237a"
 x265_jll = "dfaa095f-4041-5dcd-9319-2fabd8486b76"
 xkbcommon_jll = "d8fb68d0-12a3-5cfd-a85a-d49703b185fd"
-
-[compat]
-# Specify Julia version compatibility, e.g.:
-# "julia" = "1.11.2, 1.11.3, 1.11.4"

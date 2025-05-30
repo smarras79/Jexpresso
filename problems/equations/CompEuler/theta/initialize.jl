@@ -141,7 +141,6 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     if rank == 0
         @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
     end
-    # @mystop("my stop at mesh.jl L135")
     
     return q
 end

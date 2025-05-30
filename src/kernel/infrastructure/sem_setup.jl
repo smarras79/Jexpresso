@@ -247,13 +247,17 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
 
             if (inputs[:lperiodic_1d])
                 @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
-                                               mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,mesh.poin_in_bdy_face,
-                                               mesh.poin_in_bdy_edge,mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
+                                               mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,
+                                               mesh.poin_in_bdy_face,mesh.poin_in_bdy_edge,
+                                               mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
                                                mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-                                               mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,inputs,inputs[:backend])
+                                               mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,
+                                               inputs,inputs[:backend])
             end
-            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
-                        ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
+            matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
+                                    ldss_laplace=inputs[:ldss_laplace],
+                                    ldss_differentiation=inputs[:ldss_differentiation],
+                                    backend = inputs[:backend], interp)
         end
     end
 
@@ -267,32 +271,32 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         mesh.∂O       = unroll_positive_unique(new_no_bdy_poin)
         mesh.Γ        = unroll_positive_unique(mesh.poin_in_bdy_edge)
         mesh.∂τ       = vcat(mesh.Γ, mesh.∂O)
-        mesh.τO       = view(mesh.internal_poin_in_elem, :)
-        mesh.lengthτO = length(mesh.τO)
-        mesh.O        = vcat(mesh.τO, mesh.∂O)
+        mesh.Io       = view(mesh.internal_poin_in_elem, :)
+        mesh.lengthIo = length(mesh.Io)
+        mesh.O        = vcat(mesh.Io, mesh.∂O)
         mesh.length∂O = length(mesh.∂O)
         mesh.length∂τ = length(mesh.∂τ)
         mesh.lengthΓ  = length(mesh.Γ)
         
-        println("Γ")
-        println(mesh.Γ)
-        println(mesh.lengthΓ)
+        #println("Γ")
+        #println(mesh.Γ)
+        #println(mesh.lengthΓ)
         
-        println("O")
-        println(mesh.O)
-        println(mesh.lengthO)
+        #println("O")
+        #println(mesh.O)
+        #println(mesh.lengthO)
         
-        println("∂O")
-        println(mesh.∂O)
-        println(mesh.length∂O)
+        #println("∂O")
+        #println(mesh.∂O)
+        #println(mesh.length∂O)
         
-        println("∂τ")
-        println(mesh.∂τ)
-        println(mesh.length∂τ)
+        #println("∂τ")
+        #println(mesh.∂τ)
+        #println(mesh.length∂τ)
         
-        println("τO")
-        println(mesh.τO)
-        println(mesh.lengthτO)
+        #println("Io")
+        #println(mesh.Io)
+        #println(mesh.lengthIo)
     end
 
     #--------------------------------------------------------

@@ -1,8 +1,9 @@
 function driver(nparts,
                 distribute,
                 inputs::Dict,
-                    OUTPUT_DIR::String,
-                TFloat) 
+                OUTPUT_DIR::String,
+                TFloat)
+    
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
     sem = sem_setup(inputs, nparts, distribute)
@@ -75,15 +76,6 @@ function driver(nparts,
                 sem.matrix.L[ip,ip] += inputs[:rconst][1]
             end
 
-            #-----------------------------------------------------
-            # Element-learning infrastructure
-            #-----------------------------------------------------
-            if inputs[:lelementLearning]
-                elementLearning_Axb(sem.mesh, sem.matrix.L, RHS)
-            end
-            #-----------------------------------------------------
-            # END Element-learning infrastructure
-            #-----------------------------------------------------
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
                                                  params.mesh.x, params.mesh.y, params.mesh.z,
@@ -103,10 +95,27 @@ function driver(nparts,
                                                  params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
                                                  params.mesh.bdy_edge_type,
                                                  params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
-      
-         
+
+            
+            #-----------------------------------------------------
+            # Element-learning infrastructure
+            #-----------------------------------------------------
+            if inputs[:lelementLearning]
+                elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
+            else
+                solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
+            end
+            #-----------------------------------------------------
+            # END Element-learning infrastructure
+            #-----------------------------------------------------
+            
         else
-            k = lin_solve_rhs_gpu_2d!(inputs[:backend])
+            println( " ")
+            println( " WARNING!!! drivers.jl:L114")
+            println( " WARNING: CHECK IF THIS GPU IMPLEMENTATION OF Ax=b still works")
+            println( " ")
+            nothing
+            #=k = lin_solve_rhs_gpu_2d!(inputs[:backend])
             k(RHS, qp.qn, qp.qe, sem.mesh.x, sem.mesh.y, qp.neqs; ndrange = sem.mesh.npoin)
             KernelAbstractions.synchronize(inputs[:backend])
             
@@ -127,93 +136,81 @@ function driver(nparts,
             end
             k = add_to_diag!(inputs[:backend])
             k(sem.matrix.L, TFloat(10.0); ndrange = sem.mesh.npoin)
-            KernelAbstractions.synchronize(inputs[:backend])
+            KernelAbstractions.synchronize(inputs[:backend])=#
         end
         
-        @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
-        
-        write_output(params.SD, solution.u, params.uaux, 0.0, 1,
+        usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
+        args = (params.SD, usol, params.uaux, 0.0, 1,
                      sem.mesh, nothing,
                      nothing, nothing,
                      0.0, 0.0, 0.0,
                      OUTPUT_DIR, inputs,
                      params.qp.qvars,
                      params.qp.qoutvars,
-                     inputs[:outformat];
-                     nvar=params.qp.neqs, qexact=params.qp.qe)
+                     inputs[:outformat])
+
+        write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
         
     end
 end
 
-function elementLearning_Axb(mesh::St_mesh, A, RHS)
-
-    @info "∂Oxdd"
-    println(mesh.∂O)
-    @info "∂τddddd"
-    println(mesh.∂τ)
-
-    mesh.lengthO =  mesh.length∂O +  mesh.lengthτO
+function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     
-    @info mesh.lengthΓ, mesh.lengthO, mesh.length∂τ, mesh.lengthτO, mesh.length∂O
-    
+    mesh.lengthO =  mesh.length∂O +  mesh.lengthIo
+        
     EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
                                mesh.length∂O,
                                mesh.length∂τ,
+                               mesh.lengthΓ,
                                TFloat, inputs[:backend])
 
     nelintpoints = (mesh.ngl-2)*(mesh.ngl-2)
     nelpoints = size(mesh.conn)[2]
-    intaux = nelpoints - nelintpoints
-    
+    elnbdypoints = nelpoints - nelintpoints
     for iel=1:mesh.nelem
-
         #
-        # A∂oᵥₒₜ
+        # A∂oᵥₒ
         #
         ii = 1
-        for i = intaux+1:nelpoints
+        for i = elnbdypoints+1:nelpoints
             ipo = mesh.conn[iel, i]
-
-            for i1=1:length(mesh.∂O)
-                
-                iO = mesh.∂O[i1]
-                
-                EL.A∂Ovo[i1, ii, iel] = A[iO, ipo]
+            
+            for io=1:length(mesh.∂O)
+                io1 = mesh.∂O[io]
+                EL.A∂Ovo[io, ii, iel] = A[io1, ipo]
             end
 
             #
-            # Aᵥₒ∂τₜ
+            # Aᵥₒ∂τ
             #
-            for i1=1:length(mesh.∂τ)
-                
-                iτ = mesh.∂τ[i1]
-                
-                EL.Avo∂τ[ii, i1, iel] = A[ipo, iτ]
+            for jτ = 1:mesh.length∂τ
+                jτ1 = mesh.∂τ[jτ]
+                EL.Avo∂τ[ii, jτ, iel] = A[ipo, jτ1]
             end
 
             #
             # Aᵥₒᵥₒ
             #
             jj = 1
-            for j = intaux+1:nelpoints          
+            for j = elnbdypoints+1:nelpoints          
                 jpo = mesh.conn[iel, j]
                 
-                EL.Avovo[ii,jj,iel] = A[ipo, jpo]
-                println(EL.Avovo[ii, jj, iel])
-
+                EL.Avovo[ii, jj, iel] = A[ipo, jpo]
                 jj += 1
-                
             end
+            
+            #
+            # Aᵥₒᵥb
+            #
+            for j = 1:elnbdypoints
+                jpb = mesh.conn[iel, j]
+                
+                EL.Avovb[ii, j, iel] = A[ipo, jpb]
+            end
+            
             ii += 1
         end
-
-        #
-        # Hᵥₒᵥₒ[iel] = A⁻¹ᵥₒᵥₒ[iel]
-        # 
-        EL.Hvovo[:,:,iel] = inv(EL.Avovo[:,:,iel])
-        
     end
-    
     #
     # A∂O∂τ ⊂ A∂τ∂τ
     #
@@ -231,32 +228,177 @@ function elementLearning_Axb(mesh::St_mesh, A, RHS)
             jτ2 = mesh.∂τ[j2]
             
             EL.A∂τ∂τ[j1, j2] = A[jτ1, jτ2]
-        end
-            
+        end            
     end
+    #
+    # A∂OIo
+    #
+    for jo=1:mesh.length∂O
+        jo1 = mesh.∂O[jo]
+        
+        for io=1:mesh.lengthIo            
+            io1 = mesh.Io[io]
+            
+            EL.A∂OIo[jo, io] = A[jo1, io1]
+        end
+    end
+     #
+    # AIo∂O
+    #
+    for jo=1:mesh.length∂O
+        jo1 = mesh.∂O[jo]
+        
+        for io=1:mesh.lengthIo            
+            io1 = mesh.Io[io]
+            
+            EL.AIo∂O[io, jo] = A[io1, jo1]
+        end
+    end
+    #
+    # AIoIo
+    #
+    for io = 1:mesh.lengthIo
+        io1 = mesh.Io[io]
+        
+        for jo = 1:mesh.lengthIo
+            jo1 = mesh.Io[jo]
+
+            EL.AIoIo[io, jo] = A[io1, jo1]
+        end
+    end
+    #
+    # AIo∂τ
+    #
+    for jτ = 1:mesh.length∂τ
+        jτ1 = mesh.∂τ[jτ]
+        
+        for io=1:mesh.lengthIo
+            io1 = mesh.Io[io]
+            
+            EL.AIo∂τ[io, jτ] = A[io1, jτ1]
+        end
+    end
+    invAIoIo = similar(EL.AIoIo)
+    invAIoIo = inv(EL.AIoIo)
+
+    dims = (mesh.lengthIo, mesh.lengthΓ)
+    AIoΓ = similar(EL.AIoIo, dims);
+    
+    #------------------------------------------------------------------------
+    # Eq. (13)
+    #------------------------------------------------------------------------    
+    #  B∂O∂τ[:,:] = A∂O∂τ - Sum_{iel} A∂Oᵥₒ[:,:,iel]*A⁻¹ᵥₒᵥₒ[:,:,iel]*Aᵥₒ∂τ[:,:,iel] -> A∂O∂τ - Sum_{iel}A⋅B⋅C
+    #
     
     #
-    # B∂O∂τ[:,:] = A∂O∂τ - Sum_{iel} A∂Oᵥₒ[:,:,iel]*A⁻¹ᵥₒᵥ[:,:,iel]*Aᵥₒ∂τ[:,:,iel]
+    # LOCAL VERSION (eq 13)
     #
-    intermediate_product = zeros(mesh.length∂O, mesh.length∂τ, mesh.nelem)
-    for i in 1:size(EL.Avo∂τ, 3)
-        intermediate_product[:,:,i] = EL.A∂Ovo[:,:,i]*EL.Hvovo[:,:,i]*EL.Avo∂τ[:,:,i]
+    ABC = zeros(mesh.length∂O, mesh.length∂τ, mesh.nelem)
+    BC  = zeros(size(EL.Avo∂τ)[1], size(EL.Avo∂τ)[2])
+    for iel = 1:mesh.nelem
+        
+        # BC = A⁻¹ᵥₒᵥₒ[:,:,iel]⋅Aᵥₒ∂τ[:,:,iel]
+        LinearAlgebra.mul!(BC, inv(EL.Avovo[:,:,iel]), EL.Avo∂τ[:,:,iel])
+        
+        # ABC = A∂Oᵥₒ[:,:,iel]⋅BC
+        LinearAlgebra.mul!(@view(ABC[:,:,iel]), @view(EL.A∂Ovo[:,:,iel]), @view(BC[:,:]))
     end
-    EL.B∂O∂τ = EL.A∂O∂τ - sum(intermediate_product, dims=3)
+    ∑el = similar(EL.A∂O∂τ)
+    ∑el = sum(ABC, dims=3)
+    EL.B∂O∂τ = EL.A∂O∂τ - ∑el # (13)
 
-
+    #
+    # WARNING: for large grids this double loop may be a bottleneck
+    #
     for i1=1:length(mesh.∂O)      #row    B[i1][i2]        
         for i2=1:length(mesh.∂O)  #column B[i1][i2]
             
-            j2 = findall(x->x==mesh.∂O[i2], mesh.∂τ)
-            
+            j2 = findall(x->x==mesh.∂O[i2], mesh.∂τ)[1]
             EL.B∂O∂O[i1, i2] = EL.B∂O∂τ[i1, j2]
-            @info i1, i2, EL.B∂O∂O[i1, i2]
         end        
     end
     
+    gΓ = zeros(mesh.lengthΓ)
+    for iΓ = 1:mesh.lengthΓ
+        g1=mesh.Γ[iΓ]
+        
+        jτ = findall(x->x==mesh.Γ[iΓ], mesh.∂τ)[1]
+        EL.B∂O∂Γ[:, iΓ] .= EL.B∂O∂τ[:, jτ]
+
+        gΓ[iΓ] = ubdy[g1, 1]
+    end
     
-    @info size(EL.B∂O∂τ)
-    @mystop
-    
+    #------------------------------------------------------------------------
+    # Eq. (11)
+    #------------------------------------------------------------------------    
+    #
+    # B∂O∂Γ⋅gΓ
+    #
+    BOΓg = zeros(mesh.length∂O)
+    LinearAlgebra.mul!(BOΓg, EL.B∂O∂Γ, gΓ)
+
+    u∂O = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(mesh.length∂O))
+    invB∂O∂O = similar(EL.B∂O∂O)
+    invB∂O∂O = inv(EL.B∂O∂O)
+    #
+    #  u∂O = -B⁻¹∂O∂O⋅(B∂OΓ⋅gΓ)
+    #
+    LinearAlgebra.mul!(u∂O, -invB∂O∂O, BOΓg)
+
+    #
+    #  AIo,Γ
+    #
+    AIoΓ = similar(A, (mesh.lengthIo, mesh.lengthΓ))
+    for iΓ = 1:mesh.lengthΓ
+        g1=mesh.Γ[iΓ]        
+        for io = 1:mesh.lengthIo
+            io1 = mesh.Io[io]
+            
+            AIoΓ[io, iΓ] = A[io1, g1]
+        end
+    end
+
+    #
+    # Eq (12)
+    #
+    AIoΓg = similar(AIoΓ, (mesh.lengthIo))
+    LinearAlgebra.mul!(AIoΓg, AIoΓ, gΓ)
+
+    AIou∂O = similar(AIoΓg)
+    LinearAlgebra.mul!(AIou∂O, EL.AIo∂O, u∂O)
+
+    dims = (mesh.lengthIo)
+    uIo = similar(u∂O, dims)
+    LinearAlgebra.mul!(uIo, -invAIoIo, (AIou∂O + AIoΓg))
+
+    for io = 1:mesh.lengthIo
+        io1 = mesh.Io[io]
+        u[io1] = uIo[io]
+    end
+    for io = 1:mesh.length∂O
+        io1 = mesh.∂O[io]
+        u[io1] = u∂O[io]
+    end
+    for io = 1:mesh.lengthΓ
+        io1 = mesh.Γ[io]
+        u[io1] = gΓ[io]
+    end
+
 end
+
+#
+    #= GLOBAL VERSION (eq 10)
+    # BC = A⁻¹ᵢₒᵢₒ⋅Aᵢₒ∂τ
+    dims = (mesh.lengthIo, mesh.length∂τ)
+    BC = similar(EL.AIoIo, dims);
+    LinearAlgebra.mul!(BC, invAIoIo, EL.AIo∂τ)
+
+    # ABC = A∂Oᵢₒ⋅BC
+    dims = (mesh.length∂O, mesh.length∂τ)
+    ABC  = similar(EL.AIoIo, dims)
+    LinearAlgebra.mul!(ABC, EL.A∂OIo, BC)
+    
+    EL.B∂O∂τ .= EL.A∂O∂τ .- ABC
+    globalB∂O∂τ = copy(EL.B∂O∂τ)
+    =#
+    

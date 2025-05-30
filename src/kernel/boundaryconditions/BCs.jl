@@ -287,7 +287,9 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
 end
 
 
-function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
+function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz,
+                                     npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                     ngl, ngr, nelem_semi_inf, ω,
                                      xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
                                      connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                      neqs, dirichlet!, neumann, inputs)
@@ -312,10 +314,11 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, np
                 for ieq=1:neqs
                     RHS[ip,ieq] = qbdy[ieq]
                 end
+
             end
         end
     end
-
+#@mystop(BCs.jl)
     if ("Laguerre" in bdy_edge_type)
         for k=1:ngr
             ip = connijk_lag[1, 1, k]

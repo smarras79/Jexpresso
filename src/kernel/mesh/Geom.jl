@@ -1,6 +1,5 @@
 module JeGeometry
 __precompile__(false)
-using MPI
 using Gridap
 using Gridap.Arrays
 using Gridap.Arrays: Table
@@ -16,12 +15,10 @@ using PartitionedArrays
 using GridapGmsh
 using GridapP4est
 using P4est_wrapper
-using Metis
 using SparseArrays
 
-
 # Define your custom version of DiscreteModel function
-function Geometry.DiscreteModel(
+function Gridap.Geometry.DiscreteModel(
     parts::AbstractArray,
     model::Geometry.DiscreteModel,
     cell_to_part::AbstractArray,
@@ -40,12 +37,6 @@ function Geometry.DiscreteModel(
         for icell in 1:ncells
             if cell_to_part[icell] == part
                 cell_to_mask[icell] = true
-                # pini = icell_to_jcells_ptrs[icell]
-                # pend = icell_to_jcells_ptrs[icell + 1] - 1
-                # for p in pini:pend
-                #     jcell = icell_to_jcells_data[p]
-                #     cell_to_mask[jcell] = true
-                # end
             end
         end
         lcell_to_cell = findall(cell_to_mask)

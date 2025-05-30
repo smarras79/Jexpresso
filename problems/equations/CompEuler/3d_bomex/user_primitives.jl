@@ -27,7 +27,7 @@ function user_primitives_gpu(u,qe,lpert)
     end
 end
 
-function user_uout!(uout, u, qe, ::TOTAL)
+function user_uout!(ip, ET, uout, u, qe; kwargs...)
 
     uout[1] = u[1]
     uout[2] = u[2]/u[1]

@@ -26,7 +26,7 @@ function user_primitives_gpu(u, qe, lpert)
     end
 end
 
-function user_uout!(uout, u, qe, mp, ip, ::TOTAL)
+function user_uout!(ip, uout, u, qe, mp...)
 
     uout[1] = u[1]
     uout[2] = u[2]/u[1]
@@ -38,7 +38,7 @@ function user_uout!(uout, u, qe, mp, ip, ::TOTAL)
     uout[8] = mp.Tabs[ip]
 end
 
-function user_uout!(uout, u, qe, mp, ip, ::PERT)
+function user_uout!(ip, uout, u, qe, mp...)
 
     uout[1] = u[1]
     uout[2] = u[2]
