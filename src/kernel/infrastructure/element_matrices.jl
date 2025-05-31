@@ -672,6 +672,165 @@ function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T
     end
 end
 
+
+#####
+using SparseArrays
+
+function DSS_diffusion_matrix_sparse(mesh, metrics, Lel, ω)
+    # Pre-allocate arrays for COO format
+    # Estimate size: each element contributes ngl^2 × ngl^2 entries
+    max_entries = mesh.nelem * (mesh.ngl^2)^2
+    
+    I = Vector{Int}()
+    J = Vector{Int}()
+    V = Vector{Float64}()
+    
+    # Pre-allocate with estimated size for better performance
+    sizehint!(I, max_entries)
+    sizehint!(J, max_entries)
+    sizehint!(V, max_entries)
+    
+    # Assembly loop over elements
+    for iel = 1:mesh.nelem
+        # Local assembly for ξ-direction contribution
+        for i = 1:mesh.ngl
+            for j = 1:mesh.ngl
+                ip = mesh.connijk[iel, i, j]  # Global node index
+                
+                # ξ-direction terms: ∂/∂ξ contributions
+                for k = 1:mesh.ngl
+                    jp = mesh.connijk[iel, k, j]  # Global node index
+                    
+                    # Contribution: (dξ/dx)² * D_ξ * ω_η * J
+                    local_contrib = metrics.dξdx[iel, i, k] * Lel[i, k] * 
+                                   ω[j] * metrics.Je[iel, i, j]
+                    
+                    if abs(local_contrib) > eps(Float64)  # Skip near-zero entries
+                        push!(I, ip)
+                        push!(J, jp)
+                        push!(V, local_contrib)
+                    end
+                end
+                
+                # η-direction terms: ∂/∂η contributions  
+                for l = 1:mesh.ngl
+                    jp = mesh.connijk[iel, i, l]  # Global node index
+                    
+                    # Contribution: (dη/dy)² * D_η * ω_ξ * J
+                    local_contrib = metrics.dηdy[iel, j, l] * Lel[j, l] * 
+                                   ω[i] * metrics.Je[iel, i, j]
+                    
+                    if abs(local_contrib) > eps(Float64)  # Skip near-zero entries
+                        push!(I, ip)
+                        push!(J, jp)
+                        push!(V, local_contrib)
+                    end
+                end
+            end
+        end
+    end
+    
+    # Get total number of global degrees of freedom
+    n_global = maximum(mesh.connijk)
+    
+    # Create sparse matrix in CSR format (SparseMatrixCSC in Julia)
+    # Julia automatically combines duplicate entries by summing them
+    L = sparse(I, J, V, n_global, n_global)
+    
+    return L
+end
+
+# Alternative version with pre-computed element matrices for better performance
+function DSS_laplace_sparse!(mesh, metrics, Lel, ω) #L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
+
+    n_global = maximum(mesh.connijk)
+    entries_per_elem = (mesh.ngl^2)^2
+    
+    # Pre-allocate with exact size
+    I = Vector{Int}(undef, mesh.nelem * entries_per_elem)
+    J = Vector{Int}(undef, mesh.nelem * entries_per_elem)
+    V = Vector{Float64}(undef, mesh.nelem * entries_per_elem)
+    
+    entry_idx = 1
+    
+    for iel = 1:mesh.nelem
+        # Extract local connectivity for this element
+        local_nodes = @view mesh.connijk[iel, :, :]
+        
+        # Compute local element matrix
+        K_local = zeros(mesh.ngl^2, mesh.ngl^2)
+        
+        # Build local matrix (vectorized approach)
+        for j = 1:mesh.ngl, i = 1:mesh.ngl
+            local_i = (j-1) * mesh.ngl + i
+            
+            # ξ-direction contributions
+            for k = 1:mesh.ngl
+                local_k = (j-1) * mesh.ngl + k
+                K_local[local_i, local_k] += metrics.dξdx[iel, i, k] * Lel[i, k] * 
+                                           ω[j] * metrics.Je[iel, i, j]
+            end
+            
+            # η-direction contributions
+            for l = 1:mesh.ngl
+                local_l = (l-1) * mesh.ngl + i
+                K_local[local_i, local_l] += metrics.dηdy[iel, j, l] * Lel[j, l] * 
+                                           ω[i] * metrics.Je[iel, i, j]
+            end
+        end
+        
+        # Scatter local matrix to global arrays
+        for local_j = 1:mesh.ngl^2, local_i = 1:mesh.ngl^2
+            if abs(K_local[local_i, local_j]) > eps(Float64)
+                # Convert local indices back to (i,j) pairs
+                i_node, j_node = divrem(local_i - 1, mesh.ngl) .+ (1, 1)
+                i_glob, j_glob = divrem(local_j - 1, mesh.ngl) .+ (1, 1)
+                
+                I[entry_idx] = local_nodes[i_node, j_node]
+                J[entry_idx] = local_nodes[i_glob, j_glob]
+                V[entry_idx] = K_local[local_i, local_j]
+                entry_idx += 1
+            end
+        end
+    end
+    
+    # Resize arrays to actual size
+    resize!(I, entry_idx - 1)
+    resize!(J, entry_idx - 1)
+    resize!(V, entry_idx - 1)
+    
+    # Create sparse matrix
+    L = sparse(I, J, V, n_global, n_global)
+    
+    return L
+end
+
+# Utility function to convert to different sparse formats if needed
+function convert_sparse_format(A::SparseMatrixCSC; format=:CSR)
+    if format == :CSR
+        # Julia's SparseMatrixCSC is essentially CSC format
+        # For true CSR, you'd need to transpose and use rowvals/nzval
+        return A'  # This gives CSR-like access pattern
+    elseif format == :COO
+        I, J, V = findnz(A)
+        return (I, J, V)
+    else
+        return A  # Default CSC format
+    end
+end
+
+# Example usage:
+# L = assemble_diffusion_matrix_sparse(mesh, metrics, Lel, ω)
+# 
+# # For iterative solvers, you might want:
+# using LinearAlgebra
+# F = lu(L)  # Direct solver factorization
+# 
+# # Or for iterative methods:
+# using IterativeSolvers
+# x = cg(L, b)  # Conjugate gradient
+####
+
 @kernel function DSS_laplace_gpu!(L, Lel, connijk, ωx, ωy, nx, ny, dξdx, dydη, dηdy, dxdξ)
     ie = @index(Group, Linear)
     idx = @index(Local, NTuple)
@@ -1044,14 +1203,18 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     if lbuild_laplace_matrix
         if (backend == CPU())
             Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
-            L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
             
             #@info inputs[:lsparse]
-            #if (inputs[:lsparse])
-            #    DSS_laplace_sparse!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
-            #else
-                DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
-            #end
+            if (inputs[:lsparse])
+                L = DSS_diffusion_matrix_sparse(mesh, metrics, Le, ω)
+                #L = DSS_diffusion_matrix_sprse_with_bc(mesh, metrics, Le, ω, 
+                #                                            mesh.poin_in_bdy_edge, mesh.ngl;
+                #                                            symmetric=true, filter_zeros=true)
+                
+            else
+                L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+                @time DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+            end
             
         else
             Le = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngl), Int64(mesh.ngl))

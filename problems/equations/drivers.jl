@@ -62,6 +62,25 @@ function driver(nparts,
             
             L_temp = Minv * sem.matrix.L
             sem.matrix.L .= L_temp
+            @info typeof(sem.matrix.L)
+
+            # Sparse matrix
+
+            #=if inputs[:lsparse] ==  false
+                nnz_count = size(sem.matrix.L)[1]*size(sem.matrix.L)[2]
+                n = nnz_count
+            else
+                n = size(sem.matrix.L, 1)
+                nnz_count =  nnz(sem.matrix.L)
+            end
+            println("SPARSE MATRIX (CSC format):")
+            println("  Non-zero values: ", nnz_count, " × 8 bytes = ", nnz_count * 8, " bytes")
+            println("  Row indices: ", nnz_count, " × 8 bytes = ", nnz_count * 8, " bytes") 
+            println("  Column pointers: ", n+1, " × 8 bytes = ", (n+1) * 8, " bytes")
+            println("  Total memory: ", (nnz_count * 16 + (n+1) * 8), " bytes = ", 
+                    round((nnz_count * 16 + (n+1) * 8) / 1024^2, digits=2), " MB")
+            println("  Memory usage: O(nnz + n)")
+            println()=#
             
             for ip =1:sem.mesh.npoin
                 b = user_source(RHS[ip],
@@ -71,11 +90,12 @@ function driver(nparts,
                                 neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip])
                 RHS[ip] = b
             end
-
-            for ip = 1:sem.mesh.npoin
-                sem.matrix.L[ip,ip] += inputs[:rconst][1]
+            
+            if inputs[:lsparse] ==  false
+                for ip = 1:sem.mesh.npoin
+                    sem.matrix.L[ip,ip] += inputs[:rconst][1]
+                end
             end
-
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
                                                  params.mesh.x, params.mesh.y, params.mesh.z,
@@ -95,16 +115,26 @@ function driver(nparts,
                                                  params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
                                                  params.mesh.bdy_edge_type,
                                                  params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
-
+            
+            
+           # if inputs[:lsparse]
+           #     apply_dirichlet_bc_inplace!(sem.matrix.L, params.mesh.poin_in_bdy_edge, params.mesh.ngl)
+           # end
             
             #-----------------------------------------------------
             # Element-learning infrastructure
             #-----------------------------------------------------
-            if inputs[:lelementLearning]
-                elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
-            else
+            if inputs[:lelementLearning] == false && inputs[:lsparse] ==  false
                 solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
+            else
+                if inputs[:lelementLearning]
+                    elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
+                elseif inputs[:lsparse]
+                    @info "SPARS E EE E E E E E E E E"
+                    params.qp.qn = sem.matrix.L\RHS
+                end
             end
+            
             #-----------------------------------------------------
             # END Element-learning infrastructure
             #-----------------------------------------------------
@@ -139,7 +169,13 @@ function driver(nparts,
             KernelAbstractions.synchronize(inputs[:backend])=#
         end
         
-        usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
+        #usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
+if inputs[:lelementLearning] || inputs[:lsparse]
+    @info  " SPARRRRRRRRRSEEEEEEE "
+    usol = params.qp.qn
+else
+    usol = solution.u
+end
         args = (params.SD, usol, params.uaux, 0.0, 1,
                      sem.mesh, nothing,
                      nothing, nothing,
