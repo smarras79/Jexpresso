@@ -245,7 +245,6 @@ function params_setup(sem,
         visc_coeff = KernelAbstractions.allocate(backend, TFloat, 1)
         visc_coeff = [0.0]
     end
-    
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------

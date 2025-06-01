@@ -12,6 +12,6 @@ function user_primitives_gpu(u,qe,lpert)
 end
 
 
-function user_uout!(ip, ET, uout, u, qe...)
+function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[1] = u[1] #+qe[1]
 end

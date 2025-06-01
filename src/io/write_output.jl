@@ -9,7 +9,7 @@ function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar)
     
     if function_exists(@__MODULE__, :user_uout!)
         for ip=1:npoin
-            user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), qe[ip,1:nvar], mp)
+            user_uout!(ip, ET, @view(uout[ip,1:noutvar]), @view(u[ip,1:nvar]), @view(qe[ip,1:nvar]); mp=mp)
         end
     else
         for ip=1:npoin

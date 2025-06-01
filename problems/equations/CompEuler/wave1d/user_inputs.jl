@@ -21,7 +21,7 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc               => true,
-        :μ                   => [0.0001, 0.0001], #horizontal viscosity constant for momentum
+        :μ                   => [0.0001], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

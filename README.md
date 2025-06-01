@@ -1,4 +1,4 @@
-# <img src="https://github.com/smarras79/Jexpresso/blob/master/assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
+# <img src="./assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
 
 | **Documentation** |
 |:------------ |
@@ -15,9 +15,7 @@
 # JEXPRESSO
 A CPU and GPU research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this will always be WIP! Contact us to join the team of developers!
 
-Suggested Julia version: 1.10.0
-
-Suggested Julia version: 1.10
+Suggested Julia version: 1.11.2
 
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
 
@@ -182,7 +180,7 @@ If you are interested in contributing, please get in touch:
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia 1.10
+To install and run the code assume Julia 1.11.2
 
 ## Setup with CPUs
 
@@ -214,7 +212,7 @@ Example of cloud simulations (please contact us to run this because its branch h
 
 Examples available in this branch:
 
-Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
+Example 1: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
 push!(empty!(ARGS), "CompEuler", "thetaTracers");
 include("./src/Jexpresso.jl")
@@ -225,7 +223,7 @@ include("./src/Jexpresso.jl")
      style="float: left; margin-right: 5px;" />
 
 
-Example 2: to solve the 3D Euler equations with buyoancy defined in `problems/equations/CompEuler/3d` you would do the following:
+Example 2: to solve the 3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
 ```bash
 push!(empty!(ARGS), "CompEuler", "3d");
 include("./src/Jexpresso.jl")
@@ -324,7 +322,7 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 5: Rising thermal bubble
+Test 5: Rising thermal bubble with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
 
@@ -337,6 +335,20 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
+Test 6: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
+
+The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
+
+```bash      
+push!(empty!(ARGS), "CompEuler", "HSmount_Lag");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/wvelo.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 7: Shallow cumuli simulation with BOMEX conditions:
 
 ```bash
 push!(empty!(ARGS), "CompEuler", "3d_bomex");
@@ -407,7 +419,20 @@ mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<C
 ```bash
 mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
 ```
+#### Script
+You can simplify the run steps with a `runjexpresso` script like this:
+```bash
+#!/bin/bash
 
+MPIRUN=/YOUR/PATH/TO/mpirun
+JULIA=/YOUR/PATH/TO/julia
+
+$MPIRUN -np $1 $JULIA --project=. -e 'push!(empty!(ARGS), "'"$2"'", "'"$3"'"); include("./src/Jexpresso.jl")' "$@"
+```
+and run it like this:
+```bash
+./runjexpresso 4 CompEuler theta
+```
 
 ### Troubleshooting
 

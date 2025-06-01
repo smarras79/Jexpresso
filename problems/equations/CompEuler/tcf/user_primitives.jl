@@ -14,7 +14,7 @@ function user_primitives!(u,qe,uprimitive,::PERT)
     uprimitive[5] = (u[5]+qe[5])/(u[1]+qe[1])-qe[5]/qe[1]
 end
 
-function user_uout!(ip, ET, uout, u, qe...)
+function user_uout!(ip, ET, uout, u, qe; kwargs...)
 
     uout[1] = u[1]
     uout[2] = u[2]/u[1]

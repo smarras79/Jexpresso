@@ -1,4 +1,4 @@
-# Tutorial: Running the rising thermal bubble test case with Jexpresso.jl
+# Tutorial: create a case from scratch:
 
 This tutorial guides you through the process of creating a new physical problem from scratch. We will cover the necessary setup and command execution.
 
@@ -8,48 +8,54 @@ Before starting, ensure you have the following:
 
 * **Julia Installation:** You need to have Julia installed on your system. You can download it from the official Julia website: [https://julialang.org/downloads/](https://julialang.org/downloads/)
 * **Jexpresso Repository:** The `Jexpresso.jl` framework needs to be accessible. This tutorial assumes you have the repository cloned locally. If not, you can clone it using Git:
+
     ```bash
     git clone https://github.com/smarras79/Jexpresso.git
+    
+    ```
+
+```bash
     git clone https://github.com/smarras79/JexpressoMeshes.git
+    ```
+    
+    ```bash
     cd Jexpresso
+    ```
+    ```bash
     ln -s ../JexpressoMeshes/meshes .
     ```
 
-# Creating a New Problem called Hello in, e.g., ```Jexpresso/problems/equations/CompEuler/```
-
-## Step 1: Navigate to the Problems Directory
-
-First, open your terminal and navigate to the `problems/equations/CompEuler` directory within your CompEuler repository.
+## Creating a New Problem called `Hello` in ```Jexpresso/problems/equations/CompEuler/```
 
 ```bash
 cd problems/equations/CompEuler
 ```
 
-## Step 2: Create a New Directory for Your Case
-Next, create a new directory to house the files for your specific problem. Choose a descriptive name for Hello.
+- Step2: Create a New Directory for Your Case
 
 ```
 mkdir Hello
 ```
 
-## Step 3: Enter the New Case Directory
-Navigate into the newly created directory.
+- Step3: Enter the New Case Directory
 
 ```
 cd Hello
 ```
 
-## Step 4: Copy Essential Files from and Existing Problem:
+- Step4: Copy Essential Files
 Copy the generic solver files from the theta directory into your new case directory. These files provide the basic structure for your simulation.
 
 ```
 cp ../theta/*.jl .
 ```
 
-## Step 5: Configure Initial Conditions in initialize.jl
+- Step5: Configure Initial Conditions in initialize.jl
 Open the initialize.jl file in a text editor. In this file, you will need to define and initialize the solution array q. The structure of q depends on the dimensionality of your problem and the number of conserved variables (e.g., density, momentum components, energy).
 
 ### Example of initialization for the 2D Euler equations density (rho), momentum (rho u), and potential temperature
+
+Open `initialize.jl`: (ex.[Jepresso/problems/equations/CompEuler/theta/initialize.jl](https://github.com/smarras79/Jexpresso/blob/master/problems/equations/CompEuler/theta/initialize.jl))
 
 ```
 function initialize(SD::NSD_2D, 
@@ -83,7 +89,7 @@ Allocate space for the solution array:
                  qoutvars=qoutvars)
 ```
 
-## Now initialize:
+#### Now initialize:
 
 For example, a minimal version of [Jepresso/problems/equations/CompEuler/theta/initialize.jl](https://github.com/smarras79/Jexpresso/blob/master/problems/equations/CompEuler/theta/initialize.jl): may looks like this:
 
@@ -119,7 +125,7 @@ end
 
 WARNING: refer to a proper working [code](https://github.com/smarras79/Jexpresso/blob/master/problems/equations/CompEuler/theta/initialize.jl) rather than the simplified version above. The one above was given as an example of what an initialization file may look like.
 
-## Add the fluxes and sources depending on the equations that you are solving
+### Add the fluxes for the equations that you are solving:
 
 If we were to solve the 2D Euler equations of compressible flows with gravity, where `q` and the fluxes are defined as
 
@@ -186,9 +192,14 @@ end
 ```
 Notice how there are no loops and the `F` and `G` are exactly defined as you'd write them on paper.
 
-SImilarly, you handle the source through [user_source.jl](https://github.com/smarras79/Jexpresso/blob/master/problems/equations/CompEuler/theta/user_source.jl).
+### Add the sources:
+Similarly, you handle the source through [user_source.jl](https://github.com/smarras79/Jexpresso/blob/master/problems/equations/CompEuler/theta/user_source.jl).
 
-Now you can run it as usual. For example, from the Julia REPL using:
+### Outouts:
+By default, the output is written for the solution variables. 
+Follow the output tutorial [here](./define_output_variables.md)
+
+### Now run the new case:
 
 ```bash
 push!(empty!(ARGS), "CompEuler", "Hello");
