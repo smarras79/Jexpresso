@@ -1,3 +1,8 @@
+using Plots
+using UnicodePlots
+using CairoMakie
+using Makie
+
 abstract type AbstractMassType end
 mutable struct St_ElMat{TFloat} <: AbstractMassType
     M::Array{TFloat} #Mass
@@ -703,7 +708,7 @@ function DSS_diffusion_matrix_sparse(mesh, metrics, Lel, ω)
                     
                     # Contribution: (dξ/dx)² * D_ξ * ω_η * J
                     local_contrib = metrics.dξdx[iel, i, k] * Lel[i, k] * 
-                                   ω[j] * metrics.Je[iel, i, j]
+                                   ω[j] * metrics.dydη[iel,i, k] #metrics.Je[iel, i, j]
                     
                     if abs(local_contrib) > eps(Float64)  # Skip near-zero entries
                         push!(I, ip)
@@ -718,7 +723,7 @@ function DSS_diffusion_matrix_sparse(mesh, metrics, Lel, ω)
                     
                     # Contribution: (dη/dy)² * D_η * ω_ξ * J
                     local_contrib = metrics.dηdy[iel, j, l] * Lel[j, l] * 
-                                   ω[i] * metrics.Je[iel, i, j]
+                                   ω[i] *metrics.dxdξ[iel,i,l]
                     
                     if abs(local_contrib) > eps(Float64)  # Skip near-zero entries
                         push!(I, ip)
@@ -1204,18 +1209,36 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         if (backend == CPU())
             Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
             
-            #@info inputs[:lsparse]
-            if (inputs[:lsparse])
-                L = DSS_diffusion_matrix_sparse(mesh, metrics, Le, ω)
+            #if (inputs[:lsparse])
+                L_sparse = DSS_diffusion_matrix_sparse(mesh, metrics, Le, ω)
                 #L = DSS_diffusion_matrix_sprse_with_bc(mesh, metrics, Le, ω, 
                 #                                            mesh.poin_in_bdy_edge, mesh.ngl;
                 #                                            symmetric=true, filter_zeros=true)
                 
-            else
+            #else
                 L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
                 @time DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
-            end
+            #end
+
+            L_full = Array(L_sparse)
+
+            #Check if they're equivalent
+            println("Matrices are equal: ", L ≈ L_full)
             
+            # Element-wise comparison
+            max_diff = maximum(abs.(L_full - L))
+            println("Maximum difference: ", max_diff)
+
+         
+            
+            println("Sparse matrix (first 5x5):")
+            display(L[1:15, 1:15])
+            println("\nFull matrix (first 5x5):")
+            display(L_full[1:15, 1:15])
+
+#### SM SIMONE THE ISSUE IS CERTAINLY IN THE ASSEMBLY FOR NOT PASSING THE CORRECT JACOBIAN OR \omega
+            
+            @mystop
         else
             Le = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
 
