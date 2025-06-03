@@ -2,6 +2,8 @@ using Plots
 using UnicodePlots
 using CairoMakie
 using Makie
+using SparseArrays
+using Base.Threads
 
 abstract type AbstractMassType end
 mutable struct St_ElMat{TFloat} <: AbstractMassType
@@ -407,26 +409,21 @@ function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, 
     return Le
 end
 
-function build_laplace_matrix_OLD(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
+function build_laplace_matrix_lag(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     Le = zeros((N+1),(N+1))
     
     for i=1:N+1
         for j=1:N+1
             for k=1:Q+1
-
                 sum = ω[k]*dψ[i,k]*dψ[j,k]
                 Le[i,j] = Le[i,j] + sum
             end
         end
     end 
     
-    #@info size(L)
-    #show(stdout, "text/plain", L)
-    
     return Le
 end
-
 
 @kernel function build_laplace_matrix_gpu!(Le, dψ, ω, Q)
     idx = @index(Global, NTuple)
@@ -668,7 +665,7 @@ end
     end
 end
 
-function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, ::NSD_2D)
+function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
     
     for iel=1:mesh.nelem
         for j = 1:mesh.ngl, i = 1:mesh.ngl
@@ -687,180 +684,81 @@ function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, ::NSD_2D)
     #show(stdout, "text/plain", L)
 end
 
-function DSS_laplace_OLD!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
-    
-    for iel=1:mesh.nelem
-
-        for i=1:mesh.ngl
-            for j=1:mesh.ngl
-                ip = mesh.connijk[iel,i,j]
-                for k =1:mesh.ngl
-                    jp = mesh.connijk[iel,k,j]
-                    L[ip,jp] += metrics.dξdx[iel,i,k]*Lel[i,k]*ω[j]*metrics.dydη[iel,i,k]
-                end
-
-                for l = 1:mesh.ngl
-                    jp = mesh.connijk[iel,i,l]
-                    L[ip,jp] += metrics.dηdy[iel,i,l]*Lel[j,l]*ω[i]*metrics.dxdξ[iel,i,l]
-                end
-            end
-        end
-    end
-end
-
-function DSS_laplace_OLD!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
-
-    for iel=1:mesh.nelem
-
-        for i=1:mesh.ngl
-            for j=1:mesh.ngl
-                ip = mesh.connijk[iel,i,j]
-                for k =1:mesh.ngl
-                    jp = mesh.connijk[iel,k,j]
-                    L[ip,jp] += metrics.dξdx[iel,i,k]*Lel[i,k]*ω[j]*metrics.dydη[iel,i,k]
-                end
-
-                for l = 1:mesh.ngl
-                    jp = mesh.connijk[iel,i,l]
-                    L[ip,jp] += metrics.dηdy[iel,i,l]*Lel[j,l]*ω[i]*metrics.dxdξ[iel,i,l]
-                end
-            end
-        end
-    end
-end
-
-
-#####
-using SparseArrays
-
-function DSS_diffusion_matrix_sparse(mesh, metrics, Lel, ω)
-    # Pre-allocate arrays for COO format
-    # Estimate size: each element contributes ngl^2 × ngl^2 entries
-    max_entries = mesh.nelem * (mesh.ngl^2)^2
-    
-    I = Vector{Int}()
-    J = Vector{Int}()
-    V = Vector{Float64}()
-    
-    # Pre-allocate with estimated size for better performance
-    sizehint!(I, max_entries)
-    sizehint!(J, max_entries)
-    sizehint!(V, max_entries)
-    
-    # Assembly loop over elements
-    for iel = 1:mesh.nelem
-        # Local assembly for ξ-direction contribution
-        for i = 1:mesh.ngl
-            for j = 1:mesh.ngl
-                ip = mesh.connijk[iel, i, j]  # Global node index
-                
-                # ξ-direction terms: ∂/∂ξ contributions
-                for k = 1:mesh.ngl
-                    jp = mesh.connijk[iel, k, j]  # Global node index
-                    
-                    # Contribution: (dξ/dx)² * D_ξ * ω_η * J
-                    local_contrib = metrics.dξdx[iel, i, k] * Lel[i, k] * 
-                        ω[j] * metrics.dydη[iel,i, k] #metrics.Je[iel, i, j]
-                    
-                    if abs(local_contrib) > eps(Float64)  # Skip near-zero entries
-                        push!(I, ip)
-                        push!(J, jp)
-                        push!(V, local_contrib)
-                    end
-                end
-                
-                # η-direction terms: ∂/∂η contributions  
-                for l = 1:mesh.ngl
-                    jp = mesh.connijk[iel, i, l]  # Global node index
-                    
-                    # Contribution: (dη/dy)² * D_η * ω_ξ * J
-                    local_contrib = metrics.dηdy[iel, j, l] * Lel[j, l] * 
-                        ω[i] *metrics.dxdξ[iel,i,l]
-                    
-                    if abs(local_contrib) > eps(Float64)  # Skip near-zero entries
-                        push!(I, ip)
-                        push!(J, jp)
-                        push!(V, local_contrib)
-                    end
-                end
-            end
-        end
-    end
-    
-    # Get total number of global degrees of freedom
-    n_global = maximum(mesh.connijk)
-    
-    # Create sparse matrix in CSR format (SparseMatrixCSC in Julia)
-    # Julia automatically combines duplicate entries by summing them
-    L = sparse(I, J, V, n_global, n_global)
-    
-    return L
-end
 
 # Alternative version with pre-computed element matrices for better performance
-function DSS_laplace_sparse!(mesh, metrics, Lel, ω) #L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
+function DSS_laplace_sparse(mesh, Lel)
 
-    n_global = maximum(mesh.connijk)
-    entries_per_elem = (mesh.ngl^2)^2
+    # Pre-allocate arrays for triplet format
+    # Estimate size: ngl^2 entries per element * number of elements
+    max_entries = mesh.ngl^2 * mesh.ngl^2 * mesh.nelem
     
-    # Pre-allocate with exact size
-    I = Vector{Int}(undef, mesh.nelem * entries_per_elem)
-    J = Vector{Int}(undef, mesh.nelem * entries_per_elem)
-    V = Vector{Float64}(undef, mesh.nelem * entries_per_elem)
+    I_vec = Vector{Int}()
+    J_vec = Vector{Int}()
+    V_vec = Vector{Float64}()
     
-    entry_idx = 1
+    # Reserve space to avoid frequent reallocations
+    sizehint!(I_vec, max_entries)
+    sizehint!(J_vec, max_entries)
+    sizehint!(V_vec, max_entries)
     
+    # Assembly loop
     for iel = 1:mesh.nelem
-        # Extract local connectivity for this element
-        local_nodes = @view mesh.connijk[iel, :, :]
-        
-        # Compute local element matrix
-        K_local = zeros(mesh.ngl^2, mesh.ngl^2)
-        
-        # Build local matrix (vectorized approach)
         for j = 1:mesh.ngl, i = 1:mesh.ngl
-            local_i = (j-1) * mesh.ngl + i
+            JP = mesh.connijk[iel, i, j]
             
-            # ξ-direction contributions
-            for k = 1:mesh.ngl
-                local_k = (j-1) * mesh.ngl + k
-                K_local[local_i, local_k] += metrics.dξdx[iel, i, k] * Lel[i, k] * 
-                    ω[j] * metrics.Je[iel, i, j]
-            end
-            
-            # η-direction contributions
-            for l = 1:mesh.ngl
-                local_l = (l-1) * mesh.ngl + i
-                K_local[local_i, local_l] += metrics.dηdy[iel, j, l] * Lel[j, l] * 
-                    ω[i] * metrics.Je[iel, i, j]
-            end
-        end
-        
-        # Scatter local matrix to global arrays
-        for local_j = 1:mesh.ngl^2, local_i = 1:mesh.ngl^2
-            if abs(K_local[local_i, local_j]) > eps(Float64)
-                # Convert local indices back to (i,j) pairs
-                i_node, j_node = divrem(local_i - 1, mesh.ngl) .+ (1, 1)
-                i_glob, j_glob = divrem(local_j - 1, mesh.ngl) .+ (1, 1)
+            for n = 1:mesh.ngl, m = 1:mesh.ngl
+                IP = mesh.connijk[iel, m, n]
                 
-                I[entry_idx] = local_nodes[i_node, j_node]
-                J[entry_idx] = local_nodes[i_glob, j_glob]
-                V[entry_idx] = K_local[local_i, local_j]
-                entry_idx += 1
+                val = Lel[iel, m, n, i, j]
+                if abs(val) > eps(Float64)  # Skip near-zero entries
+                    push!(I_vec, IP)
+                    push!(J_vec, JP)
+                    push!(V_vec, val)
+                end
             end
         end
     end
     
-    # Resize arrays to actual size
-    resize!(I, entry_idx - 1)
-    resize!(J, entry_idx - 1)
-    resize!(V, entry_idx - 1)
-    
-    # Create sparse matrix
-    L = sparse(I, J, V, n_global, n_global)
-    
-    return L
+    # Create sparse matrix and sum duplicate entries automatically
+    return sparse(I_vec, J_vec, V_vec)
 end
+
+
+
+function assemble_diffusion_matrix_threaded!(mesh, Lel)
+    # Thread-local storage for triplets
+    thread_triplets = [Tuple{Int, Int, Float64}[] for _ in 1:nthreads()]
+    
+    # Thread-parallel assembly
+    @threads for iel = 1:mesh.nelem
+        tid = threadid()
+        local_triplets = thread_triplets[tid]
+        
+        for j = 1:mesh.ngl, i = 1:mesh.ngl
+            JP = mesh.connijk[iel, i, j]
+            
+            for n = 1:mesh.ngl, m = 1:mesh.ngl
+                IP = mesh.connijk[iel, m, n]
+                
+                val = Lel[iel, m, n, i, j]
+                if abs(val) > eps(Float64)
+                    push!(local_triplets, (IP, JP, val))
+                end
+            end
+        end
+    end
+    
+    # Combine thread-local results
+    all_triplets = vcat(thread_triplets...)
+    
+    # Extract vectors and create sparse matrix
+    I_vec = [t[1] for t in all_triplets]
+    J_vec = [t[2] for t in all_triplets]
+    V_vec = [t[3] for t in all_triplets]
+    
+    return sparse(I_vec, J_vec, V_vec)
+end
+
 
 # Utility function to convert to different sparse formats if needed
 function convert_sparse_format(A::SparseMatrixCSC; format=:CSR)
@@ -923,6 +821,7 @@ end
         KernelAbstractions.@atomic L[ip, jp] += dηdy[ie, j, l] * Lel[j, l]*dxdη_lag[ie, l, i] * ωy[i]
     end
 end
+
 
 function DSS_laplace_Laguerre!(L, SD::NSD_2D, Lel::AbstractArray, Lel_lag::AbstractArray, ω, ω_lag, mesh, metrics, metrics_lag, N, T; llump=false)
 
@@ -1259,52 +1158,66 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
     if lbuild_laplace_matrix
         if (backend == CPU())
-            #QUI
-            Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh.nelem, mesh, metrics, N, Q, TFloat)
-            #Le = build_laplace_matrix_OLD(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
+            #
+            # CPU
+            #
+            Le = build_laplace_matrix(SD,
+                                      basis.ψ, basis.dψ,
+                                      ω, mesh.nelem,
+                                      mesh,
+                                      metrics,
+                                      N, Q, TFloat)
             
             if (inputs[:lsparse])
-                L_sparse = DSS_diffusion_matrix_sparse(mesh, metrics, Le, ω)
-                #L = DSS_diffusion_matrix_sprse_with_bc(mesh, metrics, Le, ω, 
-                #                                            mesh.poin_in_bdy_edge, mesh.ngl;
-                #                                            symmetric=true, filter_zeros=true)
-                
+                L = DSS_laplace_sparse(mesh, Le)
+                assemble_diffusion_matrix_threaded!(mesh, Le)
             else
-                L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
-                #@time DSS_laplace_OLD!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
-                @time DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
+                L = KernelAbstractions.zeros(backend,
+                                             TFloat,
+                                             Int64(mesh.npoin),
+                                             Int64(mesh.npoin))
+                DSS_laplace!(L, SD,
+                             Le, ω,
+                             mesh, metrics,
+                             N, TFloat;
+                             llump=inputs[:llump])
             end
-
-            L_full = Array(L_sparse)
-
-            #Check if they're equivalent
-            println("Matrices are equal: ", L ≈ L_full)
             
-            # Element-wise comparison
-            max_diff = maximum(abs.(L_full - L))
-            println("Maximum difference: ", max_diff)
-
-            
-            
-            println("Sparse matrix (first 5x5):")
-            display(L[1:15, 1:15])
-            println("\nFull matrix (first 5x5):")
-            display(L_full[1:15, 1:15])
-
-            #### SM SIMONE THE ISSUE IS CERTAINLY IN THE ASSEMBLY FOR NOT PASSING THE CORRECT JACOBIAN OR \omega
-            
-            @mystop
         else
-            Le = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
+            #
+            # GPU
+            #
+            Le = KernelAbstractions.zeros(backend,
+                                          TFloat,
+                                          Int64(mesh.ngl),
+                                          Int64(mesh.ngl))
 
             k = build_laplace_matrix_gpu!(backend)
+
             k(Le, basis.dψ, ω, TInt(mesh.ngl-1); ndrange=(mesh.ngl,mesh.ngl))
+
             KernelAbstractions.synchronize(backend)
-            L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+            
+            L = KernelAbstractions.zeros(backend,
+                                         TFloat,
+                                         Int64(mesh.npoin),
+                                         Int64(mesh.npoin))
+            
             KernelAbstractions.synchronize(backend)
             k = DSS_laplace_gpu!(backend)
-            k(L, Le, connijk, ω, ω, mesh.ngl, mesh.ngl, metrics.dξdx, metrics.dydη, metrics.dηdy, metrics.dxdξ;
-              ndrange = (mesh.nelem*mesh.ngl, mesh.ngl), workgroupsize = (mesh.ngl, mesh.ngl))
+            
+            k(L, Le,
+              connijk,
+              ω, ω,
+              mesh.ngl,
+              mesh.ngl,
+              metrics.dξdx,
+              metrics.dydη,
+              metrics.dηdy,
+              metrics.dxdξ;
+              ndrange = (mesh.nelem*mesh.ngl,
+                         mesh.ngl), workgroupsize = (mesh.ngl, mesh.ngl))
+            
             KernelAbstractions.synchronize(backend)
         end
     end
@@ -1450,8 +1363,23 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     if lbuild_laplace_matrix
         if (backend == CPU())
             L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
-            Le = build_laplace_matrix(SD, basis[1].ψ, basis[1].dψ, ω[1], mesh, metrics[1], N, Q, TFloat)
-            Le_lag = build_laplace_matrix(SD, basis[2].ψ, basis[2].dψ, ω[2], mesh, metrics[2], mesh.ngr-1, mesh.ngr-1, TFloat)
+            Le = build_laplace_matrix_lag(SD,
+                                          basis[1].ψ,
+                                          basis[1].dψ,
+                                          ω[1],
+                                          mesh,
+                                          metrics[1],
+                                          N, Q, TFloat)
+            
+            Le_lag = build_laplace_matrix_lag(SD,
+                                              basis[2].ψ,
+                                              basis[2].dψ,
+                                              ω[2],
+                                              mesh,
+                                              metrics[2],
+                                              mesh.ngr-1,
+                                              mesh.ngr-1,
+                                              TFloat)
             L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin),Int64(mesh.npoin))
             
             if ldss_laplace

@@ -304,7 +304,7 @@ function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, x, y, z, nx, ny, nz,
                                             connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                             neqs, dirichlet!, neumann, inputs)
 
-     for iedge = 1:nedges_bdy
+    for iedge = 1:nedges_bdy
 
         if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
             bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "periodic3" &&
@@ -325,10 +325,43 @@ function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, x, y, z, nx, ny, nz,
         end
     end
 
-    # Replace bdy rows in global L
-    apply_dirichlet_bc_inplace!(L, poin_in_bdy_edge, ngl)
-    #L_bc = apply_dirichlet_bc_reconstruct(L, poin_in_bdy_edge, ngl)
-    #L = L_bc
+    if ("Laguerre" in bdy_edge_type)
+        for k=1:ngr
+            ip = connijk_lag[1, 1, k]
+            for ip1 = 1:npoin
+                L[ip,ip1] = 0.0
+            end
+            L[ip,ip] = 1.0
+            RHS[ip] = 0.0
+        end
+
+        for k=1:ngr
+            ip = connijk_lag[nelem_semi_inf, ngl, k]
+            for ip1 = 1:npoin
+                L[ip,ip1] = 0.0
+            end
+            L[ip,ip] = 1.0
+            RHS[ip] = 0.0
+        end
+        
+        for e=1:nelem_semi_inf
+            for i=1:ngl
+                ip = connijk_lag[e, i, ngr]
+                for ip1 = 1:npoin
+                    L[ip,ip1] = 0.0
+                end
+                L[ip,ip] = 1.0
+                RHS[ip] = 0.0
+            end
+        end
+
+    else
+        # Replace bdy rows in global L
+        #apply_dirichlet_bc_inplace!(L, poin_in_bdy_edge, ngl)
+        L_bc = apply_dirichlet_bc_reconstruct(L, poin_in_bdy_edge, ngl)
+        L = L_bc
+    end
+    
 end
 
 function apply_dirichlet_bc_inplace!(L::SparseMatrixCSC, poin_in_bdy_edge, ngl)
@@ -353,7 +386,7 @@ function apply_dirichlet_bc_inplace!(L::SparseMatrixCSC, poin_in_bdy_edge, ngl)
     # Remove duplicates and sort
     boundary_nodes = unique!(sort!(boundary_nodes))
     
-    println("Applying boundary conditions to $(length(boundary_nodes)) nodes")
+    #println("Applying boundary conditions to $(length(boundary_nodes)) nodes")
     
     # Method 1a: Direct modification (works but not most efficient)
     for ip in boundary_nodes
@@ -400,7 +433,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz,
             end
         end
     end
-#@mystop(BCs.jl)
+    
     if ("Laguerre" in bdy_edge_type)
         for k=1:ngr
             ip = connijk_lag[1, 1, k]

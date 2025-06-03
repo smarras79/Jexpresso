@@ -104,7 +104,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :lsparse))
-      inputs[:lsparse] = false
+      inputs[:lsparse] = true
     end
 
     if(!haskey(inputs, :plot_vlines))

@@ -8,7 +8,6 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
-        #:lsparse              => true,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -19,8 +18,8 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_100x100.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
         #---------------------------------------------------------------------------

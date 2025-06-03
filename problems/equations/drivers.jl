@@ -101,13 +101,15 @@ function driver(nparts,
             # Element-learning infrastructure
             #-----------------------------------------------------
             if inputs[:lelementLearning] == false && inputs[:lsparse] ==  false
-                solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
+                println(" # Solve x=inv(A)*b: full storage")
+                @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
                 #params.qp.qn = sem.matrix.L\RHS
             else
                 if inputs[:lelementLearning]
                     elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
                 elseif inputs[:lsparse]
-                    params.qp.qn = sem.matrix.L\RHS
+                    println(" # Solve x=inv(A)*b: sparse storage")
+                    @time params.qp.qn = sem.matrix.L\RHS
                 end
             end
             

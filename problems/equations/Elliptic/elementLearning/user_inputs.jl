@@ -42,7 +42,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output_standard/",
+        :output_dir          => "./output/",
         :loverwrite_output   => true,
         #---------------------------------------------------------------------------
     ) #Dict
