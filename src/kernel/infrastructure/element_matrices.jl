@@ -374,13 +374,47 @@ function build_laplace_matrix(SD::NSD_1D, ψ, dψ, ω, mesh, metrics, N, Q, T)
 end
 
 
-function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
+function build_laplace_matrix(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T)
+    
+    Le = zeros(nelem, Q+1, Q+1, N+1, N+1)
+
+    for iel = 1:nelem
+        for l = 1:Q+1, k = 1:Q+1
+            
+            dξdx_kl = metrics.dξdx[iel,k,l]
+            dξdy_kl = metrics.dξdy[iel,k,l]
+            dηdx_kl = metrics.dηdx[iel,k,l]
+            dηdy_kl = metrics.dηdy[iel,k,l]            
+            for j = 1:N+1, i = 1:N+1
+                
+                dΨJKdx = dψ[i,k]*ψ[j,l]*dξdx_kl + ψ[i,k]*dψ[j,l]*dηdx_kl
+                dΨJKdy = dψ[i,k]*ψ[j,l]*dξdy_kl + ψ[i,k]*dψ[j,l]*dηdy_kl
+
+                for n = 1:N+1, m = 1:N+1
+
+                    dΨIKdx = dψ[m,k]*ψ[n,l]*dξdx_kl + ψ[m,k]*dψ[n,l]*dηdx_kl
+                    dΨIKdy = dψ[m,k]*ψ[n,l]*dξdy_kl + ψ[m,k]*dψ[n,l]*dηdy_kl
+                    
+                    Le[iel,m,n,i,j] += ω[k]*ω[l]*metrics.Je[iel,k,l]*(dΨIKdx*dΨJKdx + dΨIKdy*dΨJKdy)
+                end
+            end
+        end
+    end
+    
+    #@info size(L)
+    #show(stdout, "text/plain", L)
+    
+    return Le
+end
+
+function build_laplace_matrix_OLD(SD::NSD_2D, ψ, dψ, ω, mesh, metrics, N, Q, T)
     
     Le = zeros((N+1),(N+1))
     
     for i=1:N+1
         for j=1:N+1
             for k=1:Q+1
+
                 sum = ω[k]*dψ[i,k]*dψ[j,k]
                 Le[i,j] = Le[i,j] + sum
             end
@@ -586,8 +620,7 @@ function DSS_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::Abstrac
                 end    
             end
         end     
-    end
-    
+    end    
 end
 
 @kernel function DSS_Mass_gpu_1D!(M, Mel, conn)
@@ -638,25 +671,44 @@ end
 function DSS_laplace!(L, Lel::AbstractArray, mesh::St_mesh, T, ::NSD_2D)
     
     for iel=1:mesh.nelem
-        for j = 1:mesh.ngl
-            for i = 1:mesh.ngl
-                J = i + (j - 1)*mesh.ngl
-                JP = mesh.connijk[iel,i,j]
-                for n = 1:mesh.ngl
-                    for m = 1:mesh.ngl
-                        I = m + (n - 1)*mesh.ngl
-                        IP = mesh.connijk[iel,m,n]
-                        
-                        L[IP,JP] = L[IP,JP] + Lel[I,J,iel] #if exact
-                    end
-                end
+        for j = 1:mesh.ngl, i = 1:mesh.ngl
+            #J = i + (j - 1)*mesh.ngl
+            JP = mesh.connijk[iel,i,j]
+
+            for n = 1:mesh.ngl, m = 1:mesh.ngl
+                #I = m + (n - 1)*mesh.ngl
+                IP = mesh.connijk[iel,m,n]
+                
+                L[IP,JP] += Lel[iel,m,n,i,j]
             end
         end
-    end    
+    end
+    
     #show(stdout, "text/plain", L)
 end
 
-function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
+function DSS_laplace_OLD!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
+    
+    for iel=1:mesh.nelem
+
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                ip = mesh.connijk[iel,i,j]
+                for k =1:mesh.ngl
+                    jp = mesh.connijk[iel,k,j]
+                    L[ip,jp] += metrics.dξdx[iel,i,k]*Lel[i,k]*ω[j]*metrics.dydη[iel,i,k]
+                end
+
+                for l = 1:mesh.ngl
+                    jp = mesh.connijk[iel,i,l]
+                    L[ip,jp] += metrics.dηdy[iel,i,l]*Lel[j,l]*ω[i]*metrics.dxdξ[iel,i,l]
+                end
+            end
+        end
+    end
+end
+
+function DSS_laplace_OLD!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
 
     for iel=1:mesh.nelem
 
@@ -708,7 +760,7 @@ function DSS_diffusion_matrix_sparse(mesh, metrics, Lel, ω)
                     
                     # Contribution: (dξ/dx)² * D_ξ * ω_η * J
                     local_contrib = metrics.dξdx[iel, i, k] * Lel[i, k] * 
-                                   ω[j] * metrics.dydη[iel,i, k] #metrics.Je[iel, i, j]
+                        ω[j] * metrics.dydη[iel,i, k] #metrics.Je[iel, i, j]
                     
                     if abs(local_contrib) > eps(Float64)  # Skip near-zero entries
                         push!(I, ip)
@@ -723,7 +775,7 @@ function DSS_diffusion_matrix_sparse(mesh, metrics, Lel, ω)
                     
                     # Contribution: (dη/dy)² * D_η * ω_ξ * J
                     local_contrib = metrics.dηdy[iel, j, l] * Lel[j, l] * 
-                                   ω[i] *metrics.dxdξ[iel,i,l]
+                        ω[i] *metrics.dxdξ[iel,i,l]
                     
                     if abs(local_contrib) > eps(Float64)  # Skip near-zero entries
                         push!(I, ip)
@@ -773,14 +825,14 @@ function DSS_laplace_sparse!(mesh, metrics, Lel, ω) #L, SD::NSD_2D, Lel::Abstra
             for k = 1:mesh.ngl
                 local_k = (j-1) * mesh.ngl + k
                 K_local[local_i, local_k] += metrics.dξdx[iel, i, k] * Lel[i, k] * 
-                                           ω[j] * metrics.Je[iel, i, j]
+                    ω[j] * metrics.Je[iel, i, j]
             end
             
             # η-direction contributions
             for l = 1:mesh.ngl
                 local_l = (l-1) * mesh.ngl + i
                 K_local[local_i, local_l] += metrics.dηdy[iel, j, l] * Lel[j, l] * 
-                                           ω[i] * metrics.Je[iel, i, j]
+                    ω[i] * metrics.Je[iel, i, j]
             end
         end
         
@@ -1100,7 +1152,7 @@ function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
     if SD == NSD_1D()
         return nothing
     end
-   
+    
     pM = setup_assembler(SD, M, ip2gip, gip2owner)
     
     @time assemble_mpi!(M,pM)
@@ -1152,8 +1204,8 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     if backend == CPU()
         if (inputs[:ladapt] == true)
             @time DSS_nc_gather_mass!(M, mesh, SD, QT, Me, mesh.connijk, mesh.poin_in_edge,
-                                    mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
-                                    mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, N, interp)
+                                      mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
+                                      mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, N, interp)
             #@info "@time DSS_nc_gather_mass!"
         end
 
@@ -1176,11 +1228,11 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     end
     
     pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
-        
+    
     if (inputs[:ladapt] == true)
         @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
                                    mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, N, interp)
-            #@info "@time DSS_nc_scatter_mass!"
+        #@info "@time DSS_nc_scatter_mass!"
     end
     if (inputs[:bdy_fluxes])
         if SD == NSD_3D()
@@ -1207,18 +1259,21 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
     if lbuild_laplace_matrix
         if (backend == CPU())
-            Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
+            #QUI
+            Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh.nelem, mesh, metrics, N, Q, TFloat)
+            #Le = build_laplace_matrix_OLD(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
             
-            #if (inputs[:lsparse])
+            if (inputs[:lsparse])
                 L_sparse = DSS_diffusion_matrix_sparse(mesh, metrics, Le, ω)
                 #L = DSS_diffusion_matrix_sprse_with_bc(mesh, metrics, Le, ω, 
                 #                                            mesh.poin_in_bdy_edge, mesh.ngl;
                 #                                            symmetric=true, filter_zeros=true)
                 
-            #else
+            else
                 L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+                #@time DSS_laplace_OLD!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
                 @time DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump=inputs[:llump])
-            #end
+            end
 
             L_full = Array(L_sparse)
 
@@ -1229,14 +1284,14 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             max_diff = maximum(abs.(L_full - L))
             println("Maximum difference: ", max_diff)
 
-         
+            
             
             println("Sparse matrix (first 5x5):")
             display(L[1:15, 1:15])
             println("\nFull matrix (first 5x5):")
             display(L_full[1:15, 1:15])
 
-#### SM SIMONE THE ISSUE IS CERTAINLY IN THE ASSEMBLY FOR NOT PASSING THE CORRECT JACOBIAN OR \omega
+            #### SM SIMONE THE ISSUE IS CERTAINLY IN THE ASSEMBLY FOR NOT PASSING THE CORRECT JACOBIAN OR \omega
             
             @mystop
         else
@@ -1381,7 +1436,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
             KernelAbstractions.copyto!(backend, connijk_lag, mesh.connijk_lag)
             k2 = DSS_mass_Laguerre_gpu_2D!(backend)
             k2(M, M_lag, connijk_lag, mesh.ngl, mesh.ngr;ndrange = (mesh.nelem_semi_inf*mesh.ngl,mesh.ngr), workgroupsize = (mesh.ngl,mesh.ngr))
-        
+            
             KernelAbstractions.synchronize(backend)
         end
     end
@@ -1398,7 +1453,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
             Le = build_laplace_matrix(SD, basis[1].ψ, basis[1].dψ, ω[1], mesh, metrics[1], N, Q, TFloat)
             Le_lag = build_laplace_matrix(SD, basis[2].ψ, basis[2].dψ, ω[2], mesh, metrics[2], mesh.ngr-1, mesh.ngr-1, TFloat)
             L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin),Int64(mesh.npoin))
-        
+            
             if ldss_laplace
                 DSS_laplace_Laguerre!(L, SD, Le, Le_lag, ω[1], ω[2], mesh, metrics[1], metrics[2], N, TFloat; llump=inputs[:llump])
             end

@@ -8,6 +8,7 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
+        #:lsparse              => true,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
