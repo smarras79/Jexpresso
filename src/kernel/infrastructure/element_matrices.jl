@@ -1,7 +1,3 @@
-using Plots
-using UnicodePlots
-using CairoMakie
-using Makie
 using SparseArrays
 using Base.Threads
 

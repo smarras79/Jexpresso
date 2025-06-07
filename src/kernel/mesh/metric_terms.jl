@@ -1,4 +1,3 @@
-#Base.@kwdef mutable struct St_metrics{TFloat,backend}
 Base.@kwdef mutable struct St_metrics{TFloat <: AbstractFloat, dims1, dims2, backend}
 
     dxdξ = KernelAbstractions.zeros(backend,TFloat, dims1)
@@ -104,9 +103,10 @@ function allocate_metrics_laguerre(SD, nelem, nfaces_bdy, Q, Qgr, T, backend)
 end
 
 
-function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
+function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T, MT::COVAR, SD::NSD_1D; backend = CPU())
+#function build_metric_terms(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
     
-    metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Q, T, backend)
+    #metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Q, T, backend)
     
     if (backend == CPU())
         for iel = 1:mesh.nelem
@@ -145,9 +145,10 @@ end
 
 end
 
-function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, inputs,T; backend = CPU())
+function build_metric_terms_1D_Laguerre!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, inputs,T, MT::COVAR, SD::NSD_1D; backend = CPU())
+#function build_metric_terms_1D_Laguerre(SD::NSD_1D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, inputs,T; backend = CPU())
     
-    metrics = allocate_metrics(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, Q, T, backend)
+    #metrics = allocate_metrics(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, Q, T, backend)
     
     if (backend == CPU())
         dψ = basis.dψ
@@ -198,9 +199,10 @@ end
 
 end
 
-function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
+#function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
+function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T, MT::COVAR, SD::NSD_2D; backend = CPU())
     
-    metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Q, T, backend)
+    #metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Q, T, backend)
     
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
@@ -438,9 +440,10 @@ end
     end
 end
 
-function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange ,N, Q, NGR, QGR, ξ, ω1, ω2, T; backend = CPU())
+function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange ,N, Q, NGR, QGR, ξ, ω1, ω2, T, MT::COVAR, SD::NSD_2D; backend = CPU())
+#function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange ,N, Q, NGR, QGR, ξ, ω1, ω2, T; backend = CPU())
     
-    metrics = allocate_metrics_laguerre(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, Q, QGR, T, backend)
+    #metrics = allocate_metrics_laguerre(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, Q, QGR, T, backend)
     
     ψ  = basis.ψ
     dψ = basis.dψ
@@ -530,14 +533,15 @@ end
     end
 end
 
-
-function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
+function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T, MT::COVAR, SD::NSD_3D; backend = CPU())
+    
+#function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T; backend = CPU())
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
     
-    metrics = allocate_metrics(SD, mesh.nelem, mesh.nfaces_bdy, Q, T, backend)
+    #metrics = allocate_metrics(SD, mesh.nelem, mesh.nfaces_bdy, Q, T, backend)
     
     ψ  = @view(basis.ψ[:,:])
     dψ = @view(basis.dψ[:,:])
@@ -750,13 +754,17 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
     return metrics
 end
 
-function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange,N, Q, NGR, QGR, ξ, T;dir="x",side ="min")
+
+
+#function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange,N, Q, NGR, QGR, ξ, T;dir="x",side ="min")
+   
+function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR::St_Lagrange,N, Q, NGR, QGR, ξ, T, MT::COVAR, SD::NSD_3D; dir="x",side ="min")
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
     
-    metrics = allocate_metrics(SD, mesh.nelem, mesh.nfaces_bdy, Q, T, backend)
+    #metrics = allocate_metrics(SD, mesh.nelem, mesh.nfaces_bdy, Q, T, backend)
     
     if (dir == "x")
       ψ1  = basisGR.ψ

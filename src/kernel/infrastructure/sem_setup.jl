@@ -110,19 +110,17 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                 ξω3 = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.ngr-1, inputs[:backend])
                 ξ3,ω3 = ξω3.ξ, ξω3.ω
                 if (inputs[:backend] == CPU())
-                    fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
-                    fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
-                #fy_lag = init_filter(mesh.ngr-1,ξ3,inputs[:mu_y],mesh,inputs)
-                    fy_lag = init_filter(mesh.ngr-1,ξ2,inputs[:mu_y],mesh,inputs)
+                    fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs, rank)
+                    fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs, rank)
+                    fy_lag = init_filter(mesh.ngr-1,ξ2,inputs[:mu_y],mesh,inputs, rank)
                 else
                     ξ_gl = KernelAbstractions.zeros(CPU(), Float64, Int64(mesh.ngl))
                     KernelAbstractions.copyto!(CPU(),ξ_gl,ξ)
                     ξ_gr = KernelAbstractions.zeros(CPU(), Float64, Int64(mesh.ngr))
                     KernelAbstractions.copyto!(CPU(),ξ_gr,ξ2)
-                    fx_1 = init_filter(mesh.ngl-1,ξ_gl,inputs[:mu_x],mesh,inputs)
-                    fy_1 = init_filter(mesh.ngl-1,ξ_gl,inputs[:mu_y],mesh,inputs)
-                #fy_lag = init_filter(mesh.ngr-1,ξ3,inputs[:mu_y],mesh,inputs)
-                    fy_lag_1 = init_filter(mesh.ngr-1,ξ_gr,inputs[:mu_y],mesh,inputs)
+                    fx_1 = init_filter(mesh.ngl-1,ξ_gl,inputs[:mu_x],mesh,inputs, rank)
+                    fy_1 = init_filter(mesh.ngl-1,ξ_gl,inputs[:mu_y],mesh,inputs, rank)
+                    fy_lag_1 = init_filter(mesh.ngr-1,ξ_gr,inputs[:mu_y],mesh,inputs, rank)
                     fx = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
                     fy = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
                     fy_lag = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngr), Int64(mesh.ngr))
@@ -136,8 +134,18 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                 warp_mesh!(mesh,inputs)
             end
             @info " Build metrics ......"
-            @time metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat; backend = inputs[:backend])
-            @time metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
+            #@time metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat; backend = inputs[:backend])
+            #@time metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
+
+            metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])            
+            @time build_metric_terms!(metrics1, mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat, COVAR(), SD; backend = inputs[:backend])
+            
+            #@time metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
+            
+            metrics2 = allocate_metrics_laguerre(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, Qξ, mesh.ngr, TFloat, inputs[:backend])
+            build_metric_terms!(metrics2, mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat, COVAR(), SD; backend = inputs[:backend])
+
+            
             metrics = (metrics1, metrics2)
             @info " Build metrics ...... DONE"
             
@@ -152,22 +160,22 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             ω = ω1
             if (inputs[:lfilter])
                 if (inputs[:backend] == CPU())
-                    fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs)
-                    fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs)
+                    fx = init_filter(mesh.ngl-1,ξ,inputs[:mu_x],mesh,inputs, rank)
+                    fy = init_filter(mesh.ngl-1,ξ,inputs[:mu_y],mesh,inputs, rank)
                     if (mesh.nsd >2)
-                        fz = init_filter(mesh.ngl-1,ξ,inputs[:mu_z],mesh,inputs)
+                        fz = init_filter(mesh.ngl-1,ξ,inputs[:mu_z],mesh,inputs, rank)
                     end
                 else
                     ξ_temp = KernelAbstractions.zeros(CPU(), Float64, Int64(mesh.ngl))
                     KernelAbstractions.copyto!(CPU(),ξ_temp,ξ)
-                    fx_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_x],mesh,inputs)
-                    fy_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_y],mesh,inputs)
+                    fx_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_x],mesh,inputs, rank)
+                    fy_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_y],mesh,inputs, rank)
                     fx = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
                     fy = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
                     KernelAbstractions.copyto!(inputs[:backend], fx, fx_1)
                     KernelAbstractions.copyto!(inputs[:backend], fy, fy_1)
                     if (mesh.nsd > 2)
-                        fz_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_z],mesh,inputs)
+                        fz_1 = init_filter(mesh.ngl-1,ξ_temp,inputs[:mu_z],mesh,inputs, rank)
                         fz = KernelAbstractions.allocate(inputs[:backend], TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
                         KernelAbstractions.copyto!(inputs[:backend], fz, fz_1)
                     end
@@ -186,11 +194,16 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                 end
             end
             if rank == 0
-                @info " Build metrics ......"
+                @info " Build metrics ...... SM"
             end
-            @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
+            
+            #@time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
+            
+            metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])            
+            @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
+            
             if rank == 0
-                @info " Build metrics ...... END"
+                @info " Build metrics ...... END SM"
             end
             if (inputs[:lphysics_grid])
                 phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
@@ -229,9 +242,16 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-             @info " Build metrics ......"
-             @time metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat;backend = inputs[:backend])
-             @time metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat;backend = inputs[:backend])
+            @info " Build metrics ......"
+
+            #@time metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat;backend = inputs[:backend])
+            metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
+            build_metric_terms!(metrics1, mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
+            
+            #@time metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat;backend = inputs[:backend])
+            metrics2 = allocate_metrics(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, mesh.ngr, TFloat, inputs[:backend])
+            build_metric_terms_1D_Laguerre!(metrics2, mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat, COVAR(), SD;backend = inputs[:backend])
+            
             metrics = (metrics1, metrics2)
              @info " Build metrics ...... DONE"
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
@@ -243,7 +263,9 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-             @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
+            metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
+            @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
+            #@time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
 
             if (inputs[:lperiodic_1d])
                 @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
@@ -298,7 +320,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         #println(mesh.Io)
         #println(mesh.lengthIo)
     end
-
+    
     #--------------------------------------------------------
     # Build matrices
     #--------------------------------------------------------

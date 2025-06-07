@@ -534,8 +534,12 @@ end
 end
 
 
-function init_filter(nop,xgl,mu_x,mesh,inputs)
-
+function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
+    
+    if rank == 0
+        @info "Legendre filter"
+    end
+    
     f = zeros(TFloat,nop+1,nop+1)
     weight = ones(Float64,nop+1)
     exp_alpha = 36
@@ -548,7 +552,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs)
     leg = zeros(Float128,nop+1,nop+1)
     ## Legendre Polynomial matrix
     if (nop+1 == mesh.ngl)
-        @info "Legendre filter"
+        
         for i = 1:nop+1
             ξ = xgl[i]
             for j = 1:nop+1
@@ -572,7 +576,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs)
             end
         end
     elseif (nop+1 == mesh.ngr)
-        @info "Laguerre filter"
+        
         Laguerre = St_Laguerre(Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)),Polynomial(Float128(2.0)))
         for i=1:nop+1
             ξ = xgl[i]
@@ -611,13 +615,18 @@ function init_filter(nop,xgl,mu_x,mesh,inputs)
     ## Compute Boyd-Vandeven (ERF-LOG) Transfer function
     filter_type = inputs[:filter_type]
     if (filter_type == "erf")   
-        @info "erf filtering on"
+        if rank == 0
+            @info "erf filtering on"
+        end
+        
         for k=1:nop+1
             # Boyd filter
             weight[k] = vandeven_modal(k,nop+1,erf_order)
         end
     elseif (filter_type == "quad")
-        @info "quadratic filtering on"
+        if rank == 0
+            @info "quadratic filtering on"
+        end
         mode_filter = floor(quad_order)   
         k0 = Int64(nop+1 - mode_filter)
         xmode2 = mode_filter*mode_filter
@@ -627,7 +636,9 @@ function init_filter(nop,xgl,mu_x,mesh,inputs)
             weight[k] = 1.0 - amp
         end
     elseif (filter_type == "exp")
-        @info "exponential filtering on"
+        if rank == 0
+            @info "exponential filtering on"
+        end
         for k=1:nop+1
             weight[k] = exp(-exp_alpha*(Float64(k-1)/nop)^exp_order)
         end

@@ -356,10 +356,8 @@ function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, x, y, z, nx, ny, nz,
         end
 
     else
-        # Replace bdy rows in global L
-        #apply_dirichlet_bc_inplace!(L, poin_in_bdy_edge, ngl)
-        L_bc = apply_dirichlet_bc_reconstruct(L, poin_in_bdy_edge, ngl)
-        L = L_bc
+        # Replace bdy rows in global L (in sparse storage):
+        apply_dirichlet_bc_inplace!(L, poin_in_bdy_edge, ngl)
     end
     
 end
