@@ -315,7 +315,13 @@ function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, x, y, z, nx, ny, nz,
                 ny_l = ny[iedge,k]
                 fill!(qbdy, 4325789.0)
                 
-                user_bc_dirichlet!(@view(RHS[ip,:]), x[ip], y[ip], t, bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ip,:]),inputs[:SOL_VARS_TYPE])
+                user_bc_dirichlet!(@view(RHS[ip,:]),
+                                   x[ip], y[ip], t,
+                                   bdy_edge_type[iedge],
+                                   qbdy,
+                                   nx_l, ny_l,
+                                   @view(qe[ip,:]),
+                                   inputs[:SOL_VARS_TYPE])
                 
                 for ieq=1:neqs
                     RHS[ip,ieq] = qbdy[ieq]

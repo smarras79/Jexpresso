@@ -133,14 +133,9 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
             end
-            @info " Build metrics ......"
-            #@time metrics1 = build_metric_terms(SD, COVAR(), mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat; backend = inputs[:backend])
-            #@time metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
-
+            @info " Build metrics ......"            
             metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])            
             @time build_metric_terms!(metrics1, mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat, COVAR(), SD; backend = inputs[:backend])
-            
-            #@time metrics2 = build_metric_terms(SD, COVAR(), mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat; backend = inputs[:backend])
             
             metrics2 = allocate_metrics_laguerre(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, Qξ, mesh.ngr, TFloat, inputs[:backend])
             build_metric_terms!(metrics2, mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat, COVAR(), SD; backend = inputs[:backend])
@@ -194,17 +189,15 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                 end
             end
             if rank == 0
-                @info " Build metrics ...... SM"
+                @info " Build metrics ......"
             end
-            
-            #@time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
-            
-            metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])            
+            metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
             @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
             
             if rank == 0
-                @info " Build metrics ...... END SM"
+                @info " Build metrics ...... END"
             end
+            
             if (inputs[:lphysics_grid])
                 phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
             end 
@@ -243,12 +236,8 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             # Build metric terms
             #--------------------------------------------------------
             @info " Build metrics ......"
-
-            #@time metrics1 = build_metric_terms(SD, COVAR(), mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat;backend = inputs[:backend])
             metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
             build_metric_terms!(metrics1, mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
-            
-            #@time metrics2 = build_metric_terms_1D_Laguerre(SD, COVAR(), mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat;backend = inputs[:backend])
             metrics2 = allocate_metrics(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, mesh.ngr, TFloat, inputs[:backend])
             build_metric_terms_1D_Laguerre!(metrics2, mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat, COVAR(), SD;backend = inputs[:backend])
             
@@ -265,8 +254,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             #--------------------------------------------------------
             metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
             @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
-            #@time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
-
+            
             if (inputs[:lperiodic_1d])
                 @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
                                                mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,
@@ -300,25 +288,6 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         mesh.length∂τ = length(mesh.∂τ)
         mesh.lengthΓ  = length(mesh.Γ)
         
-        #println("Γ")
-        #println(mesh.Γ)
-        #println(mesh.lengthΓ)
-        
-        #println("O")
-        #println(mesh.O)
-        #println(mesh.lengthO)
-        
-        #println("∂O")
-        #println(mesh.∂O)
-        #println(mesh.length∂O)
-        
-        #println("∂τ")
-        #println(mesh.∂τ)
-        #println(mesh.length∂τ)
-        
-        #println("Io")
-        #println(mesh.Io)
-        #println(mesh.lengthIo)
     end
     
     #--------------------------------------------------------
