@@ -515,7 +515,7 @@ function periodicity_restructure!(mesh,x,y,z,xmax,xmin,ymax,ymin,zmax,zmin,poin_
             for i =1:3
                 interval[i] = plane1[i+1]
             end
-            @info x[target_idx], y[target_idx],z[target_idx]
+            #@info x[target_idx], y[target_idx],z[target_idx]
             for i in interval
                 ip_kill=i
                 ip_dest=target_idx

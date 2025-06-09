@@ -71,11 +71,12 @@ function driver(nparts,
                                 neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip])
                 RHS[ip] = b
             end
-
-            for ip = 1:sem.mesh.npoin
-                sem.matrix.L[ip,ip] += inputs[:rconst][1]
+            
+            if inputs[:lsparse] ==  false
+                for ip = 1:sem.mesh.npoin
+                    sem.matrix.L[ip,ip] += inputs[:rconst][1]
+                end
             end
-
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
                                                  params.mesh.x, params.mesh.y, params.mesh.z,
@@ -95,16 +96,23 @@ function driver(nparts,
                                                  params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
                                                  params.mesh.bdy_edge_type,
                                                  params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
-
             
             #-----------------------------------------------------
             # Element-learning infrastructure
             #-----------------------------------------------------
-            if inputs[:lelementLearning]
-                elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
+            if inputs[:lelementLearning] == false && inputs[:lsparse] ==  false
+                println(" # Solve x=inv(A)*b: full storage")
+                @time solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
+                #params.qp.qn = sem.matrix.L\RHS
             else
-                solution = solveAx(sem.matrix.L, RHS, inputs[:ode_solver])
+                if inputs[:lelementLearning]
+                    elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
+                elseif inputs[:lsparse]
+                    println(" # Solve x=inv(A)*b: sparse storage")
+                    @time params.qp.qn = sem.matrix.L\RHS
+                end
             end
+            
             #-----------------------------------------------------
             # END Element-learning infrastructure
             #-----------------------------------------------------
@@ -139,7 +147,13 @@ function driver(nparts,
             KernelAbstractions.synchronize(inputs[:backend])=#
         end
         
-        usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
+        #usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
+        if inputs[:lelementLearning] || inputs[:lsparse]
+            usol = params.qp.qn
+        else
+            #usol = params.qp.qn
+            usol = solution.u
+        end
         args = (params.SD, usol, params.uaux, 0.0, 1,
                      sem.mesh, nothing,
                      nothing, nothing,

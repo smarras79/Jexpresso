@@ -8,6 +8,7 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
+        #:lsparse              => true,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -34,7 +35,6 @@ function user_inputs()
         :outformat           => "vtk",
         :output_dir          => "./output/",
         :loverwrite_output   => true,
-        :plot_vlines         => [5.0],
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

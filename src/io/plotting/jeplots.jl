@@ -70,7 +70,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
         end
         if !(axis == "empty")
             idx = (ivar-1)*2
-            ylims!(ax, axis[1+idx], axis[2+idx])
+            CairoMakie.ylims!(ax, axis[1+idx], axis[2+idx])
         end
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
         save(string(fout_name), fig)
@@ -96,7 +96,7 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
             push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, color=color))
         end
         p[end].color = color
-        ylims!(ax, -0.03, 0.03)
+        CairoMakie.ylims!(ax, -0.03, 0.03)
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".eps")  
         save(string(fout_name), fig)
         fig

@@ -70,13 +70,23 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                               connijk_lag, bdy_edge_in_elem, bdy_edge_type,
                                               ω, neqs, inputs, AD, SD)
 
-    # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
-    build_custom_bcs_lin_solve!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
-                                poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
-                                ngl, ngr, nelem_semi_inf, ω,
-                                xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
-                                connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
-                                neqs, dirichlet!, neumann, inputs)
+    if inputs[:lsparse]
+        # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
+        build_custom_bcs_lin_solve_sparse!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
+                                           poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                           ngl, ngr, nelem_semi_inf, ω,
+                                           xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
+                                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
+                                           neqs, dirichlet!, neumann, inputs)
+    else
+        # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
+        build_custom_bcs_lin_solve!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
+                                    poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                    ngl, ngr, nelem_semi_inf, ω,
+                                    xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
+                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
+                                    neqs, dirichlet!, neumann, inputs)
+    end
     
 end
 
@@ -287,6 +297,115 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
 end
 
 
+function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, x, y, z, nx, ny, nz,
+                                            npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
+                                            ngl, ngr, nelem_semi_inf, ω,
+                                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
+                                            connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
+                                            neqs, dirichlet!, neumann, inputs)
+
+    for iedge = 1:nedges_bdy
+
+        if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
+            bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "periodic3" &&
+            bdy_edge_type[iedge] != "Laguerre")
+            for k=1:ngl
+                ip = poin_in_bdy_edge[iedge,k]
+                nx_l = nx[iedge,k]
+                ny_l = ny[iedge,k]
+                fill!(qbdy, 4325789.0)
+                
+                user_bc_dirichlet!(@view(RHS[ip,:]),
+                                   x[ip], y[ip], t,
+                                   bdy_edge_type[iedge],
+                                   qbdy,
+                                   nx_l, ny_l,
+                                   @view(qe[ip,:]),
+                                   inputs[:SOL_VARS_TYPE])
+                
+                for ieq=1:neqs
+                    RHS[ip,ieq] = qbdy[ieq]
+                end
+
+            end
+        end
+    end
+
+    if ("Laguerre" in bdy_edge_type)
+        for k=1:ngr
+            ip = connijk_lag[1, 1, k]
+            for ip1 = 1:npoin
+                L[ip,ip1] = 0.0
+            end
+            L[ip,ip] = 1.0
+            RHS[ip] = 0.0
+        end
+
+        for k=1:ngr
+            ip = connijk_lag[nelem_semi_inf, ngl, k]
+            for ip1 = 1:npoin
+                L[ip,ip1] = 0.0
+            end
+            L[ip,ip] = 1.0
+            RHS[ip] = 0.0
+        end
+        
+        for e=1:nelem_semi_inf
+            for i=1:ngl
+                ip = connijk_lag[e, i, ngr]
+                for ip1 = 1:npoin
+                    L[ip,ip1] = 0.0
+                end
+                L[ip,ip] = 1.0
+                RHS[ip] = 0.0
+            end
+        end
+
+    else
+        # Replace bdy rows in global L (in sparse storage):
+        apply_dirichlet_bc_inplace!(L, poin_in_bdy_edge, ngl)
+    end
+    
+end
+
+function apply_dirichlet_bc_inplace!(L::SparseMatrixCSC, poin_in_bdy_edge, ngl)
+ """
+    Apply Dirichlet boundary conditions by modifying sparse matrix in-place
+    Sets boundary rows to: L[ip, :] = 0, L[ip, ip] = 1
+    
+    This is efficient when the number of boundary nodes is small relative to matrix size.
+    """
+    
+    # Get boundary node indices
+    boundary_nodes = Int[]
+    for iedge = 1:size(poin_in_bdy_edge, 1)
+        for k = 1:ngl
+            ip = poin_in_bdy_edge[iedge, k]
+            if ip > 0  # Valid node index
+                push!(boundary_nodes, ip)
+            end
+        end
+    end
+    
+    # Remove duplicates and sort
+    boundary_nodes = unique!(sort!(boundary_nodes))
+    
+    #println("Applying boundary conditions to $(length(boundary_nodes)) nodes")
+    
+    # Method 1a: Direct modification (works but not most efficient)
+    for ip in boundary_nodes
+        # Zero out entire row
+        for j = 1:size(L, 2)
+            L[ip, j] = 0.0
+        end
+        # Set diagonal to 1
+        L[ip, ip] = 1.0
+    end
+    
+    return L
+end
+
+
 function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz,
                                      npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
                                      ngl, ngr, nelem_semi_inf, ω,
@@ -318,7 +437,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz,
             end
         end
     end
-#@mystop(BCs.jl)
+    
     if ("Laguerre" in bdy_edge_type)
         for k=1:ngr
             ip = connijk_lag[1, 1, k]

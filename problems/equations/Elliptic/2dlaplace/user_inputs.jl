@@ -3,38 +3,38 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 1000,
-        :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
-        :Δt                   => 0.4,
-        :ndiagnostics_outputs => 10,
-        :case                 => "rtb",
-        :CL                   => NCL(),
+        :tend                 => 1000.0,
+        :ode_solver           => "BICGSTABLE", #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
+        :ndiagnostics_outputs => 1,
+        :lsource              => true, 
+        :llinsolve            => true,
+        :rconst               => [0.0],
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        #:lexact_integration  => true,
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
-        #---------------------------------------------------------------------------
-        # Physical parameters/constants:
-        #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :νx                   => 30.0, #horizontal viscosity constant for momentum
-        :νy                   => 30.0, #vertical   viscosity constant for momentum
-        :κ                    => 60.0, #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB27x27.msh", #for nop=3
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB40x40.msh", #for nop=2
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_15x15.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_50x50.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_100x100.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
+        #---------------------------------------------------------------------------
+        # grid modification parameters
+        #---------------------------------------------------------------------------
+        :xscale              => 5.0,
+        :yscale              => 3.14,
+        :xdisp               => 1.0,
+        :ydisp               => 0.0,
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output",
-        :loutput_pert        => true,  #this is only implemented for VTK for now
+        :output_dir          => "./output/",
+        :loverwrite_output   => true,
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------
