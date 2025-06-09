@@ -6,12 +6,12 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.2,
         :tinit                => 0.0,
-        :tend                 => 3500.0,
+        :tend                 => 14400.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (0.2, 1, 10, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1500, 1600, 1700, 1800, 1900, 2000, 2500, 3000, 3500, 4000),
+        :diagnostics_at_times => (0.2, 100, 200, 400, 600, 800, 1000, 1100, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000),
         :case                 => "rtb",
         :lsource              => true, 
         :lmoist               => true,
@@ -30,8 +30,9 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
+        :visc_model           => SMAG(),
         :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
-        :μ                   => [0.0, 200.0, 200.0, 200.0, 300.0, 300.0, 300.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 50.0, 50.0, 50.0, 75.0, 75.0, 75.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -52,7 +53,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
+        :lfilter             => false,
         :mu_x                => 0.05,
         :mu_y                => 0.00,
         :mu_z                => 0.05,

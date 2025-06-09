@@ -144,6 +144,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     internal_poin_in_elem     = KernelAbstractions.zeros(backend, TInt, 0, 0)
     bdy_face_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_face          = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
+    elem_to_face    = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     face_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
@@ -458,6 +459,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         mesh.face_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces))
         mesh.bdy_face_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces_bdy))
         mesh.bdy_face_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces_bdy))
+        mesh.elem_to_face     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl), 3)
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
     mesh.conn = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
@@ -1109,6 +1111,35 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 iface_bdy += 1
             # end
         end
+        #=
+        for e = 1:mesh.nelem
+            for k=1:mesh.ngl
+                for j=1:mesh.ngl
+                    for i = 1:mesh.ngl
+                        ip = connijk[e, i, j, k]
+                        if (ip in mesh.poin_in_bdy_face)
+                            found = false
+                            iface =1
+                            while (iface <= mesh.nfaces_bdy && found == false)
+                                for j1 = mesh.ngl
+                                    for i1 = mesh.ngl
+                                        ip1 = mesh.poin_in_bdy_face[iface, i1, j1]
+                                        e1 = mesh.bdy_face_in_elem[iface]
+                                        if (ip1 == ip && e1 == e)
+                                            mesh.elem_to_face[e,i,j,k,1] = iface
+                                            mesh.elem_to_face[e,i,j,k,2] = i1
+                                            mesh.elem_to_face[e,i,j,k,3] = j1
+                                            found = true
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end=#
+        ## generate element to face point mapping
         #=for iface =1:mesh.nfaces_bdy
             for i=1:mesh.ngl
                 for j=1:mesh.ngl
