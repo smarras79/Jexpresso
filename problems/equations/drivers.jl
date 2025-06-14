@@ -109,7 +109,8 @@ function driver(nparts,
                     elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
                 elseif inputs[:lsparse]
                     println(" # Solve x=inv(A)*b: sparse storage")
-                    @time params.qp.qn = sem.matrix.L\RHS
+                    
+                    @time params.qp.qn = sem.matrix.L \ RHS
                 end
             end
             

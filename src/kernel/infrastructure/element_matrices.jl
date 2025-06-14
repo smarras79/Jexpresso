@@ -701,8 +701,10 @@ function DSS_laplace_sparse(mesh, Lel)
     for iel = 1:mesh.nelem
         for j = 1:mesh.ngl, i = 1:mesh.ngl
             JP = mesh.connijk[iel, i, j]
+            #JP = mesh.ip2gip[mesh.connijk[iel, i, j]]
             
             for n = 1:mesh.ngl, m = 1:mesh.ngl
+                #IP = mesh.ip2gip[mesh.connijk[iel, m, n]]
                 IP = mesh.connijk[iel, m, n]
                 
                 val = Lel[iel, m, n, i, j]
@@ -716,12 +718,15 @@ function DSS_laplace_sparse(mesh, Lel)
     end
     
     # Create sparse matrix and sum duplicate entries automatically
-    return sparse(I_vec, J_vec, V_vec)
+    return sparse(I_vec, J_vec, V_vec) #Julia native CSC format (good for PETC.jl solvers)
 end
 
 
-
-function assemble_diffusion_matrix_threaded!(mesh, Lel)
+function DSS_laplace_sparse_threaded(mesh, Lel)
+    #
+    # CSC aasembly
+    #
+    
     # Thread-local storage for triplets
     thread_triplets = [Tuple{Int, Int, Float64}[] for _ in 1:nthreads()]
     
@@ -752,22 +757,7 @@ function assemble_diffusion_matrix_threaded!(mesh, Lel)
     J_vec = [t[2] for t in all_triplets]
     V_vec = [t[3] for t in all_triplets]
     
-    return sparse(I_vec, J_vec, V_vec)
-end
-
-
-# Utility function to convert to different sparse formats if needed
-function convert_sparse_format(A::SparseMatrixCSC; format=:CSR)
-    if format == :CSR
-        # Julia's SparseMatrixCSC is essentially CSC format
-        # For true CSR, you'd need to transpose and use rowvals/nzval
-        return A'  # This gives CSR-like access pattern
-    elseif format == :COO
-        I, J, V = findnz(A)
-        return (I, J, V)
-    else
-        return A  # Default CSC format
-    end
+    return sparse(I_vec, J_vec, V_vec) #Julia native CSC format (good for PETC.jl solvers)
 end
 
 # Example usage:
@@ -1165,18 +1155,23 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
                                       N, Q, TFloat)
             
             if (inputs[:lsparse])
-                L = DSS_laplace_sparse(mesh, Le)
-                assemble_diffusion_matrix_threaded!(mesh, Le)
+                @info " DSS sparse"
+                @time L = DSS_laplace_sparse(mesh, Le)
+                @info " DSS sparse .................... DONE"
             else
                 L = KernelAbstractions.zeros(backend,
                                              TFloat,
                                              Int64(mesh.npoin),
                                              Int64(mesh.npoin))
+
+                @info " DSS "
                 DSS_laplace!(L, SD,
                              Le, ω,
                              mesh, metrics,
                              N, TFloat;
                              llump=inputs[:llump])
+                @info " DSS ..... ..................... DONE"
+                
             end
             
         else

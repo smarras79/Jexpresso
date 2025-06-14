@@ -101,16 +101,6 @@ function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
     xmin = mesh.xmin + eps; xmax = mesh.xmax - eps
     ymin = mesh.ymin + eps; ymax = mesh.ymax - eps
     
-    #=if ( x <= -4990.0 || x >= 4990.0)
-    qbdy[2] = 0.0
-    end
-    if (y <= 10.0 || y >= 9990.0)
-    qbdy[3] = 0.0
-    end
-    if ((x >= 4990.0 || x <= -4990.0) && (y >= 9990.0 || y <= 10.0))
-    qbdy[2] = 0.0
-    qbdy[3] = 0.0
-    end=#
     if ( x <= xmin || x >= xmax)
         qbdy[2] = 0.0
     end

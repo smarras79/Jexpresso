@@ -356,7 +356,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.nfaces_bdy   = length(get_boundary_faces(model,mesh.nsd,FACE_flg))
     mesh.nedges_bdy   = length(get_boundary_faces(model,mesh.nsd,EDGE_flg))
     
-    mesh.nelem_int    = mesh.nelem - mesh.nelem_bdy
+    mesh.nelem_int    = mesh.nelem  - mesh.nelem_bdy
     mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
     mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
 
@@ -606,18 +606,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         element_types = Dict(
             kk => :Hexa8
             for kk = 1:mesh.nelem)
-        
-        #
-        #Use NodeNumbering.jl
-        #
-        #adjacency = create_adjacency_graph(elements, element_types)
-        #degrees = node_degrees(adjacency)
-        #neworder = RCM(adjacency, degrees, tot_linear_poin, tot_linear_poin)
-        #finalorder = renumbering(neworder)
-        #RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
-        #newmatrix = adjacency_visualization(RCM_adjacency)
-        #display(UnicodePlots.heatmap(newmatrix))
-        
         
         #
         # Rewrite coordinates in RCM order:
@@ -1235,21 +1223,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         end
 
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. "; msg_rank = rank, suppress = mesh.msg_suppress)
-                
-        #@info " TEYYYYYYYY NOT - OPTIMIZED"
-        # restructure4periodicity_3D(mesh, norx, "periodicx")
-        # restructure4periodicity_3D(mesh, nory, "periodicy")
-        # restructure4periodicity_3D(mesh, norz, "periodicz")
-
-
+     
         restructure4periodicity_3D_sorted!(mesh, norx, "periodicx")
         restructure4periodicity_3D_sorted!(mesh, nory, "periodicy")
         restructure4periodicity_3D_sorted!(mesh, norz, "periodicz")
         
-
-        #restructure4periodicity_3D_optimized!(mesh, norx, "periodicx")
-        #restructure4periodicity_3D_optimized!(mesh, nory, "periodicy")
-        #restructure4periodicity_3D_optimized!(mesh, norz, "periodicz")
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
 
     end
@@ -1315,13 +1293,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #end #f
     
     # write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./", parts, nparts)
-
-    #
-    # gridapDistributed test on gmsh
-    #
-    # @mystop("my stop at mesh.jl L135")
-    # end gridapDistributed test on gmsh
-
 
     #show(stdout, "text/plain", mesh.conn')
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
