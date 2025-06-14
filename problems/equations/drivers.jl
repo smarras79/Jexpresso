@@ -18,14 +18,14 @@ function driver(nparts,
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
     if inputs[:ladapt] == true
         if rank == 0
-            @info "start conformity4ncf_q!"
+            @info " start conformity4ncf_q!"
         end
-        @time conformity4ncf_q!(qp.qn, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
-        @time conformity4ncf_q!(qp.qe, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+        conformity4ncf_q!(qp.qn, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
+        conformity4ncf_q!(qp.qe, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
         
         MPI.Barrier(comm)
         if rank == 0
-            @info "end conformity4ncf_q!"
+            @info " end conformity4ncf_q!"
         end
     end
 
@@ -36,12 +36,20 @@ function driver(nparts,
     else
         tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
     end
+
+    if rank == 0
+        @info " Params_setup .................................."
+    end
     params, u =  params_setup(sem,
                               qp,
                               inputs,
                               OUTPUT_DIR,
                               TFloat,
                               tspan)
+
+    if rank == 0
+        @info " Params_setup .................................. END"
+    end
     
     if !inputs[:llinsolve]
         #
@@ -49,7 +57,6 @@ function driver(nparts,
         #
         @time solution = time_loop!(inputs, params, u)
         # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
-        
     else
         #
         # Problems that lead to Ax = b
