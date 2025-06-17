@@ -1121,8 +1121,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                             found = false
                             iface = 1
                             while (iface <= mesh.nfaces_bdy && found == false)
-                                for j1 = mesh.ngl
-                                    for i1 = mesh.ngl
+                                for j1 = 1:mesh.ngl
+                                    for i1 = 1:mesh.ngl
                                         ip1 = mesh.poin_in_bdy_face[iface, i1, j1]
                                         e1 = mesh.bdy_face_in_elem[iface]
                                         if (ip1 == ip && e1 == e)
