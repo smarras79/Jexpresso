@@ -57,7 +57,7 @@ function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x, y, ::TOTAL)
 end
 
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x, y, ::PERT)
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x, y, τ_f, wθ, ::PERT)
 
     if (tag == "bottom" && x < 4000 && x > -4000)
         F_edge[4] = 0.0001*1004*rand()*(u[1]+qe[1])

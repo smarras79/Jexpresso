@@ -1111,15 +1111,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 iface_bdy += 1
             # end
         end
-        #=
+        
         for e = 1:mesh.nelem
             for k=1:mesh.ngl
                 for j=1:mesh.ngl
                     for i = 1:mesh.ngl
-                        ip = connijk[e, i, j, k]
+                        ip = mesh.connijk[e, i, j, k]
                         if (ip in mesh.poin_in_bdy_face)
                             found = false
-                            iface =1
+                            iface = 1
                             while (iface <= mesh.nfaces_bdy && found == false)
                                 for j1 = mesh.ngl
                                     for i1 = mesh.ngl
@@ -1133,12 +1133,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                                         end
                                     end
                                 end
+                                iface += 1
                             end
                         end
                     end
                 end
             end
-        end=#
+        end
         ## generate element to face point mapping
         #=for iface =1:mesh.nfaces_bdy
             for i=1:mesh.ngl

@@ -53,7 +53,8 @@ function user_uout!(ip, ET, uout, u, qe; mp = mp)
         uout[12] = mp.qr[ip]
         uout[13] = mp.qs[ip]
         uout[14] = mp.qg[ip]
+        uout[15] = mp.qsatt[ip]
     end
-    
+        
 end
 

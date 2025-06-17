@@ -206,7 +206,10 @@ function params_setup(sem,
     # Allocate large scale tendencies arrays
     #------------------------------------------------------------------------------------
     LST = allocate_LargeScaleTendencies(sem.mesh.npoin, sem.mesh, inputs, T, backend; lLST=inputs[:LST])
-    
+    #------------------------------------------------------------------------------------
+    # Allocate wall model arrays
+    #------------------------------------------------------------------------------------
+    WM = allocate_Wall_model(sem.mesh.nfaces_bdy, sem.mesh.ngl, T, backend; lwall_model=inputs[:lwall_model])
     #------------------------------------------------------------------------------------
     # Allocate Thermodynamic params for bomex case
     #------------------------------------------------------------------------------------
@@ -306,6 +309,7 @@ function params_setup(sem,
                   thermo_params, VT = inputs[:visc_model], visc_coeff,
                   sem.matrix.M, sem.matrix.Minv, pM=pM,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
+                  WM,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,

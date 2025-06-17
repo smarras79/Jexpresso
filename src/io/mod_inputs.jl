@@ -35,6 +35,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
+    if(!haskey(inputs, :lwall_model))
+       inputs[:lwall_model] = false
+    end
+
     if(!haskey(inputs, :bulk_fluxes))
        inputs[:bulk_fluxes] = false
     end

@@ -1,6 +1,6 @@
 include("custom_bcs.jl")
 
-function apply_boundary_conditions!(u, uaux, t,qe,
+function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                                     x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ψ, dψ,
                                     xmax, ymax, zmax, xmin, ymin, zmin, RHS, rhs_el, ubdy,
                                     connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
@@ -15,7 +15,7 @@ function apply_boundary_conditions!(u, uaux, t,qe,
                            RHS, rhs_el, ubdy,
                            ω, neqs, inputs, AD, SD)
     else
-        build_custom_bcs!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
+        build_custom_bcs_dirichlet!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                           xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                           connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
@@ -23,6 +23,26 @@ function apply_boundary_conditions!(u, uaux, t,qe,
                           neqs, dirichlet!, neumann, inputs)
     end
 end
+
+function apply_boundary_conditions_neumann!(u, uaux, t,qe,
+                                    x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ψ, dψ,
+                                    xmax, ymax, zmax, xmin, ymin, zmin, RHS, rhs_el, ubdy,
+                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                    connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                                    τ_f, wθ,
+                                    Tabs, qn,
+                                    ω, neqs, inputs, AD, SD)
+
+    build_custom_bcs_neumann!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear, 
+                              poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
+                          xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
+                          connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                          connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                          τ_f, wθ,
+                          Tabs, qn,
+                          neqs, dirichlet!, neumann, inputs)
+end
+
 
 function apply_periodicity!(u, uaux, t, qe,
                             npoin_linear, ψ, dψ,
@@ -124,7 +144,8 @@ function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
     
 end
 
-function build_custom_bcs!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
+function build_custom_bcs_dirichlet!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, 
+        npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
                            connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                            connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
@@ -156,7 +177,19 @@ function build_custom_bcs!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
 
 end
 
-function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
+function build_custom_bcs_neumann!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, 
+        npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                           connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                           Tabs, qn,
+                           neqs, dirichlet!, neumann, inputs)
+
+    nothing
+end
+
+function build_custom_bcs_dirichlet!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, 
+        npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
                            connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                            connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
@@ -191,6 +224,20 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                 end
             end
         end
+    end
+end
+function build_custom_bcs_neumann!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin,
+        npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                           connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                           τ_f, wθ,
+                           Tabs, qn,
+                           neqs, dirichlet!, neumann, inputs)
+
+    # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
+    #          That
+    for iedge = 1:nedges_bdy
         if (inputs[:bdy_fluxes])
             F_surf .= 0.0
             if (inputs[:bulk_fluxes])
@@ -472,7 +519,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, x, y, z, nx, ny, nz,
 end
 
 
-function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
+function build_custom_bcs_dirichlet!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
                            connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                            connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
@@ -508,6 +555,21 @@ function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                 end
             end
         end
+    end
+end
+
+
+function build_custom_bcs_neumann!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
+        poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                           connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                           connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                           τ_f, wθ, 
+                           Tabs, qn,
+                           neqs, dirichlet!, neumann, inputs)
+    
+    PhysConst = PhysicalConst{Float64}() 
+    for iface = 1:nfaces_bdy
         if (inputs[:bdy_fluxes])
             F_surf .= 0.0
             if (inputs[:bulk_fluxes])
@@ -537,7 +599,8 @@ function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
                             ip1 = connijk[e,i,j,2]
-                            user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], bdy_face_type[iface], x[ip], y[ip], z[ip], inputs[:SOL_VARS_TYPE])
+                            user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:],
+                                             bdy_face_type[iface], x[ip], y[ip], z[ip], τ_f, wθ, inputs[:SOL_VARS_TYPE])
                         end
                     end
                  end
