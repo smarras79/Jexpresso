@@ -67,16 +67,14 @@ function driver(nparts,
           
             Minv = diagm(sem.matrix.Minv)
             
-            L_temp = Minv * sem.matrix.L
-            sem.matrix.L .= L_temp
+            sem.matrix.L .= Minv * sem.matrix.L
             
             for ip =1:sem.mesh.npoin
-                b = user_source(RHS[ip],
+                RHS[ip] = user_source(RHS[ip],
                                 params.qp.qn[ip],
                                 params.qp.qe[ip],
                                 sem.mesh.npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
                                 neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip])
-                RHS[ip] = b
             end
             
             if inputs[:lsparse] ==  false
