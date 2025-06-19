@@ -576,9 +576,12 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=x[ip], y=y[ip], xmax=xmax, xmin=xmin, ymax=ymax)
                 if (params.inputs[:lmoist])
-                    add_micro_precip_sources!(params.mp, params.mp.flux_lw[ip], params.mp.flux_sw[ip], params.mp.Tabs[ip], params.mp.S_micro[ip],
+                    add_micro_precip_sources!(params.mp, params.mp.flux_lw[ip],
+                                              params.mp.flux_sw[ip], params.mp.Tabs[ip],
+                                              params.mp.S_micro[ip],
                                               @view(params.S[i,j,:]), @view(params.uaux[ip,:]),
-                                              params.mp.qn[ip], @view(qe[ip,:]), SD, params.SOL_VARS_TYPE)
+                                              params.mp.qn[ip], @view(qe[ip,:]),
+                                              SD, params.SOL_VARS_TYPE)
                 end
             end
 
@@ -653,6 +656,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                              params.mesh.npoin, params.CL,
                              params.SOL_VARS_TYPE; neqs=params.neqs,
                              x=x[ip], y=y[ip], z=z[ip], xmax=xmax, xmin=xmin, zmax=zmax)
+                
                 if (params.inputs[:lmoist])
                     add_micro_precip_sources!(params.mp,
                                               params.mp.flux_lw[ip],
@@ -687,7 +691,9 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                              params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
                              params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
                              params.rhs_el, iel, 
-                             params.WM.wθ, params.inputs[:lwall_model], params.mesh.connijk,
+                             params.WM.wθ, params.inputs[:lwall_model],
+                             params.mesh.connijk,
+                             [params.mesh.x, params.mesh.y, params.mesh.z],
                              params.mesh.poin_in_bdy_face, params.mesh.elem_to_face,
                              params.CL, params.QT, SD, params.AD) 
     end
@@ -714,7 +720,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_1D)
                              params.basis.dψ,
                              params.metrics.Je,
                              params.metrics.dξdx,
-                             params.inputs, params.rhs_el, iel, ieq, params.QT, params.VT, SD, params.AD)
+                             params.inputs, params.rhs_el,
+                             iel, ieq, params.QT, params.VT, SD, params.AD)
         end
         
     end
@@ -744,7 +751,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
                              params.metrics.Je,
                              params.metrics.dξdx, params.metrics.dξdy,
                              params.metrics.dηdx, params.metrics.dηdy,
-                             params.inputs, params.rhs_el, iel, ieq, params.QT, params.VT, SD, params.AD)
+                             params.inputs, params.rhs_el,
+                             iel, ieq, params.QT, params.VT, SD, params.AD)
         end
         
     end
@@ -783,6 +791,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
                              params.metrics.dζdx,params.metrics.dζdy, params.metrics.dζdz,
                              params.inputs, params.rhs_el, iel, ieq,
                              params.WM.τ_f, params.inputs[:lwall_model], params.mesh.connijk,
+                             [params.mesh.x, params.mesh.y, params.mesh.z], 
                              params.mesh.poin_in_bdy_face, params.mesh.elem_to_face,
                              params.QT, params.VT, SD, params.AD)
             
@@ -809,7 +818,8 @@ end
 
 
 function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, S,
-                              rhs_el, iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+                              rhs_el, iel,
+                              ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
     
     for ieq = 1:neqs
         for i=1:ngl
@@ -825,9 +835,13 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, S,
-                              Je, dξdx, dξdy, dηdx, dηdy,
-                              rhs_el, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
+                              F, G, S,
+                              Je,
+                              dξdx, dξdy,
+                              dηdx, dηdy,
+                              rhs_el, iel,
+                              ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
     
     for ieq=1:neqs
         for j=1:ngl
@@ -863,9 +877,18 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, S,
     end
 end
 
-function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, H, S,
-                              Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
-                              rhs_el, iel, wθ, lwall_model, connijk, poin_in_bdy_face, elem_to_face, ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
+function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
+                              F, G, H, S,
+                              Je,
+                              dξdx, dξdy, dξdz,
+                              dηdx, dηdy, dηdz,
+                              dζdx, dζdy, dζdz,
+                              rhs_el, iel,
+                              wθ, lwall_model,
+                              connijk,
+                              coords,
+                              poin_in_bdy_face, elem_to_face,
+                              ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
     for ieq=1:neqs
         for k=1:ngl
             for j=1:ngl
@@ -1168,8 +1191,13 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
     nothing
 end
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, dξdy, dηdx, dηdy, inputs, rhs_el, iel, ieq,
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy,
+                          dηdx, dηdy,
+                          inputs, rhs_el,
+                          iel, ieq,
                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal)
     
     for l = 1:ngl
@@ -1207,11 +1235,25 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coef
     end
 end
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs, rhs_el, iel, ieq, τ_f, lwall_model, connijk, 
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy, dξdz,
+                          dηdx, dηdy, dηdz,
+                          dζdx, dζdy, dζdz,
+                          inputs,
+                          rhs_el,
+                          iel, ieq,
+                          τ_f, lwall_model,
+                          connijk,
+                          coords, 
                           poin_in_bdy_face, elem_to_face,
                           QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal)
 
+    '''
+    
+    '''
+    
     for m = 1:ngl
         for l = 1:ngl
             for k = 1:ngl
@@ -1250,17 +1292,21 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
                 ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
                 ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
                 
-                if (lwall_model)
-                    ip = connijk[iel,i,j,k]
+                if (lwall_model)                   
+                    ip = connijk[iel,k,l,m]
                     if (ip in poin_in_bdy_face)
-                        iface = elem_to_face[iel,i,j,k,1]
-                        idx1 = elem_to_face[iel,i,j,k,2]
-                        idx2 = elem_to_face[iel,i,j,k,3]
+                        iface = elem_to_face[iel,k,l,m,1]
+                        idx1  = elem_to_face[iel,k,l,m,2]
+                        idx2  = elem_to_face[iel,k,l,m,3]
                         ###define τij for wall model
-                        #τ_f[iface,idx1,idx2] =
+                        u2 = uprimitiveieq[k,l,2,4]
+                        uτ = jeFind_uτ(u2, mesh.z[ip], 0.4, 1.0e-5, 5.0)
+                        τw = uτ^2*ρ
+                        println(" uτ = ", uτ)
+                        #τ_f[iface,idx1,idx2] = τw
                     end
                 end
-
+                
                 @turbo for i = 1:ngl
                     dhdξ_ik = dψ[i,k]
                     dhdη_il = dψ[i,l]
@@ -1276,9 +1322,19 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
 end
 
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitive, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs,
-                          rhs_el, iel, ieq, τ_f, lwall_model, connijk, poin_in_bdy_face, elem_to_face,
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                          uprimitive, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy, dξdz,
+                          dηdx, dηdy, dηdz,
+                          dζdx, dζdy, dζdz,
+                          inputs,
+                          rhs_el,
+                          iel, ieq,
+                          τ_f, lwall_model,
+                          connijk,
+                          coords,
+                          poin_in_bdy_face, elem_to_face,
                           QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
     
 
@@ -1409,9 +1465,19 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitiv
     end
 end
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, uprimitive, visc_coeffieq, ω,
-                          ngl, dψ, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz, inputs,
-                          rhs_el, iel, ieq, τ_f, lwall_model, connijk, poin_in_bdy_face, elem_to_face,
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                          uprimitive, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy, dξdz,
+                          dηdx, dηdy, dηdz,
+                          dζdx, dζdy, dζdz,
+                          inputs,
+                          rhs_el,
+                          iel, ieq,
+                          τ_f, lwall_model,
+                          connijk,
+                          coords,
+                          poin_in_bdy_face, elem_to_face,
                           QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal)
     
     for m = 1:ngl
@@ -1520,68 +1586,22 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
     nothing
 end
 
-function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, iel, ieq, QT::Exact, VT::AV, SD::NSD_2D, ::ContGal)
+function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, 
+                           uprimitive, visc_coeffieq, ω,
+                           ngl, dψ, Je,
+                           dξdx, dξdy, 
+                           dηdx, dηdy, 
+                           inputs,
+                           rhs_el,
+                           iel, ieq,
+                           τ_f, lwall_model,
+                           connijk,
+                           coords,
+                           poin_in_bdy_face, elem_to_face,
+                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal)
     
-    N = params.mesh.ngl
-    Q = N + 1
-
-    for l=1:Q
-        for k=1:Q
-            ωJac = params.ω[k]*params.ω[l]*params.metrics.Je[iel,k,l]
-            
-            dqdξ = 0.0; dqdη = 0.0
-            ρkl = 0.0; ukl = 0.0; vkl = 0.0; Skl = 0.0
-            for n=1:N
-                for m=1:N
-                    ψmk = params.basis.ψ[m,k]
-                    ψnl = params.basis.ψ[n,l]
-                    
-                    dψmk_ψnl = params.basis.dψ[m,k]* params.basis.ψ[n,l]
-                    ψmk_dψnl = params.basis.ψ[m,k]*params.basis.dψ[n,l]
-                    
-                    dqdξ += dψmk_ψnl*params.uprimitiveieq[m,n]
-                    dqdη += ψmk_dψnl*params.uprimitiveieq[m,n]
-                    ukl  +=  ψmk*ψnl*params.uprimitiveieq[m,n]
-                    
-                end
-            end
-
-            dξdx_kl = params.metrics.dξdx[iel,k,l]
-            dξdy_kl = params.metrics.dξdy[iel,k,l]
-            dηdx_kl = params.metrics.dηdx[iel,k,l]
-            dηdy_kl = params.metrics.dηdy[iel,k,l]
-            
-            dqdx = dqdξ*dξdx_kl + dqdη*dηdx_kl
-            dqdx = dqdx*visc_coeff[2]
-
-            dqdy = dqdξ*dξdy_kl + dqdη*dηdy_kl
-            dqdy = dqdy*visc_coeff[2]
-            
-            ∇ξ∇u_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
-            ∇η∇u_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
-            
-            ###### W I P ######
-            for j=1:N
-                for i=1:N
-
-                    dhdξ_ik = basis.dψ[i,k]
-                    dhdη_il = basis.dψ[i,l]
-                    
-                    rhs_diffξ_el[i,l] -= dhdξ_ik * ∇ξ∇u_kl
-                    rhs_diffη_el[k,i] -= dhdη_il * ∇η∇u_kl
-                    
-                    #params.rhs_diffξ_el[iel,i,j,2] -=
-                    #params.rhs_diffξ_el[iel,i,j,3] -=
-                    #params.rhs_diffξ_el[iel,i,j,4] -=
-                    
-                    #params.rhs_diffη_el[iel,i,j,2] -=
-                    #params.rhs_diffη_el[iel,i,j,3] -=
-                    #params.rhs_diffη_el[iel,i,j,4] -=
-                end
-            end
-            
-        end
-    end
+    nothing
+      
 end
 
 function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ, ::NSD_3D)

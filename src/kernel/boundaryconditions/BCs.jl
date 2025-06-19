@@ -237,8 +237,8 @@ function build_custom_bcs_neumann!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin,
 
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
-    for iedge = 1:nedges_bdy
-        if (inputs[:bdy_fluxes])
+    if (inputs[:bdy_fluxes])
+        for iedge = 1:nedges_bdy
             F_surf .= 0.0
             if (inputs[:bulk_fluxes])
                 for i = 1:ngl

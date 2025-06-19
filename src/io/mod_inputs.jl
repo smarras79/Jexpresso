@@ -38,15 +38,21 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lwall_model))
        inputs[:lwall_model] = false
     end
-
-    if(!haskey(inputs, :bulk_fluxes))
-       inputs[:bulk_fluxes] = false
-    end
-
+    
     if(!haskey(inputs, :bdy_fluxes))
        inputs[:bdy_fluxes] = false
     end
 
+    if(!haskey(inputs, :bulk_fluxes))
+        inputs[:bulk_fluxes] = false
+    else
+        if inputs[:bulk_fluxes]  == true
+            if inputs[:bdy_fluxes]  == false
+                inputs[:bdy_fluxes]  = true
+            end
+        end
+    end
+    
     if(!haskey(inputs, :LST))
        inputs[:LST] = false
     end

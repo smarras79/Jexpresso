@@ -95,6 +95,8 @@ include(joinpath( "kernel", "physics", "large_scale.jl"))
 
 include(joinpath( "kernel", "physics", "largescaleStructs.jl"))
 
+include(joinpath( "kernel", "physics", "turbul.jl"))
+
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))

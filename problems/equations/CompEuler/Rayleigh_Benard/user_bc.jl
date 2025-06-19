@@ -70,7 +70,6 @@ function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x, y, τ_f, wθ, ::PERT)
     elseif (tag == "top")
         F_edge[4] = -0.02*rand()*(u[1]+qe[1])
     end
-
 end
 
 function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
