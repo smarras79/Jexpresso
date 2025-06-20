@@ -556,6 +556,9 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, np
             end
         end
     end
+
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, npoin)
 end
 
 
@@ -621,7 +624,5 @@ function build_custom_bcs_neumann!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoi
         end
     end
     
-    #Map back to u after applying b.c.
-    uaux2u!(u, uaux, neqs, npoin)
     
 end
