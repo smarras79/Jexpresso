@@ -1,30 +1,14 @@
-function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
-    #    if (tag == "free_slip")
-    #if ((x == 5000.0 && y == 0.0) || (x == -5000.0 && y == 0.0) || (x == -5000.0 && y == 10000.0) || (x == 5000.0 && y == 10000.0)) 
-    #  a = 1
-    #  b = 1
-    #  if (x > 0)
-    #    a= -1
-    #  end
-    #  if (y > 0)
-    #    b = -1
-    #  end
-    #  qnl = a*(sqrt(2)/2)*q[2] + b*(sqrt(2)/2)*q[3]
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
     
     # else
     qnl = nx*q[2] + ny*q[3]
     # end
     qbdy[2] = q[2] - qnl*nx
     qbdy[3] = q[3] - qnl*ny
-
-    #   else
-    #    qbdy[2] = 0.0
-    # end
-    #return qbdy #, flags
     
 end
 
-function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
 #    if (tag == "free_slip")
     
     qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
@@ -39,22 +23,22 @@ function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFl
       #  qbdy[2] = 0.0
       #  qbdy[3] = 0.0
       #end
-     #@info x,y,nx,ny,qbdy[2],qbdy[3] 
+     #@info coords,nx,ny,qbdy[2],qbdy[3] 
   # return qbdy #, flags
     
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords,  t::AbstractFloat, tag::String, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
 end
 
-function user_bc_dirichlet_gpu(q,qe,x,y,t,nx,ny,qbdy,lpert)
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)
     T = eltype(q)
     if (lpert)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])

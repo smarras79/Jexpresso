@@ -76,7 +76,8 @@ function driver(nparts,
             end
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
-                                                 params.mesh.x, params.mesh.y, params.mesh.z,
+                                                 params.mesh.coords,
+                                                 #params.mesh.x, params.mesh.y, params.mesh.z,
                                                  params.metrics.nx,
                                                  params.metrics.ny,
                                                  params.metrics.nz,

@@ -24,7 +24,7 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
     if (tag == "free_slip")
      #if ((x == 5000.0 && y == 0.0) || (x == -5000.0 && y == 0.0) || (x == -5000.0 && y == 10000.0) || (x == 5000.0 && y == 10000.0)) 
      #  a = 1
@@ -50,7 +50,7 @@ function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFl
     
 end
 
-function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
      #if (y <4995 || abs(x) > 4995)
      if (tag == "free_slip")
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
@@ -60,7 +60,7 @@ function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFl
 
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
 end
@@ -70,7 +70,7 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     return flux
 end
 
-function user_bc_dirichlet_gpu(q,qe,x,y,t,nx,ny,qbdy,lpert)
+function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,qbdy,lpert)
     T = eltype(q)
     qnl = nx*(q[2]) + ny*(q[3])
     u = q[2] - qnl*nx

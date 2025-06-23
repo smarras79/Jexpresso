@@ -28,6 +28,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     x = KernelAbstractions.zeros(backend, TFloat, 2)
     y = KernelAbstractions.zeros(backend, TFloat, 2)
     z = KernelAbstractions.zeros(backend, TFloat, 2)
+    coords = KernelAbstractions.zeros(backend, TFloat, 2, 1)
 
     x_ho = KernelAbstractions.zeros(backend, TFloat, 2)
     y_ho = KernelAbstractions.zeros(backend, TFloat, 2)
@@ -144,7 +145,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     internal_poin_in_elem     = KernelAbstractions.zeros(backend, TInt, 0, 0)
     bdy_face_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_face          = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
-    elem_to_face    = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     face_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
@@ -357,7 +357,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.nfaces_bdy   = length(get_boundary_faces(model,mesh.nsd,FACE_flg))
     mesh.nedges_bdy   = length(get_boundary_faces(model,mesh.nsd,EDGE_flg))
     
-    mesh.nelem_int    = mesh.nelem - mesh.nelem_bdy
+    mesh.nelem_int    = mesh.nelem  - mesh.nelem_bdy
     mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
     mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
 
@@ -435,6 +435,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.x = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.y = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
     mesh.z = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+    mesh.coords = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
 
     mesh.ip2gip    = KernelAbstractions.zeros(backend, TInt, Int64(mesh.npoin))
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
@@ -459,7 +460,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         mesh.face_type        = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces))
         mesh.bdy_face_type    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces_bdy))
         mesh.bdy_face_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces_bdy))
-        mesh.elem_to_face     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl), 3)
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
     mesh.conn = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
@@ -608,18 +608,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         element_types = Dict(
             kk => :Hexa8
             for kk = 1:mesh.nelem)
-        
-        #
-        #Use NodeNumbering.jl
-        #
-        #adjacency = create_adjacency_graph(elements, element_types)
-        #degrees = node_degrees(adjacency)
-        #neworder = RCM(adjacency, degrees, tot_linear_poin, tot_linear_poin)
-        #finalorder = renumbering(neworder)
-        #RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
-        #newmatrix = adjacency_visualization(RCM_adjacency)
-        #display(UnicodePlots.heatmap(newmatrix))
-        
         
         #
         # Rewrite coordinates in RCM order:
@@ -1111,36 +1099,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 iface_bdy += 1
             # end
         end
-        
-        for e = 1:mesh.nelem
-            for k=1:mesh.ngl
-                for j=1:mesh.ngl
-                    for i = 1:mesh.ngl
-                        ip = mesh.connijk[e, i, j, k]
-                        if (ip in mesh.poin_in_bdy_face)
-                            found = false
-                            iface = 1
-                            while (iface <= mesh.nfaces_bdy && found == false)
-                                for j1 = 1:mesh.ngl
-                                    for i1 = 1:mesh.ngl
-                                        ip1 = mesh.poin_in_bdy_face[iface, i1, j1]
-                                        e1 = mesh.bdy_face_in_elem[iface]
-                                        if (ip1 == ip && e1 == e)
-                                            mesh.elem_to_face[e,i,j,k,1] = iface
-                                            mesh.elem_to_face[e,i,j,k,2] = i1
-                                            mesh.elem_to_face[e,i,j,k,3] = j1
-                                            found = true
-                                        end
-                                    end
-                                end
-                                iface += 1
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        ## generate element to face point mapping
         #=for iface =1:mesh.nfaces_bdy
             for i=1:mesh.ngl
                 for j=1:mesh.ngl
@@ -1267,21 +1225,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         end
 
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. "; msg_rank = rank, suppress = mesh.msg_suppress)
-                
-        #@info " TEYYYYYYYY NOT - OPTIMIZED"
-        # restructure4periodicity_3D(mesh, norx, "periodicx")
-        # restructure4periodicity_3D(mesh, nory, "periodicy")
-        # restructure4periodicity_3D(mesh, norz, "periodicz")
-
-
+     
         restructure4periodicity_3D_sorted!(mesh, norx, "periodicx")
         restructure4periodicity_3D_sorted!(mesh, nory, "periodicy")
         restructure4periodicity_3D_sorted!(mesh, norz, "periodicz")
         
-
-        #restructure4periodicity_3D_optimized!(mesh, norx, "periodicx")
-        #restructure4periodicity_3D_optimized!(mesh, nory, "periodicy")
-        #restructure4periodicity_3D_optimized!(mesh, norz, "periodicz")
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
 
     end
@@ -1347,13 +1295,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #end #f
     
     # write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./", parts, nparts)
-
-    #
-    # gridapDistributed test on gmsh
-    #
-    # @mystop("my stop at mesh.jl L135")
-    # end gridapDistributed test on gmsh
-
 
     #show(stdout, "text/plain", mesh.conn')
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
@@ -3792,6 +3733,14 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
                                         SD=NSD_1D())
         end
         mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], CPU())
+
+        mesh.coords[:,1] = mesh.x[:]
+        if mesh.nsd > 1
+            mesh.coords[:,2] = mesh.y[:]
+            if mesh.nsd > 2
+                mesh.coords[:,3] = mesh.z[:]
+            end
+        end
         
         #Write structured grid to VTK
         #vtkfile = vtk_grid("mySTRUCTURED_GRID", mesh.x, mesh.y, mesh.z) # 3-D

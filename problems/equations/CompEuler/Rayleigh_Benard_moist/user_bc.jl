@@ -1,4 +1,4 @@
-function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
     #    if (tag == "free_slip")
     #if ((x == 5000.0 && y == 0.0) || (x == -5000.0 && y == 0.0) || (x == -5000.0 && y == 10000.0) || (x == 5000.0 && y == 10000.0)) 
     #  a = 1
@@ -25,7 +25,7 @@ function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFl
     
 end
 
-function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
 #    if (tag == "free_slip")
     
     qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
@@ -40,12 +40,12 @@ function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFl
       #  qbdy[2] = 0.0
       #  qbdy[3] = 0.0
       #end
-     #@info x,y,nx,ny,qbdy[2],qbdy[3] 
+     #@info coords,nx,ny,qbdy[2],qbdy[3] 
   # return qbdy #, flags
     
 end
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x, y, ::TOTAL)
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, ::TOTAL)
 
     if (tag == "bottom" && x < 4000 && x > -4000)
         F_edge[4] = 0.0001*1004*rand()*u[1]
@@ -57,7 +57,7 @@ function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x, y, ::TOTAL)
 end
 
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, x, y, τ_f, wθ, ::PERT)
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, ::PERT)
 
     if (tag == "bottom" && x < 4000 && x > -4000)
         F_edge[4] = 0.0001*1004*rand()*(u[1]+qe[1])
@@ -73,7 +73,7 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloa
     return flux
 end
 
-function user_bc_dirichlet_gpu(q,qe,x,y,t,nx,ny,qbdy,lpert)
+function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,qbdy,lpert)
     T = eltype(q)
     if (lpert)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])

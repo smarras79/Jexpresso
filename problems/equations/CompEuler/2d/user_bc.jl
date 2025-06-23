@@ -1,4 +1,4 @@
-function user_bc_dirichlet!(qbdy, x, y, t, tag::String, inputs)    
+function user_bc_dirichlet!(qbdy, coords, t, tag::String, inputs)    
     
     #fill!(flags, zero(Float64))
     if ( x <= -4990.0 || x >= 4990.0)
@@ -14,7 +14,7 @@ function user_bc_dirichlet!(qbdy, x, y, t, tag::String, inputs)
     
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs::Dict)
     fill!(flux, zero(Float64))
     return flux
 end

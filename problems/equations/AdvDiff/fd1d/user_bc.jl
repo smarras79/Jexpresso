@@ -30,7 +30,7 @@ function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractF
     
     return qbdy
 end
-function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String)
+function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String)
 
     qbdy[1] = 0.0    
     

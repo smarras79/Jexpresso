@@ -56,7 +56,7 @@ function user_bc_dirichlet!(q, x::AbstractFloat, t::AbstractFloat, tag::String, 
     
 end
 
-function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
 #    if (tag == "free_slip")
       
       if (y<=14950) #(abs(x) < 119500.0 && y<= 14950.0)
@@ -72,12 +72,12 @@ function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFl
       #  qbdy[2] = 0.0
       #  qbdy[3] = 0.0
       #end
-     #@info x,y,nx,ny,qbdy[2],qbdy[3] 
+     #@info coords,nx,ny,qbdy[2],qbdy[3] 
   # return qbdy #, flags
     
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
 end

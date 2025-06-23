@@ -39,18 +39,18 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         mesh, partitioned_model, n2o_ele_map = mod_mesh_mesh_driver(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, omesh)
     end
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
-        mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
+        mesh.coords[:,1] .= (@view(mesh.coords[:,1]) .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xscale] != 1.0)
-        mesh.x = mesh.x*TFloat(inputs[:xscale]*0.5)
+        mesh.coords[:,1] = @view(mesh.coords[:,1])*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xdisp] != 0.0)
-        mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp]))
+        mesh.coords[:,1] .= (@view(mesh.coords[:,1]) .+ TFloat(inputs[:xdisp]))
     end
     if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
-        mesh.y .= (mesh.y .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
+        mesh.coords[:,2] .= (mesh.coords[:,2] .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
     elseif(inputs[:yscale] != 1.0)
-        mesh.y .= (mesh.y) .*inputs[:yscale]*0.5
+        mesh.coords[:,2] .= (mesh.coords[:,2]) .*inputs[:yscale]*0.5
     elseif(inputs[:ydisp] != 0.0)
-        mesh.y .= (mesh.y .+ inputs[:ydisp])
+        mesh.coords[:,2] .= (mesh.coords[:,2] .+ inputs[:ydisp])
     end
     mesh.ymax = maximum(mesh.y)
     
@@ -256,13 +256,13 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
             
             if (inputs[:lperiodic_1d])
-                @time periodicity_restructure!(mesh,mesh.x,mesh.y,mesh.z,mesh.xmax,
-                                               mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,
-                                               mesh.poin_in_bdy_face,mesh.poin_in_bdy_edge,
-                                               mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
-                                               mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
-                                               mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,
-                                               inputs,inputs[:backend])
+                @time periodicity_restructure!( mesh.coords, # mesh,mesh.x,mesh.y,mesh.z,
+                                                mesh.xmax, mesh.xmin,mesh.ymax,mesh.ymin,mesh.zmax,mesh.zmin,
+                                                mesh.poin_in_bdy_face,mesh.poin_in_bdy_edge,
+                                                mesh.ngl,mesh.ngr,mesh.nelem,mesh.npoin,mesh.nsd,mesh.bdy_edge_type,
+                                                mesh.bdy_face_type,mesh.bdy_face_in_elem,mesh.bdy_edge_in_elem,
+                                                mesh.connijk,mesh.connijk_lag,mesh.npoin_linear,mesh.nelem_semi_inf,
+                                                inputs,inputs[:backend])
             end
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
                                     ldss_laplace=inputs[:ldss_laplace],
