@@ -24,17 +24,17 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe,::TOTAL)
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe,::TOTAL)
 
    nothing
 end
 
-function user_bc_dirichlet!(q, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe,::PERT)
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe,::PERT)
 
    nothing
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, inputs::Dict)
     
     flux = zeros(size(q,2),1)
     return flux
