@@ -793,8 +793,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
                              params.metrics.dζdx,params.metrics.dζdy, params.metrics.dζdz,
                              params.inputs, params.rhs_el, iel, ieq,
                              params.WM.τ_f, params.inputs[:lwall_model], params.mesh.connijk,
-                             [params.mesh.x, params.mesh.y, params.mesh.z], 
-                             params.mesh.poin_in_bdy_face, params.mesh.elem_to_face,
+                             params.mesh.coords,                             
+                             params.mesh.poin_in_bdy_face, params.mesh.elem_to_face, params.mesh.bdy_face_type,
                              params.QT, params.VT, SD, params.AD)
             
         end
@@ -950,11 +950,11 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                     if (lwall_model && ieq == 5)
                         ip = connijk[iel,i,j,k]
                         if (ip in poin_in_bdy_face)
-                            iface = elem_to_face[iel,i,j,k,1]
+                            iface_bdy = elem_to_face[iel,i,j,k,1]
                             idx1 = elem_to_face[iel,i,j,k,2]
                             idx2 = elem_to_face[iel,i,j,k,3]
                             ###define vertical heat flux at surface for wall model
-                            #wθ[iface,idx1,idx2] = 
+                            #wθ[iface_bdy,idx1,idx2] = 
                         end 
                     end
                     auxi = ωJac*((dFdx + dGdy + dHdz) - S[i,j,k,ieq])
@@ -1249,13 +1249,13 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           τ_f, lwall_model,
                           connijk,
                           coords, 
-                          poin_in_bdy_face, elem_to_face,
+                          poin_in_bdy_face, elem_to_face, bdy_face_type, 
                           QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal)
 
     '''
     
     '''
-    
+
     for m = 1:ngl
         for l = 1:ngl
             for k = 1:ngl
@@ -1297,15 +1297,21 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 if (lwall_model)                   
                     ip = connijk[iel,k,l,m]
                     if (ip in poin_in_bdy_face)
-                        iface = elem_to_face[iel,k,l,m,1]
+                        
+                        iface_bdy = elem_to_face[iel,k,l,m,1]
                         idx1  = elem_to_face[iel,k,l,m,2]
                         idx2  = elem_to_face[iel,k,l,m,3]
-                        ###define τij for wall model
-                        u2 = uprimitiveieq[k,l,2,4]
-                        uτ = jeFind_uτ(u2, mesh.z[ip], 0.4, 1.0e-5, 5.0)
-                        τw = uτ^2*ρ
-                        println(" uτ = ", uτ)
-                        #τ_f[iface,idx1,idx2] = τw
+                        if bdy_face_type[iface_bdy] == "wall_model"
+                            ip2 = connijk[iel,k,l,2]
+                            #@info ip2, coords[ip2, 3]
+                       
+                            ###define τij for wall model
+                            u2 = uprimitiveieq[k,l,2,4]
+                            uτ = jeFind_uτ(u2, coords[ip2,3], 0.4, 1.0e-5, 5.0)
+                            #τw = uτ^2*ρ
+                            println(" uτ = ", uτ)
+                            #τ_f[iface,idx1,idx2] = τw
+                        end
                     end
                 end
                 

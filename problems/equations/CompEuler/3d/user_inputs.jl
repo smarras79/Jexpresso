@@ -6,12 +6,12 @@ function user_inputs()
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.2,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 1.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output",
-        :diagnostics_at_times => (0:50:1000),
+        :diagnostics_at_times => (0:0.1:1),
         :lsource              => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -21,11 +21,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc               => true, #false by default
+        :lwall_model          => true,
+        :lvisc                => true, #false by default
         :visc_model           => AV(), #VREM(), #SMAG(),
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587],
-        :μ                   => [0.0, 60.0, 60.0, 60.0, 60.0],
+        :μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
