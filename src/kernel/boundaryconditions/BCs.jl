@@ -131,40 +131,6 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
     
 end
 
-
-#=function _bc_dirichlet!(qbdy, x, y, t, tag, mesh)
-
-    # WARNING!!!!
-    # THIS SHOULD LEVERAGE the bdy node tag rather than checking coordinates
-    # REWRITE and make sure that there is no allocation.
-    #############
-    eps = 10.0
-    xmin = mesh.xmin + eps; xmax = mesh.xmax - eps
-    ymin = mesh.ymin + eps; ymax = mesh.ymax - eps
-    
-    #=if ( x <= -4990.0 || x >= 4990.0)
-    qbdy[2] = 0.0
-    end
-    if (y <= 10.0 || y >= 9990.0)
-    qbdy[3] = 0.0
-    end
-    if ((x >= 4990.0 || x <= -4990.0) && (y >= 9990.0 || y <= 10.0))
-    qbdy[2] = 0.0
-    qbdy[3] = 0.0
-    end=#
-    if ( x <= xmin || x >= xmax)
-        qbdy[2] = 0.0
-    end
-    if (y <= ymin || y >= ymax)
-        qbdy[3] = 0.0
-    end
-    if ((x >= xmax || x <= xmin) && (y >= ymax || y <= ymin))
-        qbdy[2] = 0.0
-        qbdy[3] = 0.0
-    end
-    
-end=#
-
 function build_custom_bcs_dirichlet!(::NSD_1D, t,
                                      coords, 
                                      #x, y, z,
@@ -172,7 +138,8 @@ function build_custom_bcs_dirichlet!(::NSD_1D, t,
                                      npoin_linear, poin_in_bdy_edge, poin_in_bdy_face,
                                      nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                                      xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
-                                     connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
+                                     connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type,
+                                     RHS, rhs_el,
                                      connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
                                      Tabs, qn,
                                      neqs, dirichlet!, neumann, inputs)

@@ -6,20 +6,22 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
     
-    fx = zeros(Float64,1,1)
-    fy = zeros(Float64,1,1)
-    fz = zeros(Float64,1,1)
-    fy_lag = zeros(Float64,1,1)
-    Nξ    = inputs[:nop]
-    lexact_integration = inputs[:lexact_integration]    
-    PT    = inputs[:equations]
-    AD    = inputs[:AD]
-    CL    = inputs[:CL]
+    fx        = zeros(Float64,1,1)
+    fy        = zeros(Float64,1,1)
+    fz        = zeros(Float64,1,1)
+    fy_lag    = zeros(Float64,1,1)
     phys_grid = zeros(Float64,1,1)
-    SOL_VARS_TYPE = inputs[:SOL_VARS_TYPE]
+    Nξ        = inputs[:nop]   
+    PT        = inputs[:equations]
+    AD        = inputs[:AD]
+    CL        = inputs[:CL]
     
-    connijk_original = zeros(TInt,1,1,1,1)
+    lexact_integration = inputs[:lexact_integration]
+    SOL_VARS_TYPE      = inputs[:SOL_VARS_TYPE]
+    
+    connijk_original          = zeros(TInt,1,1,1,1)
     poin_in_bdy_face_original = zeros(TInt,1,1,1)
+    
     x_original = zeros(1,1)
     y_original = zeros(1,1)
     z_original = zeros(1,1)
@@ -45,6 +47,8 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     elseif (inputs[:xdisp] != 0.0)
         mesh.coords[:,1] .= (@view(mesh.coords[:,1]) .+ TFloat(inputs[:xdisp]))
     end
+    mesh.xmin = minimum(mesh.coords[:,1])
+    mesh.xmax = maximum(mesh.coords[:,1])
     if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
         mesh.coords[:,2] .= (mesh.coords[:,2] .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
     elseif(inputs[:yscale] != 1.0)
@@ -52,8 +56,10 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     elseif(inputs[:ydisp] != 0.0)
         mesh.coords[:,2] .= (mesh.coords[:,2] .+ inputs[:ydisp])
     end
-    mesh.ymax = maximum(mesh.y)
-    
+    if mesh.nsd == 2
+        mesh.ymin = minimum(mesh.coords[:,2])
+        mesh.ymax = maximum(mesh.coords[:,2])
+    end
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
@@ -130,27 +136,24 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                 end
             end
             
-            if (inputs[:lwarp])
-                warp_mesh!(mesh,inputs)
-            end
-            @info " Build metrics ......"            
+            if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+            if (rank == 0) @info " Build metrics ......" end
             metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])            
             @time build_metric_terms!(metrics1, mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat, COVAR(), SD; backend = inputs[:backend])
             
             metrics2 = allocate_metrics_laguerre(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, Qξ, mesh.ngr, TFloat, inputs[:backend])
             build_metric_terms!(metrics2, mesh, basis1, basis2, Nξ, Qξ, mesh.ngr, mesh.ngr, ξ, ω1, ω2, TFloat, COVAR(), SD; backend = inputs[:backend])
-
             
             metrics = (metrics1, metrics2)
-            @info " Build metrics ...... DONE"
+            if (rank == 0) @info " Build metrics ...... DONE" end
             
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat;
                                              ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
             
         else
-            @info " Build interpolation bases ......"
+            if (rank == 0) @info " Build interpolation bases ......" end
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
-            @info " Build interpolation bases ...... END"
+            if (rank == 0) @info " Build interpolation bases ...... END" end
             ω1 = ω
             ω = ω1
             if (inputs[:lfilter])
@@ -180,44 +183,26 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             # Build metric terms
             #--------------------------------------------------------
             if (mesh.nsd > 2)
-                if (inputs[:lwarp])
-                    warp_mesh_3D!(mesh,inputs)
-                end
+                if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
             else
-                if (inputs[:lwarp])
-                    warp_mesh!(mesh,inputs)
-                end
+                if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
             end
-            if rank == 0
-                @info " Build metrics ......"
-            end
+            if (rank == 0) @info " Build metrics ......" end
             metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
             @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
-            
-            if rank == 0
-                @info " Build metrics ...... END"
-            end
+            if (rank == 0) @info " Build metrics ...... END" end
             
             if (inputs[:lphysics_grid])
                 phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
             end 
-            if rank == 0
-                @info " Build periodicity infrastructure ......"
-            end
+            if (rank == 0) @info " Build periodicity infrastructure ......" end
 
-            if (inputs[:lwarp])
-                warp_mesh!(mesh,inputs)
-            end           
+            if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
 
-            if rank == 0
-                @info " Matrix wrapper ......"
-            end
+            if (rank == 0) @info " Matrix wrapper ......" end
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
                         ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
-            if rank == 0
-                @info " Matrix wrapper ...... END"
-            end
-            
+            if (rank == 0)  @info " Matrix wrapper ...... END" end
         end
     else
         #
@@ -226,23 +211,23 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         if(inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
 
             basis1 = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
-            ξω2 = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta], inputs[:backend])
-            ξ2,ω2 = ξω2.ξ, ξω2.ω
+            ξω2    = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta], inputs[:backend])
+            ξ2,ω2  = ξω2.ξ, ξω2.ω
             basis2 = build_Interpolation_basis!(ScaledLaguerreBasis(), ξ2, ξ2, inputs[:laguerre_beta], TFloat, inputs[:backend])
-            basis = (basis1, basis2)
-            ω1 = ω
-            ω = (ω1,ω2)
+            basis  = (basis1, basis2)
+            ω1     = ω
+            ω      = (ω1,ω2)
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-            @info " Build metrics ......"
+            if (rank == 0) @info " Build metrics ......" end
             metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
             build_metric_terms!(metrics1, mesh, basis[1], Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
             metrics2 = allocate_metrics(SD, mesh.nelem_semi_inf, mesh.nedges_bdy, mesh.ngr, TFloat, inputs[:backend])
             build_metric_terms_1D_Laguerre!(metrics2, mesh, basis[2], mesh.ngr, mesh.ngr, ξ2, ω2, inputs, TFloat, COVAR(), SD;backend = inputs[:backend])
             
             metrics = (metrics1, metrics2)
-             @info " Build metrics ...... DONE"
+            if (rank == 0) @info " Build metrics ...... DONE" end
             matrix = matrix_wrapper_laguerre(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
         else
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
@@ -287,7 +272,6 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         mesh.length∂O = length(mesh.∂O)
         mesh.length∂τ = length(mesh.∂τ)
         mesh.lengthΓ  = length(mesh.Γ)
-        
     end
     
     #--------------------------------------------------------
