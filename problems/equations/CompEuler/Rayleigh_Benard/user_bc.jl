@@ -63,7 +63,7 @@ function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, ::TOTAL)
 
 end
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, ::PERT)
+function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL)
 
     if (tag == "bottom")
         F_edge[4] = 0.02*rand()*(u[1]+qe[1])
@@ -72,10 +72,6 @@ function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, ::PERT
     end
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
-    flux = zeros(size(q,2),1)
-    return flux
-end
 
 function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,qbdy,lpert)
     T = eltype(q)

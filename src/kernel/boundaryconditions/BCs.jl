@@ -321,8 +321,10 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                     e   = bdy_edge_in_elem[iedge]
                     ip1 = connijk[e,i,2]
                     
-                    user_bc_neumann!(@view(F_surf[i,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:],
-                                     bdy_edge_type[iedge], @view(coords[ip,:]), inputs[:SOL_VARS_TYPE])
+                    user_bc_neumann!(@view(F_surf[i,:]), uaux[ip,:], uaux[ip1,:],
+                                     qe[ip,:], qe[ip1,:],
+                                     bdy_edge_type[iedge],
+                                     @view(coords[ip,:]), inputs[:SOL_VARS_TYPE])
                 end
             end
             compute_segment_integral!(S_face, F_surf, ω, Jef, iedge, ngl)
@@ -574,7 +576,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
         if (inputs[:bdy_fluxes])
             F_surf .= 0.0
             if (inputs[:bulk_fluxes])
-                if (z[poin_in_bdy_face[iface,3,3]] == zmin)
+                if (coords[poin_in_bdy_face[iface,3,3],3] == zmin)
                     for i = 1:ngl
                         for j = 1:ngl
                             ip  = poin_in_bdy_face[iface,i,j]
@@ -594,14 +596,17 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                 end
             
             else
-                if (z[poin_in_bdy_face[iface,3,3]] == zmin)
+                if (coords[poin_in_bdy_face[iface,3,3], 3] == zmin)
                     for i = 1:ngl
                         for j = 1:ngl
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
                             ip1 = connijk[e,i,j,2]
-                            user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:],
-                                             bdy_face_type[iface], @view(coords[ip,:]), τ_f[iface,i,j], wθ[iface,i,j], inputs[:SOL_VARS_TYPE])
+                            user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
+                                             qe[ip,:], qe[ip1,:],
+                                             bdy_face_type[iface],
+                                             @view(coords[ip,:]),
+                                             τ_f[iface,i,j], wθ[iface,i,j], inputs[:SOL_VARS_TYPE])
                         end
                     end
                  end
@@ -614,7 +619,8 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
     #@info maximum(S_face[:,:,:,2]), maximum(S_face[:,:,:,5]), maximum(S_face[:,:,:,6])
     #@info minimum(S_face[:,:,:,2]), minimum(S_face[:,:,:,5]), minimum(S_face[:,:,:,6])
     if (inputs[:bdy_fluxes])
-        DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces_bdy, ngl, z, zmin, connijk, poin_in_bdy_face, bdy_face_in_elem)
+        DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces_bdy, ngl,
+                              coords[:,3], zmin, connijk, poin_in_bdy_face, bdy_face_in_elem)
         #@info maximum(S_flux[:,2]), maximum(S_flux[:,5]), maximum(S_flux[:,6])
         #@info minimum(S_flux[:,2]), minimum(S_flux[:,5]), minimum(S_flux[:,6])
         for ieq = 1:neqs
