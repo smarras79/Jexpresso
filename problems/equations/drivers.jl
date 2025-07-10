@@ -1,11 +1,11 @@
 function driver(nparts,
                 distribute,
                 inputs::Dict,
-                    OUTPUT_DIR::String,
+                OUTPUT_DIR::String,
                 TFloat) 
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
-    sem = sem_setup(inputs, nparts, distribute)
+    sem, partitioned_model = sem_setup(inputs, nparts, distribute)
     
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
@@ -13,23 +13,8 @@ function driver(nparts,
     
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
-    # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
-    # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
-    if inputs[:ladapt] == true
-        if rank == 0
-            @info "start conformity4ncf_q!"
-        end
-        pM = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
-        @time conformity4ncf_q!(qp.qn, pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
-        @time conformity4ncf_q!(qp.qe, pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
-        
-        MPI.Barrier(comm)
-        if rank == 0
-            @info "end conformity4ncf_q!"
-        end
-    end
 
-    if (inputs[:amr] == true)
+    if (inputs[:lamr] == true)
         amr_freq = inputs[:amr_freq]
         Δt_amr   = amr_freq * inputs[:Δt]
         tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
@@ -43,11 +28,40 @@ function driver(nparts,
                               TFloat,
                               tspan)
     
+    # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
+    # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
+    if inputs[:ladapt] == true
+        if rank == 0
+            @info "start conformity4ncf_q!"
+        end
+        pM = setup_assembler(params.mesh.SD, params.qp.qn, params.mesh.ip2gip, params.mesh.gip2owner)
+        @time conformity4ncf_q!(params.qp.qn, params.rhs_el_tmp, @view(params.utmp[:,:]), params.vaux, 
+                                                                       pM, params.q_el, params.q_el_pro, 
+                                                                       params.q_ghost_p, params.q_ghost_c,
+                                                                       params.mesh.SD, 
+                                                                       params.QT, params.mesh.connijk,
+                                                                       params.mesh, params.Minv, 
+                                                                       params.metrics.Je, params.ω, params.AD, 
+                                                                       params.neqs, params.interp, params)
+        @time conformity4ncf_q!(params.qp.qe, params.rhs_el_tmp, @view(params.utmp[:,:]), params.vaux, 
+                                                                       pM, params.q_el, params.q_el_pro, 
+                                                                       params.q_ghost_p, params.q_ghost_c,
+                                                                       params.mesh.SD, 
+                                                                       params.QT, params.mesh.connijk, 
+                                                                       params.mesh, params.Minv, 
+                                                                       params.metrics.Je, params.ω, params.AD, 
+                                                                       params.neqs, params.interp, params)
+        
+        MPI.Barrier(comm)
+        if rank == 0
+            @info "end conformity4ncf_q!"
+        end
+    end
     if !inputs[:llinsolve]
         #
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
         #
-        @time solution = time_loop!(inputs, params, u)
+        @time solution = time_loop!(inputs, params, u, partitioned_model)
         # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
         
     else

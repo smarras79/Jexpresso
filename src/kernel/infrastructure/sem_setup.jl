@@ -1,10 +1,11 @@
 include("../mesh/restructure_for_periodicity.jl")
 include("../mesh/warping.jl")
 
-function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, partitioned_model_coarse = nothing, omesh = nothing)
+function sem_setup(inputs::Dict, nparts, distribute, args...)
     
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
+    adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
     fx = zeros(Float64,1,1)
     fy = zeros(Float64,1,1)
@@ -36,7 +37,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     if isnothing(adapt_flags)
         mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
     else
-        mesh, partitioned_model, n2o_ele_map = mod_mesh_mesh_driver(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, omesh)
+        mesh, partitioned_model, uaux_new = mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
     end
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.x .= (mesh.x .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
@@ -85,7 +86,6 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         ω   = ξω.ω
     end
     SD = mesh.SD
-    
     #--------------------------------------------------------
     # Build Lagrange polynomials:
     #
@@ -145,9 +145,9 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                                              ldss_laplace=inputs[:ldss_laplace], ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
             
         else
-            @info " Build interpolation bases ......"
+            if rank == 0 @info " Build interpolation bases ......" end
             basis = build_Interpolation_basis!(LagrangeBasis(), ξ, ξq, TFloat, inputs[:backend])
-            @info " Build interpolation bases ...... END"
+            if rank == 0 @info " Build interpolation bases ...... END" end
             ω1 = ω
             ω = ω1
             if (inputs[:lfilter])
@@ -188,16 +188,13 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             if rank == 0
                 @info " Build metrics ......"
             end
-            @time metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
+            metrics = build_metric_terms(SD, COVAR(), mesh, basis, Nξ, Qξ, ξ, ω, TFloat; backend = inputs[:backend])
             if rank == 0
                 @info " Build metrics ...... END"
             end
             if (inputs[:lphysics_grid])
                 phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
             end 
-            if rank == 0
-                @info " Build periodicity infrastructure ......"
-            end
 
             if (inputs[:lwarp])
                 warp_mesh!(mesh,inputs)
@@ -300,10 +297,10 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     #--------------------------------------------------------
     if isnothing(adapt_flags)
         return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
-                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, partitioned_model, nparts, distribute)
+                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model
     else
         return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
-                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, partitioned_model, nparts, distribute), n2o_ele_map
+                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model, uaux_new
     end
     
 end
