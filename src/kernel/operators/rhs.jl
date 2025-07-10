@@ -1316,7 +1316,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             if !isnan(uτ)
                                 τw = PhysConst.ν * uτ^2 / abs(uτ)  # Wall shear stress
                                 println("Wall shear stress: $τw")
-                                τ_f[iface,idx1,idx2] = τw
+                                τ_f[iface_bdy,idx1,idx2] = τw
                                 
                                 # Calculate dimensionless parameters
                                 y_plus = y2 * abs(uτ) / PhysConst.ν
@@ -1483,7 +1483,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             if !isnan(uτ)
                                 τw = PhysConst.ν * uτ^2 / abs(uτ)  # Wall shear stress
                                 println("Wall shear stress: $τw")
-                                τ_f[iface,idx1,idx2] = τw
+                                τ_f[iface_bdy, idx1, idx2] = τw
                                 
                                 # Calculate dimensionless parameters
                                 #y_plus = y2 * abs(uτ) / PhysConst.ν
