@@ -627,6 +627,4 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
             RHS[:, ieq] .+= S_flux[:,ieq] ./ M_inv[:]
         end
     end
-    
-    
 end

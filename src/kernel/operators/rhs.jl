@@ -782,7 +782,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
             _expansion_visc!(params.rhs_diffξ_el,
                              params.rhs_diffη_el,
                              params.rhs_diffζ_el,
-                             params.uprimitive, 
+                             params.uprimitive,
                              params.visc_coeff,
                              params.ω,
                              params.mesh.ngl,
@@ -947,19 +947,19 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                     #if (ieq == 4)
                     #   @info dHdz, S[i,j,k,ieq]
                     #end
-                    if (lwall_model && ieq == 5)
+                    #=if (lwall_model && ieq == 5)
                         ip = connijk[iel,i,j,k]
                         if (ip in poin_in_bdy_face)
                             iface_bdy = elem_to_face[iel,i,j,k,1]
                             idx1 = elem_to_face[iel,i,j,k,2]
                             idx2 = elem_to_face[iel,i,j,k,3]
                             if bdy_face_type[iface_bdy] == "wall_model"
-                                ip2 = connijk[iel,k,l,2]
+                                ip2 = connijk[iel,i,j,2]
                                 ###define vertical heat flux at surface for wall model
-                                #wθ[iface_bdy,idx1,idx2] =
+                    #wθ[iface_bdy,idx1,idx2] =
                             end
                         end 
-                    end
+                    end=#
                     auxi = ωJac*((dFdx + dGdy + dHdz) - S[i,j,k,ieq])
                     rhs_el[iel,i,j,k,ieq] -= auxi
                 end
@@ -1258,7 +1258,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     '''
     
     '''
-
+    PhysConst = PhysicalConst{Float32}()
+    
     for m = 1:ngl
         for l = 1:ngl
             for k = 1:ngl
@@ -1305,14 +1306,28 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         idx2  = elem_to_face[iel,k,l,m,3]
                         if bdy_face_type[iface_bdy] == "wall_model"
                             ip2 = connijk[iel,k,l,2]
-                            #@info ip2, coords[ip2, 3]
-                       
-                            ###define τij for wall model
-                            u2 = uprimitiveieq[k,l,2,4]
-                            uτ = jeFind_uτ(u2, coords[ip2,3], 0.4, 1.0e-5, 5.0)
-                            #τw = uτ^2*ρ
-                            println(" uτ = ", uτ)
-                            #τ_f[iface,idx1,idx2] = τw
+
+                            # compute τw
+                            ieq = 2
+                            u2 = uprimitiveieq[k, l, 2, ieq]
+                            y2 = coords[ip2, 3]
+                            uτ = find_uτ(u2, y2)
+                            
+                            if !isnan(uτ)
+                                τw = PhysConst.ν * uτ^2 / abs(uτ)  # Wall shear stress
+                                println("Wall shear stress: $τw")
+                                τ_f[iface,idx1,idx2] = τw
+                                
+                                # Calculate dimensionless parameters
+                                y_plus = y2 * abs(uτ) / PhysConst.ν
+                                u_plus = u2 / uτ
+                                
+                                @printf("u₂ = %8.3f, y₂ = %8.1f → uτ = %8.5f, y⁺ = %8.1f, u⁺ = %8.3f\n", 
+                                        u2, y2, uτ, y_plus, u_plus)
+                            else
+                                @printf("u₂ = %8.3f, y₂ = %8.1f → FAILED\n", u2, y2)
+                            end
+                            
                         end
                     end
                 end
@@ -1451,14 +1466,36 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac
                 
                 if (lwall_model)
-                    ip = connijk[iel,i,j,k]
+                    ip = connijk[iel,k,l,m]
                     if (ip in poin_in_bdy_face)
-                        iface = elem_to_face[iel,i,j,k,1]
-                        idx1 = elem_to_face[iel,i,j,k,2]
-                        idx2 = elem_to_face[iel,i,j,k,3]
-                        ###define τij for wall model
-                        #τ_f[iface,idx1,idx2] = 
-                    end 
+                        iface_bdy = elem_to_face[iel,k,l,m,1]
+                        idx1  = elem_to_face[iel,k,l,m,2]
+                        idx2  = elem_to_face[iel,k,l,m,3]
+                        if bdy_face_type[iface_bdy] == "wall_model"
+                            ip2 = connijk[iel,k,l,2]
+
+                            # compute τw
+                            ieq = 2
+                            u2 = uprimitiveieq[k, l, 2, ieq]
+                            y2 = coords[ip2, 3]
+                            uτ = find_uτ(u2, y2)
+                            
+                            if !isnan(uτ)
+                                τw = PhysConst.ν * uτ^2 / abs(uτ)  # Wall shear stress
+                                println("Wall shear stress: $τw")
+                                τ_f[iface,idx1,idx2] = τw
+                                
+                                # Calculate dimensionless parameters
+                                #y_plus = y2 * abs(uτ) / PhysConst.ν
+                                #u_plus = u2 / uτ
+                                #
+                                #@printf("u₂ = %8.3f, y₂ = %8.1f → uτ = %8.5f, y⁺ = %8.1f, u⁺ = %8.3f\n", 
+                                #        u2, y2, uτ, y_plus, u_plus)
+                            else
+                                @printf("u₂ = %8.3f, y₂ = %8.1f → FAILED\n", u2, y2)
+                            end
+                        end
+                    end
                 end
                 
                 @turbo for i = 1:ngl

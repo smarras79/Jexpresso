@@ -1,128 +1,96 @@
 using Roots
+using Printf
 
-"""
-    nonlinear_function(uτ, κinv, u2, ν, y2, C)
-
-Define the nonlinear function: uτ*(κinv*log(y2*uτ/ν) + C) - u2
-
-# Arguments
-- `uτ`: Variable to solve for
-- `κinv`: Inverse of κ (1/0.4 = 2.5)
-- `u2`: Constant (10)
-- `ν`: Constant (1e-4)
-- `y2`: Constant (1)
-"""
-function nonlinear_function(uτ, κinv, u2, ν, y2, C)
-    return uτ*(κinv * log(y2 * uτ / ν) + C) - u2
-end
-
-function find_zeros_nonlinear(; κinv=2.5, u2=10, ν=1e-4, y2=1, C=5.0,
-                              search_range=(1.0, 1.0), method=:brent)
+# Main function to find uτ given u2 and y2
+function find_uτ(u2, y2)
+    # Handle the sign of u2 properly
+    u2_abs = abs(u2)
+    u2_sign = sign(u2)
     
-    # Define the function with fixed parameters
-    f(uτ) = nonlinear_function(uτ, κinv, u2, ν, y2, C)
+    # Check for edge cases
+    if u2_abs < 1e-12
+        return 0.0
+    end
+    
+    if y2 <= 0
+        error("Wall-normal distance y2 must be positive, got y2 = $y2")
+    end
+    
+    # Define the nonlinear function to find zeros
+    # f(uτ) = uτ*(κinv * ln(y2 * uτ / ν) + C) - |u2| = 0
+    function wall_model_residual(uτ)
+        
+        # Wall model parameters (constants)
+        κinv = 2.5    # Inverse of von Karman constant (1/κ)
+        C = 5.5       # Additive constant in log law
+        ν = 1.0e-5    # Kinematic viscosity
+                
+        return uτ * (κinv * log(y2 * uτ / ν) + C) - u2_abs
+    end
+    
+    # Solve for uτ using Brent's method
+    uτ_low = 1e-8
+    uτ_high = 10.0 * u2_abs  # Conservative upper bound
     
     try
-        if method == :newton
-            # For Newton's method, use the midpoint as initial guess
-            x0 = sum(search_range) / 2
-            root = find_zero(f, x0, Roots.Newton())
-        elseif method == :bisection
-            root = find_zero(f, search_range, Roots.Bisection())
-        else
-            # Default to Brent's method (robust and fast)
-            root = find_zero(f, search_range, Roots.Brent())
-        end
-        
-        return root
+        uτ_solution = find_zero(wall_model_residual, (uτ_low, uτ_high), Roots.Brent())
+        return uτ_solution * u2_sign  # Apply original sign
     catch e
-        println("Error finding root: ", e)
-        println("Try adjusting the search_range or checking if a root exists in the interval")
-        return nothing
+        @warn "Brent method failed for u2=$u2, y2=$y2: $e"
+        # Fallback to Newton method
+        return find_uτ_newton_fallback(u2_abs, y2) * u2_sign
     end
 end
 
-"""
-    analyze_function(; κinv=2.5, u2=10, ν=1e-4, y2=1, C=5.0, 
-                     uτ_range=(0.01, 10.0), n_points=1000)
-
-Analyze the behavior of the nonlinear function over a range of uτ values.
-This helps visualize the function and identify potential zero locations.
-
-# Returns
-- Tuple of (uτ_values, function_values)
-"""
-function analyze_function(; κinv=2.5, u2=10, ν=1e-4, y2=1, C=5.0,
-                         uτ_range=(0.01, 10.0), n_points=1000)
+# Fallback Newton method
+function find_uτ_newton_fallback(u2_abs, y2)
+    function residual_and_derivative(uτ)
+        residual = uτ * (κinv * log(y2 * uτ / ν) + C) - u2_abs
+        derivative = κinv * log(y2 * uτ / ν) + C + κinv
+        return (residual, derivative)
+    end
     
-    uτ_vals = range(uτ_range[1], uτ_range[2], length=n_points)
-    f_vals = [nonlinear_function(uτ, κinv, u2, ν, y2, C) for uτ in uτ_vals]
+    # Initial guess
+    uτ_init = u2_abs / (κinv * log(y2 * u2_abs / (ν * 10)) + C)
+    uτ_init = max(uτ_init, 1e-8)  # Ensure positive initial guess
     
-    return uτ_vals, f_vals
+    try
+        uτ_solution = find_zero(residual_and_derivative, uτ_init, Roots.Newton())
+        return uτ_solution
+    catch e
+        @warn "Newton fallback also failed: $e"
+        return NaN
+    end
 end
 
-# Example usage and testing
-function jeFind_uτ(u2, y2, κ, ν, C)
-
-    println("=== Nonlinear Zero Finding Example ===")
-    println("Function: uτ*(κinv*log(y2*uτ/ν) + C) - u2 = 0")
-    println("Parameters: κ=$κ, u2=$u2, ν=$ν, y2=$y2")
-    println()
-    
-    # Find the zero
-    method = :bisection #Newton doesn't seem to converge
-    κinv = 1.0/κ
-    #uτ_range = (-10.0, 10.0)
-    #
-    # uτ as zeros of log-law: uτ((1/κ)log(y*uτ/ν) + C) - u = 0.0 where y,u are at some point ABOVE the surface
-    #
-
-    f(uτ, p) = uτ*(κinv * log(y2 * uτ / ν) + C) - u2 + p
-    u0 = [-1.0, 1.0]
-    p = 0.0
-    prob = NonlinearProblem(f, u0, p)
-    sol = solve(prob)
-    println(" Uτ ===== ", sol.uτ)
-    #uτ = find_zeros_nonlinear(; κinv=κinv, u2=u2, ν=ν, y2=y2, C=C, search_range=uτ_range, method=method)
-    
-    #if uτ !== nothing
-    #    println("Root found: uτ = ", uτ)
-    #    # Verify the solution
-    #    verification = nonlinear_function(uτ, κinv, u2, ν, y2, C)
-    #    println("Verification f(uτ) = ", verification)
-    #    println("(Should be close to zero)")
-    #end
-
-    return uτ
+# Test function to demonstrate usage
+function test_wall_model()
+    # Test cases with different signs and magnitudes
+    test_cases = [
+        (0.1, 17.0),     # Positive velocity
+        (0.0, 17.0),     # zero velocity
+        (10.0, 950.0),     # Positive velocity
+        (-10.0, 950.0),    # Negative velocity
+        (5.0, 500.0),      # Smaller velocity, closer to wall
+        (-15.0, 1200.0),   # Negative velocity, further from wall
+        (0.1, 100.0),      # Small positive velocity
+        (-0.1, 100.0),     # Small negative velocity
+    ]
+            
+    for (u2_test, y2_test) in test_cases
+        uτ = find_uτ(u2_test, y2_test)
+        
+        if !isnan(uτ)
+            # Calculate dimensionless parameters
+            y_plus = y2_test * abs(uτ) / ν
+            u_plus = u2_test / uτ
+            
+            @printf("u₂ = %8.3f, y₂ = %8.1f → uτ = %8.5f, y⁺ = %8.1f, u⁺ = %8.3f\n", 
+                   u2_test, y2_test, uτ, y_plus, u_plus)
+        else
+            @printf("u₂ = %8.3f, y₂ = %8.1f → FAILED\n", u2_test, y2_test)
+        end
+    end
 end
 
-#----------------------------------------------
-# flow/fluid parameters (these should come from Jexpresso)
-#----------------------------------------------
-#=
-u2 = 10.0
-y2 = 1.0
-κ  = 0.4
-ν  = 1.0e-4
-ρ  = 1.0
-C  = 5.0 # for smooth wall
-=#
-#----------------------------------------------
-# No user changes beyond this poin
-#----------------------------------------------
-#=
-uτ = jeFind_uτ(u2, y2, κ, ν, C)
-
-#verify: 
-τw = ρ*uτ^uτ
-yp = uτ*y2/ν
-up = 1.0/κ*log(yp) + C
-upverify = u2/uτ
-
-println(" τw = ", τw)
-println(" uτ = ", uτ)
-println(" yp = ", yp)
-println(" up = ", up)
-println(" upverify = ", upverify)
-println(" up - upverify = ", up - upverify)
-=#
+#test_wall_model()
