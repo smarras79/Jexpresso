@@ -75,7 +75,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     w = maximum(q.qn[:,4]./q.qn[:,1])
     speed = sqrt(u*u + v*v + w*w)
     inputs[:Δt] = min(C*mesh.Δelem_s/speed,  inputs[:Δt])
-    println_rank(" Δt = ", inputs[:Δt]; msg_rank = rank)
+    println_rank(" Δt (respecting CFL) = ", inputs[:Δt]; msg_rank = rank)
     
     println_rank(" Initialize fields for TCF with Ene equation ........................ DONE "; msg_rank = rank)
 

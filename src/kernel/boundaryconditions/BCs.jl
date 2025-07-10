@@ -312,7 +312,11 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                         θ = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
                         θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                     end
-                    bulk_surface_flux!(@view(F_surf[i,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, qn[ip], qn[ip1])
+                    bulk_surface_flux!(@view(F_surf[i,:]),
+                                       uaux[ip,:], uaux[ip1,:],
+                                       qe[ip,:], qe[ip1,:],
+                                       θ, θ1,
+                                       qn[ip], qn[ip1])
                 end
 
             else
@@ -596,7 +600,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                 end
             
             else
-                if (coords[poin_in_bdy_face[iface,3,3], 3] == zmin)
+                if (coords[poin_in_bdy_face[iface,3,3], 3] == zmin) # FOR YT THIS WOULDN'T WORK WITH TOPOGRAPHY
                     for i = 1:ngl
                         for j = 1:ngl
                             ip  = poin_in_bdy_face[iface,i,j]
@@ -607,6 +611,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                              bdy_face_type[iface],
                                              @view(coords[ip,:]),
                                              τ_f[iface,i,j], wθ[iface,i,j], inputs[:SOL_VARS_TYPE])
+                            #@info " τ_f[iface,i,j]=== ", τ_f[iface,i,j]
                         end
                     end
                  end
@@ -621,8 +626,8 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
     if (inputs[:bdy_fluxes])
         DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces_bdy, ngl,
                               coords[:,3], zmin, connijk, poin_in_bdy_face, bdy_face_in_elem)
-        #@info maximum(S_flux[:,2]), maximum(S_flux[:,5]), maximum(S_flux[:,6])
-        #@info minimum(S_flux[:,2]), minimum(S_flux[:,5]), minimum(S_flux[:,6])
+        #@info maximum(S_flux[:,2]), maximum(S_flux[:,5])
+        #@info minimum(S_flux[:,2]), minimum(S_flux[:,5])
         for ieq = 1:neqs
             RHS[:, ieq] .+= S_flux[:,ieq] ./ M_inv[:]
         end

@@ -1306,28 +1306,23 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         idx2  = elem_to_face[iel,k,l,m,3]
                         if bdy_face_type[iface_bdy] == "wall_model"
                             ip2 = connijk[iel,k,l,2]
-
-                            # compute τw
                             ieq = 2
-                            u2 = uprimitiveieq[k, l, 2, ieq]
-                            y2 = coords[ip2, 3]
-                            uτ = find_uτ(u2, y2)
+                            u2  = uprimitiveieq[k, l, 2, ieq]
+                            y2  = coords[ip2, 3]
                             
+                            uτ  = find_uτ(u2, y2)
                             if !isnan(uτ)
-                                τw = PhysConst.ν * uτ^2 / abs(uτ)  # Wall shear stress
-                                #println("Wall shear stress: $τw")
-                                τ_f[iface_bdy,idx1,idx2] = τw
+                                ρ = uprimitiveieq[k, l, 2, 1]
+                                τ_f[iface_bdy,idx1,idx2] = 5.0 #ρ*uτ^2 #τw
                                 
                                 # Calculate dimensionless parameters
                                 #y_plus = y2 * abs(uτ) / PhysConst.ν
                                 #u_plus = u2 / uτ
-                                
                                 #@printf("u₂ = %8.3f, y₂ = %8.1f → uτ = %8.5f, y⁺ = %8.1f, u⁺ = %8.3f\n", 
                                 #        u2, y2, uτ, y_plus, u_plus)
                             else
                                 @printf("u₂ = %8.3f, y₂ = %8.1f → FAILED\n", u2, y2)
                             end
-                            
                         end
                     end
                 end
