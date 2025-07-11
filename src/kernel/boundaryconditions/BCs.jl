@@ -610,7 +610,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                              qe[ip,:], qe[ip1,:],
                                              bdy_face_type[iface],
                                              @view(coords[ip,:]),
-                                             τ_f[iface,i,j], wθ[iface,i,j], inputs[:SOL_VARS_TYPE])
+                                             @view(τ_f[iface,i,j,:]), wθ[iface,i,j], inputs[:SOL_VARS_TYPE])
                             #@info " τ_f[iface,i,j]=== ", τ_f[iface,i,j]
                         end
                     end

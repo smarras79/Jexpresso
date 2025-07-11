@@ -1313,7 +1313,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             uτ  = find_uτ(u2, y2)
                             if !isnan(uτ)
                                 ρ = uprimitiveieq[k, l, 2, 1]
-                                τ_f[iface_bdy,idx1,idx2] = 5.0 #ρ*uτ^2 #τw
+                                τ_f[iface_bdy,idx1,idx2] = 5.0 # LARGE VALUE TO TEST ONLY
+                                #τ_f[iface_bdy,idx1,idx2] = ρ*uτ^2 #τw
                                 
                                 # Calculate dimensionless parameters
                                 #y_plus = y2 * abs(uτ) / PhysConst.ν
@@ -1474,21 +1475,26 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             u2 = uprimitiveieq[k, l, 2, ieq]
                             y2 = coords[ip2, 3]
                             uτ = find_uτ(u2, y2)
-                            
+
                             if !isnan(uτ)
-                                τw = PhysConst.ν * uτ^2 / abs(uτ)  # Wall shear stress
-                                println("Wall shear stress: $τw")
-                                τ_f[iface_bdy, idx1, idx2] = τw
+                                τw_mag = PhysConst.ν * uτ^2 / abs(uτ)
                                 
-                                # Calculate dimensionless parameters
-                                #y_plus = y2 * abs(uτ) / PhysConst.ν
-                                #u_plus = u2 / uτ
-                                #
-                                #@printf("u₂ = %8.3f, y₂ = %8.1f → uτ = %8.5f, y⁺ = %8.1f, u⁺ = %8.3f\n", 
-                                #        u2, y2, uτ, y_plus, u_plus)
+                                # Get velocity components at second grid point
+                                u_vel = uprimitiveieq[k, l, 2, 2]  # u-component
+                                w_vel = uprimitiveieq[k, l, 2, 3]  # w-component
+                                vel_mag = sqrt(u_vel^2 + w_vel^2)
+                                
+                                if vel_mag > 1e-12
+                                    τw_x = -τw_mag * u_vel / vel_mag
+                                    τw_z = -τw_mag * w_vel / vel_mag
+                                    
+                                    τ_f[iface_bdy, idx1, idx2, 1] = τw_x
+                                    τ_f[iface_bdy, idx1, idx2, 2] = τw_z
+                                end
                             else
                                 @printf("u₂ = %8.3f, y₂ = %8.1f → FAILED\n", u2, y2)
                             end
+                            
                         end
                     end
                 end
@@ -1607,7 +1613,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         idx1 = elem_to_face[iel,i,j,k,2]
                         idx2 = elem_to_face[iel,i,j,k,3]
                         ###define τij for wall model
-                        #τ_f[iface,idx1,idx2] = 
+                        τ_f[iface,idx1,idx2,1] =
+                        τ_f[iface,idx1,idx2,2] = 
                     end
                 end=#
                 @turbo for i = 1:ngl
