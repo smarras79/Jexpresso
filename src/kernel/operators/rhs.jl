@@ -1306,21 +1306,28 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         idx2  = elem_to_face[iel,k,l,m,3]
                         if bdy_face_type[iface_bdy] == "wall_model"
                             ip2 = connijk[iel,k,l,2]
+
+                            # compute τw
                             ieq = 2
-                            u2  = uprimitiveieq[k, l, 2, ieq]
-                            y2  = coords[ip2, 3]
-                            
-                            uτ  = find_uτ(u2, y2)
+                            u2 = uprimitiveieq[k, l, 2, ieq]
+                            y2 = coords[ip2, 3]
+                            uτ = find_uτ(u2, y2)
+
                             if !isnan(uτ)
-                                ρ = uprimitiveieq[k, l, 2, 1]
-                                τ_f[iface_bdy,idx1,idx2] = 5.0 # LARGE VALUE TO TEST ONLY
-                                #τ_f[iface_bdy,idx1,idx2] = ρ*uτ^2 #τw
+                                τw_mag = PhysConst.ν * uτ^2 / abs(uτ)
                                 
-                                # Calculate dimensionless parameters
-                                #y_plus = y2 * abs(uτ) / PhysConst.ν
-                                #u_plus = u2 / uτ
-                                #@printf("u₂ = %8.3f, y₂ = %8.1f → uτ = %8.5f, y⁺ = %8.1f, u⁺ = %8.3f\n", 
-                                #        u2, y2, uτ, y_plus, u_plus)
+                                # Get velocity components at second grid point
+                                u_vel = uprimitiveieq[k, l, 2, 2]  # u-component
+                                v_vel = uprimitiveieq[k, l, 2, 3]  # w-component
+                                vel_mag = sqrt(u_vel^2 + v_vel^2)
+                                
+                                if vel_mag > 1e-12
+                                    τw_x = -τw_mag * u_vel / vel_mag
+                                    τw_y = -τw_mag * v_vel / vel_mag
+                                    
+                                    τ_f[iface_bdy, idx1, idx2, 1] = τw_x
+                                    τ_f[iface_bdy, idx1, idx2, 2] = τw_y
+                                end
                             else
                                 @printf("u₂ = %8.3f, y₂ = %8.1f → FAILED\n", u2, y2)
                             end
@@ -1481,20 +1488,19 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                                 
                                 # Get velocity components at second grid point
                                 u_vel = uprimitiveieq[k, l, 2, 2]  # u-component
-                                w_vel = uprimitiveieq[k, l, 2, 3]  # w-component
-                                vel_mag = sqrt(u_vel^2 + w_vel^2)
+                                v_vel = uprimitiveieq[k, l, 2, 3]  # w-component
+                                vel_mag = sqrt(u_vel^2 + v_vel^2)
                                 
                                 if vel_mag > 1e-12
                                     τw_x = -τw_mag * u_vel / vel_mag
-                                    τw_z = -τw_mag * w_vel / vel_mag
+                                    τw_y = -τw_mag * v_vel / vel_mag
                                     
                                     τ_f[iface_bdy, idx1, idx2, 1] = τw_x
-                                    τ_f[iface_bdy, idx1, idx2, 2] = τw_z
+                                    τ_f[iface_bdy, idx1, idx2, 2] = τw_y
                                 end
                             else
                                 @printf("u₂ = %8.3f, y₂ = %8.1f → FAILED\n", u2, y2)
                             end
-                            
                         end
                     end
                 end
