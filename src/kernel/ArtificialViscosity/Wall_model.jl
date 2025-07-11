@@ -1,7 +1,5 @@
 Base.@kwdef mutable struct St_Wall_model{T <: AbstractFloat, dims1, backend}
-
-    # WIP
-
+    
     τ_f = KernelAbstractions.zeros(backend,  T, dims1)
     wθ  = KernelAbstractions.zeros(backend,  T, dims1)
 

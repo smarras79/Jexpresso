@@ -32,6 +32,7 @@ end
 
 
 function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, eqtype)
+    
     if (tag == "wall_model")
         # Get the wall shear stress magnitude (assuming it's passed via τ_f or accessible)
         #τw_mag = τ_f  # or however you access the stored τ_w value
@@ -39,21 +40,21 @@ function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, eqtype
         
         # Get velocity components at the boundary point
         u_vel = u1[2]  # u-velocity
-        w_vel = u1[4]  # w-velocity (assuming 3D)
+        v_vel = u1[4]  # w-velocity (assuming 3D)
         
         # Compute velocity magnitude in wall-parallel directions
-        vel_mag = sqrt(u_vel^2 + w_vel^2)
+        vel_mag = sqrt(u_vel^2 + v_vel^2)
         
         # Avoid division by zero
         if vel_mag > 1e-12
             # Compute wall shear stress components
             τw_x = -τw_mag * u_vel / vel_mag  # x-component
-            τw_z = -τw_mag * w_vel / vel_mag  # z-component
+            τw_y = -τw_mag * v_vel / vel_mag  # z-component
             
             # Apply Neumann BC: F_edge = viscous flux = μ * ∂u/∂n
             # Since τw = μ * ∂u/∂n at the wall
             F_edge[2] = τw_x  # x-momentum equation
-            F_edge[3] = τw_z  # z-momentum equation (assuming 3D)
+            F_edge[3] = τw_y  # z-momentum equation (assuming 3D)
         else
             F_edge[2] = 0.0
             F_edge[3] = 0.0
