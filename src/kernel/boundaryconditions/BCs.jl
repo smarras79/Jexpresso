@@ -601,8 +601,6 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
             
             else
                 if (coords[poin_in_bdy_face[iface,3,3], 3] == zmin) # FOR YT THIS WOULDN'T WORK WITH TOPOGRAPHY
-                    @info size(F_surf), size(τ_f)
-                    
                     for i = 1:ngl
                         for j = 1:ngl
                             ip  = poin_in_bdy_face[iface,i,j]
