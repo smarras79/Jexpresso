@@ -949,22 +949,7 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                     dFdz = dFdξ*dξdz_ij + dFdη*dηdz_ij + dFdζ*dζdz_ij
                     dGdz = dGdξ*dξdz_ij + dGdη*dηdz_ij + dGdζ*dζdz_ij
                     dHdz = dHdξ*dξdz_ij + dHdη*dηdz_ij + dHdζ*dζdz_ij
-                    #if (ieq == 4)
-                    #   @info dHdz, S[i,j,k,ieq]
-                    #end
-                    #=if (lwall_model && ieq == 5)
-                    ip = connijk[iel,i,j,k]
-                    if (ip in poin_in_bdy_face)
-                    iface_bdy = elem_to_face[iel,i,j,k,1]
-                    idx1 = elem_to_face[iel,i,j,k,2]
-                    idx2 = elem_to_face[iel,i,j,k,3]
-                    if bdy_face_type[iface_bdy] == "wall_model"
-                    ip2 = connijk[iel,i,j,2]
-                    ###define vertical heat flux at surface for wall model
-                    #wθ[iface_bdy,idx1,idx2] =
-                    end
-                    end 
-                    end=#
+                    
                     auxi = ωJac*((dFdx + dGdy + dHdz) - S[i,j,k,ieq])
                     rhs_el[iel,i,j,k,ieq] -= auxi
                 end
@@ -1398,7 +1383,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                                   coords,
                                   poin_in_bdy_face, elem_to_face, bdy_face_type,
                                   k, l, m, iface_bdy, idx1, idx2)
-                            
                         end
                     end
                 end

@@ -127,7 +127,7 @@ function MOST!(τ_f, wθ,
     z1 = abs(y2 - wall_y)
     
     # Surface parameters
-    z0     = 1e-4        # momentum roughness length (m)
+    z0     = 0.1         # momentum roughness length (m)
     z0h    = z0/10.0     # thermal roughness length (m)
     κ      = 0.4         # von Kármán constant
     g      = PhysConst.g # gravitational acceleration
@@ -225,7 +225,8 @@ function MOST!(τ_f, wθ,
             # Apply heat flux boundary condition (if temperature equation is being solved)
             # Heat flux: q = -ρ * c_p * u_τ * θ_star
             # This would typically be applied to the temperature equation boundary condition
-            q_wall = -uprimitiveieq[k, l, m, 1] * PhysConst.cp * uτ * θ_star
+            #q_wall = -uprimitiveieq[k, l, m, 1] * PhysConst.cp * uτ * θ_star
+            q_wall = 0.12 #[Km/s] constant imposition
             wθ[iface_bdy, idx1, idx2, 1] = q_wall
             # τ_f[iface_bdy, idx1, idx2, 5] = q_wall  # assuming temperature is equation 5
         end
@@ -233,6 +234,9 @@ function MOST!(τ_f, wθ,
         # Fallback to no-slip condition if MOST fails
         τ_f[iface_bdy, idx1, idx2, 1] = 0.0
         τ_f[iface_bdy, idx1, idx2, 2] = 0.0
-        wθ[iface_bdy, idx1, idx2, 1]  = 0.0
+
+        # Even in fallback, we might still want to impose the heat flux
+        q_wall = 0.12 #[Km/s] constant imposition
+        wθ[iface_bdy, idx1, idx2, 1] = 0.0 #q_wall
     end
 end

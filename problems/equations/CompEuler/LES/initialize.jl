@@ -221,10 +221,13 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         data_interpolate = interpolate_sounding(inputs[:backend], mesh.npoin, mesh.z, data_with_p)
         
         for ip = 1:mesh.npoin
-            
-            θ     = data_interpolate[ip,1]         # theta from column 2
-            qv    = data_interpolate[ip,2]/1000.0  # qv from column 3, convert g/kg to kg/kg
-            Press = data_interpolate[ip,5]         # pressure from column 6 (newly calculated)
+            randnoise = 0.0
+            if mesh.z[ip] < 3000.0
+                randnoise = rand()*0.5
+            end
+            θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
+            qv    = data_interpolate[ip,2]/1000.0              # qv from column 3, convert g/kg to kg/kg
+            Press = data_interpolate[ip,5]                     # pressure from column 6 (newly calculated)
             
             u  = data_interpolate[ip,3]  # u from column 4
             v  = data_interpolate[ip,4]  # v from column 5
