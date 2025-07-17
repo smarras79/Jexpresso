@@ -117,11 +117,7 @@ end
 #--------------------------------------------------------
 # Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
-if Sys.iswindows() == false
-    if rank == 0
-        run(`$cp -f $user_input_file $OUTPUT_DIR`)
-    end
-end
+cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
 
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
