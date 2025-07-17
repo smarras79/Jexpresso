@@ -3,9 +3,9 @@ function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, z=0.0,
    
     PhysConst = PhysicalConst{Float64}()
     
-    #
+    #--------------
     # S(q(x)) = -ρg
-    #
+    #--------------
     ρ  = q[1] -qe[1]
     
     S[1] = 0.0
@@ -15,9 +15,10 @@ function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, z=0.0,
     S[5] = 0.0
     S[6] = 0.0
     S[7] = 0.0
-    #### SPONGE
 
-    #
+    #--------------
+    # SPONGE
+    #--------------
     # clateral
     zs = 13000.0#ymax - 16000.0
     xr = 15000.0

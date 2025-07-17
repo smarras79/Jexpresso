@@ -49,9 +49,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             θc   =   3.0 #K
             rx = 10000.0
             rz = 1500.0
-            data = read_sounding(inputs[:sounding_file])
+            data       = read_sounding(inputs[:sounding_file])
             background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.y,data) 
-            balanced = zeros(mesh.npoin,1)
+            balanced   = zeros(mesh.npoin,1)
             #rebalance hydrostatic state
             diff = 100000.0
             niter = 0

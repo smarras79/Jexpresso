@@ -11,16 +11,7 @@ function user_bc_dirichlet!(q,
     qnl = nx*q[2] + ny*q[3] + nz*q[4]
     qbdy[2] = (q[2] - qnl*nx) 
     qbdy[3] = (q[3] - qnl*ny) 
-    qbdy[4] = (q[4] - qnl*nz) 
-    #if (z < 0.01) 
-    #    qbdy[2] = 0.0
-    #    qbdy[3] = 0.0
-    #    qbdy[4] = 0.0
-    #    # e_tot
-    #    qbdy[5] = 59169*q[1]
-    #    qbdy[6] = 0.0175*q[1]
-    #end
-    
+    qbdy[4] = (q[4] - qnl*nz)     
 end
 
 function user_bc_dirichlet!(q,
@@ -39,11 +30,13 @@ function user_bc_dirichlet!(q,
     qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
 end
 
-function user_bc_neumann!(F_edge, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL)
 
-    if (tag == "bottom")
-        F_edge[4] = 0.02*rand()*(u[1]+qe[1])
-    elseif (tag == "top")
-        F_edge[4] = -0.02*rand()*(u[1]+qe[1])
+function user_bc_neumann!(F_surf, u, u1, qe, qe1, tag, coords, τ_f, wθ, eqtype)
+
+    if (tag == "wall_model_bottom" || tag == "wall_model_top")
+        # Use the pre-computed wall shear stress components
+        # Apply with correct sign for Neumann BC
+        F_surf[2] = τ_f[1]  # x-momentum equation
+        F_surf[3] = τ_f[2]  # y-momentum equation
     end
 end

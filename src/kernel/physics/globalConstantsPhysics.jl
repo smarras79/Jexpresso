@@ -21,7 +21,7 @@ using Parameters
     
     #Gravity
     g::T = 9.80616 #m/s²
-    g2::T= 9.80616*9.80616
+    g2::T= 9.80616^2
     
     #Elasticity
     E::T = 70.0e9                #Pa

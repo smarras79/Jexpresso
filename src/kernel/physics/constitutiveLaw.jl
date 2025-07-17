@@ -1,3 +1,11 @@
+function perfectGasLaw_θPtoρ(PhysConst::PhysicalConst; Press=100000.0, θ=300.0)
+
+    γinv = 1.0/PhysConst.γ
+    return (Press^γinv)/(PhysConst.C0 * θ)
+
+    
+end
+
 function perfectGasLaw_ρTtoP(PhysConst::PhysicalConst; ρ=1.25, Temp=300.0)
     
     return ρ*PhysConst.Rair*Temp #Press
@@ -88,6 +96,44 @@ function moistPressure(PhysConst::PhysicalConst; ρ=1.25, Tv=300.0, qv = 0.0)
     return (T(ρ*Tv*PhysConst.Rair))
 end
 
+
+"""
+Calculate pressure using hydrostatic equation with iterative approach.
+dp/dz = -g * rho = -g * p / (R_d * T_v)
+"""
+function perfectGasLaw_θqvtoP(PhysConst::PhysicalConst,
+                              height::Vector{Float64}, 
+                              theta::Vector{Float64}, 
+                              qv::Vector{Float64}; p0=101325.0)
+    
+    n = length(height)
+    pressure = zeros(Float64, n)
+    
+    # Surface pressure assumption (can be adjusted)
+    pressure[1] = p0  # Standard sea level pressure [Pa]
+    
+    # Integrate hydrostatic equation upward
+    for i in 2:n
+        dz = height[i] - height[i-1]
+        
+        # Use average values for integration
+        p_avg = pressure[i-1]  # Initial guess
+        
+        # Iterative solution for pressure
+        for iteration in 1:5
+            T_avg   = calculate_temperature(PhysConst, (theta[i] + theta[i-1]) / 2, p_avg)
+            T_v_avg = calculate_virtual_temperature(PhysConst, T_avg, (qv[i] + qv[i-1]) / 2)
+            
+            # Hydrostatic equation: dp = -g * p / (R_d * T_v) * dz
+            dp          = -PhysConst.g * p_avg / (PhysConst.Rair * T_v_avg) * dz
+            pressure[i] = pressure[i-1] + dp
+            p_avg       = (pressure[i] + pressure[i-1]) / 2
+        end
+    end
+    
+    return pressure
+end
+
 # Function to update p_ref_theta
 function create_updated_TD_Parameters(new_p_ref_theta::FT) where {FT}
     ps = TP.ThermodynamicsParameters(FT)
@@ -99,4 +145,33 @@ function create_updated_TD_Parameters(new_p_ref_theta::FT) where {FT}
     ps.molmass_water, ps.T_surf_ref, ps.T_min_ref, ps.grav, ps.T_icenuc,
     ps.pow_icenuc
     )
+end
+
+"""
+Calculate temperature from potential temperature and pressure.
+T = theta * (p/p_0)^(R_d/c_p)
+"""
+function calculate_temperature(PhysConst::PhysicalConst, theta::Float64, pressure::Float64)
+    return theta * (pressure / PhysConst.pref)^(PhysConst.Rair / PhysConst.cp)
+end
+
+# Vectorized version
+function calculate_temperature(PhysConst::PhysicalConst, theta::Vector{Float64}, pressure::Vector{Float64})
+    return theta .* (pressure ./ PhysConst.pref).^(PhysConst.Rair / PhysConst.cp)
+end
+
+"""
+Calculate virtual temperature accounting for water vapor.
+T_v = T * (1 + qv/epsilon) / (1 + qv/1000)
+epsilon = 0.6217504
+"""
+function calculate_virtual_temperature(PhysConst::PhysicalConst, T::Float64, qv::Float64)
+    qv_kg = qv / 1000.0  # Convert g/kg to kg/kg
+    return T * (1 + qv_kg / 0.6217504) / (1 + qv_kg)
+end
+
+# Vectorized version
+function calculate_virtual_temperature(PhysConst::PhysicalConst, T::Vector{Float64}, qv::Vector{Float64})
+    qv_kg = qv ./ 1000.0  # Convert g/kg to kg/kg
+    return T .* (1 .+ qv_kg ./ 0.6217504) ./ (1 .+ qv_kg)
 end
