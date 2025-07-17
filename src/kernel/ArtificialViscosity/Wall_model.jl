@@ -8,7 +8,7 @@ end
 function allocate_Wall_model(nface, ngl, T, backend; lwall_model=false)
 
     dims1 = (nface, ngl, ngl, 2)
-    dims2 = (nface, ngl, ngl)
+    dims2 = (nface, ngl, ngl, 1)
     
     wm = St_Wall_model{T, dims1, dims2, backend}()
 
