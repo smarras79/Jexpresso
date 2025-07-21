@@ -1,7 +1,7 @@
 using Dierckx
+using CairoMakie
 using LaTeXStrings
 using ColorSchemes
-using CairoMakie
 using Makie
 #using Interpolations
 
