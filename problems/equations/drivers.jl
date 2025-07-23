@@ -16,17 +16,20 @@ function driver(nparts,
 
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
-    if inputs[:ladapt] == true
-        if rank == 0
-            @info "start conformity4ncf_q!"
-        end
-        @time conformity4ncf_q!(qp.qn, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
-        @time conformity4ncf_q!(qp.qe, sem.matrix.pM, sem.mesh.SD, sem.QT, sem.mesh.connijk, sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, qp.neqs+1, sem.interp)
-        
-        MPI.Barrier(comm)
-        if rank == 0
-            @info "end conformity4ncf_q!"
-        end
+    if rank == 0
+        @info "start conformity4ncf_q!"
+    end
+    pre_allocation_q = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
+    @time conformity4ncf_q!(qp.qn, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
+                            sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
+                            qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
+    @time conformity4ncf_q!(qp.qe, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
+                            sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
+                            qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
+    
+    MPI.Barrier(comm)
+    if rank == 0
+        @info "end conformity4ncf_q!"
     end
 
     if (inputs[:ladapt] == true) && (inputs[:amr] == true)

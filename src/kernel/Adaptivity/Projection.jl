@@ -2622,7 +2622,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, con
 end
 
 
-function conformity4ncf_q!(q, pM, SD::NSD_3D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, interp)
+function conformity4ncf_q!(q, pM, SD::NSD_3D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, interp; ladapt = true)
     nelem = mesh.nelem
     npoin = mesh.npoin
     ngl = mesh.ngl
@@ -2643,13 +2643,17 @@ function conformity4ncf_q!(q, pM, SD::NSD_3D, QT::Inexact, conn::AbstractArray, 
             end
         end
     end
-    DSS_nc_gather_rhs!(q_tmp, SD, QT, q_el_tmp, conn, mesh.poin_in_edge, mesh.non_conforming_facets,
-                       mesh.non_conforming_facets_parents_ghost, mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, ngl-1, neqs, interp)
+    if (ladapt == true)
+        DSS_nc_gather_rhs!(q_tmp, SD, QT, q_el_tmp, conn, mesh.poin_in_edge, mesh.non_conforming_facets,
+                        mesh.non_conforming_facets_parents_ghost, mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, ngl-1, neqs, interp)
+    end
     DSS_global_RHS!(@view(q_tmp[:,:]), pM, neqs)
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(q_tmp[:,ieq]), vaux, Minv, neqs, npoin, AD)
-        DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT, q_el_tmp[:,:,:,:,ieq], conn, mesh.poin_in_edge, mesh.non_conforming_facets,
-                            mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, ngl-1, interp)
+        if (ladapt == true)
+            DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT, q_el_tmp[:,:,:,:,ieq], conn, mesh.poin_in_edge, mesh.non_conforming_facets,
+                                mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, ngl-1, interp)
+        end
         q[:,ieq] .= q_tmp[:,ieq]
     end
 
