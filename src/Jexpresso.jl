@@ -61,6 +61,20 @@ using Printf
 using NCDatasets
 using MPI
 
+using Gridap
+using Gridap.Arrays
+using Gridap.Arrays: Table
+using Gridap.Geometry
+using Gridap.Fields
+using Gridap.ReferenceFEs
+using Gridap.CellData
+using Gridap.Adaptivity
+using Gridap.Geometry: GridMock
+using GridapDistributed
+using PartitionedArrays
+using GridapGmsh
+using GridapP4est
+
 TInt   = Int64
 TFloat = Float64
 cpu    = true

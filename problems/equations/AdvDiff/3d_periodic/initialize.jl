@@ -117,3 +117,32 @@ end
     qe[ip,end] = pref
 
 end
+
+
+function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
+    ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
+    tol         = 0.1
+    max_level   = inputs[:amr_max_level] 
+    
+    for iel = 1:nelem
+        m = 1
+        for i = 1:ngl
+            for j = 1:ngl
+                for k = 1:ngl
+                    ips[m] = connijk[iel, i, j, k]
+                    m += 1
+                end
+            end
+        end
+        u      = q[ips, 1]
+        u_ref  = qe[ips, 1]
+        du     = u - u_ref
+        # @info du
+        if any(du .> tol) && (old_ad_lvl[iel] < max_level)
+            adapt_flags[iel] = refine_flag
+        end
+        if all(du .< tol)
+            adapt_flags[iel] = coarsen_flag
+        end
+    end
+end
