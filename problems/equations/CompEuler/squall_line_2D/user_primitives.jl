@@ -26,14 +26,14 @@ function user_primitives_gpu(u,qe,lpert)
     end
 end
 
-function user_uout!(ip, ET, uout, u, qe; mp=mp)
+function user_uout!(ip, ET, uout, u, ue; mp=mp)
 
     uout[1] = u[1]
-    uout[2] = u[2]
-    uout[3] = u[3]
-    uout[4] = u[4]
-    uout[5] = u[5]
-    uout[6] = u[6]
+    uout[2] = ue[2]
+    uout[3] = ue[3]
+    uout[4] = ue[4]
+    uout[5] = ue[5]
+    uout[6] = ue[6]
     
     uout[7]  = mp.Tabs[ip]
     uout[8]  = mp.qn[ip]

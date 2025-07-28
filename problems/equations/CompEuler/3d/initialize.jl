@@ -205,10 +205,9 @@ end
 
 end
 
-function user_get_adapt_flags(inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
-    adapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(nelem))
+function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
     ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
-    tol         = 1.0
+    tol         = 0.1
     max_level   = inputs[:amr_max_level] 
     
     for iel = 1:nelem
@@ -233,5 +232,4 @@ function user_get_adapt_flags(inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
             adapt_flags[iel] = coarsen_flag
         end
     end
-    return adapt_flags
 end

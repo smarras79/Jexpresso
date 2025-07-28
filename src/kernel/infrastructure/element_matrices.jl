@@ -701,8 +701,10 @@ function DSS_laplace_sparse(mesh, Lel)
     for iel = 1:mesh.nelem
         for j = 1:mesh.ngl, i = 1:mesh.ngl
             JP = mesh.connijk[iel, i, j]
+            #JP = mesh.ip2gip[mesh.connijk[iel, i, j]]
             
             for n = 1:mesh.ngl, m = 1:mesh.ngl
+                #IP = mesh.ip2gip[mesh.connijk[iel, m, n]]
                 IP = mesh.connijk[iel, m, n]
                 
                 val = Lel[iel, m, n, i, j]
@@ -716,12 +718,15 @@ function DSS_laplace_sparse(mesh, Lel)
     end
     
     # Create sparse matrix and sum duplicate entries automatically
-    return sparse(I_vec, J_vec, V_vec)
+    return sparse(I_vec, J_vec, V_vec) #Julia native CSC format (good for PETC.jl solvers)
 end
 
 
-
-function assemble_diffusion_matrix_threaded!(mesh, Lel)
+function DSS_laplace_sparse_threaded(mesh, Lel)
+    #
+    # CSC aasembly
+    #
+    
     # Thread-local storage for triplets
     thread_triplets = [Tuple{Int, Int, Float64}[] for _ in 1:nthreads()]
     
@@ -752,22 +757,7 @@ function assemble_diffusion_matrix_threaded!(mesh, Lel)
     J_vec = [t[2] for t in all_triplets]
     V_vec = [t[3] for t in all_triplets]
     
-    return sparse(I_vec, J_vec, V_vec)
-end
-
-
-# Utility function to convert to different sparse formats if needed
-function convert_sparse_format(A::SparseMatrixCSC; format=:CSR)
-    if format == :CSR
-        # Julia's SparseMatrixCSC is essentially CSC format
-        # For true CSR, you'd need to transpose and use rowvals/nzval
-        return A'  # This gives CSR-like access pattern
-    elseif format == :COO
-        I, J, V = findnz(A)
-        return (I, J, V)
-    else
-        return A  # Default CSC format
-    end
+    return sparse(I_vec, J_vec, V_vec) #Julia native CSC format (good for PETC.jl solvers)
 end
 
 # Example usage:
@@ -1050,7 +1040,7 @@ function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
     
     pM = setup_assembler(SD, M, ip2gip, gip2owner)
     
-    @time assemble_mpi!(M,pM)
+    assemble_mpi!(M,pM)
 
     return pM
     
@@ -1075,7 +1065,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^3, (N+1)^3, Int64(mesh.nelem))
     end
     if (backend == CPU())
-        @time build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, mesh.Δx, N, Q, TFloat)
+        build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, mesh.Δx, N, Q, TFloat)
     else
         if (SD == NSD_1D())
             k = build_mass_matrix_1d_gpu!(backend, (N+1))
@@ -1098,10 +1088,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     
     if backend == CPU()
         if (inputs[:ladapt] == true)
-            @time DSS_nc_gather_mass!(M, mesh, SD, QT, Me, mesh.connijk, mesh.poin_in_edge,
-                                      mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
-                                      mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, N, interp)
-            #@info "@time DSS_nc_gather_mass!"
+            DSS_nc_gather_mass!(M, mesh, SD, QT, Me, mesh.connijk, mesh.poin_in_edge,
+                                    mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
+                                    mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, N, interp)
         end
 
         DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
@@ -1125,9 +1114,8 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     
     if (inputs[:ladapt] == true)
-        @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
+        DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
                                    mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, N, interp)
-        #@info "@time DSS_nc_scatter_mass!"
     end
     if (inputs[:bdy_fluxes])
         if SD == NSD_3D()
@@ -1165,18 +1153,23 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
                                       N, Q, TFloat)
             
             if (inputs[:lsparse])
-                L = DSS_laplace_sparse(mesh, Le)
-                assemble_diffusion_matrix_threaded!(mesh, Le)
+                @info " DSS sparse"
+                @time L = DSS_laplace_sparse(mesh, Le)
+                @info " DSS sparse .................... DONE"
             else
                 L = KernelAbstractions.zeros(backend,
                                              TFloat,
                                              Int64(mesh.npoin),
                                              Int64(mesh.npoin))
+
+                @info " DSS "
                 DSS_laplace!(L, SD,
                              Le, ω,
                              mesh, metrics,
                              N, TFloat;
                              llump=inputs[:llump])
+                @info " DSS ..... ..................... DONE"
+                
             end
             
         else

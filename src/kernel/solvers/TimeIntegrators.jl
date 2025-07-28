@@ -1,7 +1,8 @@
-function time_loop!(inputs, params, u)
+function time_loop!(inputs, params, u, args...)
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+    partitioned_model = args[1]
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
     
     prob = ODEProblem(rhs!,
@@ -57,13 +58,15 @@ function time_loop!(inputs, params, u)
             println_rank(" #  t=", integrator.t; msg_rank = rank)
 
             #CFL
-            #=computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
-                       inputs[:Δt],
-                       params.mesh.Δeffective_s,
-                       integrator,
-                       params.SD; visc=inputs[:μ])
-            =#
-            write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
+            if inputs[:ladapt] == false
+                computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
+                           inputs[:Δt],
+                           params.mesh.Δeffective_s,
+                           integrator,
+                           params.SD; visc=inputs[:μ])
+            end
+            
+            write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
                          integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
@@ -107,11 +110,11 @@ function time_loop!(inputs, params, u)
                      adaptive=inputs[:ode_adaptive_solver],
                      saveat = range(inputs[:tinit], inputs[:tend], length=inputs[:ndiagnostics_outputs]));
     
-    if inputs[:ladapt] == true
+    if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
-            prob = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end])
+            @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
             
-            solution = solve(prob,
+            @time solution = solve(prob,
                                 inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                                 callback = cb_amr, tstops = dosetimes,
                                 save_everystep = false,

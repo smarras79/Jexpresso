@@ -686,12 +686,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     # AMR
+    
+    if(!haskey(inputs, :lamr))
+        inputs[:lamr] = false
+    end
+
+
     if(!haskey(inputs, :ladapt))
         inputs[:ladapt] = false
     end
 
     if(!haskey(inputs, :linitial_refine))
         inputs[:linitial_refine] = false
+    end
+
+    if(!haskey(inputs, :init_refine_lvl))
+        inputs[:init_refine_lvl] = 0
     end
         
     if(!haskey(inputs, :amr_max_level))

@@ -21,7 +21,6 @@ function RHStoDU!(du, RHS, neqs, npoin)
 end
 
 function u2uaux!(uaux, u, neqs, npoin)
-
     for i=1:neqs
         idx = (i-1)*npoin
         uaux[:,i] = view(u, idx+1:i*npoin)
@@ -409,7 +408,14 @@ function _build_rhs!(RHS, u, params, time)
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     if inputs[:ladapt] == true
-        conformity4ncf_q!(params.uaux, params.pM, SD, QT, params.mesh.connijk, params.mesh, params.Minv, params.metrics.Je, params.ω, AD, neqs, params.interp)
+        conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux, 
+                            params.pM, params.q_el, params.q_el_pro, 
+                            params.q_ghost_p, params.q_ghost_c,
+                            params.mesh.SD, 
+                            params.QT, params.mesh.connijk,
+                            params.mesh, params.Minv, 
+                            params.metrics.Je, params.ω, params.AD, 
+                            params.neqs, params.interp, params)
     end
     
     resetbdyfluxToZero!(params)
@@ -462,8 +468,13 @@ function _build_rhs!(RHS, u, params, time)
     inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, SD)
     
     if inputs[:ladapt] == true
-        DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+        DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, 
+                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
+                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+                           params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           ngl-1, neqs, params.interp)
     end
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
 
@@ -479,8 +490,13 @@ function _build_rhs!(RHS, u, params, time)
         
         # @info "start DSS_rhs_viscous"
         if inputs[:ladapt] == true
-            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                               params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk, params.mesh.poin_in_edge, 
+                               params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                               params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
+                               params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+                               params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                               params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                               ngl-1, neqs, params.interp)
         end
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
@@ -506,8 +522,14 @@ function _build_rhs!(RHS, u, params, time)
         # @info "ieq", ieq
         if inputs[:ladapt] == true
             
-            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, selectdim(params.rhs_el, ndims(params.rhs_el), ieq), params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                            params.mesh.non_conforming_facets_children_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, ngl-1, params.interp)
+            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, selectdim(params.rhs_el, ndims(params.rhs_el), ieq), 
+                                params.mesh.connijk, params.mesh.poin_in_edge, 
+                                params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                                params.mesh.non_conforming_facets_children_ghost, params.mesh.pip_cg, params.mesh.lfid_cg, params.mesh.half1_cg, params.mesh.half2_cg, 
+                                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.mesh.q_local_c, params.q_ghost_c, 
+                                params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
+                                params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, params.mesh.cgip_local,
+                                ngl-1, params.interp)
         end
     end
 end

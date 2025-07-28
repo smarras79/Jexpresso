@@ -6,7 +6,7 @@ rm -rf output
 
 ./runjexpresso 1 AdvDiff Wave_Train
 
-./runjexpresso 1 AdvDiff 2D_laguerre
+./runjexpresso 1 AdvDiff 2d_Laguerre
 
 ./runjexpresso 2 CompEuler thetaTracers
 
@@ -20,4 +20,4 @@ rm -rf output
 
 ./runjexpresso 1 Helmholtz case1_laguerre
 
-./runjexpresso 4 compeuler Rayleigh_Benard
+./runjexpresso 4 CompEuler Rayleigh_Benard

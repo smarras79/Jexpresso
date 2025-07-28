@@ -27,3 +27,12 @@ function user_primitives_gpu(u,qe,lpert)
         return T(u[1]), T(u[2]/u[1]), T(u[3]/u[1]), T(u[4]/u[1]), T(u[5]/u[1])
     end
 end
+
+function user_uout!(ip, ET, uout, u, ue; kwargs...)
+    uout[1] = ue[1]
+    uout[2] = ue[2]/ue[1]
+    uout[3] = ue[3]/ue[1]
+    uout[4] = ue[4]/ue[1]
+    uout[5] = ue[5]/ue[1]
+    uout[6] = ue[6]
+end
