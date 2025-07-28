@@ -593,6 +593,8 @@ xkbcommon_jll = "d8fb68d0-12a3-5cfd-a85a-d49703b185fd"
 
 [compat]
 CSV = "0.10.15"
+FastLapackInterface = "2.0.4"
+GridapGmsh = "0.7.2"
 NLsolve = "4.5.1"
 Roots = "2.2.7"
 UnicodePlots = "3.7.2"

@@ -1,10 +1,8 @@
-function perfectGasLaw_θPtoρ(PhysConst::PhysicalConst; Press=100000.0, θ=300.0)
-
-    γinv = 1.0/PhysConst.γ
-    return (Press^γinv)/(PhysConst.C0 * θ)
-
-    
+function perfectGasLaw_θPtoρ(PhysConst::PhysicalConst; θ=300.0, Press=100000.0)
+    T = typeof(θ)
+    return (T(1.0)/θ)*(Press/PhysConst.C0)^(T(1.0)/PhysConst.γ) #ρ
 end
+
 
 function perfectGasLaw_ρTtoP(PhysConst::PhysicalConst; ρ=1.25, Temp=300.0)
     
@@ -81,12 +79,6 @@ end
 function perfectGasLaw_ρPtoθ(PhysConst::PhysicalConst; ρ=1.25, Press=100000.0)
     T = typeof(ρ)    
     return (T(1.0)/ρ)*(Press/PhysConst.C0)^(T(1.0)/PhysConst.γ) #θ
-    
-end
-
-function perfectGasLaw_θPtoρ(PhysConst::PhysicalConst; θ=300.0, Press=100000.0)
-    T = typeof(θ)
-    return (T(1.0)/θ)*(Press/PhysConst.C0)^(T(1.0)/PhysConst.γ) #ρ
     
 end
 
