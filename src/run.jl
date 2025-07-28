@@ -57,9 +57,7 @@ parsed_args                = parse_commandline()
 parsed_equations           = string(parsed_args["eqs"])
 parsed_equations_case_name = string(parsed_args["eqs_case"])
 parsed_CI_mode             = string(parsed_args["CI_MODE"])
-
-
-driver_file          = string(dirname(@__DIR__()), "/problems/equations/drivers.jl")
+driver_file                = string(dirname(@__DIR__()), "/problems/equations/drivers.jl")
 
 # Check if running under CI environment and set directory accordingly
 if parsed_CI_mode == "true"
@@ -117,11 +115,7 @@ end
 #--------------------------------------------------------
 # Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
-if Sys.iswindows() == false
-    if rank == 0
-        run(`$cp -f $user_input_file $OUTPUT_DIR`)
-    end
-end
+cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
 
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU

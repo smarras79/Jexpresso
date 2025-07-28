@@ -1939,6 +1939,7 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, con
     end
 end
 
+function conformity4ncf_q!(q, pM, SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, interp; ladapt = true) nothing end
 
 function conformity4ncf_q!(q, pM, SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, interp; ladapt = true)
     nelem = mesh.nelem
