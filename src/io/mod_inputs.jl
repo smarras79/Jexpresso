@@ -33,6 +33,14 @@ function mod_inputs_user_inputs!(inputs)
         end
     end
 
+    if(!haskey(inputs, :lcubed_sphere_angular_mesh))
+       inputs[:lcubed_sphere_angular_mesh] = false
+    end
+
+    if(!haskey(inputs, :rad_HG_g))
+      inputs[:rad_HG_g] = 0
+    end
+
     if(!haskey(inputs, :extra_dimensions))
       inputs[:extra_dimensions] = 0
     end

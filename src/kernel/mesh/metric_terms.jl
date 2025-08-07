@@ -238,19 +238,53 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 ip = mesh.poin_in_bdy_edge[iedge,k]
                 if (k < N+1)
                     ip1 = mesh.poin_in_bdy_edge[iedge,k+1]
+                    x1 = mesh.x[ip]
+                    x2 = mesh.x[ip1]
+                    y1 = mesh.y[ip]
+                    y2 = mesh.y[ip1]
+                    mag = sqrt((x1-x2)^2+(y1-y2)^2)
+                    metrics.Jef[iedge, k] = mag/2
+                    comp1 = (x1-x2)/mag
+                    comp2 = (y1-y2)/mag
                 else
                     ip1 = mesh.poin_in_bdy_edge[iedge,k-1]
+                    x1 = mesh.x[ip]
+                    x2 = mesh.x[ip1]
+                    y1 = mesh.y[ip]
+                    y2 = mesh.y[ip1]
+                    mag = sqrt((x1-x2)^2+(y1-y2)^2)
+                    metrics.Jef[iedge, k] = mag/2
+                    comp1 = -(x1-x2)/mag
+                    comp2 = -(y1-y2)/mag
                 end
-                x1 = mesh.x[ip]
+                #=x1 = mesh.x[ip]
                 x2 = mesh.x[ip1]
                 y1 = mesh.y[ip]
                 y2 = mesh.y[ip1]
                 mag = sqrt((x1-x2)^2+(y1-y2)^2)
                 metrics.Jef[iedge, k] = mag/2
                 comp1 = (x1-x2)/mag
-                comp2 = (y1-y2)/mag
+                comp2 = (y1-y2)/mag=#
+
                 metrics.nx[iedge, k] = comp2
                 metrics.ny[iedge, k] = -comp1
+                e = mesh.bdy_edge_in_elem[iedge]
+                idx1 = 0
+                idx2 = 0
+                for j=1:N+1
+                    for i=1:N+1
+                        if (mesh.connijk[e,i,j] == ip)
+                            idx1 = i
+                            idx2 = j
+                        end
+                    end
+                end
+                if (idx1 + metrics.nx[iedge, k] < 1 || idx1 + metrics.nx[iedge, k] > N+1 || idx2 + metrics.ny[iedge, k] < 1 || idx2 + metrics.ny[iedge, k] > N+1)
+                    metrics.nx[iedge, k] = - metrics.nx[iedge, k]
+                    metrics.ny[iedge, k] = - metrics.ny[iedge, k]
+                end
+
+
             end
         end
     else
@@ -630,6 +664,28 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     metrics.nx[iface, i, j] = comp1*maginv
                     metrics.ny[iface, i, j] = comp2*maginv
                     metrics.nz[iface, i, j] = comp3*maginv
+                   
+                    e = mesh.bdy_face_in_elem[iface]
+                    idx1 = 0
+                    idx2 = 0
+                    idx3 = 0
+                    for o=1:mesh.ngl
+                        for n=1:mesh.ngl
+                            for m=1:mesh.ngl
+                                if (mesh.connijk[e,m,n,o] == ip)
+                                    idx1 = m
+                                    idx2 = n
+                                    idx3 = o
+                                end
+                            end
+                        end
+                    end
+                    if (idx1 + metrics.nx[iface, i, j] < 1 || idx1 + metrics.nx[iface, i, j] > N+1 || idx2 + metrics.ny[iface, i, j] < 1 || idx2 + metrics.ny[iface, i, j] > N+1 || idx3 + metrics.nz[iface, i, j] < 1 || idx3 + metrics.nz[iface, i, j] > N+1)
+                    metrics.nx[iface, i, j] = - metrics.nx[iface, i, j]
+                    metrics.ny[iface, i, j] = - metrics.ny[iface, i, j]
+                    metrics.nz[iface, i, j] = - metrics.nz[iface, i, j]
+                end
+
                 end
             end
         end

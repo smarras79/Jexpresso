@@ -9,8 +9,16 @@ function driver(inputs::Dict,        #input parameters from src/user_input.jl
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
-    build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je, 
-                                     sem.metrics.dξdx, sem.metrics.dξdy, sem.mesh.extra_mesh, sem.QT, NSD_2D(), sem.AD)
+    #=build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je, 
+                                     sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dηdx, sem.metrics.dηdy, 
+                                     sem.metrics.nx, sem.metrics.ny, sem.mesh.elem_to_edge, sem.mesh.extra_mesh, sem.QT, NSD_2D(), sem.AD)
+=#
+    build_radiative_transfer_problem(sem.mesh, inputs, 1, sem.mesh.ngl, sem.basis.dψ, sem.basis.ψ, sem.ω, sem.metrics.Je,
+                                     sem.metrics.dξdx, sem.metrics.dξdy, sem.metrics.dξdz, 
+                                     sem.metrics.dηdx, sem.metrics.dηdy, sem.metrics.dηdz,
+                                     sem.metrics.dζdx, sem.metrics.dζdy, sem.metrics.dζdz,
+                                     sem.metrics.nx, sem.metrics.ny, sem.metrics.nz, 
+                                     sem.mesh.elem_to_face, sem.mesh.extra_mesh, sem.QT, NSD_3D(), sem.AD)
     #=
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     params, u =  params_setup(sem,

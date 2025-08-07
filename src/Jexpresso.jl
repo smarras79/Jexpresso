@@ -100,6 +100,8 @@ include(joinpath( "kernel", "solvers", "Axb.jl"))
 
 include(joinpath("kernel", "operators", "build_rad_2d.jl"))
 
+include(joinpath("kernel", "operators", "build_rad_3d.jl"))
+
 include(joinpath( "io", "mod_inputs.jl"))
 
 include(joinpath( "io", "write_output.jl"))

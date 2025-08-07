@@ -18,9 +18,10 @@ const VERTEX_NODES = UInt64(1)
 const EDGE_NODES   = UInt64(2)
 const FACE_NODES   = UInt64(4)
 
-Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, dims1, dims2, dims3, dims4, nelem, npoin, backend}
+Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, dims1, dims2, dims3, dims4, dims5, nelem, npoin, backend}
 
     extra_coords  = KernelAbstractions.zeros(backend,TFloat, dims1)
+    extra_coords_cart = KernelAbstractions.zeros(backend,TFloat, dims5)
     extra_connijk = KernelAbstractions.zeros(backend,TInt, dims2)
     extra_nelem::Union{TInt, Missing} = nelem
     extra_npoin::Union{TInt, Missing} = npoin
@@ -28,6 +29,7 @@ Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, dims1, dims2, dims3,
     extra_metrics = allocate_metrics(NSD, dims4[1], dims4[2], dims4[3], TFloat, backend)
     Minv = KernelAbstractions.zeros(backend,TFloat, npoin)
     ωθ = KernelAbstractions.zeros(backend,TInt, 5)
+    ωϕ = KernelAbstractions.zeros(backend,TInt, 5)
     ψ = KernelAbstractions.zeros(backend,TInt, 5,5)
     dψ = KernelAbstractions.zeros(backend,TInt, 5,5)
 end
@@ -118,6 +120,8 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     poin_in_bdy_edge  =  KernelAbstractions.zeros(backend, TInt, 0, 0)
     bdy_face_in_elem  =  KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_face  =  KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
+    elem_to_face    = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0, 0)
+    elem_to_edge    = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0)
     edge_type     = Array{Union{Nothing, String}}(nothing, 1)
     face_type     = Array{Union{Nothing, String}}(nothing, 1)
     bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
@@ -141,7 +145,8 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     dims2 = (nelem,nop+1)
     dims3 = (nelem)
     dims4 = (nelem, 0, nop+1)
-    extra_mesh = St_extra_mesh{TInt, TFloat, NSD_1D(), dims1, dims2, dims3, dims4, nelem, npoin, backend}()
+    dims5 = (2,npoin)
+    extra_mesh = St_extra_mesh{TInt, TFloat, NSD_1D(), dims1, dims2, dims3, dims4, dims5, nelem, npoin, backend}()
     Δθe = KernelAbstractions.zeros(backend, TFloat, nelem)
     Δθe .= (θmax-θmin)/nelem 
     extra_mesh.extra_coords[1,1]      = θmin
@@ -156,6 +161,7 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
         extra_mesh.extra_coords[1,ip+1] = θmin + Δθe[e]*e
         ip +=1
     end
+    
     extra_mesh.extra_connijk[nelem,1] = ip
     extra_mesh.extra_connijk[nelem,nop+1] = ip+1
     extra_mesh.extra_coords[1,ip+1] = θmax
@@ -165,6 +171,7 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     lgl = basis_structs_ξ_ω!(LGL(), nop, backend)
     extra_mesh.ωθ = lgl.ω
     ip +=1
+
     for e=1:nelem
         ip1 = extra_mesh.extra_connijk[e,1]
         ip2 = extra_mesh.extra_connijk[e,nop+1]
@@ -187,7 +194,9 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
             end
         end
     end
+    
     extra_mesh.extra_metrics = metrics
+    
     if (lper)
         ip_old = extra_mesh.extra_connijk[nelem,nop+1]
         extra_mesh.extra_connijk[nelem,nop+1] = 1
@@ -204,6 +213,7 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
         end
         extra_mesh.extra_npoin -= 1
     end
+
     basis = build_Interpolation_basis!(LagrangeBasis(), lgl.ξ, lgl.ξ, TFloat, inputs[:backend])
     extra_mesh.ψ = basis.ψ
     extra_mesh.dψ = basis.dψ
@@ -219,109 +229,788 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
 end
 
 function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, basis, backend, inputs, lper)
-   npoin = (nelemθ*nop+1)*(nelemϕ*nop+1)
-   dims1 = (2,npoin)
-   dims2 = (nelemθ*nelemϕ,nop+1,nop+1)
-   dims3 = (nelemθ*nelemϕ)
-   dims4 = (nelemθ*nelemϕ, 0, nop+1)
-   extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), dims1, dims2, dims3, dims4, nelemθ*nelemϕ, npoin, backend}() 
-   Δθe = (θmax-θmin)/nelemθ
-   Δϕe = (ϕmax-ϕmin)/nelemϕ
-   extra_mesh.extra_nop             .= nop
-   ip = 5
-   
-   extra_mesh.extra_connijk[1,1,1] = 1
-   extra_mesh.extra_connijk[1,nop+1,1] = 2
-   extra_mesh.extra_connijk[1,1,nop+1] = 3
-   extra_mesh.extra_connijk[1,nop+1,nop+1] = 4 
-   extra_mesh.extra_coords[1,1] = θmin
-   extra_mesh.extra_coords[2,1] = ϕmin
-   extra_mesh.extra_coords[1,2] = θmin + Δθe
-   extra_mesh.extra_coords[2,2] = ϕmin
-   extra_mesh.extra_coords[1,3] = θmin
-   extra_mesh.extra_coords[2,3] = ϕmin + Δϕe
-   extra_mesh.extra_coords[1,4] = θmin + Δθe
-   extra_mesh.extra_coords[2,4] = ϕmin + Δϕe
-   #construct linear mesh
-   for eθ=1:nelemθ
-       for eϕ=1:nelemϕ
-            if (eϕ > 1 || eθ > 1)
-                e_left = eϕ + (eθ-1 - 1)*nelemϕ
-                e_down = eϕ-1 + (eθ - 1)*nelemϕ
-                e = eϕ + (eθ - 1)*nelemϕ
-                if (eθ > 1 && eϕ > 1)
-                    extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_left,nop+1,1]
-                    extra_mesh.extra_connijk[e,1,nop+1] = extra_mesh.extra_connijk[e_left,nop+1,nop+1]
-                    extra_mesh.extra_connijk[e,nop+1,1] = extra_mesh.extra_connijk[e_left,nop+1,nop+1]
-                    extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
-                    extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe 
-                    extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
-                    ip += 1
-                elseif (eθ > 1)
-                    extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_left,nop+1,1]
-                    extra_mesh.extra_connijk[e,1,nop+1] = extra_mesh.extra_connijk[e_left,nop+1,nop+1]
-                    extra_mesh.extra_connijk[e,nop+1,1] = ip
-                    extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe
-                    extra_mesh.extra_coords[2,ip] = ϕmin 
-                    ip += 1
-                    extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
-                    extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe
-                    extra_mesh.extra_coords[2,ip] = ϕmin + Δϕe
-                    ip += 1
-                elseif (eϕ > 1)
-                    extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_down,1,nop+1]
-                    extra_mesh.extra_connijk[e,nop+1,1] = extra_mesh.extra_connijk[e_down,nop+1,nop+1]
-                    extra_mesh.extra_connijk[e,1,nop+1] = ip
-                    extra_mesh.extra_coords[1,ip] = θmin 
-                    extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
-                    ip += 1
-                    extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
-                    extra_mesh.extra_coords[1,ip] = θmin + Δθe
-                    extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
-                    ip += 1        
-                end
+  
+   if (inputs[:lcubed_sphere_angular_mesh])
+        ####### PERIODICITY STILL MISSING FOR CUBED SPHERE MESH
+        #build quadrant 1
+        #first point
+        npoin = 6*(nop+1)^2#(nelemθ*nop+1)*(nelemϕ*nop+1)
+        dims1 = (2,npoin)
+        dims2 = (6,nop+1,nop+1)
+        dims3 = (6)
+        dims4 = (6, 0, nop+1)
+        dims5 = (3,npoin)
+        extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), dims1, dims2, dims3, dims4, dims5, 6, npoin, backend}()
+        Δθe = (θmax-θmin)/nelemθ
+        Δϕe = (ϕmax-ϕmin)/nelemϕ
+        extra_mesh.extra_nop             .= nop
+        x = -1
+        y = -1
+        z = -1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = -y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) - 3*π/4
+        if (ϕ < 0)
+            ϕ = ϕ + 2*π
+        end
+        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+        extra_mesh.extra_connijk[1,1,1] = 1
+        extra_mesh.extra_coords[1,1] = θ
+        extra_mesh.extra_coords[2,1] = ϕ
+        extra_mesh.extra_coords_cart[1,1] = x1
+        extra_mesh.extra_coords_cart[2,1] = -y1
+        extra_mesh.extra_coords_cart[3,1] = z1
+        #second point
+        x = -1
+        y = 1
+        z = -1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = -y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) - 3*π/4 
+        if (ϕ < 0)
+            ϕ = ϕ + 2*π
+        end 
+        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+        extra_mesh.extra_connijk[1,nop+1,1] = 2
+        extra_mesh.extra_coords[1,2] = θ
+        extra_mesh.extra_coords[2,2] = ϕ
+        extra_mesh.extra_coords_cart[1,2] = x1
+        extra_mesh.extra_coords_cart[2,2] = -y1
+        extra_mesh.extra_coords_cart[3,2] = z1
+        #third point
+        x = -1
+        y = -1
+        z = 1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = -y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) - 3*π/4
+        if (ϕ < 0)
+            ϕ = ϕ + 2*π
+        end 
+        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+        extra_mesh.extra_connijk[1,1,nop+1] = 3
+        extra_mesh.extra_coords[1,3] = θ
+        extra_mesh.extra_coords[2,3] = ϕ
+        extra_mesh.extra_coords_cart[1,3] = x1
+        extra_mesh.extra_coords_cart[2,3] = -y1
+        extra_mesh.extra_coords_cart[3,3] = z1
+        #fourth point
+        x = -1
+        y = 1
+        z = 1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = -y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) - 3*π/4
+        if (ϕ < 0)
+            ϕ = ϕ + 2*π
+        end 
+        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+        extra_mesh.extra_connijk[1,nop+1,nop+1] = 4
+        extra_mesh.extra_coords[1,4] = θ
+        extra_mesh.extra_coords[2,4] = ϕ
+        extra_mesh.extra_coords_cart[1,4] = x1
+        extra_mesh.extra_coords_cart[2,4] = -y1
+        extra_mesh.extra_coords_cart[3,4] = z1
+        #build quadrant 2
+        #first point
+        extra_mesh.extra_connijk[2,1,1] = 2
+        #third point
+        extra_mesh.extra_connijk[2,1,nop+1] = 4
+        #second point
+        x = 1
+        y = 1
+        z = -1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = -x/r
+        y1 = y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) + π/4
+        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+        extra_mesh.extra_connijk[2,nop+1,1] = 5
+        extra_mesh.extra_coords[1,5] = θ
+        extra_mesh.extra_coords[2,5] = ϕ
+        extra_mesh.extra_coords_cart[1,5] = -x1
+        extra_mesh.extra_coords_cart[2,5] = y1
+        extra_mesh.extra_coords_cart[3,5] = z1
+        #fourth point
+        x = 1
+        y = 1
+        z = 1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = -x/r
+        y1 = y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) +π/4
+        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+        extra_mesh.extra_connijk[2,nop+1,nop+1] = 6
+        extra_mesh.extra_coords[1,6] = θ
+        extra_mesh.extra_coords[2,6] = ϕ
+        extra_mesh.extra_coords_cart[1,6] = -x1
+        extra_mesh.extra_coords_cart[2,6] = y1
+        extra_mesh.extra_coords_cart[3,6] = z1
+        #build quadrant 3
+        #first point
+        extra_mesh.extra_connijk[3,1,1] = 5
+        #third point
+        extra_mesh.extra_connijk[3,1,nop+1] = 6
+        #second point
+        x = 1
+        y = -1
+        z = -1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) + 3*π/2 + π/4 
+        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+        extra_mesh.extra_connijk[3,nop+1,1] = 7
+        extra_mesh.extra_coords[1,7] = θ
+        extra_mesh.extra_coords[2,7] = ϕ
+        extra_mesh.extra_coords_cart[1,7] = x1
+        extra_mesh.extra_coords_cart[2,7] = y1
+        extra_mesh.extra_coords_cart[3,7] = z1
+        #fourth point
+        x = 1
+        y = -1
+        z = 1
+        r = sqrt(x^2 + y^2 + z^2)
+        x1 = x/r
+        y1 = y/r
+        z1 = z/r
+        θ = asin(z1) + π/2
+        ϕ = atan(y1,x1) + 3*π/2 + π/4
+        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+        extra_mesh.extra_connijk[3,nop+1,nop+1] = 8
+        extra_mesh.extra_coords[1,8] = θ
+        extra_mesh.extra_coords[2,8] = ϕ
+        extra_mesh.extra_coords_cart[1,8] = x1
+        extra_mesh.extra_coords_cart[2,8] = y1
+        extra_mesh.extra_coords_cart[3,8] = z1
+
+        #build quadrant 4
+        #second point
+        extra_mesh.extra_connijk[4,nop+1,1] = 1
+        #fourth point
+        extra_mesh.extra_connijk[4,nop+1,nop+1] = 3
+        #first point
+        extra_mesh.extra_connijk[4,1,1] = 7
+        #third point
+        extra_mesh.extra_connijk[4,1,nop+1] = 8
+        #build quadrant 5
+        #first point
+        extra_mesh.extra_connijk[5,1,1] = 3
+        #second point
+        extra_mesh.extra_connijk[5,nop+1,1] = 4
+        #third point
+        extra_mesh.extra_connijk[5,1,nop+1] = 8
+        #fourth point
+        extra_mesh.extra_connijk[5,nop+1,nop+1] = 6
+        #build quadrant 6
+        #third point
+        extra_mesh.extra_connijk[6,1,nop+1] = 1
+        #fourth point
+        extra_mesh.extra_connijk[6,nop+1,nop+1] = 2
+        #first point
+        extra_mesh.extra_connijk[6,1,1] = 7
+        #second point
+        extra_mesh.extra_connijk[6,nop+1,1] = 5
+        lgl = basis_structs_ξ_ω!(LGL(), nop, backend)
+        extra_mesh.ωθ = lgl.ω
+        extra_mesh.ωϕ = lgl.ω
+        #construct edge nodes
+        #first quadrant
+        ip = 9
+        #first edge
+        for i=2:nop
+            
+            y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            z = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            x = -1
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = -y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) - 3*π/4
+            if (ϕ < 0)
+                ϕ = ϕ + 2*π
+            end 
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[1,i,1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = -y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #second edge
+        for i=2:nop
+
+            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = -1
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = -y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) - 3*π/4
+            if (ϕ < 0)
+                ϕ = ϕ + 2*π
+            end 
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[1,1,i] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = -y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #third edge
+        for i=2:nop
+
+            y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            z = (1)#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            x = -1
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = -y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) - 3*π/4
+            if (ϕ < 0)
+                ϕ = ϕ + 2*π
+            end 
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[1,i,nop+1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = -y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #fourth edge
+        for i=2:nop
+
+            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = -1
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = -y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) - 3*π/4
+            if (ϕ < 0)
+                ϕ = ϕ + 2*π
+            end 
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[1,nop+1,i] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = -y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+
+        #second quadrant
+        #first edge
+        for i=2:nop
+
+            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = -x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) +π/4
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[2,i,1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = -x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #second edge
+        for i=2:nop
+            extra_mesh.extra_connijk[2,1,i] = extra_mesh.extra_connijk[1,nop+1,i]
+        end
+        #third edge
+        for i=2:nop
+
+            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = -x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) +π/4
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[2,i,nop+1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = -x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #fourth edge
+        for i=2:nop
+
+            y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = -x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) +π/4
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[2,nop+1,i] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = -x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #third quadrant
+        #first edge
+        for i=2:nop
+            
+            y = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+            z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) + π + π/4
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[3,i,1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        # second edge
+        for i=2:nop
+
+            extra_mesh.extra_connijk[3,1,i] = extra_mesh.extra_connijk[2,nop+1,i]
+        end
+        #third edge
+        for i=2:nop
+
+            y = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+            z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) +π + π/4   
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[3,i,nop+1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #fourth edge
+        for i=2:nop
+
+            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) +3*π/2 + π/4
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[3,nop+1,i] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #fourth quadrant
+        #first edge
+        for i=2:nop
+
+            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) + 2*π + π/4
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[4,i,1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #second edge
+        for i=2:nop
+            extra_mesh.extra_connijk[4,1,i] = extra_mesh.extra_connijk[3,nop+1,i]
+        end
+        #third edge
+        for i=2:nop
+
+            y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+            z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+            x = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+            r = sqrt(x^2 + y^2 + z^2)
+            x1 = x/r
+            y1 = y/r
+            z1 = z/r
+            θ = asin(z1) + π/2
+            ϕ = atan(y1,x1) + 2*π + π/4
+            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+            extra_mesh.extra_connijk[4,i,nop+1] = ip
+            extra_mesh.extra_coords[1,ip] = θ
+            extra_mesh.extra_coords[2,ip] = ϕ
+            extra_mesh.extra_coords_cart[1,ip] = x1
+            extra_mesh.extra_coords_cart[2,ip] = y1
+            extra_mesh.extra_coords_cart[3,ip] = z1
+            ip += 1
+        end
+        #fourth edge
+        for i=2:nop
+            extra_mesh.extra_connijk[4,nop+1,i] = extra_mesh.extra_connijk[1,1,i]
+        end
+        #fifth quadrant
+        #first edge
+        for i=2:nop
+            extra_mesh.extra_connijk[5,i,1] = extra_mesh.extra_connijk[1,i,nop+1]
+        end
+        #second edge
+        for i=2:nop
+            extra_mesh.extra_connijk[5,1,nop+2-i] = extra_mesh.extra_connijk[4,i,nop+1]
+        end
+        #third edge
+        for i=2:nop
+            extra_mesh.extra_connijk[5,nop+2-i,nop+1] = extra_mesh.extra_connijk[3,i,nop+1]
+        end
+        #fourth edge
+        for i=2:nop
+            extra_mesh.extra_connijk[5,nop+1,i] = extra_mesh.extra_connijk[2,i,nop+1]
+        end
+        #sixth quadrant
+        #first edge
+        for i=2:nop
+            extra_mesh.extra_connijk[6,nop+2-i,1] = extra_mesh.extra_connijk[3,i,1]
+        end
+        #second edge
+        for i=2:nop
+            extra_mesh.extra_connijk[6,1,i] = extra_mesh.extra_connijk[4,i,1]
+        end
+        #third edge
+        for i=2:nop
+            extra_mesh.extra_connijk[6,i,nop+1] = extra_mesh.extra_connijk[1,i,1]
+        end
+        #fourth edge
+        for i=2:nop
+            extra_mesh.extra_connijk[6,nop+1,nop+2-i] = extra_mesh.extra_connijk[2,i,1]
+        end
+        #finished with cubed sphere element edges, populate interior nodes next
+        #first quadrant
+        for i=2:nop
+            for j=2:nop
+                y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
+                x = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = x/r
+                y1 = -y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) - 3*π/4
+                if (ϕ < 0)
+                    ϕ = ϕ + 2*π
+                end 
+                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+                extra_mesh.extra_connijk[1,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = x1
+                extra_mesh.extra_coords_cart[2,ip] = -y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
             end
-       end
-   end
-   ip_end = ip
-   ## construct high order nodes
-   lgl = basis_structs_ξ_ω!(LG(), nop, backend)
-   for e=1:nelemθ*nelemϕ
-       
-        ip1 = extra_mesh.extra_connijk[e,1,1]
-        ip2 = extra_mesh.extra_connijk[e,nop+1,1]
-        ip3 = extra_mesh.extra_connijk[e,1,nop+1]
-        
-        for i=1:nop+1
-            for j=1:nop+1
-                c1 = ( (i == 1 || i == nop + 1)  && (j > 1 && j < nop+1))
-                c2 = ( (j == 1 || j == nop + 1) && i > 1 && j < nop + 1) 
-                c3 = ( i > 1 && j > 1 && i < nop + 1 && j < nop + 1)
-                if ( (i == 1 || i == nop + 1)  && (j > 1 && j < nop+1)) || ( (j == 1 || j == nop + 1) && (i > 1 && i < nop + 1)) || ( i > 1 && j > 1 && i < nop + 1 && j < nop + 1)
-                    ξθ = lgl.ξ[i]
-                    ξϕ = lgl.ξ[j]
-                    θ = extra_mesh.extra_coords[1,ip1]*(1.0-ξθ)*0.5+extra_mesh.extra_coords[1,ip2]*(1.0 + ξθ)*0.5
-                    ϕ = extra_mesh.extra_coords[2,ip1]*(1.0-ξϕ)*0.5+extra_mesh.extra_coords[2,ip3]*(1.0 + ξϕ)*0.5
-                    iter = 1
-                    test = false
-                    while (test == false && iter < ip)
-                        if (AlmostEqual(extra_mesh.extra_coords[1,iter],θ) && AlmostEqual(extra_mesh.extra_coords[2,iter],ϕ))
-                            test = true
-                        end
-                        iter += 1
-                    end
-                    if (test == true)
-                        extra_mesh.extra_connijk[e,i,j] = iter - 1
-                    else
-                        extra_mesh.extra_coords[1,ip] = extra_mesh.extra_coords[1,ip1]*(1.0-ξθ)*0.5+extra_mesh.extra_coords[1,ip2]*(1.0 + ξθ)*0.5
-                        extra_mesh.extra_coords[2,ip] = extra_mesh.extra_coords[2,ip1]*(1.0-ξϕ)*0.5+extra_mesh.extra_coords[2,ip3]*(1.0 + ξϕ)*0.5
-                        extra_mesh.extra_connijk[e,i,j] = ip
+        end
+        #second quadrant
+        for i=2:nop
+            for j=2:nop
+                y = 1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
+                x = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = -x/r
+                y1 = y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) + π/4
+
+                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+                extra_mesh.extra_connijk[2,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = -x1
+                extra_mesh.extra_coords_cart[2,ip] = y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        #third quadrant
+        for i=2:nop
+            for j=2:nop
+                y = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
+                x = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = x/r
+                y1 = y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) +π + π/4
+                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+                extra_mesh.extra_connijk[3,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = x1
+                extra_mesh.extra_coords_cart[2,ip] = y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        #fourth quadrant
+        for i=2:nop
+            for j=2:nop
+                y = -1#(-π/4)*(1.0-lgl.ξ[i])*0.5+(π/4)*(1.0 + lgl.ξ[i])*0.5
+                z = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
+                x = (-1)*(1.0-lgl.ξ[nop+2-i])*0.5+(1)*(1.0 + lgl.ξ[nop+2-i])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = x/r
+                y1 = y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) + 2*π + π/4
+                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
+                extra_mesh.extra_connijk[4,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = x1
+                extra_mesh.extra_coords_cart[2,ip] = y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        #fifth quadrant
+        for i=2:nop
+            for j=2:nop
+                y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                z = 1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                x = (-1)*(1.0-lgl.ξ[j])*0.5+(1)*(1.0 + lgl.ξ[j])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = x/r
+                y1 = y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) + π
+                #=if (ϕ == 7*π/4)
+                    ϕ = 3*π/4
+                elseif (ϕ == 3*π/4)
+                    ϕ = 7*π/4
+                end=#
+                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2), i,j 
+                extra_mesh.extra_connijk[5,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = x1
+                extra_mesh.extra_coords_cart[2,ip] = y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        #sixth quadrant
+        for i=2:nop
+            for j=2:nop
+                y = (-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                z = -1#(-1)*(1.0-lgl.ξ[i])*0.5+(1)*(1.0 + lgl.ξ[i])*0.5
+                x = (-1)*(1.0-lgl.ξ[nop+2-j])*0.5+(1)*(1.0 + lgl.ξ[nop+2-j])*0.5
+                r = sqrt(x^2 + y^2 + z^2)
+                x1 = -x/r
+                y1 = y/r
+                z1 = z/r
+                θ = asin(z1) + π/2
+                ϕ = atan(y1,x1) +π
+                #=if (ϕ == 3*π/4)
+                    ϕ = 7*π/4
+                elseif (ϕ == 7*π/4)
+                    ϕ = 3*π/4
+                end=#
+                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2),i,j
+                extra_mesh.extra_connijk[6,i,j] = ip
+                extra_mesh.extra_coords[1,ip] = θ
+                extra_mesh.extra_coords[2,ip] = ϕ
+                extra_mesh.extra_coords_cart[1,ip] = -x1
+                extra_mesh.extra_coords_cart[2,ip] = y1
+                extra_mesh.extra_coords_cart[3,ip] = z1
+                ip += 1
+            end
+        end
+        extra_mesh.extra_npoin = ip - 1
+    else
+        npoin = (nelemθ*nop+1)*(nelemϕ*nop+1)
+        dims1 = (2,npoin)
+        dims2 = (nelemθ*nelemϕ, nop+1, nop+1)
+        dims3 = (nelemθ*nelemϕ)
+        dims4 = (nelemθ*nelemϕ, 0, nop+1)
+        dims5 = (3,npoin)
+        ip = 5
+        extra_mesh = St_extra_mesh{TInt, TFloat, NSD_2D(), dims1, dims2, dims3, dims4, dims5, nelemθ*nelemϕ, npoin, backend}()
+        Δθe = (θmax-θmin)/nelemθ
+        Δϕe = (ϕmax-ϕmin)/nelemϕ
+        extra_mesh.extra_nop             .= nop
+        extra_mesh.extra_connijk[1,1,1] = 1
+        extra_mesh.extra_connijk[1,nop+1,1] = 2
+        extra_mesh.extra_connijk[1,1,nop+1] = 3
+        extra_mesh.extra_connijk[1,nop+1,nop+1] = 4 
+        extra_mesh.extra_coords[1,1] = θmin
+        extra_mesh.extra_coords[2,1] = ϕmin
+        extra_mesh.extra_coords[1,2] = θmin + Δθe
+        extra_mesh.extra_coords[2,2] = ϕmin
+        extra_mesh.extra_coords[1,3] = θmin
+        extra_mesh.extra_coords[2,3] = ϕmin + Δϕe
+        extra_mesh.extra_coords[1,4] = θmin + Δθe
+        extra_mesh.extra_coords[2,4] = ϕmin + Δϕe
+        #construct linear mesh
+        for eθ=1:nelemθ
+            for eϕ=1:nelemϕ
+                if (eϕ > 1 || eθ > 1)
+                    e_left = eϕ + (eθ-1 - 1)*nelemϕ
+                    e_down = eϕ-1 + (eθ - 1)*nelemϕ
+                    e = eϕ + (eθ - 1)*nelemϕ
+                    if (eθ > 1 && eϕ > 1)
+                        extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_left,nop+1,1]
+                        extra_mesh.extra_connijk[e,1,nop+1] = extra_mesh.extra_connijk[e_left,nop+1,nop+1]
+                        extra_mesh.extra_connijk[e,nop+1,1] = extra_mesh.extra_connijk[e_down,nop+1,nop+1]
+                        extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
+                        extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe 
+                        extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
                         ip += 1
+                    elseif (eθ > 1)
+                        extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_left,nop+1,1]
+                        extra_mesh.extra_connijk[e,1,nop+1] = extra_mesh.extra_connijk[e_left,nop+1,nop+1]
+                        extra_mesh.extra_connijk[e,nop+1,1] = ip
+                        extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe
+                        extra_mesh.extra_coords[2,ip] = ϕmin 
+                        ip += 1
+                        extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
+                        extra_mesh.extra_coords[1,ip] = θmin + eθ*Δθe
+                        extra_mesh.extra_coords[2,ip] = ϕmin + Δϕe
+                        ip += 1
+                    elseif (eϕ > 1)
+                        extra_mesh.extra_connijk[e,1,1] = extra_mesh.extra_connijk[e_down,1,nop+1]
+                        extra_mesh.extra_connijk[e,nop+1,1] = extra_mesh.extra_connijk[e_down,nop+1,nop+1]
+                        extra_mesh.extra_connijk[e,1,nop+1] = ip
+                        extra_mesh.extra_coords[1,ip] = θmin 
+                        extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
+                        ip += 1
+                        extra_mesh.extra_connijk[e,nop+1,nop+1] = ip
+                        extra_mesh.extra_coords[1,ip] = θmin + Δθe
+                        extra_mesh.extra_coords[2,ip] = ϕmin + eϕ*Δϕe
+                        ip += 1        
                     end
                 end
             end
         end
-   end
+        ip_end = ip
+        ## construct high order nodes
+        lgl = basis_structs_ξ_ω!(LGL(), nop, backend)
+        extra_mesh.ωθ = lgl.ω
+        extra_mesh.ωϕ = lgl.ω
+        for e=1:nelemθ*nelemϕ
+       
+            ip1 = extra_mesh.extra_connijk[e,1,1]
+            ip2 = extra_mesh.extra_connijk[e,nop+1,1]
+            ip3 = extra_mesh.extra_connijk[e,1,nop+1]
+        
+            for i=1:nop+1
+                for j=1:nop+1
+                    c1 = ( (i == 1 || i == nop + 1)  && (j > 1 && j < nop+1))
+                    c2 = ( (j == 1 || j == nop + 1) && i > 1 && j < nop + 1) 
+                    c3 = ( i > 1 && j > 1 && i < nop + 1 && j < nop + 1)
+                    if ( (i == 1 || i == nop + 1)  && (j > 1 && j < nop+1)) || ( (j == 1 || j == nop + 1) && (i > 1 && i < nop + 1)) || ( i > 1 && j > 1 && i < nop + 1 && j < nop + 1)
+                        ξθ = lgl.ξ[i]
+                        ξϕ = lgl.ξ[j]
+                        θ = extra_mesh.extra_coords[1,ip1]*(1.0-ξθ)*0.5+extra_mesh.extra_coords[1,ip2]*(1.0 + ξθ)*0.5
+                        ϕ = extra_mesh.extra_coords[2,ip1]*(1.0-ξϕ)*0.5+extra_mesh.extra_coords[2,ip3]*(1.0 + ξϕ)*0.5
+                        iter = 1
+                        test = false
+                        while (test == false && iter < ip)
+                            if (AlmostEqual(extra_mesh.extra_coords[1,iter],θ) && AlmostEqual(extra_mesh.extra_coords[2,iter],ϕ))
+                                test = true
+                            end
+                            iter += 1
+                        end
+                        if (test == true)
+                            extra_mesh.extra_connijk[e,i,j] = iter - 1
+                        else
+                            extra_mesh.extra_coords[1,ip] = extra_mesh.extra_coords[1,ip1]*(1.0-ξθ)*0.5+extra_mesh.extra_coords[1,ip2]*(1.0 + ξθ)*0.5
+                            extra_mesh.extra_coords[2,ip] = extra_mesh.extra_coords[2,ip1]*(1.0-ξϕ)*0.5+extra_mesh.extra_coords[2,ip3]*(1.0 + ξϕ)*0.5
+                            extra_mesh.extra_connijk[e,i,j] = ip
+                            ip += 1
+                        end
+                    end
+                end
+            end
+        end
+        extra_mesh.extra_npoin = ip - 1
+    end
+    @info extra_mesh.extra_connijk[1,:,:]
    # build extra grid metrics
    metrics = allocate_metrics(NSD_2D(), nelemθ*nelemϕ, 0, nop+1, TFloat, backend)
    
@@ -330,58 +1019,289 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         
    xij = 0.0
    yij = 0.0
-   @inbounds for iel = 1:nelemθ*nelemϕ
-        for j = 1:nop+1
-            for i = 1:nop+1
+   @info extra_mesh.extra_connijk, size(extra_mesh.extra_connijk)
+   if !(inputs[:lcubed_sphere_angular_mesh])
+        @inbounds for iel = 1:nelemθ*nelemϕ
+            for j = 1:nop+1
+                for i = 1:nop+1
 
-                ip = extra_mesh.extra_connijk[iel, i, j]
-                θij = extra_mesh.extra_coords[1,ip]
-                ϕij = extra_mesh.extra_coords[2,ip]
-                    
-                @turbo for l=1:nop+1
-                    for k=1:nop+1
+                    ip = extra_mesh.extra_connijk[iel, i, j]
+                    θij = extra_mesh.extra_coords[1,ip]
+                    ϕij = extra_mesh.extra_coords[2,ip]
+                
+                    @turbo for l=1:nop+1
+                        for k=1:nop+1
         
-                        a = dψ[i,k]*ψ[j,l]
-                        b = ψ[i,k]*dψ[j,l]
-                        metrics.dxdξ[iel, k, l] += a * θij
-                        metrics.dxdη[iel, k, l] += b * θij
+                            a = dψ[i,k]*ψ[j,l]
+                            b = ψ[i,k]*dψ[j,l]
+                            metrics.dxdξ[iel, k, l] += a * θij
+                            metrics.dxdη[iel, k, l] += b * θij
 
-                        metrics.dydξ[iel, k, l] += a * ϕij
-                        metrics.dydη[iel, k, l] += b * ϕij
+                            metrics.dydξ[iel, k, l] += a * ϕij
+                            metrics.dydη[iel, k, l] += b * ϕij
 
                             #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
+                        end
                     end
                 end
             end
-        end
         
-        @inbounds for l = 1:nop+1
-            for k = 1:nop+1
+            @inbounds for l = 1:nop+1
+                for k = 1:nop+1
 
-                # Extract values from memory once per iteration
-                dxdξ_val = metrics.dxdξ[iel, k, l]
-                dydη_val = metrics.dydη[iel, k, l]
-                dydξ_val = metrics.dydξ[iel, k, l]
-                dxdη_val = metrics.dxdη[iel, k, l]
-                # Compute Je once and reuse its value
-                metrics.Je[iel, k, l] = dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                    # Extract values from memory once per iteration
+                    dxdξ_val = metrics.dxdξ[iel, k, l]
+                    dydη_val = metrics.dydη[iel, k, l]
+                    dydξ_val = metrics.dydξ[iel, k, l]
+                    dxdη_val = metrics.dxdη[iel, k, l]
+                    ip = extra_mesh.extra_connijk[iel, k, l]
+                    # Compute Je once and reuse its value
+                    metrics.Je[iel, k, l] = dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                    # Use the precomputed Je value for the other calculations
+                    Jinv = 1.0/metrics.Je[iel, k, l]
 
-                # Use the precomputed Je value for the other calculations
-                Jinv = 1.0/metrics.Je[iel, k, l]
+                    metrics.dξdx[iel, k, l] =  dydη_val * Jinv
+                    metrics.dξdy[iel, k, l] = -dxdη_val * Jinv
+                    metrics.dηdx[iel, k, l] = -dydξ_val * Jinv
+                    metrics.dηdy[iel, k, l] =  dxdξ_val * Jinv
 
-                metrics.dξdx[iel, k, l] =  dydη_val * Jinv
-                metrics.dξdy[iel, k, l] = -dxdη_val * Jinv
-                metrics.dηdx[iel, k, l] = -dydξ_val * Jinv
-                metrics.dηdy[iel, k, l] =  dxdξ_val * Jinv
-
+                end
             end
         end
-        #show(stdout, "text/plain", metrics.Je[iel, :,:])
+    else
+        lon = [0.0 90.0 180.0 270.0]
+        lat = [0.0 0.0 0.0 0.0 90.0 -90.0]
+        @inbounds for iel = 1:nelemθ*nelemϕ
+            xg = zeros(nop+1,nop+1)
+            yg = zeros(nop+1,nop+1)
+            xgs = zeros(nop+1,nop+1)
+            ygs = zeros(nop+1,nop+1)
+            dxgdξ = zeros(nop+1,nop+1)
+            dxgdη = zeros(nop+1,nop+1)
+            dygdξ = zeros(nop+1,nop+1)
+            dygdη = zeros(nop+1,nop+1)
+            dxgsdξ = zeros(nop+1,nop+1)
+            dxgsdη = zeros(nop+1,nop+1)
+            dygsdξ = zeros(nop+1,nop+1)
+            dygsdη = zeros(nop+1,nop+1)
+            dRdξ = zeros(nop+1,nop+1)
+            dRdη = zeros(nop+1,nop+1)
+            R = zeros(nop+1,nop+1)
+            Θ = zeros(nop+1,nop+1)
+            Φ = zeros(nop+1,nop+1)
+            irot = zeros(3,3)
+            for j = 1:nop+1
+                for i = 1:nop+1
+
+                    ip = extra_mesh.extra_connijk[iel, i, j]
+                    xij = extra_mesh.extra_coords_cart[1,ip]
+                    yij = extra_mesh.extra_coords_cart[2,ip]
+                    zij = extra_mesh.extra_coords_cart[3,ip]
+                    θij = extra_mesh.extra_coords[1,ip]
+                    ϕij = extra_mesh.extra_coords[2,ip]
+                    rot = zeros(3,3)
+                    if (iel < 5)
+                        θ = lon[iel]
+                        rot[1,1] = cos(θ)
+                        rot[1,2] = sin(θ)
+                        rot[2,1] = -sin(θ)
+                        rot[2,2] = cos(θ)
+                        rot[3,3] = 1.0
+                    else
+                        l = lat[iel]
+                        rot[1,1] = cos(θ)
+                        rot[1,3] = sin(θ)
+                        rot[2,2] = 1.0
+                        rot[3,1] = -sin(θ)
+                        rot[3,3] = cos(θ)
+                    end
+                    irot = inv(rot)       
+                    X = dot(rot[1,:],[xij, yij, zij])
+                    Y = dot(rot[2,:],[xij, yij, zij])
+                    Z = dot(rot[3,:],[xij, yij, zij])
+                    
+                    R[i,j] = sqrt(X^2 + Y^2 + Z^2)
+                    Θ[i,j] = asin(Z/R[i,j])
+                    Φ[i,j] = atan(Y,X+eps(Float64))
+
+                    xg[i,j] = tan(Φ[i,j])
+                    yg[i,j] = tan(Θ[i,j])/cos(Φ[i,j])
+               
+                    xgs[i,j] = atan(xg[i,j])
+                    ygs[i,j] = atan(yg[i,j])
+                    for l=1:nop+1
+                        for k = 1:nop+1
+                            a = dψ[i,k]*ψ[j,l]
+                            b = ψ[i,k]*dψ[j,l]
+                            dRdξ[k, l] += a * R[i,j]
+                            dxgdξ[k, l] += a * xg[i,j] 
+                            dygdξ[k, l] += a * yg[i,j]
+                            dxgsdξ[k, l] += a * xgs[i,j]
+                            dygsdξ[k, l] += a * ygs[i,j]
+
+                            dRdη[k, l] += b * R[i,j]
+                            dxgdη[k, l] += b * xg[i,j]
+                            dygdη[k, l] += b * yg[i,j]
+                            dxgsdη[k, l] += b * xgs[i,j]
+                            dygsdη[k, l] += b * ygs[i,j]
+                        end
+                    end
+
+                end
+            end
+
+            for j = 1:nop+1
+                for i = 1:nop+1
+
+                    dxdR = cos(Θ[i,j])*cos(Φ[i,j])
+                    dydR = cos(Θ[i,j])*sin(Φ[i,j])
+                    dzdR = sin(Φ[i,j])
+
+                    dxdΘ = -R[i,j]*sin(Θ[i,j])*cos(Φ[i,j])
+                    dydΘ = -R[i,j]*sin(Θ[i,j])*sin(Φ[i,j])
+                    dzdΘ = R[i,j]*cos(Φ[i,j])
+
+                    dxdΦ = -R[i,j]*cos(Θ[i,j])*sin(Φ[i,j])
+                    dydΦ = R[i,j]*cos(Θ[i,j])*cos(Φ[i,j])
+                    dzdΦ = 0.0
+
+                    dxdΦΘ = dot(irot[1,:],[dxdΦ dydΦ dzdΦ])
+                    dydΦΘ = dot(irot[2,:],[dxdΦ dydΦ dzdΦ])
+                    dzdΦΘ = dot(irot[3,:],[dxdΦ dydΦ dzdΦ])
+
+                    dxdΘΘ = dot(irot[1,:],[dxdΘ dydΘ dzdΘ])
+                    dydΘΘ = dot(irot[2,:],[dxdΘ dydΘ dzdΘ])
+                    dzdΘΘ = dot(irot[3,:],[dxdΘ dydΘ dzdΘ])
+
+                    dxdR = dot(irot[1,:],[dxdR dydR dzdR])
+                    dydR = dot(irot[2,:],[dxdR dydR dzdR])
+                    dzdR = dot(irot[3,:],[dxdR dydR dzdR])
+
+                    dxgdxgs = 1.0/(cos(xgs[i,j])^2)
+                    dxgdygs = 0.0
+                    dygdxgs = 0.0
+                    dygdygs = 1.0/(cos(ygs[i,j])^2)
+                    
+                    tmpx = dxgdxgs * dxgsdξ[i,j] + dxgdygs*dygsdξ[i,j]
+                    tmpy = dygdxgs * dxgsdξ[i,j] + dygdygs*dygsdξ[i,j]
+                    dxgdξ[i,j] = tmpx
+                    dygdξ[i,j] = tmpy
+                    
+                    tmpx = dxgdxgs * dxgsdη[i,j] + dxgdygs*dygsdη[i,j]
+                    tmpy = dygdxgs * dxgsdη[i,j] + dygdygs*dygsdη[i,j]
+                    dxgdη[i,j] = tmpx
+                    dygdη[i,j] = tmpy
+
+
+                    dΦΘdxg = 1.0/(1.0 + xg[i,j]^2)
+                    dΦΘdyg = 0.0
+                    dΘΘdxg = -yg[i,j]*sin(Φ[i,j])*dΦΘdxg/(1.0+(yg[i,j]*cos(Φ[i,j]))^2) 
+                    dΘΘdyg = cos(Φ[i,j])/(1.0+(yg[i,j]*cos(Φ[i,j]))^2)
+
+                    dΦΘdξ = dΦΘdxg*dxgdξ[i,j] + dΦΘdyg*dygdξ[i,j]
+                    dΦΘdη = dΦΘdxg*dxgdη[i,j] + dΦΘdyg*dygdη[i,j]
+
+                    dΘΘdξ = dΘΘdxg*dxgdξ[i,j] + dΘΘdyg*dygdξ[i,j]
+                    dΘΘdη = dΘΘdxg*dxgdη[i,j] + dΘΘdyg*dygdη[i,j]
+
+                    metrics.dxdξ[iel, i,j] = dxdR*dRdξ[i,j] + dxdΘΘ*dΘΘdξ + dxdΦΘ*dΦΘdξ
+                    metrics.dxdη[iel, i,j] = dxdR*dRdη[i,j] + dxdΘΘ*dΘΘdη + dxdΦΘ*dΦΘdη
+
+                    metrics.dydξ[iel, i,j] = dydR*dRdξ[i,j] + dydΘΘ*dΘΘdξ + dydΦΘ*dΦΘdξ
+                    metrics.dydη[iel, i,j] = dydR*dRdη[i,j] + dydΘΘ*dΘΘdη + dydΦΘ*dΦΘdη
+                    
+                    metrics.dzdξ[iel, i,j] = dzdR*dRdξ[i,j] + dzdΘΘ*dΘΘdξ + dzdΦΘ*dΦΘdξ
+                    metrics.dzdη[iel, i,j] = dzdR*dRdη[i,j] + dzdΘΘ*dΘΘdη + dzdΦΘ*dΦΘdη
+                end
+            end
+            @inbounds for l = 1:nop+1
+                for k = 1:nop+1
+
+                    # Extract values from memory once per iteration
+                    dxdξ_val = metrics.dxdξ[iel, k, l]
+                    dydη_val = metrics.dydη[iel, k, l]
+                    dydξ_val = metrics.dydξ[iel, k, l]
+                    dxdη_val = metrics.dxdη[iel, k, l]
+                    dzdξ_val = metrics.dzdξ[iel, k, l]
+                    dzdη_val = metrics.dzdη[iel, k, l]
+
+                    ip = extra_mesh.extra_connijk[iel, k, l]
+                    # Compute Je once and reuse its value
+                    col1 = [dxdξ_val, dydξ_val, dzdξ_val]
+                    col2 = [dxdη_val, dydη_val, dzdη_val]
+                    metrics.Je[iel, k, l] = norm(cross(col1, col2)) #dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                    @info metrics.Je[iel, k, l]
+                    #metrics.Je[iel, k, l] 
+                    # Use the precomputed Je value for the other calculations
+                    Jinv = 1.0/metrics.Je[iel, k, l]
+
+                    metrics.dξdx[iel, k, l] =  (dydη_val - dzdη_val) * Jinv
+                    metrics.dξdy[iel, k, l] = (dzdη_val - dxdη_val) * Jinv
+                    metrics.dξdz[iel, k, l] = (dxdη_val - dydη_val) * Jinv
+                    metrics.dηdx[iel, k, l] = (dzdξ_val - dydξ_val) * Jinv
+                    metrics.dηdy[iel, k, l] = (dxdξ_val - dzdξ_val) * Jinv
+                    metrics.dηdz[iel, k ,l] = (dydξ_val - dxdξ_val) * Jinv
+                end
+            end      
+            #=for j = 1:nop+1
+                for i = 1:nop+1
+
+                    ip = extra_mesh.extra_connijk[iel, i, j]
+                    xij = extra_mesh.extra_coords_cart[1,ip]
+                    yij = extra_mesh.extra_coords_cart[2,ip]
+                    zij = extra_mesh.extra_coords_cart[3,ip]
+                    for l=1:nop+1
+                        for k=1:nop+1
+
+                            a = dψ[i,k]*ψ[j,l]
+                            b = ψ[i,k]*dψ[j,l]
+                            metrics.dxdξ[iel, k, l] += a * xij
+                            metrics.dxdη[iel, k, l] += b * xij
+                            metrics.dydξ[iel, k, l] += a * yij
+                            metrics.dydη[iel, k, l] += b * yij
+
+                            metrics.dzdξ[iel, k, l] += a * zij
+                            metrics.dzdη[iel, k, l] += b * zij
+                            #@printf(" i,j=%d, %d. x,y=%f,%f \n",i,j,xij, yij)
+                        end
+                    end
+                end
+            end
+            @inbounds for l = 1:nop+1
+                for k = 1:nop+1
+
+                    # Extract values from memory once per iteration
+                    dxdξ_val = metrics.dxdξ[iel, k, l]
+                    dydη_val = metrics.dydη[iel, k, l]
+                    dydξ_val = metrics.dydξ[iel, k, l]
+                    dxdη_val = metrics.dxdη[iel, k, l]
+                    dzdξ_val = metrics.dzdξ[iel, k, l]
+                    dzdη_val = metrics.dzdη[iel, k, l]
+
+                    ip = extra_mesh.extra_connijk[iel, k, l]
+                    # Compute Je once and reuse its value
+                    col1 = [dxdξ_val, dydξ_val, dzdξ_val]
+                    col2 = [dxdη_val, dydη_val, dzdη_val]
+                    metrics.Je[iel, k, l] = norm(cross(col1, col2)) #dxdξ_val * dydη_val - dydξ_val * dxdη_val
+                    #metrics.Je[iel, k, l] 
+                    # Use the precomputed Je value for the other calculations
+                    Jinv = 1.0/metrics.Je[iel, k, l]
+
+                    metrics.dξdx[iel, k, l] =  (dydη_val - dzdη_val) * Jinv
+                    metrics.dξdy[iel, k, l] = (dzdη_val - dxdη_val) * Jinv
+                    metrics.dξdz[iel, k, l] = (dxdη_val - dydη_val) * Jinv
+                    metrics.dηdx[iel, k, l] = (dzdξ_val - dydξ_val) * Jinv
+                    metrics.dηdy[iel, k, l] = (dxdξ_val - dzdξ_val) * Jinv
+                    metrics.dηdz[iel, k ,l] = (dydξ_val - dxdξ_val) * Jinv
+                end
+            end=#
+
+        end
     end
 
    extra_mesh.extra_metrics = metrics
     
-   if (lper)
+   #=if (lper)
         for eθ = 1:nelemθ
             e1 = 1 + (eθ - 1) * nelemϕ
             e2 = nelemϕ + (eθ - 1) * nelemϕ
@@ -392,15 +1312,73 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             e2 = nelemϕ + (nelemθ - 1) * nelemϕ
             extra_mesh.extra_connijk[e2,nop+1,:] .= extra_mesh.extra_connijk[e1,1,:]
         end
-   end
+   end=#
+   if !(inputs[:lcubed_sphere_angular_mesh])
+   for rep = 1:2
+    for iper=1:extra_mesh.extra_npoin
+        θ = extra_mesh.extra_coords[1,iper]
+        ϕ = extra_mesh.extra_coords[2,iper]
+        @info ϕ/π, iper
+        if (abs(ϕ/π - 2.0) <= eps(Float64))
+            #found a periodic point
+            iper1 = 1
+            found = false
+            @info ϕ/π  , θ/π
+            while (iper1 <= extra_mesh.extra_npoin && found == false)
+                θ1 = extra_mesh.extra_coords[1,iper1]
+                ϕ1 = extra_mesh.extra_coords[2,iper1]
+                if (ϕ1 <= eps(Float64) && abs(θ-θ1) <= eps(Float64))
+                    found = true
+                end
+                iper1 += 1
+            end
+            if (found)
+                ip_old = iper
+                ip_new = iper1-1
+                @info found, extra_mesh.extra_coords[1,iper1-1]/π, ip_old, ip_new
+                for e=1:extra_mesh.extra_nelem
+                    for i=1:extra_mesh.extra_nop[e]+1
+                        for j=1:extra_mesh.extra_nop[e]+1
+                            ip = extra_mesh.extra_connijk[e,i,j]
+                            if (ip == ip_old)
+                                extra_mesh.extra_connijk[e,i,j] = ip_new
+                                extra_mesh.extra_coords[1,ip] = extra_mesh.extra_coords[1,ip_new]
+                                extra_mesh.extra_coords[2,ip] = extra_mesh.extra_coords[2,ip_new]
+                            end
+                        end
+                    end
+                end
+                for e=1:extra_mesh.extra_nelem
+                    for i=1:extra_mesh.extra_nop[e]+1
+                        for j=1:extra_mesh.extra_nop[e]+1
+                            ip = extra_mesh.extra_connijk[e,i,j]
+                            if (ip >= ip_old)
+                                extra_mesh.extra_connijk[e,i,j] -= 1
+                            end
+                        end
+                    end
+                end
+                for i = ip_old+1: extra_mesh.extra_npoin
+                    extra_mesh.extra_coords[1,i-1] = extra_mesh.extra_coords[1,i]
+                    extra_mesh.extra_coords[2,i-1] = extra_mesh.extra_coords[2,i]
+                end
+                extra_mesh.extra_npoin -= 1
+            end
+        end
+    end
+  end
+  end
+   
    basis = build_Interpolation_basis!(LagrangeBasis(), lgl.ξ, lgl.ξ, TFloat, inputs[:backend])
-   Me = KernelAbstractions.zeros(backend, TFloat, (nop+1)^2, (nop+1)^2, Int64(nelemθ*nelemϕ))
+   extra_mesh.ψ = basis.ψ
+   extra_mesh.dψ = basis.dψ
+   #=Me = KernelAbstractions.zeros(backend, TFloat, (nop+1)^2, (nop+1)^2, Int64(nelemθ*nelemϕ))
    build_mass_matrix!(Me, NSD_2D(), Inexact(), basis.ψ, lgl.ω, nelemθ*nelemϕ, metrics.Je, Δϕe, nop, nop, TFloat)
    M    = KernelAbstractions.zeros(backend, TFloat, Int64(npoin))
    Minv = KernelAbstractions.zeros(backend, TFloat, Int64(npoin))
    DSS_mass!(M, NSD_2D(), Inexact(), Me, extra_mesh.extra_connijk, nelemθ*nelemϕ, npoin, nop, TFloat; llump=inputs[:llump])
    Minv = TFloat(1.0)./M
-   extra_mesh.Minv = Minv
+   extra_mesh.Minv = Minv=#
    return extra_mesh
 end
 
@@ -524,12 +1502,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
     mesh.edge_type     = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges))
     mesh.bdy_edge_type                    = Array{Union{Nothing, String}}(nothing, Int64(mesh.nedges_bdy))
     mesh.bdy_edge_type_id = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
-    
+    mesh.elem_to_edge     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), 2)
     if mesh.nsd > 2
         mesh.poin_in_bdy_face = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nfaces_bdy), Int64(mesh.ngl), Int64(mesh.ngl))
         mesh.face_type = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces))
         mesh.bdy_face_type = Array{Union{Nothing, String}}(nothing, Int64(mesh.nfaces_bdy))
         mesh.bdy_face_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces_bdy))
+        mesh.elem_to_face     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl), 3)
     end
     mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
     mesh.conn = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
@@ -750,6 +1729,30 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
                 iedge_bdy += 1
             end
         end
+        
+        for e = 1:mesh.nelem
+            for j=1:mesh.ngl
+                for i = 1:mesh.ngl
+                    ip = mesh.connijk[e, i, j]
+                    if (ip in mesh.poin_in_bdy_edge)
+                        found = false
+                        iedge = 1
+                        while (iedge <= mesh.nedges_bdy && found == false)
+                            for i1 = 1:mesh.ngl
+                                ip1 = mesh.poin_in_bdy_edge[iedge, i1]
+                                e1 = mesh.bdy_edge_in_elem[iedge]
+                                if (ip1 == ip && e1 == e)
+                                    mesh.elem_to_edge[e,i,j,1] = iedge
+                                    mesh.elem_to_edge[e,i,j,2] = i1
+                                    found = true
+                                end
+                            end
+                            iedge += 1
+                        end
+                    end
+                end
+            end
+        end
         # build mesh data structs for Laguerre semi-infinite elements
         if ("Laguerre" in mesh.bdy_edge_type)
             gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend) 
@@ -926,6 +1929,34 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict)
                 end
             end
         end=#
+        for e = 1:mesh.nelem
+            for k=1:mesh.ngl
+                for j=1:mesh.ngl   
+                    for i = 1:mesh.ngl
+                        ip = mesh.connijk[e, i, j, k]
+                        if (ip in mesh.poin_in_bdy_face)
+                            found = false
+                            iface = 1
+                            while (iface <= mesh.nfaces_bdy && found == false)
+                                for j1 = 1:mesh.ngl
+                                    for i1 = 1: mesh.ngl
+                                        ip1 = mesh.poin_in_bdy_face[iface, i1, j1]
+                                        e1 = mesh.bdy_face_in_elem[iface]
+                                        if (ip1 == ip && e1 == e) 
+                                            mesh.elem_to_face[e,i,j,k,1] = iface
+                                            mesh.elem_to_face[e,i,j,k,2] = i1
+                                            mesh.elem_to_face[e,i,j,k,3] = j1
+                                            found = true
+                                        end
+                                    end
+                                end
+                                iface += 1
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
 
 #----------------------------------------------------------------------
