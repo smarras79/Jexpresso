@@ -1,9 +1,8 @@
 function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
-    """
-
-    """
-    @info " Initialize fields for 2D Helmholtz equation ........................ "
     
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    if rank == 0 @info " Initialize fields for 2D Helmholtz equation ........................ " end    
     #---------------------------------------------------------------------------------
     # Solution variables:
     #
@@ -11,11 +10,9 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("u")
+    qvars    = ["u"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
-
-
     if (inputs[:backend] == CPU())        
         for ip =1:mesh.npoin
             x=mesh.x[ip]
@@ -28,10 +25,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, mesh.y; ndrange = mesh.npoin)
     end
-        
     
-    outvarsref = ("u_ref")    
-
     @info " Initialize fields for 2D Helmholtz equation ........................ DONE "
     
     return q

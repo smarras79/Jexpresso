@@ -24,7 +24,11 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
+<<<<<<< HEAD
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
+=======
+function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
+>>>>>>> 4cfe0c028c3e1b570bbf306a1bc43ae0da460d6c
 #    if (tag == "free_slip")
      #if ((x == 5000.0 && y == 0.0) || (x == -5000.0 && y == 0.0) || (x == -5000.0 && y == 10000.0) || (x == 5000.0 && y == 10000.0)) 
      #  a = 1
@@ -50,7 +54,11 @@ function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractF
     
 end
 
+<<<<<<< HEAD
 function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe::SubArray{Float64},::PERT)
+=======
+function user_bc_dirichlet!(q, x::AbstractFloat, y::AbstractFloat, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
+>>>>>>> 4cfe0c028c3e1b570bbf306a1bc43ae0da460d6c
 #    if (tag == "free_slip")
     if (y < 0.01)
         qbdy[1] = 0.0#0.025*sinpi(2*30*t/5000.0)

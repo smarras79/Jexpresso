@@ -8,25 +8,12 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
-        :lsparse              => true,
         :rconst               => [0.0],
-        #:backend              => MetalBackend(),
-        #:CL                   => NCL(), #CL() is defaults
-        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
         :nop                 => 4,      # Polynomial order
-        #:nop_laguerre        => 14,
-        #:xfac_laguerre       => 0.25,
-        #:yfac_laguerre       => 0.0,
-        #---------------------------------------------------------------------------
-        # Physical parameters/constants:
-        #---------------------------------------------------------------------------
-        #:lvisc                => true, #false by default NOTICE: works only for Inexact
-        #:ivisc_equations      => (1, 2, 3, 4),
-        #:μ                   => (0.0, 75.0, 75.0, 75.0), #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

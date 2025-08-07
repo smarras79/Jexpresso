@@ -10,8 +10,6 @@ function user_inputs()
         :diagnostics_at_times => (0.5, 1, 2, 4),
         :output_dir          => "./output/",
         :case                 => "rtb",
-        #:backend              => MetalBackend(),
-        #:CL                   => NCL(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -59,8 +57,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "PNG",
+        :outformat           => "vtk",
         :loutput_pert        => true,  #this is only implemented for VTK for now
+        :loverwrite_output   => true,
         :plot_hlines        => [10.0],
         #---------------------------------------------------------------------------
     ) #Dict

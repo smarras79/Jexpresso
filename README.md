@@ -1,4 +1,4 @@
-# <img src="https://github.com/smarras79/Jexpresso/blob/master/assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
+# <img src="./assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
 
 | **Documentation** |
 |:------------ |
@@ -7,7 +7,7 @@
 | [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/smarras79/Jexpresso/actions?query=workflow%3ACI)
 | **Contacts**  |
 | [![Simone Marras](https://img.shields.io/badge/Simone%20Marras-smarras%40njit.edu-8e7cc3)](mailto:smarras@njit.edu) |
-| [![Yassine Tissaoui](https://img.shields.io/badge/Yassine%20Tissaoui-yt277%40njit.edu-8e7cc3)](mailto:yt277@njit.edu) |
+| [![Yassine Tissaoui](https://img.shields.io/badge/Yassine%20Tissaoui-tissaoui%40wisc.edu-8e7cc3)](mailto:tissaoui@wisc.edu) |
 | [![Hang Wang](https://img.shields.io/badge/Hang%20Wang-hang.wang%40njit.edu-8e7cc3)](mailto:hang.wang@njit.edu) |
 | **Citation** |
 | [![DOI](https://img.shields.io/badge/article-arXiv:2401.05624-green)](https://doi.org/10.48550/arXiv.2401.05624) |
@@ -103,7 +103,7 @@ $${\bf q}=\begin{bmatrix}
 \rho c1\\
 ...\\
 \rho cN
-\end{bmatrix}\quad {\bf F}1=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F}=\begin{bmatrix}
 \rho u\\
 \rho u^2 + p\\
 \rho u v\\
@@ -111,7 +111,7 @@ $${\bf q}=\begin{bmatrix}
 \rho u c1\\
 ...\\
 \rho u cN
-\end{bmatrix}\quad {\bf F}2=\begin{bmatrix}
+\end{bmatrix}\quad {\bf G}=\begin{bmatrix}
 \rho v\\
 \rho v u\\
 \rho v^2 + p\\
@@ -179,12 +179,31 @@ w_{xx} + w_{yy} + w_{zz}\\
 
 
 If you are interested in contributing, please get in touch:
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)
 
 
 # Some notes on using JEXPRESSO
 
 To install and run the code assume Julia 1.11.2
+
+Start by cloning Jexpresso and JexpressoMeshes:
+
+```bash
+git clone https://github.com/smarras79/Jexpresso.git
+```
+
+```bash
+git clone https://github.com/smarras79/JexpressoMeshes.git
+```
+    
+```bash
+cd Jexpresso
+```
+
+```bash
+ln -s ../JexpressoMeshes/meshes .
+```
+
 
 ## Setup with CPUs
 
@@ -207,16 +226,15 @@ include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
-Example of cloud simulations (please contact us to run this because its branch has not been merged into master yet)
+Example of shallow cumuli simulations (right) for the type of Barbados clouds shown on the left: (picture taken from [P. Blossey webpage](https://www.atmos.washington.edu/~bloss/) from U. Washington)
 
-<img src="assets/bomex.png"
+<img src="assets/barbados.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
 
-
 Examples available in this branch:
 
-Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
+Example 1: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
 ```bash
 push!(empty!(ARGS), "CompEuler", "thetaTracers");
 include("./src/Jexpresso.jl")
@@ -227,7 +245,7 @@ include("./src/Jexpresso.jl")
      style="float: left; margin-right: 5px;" />
 
 
-Example 2: to solve the 3D Euler equations with buyoancy defined in `problems/equations/CompEuler/3d` you would do the following:
+Example 2: to solve the 3D Euler equations with buoyancy defined in `problems/equations/CompEuler/3d` you would do the following:
 ```bash
 push!(empty!(ARGS), "CompEuler", "3d");
 include("./src/Jexpresso.jl")
@@ -326,7 +344,7 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 5: Rising thermal bubble
+Test 5: Rising thermal bubble with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
 
@@ -339,7 +357,7 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 6: Hydrostatic linear mountain waves
+Test 6: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
 
 The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
 
@@ -352,11 +370,122 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
+Test 7: Shallow cumuli simulation with BOMEX conditions:
+
+```bash
+push!(empty!(ARGS), "CompEuler", "3d_bomex");
+include("./src/Jexpresso.jl")
+```
+<img src="assets/bomex.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 3.5px;" />
+
+## Setup and Run with MPI
+
+JEXPRESSO supports parallel execution using either OpenMPI or MPICH. Follow these steps to configure and run with your preferred MPI implementation.
+
+### 1. Install MPI Implementation
+
+Choose either OpenMPI or MPICH:
+
+#### OpenMPI Installation
+```bash
+# Ubuntu/Debian
+sudo apt install libopenmpi-dev openmpi-bin
+
+# macOS (Homebrew)
+brew install open-mpi
+
+# Verify installation
+mpiexec --version
+```
+
+#### MPICH Installation
+```bash
+# Ubuntu/Debian
+sudo apt install mpich libmpich-dev
+
+# macOS (Homebrew) 
+brew install mpich
+
+# Verify installation
+mpiexec --version
+```
+
+### 2. Configure MPI Preferences
+
+#### Automatic Configuration (Default Path)
+Use this command when MPI (OpenMPI/MPICH) is installed in standard system paths (`/usr/bin`, `/usr/local/bin`, etc.):
+```bash
+julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary()'
+```
+
+#### Manual Configuration (For Multiple MPI Installations or MPI not in Default Path)
+For MPI installations in non-standard locations (e.g., /opt/openmpi, or custom paths):
+```bash
+julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary(;extra_paths = ["/where/your/mpi/lib"])'
+```
+If MPI is installed via homebrew on macOS, the MPI lib path is:
+```bash
+/opt/homebrew/lib
+```
+
+### 3. Running with MPI
+
+#### Basic Execution
+```bash
+mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<CASE_NAME>"); include("./src/Jexpresso.jl")'
+```
+
+#### Implementation-Specific Examples
+```bash
+mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
+```
+#### Script
+You can simplify the run steps with a `runjexpresso` script like this:
+```bash
+#!/bin/bash
+
+MPIRUN=/YOUR/PATH/TO/mpirun
+JULIA=/YOUR/PATH/TO/julia
+
+$MPIRUN -np $1 $JULIA --project=. -e 'push!(empty!(ARGS), "'"$2"'", "'"$3"'"); include("./src/Jexpresso.jl")' "$@"
+```
+and run it like this:
+```bash
+./runjexpresso 4 CompEuler theta
+```
+
+### Troubleshooting
+
+- **Library conflicts:** Clear existing preferences:
+  ```bash
+  rm -f LocalPreferences.toml
+  ```
+- **Path issues:** Verify paths with:
+  ```bash
+  which mpiexec
+  which mpirun
+  ```
+  You may have to use the full aboslute path to mpiexec or mpirun and to julia like this if necessary:
+  ```
+  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "theta"); include("./src/Jexpresso.jl")'
+  ```
+
+
+- **Version mismatches:** Ensure consistent versions:
+  ```bash
+  mpicc --version
+  mpif90 --version
+  ```
+
+
+
+<!-- <img src="assets/mpi_performance_comparison.png" width="700" alt="MPI Performance Comparison"> -->
+
 ## Plotting
-Files can be written to VTK (recommended) or png. For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
+Files can be written to VTK (recommended) or png (png is now only used for 1D results). For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
 modify ./src/io/plotting/jplots.jl accordinly.
 
-For non-periodic 2D tests, the output can also be written to VTK files by setting the value "vtk" for the usier_input key :outformat
-
 ## Contacts
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu), [Hang Wang](mailto:hang.wang@njit.edu)
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)

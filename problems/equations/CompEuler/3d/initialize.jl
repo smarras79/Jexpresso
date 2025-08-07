@@ -2,7 +2,11 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     """
 
             """
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    if rank == 0
+        @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+    end
     
     #---------------------------------------------------------------------------------
     # Solution variables:
@@ -11,8 +15,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars = ("ρ", "ρu", "ρv", "ρw", "ρθ")
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
+    qvars = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
+    qoutvars = ["ρ", "u", "v", "w", "θ"]
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
     if (inputs[:backend] == CPU())
@@ -42,7 +47,10 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # INITIAL STATE from scratch:
             #
-            xc = (maximum(mesh.x) + minimum(mesh.x))/2
+            comm = MPI.COMM_WORLD
+            max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
+            min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+            xc = (max_x + min_x)/2
             zc = 2500.0 #m
             r0 = 2000.0 #m
         
@@ -123,13 +131,6 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             end
         end
 
-        if (inputs[:lwrite_initial] == true)
-            outvarsref = ("rho_ref", "uρ_ref", "vρ_ref", "wρ_ref", "theta_ref", "p_ref")    
-            write_vtk_ref(SD, mesh, q.qn.-q.qe, "initial_state", inputs[:output_dir]; nvar=length(q.qn[1,:]), outvarsref=outvarsref)
-        
-            outvarsref = ("rho_ref", "uρ_ref", "vρ_ref", "wρ_ref", "theta_ref", "p_ref")    
-            write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-        end
     else
         if (inputs[:SOL_VARS_TYPE] == PERT())
             lpert = true
@@ -146,7 +147,10 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         k = initialize_gpu!(inputs[:backend])
         k(q.qn, q.qe, mesh.x, mesh.y, mesh.z, xc, rθ, zc, θref, θc, PhysConst, lpert; ndrange = (mesh.npoin))
     end
-    @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
+    if rank == 0
+        @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
+    end
+    # @mystop("my stop at mesh.jl L135")
     
     return q
 end
@@ -199,4 +203,35 @@ end
     qe[ip,5] = ρref*θref
     qe[ip,end] = pref
 
+end
+
+function user_get_adapt_flags(inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
+    adapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(nelem))
+    ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
+    tol         = 1.0
+    max_level   = inputs[:amr_max_level] 
+    
+    for iel = 1:nelem
+        m = 1
+        for i = 1:ngl
+            for j = 1:ngl
+                for k = 1:ngl
+                    ips[m] = connijk[iel, i, j, k]
+                    m += 1
+                end
+            end
+        end
+        # @info q[ips,4] - qe[ips,4]
+        theta      = q[ips, 5] ./ q[ips, 1]
+        theta_ref  = qe[ips, 5] ./ qe[ips, 1]
+        dtheta     = theta - theta_ref
+        # @info dtheta
+        if any(dtheta .> tol) && (old_ad_lvl[iel] < max_level)
+            adapt_flags[iel] = refine_flag
+        end
+        if all(dtheta .< tol)
+            adapt_flags[iel] = coarsen_flag
+        end
+    end
+    return adapt_flags
 end

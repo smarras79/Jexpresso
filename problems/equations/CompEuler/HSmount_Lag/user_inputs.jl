@@ -3,16 +3,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 30,#000.0, #2π,
+        :tend                 => 2000.0, #2π,
         :Δt                   => 0.1,#8.75e-4,
         :ode_solver           => SSPRK54(),
         #:ndiagnostics_outputs => 10,
-        :diagnostics_at_times => range(0,30,30),
+        :diagnostics_at_times => range(0,2000,30),
         :output_dir           => "./output/",
         :case                 => "rtb",
-        #:CL                   => NCL(),
-        #:backend              => CUDABackend(),
-        # :backend              => MetalBackend(),
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -28,7 +25,6 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         #:lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => [2,3,4],
         :μ                    => [0.0,1.0,1.0,1.0], #kinematic viscosity constant for θ equation
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
@@ -67,8 +63,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk",
-        :loutput_pert        => true,  #this is only implemented for VTK for now
+        :outformat         => "vtk",
+        :loutput_pert      => true,  #this is only implemented for VTK for now
+        :output_dir        => "./output",
+        :loverwrite_output => true,
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

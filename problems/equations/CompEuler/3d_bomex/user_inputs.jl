@@ -11,11 +11,12 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (100:100:10000),
+        :diagnostics_at_times => (50:100:10000),
         # :ndiagnostics_outputs => 11,
         :case                 => "bomex",
-        :lsource              => true, 
-        :backend              => CUDABackend(),
+        :lsaturation          => true,
+        :lsource              => true,
+        # :backend              => CUDABackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -25,19 +26,16 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :visc_model           => "smag",
+        :visc_model           => SMAG(),
         :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         :μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587, 0.1587, 0.1587], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh           => true, #If false, a 1D problem will be enforced
-        # :gmsh_filename        => "./meshes/gmsh_grids/hexa_BOMEX-5x1x19.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-16x16x19.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-2x2x2.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-32x32x38.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        :lread_gmsh           => true, #If false, a 1D problem will be enforced        
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-16x16x19.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-32x32x38.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------

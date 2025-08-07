@@ -8,9 +8,8 @@ function user_inputs()
         :ode_solver          => SSPRK33(),
         :tend                 => 5000.0,
         :Δt                   => 0.02,
-        :ndiagnostics_outputs => 101, #these are steps, not seconds
+        :diagnostics_at_times => (0:250:5000),
         :output_dir          => "./output/",
-        #:backend              => MetalBackend(),
         :SOL_VARS_TYPE        => PERT(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -28,8 +27,6 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => false,
-        :νx                   => 0.01, #kinematic viscosity constant
-        :νy                   => 0.01, #kinematic viscosity constant
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -42,6 +39,7 @@ function user_inputs()
         # Output formats: "png" -> plots to png file. "ascii" -> data to npoin file
         #---------------------------------------------------------------------------
         :outformat     => "png", #choice: "png", "ascii" (default is ascii)
+        :loverwrite_output => true,
         :plot_vlines   => [5000.0],
         :plot_axis     => [-0.03,0.03,-0.03,0.03],
         #---------------------------------------------------------------------------

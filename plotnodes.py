@@ -10,11 +10,11 @@ print_lables=True
 F = False
 T = True
 
-nsd = 3
+nsd = 2
 lplot_global_coords = F
 lplot_low_order_only = F
 plot_edge_nodes = T
-plot_face_nodes = F
+plot_face_nodes = T
 if nsd == 2:
     plot_vol_nodes  = F
 else:

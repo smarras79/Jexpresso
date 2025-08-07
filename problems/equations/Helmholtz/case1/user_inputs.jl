@@ -9,14 +9,10 @@ function user_inputs()
         :lsource              => true, 
         :llinsolve            => true,
         :rconst               => (10.0),
-        #:backend              => MetalBackend(),
-        #:CL                   => NCL(), #CL() is defaults
-        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+        #:lelementLearning     => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        #:lexact_integration  => true,
-        #:llump               => true,
         :interpolation_nodes =>"lgl",
         :nop                 => 10,      # Polynomial order
         :nop_laguerre        => 14,
@@ -33,6 +29,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_helmholtz.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_helmholtz_laguerre.msh", #for nop=4
         #---------------------------------------------------------------------------
         # grid modification parameters
         #---------------------------------------------------------------------------

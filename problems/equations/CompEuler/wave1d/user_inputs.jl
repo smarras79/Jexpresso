@@ -8,21 +8,19 @@ function user_inputs()
         :ode_solver          => SSPRK33(),
         :tend                 => 3.0,
         :Δt                   => 1.0e-3,
-        :ndiagnostics_outputs => 30, #these are steps, not seconds
+        :diagnostics_at_times => (0:0.1:3.0),
         :output_dir          => "./",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
         :nop                 => 6,     # Polynomial order
-        :lexact_integration  => false,
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc               => true,
-        :ivisc_equations     => [1],
         :μ                   => [0.0001], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
@@ -33,6 +31,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat         => "png", #choice: "png", "ascii" (default is ascii)
         :loverwrite_output => true,
+        :output_dir        => "./output",
         #:output_dir        => "./test/CI-ref/", 
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso

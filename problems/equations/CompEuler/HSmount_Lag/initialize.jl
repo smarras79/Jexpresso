@@ -8,7 +8,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     
 
     
-    qvars = ("dρ", "dρu", "dρv", "dρθ")
+    qvars = ["dρ", "dρu", "dρv", "dρθ"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
   
     if (inputs[:backend] == CPU())
@@ -111,10 +111,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
                 q.qe[ip,end] = p
             end
         end
-    
-        outvarsref = ("rho_ref", "u_ref", "v_ref", "theta_ref", "p_ref")
-        write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-
+        
     else
         if (inputs[:SOL_VARS_TYPE] == PERT())
             lpert = true

@@ -4,36 +4,37 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.001,
+        #:Δt                   => 0.2,
+        :Δt                   => 0.0001,
         :tinit                => 0.0,
-        :tend                 => 1.0,
+        :tend                 => 1000,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
-        :restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        #:ndiagnostics_outputs => 2,
+        #:restart_input_file_path => "",
+        :diagnostics_at_times => (1:25:1000),
         :case                 => "rtb",
-        :diagnostics_at_times => [0,0.1, 0.2, 0.3, 0.5], #range(0,10,20),
-        :lsource              => true, 
-        #:backend              => MetalBackend(),
+        :lsource              => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :interpolation_nodes =>"lgl",
-        :nop                 => 5,      # Polynomial order
+        :interpolation_nodes  =>"lgl",
+        :nop                  => 3,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => true, #false by default NOTICE: works only for Inexact
+        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        #:visc_model           => SMAG(),
+        :visc_model           => AV(),
         :ivisc_equations      => [1, 2, 3, 4, 5],
-        :μ                   => [0.0, 20.0, 20.0, 20.0, 60.0], #horizontal viscosity constant for momentum
+        # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
+        :μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-10x10x12.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-20x10x3.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-2x2x2.msh",
+        :lread_gmsh           => true, #If false, a 1D problem will be enforced
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_BOMEX-16x16x19.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/tcf_dns.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -44,11 +45,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat           => "vtk", #"hdf5",
+        :outformat           => "vtk",
         :output_dir          => "./output/",
-        :loverwrite_output   => true,
-        :loutput_pert        => true,  #this is only implemented for VTK for now
-        #:lvolume3d          => true,
+        :loverwrite_output   => true,  #this is only implemented for VTK for now
+        :lwrite_initial      => true,
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

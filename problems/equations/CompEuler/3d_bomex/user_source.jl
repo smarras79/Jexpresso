@@ -1,29 +1,61 @@
-import Thermodynamics as TD
-function user_source!(S::SubArray{Float64},
-                      q::SubArray{Float64}, 
-                      qe::SubArray{Float64},
-                      npoin::Int64,
-                      ::CL, ::TOTAL;
-                      neqs=1)
+function user_source!(S,
+                    q, 
+                    qe,
+                    npoin::Int64,
+                    ::CL, ::TOTAL;
+                    neqs=1,
+                    x=0.0,
+                    y=0.0,
+                    z=0.0,
+                    xmin=0.0,xmax=0.0,
+                    ymin=0.0,ymax=0.0,
+                    zmin=0.0,zmax=0.0)
     
     PhysConst = PhysicalConst{Float64}()
-        
+    # T = eltype(q)
     #
     # S(q(x)) = -ρg
     #
     ρ  = q[1]
-    
+
+    # Coriolis
+    # u_geostrophic::T = -10.0
+    # u_slope::T = 1.8e-3
+    # u_geo = u_geostrophic + u_slope * z
+    u_geo = 0.0
+    f0 = 0.376e-4
+    ρu = q[2] - u_geo * q[1]
+    ρv = q[3]
+    ρw = q[4]
+    buc= -f0*ρv
+    bvc= f0*ρu
+    bwc= 0.0
+
+    # sponge layer
+    z_sponge = 2400.0
+    z_max = 3000.0
+    α_max = 0.75
+    γ = 2.0
+    β_sponge = 0.0
+    if z >= z_sponge
+        r = (z - z_sponge) / (z_max - z_sponge)
+        β_sponge = α_max * sinpi(r / 2)^γ
+    end
+    ρu_sponge = - β_sponge * (ρu)
+    ρv_sponge = - β_sponge * (ρv)
+    ρw_sponge = - β_sponge * (ρw)
+
     S[1] = 0.0
-    S[2] = 0.0
-    S[3] = 0.0 #Y is the vertical direction in 3D
-    S[4] = -ρ*PhysConst.g
+    S[2] = -buc + ρu_sponge
+    S[3] = -bvc + ρv_sponge #Y is the vertical direction in 3D
+    S[4] = -ρ*PhysConst.g + ρw_sponge
     S[5] = 0.0
    
 end
 
-function user_source!(S::SubArray{Float64},
-                      q::SubArray{Float64}, 
-                      qe::SubArray{Float64},
+function user_source!(S,
+                      q, 
+                      qe,
                       npoin::Int64,
                       ::CL, ::PERT;
                       neqs=1)
@@ -107,8 +139,7 @@ function user_source_gpu(q,qe,x,y,z,PhysConst, xmax, xmin, ymax, ymin, zmax, zmi
     return T(0.0), T(-buc + ρu_sponge), T(-bvc + ρv_sponge), T(-ρ*PhysConst.g + ρw_sponge), T(0.0), T(0.0), T(0.0)
 end
 
-
-function user_saturation_adjustment(q, qe, z, param_set, lpert)
+function user_saturation_adjustment(q, qe, z, param_set, lpert=false)
 
     T = eltype(q)
     @inbounds begin

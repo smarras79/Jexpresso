@@ -6,7 +6,7 @@ function user_inputs()
         :tend                 => 1000.0,
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 0.2,
-        :ndiagnostics_outputs => 2,
+        :diagnostics_at_times => [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000],
         :case                 => "rtb",
         :lsource              => true,
         #---------------------------------------------------------------------------
@@ -18,7 +18,6 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => [1, 2, 3, 4, 5, 6],
         :μ                   => [0.0, 40.0, 40.0, 60.0, 60.0, 60.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:

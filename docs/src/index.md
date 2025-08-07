@@ -175,9 +175,9 @@ If you are interested in contributing, please get in touch:
 
 # Some notes on using JEXPRESSO
 
-To install and run the code assume Julia 1.10.0
+To install and run the code assume Julia 1.11.0
 
-## Setup with CPUs
+## Setup with CPUs on one core from the Julia REPL:
 
 ```bash
 cd $JEXPRESSO_HOME
@@ -198,6 +198,52 @@ include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
+## Setup an MPI run:
+
+1. Basic Execution
+```bash
+mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<CASE_NAME>"); include("./src/Jexpresso.jl")'
+```
+
+2. Implementation-Specific Examples
+```bash
+mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
+```
+
+### Troubleshooting
+
+- **Library conflicts:** Clear existing preferences:
+  ```bash
+  rm -f LocalPreferences.toml
+  ```
+- **Path issues:** Verify paths with:
+  ```bash
+  which mpiexec
+  which mpirun
+  ```
+  You may have to use the full aboslute path to mpiexec or mpirun and to julia like this if necessary. For example, if your `mpirun` lives in `/opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun`, then you may want to run the code with the full path like this:
+
+  ```
+  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "theta"); include("./src/Jexpresso.jl")'
+  ```
+
+  Important notice: you need to use the Julia version that is correctly linked to the same MPI installation.
+If you have multiple Julia installations on your machine, use the full path to the one linked to the mpirun at hand.
+
+- **Version mismatches:** Ensure consistent versions:
+  ```bash
+  mpicc --version
+  mpif90 --version
+  ```
+
+
+## Performance
+Jexpresso leverages the properties of the Julia language to make it as fast as a compiled code. Some performance, measured against a legacy and massive Fortran 90/Modern Fortran code, are shown in page
+``@contents
+Pages = [
+    "features/performance.md",
+]
+
 ## Tutorials
 
 The following tutorials will introduce you to the functionality of
@@ -205,175 +251,18 @@ Jexpresso.jl.
 
 ```@contents
 Pages = [
-    "features/performance.md",
     "tutorials/user_inputs.md",
     "tutorials/theta.md",
+    "tutorials/define_output_variables.md",
+    "tutorials/laguerre_paper.md",
     ]
 Depth = 2
 ```
 
-Example 1: to solve the 2D Euler equations with buyoancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
-```bash
-push!(empty!(ARGS), "CompEuler", "thetaTracers");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/thetaTracersMesh.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
-
-
-Example 2: to solve the 2D Euler equations leading to a density current defined in `problems/equations/CompEuler/dc` you would do the following:
-```bash
-push!(empty!(ARGS), "CompEuler", "dc");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/dc.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Example 3: to solve the 1D wave equation  defined in `problems/equations/CompEuler/wave1d` you would do the following:
-```bash
-push!(empty!(ARGS), "CompEuler", "wave1d");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/wave1d-v.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-
-
-For ready to run tests, there are the currently available equations names:
-
-* CompEuler (option with total energy and theta formulation)
-
-The code is designed to create any system of conservsation laws. See CompEuler/case1 to see an example of each file.
-Details will be given in the documentation (still WIP). Write us if you need help.
-
-More are already implemented but currently only in individual branches. They will be added to master after proper testing.
-
-## Laguerre semi-infinite element test suite
-This section contains instructions to run all of the test cases presented in
-
-```
-@article{tissaoui2024,
-  doi = {},
-  url = {},
-  year = {2020},
-  volume = {},
-  number = {},
-  pages = {},
-  author = {Yassine Tissaoui and James F. Kelly and Simone Marras}
-  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains in Multiple Dimensions},
-  journal = {arXiv},
-}
-```
-
-Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
-
-The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "CompEuler", "wave1d_lag");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/wave_v_4.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 2: 1D wave train for linearized shallow water equations
-
-The problem is defined in [`problems/equations/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "AdvDiff", "Wave_Train");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/Wave_Train_final.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-A second version of this tests generate images with the solutions at different times overlapped.
-
-This version is defined in [`problems/equations/AdvDiff/Wave_Train_Overlapping_Plot`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/AdvDiff/Wave_Train_Overlapping_Plot) and by default output will be written to `output/AdvDiff/Wave_Train_Overlapping_Plot`. To run this version of the problem execute the following from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "AdvDiff", "Wave_Train_Overlapping_Plot");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/Wave_Train_overlap.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 3: 2D advection-diffusion equation
-
-The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "AdvDiff", "2D_laguerre");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/ad2d-4s-line.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 4: 2D Helmholtz equation
-
-The problem is defined in [`problems/equations/Helmholtz/case1`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/Helmholtz/case1) and by default output will be written to `output/Helmholtz/case1`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "Helmholtz", "case1");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/Helmholtz_from_jexpresso-line.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 5: Rising thermal bubble
-
-The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "CompEuler", "theta_laguerre");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/48.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 6: Hydrostatic linear mountain waves
-
-The problem is defined in [`problems/equations/CompEuler/HSmount_Lag_working`](https://github.com/smarras79/Jexpresso/tree/yt/Laguerre_test_suite/problems/equations/CompEuler/HSmount_Lag_working) and by default output will be written to `output/CompEuler/HSmount_Lag_working`. To solve this problem run the following commands from the Julia command line:
-
-```bash      
-push!(empty!(ARGS), "CompEuler", "HSmount_Lag_working");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/wvelo.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-## Plotting
-Files can be written to VTK (recommended) or png. For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
-modify ./src/io/plotting/jplots.jl accordinly.
-
-For non-periodic 2D tests, the output can also be written to VTK files by setting the value "vtk" for the usier_input key :outformat
-
-## Contacts
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
-
-
 ## Manual
 
 ```@contents
-Pages = ["Jexpresso.md"]
+Pages = [
+          Jexpresso.md",
+     ]
 ```

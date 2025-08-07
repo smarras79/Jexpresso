@@ -32,7 +32,7 @@ function parse_commandline()
         
         "eqs_case"
         help = "case name in equations directory"
-        default = "theta"
+        default = "wave1d"
         required = false
         
         "CI_MODE"
@@ -43,6 +43,12 @@ function parse_commandline()
 
     return parse_args(s)
 end
+
+
+MPI.Init()
+comm = MPI.COMM_WORLD
+rank = MPI.Comm_rank(comm)
+nparts = MPI.Comm_size(comm)
 
 #--------------------------------------------------------
 # Parse command line args:
@@ -80,11 +86,11 @@ include(user_primitives_file)
 #--------------------------------------------------------
 # Read User Inputs:
 #--------------------------------------------------------
-mod_inputs_print_welcome()
+mod_inputs_print_welcome(rank)
 inputs = Dict{}()
 
 inputs = user_inputs()
-mod_inputs_user_inputs!(inputs)
+mod_inputs_user_inputs!(inputs, rank)
 
 #--------------------------------------------------------
 # Create output directory if it doesn't exist:
@@ -94,7 +100,8 @@ user_defined_output_dir = inputs[:output_dir]
 if inputs[:loverwrite_output]
     outstring = string("output")
 else        
-    outstring = string("output-",  Dates.format(now(), "dduyyyy-HHMMSS"))
+    outstring = rank == 0 ? string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")) : ""
+    outstring = MPI.bcast(outstring, 0, comm)
 end
 if user_defined_output_dir == "none"
     OUTPUT_DIR = joinpath(case_name_dir, outstring)
@@ -110,10 +117,17 @@ end
 #--------------------------------------------------------
 # Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
-if Sys.iswindows() == false
-    run(`$cp $user_input_file $OUTPUT_DIR`)
-end
+cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
 
-driver(inputs, # input parameters from src/user_input.jl
-       OUTPUT_DIR,
-       TFloat)
+#--------------------------------------------------------
+# use Metal (for apple) or CUDA (non apple) if we are on GPU
+#--------------------------------------------------------
+with_mpi() do distribute
+    
+    driver(nparts,
+           distribute, 
+           inputs, # input parameters from src/user_input.jl
+           OUTPUT_DIR,
+           TFloat)
+    
+end

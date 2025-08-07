@@ -60,4 +60,120 @@ function warp_mesh!(mesh,inputs)
    end=#
 end
 
+function warp_mesh_3D!(mesh,inputs)
+    if (inputs[:mount_type] == "real topography")
+        # find surface heights by reading and interpolating real data onto grid
+        fname = inputs[:topo_database]
+        fname2 = inputs[:topo_geoid]
+        lat_min = inputs[:read_topo_latmin]
+        lat_max = inputs[:read_topo_latmax]
+        lon_min = inputs[:read_topo_lonmin]
+        lon_max = inputs[:read_topo_lonmax]
+        zone = inputs[:read_topo_zone]
+        xmin = minimum(mesh.x)
+        xmax = maximum(mesh.x)
+        ymin = minimum(mesh.y)
+        ymax = maximum(mesh.y)
+        lat, lon, z_topo = extract_region_topography_from_global_data(fname, fname2, lat_max, lon_max, lat_min, lon_min)
+        
+        x_topo, y_topo = Map_lat_lon_onto_simulation_domain(lat,lon,xmin,xmax,ymin,ymax,zone)
+        zsurf = zeros(mesh.npoin)
+        
+        interpolate_topography_onto_grid!(mesh.x, mesh.y, zsurf, x_topo, y_topo, z_topo)
+        ### sigma coordinate topography
+        ztop = maximum(mesh.z)
+        sigma = zeros(mesh.npoin)
+        for ip = 1:mesh.npoin
+            sigma[ip] = mesh.z[ip]
+            z_new = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+            mesh.z[ip] = z_new
+        end
 
+  elseif (inputs[:mount_type] == "agnesi")
+    zsurf = zeros(mesh.npoin)
+    sigma = zeros(mesh.npoin)
+    ztop = maximum(mesh.z)
+    am = inputs[:a_mount]
+    hm = inputs[:h_mount]
+    xc = inputs[:c_mount]
+    for ip = 1:mesh.npoin
+      x = mesh.x[ip]
+      zsurf[ip] = hm/(1+ ((x-xc)/am)^2)
+    end
+  elseif (inputs[:mount_type] == "schar")
+    ac = inputs[:a_mount]
+    hc = inputs[:h_mount]
+    lambdac = inputs[:lambda_mount]
+    for ip = 1:mesh.npoin
+      x = mesh.x[ip]
+      zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2
+    end
+  end
+
+  for ip = 1:mesh.npoin
+    sigma[ip] = mesh.z[ip]
+      z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+      mesh.z[ip] = z
+  end
+end
+
+function warp_phys_grid!(x,y,z,ncol,nlay)
+    if (inputs[:mount_type] == "real topography")
+        # find surface heights by reading and interpolating real data onto grid
+        fname = inputs[:topo_database]
+        fname2 = inputs[:topo_geoid]
+        lat_min = inputs[:read_topo_latmin]
+        lat_max = inputs[:read_topo_latmax]
+        lon_min = inputs[:read_topo_lonmin]
+        lon_max = inputs[:read_topo_lonmax]
+        zone = inputs[:read_topo_zone]
+        xmin = minimum(x)
+        xmax = maximum(x)
+        ymin = minimum(y)
+        ymax = maximum(y)
+        lat, lon, z_topo = extract_region_topography_from_global_data(fname, fname2, lat_max, lon_max, lat_min, lon_min)
+
+        x_topo, y_topo = Map_lat_lon_onto_simulation_domain(lat,lon,xmin,xmax,ymin,ymax,zone)
+        zsurf = zeros(ncol)
+
+        interpolate_topography_onto_grid!(x, y, zsurf, x_topo, y_topo, z_topo)
+        ### sigma coordinate topography
+        ztop = maximum(mesh.z)
+        sigma = zeros(nlay+1,ncol)
+        for icol = 1:ncol
+            for ilay = 1:nlay+1
+                sigma[ilay,icol] = z[ilay,icol]
+                z_new = (ztop - zsurf[icol])/ztop * sigma[ilay,icol] + zsurf[icol]
+                z[ilay,icol] = z_new
+            end
+        end
+
+  elseif (inputs[:mount_type] == "agnesi")
+    zsurf = zeros(ncol)
+    sigma = zeros(nlay+1,ncol)
+    ztop = maximum(z)
+    am = inputs[:a_mount]
+    hm = inputs[:h_mount]
+    xc = inputs[:c_mount]
+    for icol = 1:ncol
+        xx = x[icol]
+        zsurf[icol] = hm/(1+ ((xx-xc)/am)^2)
+    end
+  elseif (inputs[:mount_type] == "schar")
+    ac = inputs[:a_mount]
+    hc = inputs[:h_mount]
+    lambdac = inputs[:lambda_mount]
+    for icol = 1:ncol
+        xx = x[icol]
+        zsurf[icol] = hc * exp(-(xx/ac)^2) * cospi(xx/lambdac)^2
+    end
+  end
+
+  for icol = 1:ncol
+    for ilay = 1:nlay+1
+        sigma[ilay,icol] = z[ilay,icol]
+        z_new = (ztop - zsurf[icol])/ztop * sigma[ilay,icol] + zsurf[icol]
+        z[ilay,icol] = z_new
+    end
+  end
+end

@@ -1,6 +1,6 @@
-function user_source!(S::SubArray{Float64},
-                      q::SubArray{Float64}, 
-                      qe::SubArray{Float64},
+function user_source!(S,
+                      q, 
+                      qe,
                       npoin::Int64,
                       ::CL, ::TOTAL;
                       neqs=1, x=0.0, y=0.0, xmin=0.0, xmax=1.0)

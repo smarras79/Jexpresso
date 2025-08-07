@@ -1,12 +1,17 @@
-function user_primitives!(u::SubArray{TFloat},qe::SubArray{TFloat},uprimitive::SubArray{TFloat},::TOTAL)
+function user_primitives!(u,qe,uprimitive,::TOTAL)
     uprimitive[1] = u[1]
 end
 
-function user_primitives!(u::SubArray{TFloat},qe::SubArray{TFloat},uprimitive::SubArray{TFloat},::PERT)
+function user_primitives!(u,qe,uprimitive,::PERT)
     uprimitive[1] = u[1]+qe[1]
 end
 
 function user_primitives_gpu(u,qe,lpert)
     T = eltype(u)
     return T(u[1])
+end
+
+
+function user_uout!(ip, ET, uout, u, qe; kwargs...)
+    uout[1] = u[1] #+qe[1]
 end

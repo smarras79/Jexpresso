@@ -125,10 +125,10 @@ end
 function build_mass_matrix!(Me, SD::NSD_1D, QT::Inexact, ψ, ω, nelem, Je, Δx, N, Q, T)
     
     for iel=1:nelem
-        Jac = Δx[iel]/2
+        #Jac = Δx[iel]/2
         
         for i=1:N+1
-            Me[i,iel] += Jac*ω[i]
+            Me[i,iel] += Je[iel,i]*ω[i]
         end
     end
 end
@@ -137,7 +137,7 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, nelem, Je, Δx,
     
     MN = N + 1
     QN = Q + 1
-    for iel=1:nelem
+    @inbounds for iel=1:nelem
         
         for l = 1:Q+1
             for k = 1:Q+1
@@ -171,7 +171,7 @@ function build_mass_matrix!(Me, SD::NSD_3D, QT::Inexact, ψ, ω, nelem, Je, Δx,
     
     MN = N + 1
     QN = Q + 1
-    for iel=1:nelem
+    @inbounds for iel=1:nelem
         
         for o = 1:Q+1
             for n = 1:Q+1
@@ -894,13 +894,67 @@ function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, 
     
 end
 
+
+
+function DSS_global_RHS!(RHS, pM, neqs)
+
+    if pM == nothing return end
+    
+    assemble_mpi!(@view(RHS[:,:]),pM)
+    
+end
+
+function DSS_global_RHS_v0!(M, pM)
+    # # @info ip2gip
+
+    # pM = pvector(values->@view(M[:]), row_partition)
+    sizeM = length(M)
+    # pM = map(parts, local_values(pM)) do part, localpM
+    #     @info part, length(localpM), sizeM
+    #     localpM = copy(M)
+    # end
+
+    map( partition(pM)) do values
+        for i = 1:sizeM
+            values[i] = M[i]
+        end
+    end
+
+
+    assemble!(pM) |> wait
+    consistent!(pM) |> wait
+    map(local_values(pM)) do values
+        for i = 1:sizeM
+            M[i] = values[i]
+        end
+    end
+end
+
+
+function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+
+    if SD == NSD_1D()
+        return nothing
+    end
+   
+    pM = setup_assembler(SD, M, ip2gip, gip2owner)
+    
+    @time assemble_mpi!(M,pM)
+
+    return pM
+    
+end
+
 function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
-        ldss_laplace=false, ldss_differentiation=false, backend = CPU())
+                        ldss_laplace=false, ldss_differentiation=false, backend = CPU(), interp)
 
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false
     if (ldss_differentiation) lbuild_differentiation_matrix = true end
     if (ldss_laplace) lbuild_laplace_matrix = true end
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
 
     if typeof(SD) == NSD_1D
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^2, Int64(mesh.nelem))
@@ -932,7 +986,14 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     end
     
     if backend == CPU()
-        @time DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
+        if (inputs[:ladapt] == true)
+            @time DSS_nc_gather_mass!(M, mesh, SD, QT, Me, mesh.connijk, mesh.poin_in_edge,
+                                    mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
+                                    mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, N, interp)
+            #@info "@time DSS_nc_gather_mass!"
+        end
+
+        DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
     else
         # backend -> GPU
         if SD == NSD_1D()
@@ -949,6 +1010,34 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             k(M,Me,connijk,mesh.nelem, mesh.npoin, N;ndrange =(mesh.nelem*mesh.ngl,mesh.ngl,mesh.ngl), workgroupsize = (mesh.ngl,mesh.ngl,mesh.ngl))
         end
     end
+    
+    pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+        
+    if (inputs[:ladapt] == true)
+        @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
+                                   mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, N, interp)
+            #@info "@time DSS_nc_scatter_mass!"
+    end
+    if (inputs[:bdy_fluxes])
+        if SD == NSD_3D()
+            M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_surf,pM)
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_surf_inv, M_surf, QT)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            
+        else
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_edge,pM)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_edge_inv, M_edge, QT)
+        end
+    else
+        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+        M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+    end
+    
     mass_inverse!(Minv, M, QT)
     Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
     L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
@@ -988,7 +1077,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    return (; Me, De, Le, M, Minv, D, L)
+    return (; Me, De, Le, M, Minv, pM, D, L, M_surf_inv, M_edge_inv)
 end
 
 
@@ -1005,7 +1094,8 @@ function matrix_wrapper_laguerre(::FD, SD, QT, basis, ω, mesh, metrics, N, Q, T
     return 0
 end
 
-function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N, Q, TFloat; ldss_laplace=false, ldss_differentiation=false, backend = CPU())
+function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N, Q, TFloat;
+                                 ldss_laplace=false, ldss_differentiation=false, backend = CPU(), interp)
 
     lbuild_differentiation_matrix = false
     lbuild_laplace_matrix = false    
@@ -1028,7 +1118,26 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     else
         nothing
     end
-
+    
+    if (inputs[:bdy_fluxes])
+        if SD == NSD_3D()
+            M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_surf,pM)
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_surf_inv, M_surf, QT)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            
+        else
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_edge,pM)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_edge_inv, M_edge, QT)
+        end
+    else
+        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+        M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+    end
 
     if typeof(SD) == NSD_1D
         M_lag = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.ngr*mesh.ngr), Int64(mesh.nelem_semi_inf))
@@ -1049,7 +1158,8 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
             build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[1].ψ, basis[2].ψ, ω[1], ω[2], mesh, metrics[2], N, Q, TFloat)
         end
         
-        DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
+        @time DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
+        pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     else
         if (typeof(SD) == NSD_1D)
             k = build_mass_matrix_1d_gpu!(backend)
@@ -1136,7 +1246,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
     end
 
-    return (; Me, De, Le, M, Minv, D, L)
+    return (; Me, De, Le, M, Minv, M_edge_inv, M_surf_inv, pM, D, L)
 end
 
 function mass_inverse!(Minv, M::AbstractVector, QT)

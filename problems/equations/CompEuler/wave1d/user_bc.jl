@@ -26,7 +26,7 @@
 """
 function user_bc_dirichlet!(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, tag::String)
 
-    qbdy[1] = 0.0    
+    qbdy[1] = 0.0
     
     return qbdy
 end

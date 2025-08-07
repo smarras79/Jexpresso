@@ -3,7 +3,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 4.0, #2π,
+        :tend                 => 10.0, #2π,
         :Δt                   => 0.005,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :diagnostics_at_times => [0.5, 1, 2, 4],
@@ -19,21 +19,20 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :ivisc_equations      => [1],
-        :μ                    => [0.1], 
+        :μ                    => [0.1, 0.1],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename         => "./meshes/gmsh_grids/unit_square_20x20.msh",
-        #:gmsh_filename         => "./meshes/gmsh_grids/Wave_Train.msh",
+        #:gmsh_filename         => "./meshes/gmsh_grids/kopriva.msh",
+        :gmsh_filename         => "./meshes/gmsh_grids/kopriva_periodic.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
         #--------------------------------------------------------------------------- 
-        :xscale              => 10.0,
-        :yscale              => 10.0,
-        :xdisp               => 1.0,
-        :ydisp               => 1.0,
+        :xscale              => 1.0,
+        :yscale              => 1.0,
+        :xdisp               => 0.0,
+        :ydisp               => 0.0,
         #---------------------------------------------------------------------------
         # Mountain parameters
         #---------------------------------------------------------------------------
@@ -57,6 +56,7 @@ function user_inputs()
         :loutput_pert      => true,  #this is only implemented for VTK for now
         :output_dir        => "./output/",
         #:plot_hlines      => [10.0],
+        :loutput_pert      => true
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

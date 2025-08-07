@@ -1,4 +1,4 @@
-function user_primitives!(u::SubArray{TFloat},qe::SubArray{TFloat},uprimitive::SubArray{TFloat},::TOTAL)
+function user_primitives!(u,qe,uprimitive,::TOTAL)
     uprimitive[1] = u[1]
     uprimitive[2] = u[2]/u[1]
     uprimitive[3] = u[3]/u[1]
@@ -6,7 +6,7 @@ function user_primitives!(u::SubArray{TFloat},qe::SubArray{TFloat},uprimitive::S
     uprimitive[5] = u[5]/u[1]
 end
 
-function user_primitives!(u::SubArray{TFloat},qe::SubArray{TFloat},uprimitive::SubArray{TFloat},::PERT)
+function user_primitives!(u,qe,uprimitive,::PERT)
     uprimitive[1] = u[1]+qe[1]
     uprimitive[2] = u[2]/(u[1]+qe[1])
     uprimitive[3] = u[3]/(u[1]+qe[1])
@@ -21,4 +21,21 @@ function user_primitives_gpu(u,qe,lpert)
     else
         return T(u[1]), T(u[2]/u[1]), T(u[3]/u[1]), T(u[4]/u[1]), T(u[5]/u[1])
     end
+end
+
+
+function user_uout!(ip, ET, uout, u, qe; kwargs...)
+
+    #
+    # IMPORTANT NOTICE:
+    # uout has length equivalent to 'qoutvars' defined in your initialize.jl
+    # If you have not defined qoutvars in initialize.jl, then uout will only
+    # be allocated to the length of u by default.
+    #
+    uout[1] = u[1]
+    uout[2] = u[2]/u[1]
+    uout[3] = u[3]/u[1]
+    uout[4] = u[4]/u[1]
+    uout[5] = u[5]/u[1]
+    
 end
