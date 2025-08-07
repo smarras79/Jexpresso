@@ -58,7 +58,7 @@ function time_loop!(inputs, params, u, args...)
             println_rank(" #  t=", integrator.t; msg_rank = rank)
 
             #CFL
-            if inputs[:ladapt] == false
+            if (inputs[:ladapt] == false && params.SOL_VARS_TYPE == TOTAL())
                 computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
                            inputs[:Δt],
                            params.mesh.Δeffective_s,

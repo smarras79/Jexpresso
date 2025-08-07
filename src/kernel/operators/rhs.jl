@@ -1,5 +1,5 @@
 #using InteractiveUtils
-
+const PHYS_CONST = PhysicalConst{Float64}()
 #---------------------------------------------------------------------------
 # Optimized (more coud possibly be done)
 #---------------------------------------------------------------------------
@@ -39,6 +39,25 @@ function uaux2u!(u, uaux, neqs, npoin)
     end
     
 end
+
+function micro2rhs!(rhs,dhldt,dqtdt,dqpdt,::NSD_2D)
+
+    @view(rhs[:,:,:,4]) .= @view(rhs[:,:,:,4]) .- @view(dhldt[:,:,:])
+    @view(rhs[:,:,:,5]) .= @view(rhs[:,:,:,5]) .+ @view(dqtdt[:,:,:])
+    @view(rhs[:,:,:,6]) .= @view(rhs[:,:,:,6]) .+ @view(dqpdt[:,:,:])
+
+end
+
+
+function micro2rhs!(rhs,dhldt,dqtdt,dqpdt,::NSD_3D)
+
+    @view(rhs[:,:,:,:,5]) .= @view(rhs[:,:,:,:,5]) .- @view(dhldt[:,:,:,:])
+    @view(rhs[:,:,:,:,6]) .= @view(rhs[:,:,:,:,6]) .+ @view(dqtdt[:,:,:,:])
+    @view(rhs[:,:,:,:,7]) .= @view(rhs[:,:,:,:,7]) .+ @view(dqpdt[:,:,:,:])
+
+end 
+
+
 
 function resetRHSToZero_inviscid!(params)
     fill!(params.rhs_el, zero(params.T))   
@@ -447,15 +466,16 @@ function _build_rhs!(RHS, u, params, time)
                                                params.mp.Pg, params.mp.Tabs, params.mp.qi, @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
                                                params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
                                                params.metrics, params.ω, params.basis.dψ, SD, params.SOL_VARS_TYPE)
-            if (SD == NSD_3D())
+            #=@time if (SD == NSD_3D())
                 params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt
                 params.rhs_el[:,:,:,:,6] .+= params.mp.dqtdt
                 params.rhs_el[:,:,:,:,7] .+= params.mp.dqpdt
             else
-                params.rhs_el[:,:,:,4] .-= params.mp.dhldt
-                params.rhs_el[:,:,:,5] .+= params.mp.dqtdt
-                params.rhs_el[:,:,:,6] .+= params.mp.dqpdt
-            end
+                @time @view(params.rhs_el[:,:,:,4]) .-= params.mp.dhldt[:,:,:]
+                @time @view(params.rhs_el[:,:,:,5]) .+= @view(params.mp.dqtdt[:,:,:])
+                @time @view(params.rhs_el[:,:,:,6]) .= @view(params.rhs_el[:,:,:,6]) .+ @view(params.mp.dqpdt[:,:,:])
+            end=#
+            micro2rhs!(params.rhs_el,params.mp.dhldt, params.mp.dqtdt, params.mp.dqpdt, SD)
         end
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
@@ -465,7 +485,8 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
     
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, SD)
+    @time inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, 
+                     params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
     
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, 
@@ -534,7 +555,7 @@ function _build_rhs!(RHS, u, params, time)
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_1D)
+function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
@@ -574,15 +595,17 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_1D)
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
+function inviscid_rhs_el!(u, connijk::Array{Int64,4}, qe::Matrix{Float64}, x::Vector{Float64}, y::Vector{Float64}, z::Vector{Float64}, 
+        lsource, S_micro_vec::Vector{Float64}, qn_vec::Vector{Float64}, flux_lw_vec::Vector{Float64},
+        flux_sw_vec::Vector{Float64}, SD::NSD_2D)
     
-    PhysConst = PhysicalConst{Float64}()
+    #PhysConst = PhysicalConst{Float64}()
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
 
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
-            ip = connijk[iel,i,j]
+            ip = connijk[iel,i,j,1]
             
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
@@ -597,10 +620,17 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=x[ip], y=y[ip], xmax=xmax, xmin=xmin, ymax=ymax)
+
                 if (params.inputs[:lmoist])
-                    add_micro_precip_sources!(params.mp, params.mp.flux_lw[ip], params.mp.flux_sw[ip], params.mp.Tabs[ip], params.mp.S_micro[ip],
-                                              @view(params.S[i,j,:]), @view(params.uaux[ip,:]),
-                                              params.mp.qn[ip], @view(qe[ip,:]), SD, params.SOL_VARS_TYPE)
+                    S_micro::Float64 = @inbounds S_micro_vec[ip]
+                    flux_lw::Float64 = @inbounds flux_lw_vec[ip]
+                    flux_sw::Float64 = @inbounds flux_sw_vec[ip]
+                    qn::Float64 = @inbounds qn_vec[ip]
+                    add_micro_precip_sources!(@view(params.S[i,j,:]),
+                                                @view(params.uaux[ip,:]),
+                                                @view(qe[ip,:]),
+                                                S_micro, qn, flux_lw, flux_sw, PHYS_CONST,
+                                                SD, params.SOL_VARS_TYPE)
                 end
             end
 
@@ -632,14 +662,15 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              params.metrics.dηdx, params.metrics.dηdy,
                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
     end
-
+    return nothing
   #= SM params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
     params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]=#
 
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
-    
+function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_3D)
+   
+    PhysConst = PhysicalConst{Float64}()
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmin = params.xmin; xmax = params.xmax; zmax = params.zmax 
     for iel = 1:params.mesh.nelem
@@ -676,16 +707,15 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                              params.SOL_VARS_TYPE; neqs=params.neqs,
                              x=x[ip], y=y[ip], z=z[ip], xmax=xmax, xmin=xmin, zmax=zmax)
                 if (params.inputs[:lmoist])
-                    add_micro_precip_sources!(params.mp,
-                                              params.mp.flux_lw[ip],
-                                              params.mp.flux_sw[ip],
-                                              params.mp.Tabs[ip],
-                                              params.mp.S_micro[ip],
-                                              @view(params.S[i,j,k,:]),
-                                              @view(params.uaux[ip,:]),
-                                              params.mp.qn[ip],
-                                              @view(qe[ip,:]),
-                                              SD, params.SOL_VARS_TYPE)
+                    S_micro::Float64 = @inbounds S_micro_vec[ip]
+                    flux_lw::Float64 = @inbounds flux_lw_vec[ip]
+                    flux_sw::Float64 = @inbounds flux_sw_vec[ip]
+                    qn::Float64 = @inbounds qn_vec[ip]
+                    add_micro_precip_sources!(@view(params.S[i,j,k,:]),
+                                                @view(params.uaux[ip,:]),
+                                                @view(qe[ip,:]),
+                                                S_micro, qn, flux_lw, flux_sw, PhysConst,
+                                                SD, params.SOL_VARS_TYPE)
                     if (params.inputs[:LST])
                         large_scale_source!(@view(params.uaux[ip,:]),
                                             @view(qe[ip,:]),
@@ -1606,20 +1636,31 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coe
     end
 end
 
-function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ, ::NSD_3D)
+function compute_vertical_derivative_q!(dqdz::Array{Float64,4}, q::Array{Float64,4}, iel::Int64, ngl::Int64, Je::Array{Float64,4}, 
+        dξdz::Array{Float64,4}, dηdz::Array{Float64,4}, dζdz::Array{Float64,4}, ω::Vector{Float64}, dψ::Matrix{Float64}, ::NSD_3D)
+    
+    local ωJac::Float64
+    local dHdξ::Float64
+    local dHdη::Float64
+    local dHdζ::Float64
+    local dξdz_ij::Float64
+    local dηdz_ij::Float64
+    local dζdz_ij::Float64
+    local dHdz::Float64
+    local auxi::Float64
 
     for k=1:ngl
         for j=1:ngl
             for i=1:ngl
-                ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                @inbounds ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
                 
                 dHdξ = 0.0
                 dHdη = 0.0
                 dHdζ = 0.0
                 @turbo for m = 1:ngl
-                    dHdξ += dψ[m,i]*q[m,j,k]
-                    dHdη += dψ[m,j]*q[i,m,k]
-                    dHdζ += dψ[m,k]*q[i,j,m]
+                    dHdξ += dψ[m,i]*q[m,j,k,1]
+                    dHdη += dψ[m,j]*q[i,m,k,1]
+                    dHdζ += dψ[m,k]*q[i,j,m,1]
                 end
                 dξdz_ij = dξdz[iel,i,j,k]
                 dηdz_ij = dηdz[iel,i,j,k]
@@ -1634,7 +1675,7 @@ function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζ
     end
 end
 
-function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdy, dηdy, ω, dψ, ::NSD_2D)
+function compute_vertical_derivative_q!(dqdz, q, iel::Int64, ngl::Int64, Je, dξdy, dηdy, ω, dψ, ::NSD_2D)
     for j=1:ngl
         for i=1:ngl
             ωJac = ω[i]*ω[j]*Je[iel,i,j]
@@ -1642,8 +1683,8 @@ function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdy, dηdy, ω,
             dHdξ = 0.0    
             dHdη = 0.0
             @turbo for m = 1:ngl
-                dHdξ += dψ[m,i]*q[m,j]
-                dHdη += dψ[m,j]*q[i,m]
+                dHdξ += dψ[m,i]*q[m,j,1]
+                dHdη += dψ[m,j]*q[i,m,1]
             end
             dξdy_ij = dξdy[iel,i,j]      
             dηdy_ij = dηdy[iel,i,j]      

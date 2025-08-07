@@ -87,7 +87,7 @@ const _setup_cell_to_vertices = GridapGmsh._setup_cell_to_vertices
 const _setup_grid =GridapGmsh._setup_grid
 const _setup_labeling = GridapGmsh._setup_labeling
 
-function GridapGmsh.GmshDiscreteModel(gmsh::Module; has_affine_map=nothing)
+function GridapGmsh.GmshDiscreteModel(gmsh::Module; has_affine_map=nothing, orient_if_simplex = nothing)
 
     Dc = _setup_cell_dim(gmsh)
     Dp = Dc

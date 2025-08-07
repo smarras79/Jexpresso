@@ -92,7 +92,7 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
                 end
             end
         end
-        compute_vertical_derivative_q!(dqpdt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
+        compute_vertical_derivative_q!(dqpdt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ,SD)
         
         # do precipitation effects on hl
 
@@ -105,7 +105,7 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
             end
         end
         
-        compute_vertical_derivative_q!(dhldt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
+        compute_vertical_derivative_q!(dhldt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ, SD)
         
         #do cloud ice sedimentation
 
@@ -118,7 +118,7 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
             end
         end
         
-        compute_vertical_derivative_q!(dqtdt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ)
+        compute_vertical_derivative_q!(dqtdt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz,ω,dψ, SD)
         
         for i=1:ngl
             for j=1:ngl
@@ -145,6 +145,10 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
     Lf = MicroConst.Lf
     T0n = MicroConst.T0n
     T00n = MicroConst.T00n
+    Je = metrics.Je
+    dξdz = metrics.dξdz
+    dηdz = metrics.dηdz
+    dζdz = metrics.dζdz
     for e=1:nelem
         # do precipitation
         for i=1:ngl
@@ -155,7 +159,7 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
                 end
             end
         end
-        compute_vertical_derivative_q!(dqpdt, H, e, ngl, metrics.Je, metrics.dξdz, metrics.dηdz, metrics.dζdz, ω, dψ, SD)
+        compute_vertical_derivative_q!(dqpdt, H, e, ngl, Je, dξdz, dηdz, metrics.dζdz, ω, dψ, SD)
 
         # do precipitation effects on hl
 
@@ -267,8 +271,8 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
         # do precipitation
         for i=1:ngl
             for j=1:ngl
-                ip         = connijk[e,i,j]
-                H[i,j,1] = Pr[ip] + Ps[ip] + Pg[ip]
+                @inbounds ip::Int64         = connijk[e,i,j]
+                @inbounds H[i,j,1] = Pr[ip] + Ps[ip] + Pg[ip]
             end
         end
         compute_vertical_derivative_q!(dqpdt, H, e, ngl, metrics.Je, metrics.dξdy, metrics.dηdy, ω, dψ, SD)
@@ -277,8 +281,8 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
 
         for i=1:ngl
             for j=1:ngl
-                ip         = connijk[e,i,j]
-                H[i,j,1] = Lc*Pr[ip] + Ls*(Ps[ip] + Pg[ip])
+                @inbounds ip         = connijk[e,i,j]
+                @inbounds H[i,j,1] = Lc*Pr[ip] + Ls*(Ps[ip] + Pg[ip])
             end
         end
 
@@ -288,8 +292,8 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
 
         for i=1:ngl
             for j=1:ngl
-                ip         = connijk[e,i,j]
-                H[i,j,1] = qi[ip] * (ρ[ip] +ρe[ip])* 0.4
+                @inbounds ip         = connijk[e,i,j]
+                @inbounds H[i,j,1] = qi[ip] * (ρ[ip] +ρe[ip])* 0.4
             end
         end
 
@@ -297,10 +301,10 @@ function compute_precipitation_derivatives!(dqpdt, dqtdt, dhldt, Pr, Ps, Pg, Tab
 
         for i=1:ngl
             for j=1:ngl
-                ip              = connijk[e,i,j]
-                T               = Tabs[ip]
+                @inbounds ip              = connijk[e,i,j]
+                @inbounds T               = Tabs[ip]
                 ωn              = max(0,min(1,(T-T00n)/(T0n - T00n)))
-                dhldt[e,i,j] += (Lc + ωn*Lf)*dqtdt[e,i,j]
+                @inbounds dhldt[e,i,j] += (Lc + ωn*Lf)*dqtdt[e,i,j]
             end
         end
     end
@@ -321,73 +325,69 @@ function precipitation_flux_gpu(u,qe,MicroConst,lpert,Pr,Ps,Pg,qi)
     return T(0.0), T(Lc*Pr +Ls*(Ps+Pg)), T(qi*ρ*T(0.4)), T(Pr + Ps + Pg) 
 end
 
-function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe, ::NSD_3D, ::TOTAL)
-
-    PhysConst = PhysicalConst{Float64}()
+function add_micro_precip_sources!(S, q, qe, S_micro::Float64, qn::Float64, flux_lw::Float64, flux_sw::Float64, PhysConst, ::NSD_3D, ::TOTAL)
     
-    ρ        = q[1]
-    qt       = q[6]/ρ
-    qp       = q[7]/ρ
-    qv       = qt - qn
-    ρqv_pert = ρ*qv - qe[6]
+    @inbounds ρ        = q[1]
+    @inbounds qt       = q[6]/ρ
+    @inbounds qp       = q[7]/ρ
+    qv::Float64        = qt - qn
+    @inbounds ρqv_pert = ρ*qv - qe[6]
      
-    S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))
-    S[5] += ρ*(flux_lw - flux_sw)
-    S[6] += -ρ*S_micro
-    S[7] += ρ*S_micro
+    @inbounds S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))
+    @inbounds S[5] += ρ*(flux_lw - flux_sw)
+    @inbounds S[6] += -ρ*S_micro
+    @inbounds S[7] += ρ*S_micro
 
 end
 
-function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe, ::NSD_3D,::PERT)
-
-    PhysConst = PhysicalConst{Float64}()
+function add_micro_precip_sources!(S, q, qe, S_micro::Float64, qn::Float64, flux_lw::Float64, flux_sw::Float64, PhysConst, ::NSD_3D, ::PERT)
     
-    ρ        = q[1]+qe[1]
-    qt       = (q[6] + qe[6])/ρ
-    qv_ref   = qe[6]/qe[1]
-    qp       = (q[7] + qe[7]) /ρ
-    qv       = (qt - qn) #- qe[6]/qe[1]
-    ρqv_pert = ρ*qv - qe[6]
+    @inbounds ρ        = q[1]+qe[1]
+    @inbounds qt       = (q[6] + qe[6])/ρ
+    @inbounds qv_ref   = qe[6]/qe[1]
+    @inbounds qp       = (q[7] + qe[7]) /ρ
+    qv::Float64        = (qt - qn) #- qe[6]/qe[1]
+    @inbounds ρqv_pert = ρ*qv - qe[6]
     
-    S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
-    S[5] += ρ*(flux_lw - flux_sw)
-    S[6] += -ρ*S_micro
-    S[7] += ρ*S_micro
+    @inbounds S[4] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
+    @inbounds S[5] += ρ*(flux_lw - flux_sw)
+    @inbounds S[6] += -ρ*S_micro
+    @inbounds S[7] += ρ*S_micro
 
 end
 
-function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe, ::NSD_2D, ::TOTAL)
-    
-    PhysConst = PhysicalConst{Float64}()
-    
-    ρ        = q[1]
-    qt       = q[5]/ρ
-    qp       = q[6]/ρ
-    qv       = qt - qn
-    ρqv_pert = ρ*qv - qe[5]
+function add_micro_precip_sources!(S, q, qe, S_micro::Float64, qn::Float64, flux_lw::Float64, flux_sw::Float64, PhysConst, ::NSD_2D, ::TOTAL)   
 
-    S[3] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp)) 
-    S[4] += ρ*(flux_lw - flux_sw)
-    S[5] += -ρ*S_micro
-    S[6] += ρ*S_micro
+    
+    @inbounds ρ        = q[1]
+    @inbounds qt       = q[5]/ρ
+    @inbounds qp       = q[6]/ρ
+    qv::Float64        = qt - qn
+    @inbounds ρqv_pert = ρ*qv - qe[5]
+
+    @inbounds S[3] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp)) 
+    @inbounds S[4] += ρ*(flux_lw - flux_sw)
+    @inbounds S[5] += -ρ*S_micro
+    @inbounds S[6] += ρ*S_micro
 
 end 
     
-function add_micro_precip_sources!(mp::St_SamMicrophysics,flux_lw, flux_sw, T,S_micro,S,q,qn,qe, ::NSD_2D,::PERT)
+function add_micro_precip_sources!(S, q, qe, S_micro::Float64, qn::Float64, flux_lw::Float64, flux_sw::Float64, PhysConst, ::NSD_2D, ::PERT)
     
-    PhysConst = PhysicalConst{Float64}()
     
-    ρ        = q[1]+qe[1]
-    qt       = (q[5] + qe[5])/ρ
-    qv_ref   = qe[5]/qe[1]
-    qp       = (q[6] + qe[6]) /ρ
-    qv       = (qt - qn) #- qe[6]/qe[1]
-    ρqv_pert = ρ*qv - qe[5]
+    @inbounds ρ        = q[1]+qe[1]
+    @inbounds ρqt      = (q[5] + qe[5])
+    qt::Float64        = ρqt/ρ
+    @inbounds qv_ref   = qe[5]/qe[1]
+    @inbounds ρqp      = (q[6] + qe[6])
+    qp::Float64        = ρqp/ρ
+    qv::Float64        = (qt - qn) #- qe[6]/qe[1]
+    @inbounds ρqv_pert = ρ*qv - qe[5]
 
-    S[3] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
-    S[4] += ρ*(flux_lw - flux_sw)
-    S[5] += -ρ*S_micro
-    S[6] += ρ*S_micro
+    @inbounds S[3] += PhysConst.g*(0.61*ρqv_pert -ρ*(qn+qp))# should we ignore condensates in the hydrostatic balance if they're not included in the pressure term?
+    @inbounds S[4] += ρ*(flux_lw - flux_sw)
+    @inbounds S[5] += -ρ*S_micro
+    @inbounds S[6] += ρ*S_micro
 
 end
 
