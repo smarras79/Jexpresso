@@ -172,6 +172,7 @@ function build_custom_bcs_neumann!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin,
                            xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
                            connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                            connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
+                           τ_f, wθ,
                            Tabs, qn,
                            neqs, dirichlet!, neumann, inputs)
 

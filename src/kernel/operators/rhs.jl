@@ -485,7 +485,7 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
     
-    @time inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, 
+    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, 
                      params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
     
     if inputs[:ladapt] == true
@@ -595,9 +595,9 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, S_micro_vec,
     end
 end
 
-function inviscid_rhs_el!(u, connijk::Array{Int64,4}, qe::Matrix{Float64}, x::Vector{Float64}, y::Vector{Float64}, z::Vector{Float64}, 
-        lsource, S_micro_vec::Vector{Float64}, qn_vec::Vector{Float64}, flux_lw_vec::Vector{Float64},
-        flux_sw_vec::Vector{Float64}, SD::NSD_2D)
+function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, x::Vector{Float64}, y::Vector{Float64}, z::Vector{Float64}, 
+        lsource, S_micro_vec, qn_vec, flux_lw_vec,
+        flux_sw_vec, SD::NSD_2D)
     
     #PhysConst = PhysicalConst{Float64}()
     
