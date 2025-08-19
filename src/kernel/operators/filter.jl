@@ -1,6 +1,6 @@
 using Quadmath
 
-function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1))   
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1), ladapt = false)   
 
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -65,6 +65,15 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_la
         end
     end
     
+    if ladapt == true
+        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b, connijk, params.mesh.poin_in_edge, 
+                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
+                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+                           params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           params.mesh.ngl-1, params.neqs, params.interp)
+    end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
 
     DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
@@ -78,7 +87,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_la
     uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
 
-function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1))
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1), ladapt = false)
     
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -197,6 +206,9 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
             end
         end
 
+        if ladapt == true
+            @mystop("not yet implemented for 2D Laguerre with AMR!")
+        end
         DSS_rhs_laguerre!(params.B_lag, params.b_lag, connijk_lag, params.mesh.nelem_semi_inf, params.mesh.ngl, params.mesh.ngr, params.neqs, SD, params.AD)
         #for ip=1:params.mesh.npoin
         #if !(ip in params.mesh.poin_in_bdy_edge)
@@ -224,10 +236,10 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
 end=#
 
 
-uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
+    uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
 end
 
-function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1))
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1), ladapt = false)
 
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -335,11 +347,30 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
         end
     end
 
+    if ladapt == true
+        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b, connijk, params.mesh.poin_in_edge, 
+                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
+                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+                           params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           params.mesh.ngl-1, params.neqs, params.interp)
+    end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, ngl, params.neqs, SD, params.AD)
 
     DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
+        if ladapt == true
+            DSS_nc_scatter_rhs!(@view(params.B[:,ieq]), SD, params.QT, selectdim(params.b, ndims(params.b), ieq), 
+                                connijk, params.mesh.poin_in_edge, 
+                                params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                                params.mesh.non_conforming_facets_children_ghost, params.mesh.pip_cg, params.mesh.lfid_cg, params.mesh.half1_cg, params.mesh.half2_cg, 
+                                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.mesh.q_local_c, params.q_ghost_c, 
+                                params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
+                                params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, params.mesh.cgip_local,
+                                params.mesh.ngl-1, params.interp)
+        end
     end
     uaux[:,1:params.neqs] .= @view params.B[:,1:params.neqs]
 
@@ -353,7 +384,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
     uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
 end
 
-function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1))
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1), ladapt = false)
 
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -434,10 +465,29 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
         end
     end
 
+    if ladapt == true
+        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b, connijk, params.mesh.poin_in_edge, 
+                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
+                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+                           params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           params.mesh.ngl-1, params.neqs, params.interp)
+    end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
     DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
+        if ladapt == true
+            DSS_nc_scatter_rhs!(@view(params.B[:,ieq]), SD, params.QT, selectdim(params.b, ndims(params.b), ieq), 
+                                connijk, params.mesh.poin_in_edge, 
+                                params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                                params.mesh.non_conforming_facets_children_ghost, params.mesh.pip_cg, params.mesh.lfid_cg, params.mesh.half1_cg, params.mesh.half2_cg, 
+                                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.mesh.q_local_c, params.q_ghost_c, 
+                                params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
+                                params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, params.mesh.cgip_local,
+                                params.mesh.ngl-1, params.interp)
+        end
     end
 
     uaux[:,1:params.neqs] .= @view params.B[:,1:params.neqs]

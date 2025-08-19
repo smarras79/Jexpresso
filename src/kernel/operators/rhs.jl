@@ -418,12 +418,12 @@ function _build_rhs!(RHS, u, params, time)
         if (params.laguerre)
             reset_laguerre_filters!(params)
             filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
-                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je)
+                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = inputs[:ladapt])
         else
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE)
+            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
         end
     end
-    
+
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     if inputs[:ladapt] == true
@@ -450,7 +450,7 @@ function _build_rhs!(RHS, u, params, time)
                                params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
                                params.mp.Tabs, params.mp.qn,
                                params.ω, neqs, params.inputs, AD, SD)
-    
+
     if (params.inputs[:lmoist])
         if (SD == NSD_3D())
             do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
@@ -498,7 +498,6 @@ function _build_rhs!(RHS, u, params, time)
                            ngl-1, neqs, params.interp)
     end
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
-
 
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
