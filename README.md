@@ -99,7 +99,7 @@ $${\bf q}=\begin{bmatrix}
 \rho c1\\
 ...\\
 \rho cN
-\end{bmatrix}\quad {\bf F}=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F1}=\begin{bmatrix}
 \rho u\\
 \rho u^2 + p\\
 \rho u v\\
@@ -107,7 +107,7 @@ $${\bf q}=\begin{bmatrix}
 \rho u c1\\
 ...\\
 \rho u cN
-\end{bmatrix}\quad {\bf G}=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F2}=\begin{bmatrix}
 \rho v\\
 \rho v u\\
 \rho v^2 + p\\
