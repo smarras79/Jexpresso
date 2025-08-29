@@ -45,9 +45,14 @@ Please cite Jexpresso using:
   journal = {App. Math. Comput.},
 }
 
-@article{marrasajexpresso,
-  title={JEXPRESSO {V0. 1}: {A} {J}ULIA-LANGUAGE, USER-FRIENDLY, MULTI-PHYSICS PARALLEL SOLVER FOR THE SOLUTION OF CONSERVATIONS LAWS ON {CPUs} AND {GPUs}},
-  author={Marrasa, Simone and Tissaouib, Yassine and Wanga, Hang and Stechmannb, Samuel N}
+@inproceedings{marrasJexpresso,
+  author    = {S. Marras and Y. Tissaoui and H. Wang and S. Stechmann}
+  title     = {JEXPRESSO V0. 1: A JULIA-LANGUAGE, USER-FRIENDLY, MULTI-PHYSICS PARALLEL SOLVER FOR THE SOLUTION OF CONSERVATIONS LAWS ON CPUs AND GPUs.},
+  booktitle = {Proceedings of the 36th Parallel CFD international conference 2025},
+  year      = {2025},
+  address   = {Merida, Yucatan, Mexico},
+  month     = {November},
+  organization = {UNAM},
 }
 ```
 
