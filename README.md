@@ -15,7 +15,21 @@
 # JEXPRESSO
 A CPU and GPU research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this will always be WIP! Contact us to join the team of developers!
 
-Suggested Julia version: 1.11.2
+Suggested Julia version: 1.11.2 or higher.
+
+Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
+
+```
+MPI = "0.20.22"
+MPIPreferences = "0.1.11"
+PackageCompiler = "2.2.1"
+Thermodynamics = "0.12.7"
+UnicodePlots = "3.7.2"
+Gridap v0.18.12
+GridapDistributed v0.4.7
+GridapGmsh v0.7.2
+GridapP4est v0.3.11
+```
 
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
 
@@ -29,6 +43,11 @@ Please cite Jexpresso using:
   pages={129080},
   year = {2024},
   journal = {App. Math. Comput.},
+}
+
+@article{marrasajexpresso,
+  title={JEXPRESSO {V0. 1}: {A} {J}ULIA-LANGUAGE, USER-FRIENDLY, MULTI-PHYSICS PARALLEL SOLVER FOR THE SOLUTION OF CONSERVATIONS LAWS ON {CPUs} AND {GPUs}},
+  author={Marrasa, Simone and Tissaouib, Yassine and Wanga, Hang and Stechmannb, Samuel N}
 }
 ```
 
