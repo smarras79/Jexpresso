@@ -20,11 +20,11 @@ Suggested Julia version: 1.11.2 or higher.
 Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
 
 ```
-MPI = "0.20.22"
-MPIPreferences = "0.1.11"
-PackageCompiler = "2.2.1"
-Thermodynamics = "0.12.7"
-UnicodePlots = "3.7.2"
+MPI 0.20.22
+MPIPreferences 0.1.11
+PackageCompiler 2.2.1
+Thermodynamics 0.12.7
+UnicodePlots 3.7.2
 Gridap v0.18.12
 GridapDistributed v0.4.7
 GridapGmsh v0.7.2
