@@ -16,9 +16,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars    = ("ρ", "ρu", "ρv", "ρw", "θ")
+    qvars    = ["ρ", "ρu", "ρv", "ρw", "θ"]
     qoutvars = ["ρ", "u", "v", "w", "θ", "p"]
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
+    q        = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
     if (inputs[:backend] == CPU())
@@ -109,8 +109,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 z_prev     = data[i-1,1]
                 θ_current  = data[i,2]
                 θ_prev     = data[i-1,2]
-                qv_current = data[i,3] / 1000.0
-                qv_prev    = data[i-1,3] / 1000.0
+                qv_current = data[i,3]/1000.0
+                qv_prev    = data[i-1,3]/1000.0
                 
                 dz = z_current - z_prev
                 
@@ -226,8 +226,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 randnoise = rand()*0.5
             end
             θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
-            qv    = data_interpolate[ip,2]/1000.0              # qv from column 3, convert g/kg to kg/kg
-            Press = data_interpolate[ip,5]                     # pressure from column 6 (newly calculated)
+            qv    = data_interpolate[ip,2]/1000.0       # qv from column 3, convert g/kg to kg/kg
+            Press = data_interpolate[ip,5]              # pressure from column 6 (newly calculated)
             
             u  = data_interpolate[ip,3]  # u from column 4
             v  = data_interpolate[ip,4]  # v from column 5

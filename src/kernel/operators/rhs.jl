@@ -3,16 +3,6 @@
 #---------------------------------------------------------------------------
 # Optimized (more coud possibly be done)
 #---------------------------------------------------------------------------
-function build_rhs!(RHS, u, params, time)
-    #
-    # build_rhs()! is called by TimeIntegrators.jl -> time_loop!() via ODEProblem(rhs!, u, tspan, params)
-    #
-    
-    # Apply to your model function
-    _build_rhs!(RHS, u, params, time)
-    
-end
-
 function RHStoDU!(du, RHS, neqs, npoin)
     for i=1:neqs
         idx = (i-1)*npoin
@@ -98,7 +88,7 @@ function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
     
     if (backend == CPU())
-        build_rhs!(@view(params.RHS[:,:]), u, params, time)
+        _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
         if (params.laguerre) 
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
@@ -311,7 +301,6 @@ function rhs!(du, u, params, time)
             KernelAbstractions.synchronize(backend)
             if (params.laguerre)
                 params.RHS_lag .= TFloat(0.0)
-
                 
                 k_lag = _build_rhs_lag_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngr)))
                 k_lag(params.RHS_lag, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.connijk_lag, params.metrics_lag.dξdx, params.metrics_lag.dξdy,
@@ -341,10 +330,10 @@ function rhs!(du, u, params, time)
             end
 
             if (params.inputs[:lvisc])
-                params.RHS_visc .= TFloat(0.0)
+                params.RHS_visc     .= TFloat(0.0)
                 params.rhs_diffξ_el .= TFloat(0.0)
                 params.rhs_diffη_el .= TFloat(0.0)
-                params.source_gpu .= TFloat(0.0)
+                params.source_gpu   .= TFloat(0.0)
                 
                 k = _build_rhs_diff_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
                 k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.uaux, params.qp.qe, params.source_gpu, params.mesh.x, params.mesh.y, params.mesh.connijk, 
@@ -460,7 +449,7 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
     
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, SD)
+    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, SD)
     
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
@@ -517,9 +506,9 @@ function _build_rhs!(RHS, u, params, time)
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_1D)
+function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
     
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    #u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel=1:params.mesh.nelem
@@ -544,7 +533,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_1D)
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=x[ip],y=y[ip],xmax=xmax,xmin=xmin)
+                             neqs=params.neqs, x=coords[ip,1], y=0.0, xmax=xmax,xmin=xmin)
             end
         end
         
@@ -557,7 +546,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_1D)
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
+function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
     
     PhysConst = PhysicalConst{Float64}()
     
@@ -579,7 +568,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=x[ip], y=y[ip], xmax=xmax, xmin=xmin, ymax=ymax)
+                             neqs=params.neqs, x=coords[ip,1], y=coords[ip,2], xmax=xmax, xmin=xmin, ymax=ymax)
                 if (params.inputs[:lmoist])
                     add_micro_precip_sources!(params.mp, params.mp.flux_lw[ip],
                                               params.mp.flux_sw[ip], params.mp.Tabs[ip],
@@ -624,7 +613,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
 
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
+function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_3D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmin = params.xmin; xmax = params.xmax; zmax = params.zmax 
@@ -651,7 +640,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                            params.mesh, params.thermo_params,
                            params.CL, params.SOL_VARS_TYPE;
                            neqs=params.neqs, ip=ip,
-                           x=x[ip], y=y[ip], z=z[ip])
+                           x=coords[ip,1], y=coords[ip,2], z=coords[ip,3])
             end
             
             if lsource
@@ -661,7 +650,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                              params.mesh.npoin,
                              params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs,
-                             x=x[ip], y=y[ip], z=z[ip],
+                             x=coords[ip,1], y=coords[ip,2], z=coords[ip,3],
                              xmax=xmax, xmin=xmin, zmax=zmax)
                 
                 if (params.inputs[:lmoist])
@@ -700,7 +689,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_3D)
                              params.rhs_el, iel, 
                              params.WM.wθ, params.inputs[:lwall_model],
                              params.mesh.connijk,
-                             [params.mesh.x, params.mesh.y, params.mesh.z],
+                             params.mesh.coords,
                              params.mesh.poin_in_bdy_face, params.mesh.elem_to_face, params.mesh.bdy_face_type,
                              params.CL, params.QT, SD, params.AD) 
     end
@@ -795,7 +784,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
                              params.metrics.Je,
                              params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz, 
                              params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
-                             params.metrics.dζdx,params.metrics.dζdy, params.metrics.dζdz,
+                             params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
                              params.inputs, params.rhs_el, iel, ieq,
                              params.WM.τ_f, params.WM.wθ, params.inputs[:lwall_model], params.mesh.connijk,
                              params.mesh.coords,                             
@@ -824,9 +813,11 @@ function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_1D, AD:
 end
 
 
-function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, S,
-                              rhs_el, iel,
-                              ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+function _expansion_inviscid!(u, neqs, ngl,
+                              dψ, ω,
+                              F, S,
+                              rhs_el,
+                              iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
     
     for ieq = 1:neqs
         for i=1:ngl

@@ -485,7 +485,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #
     mesh.ad_lvl = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem))
     if ladaptive == true
-        nelem_c        = num_faces(model_coarse,ELEM_flg)
+        nelem_c = num_faces(model_coarse,ELEM_flg)
 
         glue = local_views(glue_adapt).item_ref[]
         r_c_flags = local_views(ref_coarse_flags).item_ref[]
@@ -1550,7 +1550,10 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
     resize!(mesh.x, (mesh.npoin))
-    mesh.coords  = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), 1)
+    mesh.coords[:,1] = copy(mesh.x[:]) #KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), 1)
+
+    # SM here is the issue. COORDS is not being populated correctly at 1D grid generationS
+    
     mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1, 1)
 
     #
@@ -1571,6 +1574,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             ξ = lgl.ξ[l];
             
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
+            mesh.coords[ip,1] = mesh.x[ip]
             
             mesh.conn[iel_g, l] = ip #OK
             mesh.connijk[iel_g, l, 1, 1] = ip #OK
@@ -1580,8 +1584,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
         end
     end
 
-    mesh.coords[:,1] .= mesh.x[:]
-    
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
 end
@@ -2860,9 +2862,9 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     Δx = abs(mesh.xmax - mesh.xmin)/(mesh.nelem)
     mesh.npoin = mesh.npx
 
-    mesh.x[1] = mesh.xmin
+    mesh.coords[1,1] = mesh.xmin
     for i = 2:mesh.npx
-        mesh.x[i] = mesh.x[i-1] + Δx
+        mesh.coords[i,1] = mesh.coords[i-1,1] + Δx
         mesh.Δx[i-1] = Δx #Constant for the sake of simplicity in 1D problems. This may change later
     end
     mesh.NNODES_EL  = 2
@@ -2889,7 +2891,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     
     
     # Resize (using resize! from ElasticArrays) as needed
-    resize!(mesh.x, (mesh.npoin))
+    resize!(mesh.coords[:,1], (mesh.npoin))
     mesh.npoin_el = ngl
     #allocate mesh.conn and reshape it
     mesh.conn = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
@@ -2913,7 +2915,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     mesh.npoin_original = mesh.npoin
     if (inputs[:llaguerre_1d_right])
         x = KernelAbstractions.zeros(backend, TFloat, mesh.npoin+mesh.ngr-1)      
-        x[1:mesh.npoin] .= mesh.x[1:mesh.npoin] 
+        x[1:mesh.npoin] .= mesh.coords[1:mesh.npoin,1]
         gr = basis_structs_ξ_ω!(LGR(), mesh.ngr-1,inputs[:laguerre_beta],backend)
         mesh.connijk_lag[1,1,1] = mesh.npoin_linear 
         for i=2:mesh.ngr
@@ -2922,7 +2924,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
             x[ip] = mesh.xmax + inputs[:yfac_laguerre]*gr.ξ[i]
         end    
         mesh.npoin = mesh.npoin + mesh.ngr-1
-        mesh.x = x
+        mesh.coords[:,1] .= x[:]
     end
     if (inputs[:llaguerre_1d_left])
         e = min(2,mesh.nelem_semi_inf)
@@ -2969,11 +2971,11 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
         end
 
         # WARNING: this will be removed when x,y,z is fulyl replaced by coords
-        mesh.coords[:,1] = mesh.x
+        mesh.coords[:,1] = mesh.x[:]
         if mesh.nsd > 1
-            mesh.coords[:,2] = mesh.y
+            mesh.coords[:,2] = mesh.y[:]
             if mesh.nsd > 2
-                mesh.coords[:,3] = mesh.z
+                mesh.coords[:,3] = mesh.z[:]
             end
         end
         
@@ -2988,7 +2990,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
             
             if (inputs[:nsd]==1)
                 println(" # ... build 1D grid ")
-                mesh = St_mesh{TInt,TFloat, CPU()}(x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
+                mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx]), 1),
                                             npx  = TInt(inputs[:npx]),
                                             xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
                                             nop=TInt(inputs[:nop]),
@@ -3006,14 +3008,15 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
             #
             println(" # ... build DEFAULT 1D grid")
             println(" # ...... DEFINE NSD in your input dictionary if you want a different grid!")
-            mesh = St_mesh{TInt,TFloat, CPU()}(x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
-                                        npx  = Int64(inputs[:npx]),
-                                        xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
-                                        nop=Int64(inputs[:nop]),
-                                        ngr=Int64(inputs[:nop_laguerre]+1),
-                                        SD=NSD_1D())
+            mesh = St_mesh{TInt,TFloat, CPU()}(x = KernelAbstractions.zeros(CPU(), TFloat, Int64(inputs[:npx]), 1),
+                                               npx  = Int64(inputs[:npx]),
+                                               xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
+                                               nop=Int64(inputs[:nop]),
+                                               ngr=Int64(inputs[:nop_laguerre]+1),
+                                               SD=NSD_1D())
         end
         mod_mesh_build_mesh!(mesh,  inputs[:interpolation_nodes], CPU())
+        #mesh.coords[:,1] .= mesh.x[:]
         
         println(" # Build native grid ........................ DONE")
     end
@@ -3097,7 +3100,7 @@ end
 #Computes element size assuming flow in a straght-sided cube
 #------------------------------------------------------------------------------------
 function compute_element_size!(SD::NSD_1D, ie, mesh::St_mesh, T) nothing end
-    
+
 function compute_element_size!(SD::NSD_2D, ie, mesh::St_mesh, T)
     
     #local arrays
