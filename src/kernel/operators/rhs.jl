@@ -1392,7 +1392,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     end
 end
 
-
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           uprimitive, visc_coeffieq, ω,
                           ngl, dψ, Je,

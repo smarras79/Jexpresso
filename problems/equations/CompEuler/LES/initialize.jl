@@ -196,26 +196,6 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         
         # Store calculated pressures
         data_with_p[:, sounding_nvars+1] .= pressure
-
-        #p1 = Plots.plot(data_with_p[:, sounding_nvars+1], data_with_p[:, 1])
-        #display(p1)
-        #@mystop
-        
-        # Alternative: Use the existing perfectGasLaw_θqvtoP function if available
-        # This would be more consistent with your existing codebase
-        # Uncomment the following lines if you prefer to use the existing function:
-        #
-        # Calculate pressure using your existing function
-        # data_with_p[:, sounding_nvars] .= perfectGasLaw_θqvtoP(PhysConst,
-        #                                                       data[:,1], #z
-        #                                                       data[:,2], #θ
-        #                                                       data[:,3]; #qv
-        #                                                       p0=PhysConst.pref)
-        #        
-        #p1 = Plots.plot(data_with_p[:, sounding_nvars+1], data_with_p[:, 1])
-        #p1 = Plots.plot!(data_with_p[:, sounding_nvars], data_with_p[:, 1])
-        #display(p1)
-        #@mystop
         
         #Interpolate
         data_interpolate = interpolate_sounding(inputs[:backend], mesh.npoin, mesh.z, data_with_p)
