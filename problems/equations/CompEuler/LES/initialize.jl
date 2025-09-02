@@ -162,16 +162,16 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         # Verify hydrostatic balance
         max_imbalance = 0.0
         for i = 2:sounding_nlevels
-            z_current  = data[i,1]
-            z_prev     = data[i-1,1]
-            θ_current  = data[i,2]
-            θ_prev     = data[i-1,2]
-            qv_current = data[i,3] / 1000.0
-            qv_prev    = data[i-1,3] / 1000.0
+            z_current   = data[i,1]
+            z_prev      = data[i-1,1]
+            θ_current   = data[i,2]
+            θ_prev      = data[i-1,2]
+            qv_current  = data[i,3] / 1000.0
+            qv_prev     = data[i-1,3] / 1000.0
             
-            dz        = z_current - z_prev
-            p_current = pressure[i]
-            p_prev    = pressure[i-1]
+            dz          = z_current - z_prev
+            p_current   = pressure[i]
+            p_prev      = pressure[i-1]
             
             # Calculate average virtual temperature
             θ_v_prev    = θ_prev * (1.0 + 0.61 * qv_prev)
@@ -181,7 +181,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             T_v_avg     = 0.5 * (T_v_prev + T_v_current)
             
             # Calculate expected pressure from hydrostatic equation
-            p_expected = p_prev * exp(-PhysConst.g * dz / (PhysConst.Rair * T_v_avg))
+            p_expected  = p_prev * exp(-PhysConst.g * dz / (PhysConst.Rair * T_v_avg))
             
             # Calculate imbalance
             imbalance = abs(p_current - p_expected)
@@ -219,21 +219,20 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         
         #Interpolate
         data_interpolate = interpolate_sounding(inputs[:backend], mesh.npoin, mesh.z, data_with_p)
-        
+
+        amp = 0.25
         for ip = 1:mesh.npoin
             randnoise = 0.0
             if mesh.z[ip] < 3000.0
-                randnoise = rand()*0.5
+                randnoise = 2*amp*(rand() - 1.0)
             end
             θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
-            qv    = data_interpolate[ip,2]/1000.0       # qv from column 3, convert g/kg to kg/kg
+            qv    = data_interpolate[ip,2] / 1000.0     # qv from column 3, convert g/kg to kg/kg
             Press = data_interpolate[ip,5]              # pressure from column 6 (newly calculated)
-            
-            u  = data_interpolate[ip,3]  # u from column 4
-            v  = data_interpolate[ip,4]  # v from column 5
-            w  = 0.0
-            
-            ρ  = perfectGasLaw_θPtoρ(PhysConst; Press=Press, θ=θ)
+            ρ     = perfectGasLaw_θPtoρ(PhysConst; Press=Press, θ=θ)           
+            u     = data_interpolate[ip,3]  # u from column 4
+            v     = data_interpolate[ip,4]  # v from column 5
+            w     = 0.0
             
             q.qn[ip,1] = ρ
             q.qn[ip,2] = ρ*u

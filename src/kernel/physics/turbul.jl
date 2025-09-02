@@ -236,7 +236,6 @@ function MOST!(τ_f, wθ,
         τ_f[iface_bdy, idx1, idx2, 2] = 0.0
 
         # Even in fallback, we might still want to impose the heat flux
-        q_wall = 0.12 #[Km/s] constant imposition
-        wθ[iface_bdy, idx1, idx2, 1] = 0.0 #q_wall
+        wθ[iface_bdy, idx1, idx2, 1] = 0.0
     end
 end
