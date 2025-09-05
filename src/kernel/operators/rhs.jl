@@ -1598,6 +1598,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     dwdη += dψ[ii,l]*uprimitive[k,ii,m,4]
                     dwdζ += dψ[ii,m]*uprimitive[k,l,ii,4]
                 end
+                
+                # Cache metric derivatives for efficiency
                 dξdx_klm = dξdx[iel,k,l,m]
                 dξdy_klm = dξdy[iel,k,l,m]
                 dξdz_klm = dξdz[iel,k,l,m]
@@ -1610,6 +1612,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 dζdy_klm = dζdy[iel,k,l,m]
                 dζdz_klm = dζdz[iel,k,l,m]
 
+                # Transform derivatives to physical coordinates
                 dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
                 dvdx = dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm
                 dwdx = dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm
@@ -1622,18 +1625,33 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 dvdz = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm
                 dwdz = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm
 
-                S11 = dudx;  S22 = dvdy; S33 = dwdz
-                S12 = (dudy + dvdx) * 0.5
-                S13 = (dudz + dwdx) * 0.5
-                S21 = S12
-                S23 = (dvdz + dwdy) * 0.5
-                S31 = S13
-                S32 = S23
+                # Strain rate tensor (symmetric part of velocity gradient)
+                S11 = dudx
+                S22 = dvdy
+                S33 = dwdz
+                S12 = 0.5 * (dudy + dvdx)
+                S13 = 0.5 * (dudz + dwdx)
+                S23 = 0.5 * (dvdz + dwdy)
+
+                # Rotation tensor (anti-symmetric part)
+                Ω12 = 0.5 * (dudy - dvdx)
+                Ω13 = 0.5 * (dudz - dwdx)
+                Ω21 = -Ω12
+                Ω23 = 0.5 * (dvdz - dwdy)
+                Ω31 = -Ω13
+                Ω32 = -Ω23
                 
-                # |Sij|
-                Sij    = sqrt(2.0 * (S11*S11 + S12*S12 + S13*S13 + S21*S21 + S22*S22 + S23*S23 + S31*S31 + S32*S32 + S33*S33))
-                Δ2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
+                # Strain rate magnitude
+                Sij = sqrt(2.0 * (S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23)))
                 
+                # Filter width calculation for LGL grids
+                # Use actual local grid spacing instead of uniform assumption
+                Je_cbrt = cbrt(Je[iel,k,l,m])
+                # For LGL grids, this is a reasonable approximation, but could be improved
+                # by computing actual local mesh size
+                Δ2 = (2.0 * Je_cbrt / (ngl-1))^2
+                
+                # Compute scalar gradient for diffusion
                 dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
                 
                 @turbo for ii = 1:ngl
@@ -1642,29 +1660,24 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     dqdζ += dψ[ii,m]*uprimitive[k,l,ii,ieq]
                 end
                 
-                auxi = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
-                dqdx = 2*visc_coeffieq[ieq] * Sij * Δ2 * auxi
+                # Transform scalar gradient to physical coordinates and apply Smagorinsky model
+                dqdx_phys = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
+                dqdy_phys = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
+                dqdz_phys = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
                 
-                auxi = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
-                dqdy = 2*visc_coeffieq[ieq] * Sij * Δ2 * auxi
+                # Apply eddy viscosity (Smagorinsky model)
+                eddy_visc = 2.0 * visc_coeffieq[ieq] * Sij * Δ2
                 
-                auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
-                dqdz = 2*visc_coeffieq[ieq] * Sij * Δ2 * auxi
+                dqdx = eddy_visc * dqdx_phys
+                dqdy = eddy_visc * dqdy_phys
+                dqdz = eddy_visc * dqdz_phys
                 
+                # Transform back to computational coordinates for weak form
                 ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
                 ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
                 ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
-                #=if (lwall_model)
-                ip = connijk[iel,i,j,k]
-                if (ip in poin_in_bdy_face)
-                iface = elem_to_face[iel,i,j,k,1]
-                idx1 = elem_to_face[iel,i,j,k,2]
-                idx2 = elem_to_face[iel,i,j,k,3]
-                ###define τij for wall model
-                τ_f[iface,idx1,idx2,1] =
-                τ_f[iface,idx1,idx2,2] = 
-                end
-                end=#
+                
+                # Distribute to element RHS arrays
                 @turbo for i = 1:ngl
                     dhdξ_ik = dψ[i,k]
                     dhdη_il = dψ[i,l]
