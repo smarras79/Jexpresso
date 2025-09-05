@@ -1561,6 +1561,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     end
 end
 
+               
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           uprimitive, visc_coeffieq, ω,
                           ngl, dψ, Je,
@@ -1576,16 +1577,27 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           poin_in_bdy_face, elem_to_face, bdy_face_type, 
                           QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal)
     
+    # Constants for Richardson stability correction
+    const Pr_t = 0.9        # Turbulent Prandtl number
+    const g = 9.81          # Gravitational acceleration (m/s²)
+    const Ri_crit = 0.25    # Critical Richardson number
+    const C_s = 0.1         # Smagorinsky constant (typical range: 0.1-0.2)
+    
     for m = 1:ngl
         for l = 1:ngl
             for k = 1:ngl
                 ωJac = ω[k]*ω[l]*ω[m]*Je[iel,k,l,m]
                 
+                # Initialize velocity gradients
                 dudξ = 0.0; dudη = 0.0; dudζ = 0.0
                 dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
                 dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
+                
+                # Initialize potential temperature gradients
+                dθdξ = 0.0; dθdη = 0.0; dθdζ = 0.0
 
                 @turbo for ii = 1:ngl
+                    # Velocity gradients
                     dudξ += dψ[ii,k]*uprimitive[ii,l,m,2]
                     dudη += dψ[ii,l]*uprimitive[k,ii,m,2]
                     dudζ += dψ[ii,m]*uprimitive[k,l,ii,2]
@@ -1597,6 +1609,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     dwdξ += dψ[ii,k]*uprimitive[ii,l,m,4]
                     dwdη += dψ[ii,l]*uprimitive[k,ii,m,4]
                     dwdζ += dψ[ii,m]*uprimitive[k,l,ii,4]
+                    
+                    # Potential temperature gradients
+                    dθdξ += dψ[ii,k]*uprimitive[ii,l,m,5]
+                    dθdη += dψ[ii,l]*uprimitive[k,ii,m,5]
+                    dθdζ += dψ[ii,m]*uprimitive[k,l,ii,5]
                 end
                 
                 # Cache metric derivatives for efficiency
@@ -1612,7 +1629,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 dζdy_klm = dζdy[iel,k,l,m]
                 dζdz_klm = dζdz[iel,k,l,m]
 
-                # Transform derivatives to physical coordinates
+                # Transform velocity derivatives to physical coordinates
                 dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
                 dvdx = dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm
                 dwdx = dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm
@@ -1624,6 +1641,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 dudz = dudξ*dξdz_klm + dudη*dηdz_klm + dudζ*dζdz_klm
                 dvdz = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm
                 dwdz = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm
+                
+                # Transform potential temperature derivatives to physical coordinates
+                dθdx = dθdξ*dξdx_klm + dθdη*dηdx_klm + dθdζ*dζdx_klm
+                dθdy = dθdξ*dξdy_klm + dθdη*dηdy_klm + dθdζ*dζdy_klm
+                dθdz = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
 
                 # Strain rate tensor (symmetric part of velocity gradient)
                 S11 = dudx
@@ -1644,12 +1666,44 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 # Strain rate magnitude
                 Sij = sqrt(2.0 * (S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23)))
                 
-                # Filter width calculation for LGL grids
-                # Use actual local grid spacing instead of uniform assumption
+                # Filter width calculation
                 Je_cbrt = cbrt(Je[iel,k,l,m])
-                # For LGL grids, this is a reasonable approximation, but could be improved
-                # by computing actual local mesh size
-                Δ2 = (2.0 * Je_cbrt / (ngl-1))^2
+                Δ = 2.0 * Je_cbrt / (ngl-1)
+                Δ2 = Δ * Δ
+                
+                # Richardson number calculation for stability correction
+                # Get reference potential temperature (local value)
+                θ_ref = uprimitive[k,l,m,5]
+                
+                # Buoyancy frequency squared: N² = (g/θ) * dθ/dz
+                # Note: assuming z is vertical (modify if different coordinate system)
+                N2 = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
+                
+                # Shear squared: S² = 2 * Sᵢⱼ * Sᵢⱼ
+                S2 = 2.0 * (S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23))
+                
+                # Richardson number: Ri = N²/S²
+                Ri = (S2 > 1e-12 && N2 >= 0.0) ? N2 / S2 : 0.0
+                
+                # Stability function for Richardson correction
+                # Various formulations exist; using a smooth transition
+                f_Ri = if Ri >= Ri_crit
+                    # Stable stratification suppresses turbulence
+                    0.0
+                elseif Ri >= 0.0
+                    # Stable but sub-critical: reduce mixing
+                    (1.0 - Ri/Ri_crit)^2
+                else
+                    # Unstable stratification: enhance mixing
+                    sqrt(1.0 - 16.0*Ri)  # Ri is negative, so this increases mixing
+                end
+                
+                # Apply Richardson stability correction to eddy viscosity
+                # Base Smagorinsky eddy viscosity
+                ν_t_base = (C_s * Δ)^2 * Sij
+                
+                # Richardson-corrected eddy viscosity
+                ν_t = ν_t_base * f_Ri
                 
                 # Compute scalar gradient for diffusion
                 dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
@@ -1660,17 +1714,28 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     dqdζ += dψ[ii,m]*uprimitive[k,l,ii,ieq]
                 end
                 
-                # Transform scalar gradient to physical coordinates and apply Smagorinsky model
+                # Transform scalar gradient to physical coordinates
                 dqdx_phys = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
                 dqdy_phys = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
                 dqdz_phys = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
                 
-                # Apply eddy viscosity (Smagorinsky model)
-                eddy_visc = 2.0 * visc_coeffieq[ieq] * Sij * Δ2
+                # Determine effective diffusivity based on scalar type
+                # TODO: Replace this logic with proper equation identification
+                # Common orderings:
+                # - Conservative: [ρ, ρu, ρv, ρw, ρE] or [ρ, ρu, ρv, ρw, ρE, ρθ]
+                # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
+                if ieq == 5  # Assuming potential temperature equation is at index 5
+                    # For temperature: use thermal diffusivity (ν_t / Pr_t)
+                    effective_diffusivity = visc_coeffieq[ieq] * ν_t / Pr_t
+                else
+                    # For momentum equations: use momentum diffusivity
+                    effective_diffusivity = visc_coeffieq[ieq] * ν_t
+                end
                 
-                dqdx = eddy_visc * dqdx_phys
-                dqdy = eddy_visc * dqdy_phys
-                dqdz = eddy_visc * dqdz_phys
+                # Apply effective diffusivity to scalar gradients
+                dqdx = effective_diffusivity * dqdx_phys
+                dqdy = effective_diffusivity * dqdy_phys
+                dqdz = effective_diffusivity * dqdz_phys
                 
                 # Transform back to computational coordinates for weak form
                 ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
