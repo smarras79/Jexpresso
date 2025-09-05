@@ -10,6 +10,7 @@ using Parameters
     γ::T        = T(cp/cv)
     ν::T        = 1.0e-5
     Pr::T       = 0.7
+    Pr_t::T     = 0.9 #Turbulent Pr number
     Prnum::T    = 0.1
     pref::T     = 100000.0 #Pa
     Rvap::T     = 461.0 #J/kg.K
@@ -18,16 +19,18 @@ using Parameters
     cpovercv::T = T(cp/cv)
     cvovercp::T = T(cv/cp)
     C0::T       = T((Rair^γ)/pref^(γ-1.0)) #Rovercv
+    Ri_crit::T  = 0.25                     #Critical Richardson number
+    C_s::T      = 0.12                     #Smagorinsky constant
     
     #Gravity
     g::T = 9.80616 #m/s²
     g2::T= 9.80616^2
     
     #Elasticity
-    E::T = 70.0e9                #Pa
+    E::T  = 70.0e9                #Pa
     νp::T = 0.33                 #Poisson's ratio: -dϵ_transverse/dϵ_axial
-    λ::T = (E*ν)/((1+ν)*(1-2*ν)) #Lamé parameters λ, μ
-    μ::T = E/(2*(1+ν))
+    λ::T  = (E*ν)/((1+ν)*(1-2*ν)) #Lamé parameters λ, μ
+    μ::T  = E/(2*(1+ν))
 
     ## molar masses
     Mol_mass_air   = 28.9647      #g/mol

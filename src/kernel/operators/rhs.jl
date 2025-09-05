@@ -1576,12 +1576,15 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           coords,
                           poin_in_bdy_face, elem_to_face, bdy_face_type, 
                           QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal)
-    
+
+    #
     # Constants for Richardson stability correction
-    const Pr_t = 0.9        # Turbulent Prandtl number
-    const g = 9.81          # Gravitational acceleration (m/s²)
-    const Ri_crit = 0.25    # Critical Richardson number
-    const C_s = 0.1         # Smagorinsky constant (typical range: 0.1-0.2)
+    #
+    PhysConst = PhysicalConst{Float32}()
+    Pr_t      = PhysConst.Pr_t            # Turbulent Prandtl number
+    g         = PhysConst.g               # Gravitational acceleration (m/s²)
+    Ri_crit   = PhysConst.Ri_crit         # Critical Richardson number
+    C_s       = PhysConst.C_s             # Smagorinsky constant (typical range: 0.1-0.2)
     
     for m = 1:ngl
         for l = 1:ngl
@@ -1664,12 +1667,13 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 Ω32 = -Ω23
                 
                 # Strain rate magnitude
-                Sij = sqrt(2.0 * (S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23)))
+                Sij = sqrt(0.5 * (S11*S11 + S22*S22 + S33*S33) + (S12*S12 + S13*S13 + S23*S23))
+                S2  = Sij*Sij
                 
                 # Filter width calculation
                 Je_cbrt = cbrt(Je[iel,k,l,m])
-                Δ = 2.0 * Je_cbrt / (ngl-1)
-                Δ2 = Δ * Δ
+                Δ       = 2.0 * Je_cbrt / (ngl-1)
+                Δ2      = Δ * Δ
                 
                 # Richardson number calculation for stability correction
                 # Get reference potential temperature (local value)
@@ -1679,9 +1683,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 # Note: assuming z is vertical (modify if different coordinate system)
                 N2 = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
                 
-                # Shear squared: S² = 2 * Sᵢⱼ * Sᵢⱼ
-                S2 = 2.0 * (S11*S11 + S22*S22 + S33*S33 + 2.0*(S12*S12 + S13*S13 + S23*S23))
-                
+               
                 # Richardson number: Ri = N²/S²
                 Ri = (S2 > 1e-12 && N2 >= 0.0) ? N2 / S2 : 0.0
                 
