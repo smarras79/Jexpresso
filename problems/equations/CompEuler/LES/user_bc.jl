@@ -33,7 +33,8 @@ end
 
 function user_bc_neumann!(F_surf, u, u1, qe, qe1, tag, coords, τ_f, wθ, eqtype)
 
-    if (tag == "wall_model_bottom" || tag == "wall_model_top" || tag == "MOST")
+    #if (tag == "wall_model_bottom" || tag == "wall_model_top" || tag == "MOST")
+    if (tag == "MOST")
         # Use the pre-computed wall shear stress components
         # Apply with correct sign for Neumann BC
         F_surf[2] = τ_f[1]  # x-momentum equation
