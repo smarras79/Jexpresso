@@ -6,6 +6,9 @@ using Parameters
     Rair::T     =  287.0 #J/kg.K
     cp::T       = 1004.0 #J/kg.K
     cv::T       =  718.0 #J/kg.K
+    Lc::T       = 2.5104e6 #J/kg Latent heat of vaporization
+    Ls::T       = 2.8440e6 #J/kg Latent heat of sublimation
+    Lf::T       = 0.3336e6 #J/kg Latent heat of fusion
     γair::T     = T(cp/cv)
     γ::T        = T(cp/cv)
     ν::T        = 1.0e-5
@@ -21,6 +24,8 @@ using Parameters
     C0::T       = T((Rair^γ)/pref^(γ-1.0)) #Rovercv
     Ri_crit::T  = 0.25                     #Critical Richardson number
     C_s::T      = 0.12                     #Smagorinsky constant
+
+    karman      = 0.4
     
     #Gravity
     g::T = 9.80616 #m/s²

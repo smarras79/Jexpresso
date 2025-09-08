@@ -10,20 +10,20 @@ function perfectGasLaw_ρTtoP(PhysConst::PhysicalConst; ρ=1.25, Temp=300.0)
 end
 
 function perfectGasLaw_ρPtoT(PhysConst::PhysicalConst; ρ=1.25, Press=100000.0)
-    
     return  Press/(ρ*PhysConst.Rair) #Temp
 end
 
 
 function perfectGasLaw_TPtoρ(PhysConst::PhysicalConst; Temp=300.0, Press=100000.0)
-    
     return  Press/(Temp*PhysConst.Rair) #ρ
 end
 
 function perfectGasLaw_ρθtoP(PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
-    
     return PhysConst.C0*(ρ*θ)^PhysConst.γ #Press
-    
+end
+
+function perfectGasLaw_ρθtoP!(Press::Float64, PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
+    Press = PhysConst.C0*(ρ*θ)^PhysConst.γ #Press
 end
 
 function perfectGasLaw_ρθtoP(PhysConst::PhysicalConst, ρ::AbstractArray, θ::AbstractArray)
@@ -31,9 +31,20 @@ function perfectGasLaw_ρθtoP(PhysConst::PhysicalConst, ρ::AbstractArray, θ::
 end
 
 function perfectGasLaw_ρθtoP!(Press::Array{Float64}, PhysConst::PhysicalConst; ρ=1.25, θ=300.0)
-    
     Press[1] = PhysConst.C0*(ρ*θ)^PhysConst.γ #Press
-    
+end
+
+function perfectGasLaw_θPtoT!(T::Float64, PhysConst::PhysicalConst; θ=300.0, Press=100000.0)
+    T = θ * (Press / PhysConst.pref)^(PhysConst.Rair / PhysConst.cp)
+end
+
+function perfectGasLaw_θPtoT(PhysConst::PhysicalConst; θ=300.0, Press=100000.0)
+    return θ * (Press / PhysConst.pref)^(PhysConst.Rair / PhysConst.cp)
+end
+
+# Vectorized version
+function perfectGasLaw_θPtoT(PhysConst::PhysicalConst, θ::Vector{Float64}, Press::Vector{Float64})
+    return θ .* (Press ./ PhysConst.pref).^(PhysConst.Rair / PhysConst.cp)
 end
 
 function perfectGasLaw_ρθqtoP(ρ, θ, qt, ql)
@@ -113,7 +124,7 @@ function perfectGasLaw_θqvtoP(PhysConst::PhysicalConst,
         
         # Iterative solution for pressure
         for iteration in 1:5
-            T_avg   = calculate_temperature(PhysConst, (theta[i] + theta[i-1]) / 2, p_avg)
+            T_avg   = perfectGasLaw_θPtoT(PhysConst, (theta[i] + theta[i-1]) / 2, p_avg)
             T_v_avg = calculate_virtual_temperature(PhysConst, T_avg, (qv[i] + qv[i-1]) / 2)
             
             # Hydrostatic equation: dp = -g * p / (R_d * T_v) * dz
@@ -137,19 +148,6 @@ function create_updated_TD_Parameters(new_p_ref_theta::FT) where {FT}
     ps.molmass_water, ps.T_surf_ref, ps.T_min_ref, ps.grav, ps.T_icenuc,
     ps.pow_icenuc
     )
-end
-
-"""
-Calculate temperature from potential temperature and pressure.
-T = theta * (p/p_0)^(R_d/c_p)
-"""
-function calculate_temperature(PhysConst::PhysicalConst, theta::Float64, pressure::Float64)
-    return theta * (pressure / PhysConst.pref)^(PhysConst.Rair / PhysConst.cp)
-end
-
-# Vectorized version
-function calculate_temperature(PhysConst::PhysicalConst, theta::Vector{Float64}, pressure::Vector{Float64})
-    return theta .* (pressure ./ PhysConst.pref).^(PhysConst.Rair / PhysConst.cp)
 end
 
 """

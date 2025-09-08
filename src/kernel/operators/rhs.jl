@@ -1,3 +1,4 @@
+using Distributions
 #using InteractiveUtils
 
 #---------------------------------------------------------------------------
@@ -1240,6 +1241,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     
     '''
     PhysConst = PhysicalConst{Float32}()
+    MPConst   = MicrophysicalConst{Float32}()
+
+    mean_val = 0.05  # midpoint of [0, 0.1]
+    std_dev  = 0.01 * mean_val  # 1% of the mean
+    dist     = Normal(mean_val, std_dev)
     
     for m = 1:ngl
         for l = 1:ngl
@@ -1363,12 +1369,13 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         elseif bdy_face_type[iface_bdy] == "MOST"
                             #
                             # Monin-Obukhov Similarity Theory
-                            # 
+                            #                            
                             MOST!(τ_f, wθ,
                                   lwall_model,
                                   uprimitiveieq,
                                   inputs,
-                                  PhysConst,
+                                  PhysConst, MPConst,
+                                  dist,
                                   iel, ieq,
                                   connijk,
                                   coords,
