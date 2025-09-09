@@ -1,6 +1,3 @@
-# module MoninObukovSimilarity
-#export surface_layer_similarity, bulk_richardson, calculate_exchange_coefficients!, wrf_surface_driver!, test_neutral_conditions, test_unstable_conditions, run_tests
-
 # Physical constants
 const BETA_H = 5.0         # stability function parameter
 const BETA_M = 5.0         # stability function parameter
@@ -253,7 +250,7 @@ function MOST!(τ_f, wθ,
     # Heat: sign depends on your flux convention
     # If wθ represents "flux TO atmosphere FROM surface", use positive when surface is warmer
     # If wθ represents "flux TO surface FROM atmosphere", use as calculated
-    wθ[iface_bdy, idx1, idx2, 1] = 0.12 #hfx_local  # Check this based on your convention
+    wθ[iface_bdy, idx1, idx2, 1] = hfx_local  # Check this based on your convention
     
 end
 
