@@ -19,7 +19,7 @@ function user_source!(S,
     #--------------
     # SPONGE
     #--------------
-    zs = 1000.0
+    zs = 1200.0
     xr = 0.0
     xl = 0.0
     α  = 0.5
@@ -42,8 +42,8 @@ function user_source!(S,
         betaxl_coe = 0.0
     #end
    
-    cxr = 0.0*betaxr_coe
-    cxl = 0.0*betaxl_coe
+    cxr = 0.0
+    cxl = 0.0
     cyr = 0.0
     cyl = 0.0
     cs  = 1.0 - (1.0 - ctop)*(1.0 - cxr)*(1.0 - cxl)*(1.0 - cyr)*(1.0 - cyl)
