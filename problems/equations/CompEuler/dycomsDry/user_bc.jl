@@ -44,7 +44,7 @@ function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, eqtype
         # Apply with correct sign for Neumann BC
         F_surf[2] = -0.2 #τ_f[1]  # x-momentum equation
         F_surf[3] = -0.2 #τ_f[2]  # y-momentum equation
-        F_surf[5] = 15.0 #wθ[1]   # θ equation
+        F_surf[5] = 0.12 #120.0/(q[1]*cp) #150 #ρ*cp*wθ[1]   # θ equation
        # @info F_surf[5]
     end
 end

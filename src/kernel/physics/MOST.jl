@@ -134,7 +134,7 @@ function MOST!(τ_f, wθ,
                current_time::Real = 0.0,                    # Current simulation time
                dt::Real = 1.0,                              # Time step
                use_exponential_avg::Bool = true)            # Choose averaging method
-
+    return 0 
     # Get physical constants    
     Rair   = PhysConst.Rair # dry air gas constant
     cp     = PhysConst.cp    # specific heat at constant pressure
