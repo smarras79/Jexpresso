@@ -10,7 +10,7 @@ function compute_surface_integral!(S_face, F_surf, ω, Jac_face, iface, ngl)
 
 end
 
-function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin, connijk, poin_in_bdy_face, bdy_face_in_elem)
+function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
 
     for iface = 1:nfaces
         if (z[poin_in_bdy_face[iface,3,3]] == zmin)
@@ -19,7 +19,13 @@ function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin,
                     e = bdy_face_in_elem[iface]
                     ip = poin_in_bdy_face[iface,i,j]
                     ip1 = connijk[e,i,j,2]
-                    S_flux[ip1,:] .+= S_face[iface,i,j,:]*M_surf_inv[ip]
+                    for ieq = 1:neqs
+                        if(ieq == 2 || ieq == 3)
+                            S_flux[ip,ieq] += S_face[iface,i,j,ieq]*M_surf_inv[ip]
+                        else
+                            S_flux[ip1,ieq] += S_face[iface,i,j,ieq]*M_surf_inv[ip]
+                        end
+                    end
                 end
             end
         end
@@ -50,18 +56,25 @@ function compute_segment_integral!(S_edge, F_edge, ω, Jac_edge, iedge, ngl)
 
 end
 
-function DSS_segment_integral!(S_flux, S_edge, M_seg_inv, nedges, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem)
+function DSS_segment_integral!(S_flux, S_edge, M_seg_inv, nedges, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem, neqs)
 
     for iedge = 1:nedges
         for i = 1:ngl
             e = bdy_edge_in_elem[iedge]
             ip = poin_in_bdy_edge[iedge,i]
             ip1 = connijk[e,i,2]
-            S_flux[ip1,:] .+= S_edge[iedge,i,:]*M_seg_inv[ip]
+            for ieq = 1:neqs
+                if (ieq == 2)
+                    S_flux[ip,ieq] .+= S_edge[iedge,i,ieq]*M_seg_inv[ip]
+                else
+                    S_flux[ip1,ieq] .+= S_edge[iedge,i,ieq]*M_seg_inv[ip]
+                end
+            end
         end
     end
 
 end
+
 
 function build_segment_mass_matrix(nedges, npoin, ω, ψ, ngl, Jac_edge, poin_in_bdy_edge, T, Δx, inputs)
 
