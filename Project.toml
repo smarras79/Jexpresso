@@ -2,6 +2,9 @@ name = "Jexpresso"
 uuid = "b6c1962e-2b89-11f0-398d-4f31b209be71"
 version = "0.1.0"
 
+[compat]
+UnicodePlots = "3.7.2"
+
 [deps]
 ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
 AMRVW = "233ec0c9-6b8d-4766-b9a2-a16e389fc38a"
@@ -589,5 +592,5 @@ x264_jll = "1270edf5-f2f9-52d2-97e9-ab00b5d0237a"
 x265_jll = "dfaa095f-4041-5dcd-9319-2fabd8486b76"
 xkbcommon_jll = "d8fb68d0-12a3-5cfd-a85a-d49703b185fd"
 
-[compat]
-UnicodePlots = "3.7.2"
+[extras]
+JACC = "0979c8fe-16a4-4796-9b82-89a9f10403ea"

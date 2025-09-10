@@ -43,7 +43,7 @@ function user_inputs()
         :outformat           => "vtk",
         :loverwrite_output   => true,
         :lwrite_initial      => true,
-        :output_dir          => "./output",
+        :output_dir          => "./output/",
         #:output_dir          => "./test/CI-run",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

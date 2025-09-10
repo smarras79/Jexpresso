@@ -101,7 +101,11 @@ include(joinpath( "kernel", "bases", "basis_structs.jl"))
 
 include(joinpath( "kernel", "mesh", "metric_terms.jl"))
 
-include(joinpath( "kernel", "infrastructure", "element_matrices.jl"))
+println("ABOUT TO INCLUDE ELEMENT MATRICES")
+
+include(joinpath( "kernel", "infrastructure", "element_matrices_original.jl"))
+
+println("INCLUDED ELEMENT MATRICES")
 
 include(joinpath( "kernel", "mesh", "phys_grid.jl"))
 
