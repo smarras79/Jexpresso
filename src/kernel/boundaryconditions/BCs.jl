@@ -335,7 +335,7 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
         end
     end
     if (inputs[:bdy_fluxes])
-        DSS_segment_integral!(S_flux, S_face, M_edge_inv, nedges_bdy, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem)
+        DSS_segment_integral!(S_flux, S_face, M_edge_inv, nedges_bdy, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem, neqs)
         #@info maximum(S_flux[:,2]), maximum(S_flux[:,5]), maximum(S_flux[:,6])
         #@info minimum(S_flux[:,2]), minimum(S_flux[:,5]), minimum(S_flux[:,6])
         for ieq = 1:neqs
@@ -621,7 +621,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
     #@info minimum(S_face[:,:,:,2]), minimum(S_face[:,:,:,5]), minimum(S_face[:,:,:,6])
     if (inputs[:bdy_fluxes])
         DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces_bdy, ngl,
-                              coords[:,3], zmin, connijk, poin_in_bdy_face, bdy_face_in_elem)
+                              coords[:,3], zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
         #@info maximum(S_flux[:,2]), maximum(S_flux[:,5])
         #@info minimum(S_flux[:,2]), minimum(S_flux[:,5])
         for ieq = 1:neqs
