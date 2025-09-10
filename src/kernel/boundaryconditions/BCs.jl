@@ -309,7 +309,7 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                         θ = 0.0
                         θ1 = 0.0
                     else
-                        θ = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
+                        θ  = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
                         θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                     end
                     bulk_surface_flux!(@view(F_surf[i,:]),
@@ -535,9 +535,7 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
     #for ip = 1:npoin
     PhysConst = PhysicalConst{Float64}()
     for iface = 1:nfaces_bdy
-        if (bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodic1" &&
-            bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodic2" &&
-            bdy_face_type[iface] != "periodicy" && bdy_face_type[iface] != "periodic3" )
+        if !startswith(bdy_face_type[iface], "periodic")
             for i=1:ngl
                 for j=1:ngl
                     fill!(qbdy, 4325789.0)

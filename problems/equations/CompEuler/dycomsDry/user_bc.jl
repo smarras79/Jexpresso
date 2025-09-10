@@ -9,9 +9,9 @@ function user_bc_dirichlet!(q,
                             qe, ::TOTAL)
 
     qnl = nx*q[2] + ny*q[3] + nz*q[4]
-    qbdy[2] = (q[2] - qnl*nx) 
-    qbdy[3] = (q[3] - qnl*ny) 
-    qbdy[4] = (q[4] - qnl*nz)     
+    qbdy[2] = (q[2] - qnl*nx)
+    qbdy[3] = (q[3] - qnl*ny)
+    qbdy[4] = (q[4] - qnl*nz)
 end
 
 function user_bc_dirichlet!(q,

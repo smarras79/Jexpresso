@@ -234,7 +234,7 @@ function build_imex_rhs_explicit_simple_2d!(u, params, connij, qe, coords, lsour
                 @warn "Flux function call failed, using fallback: $e"
                 # Fallback flux computation
                 compute_fallback_flux_2d!(params.F[i,j,:], params.G[i,j,:], 
-                                         params.uaux[ip,:], params)
+                                          params.uaux[ip,:], params)
             end
             
             # Remove pressure from fluxes for explicit treatment (IMEX splitting)
