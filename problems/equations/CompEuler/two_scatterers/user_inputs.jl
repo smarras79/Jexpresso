@@ -32,12 +32,12 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
+        :gmsh_filename       => "./JexpressoMeshes/meshes/gmsh_grids/hexa_TFI_2x2.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         :extra_dimensions    => 1,
         :adaptive_extra_meshes => false,
-        :extra_dimensions_order => 12,
-        :extra_dimensions_nelemx => 32,
+        :extra_dimensions_order => 8,
+        :extra_dimensions_nelemx => 8,
         :rad_HG_g                => 0.8,
         #:extra_dimensions_nelemy => 4,
         #---------------------------------------------------------------------------

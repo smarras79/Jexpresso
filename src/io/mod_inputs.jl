@@ -81,8 +81,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
 
     if(!haskey(inputs, :llinsolve))
       inputs[:llinsolve] = false
-    
-      if(!haskey(inputs, :bulk_fluxes))
+    end
+
+    if(!haskey(inputs, :bulk_fluxes))
        inputs[:bulk_fluxes] = false
     end
 

@@ -1,148 +1,104 @@
 using SparseArrays
+using PETSc
 function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dηdx, dηdy, nx, ny, elem_to_edge, 
         extra_mesh, QT::Inexact, SD::NSD_2D, AD::ContGal)
-
+    comm = MPI.COMM_WORLD
     npoin = mesh.npoin
     nelem = mesh.nelem
-    #LHS_ang_spat = Array{Array,3}(undef, Int64(nelem), Int64(ngl^2), Int64(ngl^2))
-    #Mass_ang_spat = Array{Array,3}(undef, Int64(nelem), Int64(ngl^2), Int64(ngl^2))
-    #=if (inputs[:adaptive_extra_meshes])
-        LHS_ang_spat = Array{Array,3}(undef, Int64(nelem), Int64(ngl^2), Int64(ngl^2))
-        Mass_ang_spat = Array{Array,3}(undef, Int64(nelem), Int64(ngl^2), Int64(ngl^2))
+    if (inputs[:adaptive_extra_meshes])
+        extra_meshes_coords = [Vector{Float64}(undef, size(extra_mesh[e].extra_coords,1)) for i in 1:nelem]
+        extra_meshes_connijk = [Array{Int}(undef, extra_mesh[e].extra_nelem, extra_mesh[e].extra_nop+1) for i in 1:nelem]
+        extra_meshes_extra_Je = [Array{Float64}(undef, extra_mesh[e].extra_nelem, extra_mesh[e].extra_nop+1) for i in 1:nelem]
+        extra_meshes_extra_nops = [Array{Float64}(undef, extra_mesh[e].extra_nelem) for i in 1:nelem]
+        extra_meshes_extra_npoins = zeros(Int, nelem)
+        extra_meshes_extra_nelems = zeros(Int, nelem)
         npoin_ang_total = 0
-        for iel=1:nelem
-            npoin_ang_total += extra_mesh[iel].extra_npoin*ngl*ngl
-            nelem_ext = extra_mesh[iel].extra_nelem
-            ngl_ext = extra_mesh[iel].extra_nop[1]+1
-            κ = zeros(TFloat, ngl, ngl)            
-            σ = zeros(TFloat, ngl, ngl)
-            Φ = zeros(TFloat, extra_mesh[iel].extra_npoin, extra_mesh[iel].extra_npoin)
-            E_rad_el = zeros(TFloat, nelem, ngl^2, ngl^2, nelem_ext, extra_mesh[iel].extra_nop[1]+1, extra_mesh[iel].extra_nop[1]+1)
-            P_rad_el = zeros(TFloat, nelem, ngl^2, ngl^2, nelem_ext, extra_mesh[iel].extra_nop[1]+1, extra_mesh[iel].extra_nop[1]+1)
-            S_rad_el = zeros(TFloat, nelem, ngl^2, ngl^2, nelem_ext, extra_mesh[iel].extra_nop[1]+1, extra_mesh[iel].extra_nop[1]+1)
-            user_extinction!(κ, mesh.x, mesh.y, mesh.connijk, iel, extra_mesh, ngl)
-            user_scattering!(σ, Φ, mesh.x, mesh.y, mesh.connijk, iel, extra_mesh, ngl)
-            _rad_element_extinction_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, E_rad_el, iel, κ, extra_mesh, QT, SD, AD)
-            _rad_element_internal_propagation_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dηdx, dηdy, P_rad_el, iel, extra_mesh, QT, SD, AD)
-            _rad_element_scattering_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, S_rad_el, iel, σ, Φ, extra_mesh, QT, SD, AD)
-            for i=1:ngl
-                for j =1:ngl
-                    LHS_ang_spat[iel,i,j] = zeros(TFloat, extra_mesh[iel].extra_npoin, extra_mesh[iel].extra_npoin)
-                end
-            end
-        end
-        LHS_el_ang = E_rad_el + P_rad_el - S_rad_el 
-        for iel=1:nelem
-            DSS_angular!(LHS_el_ang, LHS_ang_spat, nelem, extra_mesh, ngl, mesh.connijk, iel, SD)
+        for e=1:nelem
+            extra_meshes_coords[e] = extra_mesh[e].extra_coords
+            extra_meshes_connijk[e] = extra_mesh[e].extra_connijk
+            extra_meshes_extra_Je[e] = extra_mesh[e].extra_metrics.Je
+            extra_meshes_extra_npoins[e] = extra_mesh[e].extra_npoin
+            extra_meshes_extra_nelems[e] = extra_mesh[e].extra_nelem
+            extra_meshes_extra_nops[e] = extra_mesh[e].extra_nop
+            npoin_ang_total += mesh.ngl*mesh.ngl*extra_mesh[e].extra_npoin
         end
 
+        @time LHS = sparse_lhs_assembly_2Dby1D_adaptive(ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
+                                    extra_meshes_extra_Je,
+                                    extra_meshes_coords, extra_meshes_extra_nops, npoin_ang_total, nelem, ngl, extra_meshes_extra_nelem,
+                                   dξdx, dξdy, dηdx, dηdy, extra_mesh.extra_npoin, inputs[:rad_HG_g])
+        @time M = sparse_mass_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh[1].ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_extra_connijk,
+                                    extra_meshes_extra_Je,
+                                    extra_meshes_coords, extra_meshes_extra_nops, npoin_ang_total, nelem, ngl, extra_meshes_extra_nelem,
+                                   extra_meshes_extra_npoin)
+        total_ip = size(LHS,1)
+        pointwise_interaction = LHS * ones(Float64,total_ip)
+        criterion = compute_adaptivity_criterion(pointwise_interaction, nelem, ngl, mesh.connijk, extra_meshes_connijk, extra_meshes_extra_nop, extra_meshes_extra_nelem, extra_meshes_coords)
     else
-        LHS_ang_spat = zeros(Float64, Int64(nelem), Int64(ngl^2), Int64(ngl^2), extra_mesh.extra_npoin, extra_mesh.extra_npoin)
-        Mass_ang_spat = zeros(Float64, Int64(nelem), Int64(ngl^2), Int64(ngl^2), extra_mesh.extra_npoin, extra_mesh.extra_npoin)
         npoin_ang_total = npoin*extra_mesh.extra_npoin
-        nelem_ext = extra_mesh.extra_nelem
-        E_rad_el = zeros(TFloat, nelem, ngl^2, ngl^2, nelem_ext, extra_mesh.extra_nop[1]+1, extra_mesh.extra_nop[1]+1)
-        P_rad_el = zeros(TFloat, nelem, ngl^2, ngl^2, nelem_ext, extra_mesh.extra_nop[1]+1, extra_mesh.extra_nop[1]+1)
-        S_rad_el = zeros(TFloat, nelem, ngl^2, ngl^2, nelem_ext, extra_mesh.extra_nop[1]+1, extra_mesh.extra_nop[1]+1)
-        M_rad_el = zeros(TFloat, nelem, ngl^2, ngl^2, nelem_ext, extra_mesh.extra_nop[1]+1, extra_mesh.extra_nop[1]+1)
-        κ = zeros(TFloat, ngl, ngl)
-        σ = zeros(TFloat, ngl, ngl)
-        Φ = zeros(TFloat, extra_mesh.extra_npoin, extra_mesh.extra_npoin)
-        for iel=1:nelem
-            fill!(κ, zero(Float64))
-            fill!(σ, zero(Float64))
-            fill!(Φ, zero(Float64))
-            user_extinction!(κ, mesh.x, mesh.y, mesh.connijk, iel, extra_mesh, ngl)
-            
-            user_scattering!(σ, Φ, mesh.x, mesh.y, mesh.connijk, iel, extra_mesh.extra_nelem, extra_mesh.extra_nop, extra_mesh.extra_connijk,
-                             extra_mesh.extra_coords, ngl)
-            
-            _rad_element_extinction_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, E_rad_el, iel, κ, 
-                                                   extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_metrics.Je, extra_mesh.ωθ, 
-                                                   extra_mesh.ψ, QT, SD, AD)
-            
-            _rad_element_internal_propagation_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dηdx, dηdy, 
-                                                             P_rad_el, iel, 
-                                                             extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_metrics.Je, extra_mesh.ωθ,
-                                                             extra_mesh.ψ, extra_mesh.extra_connijk, extra_mesh.extra_coords, QT, SD, AD)
-            
-            _rad_element_scattering_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, S_rad_el, iel, σ, Φ, 
-                                                   extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_metrics.Je, extra_mesh.ωθ,
-                                                   extra_mesh.ψ, extra_mesh.extra_connijk, QT, SD, AD)
-            
-            _rad_element_mass_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, M_rad_el, iel, 
-                                             extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_metrics.Je, extra_mesh.ωθ,
-                                                   extra_mesh.ψ, QT, SD, AD)
-        end
-        
-        LHS_el_ang = E_rad_el -S_rad_el + P_rad_el #- S_rad_el
-        for iel=1:nelem
-            DSS_angular!(LHS_el_ang, LHS_ang_spat, nelem, extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_connijk, ngl, mesh.connijk, iel, SD)
-            DSS_angular!(M_rad_el, Mass_ang_spat, nelem, extra_mesh.extra_nop, extra_mesh.extra_nelem, extra_mesh.extra_connijk, ngl, mesh.connijk, iel, SD)
-        end
-        LHS_sp = zeros(TFloat, npoin, npoin, extra_mesh.extra_npoin, extra_mesh.extra_npoin)
-        M_sp = zeros(TFloat, npoin, npoin, extra_mesh.extra_npoin, extra_mesh.extra_npoin)
-        DSS_spatial!(LHS_sp, LHS_ang_spat, nelem, extra_mesh.extra_npoin, ngl, mesh.connijk, inputs, SD)
-        DSS_spatial!(M_sp, Mass_ang_spat, nelem, extra_mesh.extra_npoin, ngl, mesh.connijk, inputs, SD)
-        #@time LHS_sp = DSS_spatial(LHS_ang_spat, npoin, nelem, extra_mesh.extra_npoin, ngl, mesh.connijk, inputs, SD)
-        #@time M_sp = DSS_spatial(Mass_ang_spat, npoin, nelem, extra_mesh.extra_npoin, ngl, mesh.connijk, inputs, SD)
-    end=#
-    #LHS = zeros(TFloat, npoin_ang_total, npoin_ang_total)
-    #M = zeros(TFloat, npoin_ang_total, npoin_ang_total)
-    #@time LHS = Map_rad_global(LHS_sp, npoin_ang_total, npoin, extra_mesh.extra_npoin, nelem, mesh.connijk, ngl, inputs, SD)
-    #@info "assembled LHS"
-    #@time M = Map_rad_global(M_sp, npoin_ang_total, npoin, extra_mesh.extra_npoin, nelem, mesh.connijk, ngl, inputs, SD)
-    #@info "assembled Mass matrix"
-    #M = sparse(M)
-    npoin_ang_total = npoin*extra_mesh.extra_npoin
-    @time LHS = sparse_lhs_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk, 
+        @time LHS = sparse_lhs_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk, 
                                     extra_mesh.extra_metrics.Je, 
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    dξdx, dξdy, dηdx, dηdy, extra_mesh.extra_npoin, inputs[:rad_HG_g])
-    @info "assembled LHS"
-    @time M = sparse_mass_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk,
+        @info "assembled LHS"
+        @time M = sparse_mass_assembly_2Dby1D(ω, Je, mesh.connijk, extra_mesh.ωθ, mesh.x, mesh.y, ψ, dψ, extra_mesh.ψ, extra_mesh.extra_connijk,
                                     extra_mesh.extra_metrics.Je,
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    extra_mesh.extra_npoin)
-    @info "assembled Mass matrix"
-    @info nnz(M), nnz(LHS), npoin_ang_total^2, nnz(M)/npoin_ang_total^2, nnz(LHS)/npoin_ang_total^2
-    # inexact integration makes M diagonal, build the sparse inverse to save space
-    I_vec = Vector{Int}()
-    J_vec = Vector{Int}()
-    V_vec = Vector{Float64}()
-    max_entries = npoin_ang_total^2
-    sizehint!(I_vec, Int64(round(max_entries*0.0001)))
-    sizehint!(J_vec, Int64(round(max_entries*0.0001)))
-    sizehint!(V_vec, Int64(round(max_entries*0.0001)))
-    for ip=1:npoin_ang_total
-        val = 1/M[ip,ip]
-        push!(I_vec, ip)
-        push!(J_vec, ip)
-        push!(V_vec, val)
-    end
-    M_inv = sparse(I_vec, J_vec, V_vec)
-    #@time M_inv = M \ Matrix(I, size(M)) #M\Diagonal(ones(npoin_ang_total))
-    #M_inv = sparse(M_inv)
-    M = nothing
-    LHS_sp = nothing
-    LHS_el_ang = nothing
-    M_rad_el = nothing
-    LHS_ang_spat = nothing
-    Mass_ang_spat = nothing
-    E_rad_el = nothing
-    P_rad_el = nothing
-    S_rad_el = nothing
-    M_sp = nothing
-    GC.gc()
-    
-    A = M_inv * LHS
-    @info maximum(A), minimum(A)
-    M_inv = nothing
-    LHS = nothing
-    GC.gc()
-    RHS = zeros(TFloat, npoin_ang_total,1)
-    ref = zeros(TFloat, npoin_ang_total,1)
+        @info "assembled Mass matrix"
+        @info nnz(M), nnz(LHS), npoin_ang_total^2, nnz(M)/npoin_ang_total^2, nnz(LHS)/npoin_ang_total^2
+        # inexact integration makes M diagonal, build the sparse inverse to save space
+        ip2gip_extra, gip2owner_extra, gnpoin = setup_global_numbering_extra_dim(mesh.ip2gip, mesh.gip2owner, npoin, extra_mesh.extra_npoin, npoin_ang_total)
+        Md = diag(M)
+        pM = setup_assembler(SD, Md, ip2gip_extra, gip2owner_extra)
+        if  pM != nothing 
+            assemble_mpi!(Md,pM)
+            M = Diagonal(Md)
+            M = sparse(M)
         
+        #    assemble_mpi!(LHS,pM)
+        end
+
+        I_vec = Vector{Int}()
+        J_vec = Vector{Int}()
+        V_vec = Vector{Float64}()
+        max_entries = npoin_ang_total^2
+        sizehint!(I_vec, Int64(round(max_entries*0.0001)))
+        sizehint!(J_vec, Int64(round(max_entries*0.0001)))
+        sizehint!(V_vec, Int64(round(max_entries*0.0001)))
+
+        for ip=1:npoin_ang_total
+            val = 1/M[ip,ip]
+            push!(I_vec, ip)
+            push!(J_vec, ip)
+            push!(V_vec, val)
+        end
+        M_inv = sparse(I_vec, J_vec, V_vec)
+        @info size(M_inv), size(LHS)    
+
+        #@time M_inv = M \ Matrix(I, size(M)) #M\Diagonal(ones(npoin_ang_total))
+        #M_inv = sparse(M_inv)
+        M = nothing
+        LHS_sp = nothing
+        LHS_el_ang = nothing
+        M_rad_el = nothing
+        LHS_ang_spat = nothing
+        Mass_ang_spat = nothing
+        E_rad_el = nothing
+        P_rad_el = nothing
+        S_rad_el = nothing
+        M_sp = nothing
+        GC.gc()
+    
+        A = M_inv * LHS
+        @info maximum(A), minimum(A), size(A)
+        M_inv = nothing
+        LHS = nothing
+        GC.gc()
+        RHS = zeros(TFloat, npoin_ang_total)
+        ref = zeros(TFloat, npoin_ang_total)
+    end
+
     @time for iel=1:nelem
         for i=1:ngl
             for j =1:ngl
@@ -232,6 +188,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
     end
+
+
     #A_inv = inv(A)
     @info "built RHS"
     #@info RHS
@@ -239,9 +197,48 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     As = sparse(A)
     A = nothing
     GC.gc()
-    @time solution = As \ RHS
-      
-    
+    @info typeof(As)
+    #@time solution = As \ RHS
+    #=PETSc.initialize()
+    A_petsc = PETSc.MatSeqAIJ(As)#PETSc.MatSeqAIJ(comm, ones(Float64, gnpoin, gnpoin))  
+    b = PETSc.VecSeq(comm, zeros(Float64, gnpoin))
+    x = PETSc.VecSeq(comm, zeros(Float64, gnpoin))
+=#
+    @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, RHS, gnpoin, npoin_ang_total)
+    #=for ip = 1:npoin_ang_total
+        gip = ip2gip_extra[ip]
+        for jp in nzrange(As,ip)
+            gjp = ip2gip_extra[jp]
+            A_petsc[gip,gjp] = As[ip,jp]
+        end
+        b[gip] = RHS[ip]
+    end=#
+
+
+
+  #  PETSc.assemble(A_petsc)
+    #PETSc.assemble(b)
+    #=ksp = PETSc.KSP(A_petsc; 
+                    ksp_type="gmres",     # Solver type
+                    pc_type="ilu",     # Preconditioner
+                    ksp_gmres_restart= 100,
+                    pc_factor_levels = 1,
+                    pc_factor_shift_type = "nonzero",
+                    pc_factor_shift_amount = 1e-12,
+                    ksp_rtol=1e-8,        # Relative tolerance
+                    ksp_max_it=npoin_ang_total,      # Max iterations
+                    ksp_monitor=true)=#
+    #this one actually works
+   #= @time ksp = PETSc.KSP(A_petsc;
+                    ksp_type="lsqr",     # Solver type
+                    pc_type="none",     # Preconditioner
+                    ksp_rtol=1e-14,        # Relative tolerance
+                    ksp_max_it=npoin_ang_total,      # Max iterations
+                    ksp_monitor=false)
+    # Extract local solution
+    =#
+    #x = ksp\RHS#PETSc.LocalVector(x)
+    @info maximum(solution), minimum(solution) 
     @info "done radiation solved"
     @info "dof", npoin_ang_total
     #=@info "absolute errors, inf, L1, L2", maximum(abs.(solution - ref)), sum(abs.(solution-ref))/npoin_ang_total, sqrt(sum((solution-ref).^2))/npoin_ang_total
@@ -295,330 +292,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             end
         end
     end
-    @info "new L2 norms", sqrt(L2_ref), sqrt(L2_err), sqrt(L2_err/L2_ref)
-    plot_triangulation(NSD_2D(), mesh, int_ref[:], "ref",  inputs[:output_dir], inputs; iout=1, nvar=1)
+    #@info "new L2 norms", sqrt(L2_ref), sqrt(L2_err), sqrt(L2_err/L2_ref)
+    #plot_triangulation(NSD_2D(), mesh, int_ref[:], "ref",  inputs[:output_dir], inputs; iout=1, nvar=1)
     plot_triangulation(NSD_2D(), mesh, int_sol[:], "sol",  inputs[:output_dir], inputs; iout=2, nvar=1)
-end
-
-function _rad_element_mass_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, M_rad_el, iel, 
-        nop_ang, nelem_ang, Je_ang, ωθ, ψ_ang, QT::Inexact, SD::NSD_2D, AD::ContGal)
-    
-    for j=1:ngl
-        for i=1:ngl
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
-            J = i +(j-1)*(ngl) 
-            for e_ext = 1:nelem_ang
-                for iθ = 1:nop_ang[e_ext]+1
-                    J_ext = iθ
-                    ωJac_rad = ωθ[iθ]*Je_ang[e_ext,iθ]
-                            
-                    for n=1:ngl
-                        for m=1:ngl
-                            I = m + (n-1)*(ngl)
-                            for jθ = 1:nop_ang[e_ext]+1
-                                I_ext = jθ
-                                M_rad_el[iel,I,J,e_ext,I_ext,J_ext] += ωJac*ωJac_rad*ψ[j,n]*ψ[i,m]*ψ_ang[iθ,jθ]
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-function _rad_element_extinction_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, E_rad_el, iel, κ, nop_ang, nelem_ang, Je_ang, ωθ, ψ_ang, QT::Inexact, SD::NSD_2D, AD::ContGal)
-
-    for j=1:ngl
-        for i=1:ngl
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
-            J = i +(j-1)*(ngl)
-            for e_ext = 1:nelem_ang
-                for iθ = 1:nop_ang[e_ext]+1
-                    J_ext = iθ 
-                    ωJac_rad = ωθ[iθ]*Je_ang[e_ext,iθ]
-
-                    for n=1:ngl
-                        for m=1:ngl
-                            #ωJac = ω[m]*ω[n]*Je[iel,m,n]
-                            I = m + (n-1)*(ngl)
-                            for jθ = 1:nop_ang[e_ext]+1
-                                I_ext = jθ
-                                E_rad_el[iel,I,J,e_ext,I_ext,J_ext] += κ[i,j]*ωJac*ωJac_rad*ψ[j,n]*ψ[i,m]*ψ_ang[iθ,jθ]
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-function _rad_element_internal_propagation_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dηdx, dηdy, P_rad_el, iel,
-        nop_ang, nelem_ang, Je_ang, ωθ, ψ_ang, connijk_ang, coords_ang, QT::Inexact, SD::NSD_2D, AD::ContGal)
-
-    for j=1:ngl
-        for i=1:ngl
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
-            I = i +(j-1)*(ngl)
-            dξdx_ij = dξdx[iel,i,j]
-            dξdy_ij = dξdy[iel,i,j]
-            dηdx_ij = dηdx[iel,i,j]
-            dηdy_ij = dηdy[iel,i,j]
-
-            for e_ext = 1:nelem_ang
-                for iθ = 1:nop_ang[e_ext]+1
-                    I_ext = iθ
-                    ωJac_rad = ωθ[iθ]*Je_ang[e_ext,iθ]
-                    #=ψdψdξ = 0.0
-                    ψdψdη = 0.0 
-                    for n=1:ngl
-                        for m=1:ngl
-                            ψdψdξ += ψ[n,j]*dψ[m,i]
-                            ψdψdη += ψ[m,i]*dψ[n,j]
-                            @info m, n, ψdψdξ, ψdψdη, ψ[n,j]*dψ[m,i], ψ[m,i]*dψ[n,j]
-                        end
-                    end
-                    ddx = (ψdψdξ*dξdx_ij + ψdψdη * dηdx_ij)
-                    ddy = (ψdψdξ*dξdy_ij + ψdψdη * dηdy_ij)
-                    =#
-                    for n=1:ngl
-                        for m=1:ngl
-                            #ωJac = ω[m]*ω[n]*Je[iel,m,n]
-                            J = m + (n-1)*(ngl)
-                            for jθ = 1:nop_ang[e_ext]+1
-                                J_ext = jθ
-                                i_angle = connijk_ang[e_ext,iθ]
-
-                                θ = coords_ang[1,i_angle]
-                                P_rad_el[iel,I,J,e_ext,I_ext,J_ext] += (ωJac*ωJac_rad)*ψ_ang[iθ,jθ]*(ψ[n,j]*dψ[m,i]*dξdx_ij*cos(θ) + ψ[m,i]*dψ[n,j]*dηdy_ij*sin(θ))
-                            end
-                            #=for jθ = 1:nop_ang[e_ext]+1
-                                I_ext = jθ
-                                i_angle = connijk_ang[e_ext,iθ]
-
-                                θ = coords_ang[1,i_angle]
-                                #s = [cos(θ), sin(θ)]
-                                for iq = 1:ngl
-                                    ψdψdξ += ψ[j,n]*dψ[iq,i]
-                                    ψdψdη += ψ[i,m]*dψ[iq,j]
-                                end
-                                ddx = (ψdψdξ*dξdx_ij + ψdψdη * dηdx_ij)*cos(θ)
-                                ddy = (ψdψdξ*dξdy_ij + ψdψdη * dηdy_ij)*sin(θ)
-                                
-                                P_rad_el[iel,I,J,e_ext,I_ext,J_ext] += (ωJac*ωJac_rad)*(ddx + ddy)*(ψ_ang[iθ,jθ])
-                                #P_rad_el[iel,I,J,e_ext,I_ext,J_ext] += (ωJac*ωJac_rad)*(ψ[n,j]*dψ[m,i]*cos(θ)*dξdx_ij+ψ[m,i]*dψ[n,j]*sin(θ)*dηdy_ij)*(ψ_ang[iθ,jθ])
-                                #=if (ψ[i,m]*ψ[j,n]*extra_mesh.ψ[iθ,jθ] != 0)
-                                    @info P_rad_el[iel,I,J,e_ext,I_ext,J_ext], dψ[k,n]*s[2]*dηdy_ij+dψ[k,m]*s[1]*dξdx_ij, ψ[i,m]*ψ[j,n]*extra_mesh.ψ[iθ,jθ], ωJac*ωJac_rad
-                                end=#
-                            end=#
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-
-function _rad_element_scattering_matrix_2Dby1D!(neqs, ngl, dψ, ψ, ω, Je, S_rad_el, iel, σ, Φ, nop_ang, nelem_ang, Je_ang, ωθ, ψ_ang, connijk_ang, QT::Inexact, SD::NSD_2D, AD::ContGal)
-
-    for j=1:ngl
-        for i=1:ngl
-            ωJac = ω[i]*ω[j]*Je[iel,i,j]
-            I = i +(j-1)*(ngl)
-            for e_ext = 1:nelem_ang
-                for iθ = 1:nop_ang[e_ext]+1
-                    I_ext = iθ 
-                    ωJac_rad = ωθ[iθ]*Je_ang[e_ext,iθ]
-                    jpθ = connijk_ang[e_ext,iθ]
-                    for n=1:ngl
-                        for m=1:ngl
-                            J = m + (n-1)*(ngl)
-                            for jθ = 1:nop_ang[e_ext]+1
-                                J_ext = jθ
-                                intϕ = 0.0
-                                #ωJac_rad = ωθ[jθ]*Je_ang[e_ext,jθ]
-                                for e_ext_scatter = 1:nelem_ang
-                                    for kθ = 1:nop_ang[e_ext]+1
-                                        ipθ = connijk_ang[e_ext_scatter,kθ]
-                                        ωJac_rad_scatter = ωθ[kθ]*Je_ang[e_ext_scatter,kθ]
-                                        intϕ +=   ωJac_rad_scatter*Φ[jpθ,ipθ]             
-
-                                        #S_rad_el[iel,I,J,e_ext,I_ext,J_ext] += ψ_ang[iθ,jθ]*ωJac*ωJac_rad*ωJac_rad_scatter*ψ[j,n]*ψ[i,m]*σ[m,n]*Φ[jpθ,ipθ]/div
-                                    end
-                                end
-                                S_rad_el[iel,I,J,e_ext,I_ext,J_ext] += ψ_ang[iθ,jθ]*intϕ * ψ[i,m] * ψ[j,n] * ωJac*ωJac_rad*σ[m,n]
-                                #=for e_ext_scatter = 1:nelem_ang
-                                    for kθ = 1:nop_ang[e_ext]+1
-                                        ipθ = connijk_ang[e_ext_scatter,kθ]
-                                        ωJac_rad_scatter = ωθ[kθ]*Je_ang[e_ext_scatter,kθ]
-                                        div = 1
-                                        if (kθ == 1 || kθ == 1:nop_ang[e_ext]+1)
-                                            div = 2
-                                        end
-                                                        
-                                        S_rad_el[iel,I,J,e_ext,I_ext,J_ext] += ψ_ang[iθ,jθ]*ωJac*ωJac_rad*ωJac_rad_scatter*ψ[j,n]*ψ[i,m]*σ[m,n]*Φ[jpθ,ipθ]/div
-                                    end
-                                end=#
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-function DSS_angular!(M_el_ang, M, nelem, nop_ang, nelem_ang, connijk_ang, ngl, connijk, iel, ::NSD_2D)
-    
-    for j=1:ngl
-        for i=1:ngl
-            I = i +(j-1)*(ngl)
-            for e_ext = 1:nelem_ang
-                for iθ = 1:nop_ang[e_ext]+1
-                    I_ext = iθ 
-                    IP_ext = connijk_ang[e_ext,iθ]
-                    for n=1:ngl
-                        for m=1:ngl
-                            J  = m + (n-1)*(ngl)
-                            for jθ = 1:nop_ang[e_ext]+1
-                                J_ext = jθ 
-                                JP_ext = connijk_ang[e_ext,jθ]
-                                #@info M[iel, I, J]#, M_el_ang[iel, I, J, e_ext, I_ext, J_ext]
-                                M[iel, I, J, IP_ext, JP_ext] += M_el_ang[iel, I, J, e_ext, I_ext, J_ext]
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-function DSS_spatial!(M_sp, M_ang_spat, nelem, npoin_ang, ngl, connijk, inputs, ::NSD_2D)
-
-    for iel = 1:nelem
-        for j = 1:ngl
-            for i=1:ngl
-                I = i +(j-1)*(ngl)
-                ip = connijk[iel, i, j]
-                if (inputs[:adaptive_extra_meshes])
-
-                else
-                    for ip_ext = 1:npoin_ang
-
-                        for n=1:ngl
-                            for m = 1:ngl
-                                J  = m + (n-1)*(ngl)
-                                jp = connijk[iel, m, n]
-
-                                for jp_ext = 1:npoin_ang
-                                    M_sp[ip, jp, ip_ext, jp_ext] += M_ang_spat[iel, I, J, ip_ext, jp_ext]
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-#=function DSS_spatial(M_ang_spat, npoin, nelem, npoin_ang, ngl, connijk, inputs, ::NSD_2D)
-    
-    max_entries = npoin*npoin*npoin_ang*npoin_ang
-    I_vec = Vector{Int}()
-    J_vec = Vector{Int}()
-    K_vec = Vector{Int}()
-    L_vec = Vector{Int}()
-    V_vec = Vector{Float64}()
-
-        # Reserve space to avoid frequent reallocations
-    sizehint!(I_vec, max_entries)
-    sizehint!(J_vec, max_entries)
-    sizehint!(K_vec, max_entries)
-    sizehint!(L_vec, max_entries)
-    sizehint!(V_vec, max_entries)
-
-    for iel = 1:nelem
-        for j = 1:ngl
-            for i=1:ngl
-                I = i +(j-1)*(ngl)
-                ip = connijk[iel, i, j]
-                if (inputs[:adaptive_extra_meshes])
-
-                else
-                    for ip_ext = 1:npoin_ang
-
-                        for n=1:ngl
-                            for m = 1:ngl
-                                J  = m + (n-1)*(ngl)
-                                jp = connijk[iel, m, n]
-
-                                for jp_ext = 1:npoin_ang
-                                    #M_sp[ip, jp, ip_ext, jp_ext] += M_ang_spat[iel, I, J, ip_ext, jp_ext]
-                                    val = M_ang_spat[iel, I, J, ip_ext, jp_ext]
-                                    if abs(val) > eps(Float64)  # Skip near-zero entries
-                                        push!(I_vec, ip)
-                                        push!(J_vec, jp)
-                                        push!(K_vec, ip_ext)
-                                        push!(L_vec, jp_ext)
-                                        push!(V_vec, val)
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return sparse(I_vec, J_vec, K_vec, L_vec, V_vec)
-end=#
-
-
-function Map_rad_global(M_sp, npoin_ang_total, npoin, npoin_ang, nelem, connijk, ngl, inputs, ::NSD_2D)
-
-    if (inputs[:adaptive_extra_meshes])
-
-    else
-        max_entries = npoin_ang_total^2
-        I_vec = Vector{Int}()
-        J_vec = Vector{Int}()
-        V_vec = Vector{Float64}()
-    
-        # Reserve space to avoid frequent reallocations
-        sizehint!(I_vec, npoin_ang_total)
-        sizehint!(J_vec, npoin_ang_total)
-        sizehint!(V_vec, max_entries)
-
-        step_ip = 0 
-        for ip=1:npoin
-            step_jp = 0
-            for jp =1:npoin
-                npoin_ext_ip = npoin_ang
-                npoin_ext_jp = npoin_ang
-                for ip_ext = 1:npoin_ext_ip
-                    idx_ip = (ip-1)*(npoin_ext_ip) + ip_ext
-                    for jp_ext = 1:npoin_ext_jp
-                        idx_jp = (jp-1)*(npoin_ext_jp) + jp_ext
-                        #M[idx_ip, idx_jp] = M_sp[ip, jp, ip_ext, jp_ext]
-                        val = M_sp[ip, jp, ip_ext, jp_ext]
-                        if abs(val) > eps(Float64)  # Skip near-zero entries
-                            push!(I_vec, idx_ip)
-                            push!(J_vec, idx_jp)
-                            push!(V_vec, val)
-                        end
-                    end
-                end
-                step_jp +=1
-            end
-            step_ip +=1
-        end
-    end
-    # Create sparse matrix and sum duplicate entries automatically
-    return sparse(I_vec, J_vec, V_vec)
 end
 
 function sparse_lhs_assembly_2Dby1D(ω, Je, connijk, ωθ, x, y, ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang, npoin_ang_total, nelem, ngl, nelem_ang,
@@ -693,6 +369,78 @@ function sparse_lhs_assembly_2Dby1D(ω, Je, connijk, ωθ, x, y, ψ, dψ, ψ_ang
     return sparse(I_vec, J_vec, V_vec)
 end
 
+function sparse_lhs_assembly_2Dby1D_adaptive(ω, Je, connijk, ωθ, x, y, ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang, npoin_ang_total, nelem, ngl, nelem_ang,
+                                   dξdx, dξdy, dηdx, dηdy, npoin_ang, rad_HG_g)
+
+    max_entries = npoin_ang_total^2
+    I_vec = Vector{Int}()
+    J_vec = Vector{Int}()
+    V_vec = Vector{Float64}()
+
+    sizehint!(I_vec, Int64(round(max_entries*0.0009)))
+    sizehint!(J_vec, Int64(round(max_entries*0.0009)))
+    sizehint!(V_vec, Int64(round(max_entries*0.0009)))
+    HG, error = quadgk(v -> (1-rad_HG_g^2)/((1+rad_HG_g^2-2*rad_HG_g*cos(v))^(3/2)), 0, 2*π, rtol=1e-13, atol = 1e-13)
+    for iel=1:nelem
+        for j=1:ngl
+            for i=1:ngl
+                ip = connijk[iel,i,j]
+                ωJac = ω[i]*ω[j]*Je[iel,i,j]
+                dξdx_ij = dξdx[iel,i,j]
+                dξdy_ij = dξdy[iel,i,j]
+                dηdx_ij = dηdx[iel,i,j]
+                dηdy_ij = dηdy[iel,i,j]
+                κ = user_extinction(x[ip],y[ip])
+                σ = user_scattering_coef(x[ip],y[ip])
+                for e_ext = 1:nelem_ang[iel]
+                    for iθ = 1:nop_ang[iel][e_ext]+1
+                        ip_ext = connijk_ang[iel][e_ext,iθ]
+                        ωJac_rad = ωθ[iθ]*Je_ang[iel][e_ext,iθ]
+
+                        for n=1:ngl
+                            for m=1:ngl
+                                jp = connijk[iel,m,n]
+                                for jθ = 1:nop_ang[iel][e_ext]+1
+                                    jp_ext = connijk_ang[iel][e_ext,jθ]
+                                    extinction = κ*ωJac*ωJac_rad*ψ[j,n]*ψ[i,m]*ψ_ang[iθ,jθ]
+                                    i_angle = connijk_ang[iel][e_ext,iθ]
+
+                                    θ = coords_ang[iel][i_angle]
+                                    propagation = (ωJac*ωJac_rad)*ψ_ang[iθ,jθ]*(ψ[n,j]*dψ[m,i]*dξdx_ij*cos(θ) + ψ[m,i]*dψ[n,j]*dηdy_ij*sin(θ))
+                                    intϕ = 0.0
+                                    for e_ext_scatter = 1:nelem_ang[iel]
+                                        for kθ = 1:nop_ang[iel][e_ext]+1
+                                            div = 1
+                                            if (kθ == nop_ang[iel][e_ext]+1 || kθ == 1)
+                                                div =2
+                                            end
+                                            ipθ = connijk_ang[iel][e_ext_scatter,kθ]
+                                            θ1 = coords_ang[iel][ipθ]
+                                            Φ = user_scattering_functions(θ,θ1,HG)
+                                            ωJac_rad_scatter = ωθ[kθ]*Je_ang[iel][e_ext_scatter,kθ]
+                                            intϕ +=   ωJac_rad_scatter*Φ/div
+                                        end
+                                    end
+                                    scattering = ψ_ang[iθ,jθ]*intϕ * ψ[i,m] * ψ[j,n] * ωJac*ωJac_rad*σ
+                                    val = extinction + propagation - scattering
+                                    idx_ip = (ip-1)*(npoin_ang) + ip_ext
+                                    idx_jp = (jp-1)*(npoin_ang) + jp_ext
+                                    if abs(val) > eps(Float64)  # Skip near-zero entries
+                                        push!(I_vec, idx_ip)
+                                        push!(J_vec, idx_jp)
+                                        push!(V_vec, val)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return sparse(I_vec, J_vec, V_vec)
+end
+
 function sparse_mass_assembly_2Dby1D(ω, Je, connijk, ωθ, x, y, ψ, dψ, ψ_ang, 
         connijk_ang, Je_ang, coords_ang, nop_ang, npoin_ang_total, nelem, ngl, nelem_ang, npoin_ang)
   
@@ -737,4 +485,332 @@ function sparse_mass_assembly_2Dby1D(ω, Je, connijk, ωθ, x, y, ψ, dψ, ψ_an
         end
     end
     return sparse(I_vec, J_vec, V_vec)
+end
+
+function sparse_mass_assembly_2Dby1D_adaptive(ω, Je, connijk, ωθ, x, y, ψ, dψ, ψ_ang,
+        connijk_ang, Je_ang, coords_ang, nop_ang, npoin_ang_total, nelem, ngl, nelem_ang, npoin_ang)
+
+    max_entries = npoin_ang_total^2
+    I_vec = Vector{Int}()
+    J_vec = Vector{Int}()
+    V_vec = Vector{Float64}()
+
+    sizehint!(I_vec, Int64(round(max_entries*0.0001)))
+    sizehint!(J_vec, Int64(round(max_entries*0.0001)))
+    sizehint!(V_vec, Int64(round(max_entries*0.0001)))
+
+    for iel=1:nelem
+        for j=1:ngl
+            for i=1:ngl
+                ip = connijk[iel,i,j]
+                ωJac = ω[i]*ω[j]*Je[iel,i,j]
+                for e_ext = 1:nelem_ang[iel]
+                    for iθ = 1:nop_ang[iel][e_ext]+1
+                        ωJac_rad = ωθ[iθ]*Je_ang[iel][e_ext,iθ]
+                        ip_ext = connijk_ang[iel][e_ext,iθ]
+                        for n=1:ngl
+                            for m=1:ngl
+                                jp = connijk[iel,m,n]
+                                for jθ = 1:nop_ang[iel][e_ext]+1
+                                    jp_ext = connijk_ang[iel][e_ext,jθ]
+
+                                    val = ωJac*ωJac_rad*ψ[j,n]*ψ[i,m]*ψ_ang[iθ,jθ]
+                                    idx_ip = (ip-1)*(npoin_ang) + ip_ext
+                                    idx_jp = (jp-1)*(npoin_ang) + jp_ext
+                                    if abs(val) > eps(Float64)  # Skip near-zero entries
+                                        push!(I_vec, idx_ip)
+                                        push!(J_vec, idx_jp)
+                                        push!(V_vec, val)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return sparse(I_vec, J_vec, V_vec)
+end
+
+function compute_adaptivity_criterion(pointwise_interaction, nelem, ngl, connijk, connijk_ang, nop_ang, nelem_ang, coords_ang)
+    criterion = [Vector{Float64},(undef, nelem_ang[e]) for e=1:nelem]
+    for iel=1:nelem 
+        for j=1:ngl
+            for i=1:ngl 
+                ip = connijk[iel,i,j]
+                for e_ext = 1:nelem_ang[iel]
+                    for iθ = 1:nop_ang[iel][e_ext]+1
+                        ip_ext = connijk_ang[iel][e_ext,iθ]
+                        idx_ip = (ip-1)*(npoin_ang) + ip_ext
+                        θ =  coords_ang[iel][ip_ext]
+                        e_ext1 = 0
+                        e_ext2 = 0
+                        iθ1 = 0
+                        iθ2 = 0
+                        if(iθ > 1 && iθ < nop_ang[iel][e_ext]+1)
+                            e_ext1 = e_ext
+                            e_ext2 = e_ext
+                            iθ1 = iθ-1
+                            iθ2 = iθ+1
+                        elseif (iθ == 1)
+                            if(e_ext == 1)
+                                e_ext1 = nelem_ang[iel]
+                                e_ext2 = e_ext
+                                iθ1 = nop_ang[iel][e_ext1]+1
+                                iθ2 = iθ+1
+                            else
+                                e_ext1 = e_ext-1
+                                e_ext2 = e_ext
+                                iθ1 = nop_ang[iel][e_ext1]+1
+                                iθ2 = iθ+1
+                            end
+                        elseif (iθ = nop_ang[iel][e_ext]+1)
+                            if(e_ext == nelem_ang[iel])
+                                e_ext1 = e_ext
+                                e_ext2 = 1
+                                iθ1 = iθ-1
+                                iθ2 = 1
+                            else
+                                e_ext1 = e_ext
+                                e_ext2 = e_ext+1
+                                iθ1 = iθ-1
+                                iθ2 = 1
+                            end
+                        end
+                        ip_ext1 = connijk_ang[iel][e_ext1,iθ1]
+                        ip_ext2 = connijk_ang[iel][e_ext2,iθ2]
+                        idx_ip1 = (ip-1)*(npoin_ang) + ip_ext1
+                        idx_ip2 = (ip-1)*(npoin_ang) + ip_ext2
+                        θ1 = coords_ang[iel][ip_ext1]
+                        θ2 = coords_ang[iel][ip_ext2]
+                        Δθ = θ2-θ1
+                        if (Δθ < 0)
+                            Δθ += 2*π
+                        end
+                        criterion[e][e_ext] += (pointwise_interaction[idx_ip2]-pointwise_interaction[idx_ip1])/Δθ
+                    end
+                    criterion[e][e_ext] = criterion[e][e_ext]/(nop_ang[iel][e_ext]+1)
+                end
+
+            end
+        end
+    end
+    return criterion
+end
+
+function adapt_angular_grid_2Dby1D(criterion,thresholds,LHS,M,ref_levels,nelem,ngl,nelem_ang,nop_ang)
+    lgl = basis_structs_ξ_ω!(LGL(), nop, backend)
+    #loop through all spatial elements
+    for iel = 1:nelem
+        #loop through angular elements
+        original_e_ext = nelem_ang[e] #save original number of angular elements
+        for e_ext = 1:original_e_ext
+            #determine if angular element is to be adapted
+            if criterion[iel,e_ext] > thresholds
+                #adapt this angular element
+                ang_ips = zeros(Int, nop_ang[iel][e_ext])
+                ang_coords = zeros(Float64, nop_ang[iel][e_ext])
+                ang_connijk = zeros(Float64, nelem_ang[e]+1, nop_ang[iel][e_ext])
+                ang_connijk .= connijk_ang[iel][1:nelem_ang[e],:]
+                ip_adapt = zeros(Int, 2, nop_ang[iel][e_ext])
+                ip_taken = zeros(Int, nop_ang[iel][e_ext])
+                new_coords = zeros(Float64, 2, nop_ang[iel][e_ext])
+                new_ips = zeros(Int, 2, nop_ang[iel][e_ext])
+                exact_node = zeros(Int, 2, nop_ang[iel][e_ext])
+                non_zeros = [Vector{Int}(undef) for iθ=1:nop_ang[iel][e_ext]]
+                min_idx = 100000000000000000000000
+                max_idx = 0
+                for iθ=1:nop_ang[iel][e_ext]
+                    ip_ext = connijk_ang[iel][e_ext,iθ]
+                    #first determine original angular ips to reuse and use for adaptivity
+                    ang_ips[iθ] = ip_ext
+                    #find original coordinates of points on the element
+                    ang_coords[iθ] = coords_ang[iel][ip_ext]
+                     
+                end
+                ω = BarycentricWeights(ang_coords)
+                #split original element in two, first half keeps e_ext, second takes number  nelem_ang[e] + 1
+                θmin = minimum(ang_coords)
+                θmax = maximum(ang_coords)
+                θhalf = (θmax+θ_min)/2
+                #build LGL points for first new element and assign exact corresponding nodes
+                for iθ = 1:nop_ang[iel][e_ext]
+                    ξ = lgl.ξ[iθ]
+                    θ = θ_min*(1.0-ξ)*0.5+θhalf*(1.0 + ξ)*0.5
+                    new_coords[1,iθ] = θ
+                    for jθ = 1:nop_ang[iel][e_ext]
+                        if AlmostEqual(θ, ang_coords[jθ])
+                            new_ips[1, iθ] = ang_ips[jθ]
+                            ip_taken[jθ] = 1
+                            exact_node[1,iθ] = 1
+                        end
+                    end
+
+                    θ = θhalf*(1.0-ξ)*0.5+θmax*(1.0 + ξ)*0.5
+                    new_coords[2,iθ] = θ
+                    for jθ = 1:nop_ang[iel][e_ext]
+                        if AlmostEqual(θ, ang_coords[jθ])
+                            new_ips[2, iθ] = ang_ips[jθ]
+                            ip_taken[jθ] = 1
+                            exact_node[2,iθ] = 1
+                        end
+                    end
+                end
+                iter = npoin_ang[iel]+1
+                for iθ = 1:nop_ang[iel][e_ext]
+                    if (new_ips[1,iθ] == 0)
+                        if 0 in ip_taken
+                            for j=1:nop_ang[iel][e_ext]
+                                if ip_taken[jθ] == 0 && new_ips[1,iθ] == 0
+                                    new_ips[1,iθ] = ang_ips[jθ]
+                                    ip_taken[jθ] = 1
+                                end
+                            end
+                        else
+                            new_ips[1,iθ] = iter
+                            iter += 1
+                        end
+                    end
+                end
+                new_ips[2,1] = new_ips[1,nop_ang[iel][e_ext]]
+                for iθ = 2:nop_ang[iel][e_ext]
+                    if (new_ips[2,iθ] == 0)
+                        if 0 in ip_taken
+                            for j=1:nop_ang[iel][e_ext]
+                                if ip_taken[jθ] == 0 && new_ips[2,iθ] == 0
+                                    new_ips[2,iθ] = ang_ips[jθ]
+                                    ip_taken[jθ] = 1
+                                end
+                            end
+                        else
+                            new_ips[2,iθ] = iter
+                            iter += 1
+                        end
+                    end
+                end
+                #nodes that existed before use exact same ip, new nodes can use remaining untaken ips, when these run out ips are npoin_ang+1
+                #spatial-angular numbering will use the same approach as above.
+                #Do interpolations for LHS and M
+                #Loop through spatial nodes since new angular grid applies to all nodes on a spatial element
+                spa_ang = zeros(Int,2,nop_ang[iel][e_ext])
+                for j=1:ngl
+                    for i=1:ngl
+                        # determine spatial ip
+                        ip = connijk[iel,i,j]
+                        # find non-zero columns corresponding to row of original points in matrix
+                        for iθ=1:nop_ang[iel][e_ext]
+                            ip_spa = (ip-1)*(npoin_ang[iel]) + ang_ips[iθ]
+                            non_zeros[iθ] = nzrange(LHS',ip_spa)
+                            min_idx = min(min_idx, minimum(non_zeros[iθ]))
+                            max_idx = max(max_idx, maximum(non_zeros[iθ]))
+                        end
+                        f = zeros(Float64, max_idx - min_idx + 1, nop_ang[iel][e_ext])
+                        f_int_interact = zeros(Float64, nop_ang[iel][e_ext], nop_ang[iel][e_ext])
+                        fM = zeros(Float64, nop_ang[iel][e_ext])
+                        #store values of LHS of original points to use in interpolation
+                        for iθ = 1:nop_ang[iel][e_ext]
+                            ip_spa = (ip-1)*(npoin_ang[iel]) + ang_ips[iθ]
+                            for icol=min_idx:max_idx
+                                f[icol, iθ] = LHS[ip_spa,icol]
+                            end
+                            fM[iθ] = M[ip_spa,ip_spa]
+                            for jθ = 1:nop_ang[iel][e_ext]
+                                jp_spa = (ip-1)*(npoin_ang[iel]) + ang_ips[jθ]
+                                f_int_interact[iθ,jθ] = LHS[ip_spa, jp_spa]
+                            end
+
+                        end
+                        #determine spatial angular numbering for new nodes
+                        spa_iter = 1
+                        for iθ = 1:nop_ang[iel][e_ext]
+                            if new_ips[1,iθ] <= npoin_ang[iel]
+                                spa_ang[1,iθ] = (ip-1)*(npoin_ang[iel]) + new_ips[1,iθ]
+                            else
+                                spa_ang[1,iθ] = npoin_ang_total+spa_iter
+                                spa_iter += 1
+                            end
+
+                            if new_ips[2,iθ] <= npoin_ang[iel]
+                                spa_ang[2,iθ] = (ip-1)*(npoin_ang[iel]) + new_ips[2,iθ]
+                            else 
+                                spa_ang[2,iθ] = npoin_ang_total+spa_iter
+                                spa_iter += 1
+                            end
+                            
+                            #Do LHS interpolation
+                            #If node already existed, do nothing
+                            if exact_node[1,iθ] != 1
+                                #Otherwise interpolate
+                                #First check if this node number already existed (no new rows or columns added to the matrix)
+                                if new_ips[1,iθ] <= npoin_ang[iel]
+                                    #spatial angular number corresponds to matrix row
+                                    row_number = spa_ang[1,iθ]
+                                    #For LHS_ij to be non-zero use only non-zero-columns corresponding to original points
+                                    for icol=min_idx:max_idx
+                                        new_vals = LagrangeInterpolation(new_coords[1,:],ang_coords,f[icol,:], ω)
+                                    end
+
+                                else
+                                    #spatial angular number corresponds to matrix row
+                                    row_number = spa_ang[1,iθ]
+                                    #For LHS_ij to be non-zero use only non-zero-columns corresponding to original points
+                                    for icol=min_idx:max_idx
+                                        new_vals = LagrangeInterpolation(new_coords[1,iθ],ang_coords,f[icol,:], ω)
+                                    end
+                                    #Since this node appended at the bottom corner of the matrix (new row) make it contributes to all applicable old rows in this new column
+                                    #First determine what values would have corresponded to the interpolation points on the original grid
+                                    for jθ = 1:nop_ang[iel][e_ext]
+                                        col_val[jθ] = LagrangeInterpolation(new_coords[1,iθ],ang_coords,f_int_interact[jθ,:], ω)
+                                    end
+                                    #interpolate onto previous rows
+                                    for jθ = 1:iθ
+                                        rowi = spa_ang[1,jθ] 
+                                        new_val = LagrangeInterpolation(new_coords[1,jθ],ang_coords,col_val, ω)
+                                        rowi = spa_ang[2,jθ]
+                                        new_val = LagrangeInterpolation(new_coords[2,jθ],ang_coords,col_val, ω)
+                                    end
+                                end
+                            end
+                            #Same for second half of old element
+                            if exact_node[2,iθ] != 1
+                                #First check if this node number already existed (no new rows or columns added to the matrix)
+                                if new_ips[2,iθ] <= npoin_ang[iel]
+                                    #spatial angular number corresponds to matrix row
+                                    row_number = spa_ang[2,iθ]
+                                    #For LHS_ij to be non-zero use only non-zero-columns corresponding to original points 
+                                    for icol=min_idx:max_idx
+                                        new_vals = LagrangeInterpolation(new_coords[2,:],ang_coords,f[icol,:], ω)
+                                    end
+                                else
+                                    #spatial angular number corresponds to matrix row
+                                    row_number = spa_ang[2,iθ]
+                                    #For LHS_ij to be non-zero use only non-zero-columns corresponding to original points
+                                    for icol=min_idx:max_idx
+                                        new_vals = LagrangeInterpolation(new_coords[2,:],ang_coords,f[icol,:], ω)
+                                    end
+                                    #Since this node appended at the bottom corner of the matrix (new row) make it contributes to all applicable old row in this new column
+                                    #First determine what values would have corresponded to the interpolation points on the original grid
+                                    for jθ = 1:nop_ang[iel][e_ext]
+                                        col_val[jθ] = LagrangeInterpolation(new_coords[2,iθ],ang_coords,f_int_interact[jθ,:], ω)
+                                    end 
+                                    #interpolate onto previous rows
+                                    for jθ = 1:iθ
+                                        rowi = spa_ang[1,jθ]
+                                        new_val = LagrangeInterpolation(new_coords[1,jθ],ang_coords,col_val, ω)
+                                        rowi = spa_ang[2,jθ]
+                                        new_val = LagrangeInterpolation(new_coords[2,jθ],ang_coords,col_val, ω)
+                                    end 
+                                end
+                            end
+
+                        end
+
+
+                #update extra_mesh where still necessary
+            end 
+        end
+
+    end
+
 end

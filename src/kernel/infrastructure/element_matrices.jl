@@ -938,7 +938,9 @@ function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
     end
    
     pM = setup_assembler(SD, M, ip2gip, gip2owner)
-    
+   
+    if pM == nothing return end
+
     @time assemble_mpi!(M,pM)
 
     return pM

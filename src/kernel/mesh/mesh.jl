@@ -37,6 +37,7 @@ Base.@kwdef mutable struct St_extra_mesh{TInt, TFloat, NSD, dims1, dims2, dims3,
     ωϕ = KernelAbstractions.zeros(backend,TInt, 5)
     ψ = KernelAbstractions.zeros(backend,TInt, 5,5)
     dψ = KernelAbstractions.zeros(backend,TInt, 5,5)
+    ref_level = KernelAbstractions.zeros(backend,TInt,nelem)
 end
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
@@ -2184,6 +2185,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                     end
                 end
             end
+        end
         n_semi_infg = MPI.Allreduce(n_semi_inf, MPI.SUM, comm)
         if (n_semi_infg > 0) 
             mesh.lLaguerre = true

@@ -19,6 +19,7 @@ using ElasticArrays
 using Geodesy
 using InternedStrings
 using LinearAlgebra
+using LinearOperators
 using SpecialFunctions
 using StaticArrays
 using StaticArrays: SVector, MVector
@@ -132,15 +133,15 @@ include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
 
 include(joinpath("kernel", "operators", "filter.jl"))
 
+include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
+
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
-<<<<<<< HEAD
 include(joinpath("kernel", "operators", "build_rad_2d.jl"))
 
 include(joinpath("kernel", "operators", "build_rad_3d.jl"))
-=======
+
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
->>>>>>> 4cfe0c028c3e1b570bbf306a1bc43ae0da460d6c
 
 include(joinpath( "io", "mod_inputs.jl"))
 
