@@ -587,8 +587,8 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
 
                             θ  = 0.0
                             θ1 = 0.0
-                            if size(Tabs >= ip) #SM Sept 11: TEMPORARY FIX TO AVOID ISSUES WHEN DRY SINCE Tabs is only allocated for moist cases
-                                if (Tabs[ip] < 1)
+                            if size(Tabs) >= ip #SM Sept 11: TEMPORARY FIX TO AVOID ISSUES WHEN DRY SINCE Tabs is only allocated for moist cases
+                                if (Tabs[ip] < 1.0)
                                     θ  = 0.0
                                     θ1 = 0.0
                                 else
@@ -596,6 +596,10 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                     θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                                 end
                                 bulk_surface_flux!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, qn[ip], qn[ip1])
+                            else
+                                θ1 = uaux[ip1,5]/uaux[ip1,1]
+                                θ  = uaux[ip,5]/uaux[ip,1]
+                                bulk_surface_flux!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, 0.0, 0.0)
                             end
                             #@info F_surf[i,j,:]
                         end

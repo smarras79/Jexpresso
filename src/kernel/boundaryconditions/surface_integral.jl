@@ -121,7 +121,7 @@ function bulk_surface_flux!(F_surf,q,q1,qe,qe1,θ,θ1,qn,qn1)
     u_12  = (u + u1)/2
     v_12  = (v + v1)/2
     θ_12  = (θ + θ1)/2
-    qv
+    
     qv_12 = (qv + qv1)/2
 
     cd = 1.1e-3 + 4e-5*sqrt(u_12^2+v_12^2)
