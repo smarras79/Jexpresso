@@ -99,7 +99,7 @@ function time_loop!(inputs, params, u)
     #
     # Simulation
     #
-    limex = true
+    limex = false
     if limex
         ntime_steps = floor(Int32, inputs[:tend]/inputs[:Δt])
         

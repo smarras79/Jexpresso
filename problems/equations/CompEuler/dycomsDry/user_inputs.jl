@@ -24,6 +24,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lwall_model          => true,
         :bdy_fluxes           => true,
+        :bulk_fluxes          => true, #For dirichlet on theta
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :visc_model           => SMAG(),
         #:visc_model           => AV(),

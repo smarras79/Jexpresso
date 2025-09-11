@@ -92,7 +92,7 @@ end
 
 
 function bulk_surface_flux!(F_surf,q,q1,qe,qe1,θ,θ1,qn,qn1)
-
+    
     PhysConst = PhysicalConst{Float64}()    
     ρ    = q[1]  + qe[1]
     ρ1   = q1[1] + qe1[1]
@@ -100,9 +100,11 @@ function bulk_surface_flux!(F_surf,q,q1,qe,qe1,θ,θ1,qn,qn1)
     ρu1  = q1[2] + qe1[2]
     ρv   = q[3]  + qe[3]
     ρv1  = q1[3] + qe1[3]
-    ρqt  = q[6]  + qe[6]
-    ρqt1 = q1[6] + qe1[6]
 
+    if size(q) > 5
+        ρqt  = q[6]  + qe[6]
+        ρqt1 = q1[6] + qe1[6]
+    end
 
     u   = ρu/ρ
     v   = ρv/ρ
@@ -123,10 +125,11 @@ function bulk_surface_flux!(F_surf,q,q1,qe,qe1,θ,θ1,qn,qn1)
     cd = 1.1e-3 + 4e-5*sqrt(u_12^2+v_12^2)
     ce = cd
     
-    
     F_surf[2] = -ρ*cd*u_12*sqrt(u_12^2+v_12^2)
     F_surf[3] = -ρ*cd*v_12*sqrt(u_12^2+v_12^2)
     F_surf[5] = PhysConst.cp*ρ*ce*sqrt(u_12^2+v_12^2)*(θ-θ_12)
-    F_surf[6] = ρ*ce*sqrt(u_12^2+v_12^2)*(qv-qv_12)
+    if size(q) > 5
+        F_surf[6] = ρ*ce*sqrt(u_12^2+v_12^2)*(qv-qv_12)
+    end
 end
 
