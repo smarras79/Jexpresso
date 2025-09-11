@@ -570,7 +570,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                                    connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
                                    τ_f, wθ, 
-                                   Tabs, qn,
+                                   Tabs, qn, #Tabs and qn are allocated only with mp 
                                    neqs, dirichlet!, neumann, inputs)
     
     PhysConst = PhysicalConst{Float64}() 
@@ -585,16 +585,18 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                             e   = bdy_face_in_elem[iface]
                             ip1 = connijk[e,i,j,2]
 
+                            θ  = 0.0
+                            θ1 = 0.0
                             if size(Tabs >= ip) #SM Sept 11: TEMPORARY FIX TO AVOID ISSUES WHEN DRY SINCE Tabs is only allocated for moist cases
                                 if (Tabs[ip] < 1)
-                                    θ = 0.0
+                                    θ  = 0.0
                                     θ1 = 0.0
                                 else
-                                    θ = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
+                                    θ  = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
                                     θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                                 end
+                                bulk_surface_flux!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, qn[ip], qn[ip1])
                             end
-                            bulk_surface_flux!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, qn[ip], qn[ip1])                        
                             #@info F_surf[i,j,:]
                         end
                     end

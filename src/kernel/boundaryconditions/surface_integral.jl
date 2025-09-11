@@ -100,10 +100,12 @@ function bulk_surface_flux!(F_surf,q,q1,qe,qe1,θ,θ1,qn,qn1)
     ρu1  = q1[2] + qe1[2]
     ρv   = q[3]  + qe[3]
     ρv1  = q1[3] + qe1[3]
-
     if size(q) > 5
         ρqt  = q[6]  + qe[6]
         ρqt1 = q1[6] + qe1[6]
+    else
+        ρqt  = 0.0
+        ρqt1 = 0.0
     end
 
     u   = ρu/ρ
