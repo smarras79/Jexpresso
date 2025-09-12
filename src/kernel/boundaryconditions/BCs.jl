@@ -323,7 +323,7 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                 for i = 1:ngl
                     ip  = poin_in_bdy_edge[iedge,i]
                     e   = bdy_edge_in_elem[iedge]
-                    ip1 = connijk[e,i,2]
+                    ip1 = connijk[e,i,ngl]
                     
                     user_bc_neumann!(@view(F_surf[i,:]), uaux[ip,:], uaux[ip1,:],
                                      qe[ip,:], qe[ip1,:],
@@ -587,7 +587,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
 
                             θ  = 0.0
                             θ1 = 0.0
-                            if size(Tabs) >= ip #SM Sept 11: TEMPORARY FIX TO AVOID ISSUES WHEN DRY SINCE Tabs is only allocated for moist cases
+                            if (size(Tabs[:])[1] > 1) #SM Sept 11: TEMPORARY FIX TO AVOID ISSUES WHEN DRY SINCE Tabs is only allocated for moist cases
                                 if (Tabs[ip] < 1.0)
                                     θ  = 0.0
                                     θ1 = 0.0
@@ -612,12 +612,12 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                         for j = 1:ngl
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
-                            ip1 = connijk[e,i,j,2]
+                            ip1 = connijk[e,i,j,ngl]
                             user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
                                              qe[ip,:], qe[ip1,:],
                                              bdy_face_type[iface],
                                              @view(coords[ip,:]),
-                                             @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), inputs[:SOL_VARS_TYPE])
+                                             @view(τ_f[iface,i,j,1:2]), @view(wθ[iface,i,j,1]), inputs[:SOL_VARS_TYPE])
                         end
                     end
                  end

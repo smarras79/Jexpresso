@@ -23,7 +23,7 @@ using Parameters
     cvovercp::T = T(cv/cp)
     C0::T       = T((Rair^γ)/pref^(γ-1.0)) #Rovercv
     Ri_crit::T  = 0.25                     #Critical Richardson number
-    C_s::T      = 0.12                     #Smagorinsky constant
+    C_s::T      = 0.21                     #Smagorinsky constant
 
     karman      = 0.4
     

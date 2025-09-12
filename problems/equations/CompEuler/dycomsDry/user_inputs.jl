@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.018,
+        :Δt                   => 0.025,
         :tinit                => 0.0,
         :tend                 => 10000,
         #:tinit                => 100.0,
@@ -18,16 +18,16 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  =>"lgl",
-        :nop                  => 3,      # Polynomial order
+        :nop                  => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lwall_model          => true,
         :bdy_fluxes           => true,
-        :bulk_fluxes          => true, #For dirichlet on theta
+        :bulk_fluxes          => false, #For dirichlet on theta
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :visc_model           => SMAG(),
-        #:visc_model           => AV(),
+        #:visc_model           => SMAG(),
+        :visc_model           => AV(),
         :ivisc_equations      => [1, 2, 3, 4, 5],
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         :μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
@@ -36,7 +36,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/tcf_wmles.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/dycoms.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/tcf_wmles_small.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/dycoms.msh",
         :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
