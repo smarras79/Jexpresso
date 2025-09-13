@@ -1305,12 +1305,12 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                                 # For bottom wall, use second point above (m=2)
                                 wall_y = coords[ip, 3]  # y-coordinate of wall point
                                 ieq = 2
-                                u2  = uprimitiveieq[k, l, ngl-1, ieq]
-                                ip2 = connijk[iel, k, l, ngl-1]
+                                u2  = uprimitiveieq[k, l, ngl, ieq]
+                                ip2 = connijk[iel, k, l, ngl]
                                 y2  = coords[ip2, 3]
                                 uτ  = find_uτ(abs(u2), abs(y2 - wall_y))  # Use absolute values for wall model
                                 if !isnan(uτ)
-                                    τw_mag = uprimitiveieq[k, l, ngl-1, 1] * uτ^2
+                                    τw_mag = uprimitiveieq[k, l, ngl, 1] * uτ^2
                                     
                                     # Get velocity components at second grid point
                                     u_vel = uprimitiveieq[k, l, ngl-1, 2]  # u-component
