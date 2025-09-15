@@ -59,7 +59,7 @@ end
     """
 function get_imex_algorithm(inputs, jac_prototype)
     
-    imex_scheme = get(inputs, :imex_scheme, :KenCarp4)
+    imex_scheme   = get(inputs, :imex_scheme, :KenCarp4)
     linear_solver = get(inputs, :imex_linear_solver, :GMRES)
 
     # Configure linear solver - use DifferentialEquations.jl defaults to avoid conflicts
@@ -95,46 +95,6 @@ function get_imex_algorithm(inputs, jac_prototype)
     end=#
 
     algorithm = SSPRK54()
-    return algorithm
-end
-
-function get_imex_algorithm_or(inputs, jac_prototype)
-    
-    imex_scheme = get(inputs, :imex_scheme, :KenCarp4)
-    linear_solver = get(inputs, :imex_linear_solver, :GMRES)
-    
-    # Configure linear solver - use DifferentialEquations.jl defaults to avoid conflicts
-    linsolve_options = Dict{Symbol, Any}()
-    
-    if haskey(inputs, :gmres_rtol)
-        linsolve_options[:rtol] = inputs[:gmres_rtol]
-    end
-    if haskey(inputs, :gmres_atol) 
-        linsolve_options[:atol] = inputs[:gmres_atol]
-    end
-    if haskey(inputs, :gmres_maxiter)
-        linsolve_options[:maxiter] = inputs[:gmres_maxiter] 
-    end
-    
-    # Store solver options for later use
-    solver_options = (
-        rtol = get(inputs, Symbol("$(lowercase(string(linear_solver)))_rtol"), 1e-6),
-        atol = get(inputs, Symbol("$(lowercase(string(linear_solver)))_atol"), 1e-12),
-        maxiter = get(inputs, Symbol("$(lowercase(string(linear_solver)))_maxiter"), 100)
-    )
-    
-    # Select IMEX scheme - jac_prototype goes to problem, not algorithm
-    if imex_scheme == :KenCarp4
-        algorithm = KenCarp4(autodiff=false, concrete_jac=nothing)
-    elseif imex_scheme == :KenCarp3
-        algorithm = KenCarp3(autodiff=false, concrete_jac=nothing)
-    elseif imex_scheme == :ARKODE
-        algorithm = ARKODE()
-    else
-        @warn "Unknown IMEX scheme $imex_scheme, defaulting to KenCarp4"
-        algorithm = KenCarp4(autodiff=false, concrete_jac=nothing)
-    end
-    
     return algorithm
 end
 
@@ -359,12 +319,10 @@ function create_imex_functions(p, acoustic_implicit=true)
     function rhs_explicit!(du, u, p, t) #analogue of create_rhs! in the fully explicit case (rhs.jl)
         #fill!(du, 0.0)
 
-        _build_rhs_explicit!(@view(p.RHS[:,:]), u, p, t,
-                            acoustic_implicit, F_ex, G_ex, F_im, G_im, S_cache)
-
+        _build_rhs_explicit!(@view(p.RHS[:,:]), u, p, t, acoustic_implicit, F_ex, G_ex, F_im, G_im, S_cache)
         
         RHStoDU!(du, @view(p.RHS[:,:]), p.neqs, p.mesh.npoin)
-    
+        
         #= Compute explicit terms
         for iel = 1:nelem
         compute_split_fluxes!(F_ex, G_ex, F_im, G_im, S_cache, 
