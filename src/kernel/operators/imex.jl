@@ -395,6 +395,14 @@ end
     """
 function compute_split_fluxes!(F_ex, G_ex, F_im, G_im, S,
                                iel, p, t, acoustic_implicit)
+
+    ###
+    ### !!!!!
+    #### NOT SUPPOSED TO BE USED ANYMORE. I moved this to part of build_rhs_explicit!"
+    ### !!!!!
+    ###
+
+    #=
     ngl = p.mesh.ngl
     neqs = p.qp.neqs
     
@@ -435,6 +443,8 @@ function compute_split_fluxes!(F_ex, G_ex, F_im, G_im, S,
                          ymax=p.ymax)
         end
     end
+    =#
+    return nothing
 end
 
 """

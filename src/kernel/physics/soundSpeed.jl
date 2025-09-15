@@ -33,7 +33,7 @@ function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_2D; visc=[0.0])
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
-    if size(integrator.u) == 3*npoin
+    if size(integrator.u)[1] >= 3*npoin
         #u
         idx  = npoin
         umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
@@ -66,17 +66,19 @@ function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_3D; visc=[0.0])
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+
+    if size(integrator.u)[1] >= 4*npoin
+        #u
+        idx  = npoin
+        umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
+        #v
+        idx  = 2*npoin
+        vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
+        #w
+        idx  = 3*npoin
+        wmax = MPI.Allreduce(maximum(integrator.u[idx+1:4*npoin]), MPI.MAX, comm)
+    end
     
-    #u
-    idx  = npoin
-    umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
-    #v
-    idx  = 2*npoin
-    vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
-    #w
-    idx  = 3*npoin
-    wmax = MPI.Allreduce(maximum(integrator.u[idx+1:4*npoin]), MPI.MAX, comm)
-  
     velomax = max(umax, vmax, wmax)
     
     #speed of sound
@@ -105,20 +107,4 @@ function computeCFL_IMEX(npoin, neqs, Δt, Δeffective_s, integrator, SD::NSD_2D
 
     computeCFL(npoin, neqs, Δt, Δeffective_s, integrator, SD; visc=visc)
     
-#=    # For IMEX, only advective CFL matters since acoustic waves are treated implicitly
-    max_cfl_adv = 0.0
-    
-    for ip = 1:npoin
-        u_vel = integrator.p.uaux[ip, 2]  # u velocity
-        v_vel = integrator.p.uaux[ip, 3]  # v velocity
-        
-        # Advective CFL 
-        cfl_adv = (abs(u_vel) + abs(v_vel)) * Δt / Δeffective_s[ip]
-        max_cfl_adv = max(max_cfl_adv, cfl_adv)
-    end
-    
-    println(" # IMEX CFL_advective = ", max_cfl_adv)
-    
-    return max_cfl_adv
-    =#
 end
