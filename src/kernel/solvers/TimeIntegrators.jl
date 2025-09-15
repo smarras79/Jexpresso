@@ -166,19 +166,21 @@ function time_loop!(inputs, params, u, args...)
     #
     # Simulation - Choose solver path
     #
-    #if use_imex
+    if use_imex
         # IMEX solver with adaptive time stepping based on advective CFL
-        solution = solve_imex_problem(prob, imex_algorithm, inputs, cb, dosetimes, rank)
-    #=else
+        #solution = solve_imex_problem(prob, imex_algorithm, inputs, cb, dosetimes, rank)
+        solution = solve_imex_problem(prob,  inputs[:ode_solver], inputs, cb, dosetimes, rank)
+    else
         # Standard explicit solver (original path)
         solution = solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                          callback = CallbackSet(cb), tstops = dosetimes,
                          save_everystep = false,
-                         adaptive=inputs[:ode_adaptive_solver],
+                         adaptive=false,
+                         #adaptive=inputs[:ode_adaptive_solver],
                          saveat = range(inputs[:tinit], inputs[:tend], 
-                                       length=inputs[:ndiagnostics_outputs]))
-    end=#
+                                        length=inputs[:ndiagnostics_outputs]))
+    end
     
     # AMR support (works with both explicit and IMEX)
     if inputs[:lamr] == true

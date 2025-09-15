@@ -6,12 +6,14 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         #:Δt                   => 0.02,
-        :Δt                   => 0.4,
+        :Δt                   => 0.01,
         :tinit                => 0.0,
+        
         :use_imex_solver      => true,
+
         :imex_adaptive        => false,
-        :tend                 => 1000.0,
-        :diagnostics_at_times => (0:100:1000),
+        :tend                 => 0.05, #1000.0,
+        :diagnostics_at_times => (0:0.01:0.05),
         :case                 => "rtb",
         :lsource              => true, 
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default

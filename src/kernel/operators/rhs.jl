@@ -413,6 +413,7 @@ function _build_rhs!(RHS, u, params, time)
     # Inviscid rhs:
     #-----------------------------------------------------------------------------------    
     resetRHSToZero_inviscid!(params)
+    
     if (params.inputs[:lfilter])
         reset_filters!(params)
         if (params.laguerre)
@@ -425,7 +426,8 @@ function _build_rhs!(RHS, u, params, time)
     end
 
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin) #
-    
+
+ 
     if inputs[:ladapt] == true
         conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux, 
                             params.pM, params.q_el, params.q_el_pro, 
@@ -450,8 +452,9 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.connijk, params.metrics.Jef, params.S_face, 
                                params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
                                params.mp.Tabs, params.mp.qn,
-                               params.ω, neqs, params.inputs, AD, SD)
+                                         params.ω, neqs, params.inputs, AD, SD)
 
+    
     if (params.inputs[:lmoist])
         if (SD == NSD_3D())
             do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
@@ -494,6 +497,16 @@ function _build_rhs!(RHS, u, params, time)
                      params.mp.qn,
                      params.mp.flux_lw, params.mp.flux_sw,
                      SD) #QUI 
+
+          
+    outfile = "u_EXPL.txt"
+    open(outfile, "w") do f
+        for i in u
+            @printf(f, "%16.8f\n", i)
+        end
+    end
+    #@mystop("STOP EXPL")
+    
     
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, 
@@ -505,7 +518,7 @@ function _build_rhs!(RHS, u, params, time)
                            ngl-1, neqs, params.interp)
     end
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
-
+  
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
     #-----------------------------------------------------------------------------------
@@ -544,6 +557,7 @@ function _build_rhs!(RHS, u, params, time)
     
     DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
 
+   
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
         # @info "ieq", ieq
@@ -559,6 +573,23 @@ function _build_rhs!(RHS, u, params, time)
                                 ngl-1, params.interp)
         end
     end
+
+                
+    outfile = "RHS_EXPL_DSS.txt"
+    open(outfile, "w") do f
+        for i in params.RHS
+            @printf(f, "%16.8f\n", i)
+        end
+    end
+
+    outfile = "u_EXPL_DSS.txt"
+    open(outfile, "w") do f
+        for i in u
+            @printf(f, "%16.8f\n", i)
+        end
+    end
+   # @mystop("STOP EXPL ")
+    
 end
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)

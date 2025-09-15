@@ -144,7 +144,7 @@ end
     Create IMEX RHS functions for stratified atmospheric flow
     acoustic_implicit: if true, treat acoustic waves implicitly
     """
-function build_rhs_explicit!(RHS, u, p, time,
+function _build_rhs_explicit!(RHS, u, p, time,
                              acoustic_implicit, F_ex, G_ex, F_im, G_im, S_cache)
 
     T       = Float64
@@ -179,7 +179,7 @@ function build_rhs_explicit!(RHS, u, p, time,
     
     u2uaux!(@view(p.uaux[:,:]), u, p.neqs, p.mesh.npoin)
 
-    resetbdyfluxToZero!(p)
+    resetbdyfluxToZero!(p)  
     
     apply_boundary_conditions_dirichlet!(u, p.uaux, time, p.qp.qe,
                                          p.mesh.x, p.mesh.y, p.mesh.z, 
@@ -194,9 +194,8 @@ function build_rhs_explicit!(RHS, u, p, time,
                                          p.mp.Tabs, p.mp.qn,
                                          p.ω, neqs, p.inputs, AD, SD)
 
-
     
-    
+   
     #= Compute explicit terms
     for iel = 1:nelem
     compute_split_fluxes!(F_ex, G_ex, F_im, G_im, S_cache, 
@@ -220,8 +219,16 @@ function build_rhs_explicit!(RHS, u, p, time,
                           p.mp.S_micro,
                           p.mp.qn,
                           p.mp.flux_lw, p.mp.flux_sw,
-                          SD) #QUI 
+                          SD) #QUI
 
+    outfile = "u_IMEX.txt"
+    open(outfile, "w") do f
+        for i in u
+            @printf(f, "%16.8f\n", i)
+        end
+    end
+    #@mystop("STOP IMEX")
+    
     #RHStoDU!(du, @view(p.RHS[:,:]), p.neqs, p.mesh.npoin)
     
     DSS_rhs!(p.RHS, p.rhs_el, p.mesh.connijk, nelem, ngl, neqs, SD, AD)
@@ -241,9 +248,27 @@ function build_rhs_explicit!(RHS, u, p, time,
                                        p.ω, neqs, p.inputs, AD, SD) 
     
     DSS_global_RHS!(@view(p.RHS[:,:]), p.pM, p.neqs)
+
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(p.RHS[:,ieq]), p.vaux, p.Minv, neqs, npoin, AD)
     end
+    
+    
+    outfile = "RHS_IMEX_DSS.txt"
+    open(outfile, "w") do f
+        for i in p.RHS
+            @printf(f, "%16.8f\n", i)
+        end
+    end
+
+    outfile = "u_IMEX_DSS.txt"
+    open(outfile, "w") do f
+        for i in u
+            @printf(f, "%16.8f\n", i)
+        end
+    end
+   # @mystop("STOP IMEX")
+
     
 end
 
@@ -330,13 +355,16 @@ function create_imex_functions(p, acoustic_implicit=true)
     
     """
         Explicit RHS function
-        """
+    """
     function rhs_explicit!(du, u, p, t) #analogue of create_rhs! in the fully explicit case (rhs.jl)
-        fill!(du, 0.0)
+        #fill!(du, 0.0)
 
-        build_rhs_explicit!(@view(p.RHS[:,:]), u, p, t,
+        _build_rhs_explicit!(@view(p.RHS[:,:]), u, p, t,
                             acoustic_implicit, F_ex, G_ex, F_im, G_im, S_cache)
+
         
+        RHStoDU!(du, @view(p.RHS[:,:]), p.neqs, p.mesh.npoin)
+    
         #= Compute explicit terms
         for iel = 1:nelem
         compute_split_fluxes!(F_ex, G_ex, F_im, G_im, S_cache, 
@@ -362,10 +390,14 @@ function create_imex_functions(p, acoustic_implicit=true)
         Implicit RHS function
             """  
     function rhs_implicit!(du, u, p, t)
-        fill!(du, 0.0)
+        return nothing
+        #fill!(du, 0.0)
 
-        build_rhs_explicit!(@view(p.RHS[:,:]), u, p, t,
-                            acoustic_implicit, F_ex, G_ex, F_im, G_im, S_cache)
+        #_build_rhs_explicit!(@view(p.RHS[:,:]), u, p, t,
+        #                    acoustic_implicit,
+        #                    F_ex, G_ex, F_im, G_im, S_cache)
+
+        #RHStoDU!(du, @view(p.RHS[:,:]), p.neqs, p.mesh.npoin)
         
         # Compute implicit terms
         #= for iel = 1:nelem
@@ -398,7 +430,7 @@ function compute_split_fluxes!(F_ex, G_ex, F_im, G_im, S,
 
     ###
     ### !!!!!
-    #### NOT SUPPOSED TO BE USED ANYMORE. I moved this to part of build_rhs_explicit!"
+    #### NOT SUPPOSED TO BE USED ANYMORE. I moved this to part of _build_rhs_explicit!"
     ### !!!!!
     ###
 
