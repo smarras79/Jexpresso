@@ -424,7 +424,7 @@ function _build_rhs!(RHS, u, params, time)
         end
     end
 
-    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin) #
     
     if inputs[:ladapt] == true
         conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux, 
@@ -438,6 +438,7 @@ function _build_rhs!(RHS, u, params, time)
     end
     
     resetbdyfluxToZero!(params)
+    
     apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
                                params.mesh.x, params.mesh.y, params.mesh.z, 
                                params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
@@ -485,8 +486,14 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
     
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.z, lsource, 
-                     params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
+    inviscid_rhs_el!(u, params, params.mesh.connijk,
+                     params.qp.qe,
+                     params.mesh.x, params.mesh.y, params.mesh.z,
+                     lsource, 
+                     params.mp.S_micro,
+                     params.mp.qn,
+                     params.mp.flux_lw, params.mp.flux_sw,
+                     SD) #QUI 
     
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, 
@@ -594,15 +601,14 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, S_micro_vec,
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64}, x::Vector{Float64}, y::Vector{Float64}, z::Vector{Float64}, 
-        lsource, S_micro_vec, qn_vec, flux_lw_vec,
-        flux_sw_vec, SD::NSD_2D)
-    
-    #PhysConst = PhysicalConst{Float64}()
+function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64},
+                          x::Vector{Float64}, y::Vector{Float64}, z::Vector{Float64}, 
+                          lsource, S_micro_vec, qn_vec, flux_lw_vec,
+                          flux_sw_vec, SD::NSD_2D)
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
-    for iel = 1:params.mesh.nelem
 
+    for iel = 1:params.mesh.nelem
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j,1]
             
@@ -618,7 +624,11 @@ function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),          #ρref 
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=x[ip], y=y[ip], xmax=xmax, xmin=xmin, ymax=ymax)
+                             neqs=params.neqs,
+                             x=x[ip], y=y[ip],
+                             xmax=xmax,
+                             xmin=xmin,
+                             ymax=ymax)
 
                 if (params.inputs[:lmoist])
                     S_micro::Float64 = @inbounds S_micro_vec[ip]
@@ -632,26 +642,8 @@ function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64
                                                 SD, params.SOL_VARS_TYPE)
                 end
             end
-
-         #=  SM  if luser_function
-                user_function!(@view(params.fijk[i,j,:]), SD,
-                               @view(params.uaux[ip,:]),
-                               @view(qe[ip,:]),
-                               params.mesh,
-                               params.CL, params.SOL_VARS_TYPE;
-                               neqs=params.neqs, iel=iel, ip=ip)
-            end
-            =#
         end
-       #= SM
-        _∇f!(params.∇f_el, params.fijk,
-             params.mesh.ngl,
-             params.basis.dψ, params.ω,
-             params.metrics.Je,
-             params.metrics.dξdx, params.metrics.dξdy,
-             params.metrics.dηdx, params.metrics.dηdy,
-             iel, params.CL, params.QT, SD, params.AD)       
-        =#
+      
         _expansion_inviscid!(u,
                              params.neqs, params.mesh.ngl,
                              params.basis.dψ, params.ω,
@@ -661,10 +653,9 @@ function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64
                              params.metrics.dηdx, params.metrics.dηdy,
                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
     end
+    
     return nothing
-  #= SM params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
-    params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]=#
-
+    
 end
 
 function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_3D)
@@ -885,10 +876,9 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω, F, G, S,
             for i=1:ngl
                 ωJac = ω[i]*ω[j]*Je[iel,i,j]
                 
-                dFdξ = 0.0
-                dFdη = 0.0
-                dGdξ = 0.0
-                dGdη = 0.0
+                dFdξ = 0.0; dFdη = 0.0
+                dGdξ = 0.0; dGdη = 0.0
+                
                 @turbo for k = 1:ngl
                     dFdξ += dψ[k,i]*F[k,j,ieq]
                     dFdη += dψ[k,j]*F[i,k,ieq]

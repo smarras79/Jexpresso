@@ -95,3 +95,30 @@ function computeCFL(npoin, neqs, dt, Δs, integrator, SD::NSD_3D; visc=[0.0])
     println_rank(" #  Viscous   CFL: ", cfl_visc; msg_rank = rank) #, suppress = mesh.msg_suppress)
    
 end
+
+"""
+        computeCFL_IMEX(npoin, neqs, Δt, Δeffective_s, integrator, SD; visc=0.0)
+        
+    Compute CFL number for IMEX scheme (advective CFL only since acoustics are implicit)
+    """
+function computeCFL_IMEX(npoin, neqs, Δt, Δeffective_s, integrator, SD::NSD_2D; visc=[0.0])
+
+    computeCFL(npoin, neqs, Δt, Δeffective_s, integrator, SD; visc=visc)
+    
+#=    # For IMEX, only advective CFL matters since acoustic waves are treated implicitly
+    max_cfl_adv = 0.0
+    
+    for ip = 1:npoin
+        u_vel = integrator.p.uaux[ip, 2]  # u velocity
+        v_vel = integrator.p.uaux[ip, 3]  # v velocity
+        
+        # Advective CFL 
+        cfl_adv = (abs(u_vel) + abs(v_vel)) * Δt / Δeffective_s[ip]
+        max_cfl_adv = max(max_cfl_adv, cfl_adv)
+    end
+    
+    println(" # IMEX CFL_advective = ", max_cfl_adv)
+    
+    return max_cfl_adv
+    =#
+end

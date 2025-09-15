@@ -85,6 +85,38 @@ function params_setup(sem,
     rhs_el_tmp   = rhs.rhs_el_tmp
 
     #------------------------------------------------------------------------------------
+    # IMEX arrays and coefficients - Add this section for IMEX support
+    #------------------------------------------------------------------------------------
+    if get(inputs, :limex, false)
+        # IMEX-RK3 coefficients
+        imex_coeffs = (
+            gamma = [T(0.0)  T(0.0)  T(0.0);
+                     T(1.0)  T(0.0)  T(0.0);
+                     T(0.25) T(0.25) T(0.5)],
+            alpha = [T(0.5)     T(0.0)  T(0.0);
+                     T(0.0)     T(0.5)  T(0.0);
+                     T(0.0)     T(0.0)  T(1.0/3.0)],
+            s = 3
+        )
+        
+        # Allocate IMEX stage vectors
+        u_size = qp.neqs * sem.mesh.npoin
+        Q_stages = [KernelAbstractions.allocate(backend, T, u_size) for _ in 1:3]
+        RHS_explicit_stages = [similar(RHS) for _ in 1:3]
+        
+        if rank == 0
+            println(" # IMEX arrays allocated for $(sem.mesh.SD)")
+            println(" #   - Stage vectors: 3 stages")
+            println(" #   - Vector size: $u_size")
+        end
+    else
+        # Create empty placeholders when IMEX is not used
+        imex_coeffs = (gamma = zeros(T, 1, 1), alpha = zeros(T, 1, 1), s = 0)
+        Q_stages = Vector{T}[]
+        RHS_explicit_stages = typeof(RHS)[]
+    end
+
+    #------------------------------------------------------------------------------------
     # non conforming faces arrays
     #------------------------------------------------------------------------------------
     q_el      = ncf_arrays.q_el
@@ -246,12 +278,6 @@ function params_setup(sem,
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
     Δt    = inputs[:Δt]
-    #if (backend == CPU())
-    #    visc_coeff = zeros(TFloat, qp.neqs)
-    #    if inputs[:lvisc]
-    #        visc_coeff .= inputs[:μ]
-    #    end
-    #else
    
     if inputs[:lvisc]
         coeffs = zeros(TFloat, qp.neqs)
@@ -295,14 +321,16 @@ function params_setup(sem,
                   neqs=qp.neqs,
                   sem.mesh,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
-		  basis=sem.basis[1], basis_lag = sem.basis[2],
+		          basis=sem.basis[1], basis_lag = sem.basis[2],
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   WM,
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, VT = inputs[:visc_model], visc_coeff,
                   sem.matrix.M, sem.matrix.Minv, pM=pM, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
-                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
+                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
+                  # Add IMEX fields to Laguerre params
+                  imex_coeffs, Q_stages, RHS_explicit_stages)
         
     else
         pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -333,7 +361,9 @@ function params_setup(sem,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
-                  sem.interp, sem.project, sem.nparts, sem.distribute)
+                  sem.interp, sem.project, sem.nparts, sem.distribute,
+                  # Add IMEX fields to standard params
+                  imex_coeffs, Q_stages, RHS_explicit_stages)
     end
 
     println_rank(" # Build arrays and params ................................ DONE"; msg_rank = rank, suppress = sem.mesh.msg_suppress)

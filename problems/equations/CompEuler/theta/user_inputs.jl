@@ -8,6 +8,8 @@ function user_inputs()
         #:Δt                   => 0.02,
         :Δt                   => 0.4,
         :tinit                => 0.0,
+        :use_imex_solver      => true,
+        :imex_adaptive        => false,
         :tend                 => 1000.0,
         :diagnostics_at_times => (0:100:1000),
         :case                 => "rtb",
@@ -22,6 +24,8 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
+        :visc_model           => AV(),
+        :ivisc_equations      => [1, 2, 3, 4],
         :μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:

@@ -35,6 +35,55 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
+    #
+    # IMEX Time Integration Parameters
+    #
+    if(!haskey(inputs, :use_imex_solver))
+        inputs[:use_imex_solver] = false
+    end
+    
+    if(!haskey(inputs, :imex_tolerance))
+        inputs[:imex_tolerance] = 1e-12
+    end
+    
+    if(!haskey(inputs, :imex_maxiter))
+        inputs[:imex_maxiter] = 1000
+    end
+    
+    if(!haskey(inputs, :imex_restart))
+        inputs[:imex_restart] = 30
+    end
+    
+    if(!haskey(inputs, :imex_scheme))
+        inputs[:imex_scheme] = "imex_rk3"  # Could add other schemes later
+    end
+    
+    # If IMEX is enabled, ensure viscosity is enabled and warn user
+    if get(inputs, :use_imex_solver, false)
+        if rank == 0
+            println(GREEN_FG(" # IMEX time integration enabled"))
+            println(GREEN_FG(" #   - GMRES tolerance: $(inputs[:imex_tolerance])"))
+            println(GREEN_FG(" #   - GMRES max iterations: $(inputs[:imex_maxiter])"))
+            println(GREEN_FG(" #   - GMRES restart: $(inputs[:imex_restart])"))
+        end
+        
+        # Force viscosity to be enabled for IMEX splitting
+        if !get(inputs, :lvisc, false)
+            inputs[:lvisc] = true
+            if rank == 0
+                @warn "IMEX requires viscosity - automatically enabling :lvisc = true"
+            end
+        end
+        
+        # Ensure artificial viscosity is used for IMEX
+        if !haskey(inputs, :visc_model) || inputs[:visc_model] != AV()
+            inputs[:visc_model] = AV()
+            if rank == 0
+                @warn "IMEX requires artificial viscosity - setting :visc_model = AV()"
+            end
+        end
+    end
+
     if(!haskey(inputs, :lwall_model))
        inputs[:lwall_model] = false
     end
@@ -270,9 +319,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     # Time:
     #
-    if(!haskey(inputs, :ndiagnostics_outputs))
-        inputs[:ndiagnostics_outputs] = 0
-    end
     if(!haskey(inputs, :Δt))
         inputs[:Δt] = 0.1  #Initial time is 0.0 by default
     end
@@ -292,10 +338,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if( !haskey(inputs, :diagnostics_at_times) )
         inputs[:diagnostics_at_times] = inputs[:tend]
         if (!haskey(inputs, :ndiagnostics_outputs))
-            inputs[:ndiagnostics_outputs] = 1 #Force this to none to avoid double output
+            inputs[:ndiagnostics_outputs] = length(inputs[:diagnostics_at_times]) #Force this to none to avoid double output
         end
     else
-        inputs[:ndiagnostics_outputs] = 0
+        inputs[:ndiagnostics_outputs] = length(inputs[:diagnostics_at_times])
     end
     
     if(!haskey(inputs, :lexact_integration))
@@ -389,18 +435,28 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
     #
     if(!haskey(inputs, :ode_solver))
-        s = """
-                        WARNING in user_inputs.jl --> :ode_solver
-                        
-                            See usable solvers at
-                            https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
+        # Default behavior depends on whether IMEX is enabled
+        if get(inputs, :, false)
+            # For IMEX, we don't use DifferentialEquations.jl solvers
+            inputs[:ode_solver] = nothing
+            if rank == 0
+                println(GREEN_FG(" # Using custom IMEX time integrator - DifferentialEquations.jl solver not used"))
+            end
+        else
+            s = """
+                            WARNING in user_inputs.jl --> :ode_solver
+                            
+                                See usable solvers at
+                                https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/
 
-                        SSPRK53 will be used by default.
-                            """            
-            inputs[:ode_solver] = SSPRK54()
-        
-            @warn s
+                            SSPRK53 will be used by default.
+                                """            
+                inputs[:ode_solver] = SSPRK54()
+            
+                @warn s
+        end
     end
+    
     if(!haskey(inputs, :ode_adaptive_solver))
         inputs[:ode_adaptive_solver] = false
     end
@@ -490,8 +546,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lsaturation))
         inputs[:lsaturation] = false
     end
-
-    
 
     #
     # Array of user-defined constant with a user-given meaning. For example, this is used in drivers for the elliptic problems
