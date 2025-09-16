@@ -3,26 +3,6 @@
 # Import IMEX module functions
 include("../operators/imex.jl")
 
-"""
-    amr_strategy_imex!(inputs, params, u, t, partitioned_model)
-    
-AMR strategy adapted for IMEX problems
-"""
-function amr_strategy_imex!(inputs, params, u, t, partitioned_model)
-    # Call existing AMR but create SplitODEProblem instead of ODEProblem
-    # This is a placeholder - implement based on your existing AMR code
-    
-    new_params, new_partitioned_model = amr_strategy!(inputs, params, u, t, partitioned_model)
-    
-    # Create new IMEX functions
-    f_ex!, f_im!, jac_prototype = create_imex_functions(new_params, 
-                                                       get(inputs, :imex_acoustic_implicit, true))
-    
-    # Create new SplitODEProblem
-    new_prob = SplitODEProblem(f_ex!, f_im!, u, (t, inputs[:tend]), new_params)
-    
-    return new_prob, new_partitioned_model
-end
 
 function time_loop!(inputs, params, u, args...)
 
@@ -211,4 +191,26 @@ function time_loop!(inputs, params, u, args...)
     println_rank(" # Solving ODE (", solver_type, ") .............. DONE"; msg_rank = rank)
     
     return solution
+end
+
+
+
+"""
+    amr_strategy_imex!(inputs, params, u, t, partitioned_model)
+    
+AMR strategy adapted for IMEX problems
+"""
+function amr_strategy_imex!(inputs, params, u, t, partitioned_model)
+    # Call existing AMR but create SplitODEProblem instead of ODEProblem
+    # This is a placeholder - implement based on your existing AMR code
+    
+    new_params, new_partitioned_model = amr_strategy!(inputs, params, u, t, partitioned_model)
+    
+    # Create new IMEX functions
+    f_ex!, f_im!, jac_prototype = create_imex_functions(new_params, 
+                                                       get(inputs, :imex_acoustic_implicit, true))
+    
+    new_prob = SplitODEProblem(f_ex!, f_im!, u, (t, inputs[:tend]), new_params)
+    
+    return new_prob, new_partitioned_model
 end

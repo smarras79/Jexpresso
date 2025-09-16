@@ -9,7 +9,7 @@ function user_inputs()
         :Δt                   => 0.01,
         :tinit                => 0.0,
         
-        :use_imex_solver      => true,
+        #:use_imex_solver      => true, # THIS IS TO TURN IMEX ON/OFF NOAH
 
         :imex_adaptive        => false,
         :tend                 => 0.05, #1000.0,
