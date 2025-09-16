@@ -5,47 +5,38 @@ function user_flux!(F, G, H,
                     ::CL, ::TOTAL; neqs=4, ip=1)
 
     PhysConst = PhysicalConst{Float64}()
-    T      = eltype(q)
+    T  = eltype(q)
     
-    ρ      = q[1]
-    ρu     = q[2]
-    ρv     = q[3]
-    ρw     = q[4]
-    ρe_tot = q[5]
-    #tr     = q[6]
+    ρ  = q[1]
+    ρu = q[2]
+    ρv = q[3]
+    ρw = q[4]
+    ρθ = q[5]
     
-    u     = ρu/ρ
-    v     = ρv/ρ
-    w     = ρw/ρ
-    e_tot = ρe_tot/ρ
+    u = ρu/ρ
+    v = ρv/ρ
+    w = ρw/ρ
+    θ = ρθ/ρ
     
-    e_pot = 0.0 #PhysConst.g * z
-    e_kin = T(1 // 2) * (u^2 + v^2 + w^2)
-    e_int = e_tot - e_pot - e_kin
-    
-    Temp = e_int/PhysConst.cv
-    Pressure = perfectGasLaw_ρTtoP(PhysConst, ρ=ρ, Temp=Temp)
+    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
     
     F[1] = ρu
     F[2] = ρu*u .+ Pressure
     F[3] = ρu*v
     F[4] = ρu*w
-    F[5] = ρe_tot*u
-    #F[6] = tr*u
+    F[5] = ρθ*u
 
     G[1] = ρv
     G[2] = ρv*u
     G[3] = ρv*v .+ Pressure
     G[4] = ρv*w
-    G[5] = ρe_tot*v
-    #G[6] = tr*v
+    G[5] = ρθ*v
     
     H[1] = ρw
     H[2] = ρw*u
     H[3] = ρw*v
     H[4] = ρw*w .+ Pressure
-    H[5] = ρe_tot*w
-    #H[6] = tr*w
+    H[5] = ρθ*w
     
 end
 

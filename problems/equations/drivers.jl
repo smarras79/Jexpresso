@@ -66,10 +66,11 @@ function driver(nparts,
             
             for ip =1:sem.mesh.npoin
                 RHS[ip] = user_source(RHS[ip],
-                                params.qp.qn[ip],
-                                params.qp.qe[ip],
-                                sem.mesh.npoin, inputs[:CL], inputs[:SOL_VARS_TYPE];
-                                neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip])
+                                      params.qp.qn[ip],
+                                      params.qp.qe[ip],
+                                      sem.mesh.npoin,
+                                      inputs[:CL], inputs[:SOL_VARS_TYPE];
+                                      neqs=1, x=sem.mesh.x[ip], y=sem.mesh.y[ip])
             end
             
             if inputs[:lsparse] ==  false
@@ -80,7 +81,6 @@ function driver(nparts,
             
             apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
                                                  params.mesh.coords,
-                                                 #params.mesh.x, params.mesh.y, params.mesh.z,
                                                  params.metrics.nx,
                                                  params.metrics.ny,
                                                  params.metrics.nz,

@@ -1,12 +1,10 @@
-#using Plots
-
 function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
         """
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        @info " Initialize fields for 3D CompEuler with θ equation ........................ "
+        @info " Initialize fields for LES ICP ........................ "
     end
     
     #---------------------------------------------------------------------------------
@@ -16,7 +14,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # defines neqs, which is the second dimension of q = define_q()
     # 
     #---------------------------------------------------------------------------------
-    qvars    = ["ρ", "ρu", "ρv", "ρw", "θ"]
+    qvars    = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
     qoutvars = ["ρ", "u", "v", "w", "θ", "p"]
     q        = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
@@ -232,7 +230,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     end
     
     if rank == 0
-        @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE"
+        @info " Initialize fields for LES ICP ........................ DONE"
     end
     
     return q
