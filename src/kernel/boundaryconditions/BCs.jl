@@ -309,7 +309,7 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                         θ = 0.0
                         θ1 = 0.0
                     else
-                        θ  = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
+                        θ = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
                         θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                     end
                     bulk_surface_flux!(@view(F_surf[i,:]),
@@ -323,7 +323,7 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                 for i = 1:ngl
                     ip  = poin_in_bdy_edge[iedge,i]
                     e   = bdy_edge_in_elem[iedge]
-                    ip1 = connijk[e,i,ngl]
+                    ip1 = connijk[e,i,2]
                     
                     user_bc_neumann!(@view(F_surf[i,:]), uaux[ip,:], uaux[ip1,:],
                                      qe[ip,:], qe[ip1,:],
@@ -335,7 +335,7 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
         end
     end
     if (inputs[:bdy_fluxes])
-        DSS_segment_integral!(S_flux, S_face, M_edge_inv, nedges_bdy, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem, neqs)
+        DSS_segment_integral!(S_flux, S_face, M_edge_inv, nedges_bdy, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem)
         #@info maximum(S_flux[:,2]), maximum(S_flux[:,5]), maximum(S_flux[:,6])
         #@info minimum(S_flux[:,2]), minimum(S_flux[:,5]), minimum(S_flux[:,6])
         for ieq = 1:neqs
@@ -535,7 +535,9 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
     #for ip = 1:npoin
     PhysConst = PhysicalConst{Float64}()
     for iface = 1:nfaces_bdy
-        if !startswith(bdy_face_type[iface], "periodic")
+        if (bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodic1" &&
+            bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodic2" &&
+            bdy_face_type[iface] != "periodicy" && bdy_face_type[iface] != "periodic3" )
             for i=1:ngl
                 for j=1:ngl
                     fill!(qbdy, 4325789.0)
@@ -570,7 +572,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                    connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_in_elem, bdy_face_type, RHS, rhs_el,
                                    connijk, Jef, S_face, S_flux, F_surf, M_surf_inv, M_edge_inv, M_inv,
                                    τ_f, wθ, 
-                                   Tabs, qn, #Tabs and qn are allocated only with mp 
+                                   Tabs, qn,
                                    neqs, dirichlet!, neumann, inputs)
     
     PhysConst = PhysicalConst{Float64}() 
@@ -584,23 +586,14 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
                             ip1 = connijk[e,i,j,2]
-
-                            θ  = 0.0
-                            θ1 = 0.0
-                            if (size(Tabs[:])[1] > 1) #SM Sept 11: TEMPORARY FIX TO AVOID ISSUES WHEN DRY SINCE Tabs is only allocated for moist cases
-                                if (Tabs[ip] < 1.0)
-                                    θ  = 0.0
-                                    θ1 = 0.0
-                                else
-                                    θ  = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
-                                    θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
-                                end
-                                bulk_surface_flux!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, qn[ip], qn[ip1])
+                            if (Tabs[ip] < 1)
+                                θ = 0.0
+                                θ1 = 0.0
                             else
-                                θ1 = uaux[ip1,5]/uaux[ip1,1]
-                                θ  = uaux[ip,5]/uaux[ip,1]
-                                bulk_surface_flux!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, 0.0, 0.0)
+                                θ = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
+                                θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                             end
+                            bulk_surface_flux!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:], qe[ip,:], qe[ip1,:], θ, θ1, qn[ip], qn[ip1])                        
                             #@info F_surf[i,j,:]
                         end
                     end
@@ -612,12 +605,12 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                         for j = 1:ngl
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
-                            ip1 = connijk[e,i,j,ngl]
+                            ip1 = connijk[e,i,j,2]
                             user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
                                              qe[ip,:], qe[ip1,:],
                                              bdy_face_type[iface],
                                              @view(coords[ip,:]),
-                                             @view(τ_f[iface,i,j,1:2]), @view(wθ[iface,i,j,1]), inputs[:SOL_VARS_TYPE])
+                                             @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), inputs[:SOL_VARS_TYPE])
                         end
                     end
                  end

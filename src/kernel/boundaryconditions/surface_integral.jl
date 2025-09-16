@@ -18,7 +18,8 @@ function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin,
                 for j = 1:ngl
                     e = bdy_face_in_elem[iface]
                     ip = poin_in_bdy_face[iface,i,j]
-                    ip1 = connijk[e,i,j,2]
+                    #ip1 = connijk[e,i,j,2]
+                    ip1 = ip
                     for ieq = 1:neqs
                         if(ieq == 2 || ieq == 3)
                             S_flux[ip,ieq] += S_face[iface,i,j,ieq]*M_surf_inv[ip]

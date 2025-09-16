@@ -36,8 +36,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/tcf_wmles.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/tcf_wmles_small.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/dycoms.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/tcf_wmles_small.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/dycoms.msh",
         :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
