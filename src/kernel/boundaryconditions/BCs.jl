@@ -100,7 +100,7 @@ function apply_periodicity!(u, uaux, t,qe,
 end
 
 function apply_boundary_conditions_lin_solve!(L, t, qe,
-                                              x, y, z,
+                                              coords,
                                               nx, ny, nz,
                                               npoin, npoin_linear,
                                               poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
@@ -113,7 +113,7 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
 
     if inputs[:lsparse]
         # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
-        build_custom_bcs_lin_solve_sparse!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
+        build_custom_bcs_lin_solve_sparse!(SD, t, coords, nx, ny, nz, npoin, npoin_linear,
                                            poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
                                            ngl, ngr, nelem_semi_inf, ω,
                                            xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
@@ -121,7 +121,7 @@ function apply_boundary_conditions_lin_solve!(L, t, qe,
                                            neqs, dirichlet!, neumann, inputs)
     else
         # SM HERE: uncomment this and write it for the Ax=b problem when using Dirichlet.
-        build_custom_bcs_lin_solve!(SD, t, x, y, z, nx, ny, nz, npoin, npoin_linear,
+        build_custom_bcs_lin_solve!(SD, t, coords, nx, ny, nz, npoin, npoin_linear,
                                     poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy,
                                     ngl, ngr, nelem_semi_inf, ω,
                                     xmax, ymax, zmax, xmin, ymin, zmin, ubdy, qe,
@@ -605,7 +605,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                         for j = 1:ngl
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
-                            ip1 = ip #connijk[e,i,j,2]
+                            ip1 = connijk[e,i,j,ngl]
                             user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
                                              qe[ip,:], qe[ip1,:],
                                              bdy_face_type[iface],

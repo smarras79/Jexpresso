@@ -10,16 +10,24 @@ function user_source!(S,
                       xmin=0.0, xmax=0.0,
                       ymin=0.0, ymax=0.0,
                       zmin=0.0, zmax=0.0)
-    S[1] = 0.0
-    S[2] = 0.001 #0.0042
-    S[3] = 0.0
-    S[4] = 0.0
-    S[5] = 0.0
 
+    PhysConst = PhysicalConst{Float64}()
+    
+    #
+    # S(q(x)) = -ρg
+    #
+    ρ  = q[1]
+    
+    S[1] = 0.0
+    S[2] = 0.0
+    S[3] = 0.0
+    S[4] = -ρ*PhysConst.g
+    S[5] = 0.0
+    
     #--------------
     # SPONGE
     #--------------
-    zs = 2000.0
+    zs = 1200.0
     xr = 0.0
     xl = 0.0
     α  = 0.5

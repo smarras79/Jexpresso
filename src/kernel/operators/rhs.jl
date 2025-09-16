@@ -1302,8 +1302,10 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             # Determine wall orientation and second point
                             if bdy_face_type[iface_bdy] == "wall_model_bottom"
 
+                               
+                                # For bottom wall, use last point of the element (m=ngl)
                                 ipfromwall = ngl
-                                # For bottom wall, use second point above (m=2)
+                                
                                 wall_y = coords[ip, 3]  # y-coordinate of wall point
                                 ieq = 2
                                 u2  = uprimitiveieq[k, l, ipfromwall, ieq]
@@ -1375,7 +1377,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             #
                             # Monin-Obukhov Similarity Theory
                             #                            
-                            MOST!(τ_f, wθ,
+                         #=   MOST!(τ_f, wθ,
                                   lwall_model,
                                   uprimitiveieq,
                                   inputs,
@@ -1385,7 +1387,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                                   connijk,
                                   coords,
                                   poin_in_bdy_face, elem_to_face, bdy_face_type,
-                                  k, l, m, iface_bdy, idx1, idx2)
+                            k, l, m, iface_bdy, idx1, idx2)
+                            =#
                         end
                     end
                 end

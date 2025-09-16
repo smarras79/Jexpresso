@@ -33,7 +33,7 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::Abst
     elseif (tag == "right") 
         qbdy[1] = 100.0
     elseif (tag == "top") #top
-        qbdy[1] = 100 + 20.0*sin(π*x/L)
+        qbdy[1] = 100 + 20.0*sin(π*coords[1]/L)
     elseif (tag == "left") #left
         qbdy[1] = 100.0
     end

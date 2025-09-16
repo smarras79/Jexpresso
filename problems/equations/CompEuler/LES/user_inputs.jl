@@ -23,7 +23,7 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lwall_model          => true,
-        :bdy_fluxes           => true,
+        #:bdy_fluxes           => true,
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         #:visc_model           => SMAG(),
         :visc_model           => AV(),
@@ -35,8 +35,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_10240x10240x5000.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_16x1x16.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/owenEtAl16x16x16.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/tcf_wmles.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/tcf_wmles.msh",
         :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
@@ -53,6 +55,21 @@ function user_inputs()
         :output_dir          => "./output/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
+        #---------------------------------------------------------------------------
+        # init_refinement
+        #---------------------------------------------------------------------------
+        :linitial_refine     => false,
+        :init_refine_lvl     => 1,
+        #---------------------------------------------------------------------------
+        # AMR
+        #---------------------------------------------------------------------------
+        :ladapt              => false,
+        :amr                 => true,
+        #---------------------------------------------------------------------------
+        # AMR parameters
+        #---------------------------------------------------------------------------
+        :amr_freq            => 20,
+        :amr_max_level       => 1,
         #---------------------------------------------------------------------------
     ) #Dict
     #---------------------------------------------------------------------------

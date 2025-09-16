@@ -203,7 +203,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         amp = 0.25
         for ip = 1:mesh.npoin
             randnoise = 0.0
-            if mesh.z[ip] < 3000.0
+            if mesh.z[ip] < 800.0
                 randnoise = 2*amp*(rand() - 1.0)
             end
             θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
