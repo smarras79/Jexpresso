@@ -323,7 +323,7 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
                 for i = 1:ngl
                     ip  = poin_in_bdy_edge[iedge,i]
                     e   = bdy_edge_in_elem[iedge]
-                    ip1 = connijk[e,i,2]
+                    ip1 = connijk[e,i,ngl]
                     
                     user_bc_neumann!(@view(F_surf[i,:]), uaux[ip,:], uaux[ip1,:],
                                      qe[ip,:], qe[ip1,:],
@@ -605,7 +605,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                         for j = 1:ngl
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
-                            ip1 = connijk[e,i,j,2]
+                            ip1 = ip #connijk[e,i,j,2]
                             user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
                                              qe[ip,:], qe[ip1,:],
                                              bdy_face_type[iface],
