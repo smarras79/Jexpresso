@@ -33,6 +33,8 @@ end
 
 function user_bc_neumann!(F_surf, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL)
 
+    # NOT CALLED BY DEFAULT UNLESS lbdy_flux => true in input
+    
     #if (tag == "wall_model_bottom" || tag == "wall_model_top" || tag == "MOST")
    # if (tag == "MOST")
    #     # Use the pre-computed wall shear stress components
@@ -42,11 +44,7 @@ function user_bc_neumann!(F_surf, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL)
    #     F_surf[5] = wθ[1]   # θ equation
    #    # @info F_surf[5]
    # end
-    if (tag == "bottom")
-        F_edge[4] = 0.0
-    elseif (tag == "top")
-        F_edge[4] = 0.0
-    end
+    
 end
 
 
