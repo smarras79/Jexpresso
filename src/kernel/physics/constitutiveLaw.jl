@@ -143,10 +143,10 @@ end
 function create_updated_TD_Parameters(new_p_ref_theta::FT) where {FT}
     ps = TP.ThermodynamicsParameters(FT)
     return TP.ThermodynamicsParameters(
-    ps.T_0, ps.MSLP, new_p_ref_theta, ps.cp_v, ps.cp_l, ps.cp_i,
+    ps.T_0, ps.MSLP, new_p_ref_theta, ps.R_d, ps.R_v, ps.cp_d, ps.cp_v, ps.cp_l, ps.cp_i,
     ps.LH_v0, ps.LH_s0, ps.press_triple, ps.T_triple, ps.T_freeze, ps.T_min,
     ps.T_max, ps.T_init_min, ps.entropy_reference_temperature, ps.entropy_dry_air,
-    ps.entropy_water_vapor, ps.kappa_d, ps.gas_constant, ps.molmass_dryair,
+    ps.entropy_water_vapor, ps.gas_constant, ps.molmass_dryair,
     ps.molmass_water, ps.T_surf_ref, ps.T_min_ref, ps.grav, ps.T_icenuc,
     ps.pow_icenuc
     )

@@ -48,7 +48,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         for i = 1:sounding_nlevels
             z_current  = data[i,1] # height (m)
             θ_current  = data[i,2] # potential temperature (K)
-            qv_current = data[i,3] # water vapor mixing ratio (g/kg)
+            qv_current = 0.0#data[i,3] # water vapor mixing ratio (g/kg)
             
             # Convert mixing ratio from g/kg to kg/kg
             qv_kg_per_kg = qv_current / 1000.0
@@ -68,7 +68,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 # For subsequent levels, integrate hydrostatic equation
                 z_prev  = data[i-1,1]
                 θ_prev  = data[i-1,2]
-                qv_prev = data[i-1,3] / 1000.0  # Convert to kg/kg
+                qv_prev = 0.0#data[i-1,3] / 1000.0  # Convert to kg/kg
                 p_prev  = pressure[i-1]
                 
                 # Average values for integration
@@ -107,8 +107,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 z_prev     = data[i-1,1]
                 θ_current  = data[i,2]
                 θ_prev     = data[i-1,2]
-                qv_current = data[i,3]/1000.0
-                qv_prev    = data[i-1,3]/1000.0
+                qv_current = 0.0#data[i,3]/1000.0
+                qv_prev    = 0.0#data[i-1,3]/1000.0
                 
                 dz = z_current - z_prev
                 
@@ -164,8 +164,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             z_prev      = data[i-1,1]
             θ_current   = data[i,2]
             θ_prev      = data[i-1,2]
-            qv_current  = data[i,3] / 1000.0
-            qv_prev     = data[i-1,3] / 1000.0
+            qv_current  = 0.0#data[i,3] / 1000.0
+            qv_prev     = 0.0#data[i-1,3] / 1000.0
             
             dz          = z_current - z_prev
             p_current   = pressure[i]
@@ -201,11 +201,11 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         amp = 0.25
         for ip = 1:mesh.npoin
             randnoise = 0.0
-            if mesh.z[ip] < 800.0
+            #=if mesh.z[ip] < 800.0
                 randnoise = 2*amp*(rand() - 1.0)
-            end
+            end=#
             θ     = data_interpolate[ip,1] + randnoise  # theta from column 2
-            qv    = data_interpolate[ip,2] / 1000.0     # qv from column 3, convert g/kg to kg/kg
+            qv    = 0.0#data_interpolate[ip,2] / 1000.0     # qv from column 3, convert g/kg to kg/kg
             Press = data_interpolate[ip,5]              # pressure from column 6 (newly calculated)
             ρ     = perfectGasLaw_θPtoρ(PhysConst; Press=Press, θ=θ)           
             u     = data_interpolate[ip,3]  # u from column 4
