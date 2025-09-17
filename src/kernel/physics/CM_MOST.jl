@@ -296,12 +296,12 @@ function example_usage()
     println("=== Minimal Surface Fluxes Example ===")
     
     # Example atmospheric conditions
-    u_ref = 5.0        # wind speed at 10m [m/s]
-    theta_ref = 285.0  # potential temperature at 10m [K] 
-    theta_s = 288.0    # surface potential temperature [K]
-    z_ref = 10.0       # reference height [m]
-    z0_m = 0.1         # momentum roughness length [m]
-    z0_h = 0.01        # thermal roughness length [m]
+    u_ref     = 10.0  # wind speed at 10m [m/s]
+    theta_ref = 298.0 # 285.0  # potential temperature at 10m [K] 
+    theta_s   = 302.0 # 288.0  # surface potential temperature [K]
+    z_ref     = 10.0  # reference height [m]
+    z0_m      = 0.1   # momentum roughness length [m]
+    z0_h      = 0.01  # thermal roughness length [m]
     
     # Calculate surface conditions
     result = surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
@@ -668,12 +668,12 @@ function example_with_plots()
     println("=== Minimal Surface Fluxes: Comprehensive Analysis ===")
     
     # Example atmospheric conditions
-    u_ref = 5.0        # wind speed at 10m [m/s]
-    theta_ref = 285.0  # potential temperature at 10m [K] 
-    theta_s = 288.0    # surface potential temperature [K]
-    z_ref = 10.0       # reference height [m]
-    z0_m = 0.1         # momentum roughness length [m]
-    z0_h = 0.01        # thermal roughness length [m]
+    u_ref = 10.0      # wind speed at 10m [m/s]
+    theta_ref = 298.0 # 285.0  # potential temperature at 10m [K] 
+    theta_s = 302.0   # 288.0    # surface potential temperature [K]
+    z_ref = 10.0      # reference height [m]
+    z0_m = 0.1        # momentum roughness length [m]
+    z0_h = 0.01       # thermal roughness length [m]
     
     # Calculate surface conditions
     result = surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
@@ -725,4 +725,4 @@ end
 end # module MinimalSurfaceFluxes
 
 # Run example if this file is executed directly
-MinimalSurfaceFluxes.example_with_plots()
+#MinimalSurfaceFluxes.example_with_plots()
