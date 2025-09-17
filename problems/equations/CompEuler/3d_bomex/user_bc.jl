@@ -12,7 +12,7 @@ function user_bc_dirichlet!(q,
     qbdy[2] = (q[2] - qnl*nx) 
     qbdy[3] = (q[3] - qnl*ny) 
     qbdy[4] = (q[4] - qnl*nz) 
-    if (z < 0.01) 
+    if (coords[3] < 0.01) 
         qbdy[2] = 0.0
         qbdy[3] = 0.0
         qbdy[4] = 0.0
@@ -24,7 +24,7 @@ function user_bc_dirichlet!(q,
 end
 
 function user_bc_dirichlet!(q,
-                            coords,
+                            x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
                             nx, ny, nz,
@@ -44,7 +44,7 @@ function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::Abst
     return flux
 end
 
-function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,nz,qbdy,lpert)
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, nz, qbdy, lpert)
     T = eltype(q)
     if (lpert)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3]) + nz*(q[4]+qe[4])
@@ -58,7 +58,7 @@ function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,nz,qbdy,lpert)
         w = (q[4] - qnl*nz)
         ρe = qbdy[5]
         ρqt = qbdy[6]
-        if (z < 0.01)
+        if (coords[3] < 0.01)
             u = 0.0
             v = 0.0
             w = 0.0
