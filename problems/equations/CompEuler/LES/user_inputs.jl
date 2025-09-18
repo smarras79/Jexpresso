@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.015,
+        :Δt                   => 0.04,
         :tinit                => 0.0,
         :tend                 => 10000,
         #:tinit                => 100.0,
@@ -18,7 +18,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  =>"lgl",
-        :nop                  => 4,      # Polynomial order
+        :nop                  => 3,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -36,9 +36,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_10240x10240x5000.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_16x1x16.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
-        :linitial_refine     => false,
+        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_16x1x16.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
+        #:linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # Filter parameters
