@@ -17,12 +17,12 @@ function user_bc_dirichlet!(q,
     qbdy[3] = (q[3] - qnl*ny)
     qbdy[4] = (q[4] - qnl*nz)
 
-    if tag == "top_wall"
+    #=if tag == "top_wall"
         u_geo = 7.0
         α     = 3.0 #deg
         qbdy[2] = u_geo*cospi(α/180.0)
         qbdy[3] = u_geo*sinpi(α/180.0)
-    end
+    end=#
 end
 
 function user_bc_dirichlet!(q,
@@ -53,7 +53,7 @@ function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, CL, Ph
         # Apply with correct sign for Neumann BC
         F_surf[2] = τ_f[1]  # x-momentum equation
         F_surf[3] = τ_f[2]  # y-momentum equation
-        F_surf[5] = wθ[1]/(ρ*PhysConst.cp)   # θ equation
+        F_surf[5] = 0.12   # wθ[1]/(ρ*PhysConst.cp)   # θ equation
    end
 
     #
