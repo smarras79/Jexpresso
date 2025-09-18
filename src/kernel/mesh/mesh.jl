@@ -487,6 +487,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         println_rank(" # N. Global elements       : ", mesh.gnelem; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. Global edges          : ", mesh.gnedges; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. Global faces          : ", mesh.gnfaces; msg_rank = rank, suppress = mesh.msg_suppress)
+        if rank == 0 
+            rm("./mesh.log")
+        end
         MPI.Barrier(comm)
         if mesh.msg_suppress == false
             
@@ -494,17 +497,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 MPI.Barrier(comm)
                     if i == rank
                         open("./mesh.log", "a+") do f
-                        println(f, "   # Rank                       : ", rank)
-                        println(f, "     # N. points                : ", mesh.npoin_linear)
-                        println(f, "     # N. elements              : ", mesh.nelem)
-                        println(f, "     # N. edges                 : ", mesh.nedges)
-                        println(f, "     # N. faces                 : ", mesh.nfaces)    
-                        println(f, "     # N. internal elem         : ", mesh.nelem_int)
-                        println(f, "     # N. internal edges        : ", mesh.nedges_int) 
-                        println(f, "     # N. internal faces        : ", mesh.nfaces_int)    
-                        println(f, "     # N. boundary elem         : ", mesh.nelem_bdy)
-                        println(f, "     # N. boundary edges        : ", mesh.nedges_bdy)
-                        println(f, "     # N. boundary faces        : ", mesh.nfaces_bdy)
+                            println(f, "   # Rank                       : ", rank)
+                            println(f, "     # N. points                : ", mesh.npoin_linear)
+                            println(f, "     # N. elements              : ", mesh.nelem)
+                            println(f, "     # N. edges                 : ", mesh.nedges)
+                            println(f, "     # N. faces                 : ", mesh.nfaces)    
+                            println(f, "     # N. internal elem         : ", mesh.nelem_int)
+                            println(f, "     # N. internal edges        : ", mesh.nedges_int) 
+                            println(f, "     # N. internal faces        : ", mesh.nfaces_int)    
+                            println(f, "     # N. boundary elem         : ", mesh.nelem_bdy)
+                            println(f, "     # N. boundary edges        : ", mesh.nedges_bdy)
+                            println(f, "     # N. boundary faces        : ", mesh.nfaces_bdy)
+                        close(f)
                     end
                 end              
             end
@@ -542,6 +546,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                         println(f, "     # N. faces internal points   : ", tot_faces_internal_nodes)
                         println(f, "     # N. volumes internal points : ", tot_vol_internal_nodes)
                         println(f, "     # N. total high order points : ", mesh.npoin)
+                    close(f)
                     end
                 end
             end
