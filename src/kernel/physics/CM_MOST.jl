@@ -20,13 +20,14 @@
     """
 
 #module MinimalSurfaceFluxes
-
+#=
 try
     using Plots
     gr()
 catch
     error("Plots.jl not available. Install with: using Pkg; Pkg.add(\"Plots\")")
 end
+=#
 
 # Physical constants
 const κ = 0.4                  # von Kármán constant
@@ -38,6 +39,84 @@ const a_m = 16.0              # momentum stability parameter (unstable)
 const a_h = 16.0              # heat stability parameter (unstable) 
 const b_m = 5.0               # momentum stability parameter (stable)
 const b_h = 5.0               # heat stability parameter (stable)
+
+function CM_MOST!(τ_f, wθ, ρ, iface_bdy, idx1, idx2,  u_ref, v_ref, theta_ref, theta_s, z_ref)
+    
+    #println("=== Minimal Surface Fluxes: Comprehensive Analysis ===")
+    
+    # Example atmospheric conditions
+    #u_ref = 10.0      # wind speed at 10m [m/s]
+    #theta_ref = 298.0 # 285.0  # potential temperature at 10m [K] 
+    #theta_s = 302.0   # 288.0    # surface potential temperature [K]
+    #z_ref = 10.0      # reference height [m]
+
+    z0_m = 0.1        # momentum roughness length [m]
+    z0_h = 0.01       # thermal roughness length [m]
+    
+    # Calculate surface conditions
+    result_x = surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
+    result_y = surface_conditions(v_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
+       
+    #=println("\n=== CALCULATED PARAMETERS ===")
+    #println("  uinside $(u_ref) m/s")
+    #println("  vinside $(u_ref) m/s")
+    #println("  zinsie  $(z_ref) m")
+    #println("  θinside $(theta_ref) K")
+    #println("  θsfc    $(theta_s) K")
+    
+    println("\n=== CALCULATED PARAMETERS ===")
+    println("  Friction velocity uy* = $(round(result_x.u_star, digits=4)) m/s")
+    println("  Friction velocity ux* = $(round(result_y.u_star, digits=4)) m/s")
+    println("  Temperature scale θ* = $(round(result_x.theta_star, digits=4)) K") 
+    println("  Temperature scale θ* = $(round(result_y.theta_star, digits=4)) K") 
+    println("  Obukhov length L = $(round(result_x.L, digits=1)) m")
+    println("  Sensible heat flux = $(round(result_x.Q_H, digits=1)) W/m²")
+    println("  Stability parameter ζ = $(round(result_x.zeta, digits=4))")
+    println("  Drag coefficient CD = $(round(result_x.C_D * 1000, digits=2)) × 10⁻³")
+    println("  Heat transfer coeff CH = $(round(result_x.C_H * 1000, digits=2)) × 10⁻³")
+    =#
+    # Momentum flux
+    τ_f[iface_bdy, idx1, idx2, 1] = -momentum_flux(result_x.u_star, ρ)
+    τ_f[iface_bdy, idx1, idx2, 2] = -momentum_flux(result_y.u_star, ρ)
+
+    #sensible heat flux
+    wθ[iface_bdy, idx1, idx2, 1]  = result_x.Q_H
+
+    
+    #println("  x-Momentum flux τx = $(round(τ_f[iface_bdy, idx1, idx2, 1], digits=4)) N/m²")
+    #println("  y-Momentum flux τy = $(round(τ_f[iface_bdy, idx1, idx2, 2], digits=4)) N/m²")
+    
+    #= Determine stability regime
+    if result_x.zeta < -0.1
+        stability = "Moderately Unstable (Convective)"
+    elseif result_x.zeta < 0
+        stability = "Weakly Unstable" 
+    elseif result_x.zeta < 0.1
+        stability = "Near Neutral"
+    else
+        stability = "Stable"
+    end
+    println("  Atmospheric stability: $stability")
+    =#
+    #= println("\n=== GENERATING COMPREHENSIVE ANALYSIS ===")  
+    # Create and save comprehensive analysis
+    try
+    p = save_analysis_to_pdf(result, z0_m, z0_h, theta_s, u_ref, theta_ref, z_ref,
+    filename="MOST_surface_flux_analysis.pdf")
+    
+    println("\n=== ANALYSIS COMPLETE ===")
+    println("✓ Surface flux calculations completed")
+    println("✓ Comprehensive 6-panel visualization created")
+    println("✓ Results saved to PDF")
+    println("✓ Physical consistency verified")
+    
+    catch e
+    println("Plotting failed: $e")
+    println("Install Plots.jl with: using Pkg; Pkg.add(\"Plots\")")
+    end=#
+    return
+end
+
 
 """
     Universal stability functions φ_m and φ_h following Businger-Dyer (1971)
@@ -289,51 +368,8 @@ function momentum_flux(u_star, rho=1.225)
     return rho * u_star^2
 end
 
-"""
-    Example usage and validation function
-    """
-function example_usage()
-    println("=== Minimal Surface Fluxes Example ===")
-    
-    # Example atmospheric conditions
-    u_ref     = 10.0  # wind speed at 10m [m/s]
-    theta_ref = 298.0 # 285.0  # potential temperature at 10m [K] 
-    theta_s   = 302.0 # 288.0  # surface potential temperature [K]
-    z_ref     = 10.0  # reference height [m]
-    z0_m      = 0.1   # momentum roughness length [m]
-    z0_h      = 0.01  # thermal roughness length [m]
-    
-    # Calculate surface conditions
-    result = surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
-    
-    println("Results:")
-    println("  Friction velocity u* = $(round(result.u_star, digits=4)) m/s")
-    println("  Temperature scale θ* = $(round(result.theta_star, digits=4)) K") 
-    println("  Obukhov length L = $(round(result.L, digits=1)) m")
-    println("  Sensible heat flux = $(round(result.Q_H, digits=1)) W/m²")
-    println("  Stability parameter ζ = $(round(result.zeta, digits=4))")
-    println("  Drag coefficient CD = $(round(result.C_D * 1000, digits=2)) × 10⁻³")
-    println("  Heat transfer coeff CH = $(round(result.C_H * 1000, digits=2)) × 10⁻³")
-    
-    # Calculate momentum flux
-    tau = momentum_flux(result.u_star)
-    println("  Momentum flux τ = $(round(tau, digits=4)) N/m²")
-    
-    # Test profile functions
-    heights = [2.0, 5.0, 10.0, 20.0, 50.0]
-    println("\nWind profile:")
-    for z in heights
-        u = wind_profile(z, z0_m, result.L, result.u_star)
-        println("  u($(z)m) = $(round(u, digits=2)) m/s")
-    end
-    
-    println("\nTemperature profile:")
-    for z in heights
-        theta = temperature_profile(z, z0_h, result.L, theta_s, result.theta_star)
-        println("  θ($(z)m) = $(round(theta, digits=2)) K")
-    end
-end
 
+#=
 """
     Plot vertical profiles of wind speed and potential temperature
 
@@ -723,84 +759,53 @@ function example_with_plots()
 end
 
 #end # module MinimalSurfaceFluxes
+=#
 
-
-function CM_MOST!(τ_f, wθ, iface_bdy, idx1, idx2,  u_ref, v_ref, theta_ref, theta_s, z_ref)
-    
-    #println("=== Minimal Surface Fluxes: Comprehensive Analysis ===")
-    
-    # Example atmospheric conditions
-    #u_ref = 10.0      # wind speed at 10m [m/s]
-    #theta_ref = 298.0 # 285.0  # potential temperature at 10m [K] 
-    #theta_s = 302.0   # 288.0    # surface potential temperature [K]
-    #z_ref = 10.0      # reference height [m]
-
-    z0_m = 0.1        # momentum roughness length [m]
-    z0_h = 0.01       # thermal roughness length [m]
-    
-    # Calculate surface conditions
-    result_x = surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
-    result_y = surface_conditions(v_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
-       
-    #=println("\n=== CALCULATED PARAMETERS ===")
-    #println("  uinside $(u_ref) m/s")
-    #println("  vinside $(u_ref) m/s")
-    #println("  zinsie  $(z_ref) m")
-    #println("  θinside $(theta_ref) K")
-    #println("  θsfc    $(theta_s) K")
-    
-    println("\n=== CALCULATED PARAMETERS ===")
-    println("  Friction velocity uy* = $(round(result_x.u_star, digits=4)) m/s")
-    println("  Friction velocity ux* = $(round(result_y.u_star, digits=4)) m/s")
-    println("  Temperature scale θ* = $(round(result_x.theta_star, digits=4)) K") 
-    println("  Temperature scale θ* = $(round(result_y.theta_star, digits=4)) K") 
-    println("  Obukhov length L = $(round(result_x.L, digits=1)) m")
-    println("  Sensible heat flux = $(round(result_x.Q_H, digits=1)) W/m²")
-    println("  Stability parameter ζ = $(round(result_x.zeta, digits=4))")
-    println("  Drag coefficient CD = $(round(result_x.C_D * 1000, digits=2)) × 10⁻³")
-    println("  Heat transfer coeff CH = $(round(result_x.C_H * 1000, digits=2)) × 10⁻³")
-    =#
-    # Momentum flux
-    τ_f[iface_bdy, idx1, idx2, 1] = -momentum_flux(result_x.u_star)
-    τ_f[iface_bdy, idx1, idx2, 2] = -momentum_flux(result_y.u_star)
-
-    #sensible heat flux
-    wθ[iface_bdy, idx1, idx2, 1]  = result_x.Q_H
-
-    
-    #println("  x-Momentum flux τx = $(round(τ_f[iface_bdy, idx1, idx2, 1], digits=4)) N/m²")
-    #println("  y-Momentum flux τy = $(round(τ_f[iface_bdy, idx1, idx2, 2], digits=4)) N/m²")
-    
-    #= Determine stability regime
-    if result_x.zeta < -0.1
-        stability = "Moderately Unstable (Convective)"
-    elseif result_x.zeta < 0
-        stability = "Weakly Unstable" 
-    elseif result_x.zeta < 0.1
-        stability = "Near Neutral"
-    else
-        stability = "Stable"
-    end
-    println("  Atmospheric stability: $stability")
-    =#
-    #= println("\n=== GENERATING COMPREHENSIVE ANALYSIS ===")  
-    # Create and save comprehensive analysis
-    try
-    p = save_analysis_to_pdf(result, z0_m, z0_h, theta_s, u_ref, theta_ref, z_ref,
-    filename="MOST_surface_flux_analysis.pdf")
-    
-    println("\n=== ANALYSIS COMPLETE ===")
-    println("✓ Surface flux calculations completed")
-    println("✓ Comprehensive 6-panel visualization created")
-    println("✓ Results saved to PDF")
-    println("✓ Physical consistency verified")
-    
-    catch e
-    println("Plotting failed: $e")
-    println("Install Plots.jl with: using Pkg; Pkg.add(\"Plots\")")
-    end=#
-    return
-end
 
 # Run example if this file is executed directly
 #MinimalSurfaceFluxes.example_with_plots()
+
+"""
+    Example usage and validation function
+    """
+function example_usage()
+    println("=== Minimal Surface Fluxes Example ===")
+    
+    # Example atmospheric conditions
+    u_ref     = 10.0  # wind speed at 10m [m/s]
+    theta_ref = 298.0 # 285.0  # potential temperature at 10m [K] 
+    theta_s   = 302.0 # 288.0  # surface potential temperature [K]
+    z_ref     = 10.0  # reference height [m]
+    z0_m      = 0.1   # momentum roughness length [m]
+    z0_h      = 0.01  # thermal roughness length [m]
+    
+    # Calculate surface conditions
+    result = surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
+    
+    println("Results:")
+    println("  Friction velocity u* = $(round(result.u_star, digits=4)) m/s")
+    println("  Temperature scale θ* = $(round(result.theta_star, digits=4)) K") 
+    println("  Obukhov length L = $(round(result.L, digits=1)) m")
+    println("  Sensible heat flux = $(round(result.Q_H, digits=1)) W/m²")
+    println("  Stability parameter ζ = $(round(result.zeta, digits=4))")
+    println("  Drag coefficient CD = $(round(result.C_D * 1000, digits=2)) × 10⁻³")
+    println("  Heat transfer coeff CH = $(round(result.C_H * 1000, digits=2)) × 10⁻³")
+    
+    # Calculate momentum flux
+    tau = momentum_flux(result.u_star)
+    println("  Momentum flux τ = $(round(tau, digits=4)) N/m²")
+    
+    # Test profile functions
+    heights = [2.0, 5.0, 10.0, 20.0, 50.0]
+    println("\nWind profile:")
+    for z in heights
+        u = wind_profile(z, z0_m, result.L, result.u_star)
+        println("  u($(z)m) = $(round(u, digits=2)) m/s")
+    end
+    
+    println("\nTemperature profile:")
+    for z in heights
+        theta = temperature_profile(z, z0_h, result.L, theta_s, result.theta_star)
+        println("  θ($(z)m) = $(round(theta, digits=2)) K")
+    end
+end
