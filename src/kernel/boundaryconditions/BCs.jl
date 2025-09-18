@@ -576,6 +576,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                    neqs, dirichlet!, neumann, inputs)
     
     PhysConst = PhysicalConst{Float64}() 
+    micro = size(Tabs,1)
     for iface = 1:nfaces_bdy
         if (inputs[:bdy_fluxes])
             F_surf .= 0.0
@@ -606,11 +607,26 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
                             ip1 = connijk[e,i,j,ngl]
+                            θ = 0.0   
+                            θ1 = 0.0 
+                            qn1 = 0
+                            qn2 = 0
+                            if (micro > 1)
+                                qn1 = qn[ip]
+                                qn2 = qn[ip1]
+                                if (Tabs[ip] < 1)
+                                    θ = uaux[ip,5]/uaux[ip,1]
+                                    θ1 = uaxu[ip1,5]/uaux[ip1,1]
+                                else
+                                    θ = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
+                                    θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
+                                end
+                            end
                             user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
                                              qe[ip,:], qe[ip1,:],
                                              bdy_face_type[iface],
                                              @view(coords[ip,:]),
-                                             @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), inputs[:SOL_VARS_TYPE])
+                                             @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), inputs[:SOL_VARS_TYPE], PhysConst; θ = θ, θ1 = θ1, qn0 = qn1, qn1=qn2)
                         end
                     end
                  end

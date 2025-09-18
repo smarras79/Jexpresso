@@ -724,5 +724,70 @@ end
 
 end # module MinimalSurfaceFluxes
 
+
+function CM_MOST!(τx, τy, u_ref, v_ref, theta_ref, theta_s, z_ref)
+    
+    println("=== Minimal Surface Fluxes: Comprehensive Analysis ===")
+    
+    # Example atmospheric conditions
+    #u_ref = 10.0      # wind speed at 10m [m/s]
+    #theta_ref = 298.0 # 285.0  # potential temperature at 10m [K] 
+    #theta_s = 302.0   # 288.0    # surface potential temperature [K]
+    #z_ref = 10.0      # reference height [m]
+
+    z0_m = 0.1        # momentum roughness length [m]
+    z0_h = 0.01       # thermal roughness length [m]
+    
+    # Calculate surface conditions
+    result_x = surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
+    result_y = surface_conditions(v_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
+    
+    println("\n=== CALCULATED PARAMETERS ===")
+    println("  Friction velocity u* = $(round(result.u_star, digits=4)) m/s")
+    println("  Temperature scale θ* = $(round(result.theta_star, digits=4)) K") 
+    println("  Obukhov length L = $(round(result.L, digits=1)) m")
+    println("  Sensible heat flux = $(round(result.Q_H, digits=1)) W/m²")
+    println("  Stability parameter ζ = $(round(result.zeta, digits=4))")
+    println("  Drag coefficient CD = $(round(result.C_D * 1000, digits=2)) × 10⁻³")
+    println("  Heat transfer coeff CH = $(round(result.C_H * 1000, digits=2)) × 10⁻³")
+    
+    # Calculate momentum flux
+    τx = momentum_flux(result_x.u_star)
+    τy = momentum_flux(result_y.u_star)
+    println("  Momentum flux τ = $(round(tau, digits=4)) N/m²")
+    
+    # Determine stability regime
+    if result.zeta < -0.1
+        stability = "Moderately Unstable (Convective)"
+    elseif result.zeta < 0
+        stability = "Weakly Unstable" 
+    elseif result.zeta < 0.1
+        stability = "Near Neutral"
+    else
+        stability = "Stable"
+    end
+    println("  Atmospheric stability: $stability")
+    
+   #= println("\n=== GENERATING COMPREHENSIVE ANALYSIS ===")
+    
+    # Create and save comprehensive analysis
+    try
+        p = save_analysis_to_pdf(result, z0_m, z0_h, theta_s, u_ref, theta_ref, z_ref,
+                                filename="MOST_surface_flux_analysis.pdf")
+        
+        println("\n=== ANALYSIS COMPLETE ===")
+        println("✓ Surface flux calculations completed")
+        println("✓ Comprehensive 6-panel visualization created")
+        println("✓ Results saved to PDF")
+        println("✓ Physical consistency verified")
+        
+    catch e
+        println("Plotting failed: $e")
+        println("Install Plots.jl with: using Pkg; Pkg.add(\"Plots\")")
+    end=#
+end
+
+end # module MinimalSurfaceFluxes
+
 # Run example if this file is executed directly
 #MinimalSurfaceFluxes.example_with_plots()

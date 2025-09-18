@@ -29,7 +29,8 @@ function user_inputs()
         :visc_model           => AV(),
         :ivisc_equations      => [1, 2, 3, 4, 5],
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
-        :μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
+        #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 1, 1, 1, 1.6], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
