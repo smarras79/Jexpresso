@@ -14,8 +14,15 @@ function user_bc_dirichlet!(q,
     #
     qnl = nx*q[2] + ny*q[3] + nz*q[4]
     qbdy[2] = (q[2] - qnl*nx) 
-    qbdy[3] = (q[3] - qnl*ny) 
-    qbdy[4] = (q[4] - qnl*nz)     
+    qbdy[3] = (q[3] - qnl*ny)
+    qbdy[4] = (q[4] - qnl*nz)
+
+    if tag == "top_wall"
+        u_geo = 7.0
+        α     = 3.0 #deg
+        qbdy[2] = u_geo*cospi(α/180.0)
+        qbdy[3] = u_geo*sinpi(α/180.0)
+    end
 end
 
 function user_bc_dirichlet!(q,
