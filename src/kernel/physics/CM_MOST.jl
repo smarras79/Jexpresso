@@ -761,8 +761,8 @@ function CM_MOST!(τ_f, wθ, iface_bdy, idx1, idx2,  u_ref, v_ref, theta_ref, th
     println("  Heat transfer coeff CH = $(round(result_x.C_H * 1000, digits=2)) × 10⁻³")
     =#
     # Momentum flux
-    τ_f[iface_bdy, idx1, idx2, 1] = momentum_flux(result_x.u_star)
-    τ_f[iface_bdy, idx1, idx2, 2] = momentum_flux(result_y.u_star)
+    τ_f[iface_bdy, idx1, idx2, 1] = -momentum_flux(result_x.u_star)
+    τ_f[iface_bdy, idx1, idx2, 2] = -momentum_flux(result_y.u_star)
 
     #sensible heat flux
     wθ[iface_bdy, idx1, idx2, 1]  = result_x.Q_H

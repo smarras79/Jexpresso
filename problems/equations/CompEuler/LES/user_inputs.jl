@@ -36,9 +36,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_10240x10240x5000.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_16x1x16.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
-        :linitial_refine     => false,
+        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_16x1x16.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
+        #:linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # Filter parameters
