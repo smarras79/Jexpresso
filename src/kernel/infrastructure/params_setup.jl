@@ -231,7 +231,8 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Allocate Thermodynamic params for bomex case
     #------------------------------------------------------------------------------------
-    thermo_params = create_updated_TD_Parameters(TFloat(101325.0))
+    PhysConst = PhysicalConst{TFloat}()
+    thermo_params = create_updated_TD_Parameters(PhysConst.potential_temperature_reference_pressure)
     
     #------------------------------------------------------------------------------------
     # Populate solution arrays

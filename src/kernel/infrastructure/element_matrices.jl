@@ -999,7 +999,7 @@ end
 
 function DSS_global_RHS!(RHS, pM, neqs)
 
-    if pM == nothing return end
+    if pM === nothing return end
     
     assemble_mpi!(@view(RHS[:,:]),pM)
     

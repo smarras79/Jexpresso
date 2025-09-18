@@ -30,7 +30,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         xc = 5000.0
         zc = 1500.0
         trc = 1.0
-        new_param_set = create_updated_TD_Parameters(Float64(101325.0))
+        new_param_set = create_updated_TD_Parameters(PhysConst.potential_temperature_reference_pressure)
         for ip = 1:mesh.npoin
             
             x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
