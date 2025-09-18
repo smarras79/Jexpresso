@@ -40,14 +40,14 @@ function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, CL, Ph
     # NOT CALLED BY DEFAULT UNLESS lbdy_flux => true in input
     
     #if (tag == "wall_model_bottom" || tag == "wall_model_top" || tag == "MOST")
-   # if (tag == "MOST")
-   #     # Use the pre-computed wall shear stress components
-   #     # Apply with correct sign for Neumann BC
-   #     F_surf[2] = τ_f[1]  # x-momentum equation
-   #     F_surf[3] = τ_f[2]  # y-momentum equation
-   #     F_surf[5] = wθ[1]   # θ equation
-   #    # @info F_surf[5]
-   # end
+    if (tag == "MOST")
+        ρ = q[1]
+        # Use the pre-computed wall shear stress components
+        # Apply with correct sign for Neumann BC
+        F_surf[2] = τ_f[1]  # x-momentum equation
+        F_surf[3] = τ_f[2]  # y-momentum equation
+        F_surf[5] = wθ[1]/(ρ*PhysConst.cp)   # θ equation
+   end
 
     #
     # Example of user defined bulk formulas (in contrast to, e.g., CM_MOST, which is built in its own function called from within rhs.jl
