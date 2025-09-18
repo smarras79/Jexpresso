@@ -4,21 +4,21 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.04,
+        :Δt                   => 0.015,
         :tinit                => 0.0,
         :tend                 => 10000,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "",
-        :diagnostics_at_times => (0:0.25:1000),
+        :diagnostics_at_times => (0:1.0:1000),
         :lsource              => true,
         :sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  =>"lgl",
-        :nop                  => 3,      # Polynomial order
+        :nop                  => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -36,10 +36,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_10240x10240x5000.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_16x1x16.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/owenEtAl16x16x16.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/tcf_wmles.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_16x1x16.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
         :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
