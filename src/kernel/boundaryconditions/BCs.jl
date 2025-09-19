@@ -616,7 +616,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 qn2 = qn[ip1]
                                 if (Tabs[ip] < 1)
                                     θ = uaux[ip,5]/uaux[ip,1]
-                                    θ1 = uaxu[ip1,5]/uaux[ip1,1]
+                                    θ1 = uaux[ip1,5]/uaux[ip1,1]
                                 else
                                     θ = Tabs[ip]*(PhysConst.pref/uaux[ip,end])^(1/PhysConst.cpoverR)
                                     θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)

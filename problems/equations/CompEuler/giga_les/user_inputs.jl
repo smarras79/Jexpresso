@@ -18,8 +18,8 @@ function user_inputs()
         :lprecip              => true,
         :SOL_VARS_TYPE        => PERT(),
         :LST                  => true,
-        :bdy_fluxes           => true,
-        :bulk_fluxes          => true,
+        #:bdy_fluxes           => true,
+        #:bulk_fluxes          => true,
         #:backend              => MetalBackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -32,7 +32,7 @@ function user_inputs()
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :visc_model           => SMAG(),
         :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
-        :μ                   => [0.0, 0.14, 0.14, 0.14, 0.14, 0.14, 0.14],
+        :μ                   => [0.0, 200.0, 200.0, 200.0, 200.0, 200.0, 200.0],
         #:μ                   => [0.0, 100.0, 100.0, 100.0, 150.0, 150.0, 150.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:

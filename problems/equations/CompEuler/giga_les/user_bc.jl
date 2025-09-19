@@ -54,7 +54,7 @@ function user_bc_dirichlet!(q,
     end=#
 end
 
-function user_bc_neumann!(F_surf, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL, PhysConst; θ=0, θ1 = 0, qn0=0, qn1=0)
+function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, CL, PhysConst; θ=0, θ1 = 0, qn0=0, qn1=0)
 
     #if (tag == "wall_model_bottom" || tag == "wall_model_top" || tag == "MOST")
    # if (tag == "MOST")
@@ -72,13 +72,8 @@ function user_bc_neumann!(F_surf, u, u1, qe, qe1, tag, coords, τ_f, wθ, CL, Ph
         ρu1  = q1[2] + qe1[2]
         ρv   = q[3]  + qe[3]
         ρv1  = q1[3] + qe1[3]
-        if size(q)[1] > 5
-            ρqt  = q[6]  + qe[6]
-            ρqt1 = q1[6] + qe1[6]
-        else
-            ρqt  = 0.0
-            ρqt1 = 0.0
-        end
+        ρqt  = q[6]  + qe[6]
+        ρqt1 = q1[6] + qe1[6]
 
         u   = ρu/ρ
         v   = ρv/ρ

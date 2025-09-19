@@ -58,7 +58,7 @@ function time_loop!(inputs, params, u)
 
             #CFL
             computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
-                       inputs[:Δt],
+                       integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
                        params.mesh.Δeffective_s,
                        integrator,
                        params.SD; visc=inputs[:μ])
