@@ -13,9 +13,9 @@ function user_source!(S,
 
     PhysConst = PhysicalConst{Float64}()
     
-    #
+    #--------------
     # S(q(x)) = -ρg
-    #
+    #--------------
     ρ  = q[1]
     
     S[1] = 0.0
@@ -23,6 +23,11 @@ function user_source!(S,
     S[3] = 0.0
     S[4] = -ρ*PhysConst.g
     S[5] = 0.0
+
+    #--------------
+    # Coriolis
+    #--------------
+    lcoriolis = true
     
     #--------------
     # SPONGE
@@ -41,15 +46,15 @@ function user_source!(S,
     #if (x >= xr)#nsponge_points * dsy) #&& dbl >= 0.0)
     #    betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     #else
-        betaxr_coe = 0.0
+    betaxr_coe = 0.0
     #end
-   
+    
     #if (x <= xl)#nsponge_points * dsy) #&& dbl >= 0.0)
     #    betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
     #else
-        betaxl_coe = 0.0
+    betaxl_coe = 0.0
     #end
-   
+    
     cxr = 0.0*betaxr_coe
     cxl = 0.0*betaxl_coe
     cyr = 0.0
@@ -57,10 +62,20 @@ function user_source!(S,
     cs  = 1.0 - (1.0 - ctop)*(1.0 - cxr)*(1.0 - cxl)*(1.0 - cyr)*(1.0 - cyl)
 
     #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
-      #S[1] -= (cs)*(q[1]-qe[1])
-      S[2] -= cs*(q[2]-qe[2])
-      S[3] -= cs*(q[3]-qe[3])
-      S[4] -= cs*(q[4]-qe[4])
-      #S[5] -= cs*(q[5]-qe[5])
+    #S[1] -= (cs)*(q[1]-qe[1])
+    S[2] -= cs*(q[2]-qe[2])
+    S[3] -= cs*(q[3]-qe[3])
+    S[4] -= cs*(q[4]-qe[4])
+    #S[5] -= cs*(q[5]-qe[5])
+
+    #Coriolis
+    if lcoriolis == true
+        f = 1.0e-4
+        u_vel = q[2]
+        v_vel = q[3]
+        S[2] += f * v_vel
+        S[3] -= f * u_vel
+    end
+    
     return  S
 end

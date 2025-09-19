@@ -4,14 +4,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.035,
+        :Δt                   => 0.025,
         :tinit                => 0.0,
-        :tend                 => 3600,
+        :tend                 => 7200,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "",
-        :diagnostics_at_times => (0:2.0:3600),
+        :diagnostics_at_times => (0:1.0:7200),
         :lsource              => true,
         :sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
@@ -24,13 +24,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lwall_model          => true,
         :bdy_fluxes           => true,
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        :lvisc                => true, #false by default
         #:visc_model           => SMAG(),
         :visc_model           => AV(),
         :ivisc_equations      => [1, 2, 3, 4, 5],
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 10, 10, 10, 20], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 10, 10, 10, 15], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
