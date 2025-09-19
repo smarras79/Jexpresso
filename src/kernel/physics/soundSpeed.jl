@@ -73,12 +73,18 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_2D; visc=[0
 
     if size(integrator.u)[1] >= 3*npoin
         #u
-        idx  = npoin
-        umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
+        if (integrator.p.SOL_VARS_TYPE == PERT())
+            idx  = npoin
+            umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin] + integrator.p.qp.qe[idx+1:2*npoin]), MPI.MAX, comm)
+
+            idx  = 2*npoin
+            vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin] + integrator.p.qp.qe[idx+1:3*npoin]), MPI.MAX, comm)
+        else
+            umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
         
-        idx  = 2*npoin
-        vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
-        
+            idx  = 2*npoin
+            vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
+        end
         velomax = max(umax, vmax)
         
         #speed of sound
@@ -107,14 +113,24 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_3D; visc=[0
 
     if size(integrator.u)[1] >= 4*npoin
         #u
-        idx  = npoin
-        umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
-        #v
-        idx  = 2*npoin
-        vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
-        #w
-        idx  = 3*npoin
-        wmax = MPI.Allreduce(maximum(integrator.u[idx+1:4*npoin]), MPI.MAX, comm)
+        if (integrator.p.SOL_VARS_TYPE == PERT())
+            idx  = npoin
+            umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin] + integrator.p.qp.qe[idx+1:2*npoin]), MPI.MAX, comm)
+
+            idx  = 2*npoin
+            vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin] + integrator.p.qp.qe[idx+1:3*npoin]), MPI.MAX, comm)
+            
+            idx  = 3*npoin
+            wmax = MPI.Allreduce(maximum(integrator.u[idx+1:4*npoin] + integrator.p.qp.qe[idx+1:4*npoin]), MPI.MAX, comm)
+        else
+            umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
+
+            idx  = 2*npoin
+            vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin]), MPI.MAX, comm)
+            
+            idx  = 3*npoin
+            wmax = MPI.Allreduce(maximum(integrator.u[idx+1:4*npoin]), MPI.MAX, comm)
+        end
         
         velomax = max(umax, vmax, wmax)
         
