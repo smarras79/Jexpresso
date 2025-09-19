@@ -1377,18 +1377,19 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             #
                             # Monin-Obukhov Similarity Theory
                             #                            
-                         #=   MOST!(τ_f, wθ,
-                                  lwall_model,
-                                  uprimitiveieq,
-                                  inputs,
-                                  PhysConst, MPConst,
-                                  dist,
-                                  iel, ieq,
-                                  connijk,
-                                  coords,
-                                  poin_in_bdy_face, elem_to_face, bdy_face_type,
-                            k, l, m, iface_bdy, idx1, idx2)
-                            =#
+                            iz  = ngl
+                            ip2 = connijk[iel, k, l, iz]
+
+                            rho          = uprimitiveieq[k, l,  m, 1]
+                            u_inside     = uprimitiveieq[k, l, iz, 2]  # u-component
+                            v_inside     = uprimitiveieq[k, l, iz, 3]  # v-component
+                            theta_inside = uprimitiveieq[k, l, iz, 5]
+                            theta_sfc    = uprimitiveieq[k, l,  1, 5]
+                            z_sfc        = coords[ip2, 3]
+                            
+                            CM_MOST!(τ_f, wθ, rho, iface_bdy, idx1, idx2,
+                                     u_inside, v_inside, theta_inside, theta_sfc, z_sfc)
+                            
                         end
                     end
                 end

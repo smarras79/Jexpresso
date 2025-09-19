@@ -42,7 +42,7 @@ function user_bc_dirichlet!(q,
 end
 
 
-function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, CL, PhysConst; kwargs...)
+function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, CL, PhysConst; θ=0, θ1=0, kwargs...)
 
     # NOT CALLED BY DEFAULT UNLESS lbdy_flux => true in input
     
@@ -67,14 +67,10 @@ function user_bc_neumann!(F_surf, q, q1, qe, qe1, tag, coords, τ_f, wθ, CL, Ph
         ρv   = q[3]  #+ qe[3]
         ρv1  = q1[3] #+ qe1[3]
 
-        ρθ   = q[5]
-        ρθ1  = q1[5]
         u   = ρu/ρ
         v   = ρv/ρ
         u1  = ρu1/ρ1
         v1  = ρv1/ρ1
-        θ = ρθ/ρ
-        θ1 = ρθ1/ρ
 
         u_12  = (u + u1)/2
         v_12  = (v + v1)/2
