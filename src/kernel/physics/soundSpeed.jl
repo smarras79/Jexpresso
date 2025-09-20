@@ -80,6 +80,7 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_2D; visc=[0
             idx  = 2*npoin
             vmax = MPI.Allreduce(maximum(integrator.u[idx+1:3*npoin] + integrator.p.qp.qe[idx+1:3*npoin]), MPI.MAX, comm)
         else
+            idx  = npoin
             umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
         
             idx  = 2*npoin
@@ -123,6 +124,7 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_3D; visc=[0
             idx  = 3*npoin
             wmax = MPI.Allreduce(maximum(integrator.u[idx+1:4*npoin] + integrator.p.qp.qe[idx+1:4*npoin]), MPI.MAX, comm)
         else
+            idx  = npoin
             umax = MPI.Allreduce(maximum(integrator.u[idx+1:2*npoin]), MPI.MAX, comm)
 
             idx  = 2*npoin

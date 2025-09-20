@@ -3,8 +3,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.025,
+        :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        :Δt                   => 0.07,
         :tinit                => 0.0,
         :tend                 => 7200,
         #:tinit                => 100.0,
@@ -18,7 +18,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes  =>"lgl",
-        :nop                  => 3,      # Polynomial order
+        :nop                  => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -39,7 +39,8 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_16x1x16.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_64x32x32.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_64x1x32.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_64x1x32.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x2x16.msh",
         #:linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
