@@ -196,9 +196,13 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                 phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
             end 
             if (rank == 0) @info " Build periodicity infrastructure ......" end
-
-            if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
-
+            
+            if (mesh.nsd > 2)
+                if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
+            else
+                if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+            end
+            
             if (rank == 0) @info " Matrix wrapper ......" end
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
                         ldss_differentiation=inputs[:ldss_differentiation], backend = inputs[:backend], interp)
