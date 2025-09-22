@@ -97,9 +97,15 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         # INITIAL STATE from scratch:
         #
         data = read_sounding(inputs[:sounding_file])
+
         
-        sounding_nlevels = size(data)[1]
-        sounding_nvars   = size(data)[2]
+        if  any(ismissing, data)
+            sounding_nlevels = size(data)[1]
+            sounding_nvars   = size(data)[2] - 1
+        else
+            sounding_nlevels = size(data)[1]
+            sounding_nvars   = size(data)[2]
+        end
         data_with_p      = zeros(Float64, sounding_nlevels, sounding_nvars+1)
         
         # Get surface pressure from sounding header (first line: pressure, theta, qv)
@@ -107,7 +113,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         p_surface = 100000.0  # 1000 hPa converted to Pa, adjust based on your sounding reader
         
         # Copy original data (height, theta, qv, u, v)
-        data_with_p[:,1:sounding_nvars] = copy(data[:,:])
+        data_with_p[:,1:sounding_nvars] = copy(data[:,1:sounding_nvars])
         
         # Calculate pressure from hydrostatic equilibrium with iterative balancing
         # Assuming data structure: [height, theta, qv, u, v]

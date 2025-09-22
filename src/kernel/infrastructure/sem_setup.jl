@@ -182,11 +182,13 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
+            @info " A"
             if (mesh.nsd > 2)
                 if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
             else
                 if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
             end
+            @info " B"
             if (rank == 0) @info " Build metrics ......" end
             metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
             @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])

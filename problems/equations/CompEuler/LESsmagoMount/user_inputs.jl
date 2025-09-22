@@ -13,7 +13,8 @@ function user_inputs()
         #:restart_input_file_path => "",
         :diagnostics_at_times => (0:1.0:7200),
         :lsource              => true,
-        :sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
+        #:sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
+        :sounding_file        => "./data_files/input_sounding_teamx_u10_ridge100_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -44,9 +45,9 @@ function user_inputs()
         # Mountain parameters
         #---------------------------------------------------------------------------
         :lwarp               => true,
-        :mount_type          => "agnesi",
-        :a_mount             => 1000.0,
-        :h_mount             => 500.0,
+        :mount_type          => "LESICP", #"agnesi",
+        #:a_mount             => 0.0,
+        :h_mount             => 100.0,
         :c_mount             => 2560.0,
         #---------------------------------------------------------------------------
         # Filter parameters

@@ -100,6 +100,19 @@ function warp_mesh_3D!(mesh,inputs)
             x = mesh.x[ip]
             zsurf[ip] = hm*am*am/((x-xc)*(x-xc) + am*am)
         end
+        
+    elseif (inputs[:mount_type] == "LESICP")
+        zsurf = zeros(mesh.npoin)
+        sigma = zeros(mesh.npoin)
+        ztop = maximum(mesh.z)
+        am = maximum(mesh.x) - minimum(mesh.x)
+        hm = inputs[:h_mount]
+        xc = inputs[:c_mount]
+        for ip = 1:mesh.npoin
+            x = mesh.x[ip]
+            zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*(x)/am))
+        end
+        
     elseif (inputs[:mount_type] == "schar")
         ac = inputs[:a_mount]
         hc = inputs[:h_mount]
