@@ -13,8 +13,7 @@ function user_inputs()
         #:restart_input_file_path => "",
         :diagnostics_at_times => (0:5.0:7200),
         :lsource              => true,
-        #:sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
-        :sounding_file        => "./data_files/input_sounding_teamx_u10_ridge100_noheader.dat",
+        :sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -37,18 +36,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16_zmax2000.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
         #:linitial_refine     => false,
         :init_refine_lvl     => 1,
-        #---------------------------------------------------------------------------
-        # Mountain parameters
-        #---------------------------------------------------------------------------
-        :lwarp               => true,
-        :mount_type          => "LESICP", #"agnesi",
-        #:a_mount             => 0.0,
-        :h_mount             => 100.0,
-        :c_mount             => 2560.0,
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -61,7 +53,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
         #:output_dir          => "/scratch/smarras/smarras/output/",
-        :output_dir          => "./output/",
+        :output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
