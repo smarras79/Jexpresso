@@ -1,63 +1,63 @@
 function warp_mesh!(mesh,inputs)
-  
-  am = inputs[:a_mount]
-  hm = inputs[:h_mount]
-  xc = inputs[:c_mount]
-  ztop = maximum(mesh.y)#30000.0
-  zsurf = zeros(Float64,mesh.npoin)
-  sigma = zeros(Float64,mesh.npoin)
-  for i=1:mesh.npoin
-    sigma[i] = mesh.y[i]
-    
-    z = (ztop - zsurf[i])/ztop * sigma[i] + zsurf[i]
-    
-    mesh.y[i] = z
-  end
-  if (inputs[:mount_type] == "agnesi")
     am = inputs[:a_mount]
     hm = inputs[:h_mount]
     xc = inputs[:c_mount]
-    for ip = 1:mesh.npoin
-      x = mesh.x[ip]
-      zsurf[ip] = hm/(1+ ((x-xc)/am)^2)
+    ztop = maximum(mesh.z)#30000.0
+    zsurf = zeros(Float64,mesh.npoin)
+    sigma = zeros(Float64,mesh.npoin)
+    for i=1:mesh.npoin
+        sigma[i] = mesh.z[i]
+        
+        z = (ztop - zsurf[i])/ztop * sigma[i] + zsurf[i]
+        
+        mesh.z[i] = z
     end
-  elseif (inputs[:mount_type] == "schar")
-    ac = inputs[:a_mount]
-    hc = inputs[:h_mount]
-    lambdac = inputs[:lambda_mount]
-    for ip = 1:mesh.npoin
-      x = mesh.x[ip]
-      zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2 
-    end
-  end
-
-  for ip = 1:mesh.npoin
-    sigma[ip] = mesh.y[ip]
-    #if (mesh.y[ip] < 10000.0)  
-      z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-      mesh.y[ip] = z
-    #=elseif (mesh.y[ip] < 15000.0)
-      factor = (15000-mesh.y[ip])/5000.0
-      z = (ztop - factor*zsurf[ip])/ztop * sigma[ip] + factor*zsurf[ip]
-      mesh.y[ip] = z 
-    end=#
-  end 
-  
-  #=for iedge = 1:size(mesh.bdy_edge_in_elem,1)
-        iel = mesh.bdy_edge_in_elem[iedge]
-        comp = mesh.bdy_edge_comp[iedge]
-        for k=1:mesh.ngl
-            #if (mesh.bdy_edge_type[iedge] == "free_slip")
-                tag = mesh.bdy_edge_type[iedge]
-                ip = mesh.poin_in_bdy_edge[iedge,k]
-                @info "prewarp", mesh.y[ip]
-                if (mesh.y[ip] < 10.0)
-                  mesh.y[ip] = (hm*(am^2))/((mesh.x[ip]-xc)^2 + am^2)
-                end
-                @info "postwarp", mesh.y[ip]
-            #end
+    if (inputs[:mount_type] == "agnesi")
+        am = inputs[:a_mount]
+        hm = inputs[:h_mount]
+        xc = inputs[:c_mount]
+        for ip = 1:mesh.npoin
+            x = mesh.x[ip]
+            zsurf[ip] = hm*am*am/((x-xc)*(x-xc) + am*am)
+            #zsurf[ip] = hm/(1+ ((x-xc)/am)^2)
         end
-   end=#
+    elseif (inputs[:mount_type] == "schar")
+        ac = inputs[:a_mount]
+        hc = inputs[:h_mount]
+        lambdac = inputs[:lambda_mount]
+        for ip = 1:mesh.npoin
+            x = mesh.x[ip]
+            zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2 
+        end
+    end
+
+    for ip = 1:mesh.npoin
+        sigma[ip] = mesh.y[ip]
+        #if (mesh.y[ip] < 10000.0)  
+        z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+        mesh.y[ip] = z
+        #=elseif (mesh.y[ip] < 15000.0)
+        factor = (15000-mesh.y[ip])/5000.0
+        z = (ztop - factor*zsurf[ip])/ztop * sigma[ip] + factor*zsurf[ip]
+        mesh.y[ip] = z 
+        end=#
+    end 
+    
+    #=for iedge = 1:size(mesh.bdy_edge_in_elem,1)
+    iel = mesh.bdy_edge_in_elem[iedge]
+    comp = mesh.bdy_edge_comp[iedge]
+    for k=1:mesh.ngl
+    #if (mesh.bdy_edge_type[iedge] == "free_slip")
+    tag = mesh.bdy_edge_type[iedge]
+    ip = mesh.poin_in_bdy_edge[iedge,k]
+    @info "prewarp", mesh.y[ip]
+    if (mesh.y[ip] < 10.0)
+    mesh.y[ip] = (hm*(am^2))/((mesh.x[ip]-xc)^2 + am^2)
+    end
+    @info "postwarp", mesh.y[ip]
+    #end
+    end
+    end=#
 end
 
 function warp_mesh_3D!(mesh,inputs)
@@ -89,32 +89,32 @@ function warp_mesh_3D!(mesh,inputs)
             mesh.z[ip] = z_new
         end
 
-  elseif (inputs[:mount_type] == "agnesi")
-    zsurf = zeros(mesh.npoin)
-    sigma = zeros(mesh.npoin)
-    ztop = maximum(mesh.z)
-    am = inputs[:a_mount]
-    hm = inputs[:h_mount]
-    xc = inputs[:c_mount]
-    for ip = 1:mesh.npoin
-      x = mesh.x[ip]
-      zsurf[ip] = hm/(1+ ((x-xc)/am)^2)
+    elseif (inputs[:mount_type] == "agnesi")
+        zsurf = zeros(mesh.npoin)
+        sigma = zeros(mesh.npoin)
+        ztop = maximum(mesh.z)
+        am = inputs[:a_mount]
+        hm = inputs[:h_mount]
+        xc = inputs[:c_mount]
+        for ip = 1:mesh.npoin
+            x = mesh.x[ip]
+            zsurf[ip] = hm*am*am/((x-xc)*(x-xc) + am*am)
+        end
+    elseif (inputs[:mount_type] == "schar")
+        ac = inputs[:a_mount]
+        hc = inputs[:h_mount]
+        lambdac = inputs[:lambda_mount]
+        for ip = 1:mesh.npoin
+            x = mesh.x[ip]
+            zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2
+        end
     end
-  elseif (inputs[:mount_type] == "schar")
-    ac = inputs[:a_mount]
-    hc = inputs[:h_mount]
-    lambdac = inputs[:lambda_mount]
-    for ip = 1:mesh.npoin
-      x = mesh.x[ip]
-      zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2
-    end
-  end
 
-  for ip = 1:mesh.npoin
-    sigma[ip] = mesh.z[ip]
-      z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-      mesh.z[ip] = z
-  end
+    for ip = 1:mesh.npoin
+        sigma[ip] = mesh.z[ip]
+        z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+        mesh.z[ip] = z
+    end
 end
 
 function warp_phys_grid!(x,y,z,ncol,nlay)
@@ -148,32 +148,32 @@ function warp_phys_grid!(x,y,z,ncol,nlay)
             end
         end
 
-  elseif (inputs[:mount_type] == "agnesi")
-    zsurf = zeros(ncol)
-    sigma = zeros(nlay+1,ncol)
-    ztop = maximum(z)
-    am = inputs[:a_mount]
-    hm = inputs[:h_mount]
-    xc = inputs[:c_mount]
-    for icol = 1:ncol
-        xx = x[icol]
-        zsurf[icol] = hm/(1+ ((xx-xc)/am)^2)
+    elseif (inputs[:mount_type] == "agnesi")
+        zsurf = zeros(ncol)
+        sigma = zeros(nlay+1,ncol)
+        ztop = maximum(z)
+        am = inputs[:a_mount]
+        hm = inputs[:h_mount]
+        xc = inputs[:c_mount]
+        for icol = 1:ncol
+            xx = x[icol]
+            zsurf[icol] = hm/(1+ ((xx-xc)/am)^2)
+        end
+    elseif (inputs[:mount_type] == "schar")
+        ac = inputs[:a_mount]
+        hc = inputs[:h_mount]
+        lambdac = inputs[:lambda_mount]
+        for icol = 1:ncol
+            xx = x[icol]
+            zsurf[icol] = hc * exp(-(xx/ac)^2) * cospi(xx/lambdac)^2
+        end
     end
-  elseif (inputs[:mount_type] == "schar")
-    ac = inputs[:a_mount]
-    hc = inputs[:h_mount]
-    lambdac = inputs[:lambda_mount]
-    for icol = 1:ncol
-        xx = x[icol]
-        zsurf[icol] = hc * exp(-(xx/ac)^2) * cospi(xx/lambdac)^2
-    end
-  end
 
-  for icol = 1:ncol
-    for ilay = 1:nlay+1
-        sigma[ilay,icol] = z[ilay,icol]
-        z_new = (ztop - zsurf[icol])/ztop * sigma[ilay,icol] + zsurf[icol]
-        z[ilay,icol] = z_new
+    for icol = 1:ncol
+        for ilay = 1:nlay+1
+            sigma[ilay,icol] = z[ilay,icol]
+            z_new = (ztop - zsurf[icol])/ztop * sigma[ilay,icol] + zsurf[icol]
+            z[ilay,icol] = z_new
+        end
     end
-  end
 end
