@@ -252,6 +252,10 @@ Example of shallow cumuli simulations (right) for the type of Barbados clouds sh
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
 
+<img src="assets/LESsmago.gif"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
+
 Examples available in this branch:
 
 Example 1: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/equations/CompEuler/thetaTracers` you would do the following:
