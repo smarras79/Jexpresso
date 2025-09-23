@@ -36,8 +36,9 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",
-        #:linitial_refine     => false,
+        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_64x32x24_zmax3000.msh",
+	#:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
+        :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # Mountain parameters
@@ -46,7 +47,6 @@ function user_inputs()
         :mount_type          => "LESICP", #"agnesi",
         #:a_mount             => 0.0,
         :h_mount             => 100.0,
-        :c_mount             => 2560.0,
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/",
+        :output_dir          => "/scratch/smarras/smarras/output/manycores/",
         #:output_dir          => "./output/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
