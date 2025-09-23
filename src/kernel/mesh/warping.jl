@@ -70,10 +70,10 @@ function warp_mesh_3D!(mesh,inputs)
         lon_min = inputs[:read_topo_lonmin]
         lon_max = inputs[:read_topo_lonmax]
         zone = inputs[:read_topo_zone]
-        xmin = minimum(mesh.x)
-        xmax = maximum(mesh.x)
-        ymin = minimum(mesh.y)
-        ymax = maximum(mesh.y)
+        xmin = mesh.xmax
+        xmax = mesh.xmax
+        ymin = mesh.ymax
+        ymax = mesh.ymax
         lat, lon, z_topo = extract_region_topography_from_global_data(fname, fname2, lat_max, lon_max, lat_min, lon_min)
         
         x_topo, y_topo = Map_lat_lon_onto_simulation_domain(lat,lon,xmin,xmax,ymin,ymax,zone)
@@ -81,7 +81,7 @@ function warp_mesh_3D!(mesh,inputs)
         
         interpolate_topography_onto_grid!(mesh.x, mesh.y, zsurf, x_topo, y_topo, z_topo)
         ### sigma coordinate topography
-        ztop = maximum(mesh.z)
+        ztop = mesh.zmax
         sigma = zeros(mesh.npoin)
         for ip = 1:mesh.npoin
             sigma[ip] = mesh.z[ip]
@@ -92,7 +92,7 @@ function warp_mesh_3D!(mesh,inputs)
     elseif (inputs[:mount_type] == "agnesi")
         zsurf = zeros(mesh.npoin)
         sigma = zeros(mesh.npoin)
-        ztop = maximum(mesh.z)
+        ztop = mesh.zmax
         am = inputs[:a_mount]
         hm = inputs[:h_mount]
         xc = inputs[:c_mount]
@@ -104,8 +104,8 @@ function warp_mesh_3D!(mesh,inputs)
     elseif (inputs[:mount_type] == "LESICP")
         zsurf = zeros(mesh.npoin)
         sigma = zeros(mesh.npoin)
-        ztop = maximum(mesh.z)
-        am = maximum(mesh.x) - minimum(mesh.x)
+        ztop = mesh.z,ax
+        am = mesh.xmax - mesh.xmin
         hm = inputs[:h_mount]
         xc = inputs[:c_mount]
         for ip = 1:mesh.npoin
@@ -151,7 +151,7 @@ function warp_phys_grid!(x,y,z,ncol,nlay)
 
         interpolate_topography_onto_grid!(x, y, zsurf, x_topo, y_topo, z_topo)
         ### sigma coordinate topography
-        ztop = maximum(mesh.z)
+        ztop = mesh.zmax
         sigma = zeros(nlay+1,ncol)
         for icol = 1:ncol
             for ilay = 1:nlay+1
