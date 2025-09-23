@@ -1,5 +1,5 @@
 include("../mesh/restructure_for_periodicity.jl")
-include("../mesh/warping.jl")
+#include("../mesh/warping.jl")
 
 function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, partitioned_model_coarse = nothing, omesh = nothing)
     
@@ -136,7 +136,8 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                 end
             end
             
-            if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+            #if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+            
             if (rank == 0) @info " Build metrics ......" end
             metrics1 = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])            
             @time build_metric_terms!(metrics1, mesh, basis1, Nξ, Qξ, ξ, ω1, TFloat, COVAR(), SD; backend = inputs[:backend])
@@ -182,13 +183,11 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             #--------------------------------------------------------
             # Build metric terms
             #--------------------------------------------------------
-            @info " A"
-            if (mesh.nsd > 2)
-                if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
-            else
-                if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
-            end
-            @info " B"
+            #if (mesh.nsd > 2)
+            #    if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
+            #else
+            #    if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+            #end
             if (rank == 0) @info " Build metrics ......" end
             metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
             @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
@@ -199,11 +198,11 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
             end 
             if (rank == 0) @info " Build periodicity infrastructure ......" end
             
-            if (mesh.nsd > 2)
-                if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
-            else
-                if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
-            end
+            #if (mesh.nsd > 2)
+            #    if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
+            #else
+            #    if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+            #end
             
             if (rank == 0) @info " Matrix wrapper ......" end
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],

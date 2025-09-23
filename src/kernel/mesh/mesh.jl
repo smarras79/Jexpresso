@@ -23,6 +23,8 @@ const VERTEX_NODES = UInt64(1)
 const EDGE_NODES   = UInt64(2)
 const FACE_NODES   = UInt64(4)
 
+include("warping.jl")
+
 Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     x      = KernelAbstractions.zeros(backend, TFloat, 2)
@@ -1319,6 +1321,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #
     # END Free memory of obsolete arrays
     #
+    if (mesh.nsd > 2)
+        if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
+    else
+        if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
+    end
 
     #open("./COORDS_GLOBAL.dat", "w") do f
     #    for ip = 1:mesh.npoin
