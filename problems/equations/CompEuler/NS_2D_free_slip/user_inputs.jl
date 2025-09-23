@@ -18,6 +18,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
+        :l_incompressible     => true,
+        :l_vort_stream        => true,
         :luser_bc             => true,
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :ivisc_equations      => [1],
