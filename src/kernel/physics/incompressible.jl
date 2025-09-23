@@ -340,7 +340,7 @@ function compute_boundary(params, Coef, u)
     uaux2u!(u, params.uaux, neqs, npoin)    
 end
 
-function compute_oundary(params, Coef, u, index)
+function compute_boundary(params, Coef, u, index)
 
     connijk = params.mesh.connijk
     x = params.mesh.x
