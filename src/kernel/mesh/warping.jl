@@ -104,7 +104,7 @@ function warp_mesh_3D!(mesh,inputs)
     elseif (inputs[:mount_type] == "LESICP")
         zsurf = zeros(mesh.npoin)
         sigma = zeros(mesh.npoin)
-        ztop = mesh.z,ax
+        ztop = mesh.zmax
         am = mesh.xmax - mesh.xmin
         hm = inputs[:h_mount]
         xc = inputs[:c_mount]
