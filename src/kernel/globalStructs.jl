@@ -47,6 +47,25 @@ function define_q(SD, nelem, npoin, ngl, qvars, T, backend; neqs=1, qoutvars=qva
     
     return q
 end
+#-------------------------------------------------------------------------------------------------------------------------------
+# Flux data: this is to store quantities to be used in user flux that can't be directly optained from the prognostic variables.
+#-------------------------------------------------------------------------------------------------------------------------------
+Base.@kwdef mutable struct St_F_data{T <: AbstractFloat, dims1, backend}
+
+    F_data    = KernelAbstractions.zeros(backend, T, dims1)
+    
+end
+function allocate_F_data(SD, npoin, T, backend; l_incompressible=false)
+   
+    if l_incompressible
+        dims1 = (Int64(npoin),2)
+    else
+        dims1 = 1
+    end
+    uODE = St_F_data{T, dims1, backend}()
+
+    return uODE
+end
 
 
 #-------------------------------------------------------------------------------------------

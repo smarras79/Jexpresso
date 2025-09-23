@@ -155,6 +155,7 @@ function build_custom_bcs!(::NSD_2D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
     
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
+
     for iedge = 1:nedges_bdy 
         iel  = bdy_edge_in_elem[iedge]
         

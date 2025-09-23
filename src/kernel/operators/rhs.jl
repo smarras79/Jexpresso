@@ -419,7 +419,14 @@ function _build_rhs!(RHS, u, params, time)
     end
     
     resetbdyfluxToZero!(params)
-    apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
+    
+    if (inputs[:l_incompressible] && inputs[:l_vort_stream])
+        if ("LID" in params.bdy_edge_type)
+            Coef = params.qp.qe[:,1]
+            compute_boundary(params, Coef, u)
+        end
+    else
+        apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
                                params.mesh.x, params.mesh.y, params.mesh.z, params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
                                params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
                                params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
@@ -428,8 +435,10 @@ function _build_rhs!(RHS, u, params, time)
                                params.mesh.connijk, params.metrics.Jef, params.S_face, params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
                                params.mp.Tabs, params.mp.qn,
                                params.ω, neqs, params.inputs, AD, SD)
+    end
     
     if (params.inputs[:lmoist])
+
         if (SD == NSD_3D())
             do_micro_physics!(params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
                               params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg, params.mp.S_micro,
@@ -563,17 +572,31 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
     PhysConst = PhysicalConst{Float64}()
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
+    if (params.inputs[:l_incompressible])
+        if (params.inputs[:l_vort_stream])
+            compute_∇ψ!(params, connijk, x, y, params.F_data)
+        end
+    end
+
     for iel = 1:params.mesh.nelem
 
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
             
+            if (params.inputs[:l_incompressible])
+                if (params.inputs[:l_vort_stream])
+                    ip_data = ip
+                else
+                    ip_data = 1
+                end
+            end 
+
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
                        @view(qe[ip,:]),         #pref
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip)
+                       neqs=params.neqs, ip=ip, ∇ψ = F_data[ip_data,:])
             
             if lsource
                 user_source!(@view(params.S[i,j,:]),

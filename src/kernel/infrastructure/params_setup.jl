@@ -85,6 +85,11 @@ function params_setup(sem,
     rhs_el_tmp   = rhs.rhs_el_tmp
 
     #------------------------------------------------------------------------------------
+    # Additional data storage for user_flux, currently only useful for incompressible 2D
+    #------------------------------------------------------------------------------------
+    F_data_struct = allocate_F_data(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible])
+    F_data = F_data_struct.F_data
+    #------------------------------------------------------------------------------------
     # non conforming faces arrays
     #------------------------------------------------------------------------------------
     q_el      = ncf_arrays.q_el
@@ -305,6 +310,7 @@ function params_setup(sem,
         params = (backend,
                   T, inputs,
                   uaux, vaux, utmp,
+                  F_data, #for additional user_flux data (incompressible)
                   ubdy, gradu, bdy_flux,                   
                   RHS, RHS_visc,
                   fijk, ∇f_el,
