@@ -106,8 +106,8 @@ function warp_mesh_3D!(mesh,inputs)
         sigma = zeros(mesh.npoin)
         ztop = mesh.zmax
         #am = mesh.xmax - mesh.xmin
-        am = 2150.0
-        hm = inputs[:h_mount]
+	am = 10240.0
+      	hm = inputs[:h_mount]
         xc = inputs[:c_mount]
         for ip = 1:mesh.npoin
             x = mesh.x[ip]

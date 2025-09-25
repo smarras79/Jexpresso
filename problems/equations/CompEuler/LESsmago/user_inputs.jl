@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.045,
+        :Δt                   => 0.065,
         :tinit                => 0.0,
         :tend                 => 7200,
         #:tinit                => 100.0,
@@ -37,7 +37,8 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16_zmax2000.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",
+	:gmsh_filename       => "./meshes/gmsh_grids/LESICP_64x64x24_zmax3000.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
         #:linitial_refine     => false,
         :init_refine_lvl     => 1,
@@ -52,8 +53,9 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        #:output_dir          => "/scratch/smarras/smarras/output/",
-        :output_dir          => "./output",
+        :output_dir          => "/scratch/smarras/smarras/output/64x64x24/",
+        #:output_dir          => "/scratch/smarras/smarras/output/64x64x24fewcores/",
+        #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
