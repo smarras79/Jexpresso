@@ -7,7 +7,7 @@
 #SBATCH --account=smarras # Replace PI_ucid which the NJIT UCID of PI
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=128
-#SBATCH --time=23:59:00  # D-HH:MM:SS
+#SBATCH --time=71:59:00  # D-HH:MM:SS
 
 #SBATCH --mem-per-cpu=4000M
 
@@ -16,4 +16,4 @@ module load bright shared mpich/ge/gcc/64
 cd /project/smarras/smarras/Jexpresso/
 nodelist=$(scontrol show hostname $SLURM_NODELIST)
 printf "%s\n" "${nodelist[@]}" > nodefile
-mpirun -np 256 -hostfile nodefile julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "LESsmago"); include("src/Jexpresso.jl")'
+mpirun -np 200 -hostfile nodefile julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "LESsmago"); include("src/Jexpresso.jl")'
