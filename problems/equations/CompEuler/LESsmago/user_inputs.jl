@@ -53,8 +53,9 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        #:output_dir          => "/scratch/smarras/smarras/output/",
-        :output_dir          => "./output",
+        :output_dir          => "/scratch/smarras/smarras/output/64x64x24/",
+        #:output_dir          => "/scratch/smarras/smarras/output/64x64x24fewcores/",
+        #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
