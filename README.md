@@ -246,11 +246,19 @@ include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
+## Shallow comuli:
 Example of shallow cumuli simulations (right) for the type of Barbados clouds shown on the left: (picture taken from [P. Blossey webpage](https://www.atmos.washington.edu/~bloss/) from U. Washington)
 
 <img src="assets/barbados.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
+
+## Turbulent ABL
+Example of coarse simulation of the turbulent atmospheric boundary layer.
+The Monin-Obukhov Similarity Theory model is set at the bottom boundary with doubly periodic conditions in x and y. A thin sponge layer is set at 2500 m.
+<img src="assets/LESsmago.gif"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
 
 Examples available in this branch:
 

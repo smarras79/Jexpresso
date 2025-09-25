@@ -199,7 +199,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                 @info " Build periodicity infrastructure ......"
             end
 
-             if (mesh.nsd > 2)
+            if (mesh.nsd > 2)
                 if (inputs[:lwarp])
                     warp_mesh_3D!(mesh,inputs)
                 end
@@ -207,8 +207,8 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
                 if (inputs[:lwarp])
                     warp_mesh!(mesh,inputs)
                 end
-            end
-            
+            end         
+
             if rank == 0
                 @info " Matrix wrapper ......"
             end
