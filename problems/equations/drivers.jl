@@ -6,6 +6,12 @@ function driver(nparts,
     
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
+    if inputs[:lwarmup] == true
+        input_mesh = inputs[:gmsh_filename]
+        inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
+        sem_dummy = sem_setup(inputs, nparts, distribute)
+        inputs[:gmsh_filename] = input_mesh
+    end
     sem = sem_setup(inputs, nparts, distribute)
     
     if (inputs[:backend] != CPU())
