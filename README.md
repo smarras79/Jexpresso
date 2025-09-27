@@ -255,7 +255,7 @@ Example of shallow cumuli simulations (right) for the type of Barbados clouds sh
 
 ## Turbulent ABL
 Example of coarse simulation of the turbulent atmospheric boundary layer. Domain size: 10240m X 10240m X 3000m using 64x64x24 spectral elements of order 4.
-Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected Smaogirnsky.
+Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected Smagorinsky.
 <img src="assets/ABLfullDomain.gif"
      alt="Markdown icon"
      style="float: left; margin-right: 5px;" />
