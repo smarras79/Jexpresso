@@ -246,6 +246,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
             inputs[:outformat] = VTK()
         elseif lowercase(inputs[:outformat]) == "hdf5" || lowercase(inputs[:outformat]) == "h5"
             inputs[:outformat] = HDF5()
+        elseif lowercase(inputs[:outformat]) == "netcdf" || lowercase(inputs[:outformat]) == "netcdf"
+            inputs[:outformat] = NETCDF()
         end
     end
 
@@ -455,6 +457,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         #@warn s
         
     end #lread_gmsh
+
+    if (!haskey(inputs, :lwarmup))
+        inputs[:lwarmup] = false
+    end
     #
     # Some physical constants and parameters:
     #
