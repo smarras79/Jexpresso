@@ -422,6 +422,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lwrite_initial] = false
     end
 
+    if (!haskey(inputs, :gmsh_filename_c))
+        inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+    end
+
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         
