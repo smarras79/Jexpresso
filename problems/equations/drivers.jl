@@ -7,10 +7,16 @@ function driver(nparts,
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
     if inputs[:lwarmup] == true
+        if rank == 0
+            @info " # JIT pre-compilation of large problem ..."
+        end
         input_mesh = inputs[:gmsh_filename]
         inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
         sem_dummy = sem_setup(inputs, nparts, distribute)
         inputs[:gmsh_filename] = input_mesh
+	if rank == 0
+            @info " # JIT pre-compilation of large problem ... END"
+        end
     end
     sem = sem_setup(inputs, nparts, distribute)
     
