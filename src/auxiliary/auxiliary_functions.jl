@@ -10,6 +10,11 @@ function check_memory(label)
     # Get this process's memory usage
     rss_gb = Sys.maxrss() / 2^20 / 1024  # Convert KB to GB
     
+    max_used_gb           = MPI.Allreduce(used_gb, MPI.MAX, comm)
+    local_used_gb_has_max = (AlmostEqual(max_used_gb, used_gb)) ? rank : 0
+    max_used_gb_rank      = MPI.Allreduce(local_used_gb_has_max, MPI.MAX, comm)
+    hostname = ""
+    
     # Check cgroup limit
     try
         limit = parse(Int, read("/sys/fs/cgroup/memory/memory.limit_in_bytes", String))
@@ -18,18 +23,39 @@ function check_memory(label)
         usage_gb = usage / 2^30
         cgroup_pct = (usage_gb / limit_gb) * 100
         
-        println("")
-        println(" Rank $rank at $label:")
-        println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
-        println("   CGroup: $(round(usage_gb, digits=2))/$(round(limit_gb, digits=2))GB ($(round(cgroup_pct, digits=1))%)")
-        println("   Process RSS: $(round(rss_gb, digits=2))GB")
-        println("")
+        # println("")
+        # println(" Rank $rank at $label:")
+        # println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
+        # println("   CGroup: $(round(usage_gb, digits=2))/$(round(limit_gb, digits=2))GB ($(round(cgroup_pct, digits=1))%)")
+        # println("   Process RSS: $(round(rss_gb, digits=2))GB")
+        # println("")
+
+        if rank == max_used_gb_rank
+            hostname = gethostname()
+            println("")
+            println(" Rank $rank at $label:")
+            println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
+            println("   CGroup: $(round(usage_gb, digits=2))/$(round(limit_gb, digits=2))GB ($(round(cgroup_pct, digits=1))%)")
+            println("   Process RSS: $(round(rss_gb, digits=2))GB")
+            println("   Max used mem: $(round(max_used_gb, digits=2))/$(max_used_gb_rank) in host $(hostname)")
+            println("")
+        end
     catch
-        println("")
-        println(" Rank $rank at $label:")
-        println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
-        println("   Process RSS: $(round(rss_gb, digits=2))GB")
-        println("")
+        # println("")
+        # println(" Rank $rank at $label:")
+        # println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
+        # println("   Process RSS: $(round(rss_gb, digits=2))GB")
+        # println("")
+
+        if rank == max_used_gb_rank
+            hostname = gethostname()
+            println("")
+            println(" Rank $rank at $label:")
+            println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
+            println("   Process RSS: $(round(rss_gb, digits=2))GB")
+            println("   Max used mem: $(round(max_used_gb, digits=2))/$(max_used_gb_rank) in host $(hostname)")
+            println("")
+        end
     end
     flush(stdout)
 end

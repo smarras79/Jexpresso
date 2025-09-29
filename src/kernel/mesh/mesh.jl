@@ -372,7 +372,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         println_rank(" # N. Global edges          : ", mesh.gnedges; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. Global faces          : ", mesh.gnfaces; msg_rank = rank, suppress = mesh.msg_suppress)
         if rank == 0 
-            rm("./mesh.log")
+            rm("./mesh.log", force=true)
         end
         MPI.Barrier(comm)
         if mesh.msg_suppress == false
@@ -422,10 +422,15 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         sum_vol_internal_nodes   = MPI.Allreduce(tot_vol_internal_nodes, MPI.SUM, comm)
         sum_npoin                = MPI.Allreduce(mesh.npoin, MPI.SUM, comm)
 
+        max_npoin                = MPI.Allreduce(mesh.npoin, MPI.MAX, comm)
+        local_npoin_has_max = (max_npoin == mesh.npoin) ? rank : 0
+        max_npoin_rank           = MPI.Allreduce(local_npoin_has_max, MPI.MAX, comm)
+
         println_rank(" # N. edges internal points         : ", sum_edges_internal_nodes; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. faces internal points         : ", sum_faces_internal_nodes; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. volumes internal points       : ", sum_vol_internal_nodes; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. total high order points       : ", sum_npoin; msg_rank = rank, suppress = mesh.msg_suppress)
+        println_rank(" # N. max high order points         : ", max_npoin, ", ", max_npoin_rank; msg_rank = rank, suppress = mesh.msg_suppress)
         if mesh.msg_suppress == false
             for i = 0 : mpi_size
                 MPI.Barrier(comm)
