@@ -6,30 +6,69 @@ function driver(nparts,
     
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
+        
+    # Get hostname for each rank
+    hostname = gethostname()
+    println("Rank $rank/$size on node: $hostname")
+    flush(stdout)
+
+    # Aggregate to count ranks per node (on rank 0)
+    all_hostnames = MPI.Gather(hostname, 0, comm)
+    if rank == 0
+        node_counts = Dict{String, Int}()
+        for h in all_hostnames
+            node_counts[h] = get(node_counts, h, 0) + 1
+        end
+        println("\n=== Ranks per node ===")
+        for (node, count) in sort(collect(node_counts))
+            println("$node: $count ranks")
+        end
+    end
+    
+
     if inputs[:lwarmup] == true
         if rank == 0
-            @info " # JIT pre-compilation of large problem ..."
-        end
+            println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
+	end
         input_mesh = inputs[:gmsh_filename]
         inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
         sem_dummy = sem_setup(inputs, nparts, distribute)
         inputs[:gmsh_filename] = input_mesh
-	if rank == 0
-            @info " # JIT pre-compilation of large problem ... END"
+        
+        get_memory_usage(" Right after sem_dummy setup.")
+        
+        # --- MEMORY CLEANUP ---
+        # 1. Explicitly drop the reference to the dummy object
+        sem_dummy = nothing 
+
+        # 2. Force a full garbage collection run
+        GC.gc()
+        
+        get_memory_usage(" At GC() after sem_dummy setup.")
+        
+        if rank == 0
+            println(BLUE_FG(string(" # JIT pre-compilation of large problem ... END")))
         end
     end
+    get_memory_usage(" Before sem_setup.")
+                
     sem = sem_setup(inputs, nparts, distribute)
-    
+
+    get_memory_usage(" After sem_setup.")
+
+        
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
     
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
-
+    
+    get_memory_usage(" After initialize.")
+    println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
     if rank == 0
-        @info "start conformity4ncf_q!"
+        @info " # COMPUTE conformity4ncf_q!"
     end
     pre_allocation_q = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
     @time conformity4ncf_q!(qp.qn, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
@@ -41,7 +80,7 @@ function driver(nparts,
     
     MPI.Barrier(comm)
     if rank == 0
-        @info "end conformity4ncf_q!"
+        @info " # COMPUTE conformity4ncf_q! .... END"
     end
 
     if (inputs[:ladapt] == true) && (inputs[:amr] == true)
@@ -57,7 +96,15 @@ function driver(nparts,
                               OUTPUT_DIR,
                               TFloat,
                               tspan)
-    
+
+    #println(" rank$rank")
+    #println(GREEN_FG(string(" # -- N. total number of elements : $sem.mesh.nelem")))
+    #println(GREEN_FG(string(" # -- N. total high order points  : $sem.mesh.npoin")))
+    #GB = 1024^3
+    #memoryusage = sem.mesh.npoin*8*params.neqs/GB
+    #println(RED_FG(string(" # -- Min required memory (only counting the DOFs : $memoryusage on rank$rank")))
+        
+    #=  
     if !inputs[:llinsolve]
         #
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
@@ -179,6 +226,8 @@ function driver(nparts,
         write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
         
     end
+
+    =#
 end
 
 function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)

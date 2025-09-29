@@ -1,5 +1,4 @@
 include("../mesh/restructure_for_periodicity.jl")
-#include("../mesh/warping.jl")
 
 function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, partitioned_model_coarse = nothing, omesh = nothing)
     
@@ -60,6 +59,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         mesh.ymin = minimum(mesh.coords[:,2])
         mesh.ymax = maximum(mesh.coords[:,2])
     end
+    
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------

@@ -58,12 +58,12 @@ function user_inputs()
         :outformat           => "vtk",
         :output_dir          => "/scratch/smarras/smarras/output/128x128x36_10kmX10kmX3km/",
         #:output_dir          => "./output",
-        :loverwrite_output   => true,  #this is only implemented for VTK for now
+ 	:loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => false,
+        :linitial_refine     => true,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR

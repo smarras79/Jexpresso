@@ -1,3 +1,33 @@
+function check_memory(label)
+    rank = MPI.Comm_rank(MPI.COMM_WORLD)
+    free_gb = Sys.free_memory() / 2^30
+    
+    # Check cgroup limit
+    try
+        limit = parse(Int, read("/sys/fs/cgroup/memory/memory.limit_in_bytes", String))
+        usage = parse(Int, read("/sys/fs/cgroup/memory/memory.usage_in_bytes", String))
+        println("Rank $rank at $label: Free=$(round(free_gb, digits=2))GB, " *
+                "CGroup: $(round(usage/2^30, digits=2))/$(round(limit/2^30, digits=2))GB")
+    catch
+        println("Rank $rank at $label: Free=$(round(free_gb, digits=2))GB")
+    end
+    flush(stdout)
+end
+
+function get_memory_usage(position_string::String)
+
+    GC.gc()  # Force garbage collection first for more accurate reading
+    stats = Base.gc_num()
+
+    bytes = stats.allocd
+    mib =  bytes / (1024^2)
+    
+    println(RED_FG(string(" ----- Total memory allocated so far ($position_string): $mib MB")))
+    
+    #return mib  # Total allocated memory in bytes
+end
+
+
 function remove_arrays!(matrix::Matrix{Int64}, rows_to_remove::Matrix{Int64})
     """
         Removes specific rows from a matrix (Matrix{Int64}).
