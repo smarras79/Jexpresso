@@ -1,3 +1,17 @@
+function get_memory_usage(position_string::String)
+
+    GC.gc()  # Force garbage collection first for more accurate reading
+    stats = Base.gc_num()
+
+    bytes = stats.allocd
+    mib =  bytes / (1024^2)
+    
+    println(RED_FG(string(" ----- Total memory allocated so far ($position_string): $mib MB")))
+    
+    #return mib  # Total allocated memory in bytes
+end
+
+
 function remove_arrays!(matrix::Matrix{Int64}, rows_to_remove::Matrix{Int64})
     """
         Removes specific rows from a matrix (Matrix{Int64}).

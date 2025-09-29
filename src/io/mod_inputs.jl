@@ -438,6 +438,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     else
         mod_inputs_check(inputs, :gmsh_filename, "e")
+        mod_inputs_check(inputs, :gmsh_filename_c, "e")
         
         mod_inputs_check(inputs, :nsd,  Int8(3), "-")
         mod_inputs_check(inputs, :nelx,  Int8(2), "-")

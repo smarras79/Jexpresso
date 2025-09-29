@@ -34,13 +34,15 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16_zmax2000.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",
-	#:gmsh_filename       => "./meshes/gmsh_grids/LESICP_64x64x24_zmax3000.msh",    #10kmX10kmX3km
-	:gmsh_filename       => "./meshes/gmsh_grids/LESICP_64x64x36_5kmX5kmX3km.msh", #5kmX5kmX3km
-        #:gmsh_filename       => "./meshes/gmsh_grids/LESICP_128x128x36_zmax3000.msh",  #10kmX10kmX3km
+        :lwarmup          => true,
+        :lread_gmsh       => true, #If false, a 1D problem will be enforced
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x16_zmax2000.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",
+	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x24_zmax3000.msh",    #10kmX10kmX3km
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_5kmX5kmX3km.msh", #5kmX5kmX3km
+        :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_128x128x36_zmax3000.msh",  #10kmX10kmX3km
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -53,9 +55,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
         #:output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km/",
-	:output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km_MORECORES/",
+	#:output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km_MORECORES/",
         #:output_dir          => "/scratch/smarras/smarras/output/64x64x24fewcores/",
-        #:output_dir          => "./output",
+        :output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------

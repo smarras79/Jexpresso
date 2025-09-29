@@ -1330,9 +1330,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #open("./COORDS_GLOBAL.dat", "w") do f
     #    for ip = 1:mesh.npoin
     #        #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-    #    
-
+    #
     #writevtk(model,"gmsh_grid")
+    #    end
+    #end 
 end
 
 
@@ -2958,6 +2959,9 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+
+    GC.gc()  # Force garbage since the grid being read may be large and we want to remove any memory usage not necessary for this.
+    
     partitioned_model = nothing
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
         
@@ -2985,6 +2989,9 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
                 mesh.coords[:,3] = mesh.z[:]
             end
         end
+        
+        get_memory_usage(" KAKAKAKAKAKAKAKA MESH DRIVER Right after SEMSETUP setup.")
+    
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
