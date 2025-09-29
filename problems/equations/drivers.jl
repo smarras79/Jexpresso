@@ -6,29 +6,11 @@ function driver(nparts,
     
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
-
-    #= Get hostname for each rank
-    hostname = gethostname()
-    println("Rank $rank/$size on node: $hostname")
-    flush(stdout)
-
-    # Aggregate to count ranks per node (on rank 0)
-    all_hostnames = MPI.Gather(hostname, 0, comm)
-    if rank == 0
-        node_counts = Dict{String, Int}()
-        for h in all_hostnames
-            node_counts[h] = get(node_counts, h, 0) + 1
-        end
-        println("\n=== Ranks per node ===")
-        for (node, count) in sort(collect(node_counts))
-            println("$node: $count ranks")
-        end
-    end=#
     
     if inputs[:lwarmup] == true
         if rank == 0
             println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
-        end
+	end
         input_mesh = inputs[:gmsh_filename]
         inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
         sem_dummy = sem_setup(inputs, nparts, distribute)
@@ -55,7 +37,7 @@ function driver(nparts,
 
     get_memory_usage(" After sem_setup.")
 
-    
+        
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
@@ -63,7 +45,7 @@ function driver(nparts,
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
     get_memory_usage(" After initialize.")
-
+    println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
     if rank == 0

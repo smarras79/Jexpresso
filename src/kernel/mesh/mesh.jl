@@ -2998,8 +2998,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
         end
         
         get_memory_usage(" KAKAKAKAKAKAKAKA MESH DRIVER Right after SEMSETUP setup.")
-           check_memory("  KAKAKAKAKAKAKAKA MESH DRIVER Right after SEMSETUP setup.")
-        
+        check_memory("  KAKAKAKAKAKAKAKA MESH DRIVER Right after SEMSETUP setup.")
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         

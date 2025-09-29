@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=LESsmago100
+#SBATCH --job-name=LESsmago
 #SBATCH --output=%x.%j.out # %x.%j expands to slurm JobName.JobID
 #SBATCH --error=%x.%j.err
 #SBATCH --partition=general
@@ -11,9 +11,20 @@
 
 #SBATCH --mem-per-cpu=4000M
 
-ml Julia
+module load Julia
 module load bright shared mpich/ge/gcc/64
 cd /project/smarras/smarras/Jexpresso/
 nodelist=$(scontrol show hostname $SLURM_NODELIST)
+
+# Monitor in background
+(
+  while true; do
+    echo "=== $(date) ==="
+    ps aux --sort=-%mem | grep julia | head -10
+    sleep 60
+  done
+) > memory_monitor.log 2>&1 &
+
+
 printf "%s\n" "${nodelist[@]}" > nodefile
-mpirun -np 200 -hostfile nodefile julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "LESsmago"); include("src/Jexpresso.jl")'
+mpirun -np 256 -hostfile nodefile julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "LESsmago"); include("src/Jexpresso.jl")'
