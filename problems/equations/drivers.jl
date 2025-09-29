@@ -45,25 +45,25 @@ function driver(nparts,
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
     check_memory(" After initialize.")
-    println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
+    # println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
     if rank == 0
         @info " # COMPUTE conformity4ncf_q!"
     end
-    GC.gc()
-    pre_allocation_q = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
-    conformity4ncf_q!(qp.qn, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
-                            sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
-                            qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
-    check_memory(" After conformity4ncf_q! 1.")
+    # GC.gc()
+    # pre_allocation_q = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
+    # conformity4ncf_q!(qp.qn, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
+    #                         sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
+    #                         qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
+    # check_memory(" After conformity4ncf_q! 1.")
     
-    conformity4ncf_q!(qp.qe, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
-                            sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
-                            qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
-    check_memory(" After conformity4ncf_q! 2.")
-    GC.gc()
-    MPI.Barrier(comm)
+    # conformity4ncf_q!(qp.qe, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
+    #                         sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
+    #                         qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
+    # check_memory(" After conformity4ncf_q! 2.")
+    # GC.gc()
+    # MPI.Barrier(comm)
     if rank == 0
         @info " # COMPUTE conformity4ncf_q! .... END"
     end
