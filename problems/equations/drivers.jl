@@ -6,6 +6,24 @@ function driver(nparts,
     
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
+
+    #= Get hostname for each rank
+    hostname = gethostname()
+    println("Rank $rank/$size on node: $hostname")
+    flush(stdout)
+
+    # Aggregate to count ranks per node (on rank 0)
+    all_hostnames = MPI.Gather(hostname, 0, comm)
+    if rank == 0
+        node_counts = Dict{String, Int}()
+        for h in all_hostnames
+            node_counts[h] = get(node_counts, h, 0) + 1
+        end
+        println("\n=== Ranks per node ===")
+        for (node, count) in sort(collect(node_counts))
+            println("$node: $count ranks")
+        end
+    end=#
     
     if inputs[:lwarmup] == true
         if rank == 0
@@ -51,6 +69,7 @@ function driver(nparts,
     if rank == 0
         @info " # COMPUTE conformity4ncf_q!"
     end
+    GC.gc()
     pre_allocation_q = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
     @time conformity4ncf_q!(qp.qn, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
                             sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
@@ -58,7 +77,7 @@ function driver(nparts,
     @time conformity4ncf_q!(qp.qe, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
                             sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
                             qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
-    
+    GC.gc()
     MPI.Barrier(comm)
     if rank == 0
         @info " # COMPUTE conformity4ncf_q! .... END"

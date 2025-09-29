@@ -1,8 +1,44 @@
+function check_memory(label)
+    rank = MPI.Comm_rank(MPI.COMM_WORLD)
+    free_gb = Sys.free_memory() / 2^30
+    
+    # Get total system memory
+    total_gb = Sys.total_memory() / 2^30
+    used_gb = total_gb - free_gb
+    used_pct = (used_gb / total_gb) * 100
+    
+    # Get this process's memory usage
+    rss_gb = Sys.maxrss() / 2^20 / 1024  # Convert KB to GB
+    
+    # Check cgroup limit
+    try
+        limit = parse(Int, read("/sys/fs/cgroup/memory/memory.limit_in_bytes", String))
+        usage = parse(Int, read("/sys/fs/cgroup/memory/memory.usage_in_bytes", String))
+        limit_gb = limit / 2^30
+        usage_gb = usage / 2^30
+        cgroup_pct = (usage_gb / limit_gb) * 100
+        
+        println("")
+        println(" Rank $rank at $label:")
+        println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
+        println("   CGroup: $(round(usage_gb, digits=2))/$(round(limit_gb, digits=2))GB ($(round(cgroup_pct, digits=1))%)")
+        println("   Process RSS: $(round(rss_gb, digits=2))GB")
+        println("")
+    catch
+        println("")
+        println(" Rank $rank at $label:")
+        println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
+        println("   Process RSS: $(round(rss_gb, digits=2))GB")
+        println("")
+    end
+    flush(stdout)
+end
+
 function get_memory_usage(position_string::String)
 
     GC.gc()  # Force garbage collection first for more accurate reading
     stats = Base.gc_num()
-
+    
     bytes = stats.allocd
     mib =  bytes / (1024^2)
     
