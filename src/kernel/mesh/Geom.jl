@@ -182,6 +182,10 @@ mutable struct AssemblerCache
     recvback_idx_buffers::Vector{Vector{Int}}
     # combined_recv_back_idx::Vector{Int}
 
+    # Compact global index mapping
+    global_to_compact::Dict{Int, Int}     # Maps global index -> compact index
+    local_to_compact::Dict{Int, Int}      # Maps local index -> compact index (precomputed)
+
     sum_array_1D::Vector{Float64}
     sum_array_2D::Matrix{Float64}
 
@@ -305,9 +309,65 @@ function setup_assembler(SD, a, index_a, owner_a)
     #     end
     # end
 
+    needed_indices = Set{Int}()
+    
+    # 1. Add repeated indices from local index_a (owned by this rank)
+    local_index_counts = Dict{Int, Int}()
+    for (i, idx) in enumerate(index_a)
+        if owner_a[i] == rank
+            local_index_counts[idx] = get(local_index_counts, idx, 0) + 1
+        end
+    end
+    for (idx, count) in local_index_counts
+        if count > 1
+            push!(needed_indices, idx)
+        end
+    end
+    
+    # 2. Add all indices from recv_idx_buffers
+    for i in 0:rank_sz-1
+        if recv_idx_sizes[i+1] > 0
+            for idx in recv_idx_buffers[i+1]
+                push!(needed_indices, idx)
+            end
+        end
+    end
+    
+    # 3. Add all indices from recvback_idx_buffers
+    for i in 0:rank_sz-1
+        if recvback_idx_sizes[i+1] > 0
+            for idx in recvback_idx_buffers[i+1]
+                push!(needed_indices, idx)
+            end
+        end
+    end
+    
+    # Create compact mapping
+    compact_global_indices = sort(collect(needed_indices))
+    global_to_compact = Dict{Int, Int}()
+    for (compact_idx, global_idx) in enumerate(compact_global_indices)
+        global_to_compact[global_idx] = compact_idx
+    end
+    
+    compact_size = length(compact_global_indices)
+    
+    # Allocate compact sum arrays
+    sum_array_1D = zeros(Float64, compact_size)
+    sum_array_2D = zeros(Float64, compact_size, m)
 
-    sum_array_1D = zeros(Float64, global_max_index)
-    sum_array_2D = zeros(Float64, global_max_index, m)
+    # create local to compact Dict
+    local_to_compact = Dict{Int, Int}()
+
+    for (local_idx, global_idx) in enumerate(index_a)
+        compact_idx = get(global_to_compact, global_idx, 0)
+        if compact_idx > 0
+            local_to_compact[local_idx] = compact_idx
+        end
+    end
+
+
+    # sum_array_1D = zeros(Float64, global_max_index)
+    # sum_array_2D = zeros(Float64, global_max_index, m)
 
     
     send_data_sizes = [send_idx_sizes[i+1] * m for i in 0:rank_sz-1]
@@ -318,9 +378,11 @@ function setup_assembler(SD, a, index_a, owner_a)
 
 
 
-    cache = AssemblerCache(global_max_index, index_a, owner_a, recv_idx_buffers,
-            recvback_idx_buffers, sum_array_1D, sum_array_2D,
-             send_i,send_data_buffers,recv_data_buffers, send_data_sizes, recv_data_sizes)
+    cache = AssemblerCache(global_max_index, index_a, owner_a,
+            recv_idx_buffers, recvback_idx_buffers,
+            global_to_compact, local_to_compact,
+            sum_array_1D, sum_array_2D,
+            send_i,send_data_buffers,recv_data_buffers, send_data_sizes, recv_data_sizes)
     return cache
 end
 
@@ -345,7 +407,7 @@ function assemble_mpi!(a, cache::AssemblerCache)
 
 
 
-    @inbounds for (i, idx) in enumerate(cache.index_a)
+    @inbounds for (i, idx) in cache.local_to_compact
         owner = cache.owner_a[i]
         if owner == rank
             if is1D
@@ -417,11 +479,12 @@ function assemble_mpi!(a, cache::AssemblerCache)
         if cache.recv_data_sizes[rk+1] > 0
             buffer = cache.recv_data_buffers[rk+1]
             for (i, idx) in enumerate(cache.recv_idx_buffers[rk+1])
+                compact_idx = cache.global_to_compact[idx]
                 if is1D
-                    cache.sum_array_1D[idx] += buffer[i]
+                    cache.sum_array_1D[compact_idx] += buffer[i]
                 else
                     for j = 1:m
-                        cache.sum_array_2D[idx, j] += buffer[(i-1)*m+j]
+                        cache.sum_array_2D[compact_idx, j] += buffer[(i-1)*m+j]
                     end
                 end
             end
@@ -434,11 +497,12 @@ function assemble_mpi!(a, cache::AssemblerCache)
         if cache.recv_data_sizes[i+1] > 0
             buf_data = sendback_data_buffers[i+1]
             for (j, idx) in enumerate(cache.recv_idx_buffers[i+1])
+                compact_idx = cache.global_to_compact[idx]
                 if is1D
-                    buf_data[j] = cache.sum_array_1D[idx]
+                    buf_data[j] = cache.sum_array_1D[compact_idx]
                 else
                     for k = 1:m
-                        buf_data[(j-1)*m+k] = cache.sum_array_2D[idx, k]
+                        buf_data[(j-1)*m+k] = cache.sum_array_2D[compact_idx, k]
                     end
                 end
             end
@@ -484,11 +548,12 @@ function assemble_mpi!(a, cache::AssemblerCache)
         if recvback_data_sizes[rk+1] > 0
             buffer = recvback_data_buffers[rk+1]
             for (i, idx) in enumerate(cache.recvback_idx_buffers[rk+1])
+                compact_idx = cache.global_to_compact[idx]
                 if is1D
-                    cache.sum_array_1D[idx] = buffer[i]
+                    cache.sum_array_1D[compact_idx] = buffer[i]
                 else
                     for j = 1:m
-                        cache.sum_array_2D[idx, j] = buffer[(i-1)*m+j]
+                        cache.sum_array_2D[compact_idx, j] = buffer[(i-1)*m+j]
                     end
                 end
             end
@@ -496,7 +561,7 @@ function assemble_mpi!(a, cache::AssemblerCache)
     end
 
 
-    @inbounds for (i, idx) in enumerate(cache.index_a)
+    @inbounds for (i, idx) in cache.local_to_compact
         if is1D
             a[i] = cache.sum_array_1D[idx]
         else
