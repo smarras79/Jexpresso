@@ -1376,7 +1376,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         elseif bdy_face_type[iface_bdy] == "MOST"
                             #
                             # Monin-Obukhov Similarity Theory
-                            #                            
+                            #
+                            #Surface point
+                            isfc = 1
+                            ip  = connijk[iel, k, l, isfc]
+                            #Inside point
                             iz  = ngl
                             ip2 = connijk[iel, k, l, iz]
 
@@ -1385,10 +1389,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             v_inside     = uprimitiveieq[k, l, iz, 3]  # v-component
                             theta_inside = uprimitiveieq[k, l, iz, 5]
                             theta_sfc    = uprimitiveieq[k, l,  1, 5]
-                            z_sfc        = coords[ip2, 3]
+                            z_sfc        = coords[ip, 3]
+                            z_inside     = coords[ip2, 3]
                             
                             CM_MOST!(τ_f, wθ, rho, iface_bdy, idx1, idx2,
-                                     u_inside, v_inside, theta_inside, theta_sfc, z_sfc)
+                                     u_inside, v_inside, theta_inside, theta_sfc, z_inside)
                             
                         end
                     end
