@@ -16,7 +16,7 @@ function driver(nparts,
         sem_dummy = sem_setup(inputs, nparts, distribute)
         inputs[:gmsh_filename] = input_mesh
         
-        check_memory(" Right after sem_dummy setup.")
+        #check_memory(" Right after sem_dummy setup.")
         
         # --- MEMORY CLEANUP ---
         # 1. Explicitly drop the reference to the dummy object
@@ -25,17 +25,17 @@ function driver(nparts,
         # 2. Force a full garbage collection run
         GC.gc()
         
-        check_memory(" At GC() after sem_dummy setup.")
+        #check_memory(" At GC() after sem_dummy setup.")
         
         if rank == 0
             println(BLUE_FG(string(" # JIT pre-compilation of large problem ... END")))
         end
     end
-    check_memory(" Before sem_setup.")
+    #check_memory(" Before sem_setup.")
                 
     sem = sem_setup(inputs, nparts, distribute)
 
-    check_memory(" After sem_setup.")
+    #check_memory(" After sem_setup.")
     
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
@@ -43,7 +43,7 @@ function driver(nparts,
     
     qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
-    check_memory(" After initialize.")
+    #check_memory(" After initialize.")
     # println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
@@ -55,12 +55,12 @@ function driver(nparts,
     conformity4ncf_q!(qp.qn, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
                             sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
                             qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
-    check_memory(" After conformity4ncf_q! 1.")
+    #check_memory(" After conformity4ncf_q! 1.")
     
     conformity4ncf_q!(qp.qe, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
                             sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
                             qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
-    check_memory(" After conformity4ncf_q! 2.")
+    #check_memory(" After conformity4ncf_q! 2.")
     GC.gc()
     MPI.Barrier(comm)
     if rank == 0
