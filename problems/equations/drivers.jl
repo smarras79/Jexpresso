@@ -23,7 +23,7 @@ function driver(nparts,
         sem_dummy = nothing 
 
         # 2. Force a full garbage collection run
-        GC.gc()
+        #GC.gc()
         
         #check_memory(" At GC() after sem_dummy setup.")
         
@@ -50,7 +50,7 @@ function driver(nparts,
     if rank == 0
         @info " # COMPUTE conformity4ncf_q!"
     end
-    GC.gc()
+    #GC.gc()
     pre_allocation_q = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
     conformity4ncf_q!(qp.qn, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
                             sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
@@ -61,7 +61,7 @@ function driver(nparts,
                             sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
                             qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
     #check_memory(" After conformity4ncf_q! 2.")
-    GC.gc()
+    #GC.gc()
     MPI.Barrier(comm)
     if rank == 0
         @info " # COMPUTE conformity4ncf_q! .... END"
