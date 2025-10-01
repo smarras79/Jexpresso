@@ -1,3 +1,6 @@
+# Import necessary packages
+using Roots
+
 function warp_mesh!(mesh,inputs)
     am = inputs[:a_mount]
     hm = inputs[:h_mount]
@@ -101,6 +104,19 @@ function warp_mesh_3D!(mesh,inputs)
             zsurf[ip] = hm*am*am/((x-xc)*(x-xc) + am*am)
         end
         
+    elseif (inputs[:mount_type] == "SAUER")
+        zsurf = zeros(mesh.npoin)
+        sigma = zeros(mesh.npoin)
+        ztop = mesh.zmax
+        #am = mesh.xmax - mesh.xmin
+	am = inputs[:a_mount]
+      	hm = inputs[:h_mount]
+        xc = inputs[:c_mount]
+        for ip = 1:mesh.npoin
+            x = mesh.x[ip]
+            zsurf[ip] = hm*(sech(x - xc)/am)^2
+        end
+
     elseif (inputs[:mount_type] == "LESICP")
         zsurf = zeros(mesh.npoin)
         sigma = zeros(mesh.npoin)
@@ -113,7 +129,7 @@ function warp_mesh_3D!(mesh,inputs)
             x = mesh.x[ip]
             zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*(x)/am))
         end
-        
+                
     elseif (inputs[:mount_type] == "schar")
         ac = inputs[:a_mount]
         hc = inputs[:h_mount]
@@ -122,6 +138,18 @@ function warp_mesh_3D!(mesh,inputs)
             x = mesh.x[ip]
             zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2
         end
+
+    #=elseif (inputs[:mount_type] == "stretching" || inputs[:mount_type] == "bl")
+
+         Yuo need to do detect the vertically aligned nodes to move. 
+        zsurf = zeros(mesh.npoin)
+        sigma = zeros(mesh.npoin)
+        ztop = mesh.zmax
+        
+	dz1 = inputs[:a_mount]
+
+        stretching!(zsurf, ztop, dz1, mesh.npoin)
+       =#
     end
 
     for ip = 1:mesh.npoin
@@ -190,4 +218,78 @@ function warp_phys_grid!(x,y,z,ncol,nlay)
             z[ilay,icol] = z_new
         end
     end
+end
+
+# --- Wrap all logic in a main function to ensure correct variable scope ---
+function stretching!(z, zmax, dz1, N)
+    # --- 1. Define Grid Parameters ---
+    #L = zmax  # Domain height in meters
+    #dz1 = 10.0  # Desired spacing of the first layer (m)
+    #N = 16      # Total number of grid points
+
+    println("--- Grid Setup ---")
+    println("Domain Height (L): $L m")
+    println("First Spacing (dz1): $dz1 m")
+    println("Number of Points (N): $N")
+    println("--------------------")
+
+    # Define the function for the root-finding algorithm
+    # This function "captures" L, dz1, and N from the main function's scope
+    f(r) = dz1 * (r^(N - 1) - 1) / (r - 1) - L
+
+    # --- 2. Robustly find a bracketing interval [a, b] ---
+    #
+    # THE FIX IS HERE: Start 'a' slightly above 1.0 to avoid 0/0 division.
+    # nextfloat(1.0) gets the smallest floating point number greater than 1.0.
+    #
+    a, b = nextfloat(1.0), 1.1
+
+    # This loop will now correctly modify 'b' because it's inside a function
+    while f(a) * f(b) > 0
+        b += 0.1
+        if b > 5.0 # Failsafe to prevent an infinite loop
+            error("Could not find a bracketing interval. Check parameters.")
+        end
+    end
+
+    println("Found a valid search bracket: ($a, $b)")
+
+    # Numerically solve for 'r' using the dynamically found bracket
+    r = find_zero(f, (a, b))
+
+    println("✅ Calculated Stretching Ratio (r): $r")
+
+    # --- 3. Generate the Grid Points ---
+    #z = zeros(N)
+    z[1] = zmin
+
+    # The sum of spacings is the position of the next point.
+    # The spacing itself is dz_i = dz1 * r^(i-1)
+    # The position is z_k = sum_{i=1}^{k-1} dz_i
+    for i in 2:N
+        # More direct formula for position based on geometric series sum
+        z[i] = dz1 * (r^(i - 1) - 1) / (r - 1)
+    end
+
+    # --- 4. Verification and Output ---
+    println("\n--- Grid Verification ---")
+    println("Top grid point: ", round(z[end], digits=2), " m (should be close to $L)")
+    first_spacing = z[2] - z[1]
+    last_spacing = z[end] - z[end-1]
+    println("First grid spacing: ", round(first_spacing, digits=2), " m")
+    println("Last grid spacing: ", round(last_spacing, digits=2), " m")
+
+    # --- 5. Visualization ---
+    p = plot(z, 0:N-1, # Plot z on x-axis, index on y-axis for vertical look
+             seriestype = :scatter,
+             marker = :hline,
+             title = "Stretched 1D Vertical Grid",
+             xlabel = "Height (z) [m]",
+             ylabel = "Grid Point Index (i)",
+             label = "Grid Levels",
+             yflip=false, # Often vertical grids are plotted 0 at bottom
+             legend = :topleft)
+    display(p)
+    println("\n📈 Plot generated successfully.")
+
 end

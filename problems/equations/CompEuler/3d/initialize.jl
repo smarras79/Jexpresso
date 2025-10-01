@@ -1,3 +1,5 @@
+using XMLDict
+
 function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
     """
 
@@ -26,9 +28,16 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # READ RESTART HDF5:
             #
-            q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
-            PhysConst = PhysicalConst{Float64}()
-        
+        #    q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
+        #    PhysConst = PhysicalConst{Float64}()
+
+            pvtu_filepath = inputs[:restart_input_file_path]
+
+            if rank == 0; println("\n--- Starting READ procedure ---"); end
+            read_pvtu_restart!(q, pvtu_filepath; comm=comm, verbose=false)
+            if rank == 0; println("Read successful."); end
+            
+            
             for ip=1:mesh.npoin
                 ρ  = q.qn[ip,1]
                 ρθ = q.qn[ip,5]
@@ -42,7 +51,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 Pe = perfectGasLaw_ρθtoP(PhysConst, ρ=ρe, θ=θe)
                 q.qe[ip,end] = Pe
             end
-        
+            
         else
             #
             # INITIAL STATE from scratch:
@@ -150,7 +159,6 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     if rank == 0
         @info " Initialize fields for 3D CompEuler with θ equation ........................ DONE "
     end
-    # @mystop("my stop at mesh.jl L135")
     
     return q
 end
@@ -234,4 +242,177 @@ function user_get_adapt_flags(inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
         end
     end
     return adapt_flags
+end
+
+
+"""
+    read_pvtu_restart!(q::SolutionData, pvtu_filepath::String; comm=MPI.COMM_WORLD, verbose=true)
+
+Reads a parallel VTK file collection (`.pvtu` and its associated `.vtu` files)
+and populates the `q.qn` array for a simulation restart.
+
+This function is MPI-aware and must be called by all processes in the communicator.
+Rank 0 reads the `.pvtu` file to get the list of partition files and broadcasts
+this list. Each rank then reads its corresponding `.vtu` file in parallel.
+
+# Arguments
+- `q::SolutionData`: A mutable struct holding the solution arrays. The `q.qn`
+  field, a matrix of size `(npoin_local, nvars)`, will be populated with data.
+  It is assumed to be pre-allocated with the correct dimensions for the local partition.
+- `pvtu_filepath::String`: The path to the main `.pvtu` file.
+- `comm::MPI.Comm`: The MPI communicator (defaults to `MPI.COMM_WORLD`).
+- `verbose::Bool`: If true, rank 0 will print status messages.
+"""
+# run_restart.jl
+using MPI
+using ReadVTK
+using XMLDict
+using Printf
+using WriteVTK # Provides MeshCell and VTK writing functions
+
+# --- Solver-Specific Data Structure ---
+# This is an example of what your solver's data structure might look like.
+# The I/O functions below are generic and will work as long as the
+# object `q` has a `qn` matrix.
+mutable struct SolverState
+    qn::Matrix{Float64}
+    # Your structure could have other fields, which the I/O functions will ignore.
+end
+
+# --- Generic I/O Functions ---
+
+"""
+    read_pvtu_restart!(q, pvtu_filepath::String; ...)
+
+Reads parallel VTK data (.pvtu) to populate the `q.qn` array for a restart.
+This function is generic and works on any object `q` with a `q.qn` matrix.
+"""
+function read_pvtu_restart!(q, pvtu_filepath::String; comm=MPI.COMM_WORLD, verbose=true)
+    rank = MPI.Comm_rank(comm)
+    nranks = MPI.Comm_size(comm)
+    
+    local_vtu_filename = ""
+
+    # This assumes a fixed filename like "iter_11.pvtu" needs to be appended.
+    # If the full path is already in `pvtu_filepath`, you can remove the joinpath().
+    full_pvtu_path = joinpath(pvtu_filepath, "iter_11.pvtu")
+    
+    if rank == 0
+        if !isfile(full_pvtu_path)
+            error("PVTU file not found: $full_pvtu_path")
+        end
+        if verbose
+            println("Rank 0: Reading PVTU manifest from '$full_pvtu_path'...")
+        end
+
+        xml_string = read(full_pvtu_path, String)
+        
+        # --- START OF CORRECTION ---
+        # Add a check to ensure the file is not empty before parsing.
+        if isempty(xml_string)
+            error("The PVTU file at '$full_pvtu_path' was found, but it is empty. Please check the file content.")
+        end
+        # --- END OF CORRECTION ---
+        
+        xml_data = xml_dict(xml_string)
+        
+        pieces = xml_data["VTKFile"]["PUnstructuredGrid"]["Piece"]
+        if !(pieces isa AbstractVector); pieces = [pieces]; end
+        if length(pieces) != nranks; error("PVTU has $(length(pieces)) pieces, but MPI size is $nranks."); end
+        
+        vtu_files = Vector{String}(undef, nranks)
+        for i in 1:nranks
+            local piece = pieces[i]
+            if !(piece isa AbstractDict)
+                error("Piece $i is not a valid dictionary structure: $piece")
+            end
+
+            if haskey(piece, :Source)
+                vtu_files[i] = piece[:Source]
+            elseif haskey(piece, "Source")
+                vtu_files[i] = piece["Source"]
+            else
+                error("Could not find Source attribute in piece $i: $piece")
+            end
+        end
+
+        local_vtu_filename = vtu_files[1]
+        for dest_rank in 1:(nranks-1)
+            filename_bytes = Vector{UInt8}(vtu_files[dest_rank + 1])
+            MPI.Send(filename_bytes, dest_rank, 0, comm)
+        end
+    else
+        status = MPI.Probe(0, 0, comm)
+        count = MPI.Get_count(status, UInt8)
+        filename_bytes = Vector{UInt8}(undef, count)
+        MPI.Recv!(filename_bytes, 0, 0, comm)
+        local_vtu_filename = String(filename_bytes)
+    end
+
+    MPI.Barrier(comm)
+
+    pvtu_dir = dirname(full_pvtu_path)
+    local_vtu_filepath = joinpath(pvtu_dir, local_vtu_filename)
+    if !isfile(local_vtu_filepath); error("Rank $rank: Cannot find data file: $local_vtu_filepath"); end
+    
+    vtk = VTKFile(local_vtu_filepath)
+    point_data = get_point_data(vtk)
+    var_names = collect(keys(point_data))
+    
+    npoin_local, nvars_alloc = size(q.qn)
+    npoin_file = vtk.n_points
+    nvars_file = length(var_names)
+    
+    if npoin_local != npoin_file; error("Rank $rank: Point count mismatch. Allocated $npoin_local, file has $npoin_file."); end
+    
+    nvars = min(nvars_alloc, nvars_file)
+    for ivar in 1:nvars
+        # Use ReadVTK.get_data to avoid ambiguity with other functions
+        q.qn[:, ivar] .= ReadVTK.get_data(point_data[var_names[ivar]])
+    end
+    
+    if verbose && rank == 0
+        println("All ranks successfully loaded restart data.")
+    end
+    
+    return nothing
+end
+
+"""
+    write_pvtu_data(q, x, y, z, var_names, output_basename; ...)
+
+Writes the distributed solution data to a new parallel VTK collection.
+This function is generic and takes coordinates as separate arguments.
+"""
+function write_pvtu_data(q, x::Vector, y::Vector, z::Vector, var_names::Vector{String}, output_basename::String; comm=MPI.COMM_WORLD)
+    rank = MPI.Comm_rank(comm)
+    nranks = MPI.Comm_size(comm)
+    if size(q.qn, 2) != length(var_names); error("Variable name count mismatch."); end
+
+    output_dir = output_basename
+    if rank == 0; mkpath(output_dir); end
+    MPI.Barrier(comm)
+
+    coords = hcat(x, y, z)'
+    vtu_filename = joinpath(output_dir, "part_$(rank).vtu")
+
+    vtk_grid(vtu_filename, coords, MeshCell[]) do vtk
+        for (ivar, name) in enumerate(var_names)
+            vtk[name] = q.qn[:, ivar]
+        end
+    end
+
+    MPI.Barrier(comm)
+
+    if rank == 0
+        pvtu_filename = joinpath(output_dir, output_basename * ".pvtu")
+        pvtk_grid(pvtu_filename, coords, MeshCell[]; part=rank+1, nparts=nranks) do pvtk
+            for (ivar, name) in enumerate(var_names)
+                pvtk[name] = q.qn[:, ivar]
+            end
+        end
+        println("Rank 0: Successfully wrote parallel data to '$pvtu_filename'")
+    end
+
+    return nothing
 end

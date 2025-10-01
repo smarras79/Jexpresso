@@ -30,8 +30,8 @@ end
 =#
 
 # Physical constants
-const κ = 0.4                  # von Kármán constant
-const g = 9.81                 # gravitational acceleration [m/s²]
+const κ    = 0.4              # von Kármán constant
+const g    = 9.81             # gravitational acceleration [m/s²]
 const cp_d = 1004.0           # specific heat of dry air at constant pressure [J/kg/K]
 
 # Universal function parameters (Businger-Dyer)
@@ -305,7 +305,7 @@ function surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h;
     # Iterative solution
     for iter in 1:max_iter
         # Update stability parameter
-        zeta = z_ref / L
+        zeta    = z_ref / L
         zeta0_m = z0_m / L  
         zeta0_h = z0_h / L
         

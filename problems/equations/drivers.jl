@@ -36,8 +36,7 @@ function driver(nparts,
     sem = sem_setup(inputs, nparts, distribute)
 
     check_memory(" After sem_setup.")
-
-        
+    
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
@@ -81,14 +80,7 @@ function driver(nparts,
                               OUTPUT_DIR,
                               TFloat,
                               tspan)
-
-    #println(" rank$rank")
-    #println(GREEN_FG(string(" # -- N. total number of elements : $sem.mesh.nelem")))
-    #println(GREEN_FG(string(" # -- N. total high order points  : $sem.mesh.npoin")))
-    #GB = 1024^3
-    #memoryusage = sem.mesh.npoin*8*params.neqs/GB
-    #println(RED_FG(string(" # -- Min required memory (only counting the DOFs : $memoryusage on rank$rank")))
-        
+    
     if !inputs[:llinsolve]
         #
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
