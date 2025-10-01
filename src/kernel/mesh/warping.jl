@@ -104,7 +104,7 @@ function warp_mesh_3D!(mesh,inputs)
             zsurf[ip] = hm*am*am/((x-xc)*(x-xc) + am*am)
         end
         
-    elseif (inputs[:mount_type] == "SAUER")
+    elseif (inputs[:mount_type] == "sauer")
         zsurf = zeros(mesh.npoin)
         sigma = zeros(mesh.npoin)
         ztop = mesh.zmax
@@ -114,20 +114,20 @@ function warp_mesh_3D!(mesh,inputs)
         xc = inputs[:c_mount]
         for ip = 1:mesh.npoin
             x = mesh.x[ip]
-            zsurf[ip] = hm*(sech(x - xc)/am)^2
+            ####zsurf[ip] = hm*(sech(x - xc)/am)^2 #not working
+            zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*(x)/am))
         end
-
+        
     elseif (inputs[:mount_type] == "LESICP")
         zsurf = zeros(mesh.npoin)
         sigma = zeros(mesh.npoin)
         ztop = mesh.zmax
-        #am = mesh.xmax - mesh.xmin
-	am = 10240.0
+        am = mesh.xmax - mesh.xmin
       	hm = inputs[:h_mount]
         xc = inputs[:c_mount]
         for ip = 1:mesh.npoin
             x = mesh.x[ip]
-            zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*(x)/am))
+            zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*x/am))
         end
                 
     elseif (inputs[:mount_type] == "schar")

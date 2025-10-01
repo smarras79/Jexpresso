@@ -1606,6 +1606,10 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     g         = PhysConst.g               # Gravitational acceleration (m/s²)
     Ri_crit   = PhysConst.Ri_crit         # Critical Richardson number
     C_s       = PhysConst.C_s             # Smagorinsky constant (typical range: 0.1-0.2)
+
+    mean_val = 0.05  # midpoint of [0, 0.1]
+    std_dev  = 0.01 * mean_val  # 1% of the mean
+    dist     = Normal(mean_val, std_dev)
     
     for m = 1:ngl
         for l = 1:ngl
@@ -1764,6 +1768,42 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
                 ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
                 ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
+
+                if (lwall_model)                   
+                    ip = connijk[iel, k, l, m]
+                    iface_bdy = elem_to_face[iel, k, l, m, 1]
+
+                    if (ip in poin_in_bdy_face)
+                        idx1 = elem_to_face[iel, k, l, m, 2]
+                        idx2 = elem_to_face[iel, k, l, m, 3]
+
+                        if bdy_face_type[iface_bdy] == "MOST"
+                            #
+                            # Monin-Obukhov Similarity Theory
+                            #
+                            #Surface point
+                            isfc = 1
+                            ip  = connijk[iel, k, l, isfc]
+                            #Inside point
+                            iz  = ngl
+                            ip2 = connijk[iel, k, l, iz]
+
+                            rho          = uprimitive[k, l,  m, 1]
+                            u_inside     = uprimitive[k, l, iz, 2]  # u-component
+                            v_inside     = uprimitive[k, l, iz, 3]  # v-component
+                            theta_inside = uprimitive[k, l, iz, 5]
+                            theta_sfc    = uprimitive[k, l,  1, 5]
+                            z_sfc        = coords[ip, 3]
+                            z_inside     = coords[ip2, 3]
+                            
+                            CM_MOST!(τ_f, wθ, rho, iface_bdy, idx1, idx2,
+                                     u_inside, v_inside, theta_inside, theta_sfc, z_inside)
+                            
+                        end
+                        
+                    end
+
+                end
                 
                 # Distribute to element RHS arrays
                 @turbo for i = 1:ngl
@@ -1775,6 +1815,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η∇u_klm
                     rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ∇u_klm
                 end
+
             end
         end
     end

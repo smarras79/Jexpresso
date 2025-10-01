@@ -40,7 +40,42 @@ const a_h = 16.0              # heat stability parameter (unstable)
 const b_m = 5.0               # momentum stability parameter (stable)
 const b_h = 5.0               # heat stability parameter (stable)
 
-function CM_MOST!(τ_f, wθ, ρ, iface_bdy, idx1, idx2,  u_ref, v_ref, theta_ref, theta_s, z_ref)
+function CM_MOST!(τ_f, wθ, ρ, iface_bdy, idx1, idx2, u_ref, v_ref, theta_ref, theta_s, z_ref)
+    
+    # Calculate wind speed magnitude
+    u_magnitude = sqrt(u_ref^2 + v_ref^2)
+    
+    # Prevent division by zero for calm conditions
+    if u_magnitude < 1e-6
+        τ_f[iface_bdy, idx1, idx2, 1] = 0.0
+        τ_f[iface_bdy, idx1, idx2, 2] = 0.0
+        wθ[iface_bdy, idx1, idx2, 1] = 0.0
+        return
+    end
+    
+    z0_m = 0.1        # momentum roughness length [m]
+    z0_h = 0.01       # thermal roughness length [m]
+    
+    # Calculate surface conditions using wind magnitude
+    result = surface_conditions(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h, rho=ρ)
+    
+    # Calculate total momentum flux magnitude
+    τ_magnitude = momentum_flux(result.u_star, ρ)
+    
+    # Distribute momentum flux into components based on wind direction
+    # The stress opposes the wind direction, hence the negative signs
+    τ_f[iface_bdy, idx1, idx2, 1] = -τ_magnitude * (u_ref / (u_magnitude + 2.2e-12))
+    τ_f[iface_bdy, idx1, idx2, 2] = -τ_magnitude * (v_ref / (u_magnitude + 2.2e-12))
+
+    @info u_ref, v_ref, τ_magnitude, τ_f[iface_bdy, idx1, idx2, 1], τ_f[iface_bdy, idx1, idx2, 2], result.u_star
+    
+    # Sensible heat flux
+    wθ[iface_bdy, idx1, idx2, 1] = result.Q_H
+    
+    return
+end
+
+#=function CM_MOST!(τ_f, wθ, ρ, iface_bdy, idx1, idx2,  u_ref, v_ref, theta_ref, theta_s, z_ref)
     
     #println("=== Minimal Surface Fluxes: Comprehensive Analysis ===")
     
@@ -115,7 +150,7 @@ function CM_MOST!(τ_f, wθ, ρ, iface_bdy, idx1, idx2,  u_ref, v_ref, theta_ref
     println("Install Plots.jl with: using Pkg; Pkg.add(\"Plots\")")
     end=#
     return
-end
+end=#
 
 
 """
@@ -345,7 +380,7 @@ function surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h;
     C_D = (κ / (log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m)))^2
     C_H = κ^2 / ((log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m)) * 
         (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h)))
-    
+    @info u_star
     return (
         u_star = u_star,
         theta_star = theta_star,

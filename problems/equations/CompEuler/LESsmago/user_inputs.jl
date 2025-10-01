@@ -4,7 +4,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.02, #0.065,
+        :Δt                   => 0.04, #0.065,
         :tinit                => 0.0,
         :tend                 => 7200,
         #:tinit                => 100.0,
@@ -34,10 +34,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lwarmup          => true,
+        #:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x24_zmax3000.msh",    #10kmX10kmX3km
-        :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x24_zmax3000.msh",    #10kmX10kmX3km
+        #:gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
+        :gmsh_filename  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x16_zmax2000.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",
@@ -57,13 +58,13 @@ function user_inputs()
         #:output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km/",
 	#:output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km_MORECORES/",
         #:output_dir          => "/scratch/smarras/smarras/output/64x64x24fewcores/",
-        :output_dir          => "./output128",
+        :output_dir          => "./outputTAUtest",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => true,
+        :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
