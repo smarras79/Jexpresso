@@ -1296,10 +1296,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
 
-        check_memory(" AFTER restructure4periodicity before GC")
+        #check_memory(" AFTER restructure4periodicity before GC")
         
         GC.gc()  # Force garbage since the grid being read may be large and we want to remove any memory usage not necessary for this.
-        check_memory(" AFTER restructure4periodicity")
+        #check_memory(" AFTER restructure4periodicity")
     
 
     end
@@ -3004,7 +3004,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     rank = MPI.Comm_rank(comm)
 
     GC.gc()  # Force garbage since the grid being read may be large and we want to remove any memory usage not necessary for this.
-    check_memory(" BEGINNING mesh_driver\n")
+    #check_memory(" BEGINNING mesh_driver\n")
     
     partitioned_model = nothing
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
@@ -3035,7 +3035,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
         end
         
         get_memory_usage(" KAKAKAKAKAKAKAKA MESH DRIVER Right after SEMSETUP setup.")
-        check_memory("  KAKAKAKAKAKAKAKA MESH DRIVER Right after SEMSETUP setup.")
+        #check_memory("  KAKAKAKAKAKAKAKA MESH DRIVER Right after SEMSETUP setup.")
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
@@ -3102,12 +3102,12 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
         println(" # cleanup some memory, why not?!!!")
     end
 
-    check_memory("  END MESH DRIVER BEFORE GC.")
+    #check_memory("  END MESH DRIVER BEFORE GC.")
     GC.gc()
     if mesh.rank == 0
         println(" # cleanup some memory, why not?!!! ...... END")
     end
-      check_memory("  END MESH DRIVER Right after SEMSETUP setup.")
+      #check_memory("  END MESH DRIVER Right after SEMSETUP setup.")
         
     if isnothing(adapt_flags)
         return mesh, partitioned_model
