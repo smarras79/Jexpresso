@@ -448,7 +448,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         end
             println_rank(" # GMSH HIGH-ORDER GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
     end
-    
+
     #
     # Resize as needed
     #
@@ -853,6 +853,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.gnpoin    = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
     mesh.gip2owner = find_gip_owner(mesh.ip2gip)
     mesh.gip2ip    = KernelAbstractions.zeros(backend, TInt, mesh.gnpoin)
+
+    # --- Load Balance Indicator ---
+    owned_ip        = count(==(rank), mesh.gip2owner)
+    ownership_ratio = owned_ip / mesh.npoin
+
+    min_ratio = MPI.Allreduce(ownership_ratio, MPI.MIN, comm)
+    max_ratio = MPI.Allreduce(ownership_ratio, MPI.MAX, comm)
+    avg_ratio = MPI.Allreduce(ownership_ratio, MPI.SUM, comm) / mpi_size
+
+    println_rank(" # Load balance (min/avg/max ratio)   : ",
+                min_ratio, " / ", avg_ratio, " / ", max_ratio;
+                msg_rank = rank, suppress = mesh.msg_suppress)
 
     for (ip, gip) in enumerate(mesh.ip2gip)
         mesh.gip2ip[gip] = ip
@@ -1376,14 +1388,22 @@ function find_gip_owner(a)
 
         # Create a dictionary to store the smallest rank for each element
         element_owner_map = Dict{Int, Int}()
+        ownership_counts  = zeros(Int64, size)
         for i in 1:length(flat_elements)
             el = flat_elements[i]
             owner = all_owners[i]
-            if !haskey(element_owner_map, el) || owner < element_owner_map[el]
+            if !haskey(element_owner_map, el)
                 element_owner_map[el] = owner
+            else
+                # Conflict: element already seen on another rank
+                # Choose the rank with fewer owned elements
+                current_owner = element_owner_map[el]
+                if ownership_counts[owner+1] < ownership_counts[current_owner+1]
+                    element_owner_map[el] = owner
+                end
+                ownership_counts[element_owner_map[el]+1] += 1
             end
         end
-
         # Map the owners back to the original elements in each rank's vector
         all_owners_result = [element_owner_map[el] for el in flat_elements]
         
