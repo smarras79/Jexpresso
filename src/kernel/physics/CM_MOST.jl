@@ -67,7 +67,7 @@ function CM_MOST!(τ_f, wθ, ρ, iface_bdy, idx1, idx2, u_ref, v_ref, theta_ref,
     τ_f[iface_bdy, idx1, idx2, 1] = -τ_magnitude * (u_ref / (u_magnitude + 2.2e-12))
     τ_f[iface_bdy, idx1, idx2, 2] = -τ_magnitude * (v_ref / (u_magnitude + 2.2e-12))
 
-    @info u_ref, v_ref, τ_magnitude, τ_f[iface_bdy, idx1, idx2, 1], τ_f[iface_bdy, idx1, idx2, 2], result.u_star
+    #@info u_ref, v_ref, τ_magnitude, τ_f[iface_bdy, idx1, idx2, 1], τ_f[iface_bdy, idx1, idx2, 2], result.u_star
     
     # Sensible heat flux
     wθ[iface_bdy, idx1, idx2, 1] = result.Q_H
@@ -380,7 +380,7 @@ function surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h;
     C_D = (κ / (log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m)))^2
     C_H = κ^2 / ((log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m)) * 
         (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h)))
-    @info u_star
+    
     return (
         u_star = u_star,
         theta_star = theta_star,
