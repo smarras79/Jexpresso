@@ -1289,7 +1289,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
                 ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
                 
-                if (lwall_model)                   
+                #=if (lwall_model)                   
                     ip = connijk[iel, k, l, m]
                     iface_bdy = elem_to_face[iel, k, l, m, 1]
 
@@ -1397,7 +1397,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             
                         end
                     end
-                end
+                end=#
 
                 @turbo for i = 1:ngl
                     dhdξ_ik = dψ[i,k]

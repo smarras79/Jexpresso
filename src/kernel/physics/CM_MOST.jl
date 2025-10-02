@@ -41,7 +41,6 @@ const b_m = 5.0               # momentum stability parameter (stable)
 const b_h = 5.0               # heat stability parameter (stable)
 
 function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, theta_ref, theta_s, z_ref)
-#function CM_MOST!(τ_f, wθ, ρ, iface_bdy, idx1, idx2,  u_ref, v_ref, theta_ref, theta_s, z_ref)
     
     #println("=== Minimal Surface Fluxes: Comprehensive Analysis ===")
     
