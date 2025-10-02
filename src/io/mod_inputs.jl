@@ -268,11 +268,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
 
     #Restart:
-    if (haskey(inputs, :lrestart))
-        if(inputs[:lrestart] == true && !haskey(inputs, :restart_input_file_path))
-            mod_inputs_check(inputs, :restart_input_file_path, "e")
-        end
-    else
+    if (!haskey(inputs, :lrestart))
         inputs[:lrestart] = false
     end
     #
@@ -287,6 +283,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     if(!haskey(inputs, :radiation_time_step))
         inputs[:radiation_time_step] = inputs[:Δt]*100
+    end
+
+    if(!haskey(inputs, :restart_time))
+        inputs[:restart_time] = 0.0
     end
 
     #mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on

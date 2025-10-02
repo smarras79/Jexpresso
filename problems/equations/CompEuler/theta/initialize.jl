@@ -26,8 +26,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # READ RESTART HDF5:
             #
-            q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars), qoutvars=qoutvars)
-            PhysConst = PhysicalConst{Float64}()
+            
+            q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
             for ip=1:mesh.npoin
                 ρ  = q.qn[ip,1]
                 ρθ = q.qn[ip,4]

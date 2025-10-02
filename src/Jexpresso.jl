@@ -32,6 +32,7 @@ using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
                  SplitODEProblem
+using HDF5
 import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
                   get_proposed_dt, set_proposed_dt!,
@@ -39,6 +40,7 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
 import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
+
 
 import ClimaComms
 @static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends

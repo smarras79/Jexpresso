@@ -12,11 +12,12 @@ function time_loop!(inputs, params, u)
     #------------------------------------------------------------------------
     # Runtime callbacks
     #------------------------------------------------------------------------
-    dosetimes = inputs[:diagnostics_at_times]
-    idx_ref   = Ref{Int}(0)
-    c         = Float64(0.0)
-    rad_time  = inputs[:radiation_time_step]
-    lnew_mesh = true   
+    dosetimes    = inputs[:diagnostics_at_times]
+    idx_ref      = Ref{Int}(0)
+    c            = Float64(0.0)
+    restart_time = inputs[:restart_time]
+    rad_time     = inputs[:radiation_time_step]
+    lnew_mesh    = true   
     function two_stream_condition(u, t, integrator)
         if (rem(t,rad_time) < 1e-3)
             return true
@@ -30,12 +31,34 @@ function time_loop!(inputs, params, u)
         @info "doing rad test"
         compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
     end
-    ret_dosetime_ref  = Ref{Bool}(false)
 
-    
+    function restart_condition(u, t, integrator)
+        if restart_time ≠ 0.0 && (mod(t,restart_time) == 0.0)
+            return true
+        else
+            return false
+        end
+    end
+    function do_restart!(integrator)
+        idx         = idx_ref[]
+        res_fortmat = HDF5()
+        println_rank(" #  writing restart ........................", round(integrator.t,digits=2); msg_rank = rank)
+        
+        write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
+                        integrator.p.mesh, integrator.p.mp,
+                        integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
+                        integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
+                        inputs[:restart_input_file_path], inputs,
+                        integrator.p.qp.qvars,
+                        integrator.p.qp.qoutvars,
+                        res_fortmat;
+                        nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
+        println_rank(" #  writing restart ........................ DONE"; msg_rank = rank)
+    end
     # #------------------------------------------------------------------------
-    # # AMR config
+    # #  config
     # #------------------------------------------------------------------------
+    ret_dosetime_ref  = Ref{Bool}(false)
     function condition(u, t, integrator)
         idx  = findfirst(x -> x == t, dosetimes)
         if idx !== nothing
@@ -74,9 +97,10 @@ function time_loop!(inputs, params, u)
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
         end
     end
-    cb_rad = DiscreteCallback(two_stream_condition, do_radiation!)
-    cb     = DiscreteCallback(condition, affect!)    
-    cb_amr = DiscreteCallback(condition, affect!)
+    cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
+    cb         = DiscreteCallback(condition, affect!)    
+    cb_amr     = DiscreteCallback(condition, affect!)
+    cb_restart = DiscreteCallback(restart_condition, do_restart!)
     CallbackSet(cb)#,cb_rad)
     #------------------------------------------------------------------------
     # END runtime callbacks
@@ -85,16 +109,19 @@ function time_loop!(inputs, params, u)
     #
     # Write initial conditions:
     #
-    if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
-    write_output(params.SD, u, params.uaux, inputs[:tinit], 0,
-                 params.mesh, params.mp,
-                 params.connijk_original, params.poin_in_bdy_face_original,
-                 params.x_original, params.y_original, params.z_original,
-                 inputs[:output_dir], inputs,
-                 params.qp.qvars, params.qp.qoutvars,
-                 inputs[:outformat];
-                 nvar=params.qp.neqs, qexact=params.qp.qe)
-    if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
+    idx  = (inputs[:tinit] == 0.0) ? 0 : findfirst(x -> x == inputs[:tinit], dosetimes)
+    if idx ≠ nothing
+        if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
+        write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
+                    params.mesh, params.mp,
+                    params.connijk_original, params.poin_in_bdy_face_original,
+                    params.x_original, params.y_original, params.z_original,
+                    inputs[:output_dir], inputs,
+                    params.qp.qvars, params.qp.qoutvars,
+                    inputs[:outformat];
+                    nvar=params.qp.neqs, qexact=params.qp.qe)
+        if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
+    end
     
     #
     # Simulation
@@ -117,7 +144,7 @@ function time_loop!(inputs, params, u)
         solution = solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = CallbackSet(cb), tstops = dosetimes,
+                         callback = CallbackSet(cb, cb_restart), tstops = dosetimes,
                          save_everystep = false,
                          adaptive=inputs[:ode_adaptive_solver],
                          saveat = range(inputs[:tinit],

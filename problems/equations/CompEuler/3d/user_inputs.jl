@@ -4,14 +4,15 @@ function user_inputs()
     # User define your inputs below: the order doesn't matter
     #---------------------------------------------------------------------------
     :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.05,
+        :Δt                   => 0.2,
         :tinit                => 0.0,
         :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
-        :lrestart             => false,
-        :restart_input_file_path => "/Users/simone/Work-local/Codes/Jexpresso/output/CompEuler/3d/output",
-        :diagnostics_at_times => (0:10:1000),
+        :lrestart             => true,
+        :restart_input_file_path => "./output/CompEuler/3d/output/restart",
+        :diagnostics_at_times => (0:100:1000),
+        :restart_time         => 150.0,
         :lsource              => true,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -35,9 +36,9 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/2x2x2.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
-        :gmsh_filename        => "./meshes/gmsh_grids/LESICP_stretched.msh",
+        # :gmsh_filename        => "./meshes/gmsh_grids/LESICP_stretched.msh",
         #:gmsh_filename_c      => "./meshes/gmsh_grids/LESICP_stretched.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        :gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
         #:gmsh_filename_c      => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB_periodic3D.msh",
         #---------------------------------------------------------------------------

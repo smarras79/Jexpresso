@@ -10,6 +10,9 @@ function user_inputs()
         :tinit                => 0.0,
         :tend                 => 1000.0,
         :diagnostics_at_times => (0:100:1000),
+        :restart_time         => 600,
+        :lrestart             => true,
+        :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => true, 
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
