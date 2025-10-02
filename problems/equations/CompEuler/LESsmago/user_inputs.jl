@@ -4,14 +4,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.04, #0.065,
+        :Δt                   => 0.05, #0.065,
         :tinit                => 0.0,
         :tend                 => 7200,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "",
-        :diagnostics_at_times => (0:1.0:7200),
+        :diagnostics_at_times => (0:5.0:7200),
         :lsource              => true,
         :sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
@@ -39,11 +39,12 @@ function user_inputs()
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x24_zmax3000.msh",    #10kmX10kmX3km
         #:gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
-        :gmsh_filename  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
+        #:gmsh_filename  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
+        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x1x10_MOST.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x16_zmax2000.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_5kmX5kmX3km.msh", #5kmX5kmX3km
+        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_5kmX5kmX3km.msh", #5kmX5kmX3km
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_128x128x36_zmax3000.msh",  #10kmX10kmX3km
         #---------------------------------------------------------------------------
         # Filter parameters
@@ -56,10 +57,9 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        #:output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km/",
+        :output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km/",
 	#:output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km_MORECORES/",
         #:output_dir          => "/scratch/smarras/smarras/output/64x64x24fewcores/",
-        :output_dir          => "./outputTAUtest",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------

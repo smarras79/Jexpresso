@@ -28,6 +28,7 @@ function user_source!(S,
     # Coriolis
     #--------------
     lcoriolis = true
+    lgeostrophic = true
     
     #--------------
     # SPONGE
@@ -68,13 +69,20 @@ function user_source!(S,
     S[4] -= cs*(q[4]-qe[4])
     #S[5] -= cs*(q[5]-qe[5])
 
-    #Coriolis
+    #Coriolis & geostrophic wind    
     if lcoriolis == true
         f = 1.0e-4
         u_vel = q[2]
         v_vel = q[3]
         S[2] += f * v_vel
         S[3] -= f * u_vel
+
+        if lgeostrophic == true
+            U_geo = 10.0
+            V_geo = 0.0
+            S[2] += q[1] * f * V_geo
+            S[3] -= q[1] * f * U_geo
+        end
     end
     
     return  S
