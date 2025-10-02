@@ -115,7 +115,9 @@ end
 #--------------------------------------------------------
 # Create restart output/inupt directory if it doesn't exist:
 #--------------------------------------------------------
-inputs[:restart_output_file_path] = joinpath(OUTPUT_DIR,string("restart"))
+if (!haskey(inputs, :restart_output_file_path))
+    inputs[:restart_output_file_path] = joinpath(OUTPUT_DIR,string("restart"))
+end
 
 if (haskey(inputs, :lrestart))
     if(inputs[:lrestart] == true && !haskey(inputs, :restart_input_file_path))

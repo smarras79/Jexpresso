@@ -48,7 +48,7 @@ function time_loop!(inputs, params, u)
                         integrator.p.mesh, integrator.p.mp,
                         integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
                         integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
-                        inputs[:restart_input_file_path], inputs,
+                        inputs[:restart_output_file_path], inputs,
                         integrator.p.qp.qvars,
                         integrator.p.qp.qoutvars,
                         res_fortmat;
