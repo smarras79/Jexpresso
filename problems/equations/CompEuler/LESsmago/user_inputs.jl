@@ -35,10 +35,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        #:lwarmup          => true,
+        :lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x24_zmax3000.msh",    #10kmX10kmX3km
-        #:gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
+        :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
         #:gmsh_filename  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
         #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x1x10_MOST.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x16_zmax2000.msh",

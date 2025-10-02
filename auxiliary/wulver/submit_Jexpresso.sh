@@ -27,4 +27,9 @@ nodelist=$(scontrol show hostname $SLURM_NODELIST)
 
 
 printf "%s\n" "${nodelist[@]}" > nodefile
+
+echo "--- Instantiating Julia Project ---"
+julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+echo "--- Instantiation Complete ---"
+
 mpirun -np 256 -hostfile nodefile julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "LESsmago"); include("src/Jexpresso.jl")'
