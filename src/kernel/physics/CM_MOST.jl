@@ -40,83 +40,34 @@ const a_h = 16.0              # heat stability parameter (unstable)
 const b_m = 5.0               # momentum stability parameter (stable)
 const b_h = 5.0               # heat stability parameter (stable)
 
-function CM_MOST!(τ_f, wθ, ρ, iface_bdy, idx1, idx2, u_ref, v_ref, theta_ref, theta_s, z_ref)
-    
-    # Calculate wind speed magnitude
-    u_magnitude = sqrt(u_ref^2 + v_ref^2)
-    
-    # Prevent division by zero for calm conditions
-    if u_magnitude < 1e-6
-        τ_f[iface_bdy, idx1, idx2, 1] = 0.0
-        τ_f[iface_bdy, idx1, idx2, 2] = 0.0
-        wθ[iface_bdy, idx1, idx2, 1] = 0.0
-        return
-    end
-    
-    z0_m = 0.1        # momentum roughness length [m]
-    z0_h = 0.01       # thermal roughness length [m]
-    
-    # Calculate surface conditions using wind magnitude
-    result = surface_conditions(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h, rho=ρ)
-    
-    # Calculate total momentum flux magnitude
-    τ_magnitude = momentum_flux(result.u_star, ρ)
-    
-    # Distribute momentum flux into components based on wind direction
-    # The stress opposes the wind direction, hence the negative signs
-    τ_f[iface_bdy, idx1, idx2, 1] = -τ_magnitude * (u_ref / (u_magnitude + 2.2e-12))
-    τ_f[iface_bdy, idx1, idx2, 2] = -τ_magnitude * (v_ref / (u_magnitude + 2.2e-12))
-
-    #@info u_ref, v_ref, τ_magnitude, τ_f[iface_bdy, idx1, idx2, 1], τ_f[iface_bdy, idx1, idx2, 2], result.u_star
-    
-    # Sensible heat flux
-    wθ[iface_bdy, idx1, idx2, 1] = result.Q_H
-    
-    return
-end
-
-#=function CM_MOST!(τ_f, wθ, ρ, iface_bdy, idx1, idx2,  u_ref, v_ref, theta_ref, theta_s, z_ref)
+function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, theta_ref, theta_s, z_ref)
+#function CM_MOST!(τ_f, wθ, ρ, iface_bdy, idx1, idx2,  u_ref, v_ref, theta_ref, theta_s, z_ref)
     
     #println("=== Minimal Surface Fluxes: Comprehensive Analysis ===")
     
     # Example atmospheric conditions
     #u_ref = 10.0      # wind speed at 10m [m/s]
+    #v_ref = 0.0
     #theta_ref = 298.0 # 285.0  # potential temperature at 10m [K] 
     #theta_s = 302.0   # 288.0    # surface potential temperature [K]
     #z_ref = 10.0      # reference height [m]
 
     z0_m = 0.1        # momentum roughness length [m]
     z0_h = 0.01       # thermal roughness length [m]
+
+    u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref)
     
     # Calculate surface conditions
-    result_x = surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
-    result_y = surface_conditions(v_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
-       
-    #=println("\n=== CALCULATED PARAMETERS ===")
-    #println("  uinside $(u_ref) m/s")
-    #println("  vinside $(u_ref) m/s")
-    #println("  zinsie  $(z_ref) m")
-    #println("  θinside $(theta_ref) K")
-    #println("  θsfc    $(theta_s) K")
-    
-    println("\n=== CALCULATED PARAMETERS ===")
-    println("  Friction velocity uy* = $(round(result_x.u_star, digits=4)) m/s")
-    println("  Friction velocity ux* = $(round(result_y.u_star, digits=4)) m/s")
-    println("  Temperature scale θ* = $(round(result_x.theta_star, digits=4)) K") 
-    println("  Temperature scale θ* = $(round(result_y.theta_star, digits=4)) K") 
-    println("  Obukhov length L = $(round(result_x.L, digits=1)) m")
-    println("  Sensible heat flux = $(round(result_x.Q_H, digits=1)) W/m²")
-    println("  Stability parameter ζ = $(round(result_x.zeta, digits=4))")
-    println("  Drag coefficient CD = $(round(result_x.C_D * 1000, digits=2)) × 10⁻³")
-    println("  Heat transfer coeff CH = $(round(result_x.C_H * 1000, digits=2)) × 10⁻³")
-    =#
+    result = surface_conditions(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h)
+   
     # Momentum flux
-    τ_f[iface_bdy, idx1, idx2, 1] = -momentum_flux(result_x.u_star, ρ)
-    τ_f[iface_bdy, idx1, idx2, 2] = -momentum_flux(result_y.u_star, ρ)
-
-    #sensible heat flux
-    wθ[iface_bdy, idx1, idx2, 1]  = result_x.Q_H
+    τ_magnitude = momentum_flux(result.u_star, ρ)
+   
+    τ_f[1] = -τ_magnitude * (u_ref/(u_magnitude + 2.22e-16))
+    τ_f[2] = -τ_magnitude * (v_ref/(u_magnitude + 2.22e-16))
     
+    #sensible heat flux
+    #wθ[iface_bdy, idx1, idx2, 1]  = result_x.Q_H
     
     #println("  x-Momentum flux τx = $(round(τ_f[iface_bdy, idx1, idx2, 1], digits=4)) N/m²")
     #println("  y-Momentum flux τy = $(round(τ_f[iface_bdy, idx1, idx2, 2], digits=4)) N/m²")
@@ -150,7 +101,7 @@ end
     println("Install Plots.jl with: using Pkg; Pkg.add(\"Plots\")")
     end=#
     return
-end=#
+end
 
 
 """

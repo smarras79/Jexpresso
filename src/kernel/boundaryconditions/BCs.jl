@@ -604,9 +604,15 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                 if (coords[poin_in_bdy_face[iface,3,3], 3] == zmin) # FOR YT THIS WOULDN'T WORK WITH TOPOGRAPHY
                     for i = 1:ngl
                         for j = 1:ngl
+                            
+
                             ip  = poin_in_bdy_face[iface,i,j]
                             e   = bdy_face_in_elem[iface]
-                            ip1 = connijk[e,i,j,ngl]
+
+                            #Inside point
+                            iz  = inputs[:ifirst_wall_node_index]
+                            ip1 = connijk[e,i,j,iz]
+                            
                             θ = 0.0   
                             θ1 = 0.0 
                             qn1 = 0
@@ -622,11 +628,50 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                     θ1 = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                                 end
                             end
-                            user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
-                                             qe[ip,:], qe[ip1,:],
-                                             bdy_face_type[iface],
-                                             @view(coords[ip,:]),
-                                             @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), inputs[:SOL_VARS_TYPE], PhysConst; θ = θ, θ1 = θ1, qn0 = qn1, qn1=qn2)
+
+                            if (bdy_face_type[iface] == "MOST")
+                                
+                                ipsfc    = connijk[e,i,j,1]
+                                ρ        = uaux[ipsfc, 1]
+                                u_inside = uaux[ip1,   2]/ρ
+                                v_inside = uaux[ip1,   3]/ρ
+                                θ_inside = uaux[ip1,   5]/ρ
+                                θ_sfc    = uaux[ipsfc, 5]/ρ
+                                z_sfc    = coords[ipsfc, 3]
+                                z_inside = coords[ip1,   3]
+
+
+                                CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), ρ, u_inside, v_inside, θ_inside, θ_sfc, z_inside)
+                                wθ[iface,i,j,1] = 0.0
+
+                                F_surf[i,j,2] = τ_f[iface, i,j,1]
+                                F_surf[i,j,3] = τ_f[iface, i,j,2]
+                                F_surf[i,j,5] = 0.12
+                                
+                                #=user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
+                                                 qe[ip,:], qe[ip1,:],
+                                                 bdy_face_type[iface],
+                                                 @view(coords[ip,:]),
+                                                 @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]),
+                                                 inputs[:SOL_VARS_TYPE], PhysConst;
+                                                 θ = θ,
+                                                 θ1 = θ1,
+                                                 qn0 = qn1,
+                                                 qn1=qn2,
+                                                 ipsfc=ipsfc,
+                                                 z_inside=z_inside)
+                                =#
+                            else
+                                user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],
+                                                 qe[ip,:], qe[ip1,:],
+                                                 bdy_face_type[iface],
+                                                 @view(coords[ip,:]),
+                                                 @view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), inputs[:SOL_VARS_TYPE], PhysConst;
+                                                 θ = θ,
+                                                 θ1 = θ1,
+                                                 qn0 = qn1,
+                                                 qn1=qn2)
+                            end
                         end
                     end
                  end

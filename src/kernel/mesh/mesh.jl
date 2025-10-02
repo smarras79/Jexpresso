@@ -3003,7 +3003,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
 
-    GC.gc()  # Force garbage since the grid being read may be large and we want to remove any memory usage not necessary for this.
+    #GC.gc()  # Force garbage since the grid being read may be large and we want to remove any memory usage not necessary for this.
     #check_memory(" BEGINNING mesh_driver\n")
     
     partitioned_model = nothing
@@ -3033,9 +3033,6 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
                 mesh.coords[:,3] = mesh.z[:]
             end
         end
-        
-        get_memory_usage(" KAKAKAKAKAKAKAKA MESH DRIVER Right after SEMSETUP setup.")
-        #check_memory("  KAKAKAKAKAKAKAKA MESH DRIVER Right after SEMSETUP setup.")
         
         println_rank(" # Read gmsh grid and populate with high-order points ........................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
         
@@ -3097,17 +3094,10 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     #   mesh.Δeffective     --> mesh.Δelem_smallest/mesh.nop
     #
     compute_element_size_driver(mesh, mesh.SD, Float64, CPU())
-
-    if mesh.rank == 0
-        println(" # cleanup some memory, why not?!!!")
-    end
-
+    
     #check_memory("  END MESH DRIVER BEFORE GC.")
     GC.gc()
-    if mesh.rank == 0
-        println(" # cleanup some memory, why not?!!! ...... END")
-    end
-      #check_memory("  END MESH DRIVER Right after SEMSETUP setup.")
+    #check_memory("  END MESH DRIVER Right after SEMSETUP setup.")
         
     if isnothing(adapt_flags)
         return mesh, partitioned_model

@@ -19,7 +19,7 @@ function user_inputs()
         :restart_time         => 150.0, 
         # the default restart output dir is $(your_output_dir)/restart but you can always specify
         # :restart_output_file_path => "./output/CompEuler/3d/output/restart",
-        :lrestart             => true,
+        #:lrestart             => true,
         # the default restart input dir is $(your_output_dir)/restart but you can always specify
         # :restart_input_file_path => "./output/CompEuler/3d/output/restart",
         #---------------------------------------------------------------------------
@@ -32,7 +32,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lwall_model          => true,
         :lvisc                => true, #false by default
-        :visc_model           => AV(), #VREM(), #SMAG(),
+        #:visc_model           => AV(), #VREM(), #SMAG(),
+        :visc_model           => SMAG(),
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587],
         :μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],

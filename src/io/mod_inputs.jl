@@ -38,6 +38,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lwall_model))
        inputs[:lwall_model] = false
     end
+
+    if(!haskey(inputs, :ifirst_wall_node_index))
+         inputs[:ifirst_wall_node_index] = 2 #default is the first LGL point above the surface node along the vertical direction of the surface element
+    end
+    
     
     if(!haskey(inputs, :bdy_fluxes))
        inputs[:bdy_fluxes] = false

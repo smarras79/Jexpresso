@@ -1769,7 +1769,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
                 ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
 
-                if (lwall_model)                   
+                #=if (lwall_model)                   
                     ip = connijk[iel, k, l, m]
                     iface_bdy = elem_to_face[iel, k, l, m, 1]
 
@@ -1783,7 +1783,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             #
                             #Surface point
                             isfc = 1
-                            ip  = connijk[iel, k, l, isfc]
+                            #ip  = connijk[iel, k, l, isfc]
                             #Inside point
                             iz  = ngl
                             ip2 = connijk[iel, k, l, iz]
@@ -1796,14 +1796,12 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             z_sfc        = coords[ip, 3]
                             z_inside     = coords[ip2, 3]
                             
-                            CM_MOST!(τ_f, wθ, rho, iface_bdy, idx1, idx2,
-                                     u_inside, v_inside, theta_inside, theta_sfc, z_inside)
+                           # CM_MOST!(τ_f, wθ, rho, iface_bdy, idx1, idx2,
+                           #          u_inside, v_inside, theta_inside, theta_sfc, z_inside)
                             
                         end
-                        
                     end
-
-                end
+                #end=#
                 
                 # Distribute to element RHS arrays
                 @turbo for i = 1:ngl

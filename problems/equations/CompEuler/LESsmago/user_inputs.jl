@@ -11,7 +11,7 @@ function user_inputs()
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "",
-        :diagnostics_at_times => (0:5.0:7200),
+        :diagnostics_at_times => (0:1.0:7200),
         :lsource              => true,
         :sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
@@ -23,6 +23,7 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lwall_model          => true,
+        :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
