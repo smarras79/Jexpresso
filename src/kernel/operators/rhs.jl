@@ -1226,6 +1226,128 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     end
 end
 
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy,
+                          dηdx, dηdy,
+                          inputs, rhs_el,
+                          iel, ieq,
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal)
+
+    #
+    # Constants for Richardson stability correction
+    #
+    PhysConst = PhysicalConst{Float32}()
+    Pr_t      = PhysConst.Pr_t            # Turbulent Prandtl number
+    g         = PhysConst.g               # Gravitational acceleration (m/s²)
+    Ri_crit   = PhysConst.Ri_crit         # Critical Richardson number
+    C_s       = PhysConst.C_s             # Smagorinsky constant (typical range: 0.1-0.2)
+
+    mean_val = 0.05  # midpoint of [0, 0.1]
+    std_dev  = 0.01 * mean_val  # 1% of the mean
+    dist     = Normal(mean_val, std_dev)
+    
+    
+    for l = 1:ngl
+        for k = 1:ngl
+            ωJac = ω[k]*ω[l]*Je[iel,k,l]
+
+            # Quantities for Smagorinsky 
+            dudξ = 0.0; dudη = 0.0
+            dvdξ = 0.0; dvdη = 0.0
+            @turbo for ii = 1:ngl
+                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+
+                dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+            end
+            dξdx_kl = dξdx[iel,k,l]
+            dξdy_kl = dξdy[iel,k,l]
+            dηdx_kl = dηdx[iel,k,l]
+            dηdy_kl = dηdy[iel,k,l]
+
+            #u
+            auxi = dudξ*dξdx_kl + dudη*dηdx_kl
+            dudx = visc_coeffieq[ieq]*auxi
+            auxi = dudξ*dξdy_kl + dudη*dηdy_kl
+            dudy = visc_coeffieq[ieq]*auxi
+
+            #v
+            auxi = dvdξ*dξdx_kl + dvdη*dηdx_kl
+            dvdx = visc_coeffieq[ieq]*auxi
+            auxi = dvdξ*dξdy_kl + dvdη*dηdy_kl
+            dvdy = visc_coeffieq[ieq]*auxi
+
+            # Smagorinsky
+            # Strain rate tensor (symmetric part of velocity gradient)
+            S11 = dudx
+            S22 = dvdy
+            S12 = 0.5 * (dudy + dvdx)
+            S21 = S12
+            
+            # Rotation tensor (anti-symmetric part)
+            Ω12 = 0.5 * (dudy - dvdx)
+            Ω21 = -Ω12
+            
+            # Strain rate magnitude
+            Sij = sqrt(0.5 * (S11*S11 + S22*S22) + S12*S12)
+            S2  = Sij*Sij
+
+            # Filter width calculation
+            Je_cbrt = cbrt(Je[iel,k,l])
+            Δ       = 2.0 * Je_cbrt / (ngl-1)
+            Δ2      = Δ * Δ
+            
+            # Base Smagorinsky eddy viscosity
+            ν_t_base = (C_s * Δ)^2 * Sij
+            ν_t = ν_t_base
+            
+            # END Smagorinsky
+
+            # Compute scalar gradient for diffusion iequation by iequation
+            dqdξ = 0.0; dqdη = 0.0
+            @turbo for ii = 1:ngl
+                dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+            end
+            # Transform scalar gradient to physical coordinates
+            dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
+            dqdy_phys = dqdξ*dξdy_kl + dqdη*dηdy_kl
+
+            
+            # Determine effective diffusivity based on scalar type
+            # TODO: Replace this logic with proper equation identification
+            # Common orderings:
+            # - Conservative: [ρ, ρu, ρv, ρw, ρE] or [ρ, ρu, ρv, ρw, ρE, ρθ]
+            # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
+            if ieq == 4  # Assuming potential temperature equation is at index 5
+                # For temperature: use thermal diffusivity (ν_t / Pr_t)
+                effective_diffusivity = visc_coeffieq[ieq] * ν_t / Pr_t
+            else
+                # For momentum equations: use momentum diffusivity
+                effective_diffusivity = visc_coeffieq[ieq] * ν_t
+            end
+            
+            # Apply effective diffusivity to scalar gradients
+            dqdx = effective_diffusivity * dqdx_phys
+            dqdy = effective_diffusivity * dqdy_phys
+            
+            ∇ξ∇q_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
+            ∇η∇q_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
+            
+            @turbo for i = 1:ngl
+                dhdξ_ik = dψ[i,k]
+                dhdη_il = dψ[i,l]
+                
+                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl
+                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇q_kl
+            end
+        end  
+    end
+end
+
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
@@ -1768,40 +1890,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
                 ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
                 ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
-
-                #=if (lwall_model)                   
-                    ip = connijk[iel, k, l, m]
-                    iface_bdy = elem_to_face[iel, k, l, m, 1]
-
-                    if (ip in poin_in_bdy_face)
-                        idx1 = elem_to_face[iel, k, l, m, 2]
-                        idx2 = elem_to_face[iel, k, l, m, 3]
-
-                        if bdy_face_type[iface_bdy] == "MOST"
-                            #
-                            # Monin-Obukhov Similarity Theory
-                            #
-                            #Surface point
-                            isfc = 1
-                            #ip  = connijk[iel, k, l, isfc]
-                            #Inside point
-                            iz  = ngl
-                            ip2 = connijk[iel, k, l, iz]
-
-                            rho          = uprimitive[k, l,  m, 1]
-                            u_inside     = uprimitive[k, l, iz, 2]  # u-component
-                            v_inside     = uprimitive[k, l, iz, 3]  # v-component
-                            theta_inside = uprimitive[k, l, iz, 5]
-                            theta_sfc    = uprimitive[k, l,  1, 5]
-                            z_sfc        = coords[ip, 3]
-                            z_inside     = coords[ip2, 3]
-                            
-                           # CM_MOST!(τ_f, wθ, rho, iface_bdy, idx1, idx2,
-                           #          u_inside, v_inside, theta_inside, theta_sfc, z_inside)
-                            
-                        end
-                    end
-                #end=#
+                
                 
                 # Distribute to element RHS arrays
                 @turbo for i = 1:ngl
