@@ -6,21 +6,24 @@ function user_flux!(F, G, SD::NSD_2D, q, qe,
     ρ  = q[1]
     ρu = q[2]
     ρv = q[3]
-    ρθ = q[4]
-    θ  = ρθ/ρ
+    ρe = q[4]
+
+    e  = ρe/ρ
     u  = ρu/ρ
     v  = ρv/ρ
-    Pressure = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+
+    velomagsq = u*u + v*v
+    Pressure = PhysConst.γm1*(ρe - 0.5*ρ*velomagsq)
     
     F[1] = ρu
     F[2] = ρu*u .+ Pressure
     F[3] = ρv*u
-    F[4] = ρθ*u
+    F[4] = ρe*u
 
     G[1] = ρv
     G[2] = ρu*v
     G[3] = ρv*v .+ Pressure
-    G[4] = ρθ*v
+    G[4] = ρe*v
 end
 
 function user_flux!(F, G, SD::NSD_2D, q, qe,

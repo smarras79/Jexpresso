@@ -4,35 +4,35 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        #:Δt                   => 0.02,
-        :Δt                   => 0.4,
+        :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        :Δt                   => 0.0001,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
-        :diagnostics_at_times => (0:100:1000),
-        :restart_time         => 600,
-        :lrestart             => true,
+        :tend                 => 10.0,
+        :diagnostics_at_times => (0.0:0.25:10.0),
+        :restart_time         => 0.0,
+        :lrestart             => false,
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
-        :lsource              => true, 
+        :lsource              => false, 
         #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 4,      # Polynomial order
+        :nop                 => 7,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 0.5, 0.5, 0.5], #horizontal viscosity constant for momentum
+        :visc_model           => SMAG(),
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_40x40_unitsquare.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -53,7 +53,7 @@ function user_inputs()
         # init_refinement
         #---------------------------------------------------------------------------
         :linitial_refine     => false,
-        :init_refine_lvl     => 1,
+        :init_refine_lvl     => 2,
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------

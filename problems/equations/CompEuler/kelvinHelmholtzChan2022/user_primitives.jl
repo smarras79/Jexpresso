@@ -23,8 +23,15 @@ end
 
 function user_uout!(ip, ET, uout, u, qe; kwargs...)
 
-    uout[1] = u[1]
-    uout[2] = u[2]/u[1]
-    uout[3] = u[3]/u[1]
-    uout[4] = u[4]/u[1]
+    PhysConst = PhysicalConst{Float64}()
+    
+    uout[1] = u[1]      #ρ
+    uout[2] = u[2]/u[1] #u
+    uout[3] = u[3]/u[1] #v
+        
+    velomagsq = uout[2]*uout[2] + uout[3]*uout[3]
+    uout[4] = PhysConst.γm1 * (u[4] - 0.5 * u[1] * velomagsq) #Pressure
+    
+    uout[5] = uout[4]/(PhysConst.Rair*uout[1]) # T = p/(ρ*R)
+    
 end

@@ -14,90 +14,71 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # 
     #---------------------------------------------------------------------------------
     qvars    = ["ρ", "ρu", "ρv", "ρe"]
-    qoutvars = ["ρ", "u", "w", "T", "p"]
+    qoutvars = ["ρ", "u", "w", "p", "T"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())    
         PhysConst = PhysicalConst{Float64}()
-        if inputs[:lrestart] == true
-            #
-            # READ RESTART HDF5:
-            #
-            
-            q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
-            for ip=1:mesh.npoin
-                ρ  = q.qn[ip,1]
-                ρθ = q.qn[ip,4]
-                θ  = ρθ/ρ
-                P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-                q.qn[ip,end] = P
-            
-                ρe  = q.qe[ip,1]
-                ρθe = q.qe[ip,4]
-                θe  = ρθe/ρ
-                Pe = perfectGasLaw_ρθtoP(PhysConst, ρ=ρe, θ=θe)
-                q.qe[ip,end] = Pe
-            end
         
-        else
-            #
-            # INITIAL STATE from scratch:
-            #
-            comm = MPI.COMM_WORLD
-            max_x = mesh.xmax
-            min_x = mesh.xmin
+        #
+        # INITIAL STATE from scratch:
+        #
+        comm = MPI.COMM_WORLD
+        max_x = mesh.xmax
+        min_x = mesh.xmin
+        
+        for ip = 1:mesh.npoin
             
-            for ip = 1:mesh.npoin
+            x, y = mesh.x[ip], mesh.y[ip]
+
+            B      = tanh(15.0*y + 7.5) - tanh(15.0*y - 7.5)
+            ρ      = 0.5 + 3.0*B/4.0                
+            p      = 1.0
+            T      = p/(ρ*PhysConst.Rair)
+            u      = 0.5*(B - 1.0)
+            v      = sinpi(2.0*x)/10.0
+            vmagsq = u*u + v*v
+            e      = p/(ρ*(PhysConst.γm1) + 0.5*vmagsq) # E = ρ*e
             
-                x, y = mesh.x[ip], mesh.y[ip]
-
-                B = tanh(15.0*y + 7.5) - tanh(15*y - 7.5)
-                ρ = 0.5 + 3.0*B/4.0
-                p = 1.0
-                T = p/(ρ*PhysConst.Rair)
+            ρref = ρ
+            pref = p
+            eref = e
+            if inputs[:SOL_VARS_TYPE] == PERT()
+                q.qn[ip,1] = ρ   - ρref
+                q.qn[ip,2] = ρ*u - ρref*u
+                q.qn[ip,3] = ρ*v - ρref*v
+                q.qn[ip,4] = ρ*e - ρref*e
+                q.qn[ip,end] = p-pref
                 
-                pref = p
-                
-                u = 0.5*(B - 1.0)
-                v = sinpi(2.0*x)/10.0
+                #Store initial background state for plotting and analysis of pertuebations
+                q.qe[ip,1] = ρref
+                q.qe[ip,2] = u
+                q.qe[ip,3] = v
+                q.qe[ip,4] = ρref*eref
+                q.qe[ip,end] = pref
+            else
+                q.qn[ip,1] = ρ
+                q.qn[ip,2] = ρ*u
+                q.qn[ip,3] = ρ*v
+                q.qn[ip,4] = ρ*e
+                q.qn[ip,end] = p
 
-                if inputs[:SOL_VARS_TYPE] == PERT()
-                    q.qn[ip,1] = ρ - ρref
-                    q.qn[ip,2] = ρ*u - ρref*u
-                    q.qn[ip,3] = ρ*v - ρref*v
-                    q.qn[ip,4] = ρ*θ - ρref*θ
-                    q.qn[ip,end] = p
-                
-                    #Store initial background state for plotting and analysis of pertuebations
-                    q.qe[ip,1] = ρref
-                    q.qe[ip,2] = u
-                    q.qe[ip,3] = v
-                    q.qe[ip,4] = ρref*θref
-                    q.qe[ip,end] = pref
-                else
-                    q.qn[ip,1] = ρ
-                    q.qn[ip,2] = ρ*u
-                    q.qn[ip,3] = ρ*v
-                    q.qn[ip,4] = ρ*θ
-                    q.qn[ip,end] = p
-
-                    #Store initial background state for plotting and analysis of pertuebations
-                    q.qe[ip,1] = ρref
-                    q.qe[ip,2] = u
-                    q.qe[ip,3] = v
-                    q.qe[ip,4] = ρref*θref
-                    q.qe[ip,end] = pref
-                end
-                #end
+                #Store initial background state for plotting and analysis of pertuebations
+                q.qe[ip,1] = ρref
+                q.qe[ip,2] = u
+                q.qe[ip,3] = v
+                q.qe[ip,4] = ρref*eref
+                q.qe[ip,end] = pref
             end
+            #end
         end
-    
+        
         if inputs[:CL] == NCL()
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[:,2] .= q.qn[:,2]./(q.qn[:,1] + q.qe[:,1])
                 q.qn[:,3] .= q.qn[:,3]./(q.qn[:,1] + q.qe[:,1])
                 q.qn[:,4] .= q.qn[:,4]./(q.qn[:,1] + q.qe[:,1])
-            
+                
                 #Store initial background state for plotting and analysis of pertuebations
                 q.qe[:,4] .= q.qe[:,4]./q.qe[:,1]
             else
@@ -166,7 +147,7 @@ end
         qn[ip,end] = p
     end
 
-                    #Store initial background state for plotting and analysis of pertuebations
+    #Store initial background state for plotting and analysis of pertuebations
     qe[ip,1] = ρref
     qe[ip,2] = u
     qe[ip,3] = v

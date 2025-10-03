@@ -11,6 +11,7 @@ using Parameters
     Lf::T       = 0.3336e6 #J/kg Latent heat of fusion
     γair::T     = T(cp/cv)
     γ::T        = T(cp/cv)
+    γm1::T      = γ - 1.0
     ν::T        = 1.0e-5
     Pr::T       = 0.7
     Pr_t::T     = 0.9 #Turbulent Pr number
