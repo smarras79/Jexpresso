@@ -1353,22 +1353,25 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           iel, ieq,
                           QT::Inexact, VT::VREM, SD::NSD_2D, ::ContGal)
 
-    PhysConst = PhysicalConst{Float32}()
-    Pr_t      = PhysConst.Pr_t
-    C_s       = PhysConst.C_s
-    C_s2      = C_s * C_s
-    C_vrem    = 2.5 * C_s2  # Vreman coefficient
-            
-    
+    PhysConst  = PhysicalConst{Float32}()
+    Pr_t       = PhysConst.Pr_t
+    #
+    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
+    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
+    # Very unstable:    Pr_t ≈ 1/3
+    #
+    κ          = PhysConst.κ
+    cp         = PhysConst.cp
+    C_s        = PhysConst.C_s
+    C_s2       = C_s^2
+    C_vrem     = 2.5 * C_s2  # Vreman coefficient
     eps_vreman = 1.0e-14  # Safety epsilon
-
-
     
     for l = 1:ngl
         for k = 1:ngl
             Je_kl = Je[iel,k,l]
             ωJac = ω[k]*ω[l]*Je_kl
-            
+
             # Filter width calculation (isotropic)
             Je_cbrt = cbrt(Je_kl)
             Δ       = 2.0 * Je_cbrt / (ngl-1)
@@ -1427,7 +1430,13 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             
             # Effective diffusivity
             if ieq == 4
-                effective_diffusivity = visc_coeffieq[ieq] * ν_t / Pr_t
+
+                ρ           = uprimitiveieq[k,l,1]                
+                α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
+                α_turbulent = ν_t / Pr_t     # Turbulent thermal diffusivity
+
+                effective_diffusivity = ρ * cp * (α_molecular + α_turbulent)
+                
             else
                 effective_diffusivity = visc_coeffieq[ieq] * ν_t
             end
@@ -1448,7 +1457,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
         end  
     end
 end
-
 #
 # END RHS with Vreman 2D
 #
