@@ -1,16 +1,23 @@
 function user_primitives!(u,qe,uprimitive,::TOTAL)
         
     PhysConst = PhysicalConst{Float64}()
+
+    ρ  = u[1]
+    ρu = u[2]
+    ρv = u[3]
+    E  = u[4]
+
+    u  = ρu/ρ
+    v  = ρv/ρ
+    KE = 0.5 * ρ * (u^2 + v^2)
+    p  = PhysConst.γm1 * (E - KE)
+    T  = p / (ρ * PhysConst.Rair)
+
+    uprimitive[1] = ρ
+    uprimitive[2] = u
+    uprimitive[3] = v
+    uprimitive[4] = T
     
-    uprimitive[1] = u[1]      #ρ
-    uprimitive[2] = u[2]/u[1] #u
-    uprimitive[3] = u[3]/u[1] #v
-    
-    KE = uprimitive[2]*uprimitive[2] + uprimitive[3]*uprimitive[3]
-    ei = u[4]/u[1] - 0.5*KE
-    
-    uprimitive[4] = u[4]/u[1] #ei/PhysConst.cv # T = e/cv
-        
 end
 
 function user_primitives!(u,qe,uprimitive,::PERT)
