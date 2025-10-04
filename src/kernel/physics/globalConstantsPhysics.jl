@@ -12,9 +12,10 @@ using Parameters
     γair::T     = T(cp/cv)
     γ::T        = T(cp/cv)
     γm1::T      = γ - 1.0
+    κ::T        = 0.026  # W/(m·K) - thermal conductivity of air at 293 K
     ν::T        = 1.0e-5
     Pr::T       = 0.7
-    Pr_t::T     = 0.9 #Turbulent Pr number
+    Pr_t::T     = 0.7 #Turbulent Pr number
     Prnum::T    = 0.1
     pref::T     = 100000.0 #Pa
     Rvap::T     = 461.0 #J/kg.K
