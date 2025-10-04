@@ -1,8 +1,16 @@
 function user_primitives!(u,qe,uprimitive,::TOTAL)
-    uprimitive[1] = u[1]
-    uprimitive[2] = u[2]/u[1]
-    uprimitive[3] = u[3]/u[1]
-    uprimitive[4] = u[4]/u[1]
+        
+    PhysConst = PhysicalConst{Float64}()
+    
+    uprimitive[1] = u[1]      #ρ
+    uprimitive[2] = u[2]/u[1] #u
+    uprimitive[3] = u[3]/u[1] #v
+    
+    KE = uprimitive[2]*uprimitive[2] + uprimitive[3]*uprimitive[3]
+    ei = u[4]/u[1] - 0.5*KE
+    
+    uprimitive[4] = u[4]/u[1] #ei/PhysConst.cv # T = e/cv
+        
 end
 
 function user_primitives!(u,qe,uprimitive,::PERT)

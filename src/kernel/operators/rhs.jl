@@ -1243,12 +1243,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     g         = PhysConst.g               # Gravitational acceleration (m/s²)
     Ri_crit   = PhysConst.Ri_crit         # Critical Richardson number
     C_s       = PhysConst.C_s             # Smagorinsky constant (typical range: 0.1-0.2)
-
-    mean_val = 0.05  # midpoint of [0, 0.1]
-    std_dev  = 0.01 * mean_val  # 1% of the mean
-    dist     = Normal(mean_val, std_dev)
-    
-    
+    C_s2      = C_s*C_s
+        
     for l = 1:ngl
         for k = 1:ngl
             ωJac = ω[k]*ω[l]*Je[iel,k,l]
@@ -1269,17 +1265,13 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             dηdy_kl = dηdy[iel,k,l]
 
             #u
-            auxi = dudξ*dξdx_kl + dudη*dηdx_kl
-            dudx = visc_coeffieq[ieq]*auxi
-            auxi = dudξ*dξdy_kl + dudη*dηdy_kl
-            dudy = visc_coeffieq[ieq]*auxi
-
+            dudx = dudξ*dξdx_kl + dudη*dηdx_kl
+            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+            
             #v
-            auxi = dvdξ*dξdx_kl + dvdη*dηdx_kl
-            dvdx = visc_coeffieq[ieq]*auxi
-            auxi = dvdξ*dξdy_kl + dvdη*dηdy_kl
-            dvdy = visc_coeffieq[ieq]*auxi
-
+            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
+            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+            
             # Smagorinsky
             # Strain rate tensor (symmetric part of velocity gradient)
             S11 = dudx
@@ -1301,7 +1293,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             Δ2      = Δ * Δ
             
             # Base Smagorinsky eddy viscosity
-            ν_t_base = (C_s * Δ)^2 * Sij
+            ν_t_base = C_s2*Δ2* Sij
             ν_t = ν_t_base
             
             # END Smagorinsky
@@ -1325,6 +1317,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             if ieq == 4  # Assuming potential temperature equation is at index 5
                 # For temperature: use thermal diffusivity (ν_t / Pr_t)
                 effective_diffusivity = visc_coeffieq[ieq] * ν_t / Pr_t
+                effective_diffusivity = visc_coeffieq[ieq] * ν_t
             else
                 # For momentum equations: use momentum diffusivity
                 effective_diffusivity = visc_coeffieq[ieq] * ν_t
@@ -1348,6 +1341,118 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     end
 end
 
+#
+# RHS with Vreman 2D
+#
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy,
+                          dηdx, dηdy,
+                          inputs, rhs_el,
+                          iel, ieq,
+                          QT::Inexact, VT::VREM, SD::NSD_2D, ::ContGal)
+
+    PhysConst = PhysicalConst{Float32}()
+    Pr_t      = PhysConst.Pr_t
+    C_s       = PhysConst.C_s
+    C_s2      = C_s * C_s
+    C_vrem    = 2.5 * C_s2  # Vreman coefficient
+            
+    
+    eps_vreman = 1.0e-14  # Safety epsilon
+
+
+    
+    for l = 1:ngl
+        for k = 1:ngl
+            Je_kl = Je[iel,k,l]
+            ωJac = ω[k]*ω[l]*Je_kl
+            
+            # Filter width calculation (isotropic)
+            Je_cbrt = cbrt(Je_kl)
+            Δ       = 2.0 * Je_cbrt / (ngl-1)
+            Δ2      = Δ * Δ
+           
+            # Velocity gradients in computational space
+            dudξ = 0.0; dudη = 0.0
+            dvdξ = 0.0; dvdη = 0.0
+            @turbo for ii = 1:ngl
+                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+                dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+            end
+            
+            # Metric terms
+            dξdx_kl = dξdx[iel,k,l]
+            dξdy_kl = dξdy[iel,k,l]
+            dηdx_kl = dηdx[iel,k,l]
+            dηdy_kl = dηdy[iel,k,l]
+
+            # Transform to physical space
+            u11 = dudξ*dξdx_kl + dudη*dηdx_kl  # dudx
+            u12 = dudξ*dξdy_kl + dudη*dηdy_kl  # dudy
+            u21 = dvdξ*dξdx_kl + dvdη*dηdx_kl  # dvdx
+            u22 = dvdξ*dξdy_kl + dvdη*dηdy_kl  # dvdy
+
+            # Vreman β tensor
+            β11 = Δ2 * (u11*u11 + u12*u12)
+            β12 = Δ2 * (u11*u21 + u12*u22)
+            β22 = Δ2 * (u21*u21 + u22*u22)
+
+            B_β = β11*β22 - β12*β12
+            
+            # Frobenius norm squared of velocity gradient
+            u_ij_u_ij = u11*u11 + u12*u12 + u21*u21 + u22*u22
+            
+            # Vreman eddy viscosity with safety checks
+            # At the top, after line 13
+           
+            if u_ij_u_ij > eps_vreman && B_β > 0.0
+                ν_t = C_vrem * sqrt(B_β / u_ij_u_ij)
+            else
+                ν_t = 0.0
+            end
+            
+            # Scalar gradient
+            dqdξ = 0.0; dqdη = 0.0
+            @turbo for ii = 1:ngl
+                dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+            end
+            
+            dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
+            dqdy_phys = dqdξ*dξdy_kl + dqdη*dηdy_kl
+            
+            # Effective diffusivity
+            if ieq == 4
+                effective_diffusivity = visc_coeffieq[ieq] * ν_t / Pr_t
+            else
+                effective_diffusivity = visc_coeffieq[ieq] * ν_t
+            end
+            
+            dqdx = effective_diffusivity * dqdx_phys
+            dqdy = effective_diffusivity * dqdy_phys
+            
+            ∇ξ∇q_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
+            ∇η∇q_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
+            
+            @turbo for i = 1:ngl
+                dhdξ_ik = dψ[i,k]
+                dhdη_il = dψ[i,l]
+                
+                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl
+                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇q_kl
+            end
+        end  
+    end
+end
+
+#
+# END RHS with Vreman 2D
+#
+
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
@@ -1363,16 +1468,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
                           QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal)
 
-    '''
-    
-    '''
     PhysConst = PhysicalConst{Float32}()
     MPConst   = MicrophysicalConst{Float32}()
-
-    mean_val = 0.05  # midpoint of [0, 0.1]
-    std_dev  = 0.01 * mean_val  # 1% of the mean
-    dist     = Normal(mean_val, std_dev)
-    
+        
     for m = 1:ngl
         for l = 1:ngl
             for k = 1:ngl
@@ -1411,116 +1509,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
                 ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
                 
-                #=if (lwall_model)                   
-                    ip = connijk[iel, k, l, m]
-                    iface_bdy = elem_to_face[iel, k, l, m, 1]
-
-                    if (ip in poin_in_bdy_face)
-                        idx1 = elem_to_face[iel, k, l, m, 2]
-                        idx2 = elem_to_face[iel, k, l, m, 3]
-                        
-                        if (bdy_face_type[iface_bdy] == "wall_model_bottom" || bdy_face_type[iface_bdy] == "wall_model_top")
-                            
-                            # Determine wall orientation and second point
-                            if bdy_face_type[iface_bdy] == "wall_model_bottom"
-
-                               
-                                # For bottom wall, use last point of the element (m=ngl)
-                                ipfromwall = ngl
-                                
-                                wall_y = coords[ip, 3]  # y-coordinate of wall point
-                                ieq = 2
-                                u2  = uprimitiveieq[k, l, ipfromwall, ieq]
-                                ip2 = connijk[iel, k, l, ipfromwall]
-                                y2  = coords[ip2, 3]
-                                uτ  = find_uτ(abs(u2), abs(y2 - wall_y))  # Use absolute values for wall model
-                                if !isnan(uτ)
-                                    τw_mag = uprimitiveieq[k, l, ipfromwall, 1] * uτ^2
-                                    
-                                    # Get velocity components at second grid point
-                                    u_vel = uprimitiveieq[k, l, ipfromwall, 2]  # u-component
-                                    v_vel = uprimitiveieq[k, l, ipfromwall, 3]  # v-component
-                                    vel_mag = sqrt(u_vel^2 + v_vel^2)
-                                    
-                                    if vel_mag > 1e-12
-                                        # Compute wall shear stress components
-                                        # The shear stress always opposes the flow direction
-                                        τw_x = -τw_mag * u_vel / vel_mag
-                                        τw_y = -τw_mag * v_vel / vel_mag
-                                        
-                                        # Apply wall normal sign for gradient direction
-                                        # For bottom wall: gradient = (u_wall - u_interior) / dy < 0 (if u_interior > 0)
-                                        # For top wall: gradient = (u_interior - u_wall) / dy < 0 (if u_interior > 0)
-                                        τ_f[iface_bdy, idx1, idx2, 1] = τw_x
-                                        τ_f[iface_bdy, idx1, idx2, 2] = τw_y
-                                    end
-                                else
-                                    @printf("u₂ = %8.3f, y₂ = %8.1f → FAILED\n", u2, y2)
-                                end
-                                
-                            elseif bdy_face_type[iface_bdy] == "wall_model_top"
-                                
-                                # For top wall, use second point below (m=N-1, where N is max in that direction)
-                                # compute τw
-                                wall_y = coords[ip, 3]  # y-coordinate of wall point
-                                ieq    = 2
-                                u2     = uprimitiveieq[k, l, 1, ieq]
-                                ip2    = connijk[iel, k, l, 1]
-                                y2     = coords[ip2, 3]
-                                uτ     = find_uτ(abs(u2), abs(y2 - wall_y))  # Use absolute values for wall model
-                                if !isnan(uτ)
-                                    τw_mag = uprimitiveieq[k, l, 1, 1] * uτ^2
-                                    
-                                    # Get velocity components at second grid point
-                                    u_vel = uprimitiveieq[k, l, 1, 2]  # u-component
-                                    v_vel = uprimitiveieq[k, l, 1, 3]  # v-component
-                                    vel_mag = sqrt(u_vel^2 + v_vel^2)
-                                    
-                                    if vel_mag > 1e-12
-                                        # Compute wall shear stress components
-                                        # The shear stress always opposes the flow direction
-                                        τw_x = -τw_mag * u_vel / vel_mag
-                                        τw_y = -τw_mag * v_vel / vel_mag
-                                        
-                                        # Apply wall normal sign for gradient direction
-                                        # For bottom wall: gradient = (u_wall - u_interior) / dy < 0 (if u_interior > 0)
-                                        # For top wall: gradient = (u_interior - u_wall) / dy < 0 (if u_interior > 0)
-                                        τ_f[iface_bdy, idx1, idx2, 1] = -τw_x
-                                        τ_f[iface_bdy, idx1, idx2, 2] = -τw_y
-                                    end
-                                else
-                                    @printf("u₂ = %8.3f, y₂ = %8.1f → FAILED\n", u2, y2)
-                                end
-                            else
-                                τ_f[iface_bdy, idx1, idx2, :] .= 0.0
-                            end
-                            
-                        elseif bdy_face_type[iface_bdy] == "MOST"
-                            #
-                            # Monin-Obukhov Similarity Theory
-                            #
-                            #Surface point
-                            isfc = 1
-                            ip  = connijk[iel, k, l, isfc]
-                            #Inside point
-                            iz  = ngl
-                            ip2 = connijk[iel, k, l, iz]
-
-                            rho          = uprimitiveieq[k, l,  m, 1]
-                            u_inside     = uprimitiveieq[k, l, iz, 2]  # u-component
-                            v_inside     = uprimitiveieq[k, l, iz, 3]  # v-component
-                            theta_inside = uprimitiveieq[k, l, iz, 5]
-                            theta_sfc    = uprimitiveieq[k, l,  1, 5]
-                            z_sfc        = coords[ip, 3]
-                            z_inside     = coords[ip2, 3]
-                            
-                            CM_MOST!(τ_f, wθ, rho, iface_bdy, idx1, idx2,
-                                     u_inside, v_inside, theta_inside, theta_sfc, z_inside)
-                            
-                        end
-                    end
-                end=#
-
                 @turbo for i = 1:ngl
                     dhdξ_ik = dψ[i,k]
                     dhdη_il = dψ[i,l]
@@ -1728,10 +1716,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     g         = PhysConst.g               # Gravitational acceleration (m/s²)
     Ri_crit   = PhysConst.Ri_crit         # Critical Richardson number
     C_s       = PhysConst.C_s             # Smagorinsky constant (typical range: 0.1-0.2)
-
-    mean_val = 0.05  # midpoint of [0, 0.1]
-    std_dev  = 0.01 * mean_val  # 1% of the mean
-    dist     = Normal(mean_val, std_dev)
     
     for m = 1:ngl
         for l = 1:ngl

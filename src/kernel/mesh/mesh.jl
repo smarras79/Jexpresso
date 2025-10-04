@@ -213,7 +213,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         elseif ladaptive == true && linitial_refine == false
             gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
             partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
-
+            
             ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
                 flags = zeros(Cint,length(indices))
                 flags.=nothing_flag
