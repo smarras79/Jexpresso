@@ -22,13 +22,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         #
         # READ RESTART HDF5:
         #
-       q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
+        q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
 
-        # pvtu_filepath = inputs[:restart_input_file_path]
-
-        # if rank == 0; println("\n--- Starting READ procedure ---"); end
-        # read_pvtu_restart!(q, pvtu_filepath; comm=comm, verbose=false)
-        # if rank == 0; println("Read successful."); end
+        PhysConst = PhysicalConst{Float64}()
         
         
         for ip=1:mesh.npoin
