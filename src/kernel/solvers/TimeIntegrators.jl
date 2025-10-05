@@ -33,7 +33,7 @@ function time_loop!(inputs, params, u)
     end
 
     function restart_condition(u, t, integrator)
-        if restart_time ≠ 0.0 && (mod(t,restart_time) == 0.0)
+        if restart_time ≠ 0.0 && (rem(t,restart_time) < 1e-3)
             return true
         else
             return false
@@ -43,16 +43,28 @@ function time_loop!(inputs, params, u)
         idx         = idx_ref[]
         res_fortmat = HDF5()
         println_rank(" #  writing restart ........................", round(integrator.t,digits=2); msg_rank = rank)
-        
+        tmp_restart_path = joinpath(inputs[:output_dir],"tmp_restart")
+        if (rank == 0)
+            if !isdir(tmp_restart_path)
+                mkpath(tmp_restart_path)
+            end
+        end
+        MPI.Barrier(comm)
         write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
                         integrator.p.mesh, integrator.p.mp,
                         integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
                         integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
-                        inputs[:restart_output_file_path], inputs,
+                        tmp_restart_path, inputs,
                         integrator.p.qp.qvars,
                         integrator.p.qp.qoutvars,
                         res_fortmat;
                         nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
+        MPI.Barrier(comm)
+        if rank == 0
+            cp(tmp_restart_path, inputs[:restart_output_file_path]; force=true)
+            rm(tmp_restart_path; recursive=true, force=true)
+        end
+
         println_rank(" #  writing restart ........................ DONE"; msg_rank = rank)
     end
     # #------------------------------------------------------------------------
