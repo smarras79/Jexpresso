@@ -1294,7 +1294,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
 
             # Filter width calculation
             Je_cbrt = cbrt(Je[iel,k,l])
-            Δ       = 2.0 * Je_cbrt / (ngl-1)
+            Δ       = Je_cbrt / (ngl-1)
             Δ2      = Δ * Δ
             
             # Base Smagorinsky eddy viscosity
@@ -1382,7 +1382,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
 
             # Filter width calculation (isotropic)
             Je_cbrt = cbrt(Je_kl)
-            Δ       = 2.0 * Je_cbrt / (ngl-1)
+            Δ       = Je_cbrt / (ngl-1)
             Δ2      = Δ * Δ
            
             # Velocity gradients in computational space
@@ -1537,15 +1537,23 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     end
 end
 
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+
+
+function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
                           dξdx, dξdy, dξdz,
                           dηdx, dηdy, dηdz,
                           dζdx, dζdy, dζdz,
-                          inputs, rhs_el,
+                          inputs,
+                          rhs_el,
                           iel, ieq,
+                          τ_f, wθ, lwall_model,
+                          connijk,
+                          coords, 
+                          poin_in_bdy_face, elem_to_face, bdy_face_type,
                           QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
+    
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
     κ          = PhysConst.κ
@@ -1563,7 +1571,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 
                 # Filter width calculation (isotropic)
                 Je_cbrt = cbrt(Je_klm)
-                Δ       = 2.0 * Je_cbrt / (ngl-1)
+                Δ       = Je_cbrt / (ngl-1)  # ← This is the key fix
                 Δ2      = Δ * Δ
                
                 # Velocity gradients in computational space
@@ -1650,7 +1658,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     ρ           = uprimitiveieq[k,l,m,1]                
                     α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
                     α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
-                    effective_diffusivity = visc_coeffieq[ieq] * ρ * cp * (α_molecular + α_turbulent)
+                    
+                    effective_diffusivity = visc_coeffieq[ieq] * α_turbulent
+                    #effective_diffusivity = visc_coeffieq[ieq] * ρ * cp * (α_molecular + α_turbulent)
                 else
                     effective_diffusivity = visc_coeffieq[ieq] * ν_t
                 end
@@ -1789,7 +1799,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 
                 # Filter width calculation
                 Je_cbrt = cbrt(Je[iel,k,l,m])
-                Δ       = 2.0 * Je_cbrt / (ngl-1)
+                Δ       = Je_cbrt / (ngl-1)
                 Δ2      = Δ * Δ
                 
                 # Richardson number calculation for stability correction
