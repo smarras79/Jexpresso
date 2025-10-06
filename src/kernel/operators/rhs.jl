@@ -1722,7 +1722,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 
                 # Filter width calculation (isotropic)
                 Δ2      = Δ * Δ
-               @info Δ
+            #    @info Δ
                 # Velocity gradients in computational space
                 dudξ = 0.0; dudη = 0.0; dudζ = 0.0
                 dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
@@ -1948,7 +1948,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 
                 # Filter width calculation
                 Δ2      = Δ * Δ
-                @info Δ
+                # @info Δ
                 
                 # Richardson number calculation for stability correction
                 # Get reference potential temperature (local value)
