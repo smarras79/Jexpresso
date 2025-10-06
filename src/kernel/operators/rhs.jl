@@ -553,7 +553,13 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
-
+        
+         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
+            ip = connijk[iel,i,j]
+             
+            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+        end
+        
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
             
@@ -603,14 +609,29 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         params.metrics.dηdx, params.metrics.dηdy,
         iel, params.CL, params.QT, SD, params.AD)       
         =#
-        _expansion_inviscid!(u,
-                             params.neqs, params.mesh.ngl,
-                             params.basis.dψ, params.ω,
-                             params.F, params.G, params.S,
-                             params.metrics.Je,
-                             params.metrics.dξdx, params.metrics.dξdy,
-                             params.metrics.dηdx, params.metrics.dηdy,
-                             params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+
+        lkep = true
+        if lkep
+            _expansion_inviscid_KEP!(u, 
+                                     params.uprimitive,
+                                     params.neqs, params.mesh.ngl,
+                                     params.basis.dψ, params.ω,
+                                     params.F, params.G, params.S,
+                                     params.metrics.Je,
+                                     params.metrics.dξdx, params.metrics.dξdy,
+                                     params.metrics.dηdx, params.metrics.dηdy,
+                                     params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+        else
+            _expansion_inviscid!(u,
+                                 params.neqs, params.mesh.ngl,
+                                 params.basis.dψ, params.ω,
+                                 params.F, params.G, params.S,
+                                 params.metrics.Je,
+                                 params.metrics.dξdx, params.metrics.dξdy,
+                                 params.metrics.dηdx, params.metrics.dηdy,
+                                 params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+        end
+
     end
 
     #= SM params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
@@ -845,6 +866,92 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
+using StaticArrays
+
+function _expansion_inviscid_KEP!(u, uprimitive,
+                                  neqs, ngl, dψ, ω,
+                                  F, G, S,
+                                  Je,
+                                  dξdx, dξdy,
+                                  dηdx, dηdy,
+                                  rhs_el, iel,
+                                  ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
+
+    # Temporary array to store the divergence at each quadrature point
+    # Using StaticArrays for performance (avoids heap allocation in the loop)
+    Div = MVector{4, Float64}(0.0, 0.0, 0.0, 0.0)
+    
+    # Loop over quadrature points in the element
+    for j = 1:ngl
+        for i = 1:ngl
+            ωJac = ω[i] * ω[j] * Je[iel, i, j]
+            
+            # --- 1. Compute standard divergence for all equations at point (i,j) ---
+            # This is necessary because the KEP form for momentum/energy
+            # depends on the divergence of the continuity equation.
+            for ieq = 1:neqs
+                dFdξ = 0.0
+                dFdη = 0.0
+                dGdξ = 0.0
+                dGdη = 0.0
+                @turbo for k = 1:ngl
+                    dFdξ += dψ[k, i] * F[k, j, ieq]
+                    dFdη += dψ[k, j] * F[i, k, ieq]
+                    
+                    dGdξ += dψ[k, i] * G[k, j, ieq]
+                    dGdη += dψ[k, j] * G[i, k, ieq]
+                end
+                
+                dξdx_ij = dξdx[iel, i, j]
+                dξdy_ij = dξdy[iel, i, j]
+                dηdx_ij = dηdx[iel, i, j]
+                dηdy_ij = dηdy[iel, i, j]
+
+                dFdx = dFdξ * dξdx_ij + dFdη * dηdx_ij
+                #dFdy = dFdξ * dξdy_ij + dFdη * dηdy_ij
+                
+                #dGdx = dGdξ * dξdx_ij + dGdη * dηdx_ij
+                dGdy = dGdξ * dξdy_ij + dGdη * dηdy_ij
+                
+                Div[ieq] = dFdx + dGdy
+            end
+
+            # --- 2. Get primitive variables at the quadrature point (i,j) ---
+            # This assumes that the solution points and quadrature points are the same
+            # (i.e., a collocation-based method on Gauss-Lobatto nodes).
+            ρ  = uprimitive[i, j, 1]
+            ρu = uprimitive[i, j, 2]
+            ρv = uprimitive[i, j, 3]
+            
+            inv_ρ = 1.0 / ρ
+            u_vel = ρu * inv_ρ
+            v_vel = ρv * inv_ρ
+            
+            # --- 3. Apply the KEP split-form correction ---
+            # The split form is: 0.5 * [ (Standard Divergence) + (Mass Flux Divergence) * (Velocity) ]
+            div_mass_flux = Div[1]
+            
+            # x-momentum (ieq=2)
+            div_mom_x = 0.5 * (Div[2] + div_mass_flux * u_vel)
+            
+            # y-momentum (ieq=3)
+            div_mom_y = 0.5 * (Div[3] + div_mass_flux * v_vel)
+            
+            # Energy (ieq=4)
+            # This is one possible KEP extension to the energy equation.
+            # Other, more complex forms exist, often coupled with entropy stability.
+            KE = 0.5 * (u_vel^2 + v_vel^2)
+            div_energy = 0.5 * (Div[4] + div_mass_flux * KE)
+            
+            # --- 4. Update the element-local RHS with the KEP-corrected values ---
+            rhs_el[iel, i, j, 1] -= ωJac * (div_mass_flux - S[i, j, 1])
+            rhs_el[iel, i, j, 2] -= ωJac * (div_mom_x     - S[i, j, 2])
+            rhs_el[iel, i, j, 3] -= ωJac * (div_mom_y     - S[i, j, 3])
+            rhs_el[iel, i, j, 4] -= ωJac * (div_energy    - S[i, j, 4])
+        end
+    end
+end
+
 function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                               F, G, S,
                               Je,
@@ -875,13 +982,12 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                 dηdy_ij = dηdy[iel,i,j]
                 
                 dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-                dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij
+                #dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij
 
-                dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
+                #dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
                 dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
                 
-                auxi = ωJac*((dFdx + dGdy) - S[i,j,ieq])
-                rhs_el[iel,i,j,ieq] -= auxi
+                rhs_el[iel,i,j,ieq] -=  ωJac*((dFdx + dGdy) - S[i,j,ieq])
             end
         end
     end
@@ -1353,6 +1459,178 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     end
 end
 
+function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy,
+                          dηdx, dηdy,
+                          inputs, rhs_el,
+                          iel, ieq,
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+    
+    PhysConst  = PhysicalConst{Float32}()
+    Pr_t       = PhysConst.Pr_t
+    κ          = PhysConst.κ
+    cp         = PhysConst.cp
+    
+    # Test filter width (typically 2× grid filter)
+    Δ_test = 2.0 * Δ
+    α = Δ_test / Δ  # Filter ratio
+    
+    eps_dynamic = 1.0e-14  # Prevent division by zero
+    
+    for l = 1:ngl
+        for k = 1:ngl
+            ωJac = ω[k]*ω[l]*Je[iel,k,l]
+
+            # ========================================
+            # GRID-SCALE VELOCITY GRADIENTS
+            # ========================================
+            dudξ = 0.0; dudη = 0.0
+            dvdξ = 0.0; dvdη = 0.0
+            @turbo for ii = 1:ngl
+                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+                dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+            end
+            
+            dξdx_kl = dξdx[iel,k,l]
+            dξdy_kl = dξdy[iel,k,l]
+            dηdx_kl = dηdx[iel,k,l]
+            dηdy_kl = dηdy[iel,k,l]
+
+            # Transform to physical space
+            dudx = dudξ*dξdx_kl + dudη*dηdx_kl
+            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
+            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+            
+            # Grid-scale strain rate tensor
+            S11 = dudx
+            S22 = dvdy
+            S12 = 0.5 * (dudy + dvdx)
+            
+            # Grid-scale strain rate magnitude
+            S_ij_S_ij = S11*S11 + S22*S22 + 2.0 * S12*S12
+            Sij = sqrt(2.0 * S_ij_S_ij)
+            
+            # ========================================
+            # TEST-FILTERED VELOCITIES
+            # ========================================
+            # Apply simple box filter to velocities at test scale
+            # For spectral elements, approximate with local averaging
+            u_kl = uprimitiveieq[k,l,2]
+            v_kl = uprimitiveieq[k,l,3]
+            
+            # Test-filtered velocities (simple box filter approximation)
+            u_test = u_kl
+            v_test = v_kl
+            n_avg = 0
+            for jj = max(1,k-1):min(ngl,k+1)
+                for ll = max(1,l-1):min(ngl,l+1)
+                    u_test += uprimitiveieq[jj,ll,2]
+                    v_test += uprimitiveieq[jj,ll,3]
+                    n_avg += 1
+                end
+            end
+            u_test /= (n_avg + 1)
+            v_test /= (n_avg + 1)
+            
+            # Test-filtered velocity gradients
+            # Simplified: use grid gradients for test filter (approximation)
+            dudx_test = dudx
+            dudy_test = dudy
+            dvdx_test = dvdx
+            dvdy_test = dvdy
+            
+            # Test-scale strain rate tensor
+            S11_test = dudx_test
+            S22_test = dvdy_test
+            S12_test = 0.5 * (dudy_test + dvdx_test)
+            
+            S_test_ij_S_test_ij = S11_test*S11_test + S22_test*S22_test + 2.0*S12_test*S12_test
+            Sij_test = sqrt(2.0 * S_test_ij_S_test_ij)
+            
+            # ========================================
+            # GERMANO IDENTITY TERMS
+            # ========================================
+            # Leonard stresses: L_ij = test_filter(u_i*u_j) - test_filter(u_i)*test_filter(u_j)
+            # Approximate with resolved velocities
+            L11 = u_kl*u_kl - u_test*u_test
+            L12 = u_kl*v_kl - u_test*v_test
+            L22 = v_kl*v_kl - v_test*v_test
+            
+            # M_ij terms for dynamic procedure
+            # M_ij = -2*(Δ_test² |S_test| S_test_ij - α² Δ² |S| S_ij)
+            Δ2 = Δ * Δ
+            Δ_test2 = Δ_test * Δ_test
+            
+            M11 = -2.0 * (Δ_test2 * Sij_test * S11_test - α*α * Δ2 * Sij * S11)
+            M12 = -2.0 * (Δ_test2 * Sij_test * S12_test - α*α * Δ2 * Sij * S12)
+            M22 = -2.0 * (Δ_test2 * Sij_test * S22_test - α*α * Δ2 * Sij * S22)
+            
+            # Compute C_s² using least-squares (Lilly's contraction)
+            # C_s² = <L_ij M_ij> / <M_ij M_ij>
+            LM = L11*M11 + 2.0*L12*M12 + L22*M22
+            MM = M11*M11 + 2.0*M12*M12 + M22*M22
+            
+            # Dynamic coefficient
+            if MM > eps_dynamic
+                C_s2_dynamic = LM / MM
+            else
+                C_s2_dynamic = 0.0
+            end
+            
+            # Clip negative values (optional: allow backscatter by removing this)
+            C_s2_dynamic = max(0.0, C_s2_dynamic)
+            
+            # Upper bound for stability (optional)
+            C_s2_max = 0.09  # (C_s_max ≈ 0.3)²
+            C_s2_dynamic = min(C_s2_dynamic, C_s2_max)
+            
+            # ========================================
+            # DYNAMIC SMAGORINSKY EDDY VISCOSITY
+            # ========================================
+            ν_t = C_s2_dynamic * Δ2 * Sij
+            
+            # ========================================
+            # SCALAR DIFFUSION
+            # ========================================
+            dqdξ = 0.0; dqdη = 0.0
+            @turbo for ii = 1:ngl
+                dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+            end
+            
+            dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
+            dqdy_phys = dqdξ*dξdy_kl + dqdη*dηdy_kl
+
+            # Effective diffusivity
+            if ieq == 4  # Potential temperature
+                α_turbulent = ν_t / Pr_t
+                effective_diffusivity = visc_coeffieq[ieq] * α_turbulent
+            else  # Momentum
+                effective_diffusivity = visc_coeffieq[ieq] * ν_t
+            end
+                        
+            dqdx = effective_diffusivity * dqdx_phys
+            dqdy = effective_diffusivity * dqdy_phys
+            
+            ∇ξ∇q_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
+            ∇η∇q_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
+            
+            @turbo for i = 1:ngl
+                dhdξ_ik = dψ[i,k]
+                dhdη_il = dψ[i,l]
+                
+                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl
+                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇q_kl
+            end
+        end  
+    end
+end
+
 #
 # RHS with Wall-Adapting Local Eddy-viscosity (WALE) 2D
 #
@@ -1583,7 +1861,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                 #α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
                 α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
 
-                effective_diffusivity = visc_coeffieq[ieq] * α_turbulent * ρ
+                effective_diffusivity = visc_coeffieq[ieq] * α_turbulent
             else
                 effective_diffusivity = visc_coeffieq[ieq] * ν_t
             end
@@ -1722,7 +2000,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 
                 # Filter width calculation (isotropic)
                 Δ2      = Δ * Δ
-               @info Δ
+            #    @info Δ
                 # Velocity gradients in computational space
                 dudξ = 0.0; dudη = 0.0; dudζ = 0.0
                 dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
@@ -1948,7 +2226,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 
                 # Filter width calculation
                 Δ2      = Δ * Δ
-                @info Δ
+                # @info Δ
                 
                 # Richardson number calculation for stability correction
                 # Get reference potential temperature (local value)
