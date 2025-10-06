@@ -1238,13 +1238,18 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     #
     # Constants for Richardson stability correction
     #
-    PhysConst = PhysicalConst{Float32}()
-    Pr_t      = PhysConst.Pr_t            # Turbulent Prandtl number
-    g         = PhysConst.g               # Gravitational acceleration (m/s²)
-    Ri_crit   = PhysConst.Ri_crit         # Critical Richardson number
-    C_s       = PhysConst.C_s             # Smagorinsky constant (typical range: 0.1-0.2)
-    C_s2      = C_s*C_s
-        
+    PhysConst  = PhysicalConst{Float32}()
+    Pr_t       = PhysConst.Pr_t
+    #
+    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
+    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
+    # Very unstable:    Pr_t ≈ 1/3
+    #
+    κ          = PhysConst.κ
+    cp         = PhysConst.cp
+    C_s        = PhysConst.C_s
+    C_s2       = C_s^2
+    
     for l = 1:ngl
         for k = 1:ngl
             ωJac = ω[k]*ω[l]*Je[iel,k,l]
@@ -1280,8 +1285,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             S21 = S12
             
             # Rotation tensor (anti-symmetric part)
-            Ω12 = 0.5 * (dudy - dvdx)
-            Ω21 = -Ω12
+            #Ω12 = 0.5 * (dudy - dvdx)
+            #Ω21 = -Ω12
             
             # Strain rate magnitude
             Sij = sqrt(0.5 * (S11*S11 + S22*S22) + S12*S12)
@@ -1293,7 +1298,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             Δ2      = Δ * Δ
             
             # Base Smagorinsky eddy viscosity
-            ν_t_base = C_s2*Δ2* Sij
+            ν_t_base = C_s2 * Δ2 * Sij
             ν_t = ν_t_base
             
             # END Smagorinsky
@@ -1316,8 +1321,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
             if ieq == 4  # Assuming potential temperature equation is at index 5
                 # For temperature: use thermal diffusivity (ν_t / Pr_t)
-                effective_diffusivity = visc_coeffieq[ieq] * ν_t / Pr_t
-                effective_diffusivity = visc_coeffieq[ieq] * ν_t
+                ρ           = uprimitiveieq[k,l,1]                
+                α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
+                α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
+                effective_diffusivity = ρ * cp * (α_turbulent + α_molecular)
+                
             else
                 # For momentum equations: use momentum diffusivity
                 effective_diffusivity = visc_coeffieq[ieq] * ν_t
@@ -1430,13 +1438,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             
             # Effective diffusivity
             if ieq == 4
-
                 ρ           = uprimitiveieq[k,l,1]                
                 α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
-                α_turbulent = ν_t / Pr_t     # Turbulent thermal diffusivity
+                α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
 
-                effective_diffusivity = ρ * cp * (α_molecular + α_turbulent)
-                
+                effective_diffusivity = visc_coeffieq[ieq] * ρ * cp * (α_molecular + α_turbulent)
             else
                 effective_diffusivity = visc_coeffieq[ieq] * ν_t
             end
@@ -1532,174 +1538,146 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
 end
 
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
-                          uprimitive, visc_coeffieq, ω,
+                          uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
                           dξdx, dξdy, dξdz,
                           dηdx, dηdy, dηdz,
                           dζdx, dζdy, dζdz,
-                          inputs,
-                          rhs_el,
+                          inputs, rhs_el,
                           iel, ieq,
-                          τ_f, wθ, lwall_model,
-                          connijk,
-                          coords,
-                          poin_in_bdy_face, elem_to_face, bdy_face_type, 
                           QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal)
+    PhysConst  = PhysicalConst{Float32}()
+    Pr_t       = PhysConst.Pr_t
+    κ          = PhysConst.κ
+    cp         = PhysConst.cp
+    C_s        = PhysConst.C_s
+    C_s2       = C_s^2
+    C_vrem     = 2.5 * C_s2  # Vreman coefficient
+    eps_vreman = 1.0e-14  # Safety epsilon
     
-
-    ν_vreman = 0.0 # Initialize Vreman viscosity
-
     for m = 1:ngl
         for l = 1:ngl
             for k = 1:ngl
-                ωJac = ω[k]*ω[l]*ω[m]*Je[iel,k,l,m]
-
+                Je_klm = Je[iel,k,l,m]
+                ωJac = ω[k]*ω[l]*ω[m]*Je_klm
+                
+                # Filter width calculation (isotropic)
+                Je_cbrt = cbrt(Je_klm)
+                Δ       = 2.0 * Je_cbrt / (ngl-1)
+                Δ2      = Δ * Δ
+               
+                # Velocity gradients in computational space
                 dudξ = 0.0; dudη = 0.0; dudζ = 0.0
                 dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
                 dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
-
                 @turbo for ii = 1:ngl
-                    dudξ += dψ[ii,k]*uprimitive[ii,l,m,2]
-                    dudη += dψ[ii,l]*uprimitive[k,ii,m,2]
-                    dudζ += dψ[ii,m]*uprimitive[k,l,ii,2]
-
-                    dvdξ += dψ[ii,k]*uprimitive[ii,l,m,3]
-                    dvdη += dψ[ii,l]*uprimitive[k,ii,m,3]
-                    dvdζ += dψ[ii,m]*uprimitive[k,l,ii,3]
-
-                    dwdξ += dψ[ii,k]*uprimitive[ii,l,m,4]
-                    dwdη += dψ[ii,l]*uprimitive[k,ii,m,4]
-                    dwdζ += dψ[ii,m]*uprimitive[k,l,ii,4]
+                    dudξ += dψ[ii,k]*uprimitiveieq[ii,l,m,2]
+                    dudη += dψ[ii,l]*uprimitiveieq[k,ii,m,2]
+                    dudζ += dψ[ii,m]*uprimitiveieq[k,l,ii,2]
+                    
+                    dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,3]
+                    dvdη += dψ[ii,l]*uprimitiveieq[k,ii,m,3]
+                    dvdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,3]
+                    
+                    dwdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,4]
+                    dwdη += dψ[ii,l]*uprimitiveieq[k,ii,m,4]
+                    dwdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,4]
                 end
+                
+                # Metric terms
                 dξdx_klm = dξdx[iel,k,l,m]
                 dξdy_klm = dξdy[iel,k,l,m]
                 dξdz_klm = dξdz[iel,k,l,m]
-                
                 dηdx_klm = dηdx[iel,k,l,m]
                 dηdy_klm = dηdy[iel,k,l,m]
                 dηdz_klm = dηdz[iel,k,l,m]
-                
                 dζdx_klm = dζdx[iel,k,l,m]
                 dζdy_klm = dζdy[iel,k,l,m]
                 dζdz_klm = dζdz[iel,k,l,m]
-
-                dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
-                dvdx = dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm
-                dwdx = dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm
                 
-                dudy = dudξ*dξdy_klm + dudη*dηdy_klm + dudζ*dζdy_klm
-                dvdy = dvdξ*dξdy_klm + dvdη*dηdy_klm + dvdζ*dζdy_klm
-                dwdy = dwdξ*dξdy_klm + dwdη*dηdy_klm + dwdζ*dζdy_klm
+                # Transform to physical space - 3x3 velocity gradient tensor
+                u11 = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm  # ∂u/∂x
+                u12 = dudξ*dξdy_klm + dudη*dηdy_klm + dudζ*dζdy_klm  # ∂u/∂y
+                u13 = dudξ*dξdz_klm + dudη*dηdz_klm + dudζ*dζdz_klm  # ∂u/∂z
                 
-                dudz = dudξ*dξdz_klm + dudη*dηdz_klm + dudζ*dζdz_klm
-                dvdz = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm
-                dwdz = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm
-
-                # Calculate Vreman coefficient
-                S11 = dudx
-                S12 = 0.5 * (dudy + dvdx)
-                S13 = 0.5 * (dudz + dwdx)
-                S22 = dvdy
-                S23 = 0.5 * (dvdz + dwdy)
-                S33 = dwdz
-
-                M = [S11^2 + S12^2 + S13^2;
-                     S12^2 + S22^2 + S23^2;
-                     S13^2 + S23^2 + S33^2]
-
-                P = [dudx^2 + dudy^2 + dudz^2;
-                     dvdx^2 + dvdy^2 + dvdz^2;
-                     dwdx^2 + dwdy^2 + dwdz^2]
-
-                α11 = dudx; α12 = dudy; α13 = dudz
-                α21 = dvdx; α22 = dvdy; α23 = dvdz
-                α31 = dwdx; α32 = dwdy; α33 = dwdz
-
-                α = [dudx dudy dudz;
-                     dvdx dvdy dvdz;
-                     dwdx dwdy dwdz]
-
-                S = symmetrize(α)
-
-                Δ2 = (2.0 * cbrt(Je[iel,k,l,m]) / (ngl-1))^2
-                β = Δ2 * (α' * α)
-                Bβ = principal_invariants(β)[2]
-
-                ν₀ = visc_coeffieq[ieq] * Float64(2.5) * sqrt(abs(Bβ / (norm2(α) + eps(Float64))))
-
-                ν = ν₀ 
-                #ν_v = k̂ .* dot(ν, k̂)
-                #ν_h = ν₀ .- ν_v
-                #ν_vreman = SDiagonal(ν_h + ν_v .* f_b²)
-                #D_t = diag(ν) * 0.7
+                u21 = dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm  # ∂v/∂x
+                u22 = dvdξ*dξdy_klm + dvdη*dηdy_klm + dvdζ*dζdy_klm  # ∂v/∂y
+                u23 = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm  # ∂v/∂z
                 
+                u31 = dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm  # ∂w/∂x
+                u32 = dwdξ*dξdy_klm + dwdη*dηdy_klm + dwdζ*dζdy_klm  # ∂w/∂y
+                u33 = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm  # ∂w/∂z
+                
+                # Vreman β tensor (3D)
+                # β_ij = Δ_m^2 * u_im * u_jm (sum over m=1,2,3)
+                β11 = Δ2 * (u11*u11 + u12*u12 + u13*u13)
+                β12 = Δ2 * (u11*u21 + u12*u22 + u13*u23)
+                β13 = Δ2 * (u11*u31 + u12*u32 + u13*u33)
+                β22 = Δ2 * (u21*u21 + u22*u22 + u23*u23)
+                β23 = Δ2 * (u21*u31 + u22*u32 + u23*u33)
+                β33 = Δ2 * (u31*u31 + u32*u32 + u33*u33)
+                
+                # B_β for 3D
+                B_β = β11*β22 + β11*β33 + β22*β33 - (β12*β12 + β13*β13 + β23*β23)
+                
+                # Frobenius norm squared of 3x3 velocity gradient tensor
+                u_ij_u_ij = u11*u11 + u12*u12 + u13*u13 +
+                            u21*u21 + u22*u22 + u23*u23 +
+                            u31*u31 + u32*u32 + u33*u33
+                
+                # Vreman eddy viscosity with safety checks
+                if u_ij_u_ij > eps_vreman && B_β > 0.0
+                    ν_t = C_vrem * sqrt(B_β / u_ij_u_ij)
+                else
+                    ν_t = 0.0
+                end
+                
+                # Scalar gradient in computational space
                 dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
                 @turbo for ii = 1:ngl
-                    dqdξ += dψ[ii,k]*uprimitive[ii,l,m,ieq]
-                    dqdη += dψ[ii,l]*uprimitive[k,ii,m,ieq]
-                    dqdζ += dψ[ii,m]*uprimitive[k,l,ii,ieq]
+                    dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,ieq]
+                    dqdη += dψ[ii,l]*uprimitiveieq[k,ii,m,ieq]
+                    dqdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,ieq]
                 end
                 
-                # Calculate the viscous terms with Vreman viscosity
-                dqdx = ν_vreman * (dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm)
-                dqdy = ν_vreman * (dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dξdy_klm)
-                dqdz = ν_vreman * (dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dξdz_klm)
-
-                ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
-                ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
-                ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac
+                # Transform scalar gradient to physical space
+                dqdx_phys = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
+                dqdy_phys = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
+                dqdz_phys = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
                 
-                if (lwall_model)
-                    ip = connijk[iel,k,l,m]
-                    if (ip in poin_in_bdy_face)
-                        iface_bdy = elem_to_face[iel,k,l,m,1]
-                        idx1  = elem_to_face[iel,k,l,m,2]
-                        idx2  = elem_to_face[iel,k,l,m,3]
-                        if bdy_face_type[iface_bdy] == "wall_model"
-                            ip2 = connijk[iel,k,l,2]
-
-                            # compute τw
-                            ieq = 2
-                            u2 = uprimitiveieq[k, l, 2, ieq]
-                            y2 = coords[ip2, 3]
-                            uτ = find_uτ(u2, y2)
-
-                            if !isnan(uτ)
-                                τw_mag = PhysConst.ν * uτ^2 / abs(uτ)
-                                
-                                # Get velocity components at second grid point
-                                u_vel = uprimitiveieq[k, l, 2, 2]  # u-component
-                                v_vel = uprimitiveieq[k, l, 2, 3]  # w-component
-                                vel_mag = sqrt(u_vel^2 + v_vel^2)
-                                
-                                if vel_mag > 1e-12
-                                    τw_x = -τw_mag * u_vel / vel_mag
-                                    τw_y = -τw_mag * v_vel / vel_mag
-                                    
-                                    τ_f[iface_bdy, idx1, idx2, 1] = τw_x
-                                    τ_f[iface_bdy, idx1, idx2, 2] = τw_y
-                                end
-                            else
-                                @printf("u₂ = %8.3f, y₂ = %8.1f → FAILED\n", u2, y2)
-                            end
-                        end
-                    end
+                # Effective diffusivity
+                if ieq == 5  # Energy equation (shifted by 1 due to w at index 4)
+                    ρ           = uprimitiveieq[k,l,m,1]                
+                    α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
+                    α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
+                    effective_diffusivity = visc_coeffieq[ieq] * ρ * cp * (α_molecular + α_turbulent)
+                else
+                    effective_diffusivity = visc_coeffieq[ieq] * ν_t
                 end
+                
+                # Apply diffusivity to scalar gradients
+                dqdx = effective_diffusivity * dqdx_phys
+                dqdy = effective_diffusivity * dqdy_phys
+                dqdz = effective_diffusivity * dqdz_phys
+                
+                # Weak form contributions
+                ∇ξ∇q_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
+                ∇η∇q_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
+                ∇ζ∇q_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac
                 
                 @turbo for i = 1:ngl
                     dhdξ_ik = dψ[i,k]
                     dhdη_il = dψ[i,l]
                     dhdζ_im = dψ[i,m]
-
-                    rhs_diffξ_el[iel,i,l,m,ieq] -= dhdξ_ik * ∇ξ∇u_klm
-                    rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η∇u_klm
-                    rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ∇u_klm
+                    
+                    rhs_diffξ_el[iel,i,l,m,ieq] -= dhdξ_ik * ∇ξ∇q_klm
+                    rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η∇q_klm
+                    rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ∇q_klm
                 end
             end
-        end
+        end  
     end
 end
-
                
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           uprimitive, visc_coeffieq, ω,
