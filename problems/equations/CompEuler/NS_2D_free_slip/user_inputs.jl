@@ -15,6 +15,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
         :nop                 => 3,      # Polynomial order
+        :l_incompressible     => true,
+        :l_vort_stream        => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
