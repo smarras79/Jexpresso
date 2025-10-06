@@ -4,14 +4,14 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        :ode_solver           => CarpenterKennedy2N54(), #SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(),
         #:Δt                   => 0.02,
-        :Δt                   => 0.4,
+        :Δt                   => 0.7,
         :tinit                => 0.0,
         :tend                 => 1000.0,
         :diagnostics_at_times => (0:100:1000),
         :restart_time         => 600,
-        :lrestart             => true,
+        :lrestart             => false,
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => true, 
@@ -24,8 +24,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
+        :lvisc                => true, #false by default NOTICE: works only for Inexact       
+        #:visc_model           => AV(),
+        #:μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
+        :visc_model           => VREM(),
+        #:visc_model           => SMAG(),
+        :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
+        :lvisc                => true, #false by default NOTICE: works only for Inexact        
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
