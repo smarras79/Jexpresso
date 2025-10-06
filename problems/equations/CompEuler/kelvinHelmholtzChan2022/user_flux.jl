@@ -12,18 +12,22 @@ function user_flux!(F, G, SD::NSD_2D, q, qe,
     u  = ρu/ρ
     v  = ρv/ρ
 
-    velomagsq = u*u + v*v
-    Pressure = PhysConst.γm1*(ρe - 0.5*ρ*velomagsq)
+    γ   = PhysConst.γ
+    γm1 = γ - 1.0
+    
+    velomagsq = (u*u + v*v)
+    ke        = 0.5*ρ*velomagsq
+    Pressure  = γm1*(ρe - velomagsq)
     
     F[1] = ρu
     F[2] = ρu*u .+ Pressure
     F[3] = ρv*u
-    F[4] = ρe*u
+    F[4] = u*(ke + γ*Pressure/γm1)
 
     G[1] = ρv
     G[2] = ρu*v
     G[3] = ρv*v .+ Pressure
-    G[4] = ρe*v
+    G[4] = v*(ke + γ*Pressure/γm1)
 end
 
 function user_flux!(F, G, SD::NSD_2D, q, qe,
