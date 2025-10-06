@@ -35,6 +35,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
+    if(!haskey(inputs, :l_incompressible))
+       inputs[:l_incompressible] = false
+    end
+
+    if(!haskey(inputs, :l_vort_stream))
+       inputs[:l_vort_stream] = false
+    end
+
     if(!haskey(inputs, :bulk_fluxes))
        inputs[:bulk_fluxes] = false
     end
