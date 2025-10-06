@@ -4,7 +4,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 2,
+        :tend                 => 1,
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 1e-3,
         :ndiagnostics_outputs => 10,
@@ -15,6 +15,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
         :nop                 => 3,      # Polynomial order
+        :l_incompressible     => true,
+        :l_vort_stream        => true,
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
