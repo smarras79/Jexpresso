@@ -67,6 +67,7 @@ abstract type AbstractVT end
 struct AV   <: AbstractVT end
 struct SMAG <: AbstractVT end
 struct VREM <: AbstractVT end
+struct WALE <: AbstractVT end
 struct DSGS <: AbstractVT end
 
 
