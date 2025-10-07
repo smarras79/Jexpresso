@@ -13,7 +13,8 @@ function user_inputs()
         #:restart_input_file_path => "",
         :diagnostics_at_times => (0:5.0:7200),
         :lsource              => true,
-        :sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
+        :sounding_file        => "./data_files/input_sounding_teamx_u00_flat_noheader.dat",
+        #:sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -28,23 +29,22 @@ function user_inputs()
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
         #:visc_model           => AV(),
-        :ivisc_equations      => [1, 2, 3, 4, 5],
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
         :μ                    => [0.0, 10, 10, 10, 15], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-        :lwarmup          => true,
+        #:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x24_zmax3000.msh",    #10kmX10kmX3km
-        :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
+        #:gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
         #:gmsh_filename  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
-        #:gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x1x10_MOST.msh",
+        :gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x1x10_MOST.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x16_zmax2000.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x16.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_5kmX5kmX3km.msh", #5kmX5kmX3km
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_5kmX5kmX3km.msh", #5kmX5kmX3km
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_128x128x36_zmax3000.msh",  #10kmX10kmX3km
         #---------------------------------------------------------------------------
         # Filter parameters
@@ -57,7 +57,8 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km/",
+        :output_dir          => "./tmp",
+        #:output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km/",
 	#:output_dir          => "/scratch/smarras/smarras/output/64x64x36_5kmX5kmX3km_MORECORES/",
         #:output_dir          => "/scratch/smarras/smarras/output/64x64x24fewcores/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now

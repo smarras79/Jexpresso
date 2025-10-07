@@ -5,7 +5,7 @@ function warp_mesh!(mesh,inputs)
     am = inputs[:a_mount]
     hm = inputs[:h_mount]
     xc = inputs[:c_mount]
-    ztop = maximum(mesh.z)#30000.0
+    ztop = maximum(mesh.y)
     zsurf = zeros(Float64,mesh.npoin)
     sigma = zeros(Float64,mesh.npoin)
     for i=1:mesh.npoin
@@ -33,18 +33,41 @@ function warp_mesh!(mesh,inputs)
             zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2 
         end
     end
+    
+    if inputs[:lstretch]
+        for ip = 1:mesh.npoin
+            stretching_factor = inputs[:stretch_factor]
+            sigma = mesh.y[ip]
 
-    for ip = 1:mesh.npoin
-        sigma[ip] = mesh.y[ip]
-        #if (mesh.y[ip] < 10000.0)  
-        z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-        mesh.y[ip] = z
-        #=elseif (mesh.y[ip] < 15000.0)
-        factor = (15000-mesh.y[ip])/5000.0
-        z = (ztop - factor*zsurf[ip])/ztop * sigma[ip] + factor*zsurf[ip]
-        mesh.y[ip] = z 
-        end=#
-    end 
+            # Normalize the sigma coordinate to the range [0, 1]
+            sigma_normalized = sigma / ztop
+
+            # Apply the non-linear power-law stretching function.
+            # This maps the uniform [0, 1] grid to a stretched [0, 1] grid where points
+            # are concentrated towards 0.
+            z_normalized = sigma_normalized ^ stretching_factor
+
+            # Map the stretched, normalized coordinate back to the physical z-domain,
+            # which spans from the bottom surface zsurf[ip] to the domain top ztop.
+            z = zsurf[ip] + z_normalized * (ztop - zsurf[ip])
+
+            # Update the grid point's vertical position with the new stretched value.
+            mesh.y[ip] = z
+        end
+    else
+        for ip = 1:mesh.npoin
+            sigma[ip] = mesh.y[ip]
+            #if (mesh.y[ip] < 10000.0)  
+            z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+            mesh.y[ip] = z
+            #=elseif (mesh.y[ip] < 15000.0)
+            factor = (15000-mesh.y[ip])/5000.0
+            z = (ztop - factor*zsurf[ip])/ztop * sigma[ip] + factor*zsurf[ip]
+            mesh.y[ip] = z 
+            end=#
+        end
+    end
+    
     
     #=for iedge = 1:size(mesh.bdy_edge_in_elem,1)
     iel = mesh.bdy_edge_in_elem[iedge]
@@ -223,7 +246,7 @@ end
 # --- Wrap all logic in a main function to ensure correct variable scope ---
 function stretching!(z, zmax, dz1, N)
     # --- 1. Define Grid Parameters ---
-    #L = zmax  # Domain height in meters
+    L = zmax  # Domain height in meters
     #dz1 = 10.0  # Desired spacing of the first layer (m)
     #N = 16      # Total number of grid points
 
