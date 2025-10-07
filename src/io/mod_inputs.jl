@@ -197,7 +197,17 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs,:lwarp))
         inputs[:lwarp] = false
     end
-
+    
+    if(!haskey(inputs,:lstretch))
+        inputs[:lstretch] = false
+    end
+    
+    if inputs[:lstretch] == true
+        if(!haskey(inputs,:stretch_factor))
+            inputs[:stretch_factor] = 1.0
+        end
+    end
+    
     if(!haskey(inputs,:mount_type))
         inputs[:lagnesi] = "agnesi"
     end
