@@ -1372,7 +1372,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::DSMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
     
     #
     # Constants for Richardson stability correction
@@ -1489,7 +1489,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::DSMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
     
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
