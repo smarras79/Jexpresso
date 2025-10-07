@@ -550,14 +550,26 @@ end
 function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
     
     PhysConst = PhysicalConst{Float64}()
+
+    u_element_wise = zeros(params.mesh.ngl, params.mesh.ngl, params.neqs)
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
         
-         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
+        for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
-             
+            
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+
+            
+            # b. Use the map to find the global point index
+            global_point_idx = connijk[iel, i, j]
+            
+            # c. Find the starting index for this point's data in the flat vector `u`
+            start_idx = (global_point_idx - 1) * params.neqs + 1
+            
+            # d. Copy the 'neqs' variables (ρ, ρu, ρv, E) from u to your 4D array
+            u_element_wise[i, j, :] = u[start_idx : start_idx + params.neqs - 1]
         end
         
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
@@ -610,9 +622,20 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         iel, params.CL, params.QT, SD, params.AD)       
         =#
 
-        lkep = true
+        lkep = false
         if lkep
-            _expansion_inviscid_KEP!(u, 
+            
+            _expansion_inviscid_KEP_twopoint!(u_element_wise,
+                                              params.uprimitive,
+                                              params.neqs, params.mesh.ngl,
+                                              params.basis.dψ, params.ω,
+                                              params.F, params.G, params.S,
+                                              params.metrics.Je,
+                                              params.metrics.dξdx, params.metrics.dξdy,
+                                              params.metrics.dηdx, params.metrics.dηdy,
+                                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+            
+           #= _expansion_inviscid_KEP!(u, 
                                      params.uprimitive,
                                      params.neqs, params.mesh.ngl,
                                      params.basis.dψ, params.ω,
@@ -620,7 +643,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
                                      params.metrics.Je,
                                      params.metrics.dξdx, params.metrics.dξdy,
                                      params.metrics.dηdx, params.metrics.dηdy,
-                                     params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+                                     params.rhs_el, iel, params.CL, params.QT, SD, params.AD)=#
         else
             _expansion_inviscid!(u,
                                  params.neqs, params.mesh.ngl,
@@ -908,10 +931,10 @@ function _expansion_inviscid_KEP!(u, uprimitive,
                 dηdy_ij = dηdy[iel, i, j]
 
                 dFdx = dFdξ * dξdx_ij + dFdη * dηdx_ij
-                #dFdy = dFdξ * dξdy_ij + dFdη * dηdy_ij
-                
-                #dGdx = dGdξ * dξdx_ij + dGdη * dηdx_ij
                 dGdy = dGdξ * dξdy_ij + dGdη * dηdy_ij
+                
+                #dFdy = dFdξ * dξdy_ij + dFdη * dηdy_ij                
+                #dGdx = dGdξ * dξdx_ij + dGdη * dηdx_ij
                 
                 Div[ieq] = dFdx + dGdy
             end
