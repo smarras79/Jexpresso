@@ -36,9 +36,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x1x15_10kmX1kmX3km.msh",
+        #:gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
 
         # Warping:
         :lwarp => false,
@@ -51,8 +50,8 @@ function user_inputs()
         :lstretch => true,
         :stretch_factor => 1.25,
         :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
-        :first_zelement_size => 10.0,
-        :zlevel_transition => 1500.0,
+        :first_zelement_size => 20.0,
+        :zlevel_transition => 2000.0,
         
         #---------------------------------------------------------------------------
         # Filter parameters

@@ -208,14 +208,26 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         else
             if inputs[:stretch_type] == "fixed_first"
                 if(!haskey(inputs, :first_zelement_size))
-                    iputs[:first_zelement_size] = 1.0;
+                    inputs[:first_zelement_size] = 1.0;
                 end
-            elseif inputs[:stretch_type] == "fixed_first_twoblocks_weak" ||  inputs[:stretch_type] == "fixed_first_twoblocks_strong"
+            elseif (inputs[:stretch_type] == "fixed_first_twoblocks_weak" ||
+                inputs[:stretch_type] == "fixed_first_twoblocks_strong" ||
+                inputs[:stretch_type] == "fixed_first_twoblocks_strong_weak")
+                
                 if(!haskey(inputs, :first_zelement_size))
-                    iputs[:first_zelement_size] = 1.0;
+                    inputs[:first_zelement_size] = 1.0;
+                end
+                if(!haskey(inputs, :max_zelement_size_bottom))
+                    inputs[:max_zelement_size_bottom] = 1.0;
                 end
                 if(!haskey(inputs, :zlevel_transition))
                     inputs[:zlevel_transition] = 1000000000.0
+                end
+                if(!haskey(inputs, :uniform_zelement_size))
+                    inputs[:uniform_zelement_size] = 1.0
+                end
+                if(!haskey(inputs, :max_zelement_size_top))
+                    inputs[:max_zelement_size_top] = 1.0;
                 end
             end
             

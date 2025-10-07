@@ -265,6 +265,85 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             # Update the grid point's vertical position.
             mesh.z[ip] = z
         end
+
+    elseif inputs[:stretch_type] == "fixed_first_twoblocks_strong_weak"
+
+        @mystop( "stretching: fixed_first_twoblocks_strong_weak not working!")
+        
+        # --- User Inputs ---
+        uniform_cell_size_bottom = inputs[:uniform_zelement_size] # e.g., 10.0 meters
+        zlevel_transition = inputs[:zlevel_transition]      # e.g., 200.0 meters
+        max_cell_size_top = inputs[:max_zelement_size_top]        # e.g., 50.0 meters
+
+        # --- Pre-computation Step ---
+
+        # Robustness FIX: Sort the original grid points while preserving their initial indices.
+        sigma_tuples = [(mesh.z[i], i) for i in 1:npoin]
+        sort!(sigma_tuples, by = x -> x[1])
+        original_indices = [t[2] for t in sigma_tuples]
+
+        # --- 1. Partition the Grid Nodes ---
+        # Calculate how many of the npoin nodes belong to the uniform bottom region.
+        num_cells_bottom = max(0, round(Int, zlevel_transition / uniform_cell_size_bottom))
+        k = num_cells_bottom + 1 # Number of nodes in the bottom region
+
+        # Ensure the partition is valid and doesn't exhaust all points.
+        if k >= npoin
+            k = npoin - 1
+            println("Warning: The uniform grid settings cover nearly the entire domain.")
+        end
+        num_nodes_top = npoin - k
+
+        println("--- Grid Generation Plan ---")
+        println("Uniform cell size in bottom region: ", uniform_cell_size_bottom)
+        println("Partitioning grid at node k=", k, " (", num_nodes_top, " nodes left for top region)")
+        println("----------------------------")
+
+        # --- 2. Generate New Node Positions ---
+        new_z_sorted = zeros(Float64, npoin)
+
+        # --- PART A: Generate all node positions for the uniform bottom region ---
+        for i in 1:k
+            new_z_sorted[i] = (i - 1) * uniform_cell_size_bottom
+        end
+
+        # --- PART B: Generate all node positions for the stretched top region ---
+        if num_nodes_top > 0
+            z_actual_transition = new_z_sorted[k]
+            
+            # Calculate the fixed increment for cell size in the top region.
+            delta_dz = 0.0
+            if num_nodes_top > 1
+                delta_dz = (max_cell_size_top - uniform_cell_size_bottom) / (num_nodes_top - 1)
+            end
+            
+            # Calculate the size of each cell in the top region.
+            top_cell_sizes = [uniform_cell_size_bottom + (i - 1) * delta_dz for i in 1:num_nodes_top]
+            
+            # Cumulatively sum the cell sizes to get the node positions.
+            current_z = z_actual_transition
+            for i in 1:num_nodes_top
+                current_z += top_cell_sizes[i]
+                new_z_sorted[k + i] = current_z
+            end
+        end
+
+        # --- 3. Re-map and Finalize ---
+        new_ztop = new_z_sorted[end]
+        println("New calculated ztop: ", new_ztop)
+
+        # Create the final output array and fill it according to the original node order.
+        final_z = zeros(Float64, npoin)
+        for i in 1:npoin
+            original_ip = original_indices[i]
+            final_z[original_ip] = new_z_sorted[i]
+        end
+
+        # Update the mesh with the newly generated coordinates.
+        mesh.z = final_z
+
+        
     end
+    
     
 end
