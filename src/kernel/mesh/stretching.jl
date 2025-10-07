@@ -1,7 +1,12 @@
 function stretch_mesh!(mesh,inputs,npoin)
 
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    mpi_size = MPI.Comm_size(comm)
+    
     stretch_factor = inputs[:stretch_factor]
-    ztop = maximum(mesh.y)
+    ztop = mesh.ymax
+
     zsurf = zeros(Float64,npoin)
     
     for ip = 1:npoin
@@ -27,11 +32,15 @@ function stretch_mesh!(mesh,inputs,npoin)
 end
 
 function stretch_mesh_3D!(mesh,inputs, npoin)  
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    mpi_size = MPI.Comm_size(comm)
     
     stretch_factor = inputs[:stretch_factor]
-    ztop = maximum(mesh.z)
+    ztop = mesh.zmax
+    
     zsurf = zeros(Float64,npoin)
-
 
     if inputs[:stretch_type] == "powerlaw"
         for ip = 1:npoin
@@ -69,7 +78,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         sigma_coords = copy(mesh.z)
 
         # Find the maximum height of the domain.
-        ztop = maximum(sigma_coords)
+        ztop = mesh.zmax #maximum(sigma_coords)
 
         # Find the z-coordinate of the first layer in the original uniform grid (sigma_1).
         # This is the smallest positive value in the original grid coordinates.
@@ -129,9 +138,29 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         # Store a copy of the original, uniform z-coordinates to use as the sigma field.
         sigma_coords = copy(mesh.z)
 
+        
+        # 1. Initialize local minimum to positive infinity.
+        # This is the identity element for the 'min' operation and elegantly
+        # handles processes with no positive values.
+        local_min_sigma = Inf
+
+        # 2. Filter the local array for positive values.
+        local_positive_coords = filter(x -> x > 0, sigma_coords)
+
+        # 3. If any positive values were found locally, compute the local minimum.
+        # Otherwise, local_min_sigma remains Inf.
+        if !isempty(local_positive_coords)
+            local_min_sigma = minimum(local_positive_coords)
+        end
+        
+        #sigma_1 = minimum(filter(x -> x > 0, sigma_coords)) # Represents the uniform dσ
+        # 4. Perform the global reduction to find the true minimum across all processes.
+        # MPI.Allreduce sends the result to all processes.
+        sigma_1 = MPI.Allreduce(local_min_sigma, MPI.MIN, comm)
+        
         # Find the maximum height and the first layer's height in the original grid.
         ztop = maximum(sigma_coords)
-        sigma_1 = minimum(filter(x -> x > 0, sigma_coords)) # Represents the uniform dσ
+      
 
         # 1. CALCULATE STRETCHING FACTOR for the bottom region.
         # This is the same calculation as before, ensuring the bottom layer meets the size criteria.
@@ -211,9 +240,29 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         sigma_coords = copy(mesh.z)
 
         # Find the maximum height and the first layer's height in the original grid.
-        ztop = maximum(sigma_coords)
-        sigma_1 = minimum(filter(x -> x > 0, sigma_coords)) # Represents the uniform dσ
+        ztop = mesh.zmax
 
+        
+        # 1. Initialize local minimum to positive infinity.
+        # This is the identity element for the 'min' operation and elegantly
+        # handles processes with no positive values.
+        local_min_sigma = Inf
+
+        # 2. Filter the local array for positive values.
+        local_positive_coords = filter(x -> x > 0, sigma_coords)
+
+        # 3. If any positive values were found locally, compute the local minimum.
+        # Otherwise, local_min_sigma remains Inf.
+        if !isempty(local_positive_coords)
+            local_min_sigma = minimum(local_positive_coords)
+        end
+        
+        #sigma_1 = minimum(filter(x -> x > 0, sigma_coords)) # Represents the uniform dσ
+        # 4. Perform the global reduction to find the true minimum across all processes.
+        # MPI.Allreduce sends the result to all processes.
+        sigma_1 = MPI.Allreduce(local_min_sigma, MPI.MIN, comm)
+
+        
         # 1. CALCULATE STRETCHING FACTOR for the bottom region.
         n = log(first_cell_size / ztop) / log(sigma_1 / ztop)
         println("Desired resolution by the surface: ", first_cell_size/(mesh.ngl-1))
@@ -265,83 +314,6 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
             # Update the grid point's vertical position.
             mesh.z[ip] = z
         end
-
-    elseif inputs[:stretch_type] == "fixed_first_twoblocks_strong_weak"
-
-        @mystop( "stretching: fixed_first_twoblocks_strong_weak not working!")
-        
-        # --- User Inputs ---
-        uniform_cell_size_bottom = inputs[:uniform_zelement_size] # e.g., 10.0 meters
-        zlevel_transition = inputs[:zlevel_transition]      # e.g., 200.0 meters
-        max_cell_size_top = inputs[:max_zelement_size_top]        # e.g., 50.0 meters
-
-        # --- Pre-computation Step ---
-
-        # Robustness FIX: Sort the original grid points while preserving their initial indices.
-        sigma_tuples = [(mesh.z[i], i) for i in 1:npoin]
-        sort!(sigma_tuples, by = x -> x[1])
-        original_indices = [t[2] for t in sigma_tuples]
-
-        # --- 1. Partition the Grid Nodes ---
-        # Calculate how many of the npoin nodes belong to the uniform bottom region.
-        num_cells_bottom = max(0, round(Int, zlevel_transition / uniform_cell_size_bottom))
-        k = num_cells_bottom + 1 # Number of nodes in the bottom region
-
-        # Ensure the partition is valid and doesn't exhaust all points.
-        if k >= npoin
-            k = npoin - 1
-            println("Warning: The uniform grid settings cover nearly the entire domain.")
-        end
-        num_nodes_top = npoin - k
-
-        println("--- Grid Generation Plan ---")
-        println("Uniform cell size in bottom region: ", uniform_cell_size_bottom)
-        println("Partitioning grid at node k=", k, " (", num_nodes_top, " nodes left for top region)")
-        println("----------------------------")
-
-        # --- 2. Generate New Node Positions ---
-        new_z_sorted = zeros(Float64, npoin)
-
-        # --- PART A: Generate all node positions for the uniform bottom region ---
-        for i in 1:k
-            new_z_sorted[i] = (i - 1) * uniform_cell_size_bottom
-        end
-
-        # --- PART B: Generate all node positions for the stretched top region ---
-        if num_nodes_top > 0
-            z_actual_transition = new_z_sorted[k]
-            
-            # Calculate the fixed increment for cell size in the top region.
-            delta_dz = 0.0
-            if num_nodes_top > 1
-                delta_dz = (max_cell_size_top - uniform_cell_size_bottom) / (num_nodes_top - 1)
-            end
-            
-            # Calculate the size of each cell in the top region.
-            top_cell_sizes = [uniform_cell_size_bottom + (i - 1) * delta_dz for i in 1:num_nodes_top]
-            
-            # Cumulatively sum the cell sizes to get the node positions.
-            current_z = z_actual_transition
-            for i in 1:num_nodes_top
-                current_z += top_cell_sizes[i]
-                new_z_sorted[k + i] = current_z
-            end
-        end
-
-        # --- 3. Re-map and Finalize ---
-        new_ztop = new_z_sorted[end]
-        println("New calculated ztop: ", new_ztop)
-
-        # Create the final output array and fill it according to the original node order.
-        final_z = zeros(Float64, npoin)
-        for i in 1:npoin
-            original_ip = original_indices[i]
-            final_z[original_ip] = new_z_sorted[i]
-        end
-
-        # Update the mesh with the newly generated coordinates.
-        mesh.z = final_z
-
         
     end
     
