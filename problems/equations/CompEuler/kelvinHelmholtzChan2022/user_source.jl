@@ -6,15 +6,10 @@ function user_source!(S,
                       neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, xmin = -120000, xmax =120000)
 
     PhysConst = PhysicalConst{Float64}()
-        
-    #
-    # S(q(x)) = -ρg
-    #
-    ρ  = q[1]
     
     S[1] = 0.0
     S[2] = 0.0
-    S[3] = -ρ*PhysConst.g
+    S[3] = 0.0
     S[4] = 0.0
    
 end

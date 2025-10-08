@@ -12,7 +12,6 @@ function user_inputs()
         :diagnostics_at_times => (0:100:1000),
         # :diagnostics_at_times => (5, 100:100:1000...),        
         :lsource              => true,
-
         #---------------------------------------------------------------------------
         # restart options
         #---------------------------------------------------------------------------
@@ -31,25 +30,39 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lwall_model          => true,
+        #:lwall_model          => true,
         :lvisc                => true, #false by default
         #:visc_model           => AV(), #VREM(), #SMAG(),
         :visc_model           => SMAG(),
+        #:visc_model           => VREM(),
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587],
-        :μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],
+        #:μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         #:lwarmup             => true,
+        # Warping:
+        :lwarp => false,
+        :mount_type => "agnesi",
+        :a_mount => 4000.0,
+        :h_mount => 1000.0,
+        :c_mount => 5000.0,
+
+        # Stretching factors:
+        :lstretch => true,
+        :stretch_factor => 1.5,
+        :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
+        :first_zelement_size => 250.0,
+        :zlevel_transition => 5000.0,
+        
+        # GMSH files:
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/2x2x2.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
-        # :gmsh_filename        => "./meshes/gmsh_grids/LESICP_stretched.msh",
-        #:gmsh_filename_c      => "./meshes/gmsh_grids/LESICP_stretched.msh",
-        :gmsh_filename        => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        #:gmsh_filename_c      => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        :gmsh_filename      => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB_periodic3D.msh",
         #---------------------------------------------------------------------------
         # Filter parameters

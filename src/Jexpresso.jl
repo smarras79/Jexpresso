@@ -129,6 +129,8 @@ include(joinpath( "kernel", "operators", "operators.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
+include(joinpath( "kernel", "operators", "rhs_2point.jl"))
+
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_laguerre_gpu.jl"))

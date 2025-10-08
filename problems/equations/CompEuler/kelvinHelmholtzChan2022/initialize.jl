@@ -38,7 +38,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             u      = 0.5*(B - 1.0)
             v      = sinpi(2.0*x)/10.0
             vmagsq = u*u + v*v
-            e      = p/(ρ*(PhysConst.γm1) + 0.5*vmagsq) # E = ρ*e
+            ρe     = p/PhysConst.γm1 + 0.5*ρ*vmagsq # E = ρ*e
+            e      = ρe/ρ
             
             ρref = ρ
             pref = p
@@ -60,13 +61,13 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qn[ip,1] = ρ
                 q.qn[ip,2] = ρ*u
                 q.qn[ip,3] = ρ*v
-                q.qn[ip,4] = ρ*e
+                q.qn[ip,4] = ρe
                 q.qn[ip,end] = p
 
                 #Store initial background state for plotting and analysis of pertuebations
                 q.qe[ip,1] = ρref
-                q.qe[ip,2] = u
-                q.qe[ip,3] = v
+                q.qe[ip,2] = ρref*u
+                q.qe[ip,3] = ρref*v
                 q.qe[ip,4] = ρref*eref
                 q.qe[ip,end] = pref
             end

@@ -24,6 +24,7 @@ const EDGE_NODES   = UInt64(2)
 const FACE_NODES   = UInt64(4)
 
 include("warping.jl")
+include("stretching.jl")
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
@@ -655,12 +656,21 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
        #end #f
     end
 
-
+    #
+    # THE STRETCHUING MUST BE DONE BEFORE POPULATING WITH HIGH ORDER:
+    #
+    if (mesh.nsd > 2)
+        if (inputs[:lstretch]) stretch_mesh_3D!(mesh, inputs, mesh.npoin_linear) end
+    else
+        if (inputs[:lstretch]) stretch_mesh!(mesh, inputs, mesh.npoin_linear) end
+    end
     #
     # Add high-order points to edges, faces, and elements (volumes)
     #
     # initialize LGL struct and buyild Gauss-Lobatto-xxx points
     lgl = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, backend)
+
+
 
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ "; msg_rank = rank, suppress = mesh.msg_suppress)
     #
@@ -1111,6 +1121,22 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             end
         end
         get_bdy_poin_in_face_on_edges!(mesh, @view(isboundary_face[:]), mesh.SD)
+
+        #debug code: comment after fix
+        #= After loading the mesh
+        for (name, surfaces) in mesh.face_sets
+            println("Physical surface: $name")
+            for surf_id in surfaces
+                n_adjacent = size(mesh.facet_cell_ids[surf_id], 1)
+                if n_adjacent != 1
+                    println("  ERROR: Surface $surf_id has $n_adjacent adjacent cells!")
+                    # Print coordinates to identify which surface this is
+                    coords = mesh.node_coords[mesh.facet_nodes[surf_id], :]
+                    println("  Coordinates: ", extrema(coords, dims=1))
+                end
+            end
+        end=#
+        
         # @info isboundary_face
         iface_bdy = 1
         for iface in findall(x -> x == true, isboundary_face) #total nedges
