@@ -1627,12 +1627,13 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     #Increase number of grid points from linear count to total high-order points
     mesh.npoin = mesh.npoin_linear + tot_vol_internal_nodes
     resize!(mesh.x, (mesh.npoin))
-    mesh.coords[:,1] = copy(mesh.x[:]) #KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), 1)
 
+    mesh.coords = copy(mesh.x)
+    #mesh.coords = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
     # SM here is the issue. COORDS is not being populated correctly at 1D grid generationS
     
     mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1, 1)
-
+    
     #
     # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
     #
@@ -1652,7 +1653,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
             mesh.coords[ip,1] = mesh.x[ip]
-            
+            #println(ip, mesh.coords[ip,1])
             mesh.conn[iel_g, l] = ip #OK
             mesh.connijk[iel_g, l, 1, 1] = ip #OK
             iconn = iconn + 1
@@ -1660,7 +1661,8 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             ip = ip + 1
         end
     end
-
+    mesh.coords[:,1] = copy(mesh.x[:])
+    
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
 end
@@ -2940,7 +2942,9 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     mesh.npoin = mesh.npx
 
     mesh.coords[1,1] = mesh.xmin
+    mesh.x[1] = mesh.xmin
     for i = 2:mesh.npx
+        mesh.x[i] = mesh.x[i-1] + Δx
         mesh.coords[i,1] = mesh.coords[i-1,1] + Δx
         mesh.Δx[i-1] = Δx #Constant for the sake of simplicity in 1D problems. This may change later
     end
@@ -3028,9 +3032,6 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-
-    #GC.gc()  # Force garbage since the grid being read may be large and we want to remove any memory usage not necessary for this.
-    #check_memory(" BEGINNING mesh_driver\n")
     
     partitioned_model = nothing
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
@@ -3072,12 +3073,14 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
             if (inputs[:nsd]==1)
                 println(" # ... build 1D grid ")
                 mesh = St_mesh{TInt,TFloat, CPU()}(coords = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx]), 1),
-                                            npx  = TInt(inputs[:npx]),
-                                            xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
-                                            nop=TInt(inputs[:nop]),
-                                            connijk = KernelAbstractions.zeros(CPU(), TInt,  Int64(inputs[:nelx]), Int64(inputs[:nop]+1), 1, 1),
-                                            ngr=TInt(inputs[:nop_laguerre]+1),
-                                            SD=NSD_1D())
+                                                   x = KernelAbstractions.zeros(CPU(),TFloat,Int64(inputs[:npx])),
+                                                   npx  = TInt(inputs[:npx]),
+                                                   xmin = TFloat(inputs[:xmin]), xmax = TFloat(inputs[:xmax]),
+                                                   nop=TInt(inputs[:nop]),
+                                                   connijk = KernelAbstractions.zeros(CPU(), TInt,  Int64(inputs[:nelx]), Int64(inputs[:nop]+1), 1, 1),
+                                                   ngr=TInt(inputs[:nop_laguerre]+1),
+                                                   SD=NSD_1D())
+                
             else
                 @error( " INPUT ERROR: native grid can only be built in 1D. Use a GMSH generated grid for 2D/3D")
             end
