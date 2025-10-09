@@ -24,20 +24,19 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lvisc                => true, #false by default NOTICE: works only for Inexact       
-        #:visc_model           => AV(),
-        #:μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
-        :visc_model           => WALE(),
+        :lvisc                => true, #false by default NOTICE: works only for Inexact       
+        :visc_model           => AV(),
+        :μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
+        #:visc_model           => WALE(),
         #:visc_model           => VREM(),
         #:visc_model           => SMAG(),
-        :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
-        :lvisc                => true, #false by default NOTICE: works only for Inexact        
+        #:μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        :lwarp => true,
-        :lstretch => true,
+        #:lwarp => true,
+        #:lstretch => true,
         :stretch_factor => 1.25,
         :mount_type => "agnesi",        
         :h_mount => 1000.0,
