@@ -89,7 +89,8 @@ function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
     
     if (backend == CPU())
-        _build_rhs!(@view(params.RHS[:,:]), u, params, time)
+        # _build_rhs!(@view(params.RHS[:,:]), u, params, time)
+        time_function!(params.timers["_build_rhs!"], _build_rhs!, @view(params.RHS[:,:]), u, params, time)
 
         if (params.laguerre) 
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
@@ -450,7 +451,8 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
     
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, SD)
+    # inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, SD)
+    time_function!(params.timers["inviscid_rhs_el!"], inviscid_rhs_el!, u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, SD)
     
     if inputs[:ladapt] == true
         DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
@@ -466,7 +468,8 @@ function _build_rhs!(RHS, u, params, time)
         
         resetRHSToZero_viscous!(params, SD)
         
-        viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
+        # viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
+        time_function!(params.timers["viscous_rhs_el!"], viscous_rhs_el!, u, params, params.mesh.connijk, params.qp.qe, SD)
         
         # @info "start DSS_rhs_viscous"
         if inputs[:ladapt] == true
@@ -494,7 +497,8 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
     
-    DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+    # DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+    time_function!(params.timers["DSS_global_RHS!"], DSS_global_RHS!, @view(params.RHS[:,:]), params.pM, params.neqs)
 
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)

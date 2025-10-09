@@ -166,6 +166,7 @@ include(joinpath( "io", "soundings.jl"))
 include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
+include(joinpath( "auxiliary", "timing.jl"))
 
 include("./run.jl")
 

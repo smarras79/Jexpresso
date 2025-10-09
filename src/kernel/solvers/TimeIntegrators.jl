@@ -178,6 +178,8 @@ function time_loop!(inputs, params, u)
     end
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
+    MPI.Barrier(comm)
+    report_all_timers(params.timers)
     
     return solution
 end
