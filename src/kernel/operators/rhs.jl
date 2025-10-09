@@ -1,5 +1,4 @@
 using Distributions
-#using InteractiveUtils
 
 #---------------------------------------------------------------------------
 # Optimized (more coud possibly be done)
@@ -552,24 +551,29 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
     PhysConst = PhysicalConst{Float64}()
 
     u_element_wise = zeros(params.mesh.ngl, params.mesh.ngl, params.neqs)
+
+    lkep = false
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
-        
-        for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
-            ip = connijk[iel,i,j]
-            
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
 
-            
-            # b. Use the map to find the global point index
-            global_point_idx = connijk[iel, i, j]
-            
-            # c. Find the starting index for this point's data in the flat vector `u`
-            start_idx = (global_point_idx - 1) * params.neqs + 1
-            
-            # d. Copy the 'neqs' variables (ρ, ρu, ρv, E) from u to your 4D array
-            u_element_wise[i, j, :] = u[start_idx : start_idx + params.neqs - 1]
+       
+        if lkep
+            for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
+                ip = connijk[iel,i,j]
+                
+                user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+                
+                
+                # b. Use the map to find the global point index
+                global_point_idx = connijk[iel, i, j]
+                
+                # c. Find the starting index for this point's data in the flat vector `u`
+                start_idx = (global_point_idx - 1) * params.neqs + 1
+                
+                # d. Copy the 'neqs' variables (ρ, ρu, ρv, E) from u to your 4D array
+                u_element_wise[i, j, :] = u[start_idx : start_idx + params.neqs - 1]
+            end
         end
         
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
@@ -621,8 +625,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         params.metrics.dηdx, params.metrics.dηdy,
         iel, params.CL, params.QT, SD, params.AD)       
         =#
-
-        lkep = false
+        
         if lkep
             
             _expansion_inviscid_KEP_twopoint!(u_element_wise,
@@ -635,15 +638,6 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
                                               params.metrics.dηdx, params.metrics.dηdy,
                                               params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
             
-           #= _expansion_inviscid_KEP!(u, 
-                                     params.uprimitive,
-                                     params.neqs, params.mesh.ngl,
-                                     params.basis.dψ, params.ω,
-                                     params.F, params.G, params.S,
-                                     params.metrics.Je,
-                                     params.metrics.dξdx, params.metrics.dξdy,
-                                     params.metrics.dηdx, params.metrics.dηdy,
-                                     params.rhs_el, iel, params.CL, params.QT, SD, params.AD)=#
         else
             _expansion_inviscid!(u,
                                  params.neqs, params.mesh.ngl,
@@ -788,7 +782,13 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
 
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
         end
-  
+
+        # WIP: DSGS
+        # compute_viscosity!(params.μsgs, SD, params.PT,
+        #                    @view(params.uaux[ip,:]),
+        #                    q1, q2,
+        #                    rhs, params.Δt, params.mesh, params.metrics)
+        
         for ieq = 1:params.neqs
             _expansion_visc!(params.rhs_diffξ_el,
                              params.rhs_diffη_el,

@@ -28,7 +28,7 @@ function time_loop!(inputs, params, u)
 
     function do_radiation!(integrator)
         println(" doing two stream radiation heat flux calculations at t=", integrator.t)
-        @info "doing rad test"
+        #@info "doing rad test"
         compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
     end
 
@@ -80,7 +80,7 @@ function time_loop!(inputs, params, u)
             ret_dosetime_ref[] = false
         end
 
-        tol             = 1e-6
+        tol = 1e-6
         # ret_amrtime_ref = abs(mod(t, Δt_amr)) < tol
         # return (ret_dosetime_ref[] || ret_amrtime_ref[])
         return ret_dosetime_ref[]
@@ -151,7 +151,7 @@ function time_loop!(inputs, params, u)
             imex_time_step_simple_2d!(u, params, params.mesh.connijk,  params.qp.qe,  params.mesh.coords, inputs[:Δt], inputs[:lsource])
         end
         println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
-        @mystop()
+        @mystop("TimeIntegrators.jl WIP on IMEX by Simone (obsolete)")
     else
         solution = solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),

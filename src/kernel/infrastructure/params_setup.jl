@@ -56,8 +56,14 @@ function params_setup(sem,
                              sem.mesh.nelem,
                              sem.mesh.ngl,
                              T, backend, inputs[:lmoist];
-                             neqs=qp.neqs)
+                                 neqs=qp.neqs)
 
+    if inputs[:lvisc] == true && inputs[:visc_model] != AV()
+        viscsgs = allocate_visc(sem.mesh.SD, sem.mesh.nelem, sem.mesh.npoin, sem.mesh.ngl, T, backend; neqs=qp.neqs)
+    else
+        viscsgs = allocate_visc(sem.mesh.SD, 1, 1, 1, T, backend; neqs=1)
+    end
+    
     u            = uODE.u
     uaux         = uODE.uaux
     vaux         = uODE.vaux
@@ -74,6 +80,7 @@ function params_setup(sem,
     rhs_diffξ_el = rhs.rhs_diffξ_el
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
+    μsgs         = viscsgs.μ
     
     #------------------------------------------------------------------------------------
     # boundary flux arrays
@@ -223,7 +230,6 @@ function params_setup(sem,
         u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
         qp.qnm1[:,i] = @view(qp.qn[:,i])
         qp.qnm2[:,i] = @view(qp.qn[:,i])
-        
     end
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)

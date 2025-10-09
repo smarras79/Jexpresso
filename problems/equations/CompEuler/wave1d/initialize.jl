@@ -26,7 +26,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             
                 ip = mesh.connijk[iel_g,i,1]
                 x = mesh.coords[ip,1]
-
+                
                 ex = -(x - 1)^2/σ2
                 q.qn[ip,1] = 2^ex
                 q.qn[ip,2] = 0.0
@@ -37,7 +37,6 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             
             end
         end
-        
     else
         σ = TFloat(0.15)
         σ2= σ*σ

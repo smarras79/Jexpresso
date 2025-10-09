@@ -1653,7 +1653,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
             
             mesh.x[ip] = x1*(1.0 - ξ)*0.5 + x2*(1.0 + ξ)*0.5;
             mesh.coords[ip,1] = mesh.x[ip]
-            #println(ip, mesh.coords[ip,1])
+            
             mesh.conn[iel_g, l] = ip #OK
             mesh.connijk[iel_g, l, 1, 1] = ip #OK
             iconn = iconn + 1
@@ -2972,6 +2972,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
     
     
     # Resize (using resize! from ElasticArrays) as needed
+    resize!(mesh.x, (mesh.npoin))
     resize!(mesh.coords[:,1], (mesh.npoin))
     mesh.npoin_el = ngl
     #allocate mesh.conn and reshape it
@@ -3005,7 +3006,8 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
             x[ip] = mesh.xmax + inputs[:yfac_laguerre]*gr.ξ[i]
         end    
         mesh.npoin = mesh.npoin + mesh.ngr-1
-        mesh.coords[:,1] .= x[:]
+        mesh.x = x
+        #mesh.coords[:,1] = x[:]
     end
     if (inputs[:llaguerre_1d_left])
         e = min(2,mesh.nelem_semi_inf)
@@ -3020,6 +3022,7 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         end
         mesh.npoin = mesh.npoin + mesh.ngr-1
         mesh.x = x
+        #mesh.coords[:,1] = x[:]
     end 
     #plot_1d_grid(mesh)
     resize!(mesh.y, (mesh.npoin))
