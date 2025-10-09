@@ -478,9 +478,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
         
     else
-        mod_inputs_check(inputs, :gmsh_filename, "e")
-        mod_inputs_check(inputs, :gmsh_filename_c, "e")
-        
+        mod_inputs_check(inputs, :gmsh_filename, "e")       
         mod_inputs_check(inputs, :nsd,  Int8(3), "-")
         mod_inputs_check(inputs, :nelx,  Int8(2), "-")
         mod_inputs_check(inputs, :xmin, Float64(-1.0), "-")
