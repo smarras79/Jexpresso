@@ -431,6 +431,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     if (!haskey(inputs, :lelementLearning))
         inputs[:lelementLearning] = false
+    else
+        if (!haskey(inputs, :elNsamp))
+            inputs[:elNsamp] = 1
+        end
     end
     
     #

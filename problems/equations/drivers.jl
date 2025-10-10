@@ -208,16 +208,17 @@ end
 function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     
     mesh.lengthO =  mesh.length∂O +  mesh.lengthIo
-        
+    
     EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
                                mesh.length∂O,
                                mesh.length∂τ,
                                mesh.lengthΓ,
-                               TFloat, inputs[:backend])
-
+                               TFloat, inputs[:backend]; Nsamp=inputs[:elNsamp])
+    
     nelintpoints = (mesh.ngl-2)*(mesh.ngl-2)
-    nelpoints = size(mesh.conn)[2]
+    nelpoints    = size(mesh.conn)[2]
     elnbdypoints = nelpoints - nelintpoints
+    
     for iel=1:mesh.nelem
         #
         # A∂oᵥₒ
@@ -255,10 +256,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
             #
             for j = 1:elnbdypoints
                 jpb = mesh.conn[iel, j]
-                
                 EL.Avovb[ii, j, iel] = A[ipo, jpb]
             end
-            
             ii += 1
         end
     end
@@ -329,9 +328,10 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
             EL.AIo∂τ[io, jτ] = A[io1, jτ1]
         end
     end
+    # inv(AiIoIo)
     invAIoIo = similar(EL.AIoIo)
     invAIoIo = inv(EL.AIoIo)
-
+    
     dims = (mesh.lengthIo, mesh.lengthΓ)
     AIoΓ = similar(EL.AIoIo, dims);
     
@@ -435,6 +435,48 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
         u[io1] = gΓ[io]
     end
 
+    #
+    # ML: input/outpute tensors to use in training (?):
+    #
+    # 1. Set B∂τ∂τ := A∂τ∂τ
+    #
+    Nsamp = inputs[:elNsamp]
+    c0 = 0.1
+    c1 = 0.5
+    a  = zeros(TFloat, Nsamp)
+    for isamp = 1:Nsamp
+
+        # 2.a
+        r0 = rand(c0:c1)        
+        ### rand(Uniform(c0, c1)) #use this for uniform distribution. using Distributions
+
+        # 2.b
+        a[isamp] = r0
+
+        # 2.c # This looks wrong in WRONG in the notes
+        # ??? EL.input_tensor[:, isamp] = a[:] 
+
+        # 2.d        
+        T2 = zeros(size(EL.Avovo)[1], size(EL.Avovb)[2])
+        T1 = zeros(size(EL.Avovb)[2], size(EL.Avovb)[2])
+        for iel = 1:mesh.nelem
+            
+            Avbvo = transpose(EL.Avovb[:,:,iel])
+            
+            # T2 = -A⁻¹ᵥₒᵥₒ[:,:,iel]⋅Avovb[:,:,iel]
+            LinearAlgebra.mul!(T2, -inv(EL.Avovo[:,:,iel]), EL.Avovb[:,:,iel])
+            
+            # T1 = Avbvo[:,:,iel]⋅T2 = - Avbvo⋅A⁻¹ᵥₒᵥₒ⋅Avovb
+            LinearAlgebra.mul!(@view(T1[:,:]), @view(Avbvo[:,:]), @view(T2[:,:]))
+
+        end
+
+        # 2.e
+        # Output tensor:
+      #???  output_tensor[:, isamp] .= -T2    # Bie = -T2ie
+        
+    end
+    
 end
 
 #

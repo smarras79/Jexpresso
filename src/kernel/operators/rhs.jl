@@ -7,7 +7,7 @@ function RHStoDU!(du, RHS, neqs, npoin)
     for i=1:neqs
         idx = (i-1)*npoin
         du[idx+1:i*npoin] = @view RHS[:,i]
-    end  
+    end
 end
 
 function u2uaux!(uaux, u, neqs, npoin)
