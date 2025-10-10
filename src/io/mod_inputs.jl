@@ -577,8 +577,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         lowercase(parsed_equations) == "ad" ||
         lowercase(parsed_equations) == "adv2d")
         inputs[:equations] = AdvDiff()
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
+#        inputs[:ldss_laplace] = false
+#        inputs[:ldss_differentiation] = false
     elseif (lowercase(parsed_equations) == "elliptic" ||
         lowercase(parsed_equations) == "diffusion")
         inputs[:equations] = Elliptic()
