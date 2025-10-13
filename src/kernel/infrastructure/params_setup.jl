@@ -256,7 +256,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     if (sem.mesh.lLaguerre ||
         inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
-        pM = setup_assembler_v2(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        pM = setup_assembler_v3(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
                   uaux, vaux,
                   ubdy, gradu, bdy_flux, #for B.C.
@@ -290,7 +290,7 @@ function params_setup(sem,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
         
     else
-        pM = setup_assembler_v2(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        pM = setup_assembler_v3(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend,
                   T, inputs,
                   uaux, vaux,
