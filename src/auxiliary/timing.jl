@@ -78,7 +78,7 @@ function report_timer(timer::MPIFunctionTimer; name::String="Function")
         println("Rank | Calls      | Total Time (s) | Avg (ms)  | Min (ms)  | Max (ms)")
         println("-"^70)
         
-        for i in 1:nprocs
+        for i in 1:1
             rank_id = i - 1
             calls = all_call_counts[i]
             total = all_total_times[i]
@@ -96,8 +96,9 @@ function report_timer(timer::MPIFunctionTimer; name::String="Function")
         
         println("\nGlobal statistics:")
         println("  Total calls across all ranks: $total_calls")
-        println("  Total time across all ranks:  $(round(total_time_all, digits=6))s")
-        println("  Average time per call:         $(round(total_time_all/total_calls*1000, digits=6))ms")
+        println("  Total time across all ranks :  $(round(total_time_all, digits=6))s")
+        println("  Total time per rank         :  $(round(total_time_all/nprocs, digits=6))s")
+        println("  Average time per call :         $(round(total_time_all/total_calls*1000, digits=6))ms")
         println("  Min time (single call):        $(round(minimum(all_min_times)*1000, digits=6))ms")
         println("  Max time (single call):        $(round(maximum(all_max_times)*1000, digits=6))ms")
         println("="^70 * "\n")
