@@ -148,7 +148,7 @@ function assemble_mpi_matvec!(y_local, y, cache::MatvecCache)
 
 end
 
-function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse)
+function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse, nnzeros)
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
@@ -166,7 +166,6 @@ function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse)
             iter += 1
         end
     end
-
     nnzero = iter - 1
     #=requests_nzeros = MPI.Request[]
     
@@ -183,14 +182,14 @@ function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse)
 
     cache.nnzeros[rank+1] = nnzero
     =#
-    @time cache.nnzeros = MPI.Allgather(nnzero,comm)
-
+    #GC.gc()
+    MPI.Barrier(comm)
+    MPI.Allgather!(nnzero, nnzeros, 1, comm)
     requests_indices = MPI.Request[]
-
 
     @inbounds for i in 0:rank_sz-1
         fill!(cache.proc_sp_ip[i+1],zero(Int))
-        idx_end = cache.nnzeros[i+1]
+        idx_end = nnzeros[i+1]
         #send_buffer = @view(cache.sp_ip[1:nnzero])
         #recv_buffer = @view(cache.proc_sp_ip[i+1][1:idx_end])
         resize!(cache.proc_sp_ip[i+1],idx_end)
@@ -212,7 +211,7 @@ function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse)
     requests = MPI.Request[]
     @inbounds for i in 0:rank_sz-1
         fill!(cache.proc_vec[i+1],zero(Float64))
-        idx_end = cache.nnzeros[i+1]
+        idx_end = nnzeros[i+1]
         #send_buffer = @view(cache.sp_val[1:nnzero])
         #recv_buffer = @view(cache.proc_vec[i+1][1:idx_end])
         resize!(cache.proc_vec[i+1],idx_end)
@@ -231,16 +230,15 @@ function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse)
     #end
     @inbounds cache.proc_vec[rank+1][1:nnzero] .= cache.sp_val[1:nnzero]
     
-
     @inbounds for i in 0:rank_sz-1
-        idx_end = cache.nnzeros[i+1]
+        idx_end = nnzeros[i+1]
         for j=1:idx_end
             ip = cache.proc_sp_ip[i+1][j]
             gip = cache.proc_ip2gip[i+1][ip]
             y[gip] += cache.proc_vec[i+1][j]
         end
     end
-
+    #GC.gc()
 end
 
 function create_parallel_linear_operator(A_local::AbstractMatrix{T},
@@ -282,7 +280,7 @@ function create_parallel_linear_operator(A_local::AbstractMatrix{T},
                 y_local[gip] = y_temp[ip]
             end
         else
-            assemble_mpi_matvec_sparse!(y_temp, y_local, pM)
+            assemble_mpi_matvec_sparse!(y_temp, y_local, pM, pM.nnzeros)
         end
         copyto!(y, y_local)  # y_local now contains the reduced result
         return y
@@ -321,7 +319,7 @@ function create_parallel_linear_operator(A_local::AbstractMatrix{T},
                 y_local[gip] = y_temp[ip]
             end
         else
-            assemble_mpi_matvec_sparse!(y_temp, y_local, pM)
+            assemble_mpi_matvec_sparse!(y_temp, y_local, pM, pM.nnzeros)
         end
         copyto!(y, y_local)  # y_local now contains the reduced result
         return y
@@ -349,7 +347,7 @@ function create_parallel_linear_operator(A_local::AbstractMatrix{T},
     return LinearOperator{T}(gnpoin, gnpoin, false, false, matvec!, rmatvec!, rmatvec!)
 end
 
-function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin; tol::Float64 = 1e-7)
+function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; tol::Float64 = 1e-7)
    
      # Create parallel linear operator (better than AbstractMatrix)
     A_parallel = create_parallel_linear_operator(A_local, ip2gip, gip2owner, npoin, gnpoin)

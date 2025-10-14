@@ -279,7 +279,6 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     DSS_mass!(M, NSD_1D(), Inexact(), Me, extra_mesh.extra_connijk, nelem, npoin, nop, TFloat; llump=inputs[:llump])
     Minv .= TFloat(1.0)./M
     extra_mesh.Minv = Minv
-
     return extra_mesh
 end
 
