@@ -51,7 +51,13 @@ function driver(nparts,
         @info " # COMPUTE conformity4ncf_q!"
     end
     #GC.gc()
-    pre_allocation_q = setup_assembler_v3(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
+    # pre_allocation_q = setup_assembler_v3(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
+    row_partition = map(sem.mesh.parts) do part
+        row_partition = LocalIndices(sem.mesh.gnpoin,part,sem.mesh.ip2gip,sem.mesh.gip2owner)
+        # gM = M
+        row_partition
+    end
+    pre_allocation_q = pvector(values->@view(sem.matrix.M[:]), row_partition)
     conformity4ncf_q!(qp.qn, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
                             sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
                             qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
