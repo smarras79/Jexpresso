@@ -981,6 +981,9 @@ mutable struct AssemblerCache_v3
     recv_data_sizes::Vector{Int}
     # i_local::Dict{Int, Vector{Int}}
 
+    # Preallocated requests
+    requests::MPI.MultiRequest
+    requests_back::MPI.MultiRequest
 end
 
 function setup_assembler_v3(SD, a, index_a, owner_a)
@@ -1118,11 +1121,14 @@ function setup_assembler_v3(SD, a, index_a, owner_a)
     send_data_buffers = [zeros(Float64, send_idx_sizes[i+1] * m) for i in 0:rank_sz-1]
     recv_data_buffers = [zeros(Float64, recv_idx_sizes[i+1] * m) for i in 0:rank_sz-1]
 
+    # Preallocate requests for assemble function
+    n_req = sum(send_data_sizes .> 0) + sum(recv_data_sizes .> 0)
+    n_req_back = sum(recv_data_sizes .> 0) + sum(send_data_sizes .> 0)
 
-
-    cache = AssemblerCache_v3( recv_idx_buffers, recvback_idx_buffers,
-            send_i,send_data_buffers,recv_data_buffers, send_data_sizes, recv_data_sizes)
-    return cache
+    return AssemblerCache_v3( recv_idx_buffers, recvback_idx_buffers,
+            send_i,send_data_buffers,recv_data_buffers, send_data_sizes, recv_data_sizes,
+            MPI.MultiRequest(n_req),
+            MPI.MultiRequest(n_req_back))
 end
 
 
@@ -1142,16 +1148,16 @@ function assemble_mpi_v3!(a, cache::AssemblerCache_v3)
     end
 
     @inbounds for owner = 0:rank_sz-1
-            buf_data = cache.send_data_buffers[owner+1]
-            send_i_local = cache.send_i[owner+1]
+        buf_data = cache.send_data_buffers[owner+1]
+        send_i_local = cache.send_i[owner+1]
 
-            for (i,idx) in enumerate(send_i_local)
-                for j = 1:m
+        for (i,idx) in enumerate(send_i_local)
+            for j = 1:m
                 buf_data[(i-1)*m + j] = a[idx,j]
             end
         end
     end
-    MPI.Barrier(comm)
+    # MPI.Barrier(comm)
 
 
     for i in 0:rank_sz-1
@@ -1160,18 +1166,20 @@ function assemble_mpi_v3!(a, cache::AssemblerCache_v3)
 
 
     # Communicate data
-    requests = MPI.Request[]
-    for i in 0:rank_sz-1
+    req_idx = 1
+    @inbounds for i in 0:rank_sz-1
         if cache.send_data_sizes[i+1] > 0
-            push!(requests, MPI.Isend(cache.send_data_buffers[i+1], i, 0, comm))
+            MPI.Isend(cache.send_data_buffers[i+1], comm, cache.requests[req_idx]; dest=i, tag=0)
+            req_idx += 1
         end
         if cache.recv_data_sizes[i+1] > 0
-            push!(requests, MPI.Irecv!(cache.recv_data_buffers[i+1], i, 0, comm))
+            MPI.Irecv!(cache.recv_data_buffers[i+1], comm, cache.requests[req_idx]; source=i, tag=0)
+            req_idx += 1
         end
     end
 
     # Wait for all communication to complete
-    MPI.Waitall!(requests)
+    MPI.Waitall(cache.requests)
 
     @inbounds for rk in 0:rank_sz-1
         if cache.recv_data_sizes[rk+1] > 0
@@ -1198,7 +1206,7 @@ function assemble_mpi_v3!(a, cache::AssemblerCache_v3)
     end
     sendback_data_sizes = cache.recv_data_sizes
     recvback_data_sizes = cache.send_data_sizes
-    MPI.Barrier(comm)
+    # MPI.Barrier(comm)
 
 
 
@@ -1207,19 +1215,21 @@ function assemble_mpi_v3!(a, cache::AssemblerCache_v3)
 
 
     # Communicate back data
-    requests_back = MPI.Request[]
+    req_idx = 1
     @inbounds for i in 0:rank_sz-1
         if sendback_data_sizes[i+1] > 0
-            push!(requests_back, MPI.Isend(sendback_data_buffers[i+1], i, 2, comm))
+            MPI.Isend(sendback_data_buffers[i+1], comm, cache.requests_back[req_idx]; dest=i, tag=2)
+            req_idx += 1
         end
         if recvback_data_sizes[i+1] > 0
-            push!(requests_back, MPI.Irecv!(recvback_data_buffers[i+1], i, 2, comm))
+            MPI.Irecv!(recvback_data_buffers[i+1], comm, cache.requests_back[req_idx]; source=i, tag=2)
+            req_idx += 1
         end
     end
 
 
     # Wait for all communication to complete
-    MPI.Waitall!(requests_back)
+    MPI.Waitall(cache.requests_back)
 
 
     @inbounds for rk = 0:rank_sz-1

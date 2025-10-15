@@ -1398,7 +1398,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 end
 
 
-function find_gip_owner(a)
+function find_gip_owner_v1(a)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     size = MPI.Comm_size(comm)
@@ -1446,7 +1446,7 @@ function find_gip_owner(a)
     
 end
 
-function find_gip_owner_v1(a)
+function find_gip_owner(a)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     size = MPI.Comm_size(comm)

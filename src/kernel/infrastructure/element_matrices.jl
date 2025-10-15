@@ -1007,7 +1007,7 @@ end
 
 
 
-function DSS_global_RHS_v1!(RHS, pM, neqs)
+function DSS_global_RHS!(RHS, pM, neqs)
 
     if pM == nothing return end
     
@@ -1015,7 +1015,7 @@ function DSS_global_RHS_v1!(RHS, pM, neqs)
     
 end
 
-function DSS_global_RHS!(RHS, pM, neqs)
+function DSS_global_RHS_pvector!(RHS, pM, neqs)
     for i = 1:neqs
        DSS_global_RHS_v0!(@view(RHS[:,i]), pM)
     end
@@ -1048,7 +1048,7 @@ function DSS_global_RHS_v0!(M, pM)
 end
 
 
-function DSS_global_mass_v1!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
 
     if SD == NSD_1D()
         return nothing
@@ -1064,7 +1064,7 @@ function DSS_global_mass_v1!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
     
 end
 
-function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+function DSS_global_mass_pvector!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
     # @info ip2gip
     row_partition = map(parts) do part
         row_partition = LocalIndices(gnpoin,part,ip2gip,gip2owner)
