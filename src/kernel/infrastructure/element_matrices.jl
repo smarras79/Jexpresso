@@ -70,7 +70,7 @@ function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
     Del = zeros(N+1, N+1, mesh.nelem)
 
     for iel=1:mesh.nelem
-        Jac = mesh.Δx[iel]/2
+        #Jac = mesh.Δx[iel]/2
         
         for i=1:N+1
             for iq=1:Q+1, j=1:N+1

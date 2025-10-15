@@ -378,7 +378,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
 
         gΓ[iΓ] = ubdy[g1, 1]
     end
-    
+
     #------------------------------------------------------------------------
     # Eq. (11)
     #------------------------------------------------------------------------    
@@ -408,7 +408,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
             AIoΓ[io, iΓ] = A[io1, g1]
         end
     end
-
+    
     #
     # Eq (12)
     #
@@ -422,19 +422,94 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     uIo = similar(u∂O, dims)
     LinearAlgebra.mul!(uIo, -invAIoIo, (AIou∂O + AIoΓg))
 
-    for io = 1:mesh.lengthIo
+    for io = 1:mesh.lengthIo # all internal without edges
         io1 = mesh.Io[io]
         u[io1] = uIo[io]
     end
-    for io = 1:mesh.length∂O
+    for io = 1:mesh.length∂O # all skeleton no boundaries
         io1 = mesh.∂O[io]
         u[io1] = u∂O[io]
     end
-    for io = 1:mesh.lengthΓ
+    for io = 1:mesh.lengthΓ # # all boundaries
         io1 = mesh.Γ[io]
         u[io1] = gΓ[io]
     end
 
+    skeletonAndbdy = zeros(Int64, length(mesh.∂τ))
+    skeletonAndbdy[1:mesh.length∂O] .= mesh.∂O[:]
+    skeletonAndbdy[mesh.length∂O+1:mesh.length∂O+mesh.lengthΓ] .= mesh.Γ[:]
+
+    
+#    #for iel=1:mesh.nelem
+#        for iedge = 1:4
+#            @info iel, mesh.edge2pedge[iedge]
+#        end
+#    end
+#    @mystop
+#    bdy_edge_in_elem
+#    edge2pedge
+
+    #
+    # uvb ⊂ u∂τ  SHUKAI meeting
+    #
+
+    @info "mesh.cell_face_ids "
+    @info mesh.cell_face_ids, size(mesh.cell_face_ids)
+    @info "mesh.facet_cell_ids"
+    @info mesh.facet_cell_ids, size(mesh.facet_cell_ids)
+
+    for iedge=1:mesh.nedges
+        @info " iedge ", iedge, "belongs to element ",  mesh.facet_cell_ids[iedge]
+    end
+    for iedge=1:mesh.nedges
+        @info " edge ", iedge, " belong to elem ", mesh.edge_in_elem[iedge]
+    end
+
+    @info "-----"
+    
+    uvb = zeros(Float64, mesh.nelem, elnbdypoints)
+    u∂τ = zeros(Float64, length(mesh.∂τ))
+    for iskel = 1:length(mesh.∂τ)
+        is = skeletonAndbdy[iskel]
+#        @info iskel, is
+        u∂τ[iskel] = u[is]
+        @info iskel, is, u∂τ[iskel]
+    end
+
+@mystop
+    
+     for iel=1:mesh.nelem
+         #
+         # 
+         #
+         ii = 1
+         #
+         # Aᵥₒᵥb
+         #
+         for isk = 1:length(mesh.∂τ)
+             ipsk = skeletonAndbdy[isk]
+             
+             for ibdy = 1:elnbdypoints
+                 #jpb = mesh.conn[iel, j]
+                 uvb[iel, ibdy] = u∂τ[ipsk]
+                 @info iel, ibdy, uvb[iel, ibdy]
+             end
+             ii += 1
+         end
+     end
+
+    
+    #=for iel = 1:mesh.nelem
+        for ibdyel = 1:
+        for j1=1:length(mesh.∂τ)
+            jτ1 = skeletonAndbdy[j1]
+            
+            uvb[iel, ibdyel] = u∂τ[jτ1]
+        end
+    end=#
+
+    
+    
     #
     # ML: input/outpute tensors to use in training (?):
     #
@@ -443,7 +518,11 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     Nsamp = inputs[:elNsamp]
     c0 = 0.1
     c1 = 0.5
-    a  = zeros(TFloat, Nsamp)
+    a  = zeros(TFloat, mesh.ngl^2)
+
+    T2 = zeros(size(EL.Avovo)[1], size(EL.Avovb)[2])
+    T1 = zeros(size(EL.Avovb)[2], size(EL.Avovb)[2])
+    
     for isamp = 1:Nsamp
 
         # 2.a
@@ -451,14 +530,13 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
         ### rand(Uniform(c0, c1)) #use this for uniform distribution. using Distributions
 
         # 2.b
-        a[isamp] = r0
-
-        # 2.c # This looks wrong in WRONG in the notes
-        # ??? EL.input_tensor[:, isamp] = a[:] 
+        a[:] .= r0
+   
+        # 2.c
+        EL.input_tensor[:, isamp] .= a[:]
 
         # 2.d        
-        T2 = zeros(size(EL.Avovo)[1], size(EL.Avovb)[2])
-        T1 = zeros(size(EL.Avovb)[2], size(EL.Avovb)[2])
+      
         for iel = 1:mesh.nelem
             
             Avbvo = transpose(EL.Avovb[:,:,iel])

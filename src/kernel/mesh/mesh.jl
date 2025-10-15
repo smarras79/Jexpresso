@@ -142,18 +142,19 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     
     #Auxiliary arrays for boundary conditions
     
+    edge_in_elem              = KernelAbstractions.zeros(backend, TInt, 0)
     bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, 0, 0)
     internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, 0, 0)
     internal_poin_in_elem     = KernelAbstractions.zeros(backend, TInt, 0, 0)
     bdy_face_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_face          = KernelAbstractions.zeros(backend, TInt, 0, 0, 0)
-    elem_to_face    = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0, 0)
-    edge_type     = Array{Union{Nothing, String}}(nothing, 1)
-    face_type     = Array{Union{Nothing, String}}(nothing, 1)
-    bdy_edge_type = Array{Union{Nothing, String}}(nothing, 1)
-    bdy_face_type = Array{Union{Nothing, String}}(nothing, 1)
-    bdy_edge_type_id  =  KernelAbstractions.zeros(backend, TInt, 0)
+    elem_to_face              = KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0, 0)
+    edge_type                 = Array{Union{Nothing, String}}(nothing, 1)
+    face_type                 = Array{Union{Nothing, String}}(nothing, 1)
+    bdy_edge_type             = Array{Union{Nothing, String}}(nothing, 1)
+    bdy_face_type             = Array{Union{Nothing, String}}(nothing, 1)
+    bdy_edge_type_id          = KernelAbstractions.zeros(backend, TInt, 0)
 
     Δelem        = KernelAbstractions.zeros(backend, TInt, 0)
     Δelem_s      = 0.0
@@ -166,9 +167,9 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     # for AMR
     ad_lvl = KernelAbstractions.zeros(backend, TInt, 0)
     num_hanging_facets::Union{TInt, Missing} = 0
-    non_conforming_facets                = Vector{Vector{TInt}}(undef,num_hanging_facets)
-    non_conforming_facets_parents_ghost  = Vector{Vector{TInt}}(undef,num_hanging_facets)
-    non_conforming_facets_children_ghost = Vector{Vector{TInt}}(undef,num_hanging_facets)
+    non_conforming_facets                    = Vector{Vector{TInt}}(undef,num_hanging_facets)
+    non_conforming_facets_parents_ghost      = Vector{Vector{TInt}}(undef,num_hanging_facets)
+    non_conforming_facets_children_ghost     = Vector{Vector{TInt}}(undef,num_hanging_facets)
 
     pgip_ghost = KernelAbstractions.zeros(backend, TInt, 0)
     pgip_owner = KernelAbstractions.zeros(backend, TInt, 0)
@@ -464,6 +465,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.conn_edge_el              = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
     mesh.conn_face_el              = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
     mesh.bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
+    mesh.edge_in_elem              = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges))
     mesh.poin_in_edge              = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
     mesh.poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
     mesh.internal_poin_in_edge     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges),     Int64(mesh.ngl-2))
@@ -482,10 +484,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         mesh.bdy_face_in_elem = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nfaces_bdy))
         mesh.elem_to_face     = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nelem), Int64(mesh.ngl), Int64(mesh.ngl), Int64(mesh.ngl), 3)
     end
-    mesh.npoin_el         = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
-    mesh.conn = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
-    mesh.el_max = KernelAbstractions.zeros(backend,TFloat, Int64(mesh.nelem), 3)
-    mesh.el_min = KernelAbstractions.zeros(backend,TFloat, Int64(mesh.nelem), 3)
+    mesh.npoin_el          = mesh.NNODES_EL + el_edges_internal_nodes + el_faces_internal_nodes + (mesh.nsd - 2)*el_vol_internal_nodes
+    mesh.conn              = KernelAbstractions.zeros(backend,TInt, Int64(mesh.nelem), Int64(mesh.npoin_el))
+    mesh.el_max            = KernelAbstractions.zeros(backend,TFloat, Int64(mesh.nelem), 3)
+    mesh.el_min            = KernelAbstractions.zeros(backend,TFloat, Int64(mesh.nelem), 3)
     #
     # Connectivity matrices
     #
@@ -493,11 +495,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.conn_unique_faces = get_face_nodes(model, FACE_flg) #faces --> 4 nodes
     mesh.conn_unique_edges = get_face_nodes(model, EDGE_flg) #edges --> 2 nodes
 
-    mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
+    mesh.cell_edge_ids     = get_faces(topology, mesh.nsd, 1)          #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
     mesh.cell_face_ids     = get_faces(topology, mesh.nsd, mesh.nsd-1) #face map from local to global numbering i.e. iface_g = cell_face_ids[1:NELEM][1:NFACE_EL]
-    mesh.face_edge_ids     = get_faces(topology,mesh.nsd-1, 1)
-    mesh.facet_cell_ids    = get_faces(topology,mesh.nsd-1, mesh.nsd)
-    # @info mesh.facet_cell_ids
+    mesh.face_edge_ids     = get_faces(topology, mesh.nsd-1, 1)
+    mesh.facet_cell_ids    = get_faces(topology, mesh.nsd-1, mesh.nsd)
+    
     mesh.edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
     
     #
@@ -692,7 +694,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #         
     add_high_order_nodes_volumes!(mesh, lgl, mesh.SD, elm2pelm)
 
-    
     for ip = mesh.npoin_linear+1:mesh.npoin
         mesh.x[ip] = mesh.x_ho[ip]
         mesh.y[ip] = mesh.y_ho[ip]
@@ -909,14 +910,21 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         end
         iedge_bdy = 1
         for iedge = 1:mesh.nedges #total nedges
+            
+            #mesh.edge_in_elem[iedge] = mesh.facet_cell_ids[iedge]
+            @info "iedge ", iedge, " belongs to element ", mesh.facet_cell_ids[iedge] #mesh.edge_in_elem[iedge]
+             for igl = 1:mesh.ngl
+                    @info "iedge " , iedge, " has points ", mesh.poin_in_edge[iedge, igl]
+             end
+            
             if isboundary_edge[iedge] == true
                 # if rank == 1
                 #     @info mesh.x[mesh.poin_in_edge[iedge, 1]], mesh.y[mesh.poin_in_edge[iedge, 1]]
                 # end
                 for igl = 1:mesh.ngl
                     mesh.poin_in_bdy_edge[iedge_bdy, igl] = mesh.poin_in_edge[iedge, igl]
-                    mesh.bdy_edge_type[iedge_bdy] = mesh.edge_type[iedge]
-                    mesh.bdy_edge_in_elem[iedge_bdy] = mesh.facet_cell_ids[iedge][1]
+                    mesh.bdy_edge_type[iedge_bdy]         = mesh.edge_type[iedge]
+                    mesh.bdy_edge_in_elem[iedge_bdy]      = mesh.facet_cell_ids[iedge][1]
                     # if (size(mesh.facet_cell_ids[iedge],1) ≠ 1)
                     #     s = """
                     #     Check boundary elements! size(mesh.facet_cell_ids[iedge],1) ≠ 1 

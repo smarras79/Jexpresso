@@ -508,12 +508,29 @@ end
 
 function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
     
-    #u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+
+    ngl   = params.mesh.ngl
+    npoin = params.mesh.npoin
+    nelem = params.mesh.nelem
+    neqs  = params.neqs
     
+    D     = zeros(Float64, ngl, ngl)
+    uilgl = zeros(Float64, neqs, ngl, nelem)
+
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
-    for iel=1:params.mesh.nelem
-        
-        for i=1:params.mesh.ngl
+
+    for iel=1:nelem   
+        for i=1:ngl
+            ip = connijk[iel,i,1]
+            
+            uilgl[1:neqs,i,iel] .= params.uaux[ip,1:neqs]
+        end
+    end
+    
+    
+    for iel=1:nelem   
+        for i=1:ngl
             ip = connijk[iel,i,1]
             
             user_primitives!(@view(params.uaux[ip,:]),
@@ -536,13 +553,32 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                              neqs=params.neqs, x=coords[ip,1], y=0.0, xmax=xmax,xmin=xmin)
             end
         end
-        
-        _expansion_inviscid!(u, params.neqs, params.mesh.ngl,
-                             params.basis.dψ, params.ω,
-                             params.F, params.S,
-                             params.rhs_el,
-                             iel, params.CL, params.QT, SD, params.AD)
-        
+
+        lkep = true
+        if !lkep
+            _expansion_inviscid!(u, params.neqs, ngl,
+                                 params.basis.dψ, params.ω,
+                                 params.F, params.S,
+                                 params.rhs_el,
+                                 iel, params.CL, params.QT, SD, params.AD)
+        else
+
+            
+            D = build_differentiation_matrix(SD,
+                                             params.basis.ψ, params.basis.dψ, params.ω,
+                                             params.mesh,
+                                             ngl-1,
+                                             ngl-1,
+                                             Float64)
+            #print_matrix(D) #seems ok
+            
+            _expansion_inviscid_KEP!(@view(uilgl[iel,:,:]),
+                                     params.neqs, ngl, params.mesh.nelem,
+                                     params.basis.ψ, params.basis.dψ, params.ω,
+                                     params.F, params.S, D, 
+                                     params.rhs_el,
+                                     iel, params.CL, params.QT, SD, params.AD)
+        end
     end
 end
 
@@ -874,7 +910,7 @@ function _expansion_inviscid!(u, neqs, ngl,
                               F, S,
                               rhs_el,
                               iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
-    
+
     for ieq = 1:neqs
         for i=1:ngl
             dFdξ = 0.0
@@ -884,6 +920,48 @@ function _expansion_inviscid!(u, neqs, ngl,
             rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*S[i,ieq]
         end
     end
+end
+
+
+function _expansion_inviscid_KEP!(u, neqs, ngl, nelem,
+                                  ψ, dψ, ω,
+                                  F, S, D,
+                                  rhs_el,
+                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+
+    
+    
+   # for ieq = 1:neqs
+   #     for i=1:ngl
+   #         dFdξ = 0.0
+   #         for k = 1:ngl
+   #             dFdξ += dψ[k,i]*F[k,ieq]
+   #         end
+   #         rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*S[i,ieq]
+   #     end
+   # end
+
+    for ilgl = 1:ngl
+        
+        #for i in axes(du, 2)
+	u_i = SVector(u[1, i], u[2, i], u[3, i])
+	du_i = zero(u_i)
+	
+	for j in axes(du, 2)
+	    u_j = SVector(u[1, j], u[2, j], u[3, j])
+
+	    direction = 1 # x direction
+	     f = volume_flux(u_i, u_j, direction, equations)
+            # f = user_flux(u_j) #standard strong form CG
+	    du_i += 2 * D[i, j] * f
+	end
+
+	du[1, i] = du_i[1]
+	du[2, i] = du_i[2]
+	du[3, i] = du_i[3]
+    end
+
+    
 end
 
 
@@ -2420,4 +2498,32 @@ function saturation_adjustment(uaux, qe, z, connijk, nelem, ngl, neqs, thermo_pa
             end
         end
     end
+end
+
+@inline function flux_ranocha(u_ll, u_rr, orientation::Integer,
+                              equations::CompressibleEulerEquations1D)
+    # Unpack left and right state
+    rho_ll, v1_ll, p_ll = cons2prim(u_ll, equations)
+    rho_rr, v1_rr, p_rr = cons2prim(u_rr, equations)
+    params.uprimitive[i,:]
+
+    # Compute the necessary mean values
+    rho_mean = ln_mean(rho_ll, rho_rr)
+    # Algebraically equivalent to `inv_ln_mean(rho_ll / p_ll, rho_rr / p_rr)`
+    # in exact arithmetic since
+    #     log((ϱₗ/pₗ) / (ϱᵣ/pᵣ)) / (ϱₗ/pₗ - ϱᵣ/pᵣ)
+    #   = pₗ pᵣ log((ϱₗ pᵣ) / (ϱᵣ pₗ)) / (ϱₗ pᵣ - ϱᵣ pₗ)
+    inv_rho_p_mean = p_ll * p_rr * inv_ln_mean(rho_ll * p_rr, rho_rr * p_ll)
+    v1_avg = 0.5f0 * (v1_ll + v1_rr)
+    p_avg = 0.5f0 * (p_ll + p_rr)
+    velocity_square_avg = 0.5f0 * (v1_ll * v1_rr)
+    
+    # Calculate fluxes
+    # Ignore orientation since it is always "1" in 1D
+    f1 = rho_mean * v1_avg
+    f2 = f1 * v1_avg + p_avg
+    f3 = f1 * (velocity_square_avg + inv_rho_p_mean * equations.inv_gamma_minus_one) +
+         0.5f0 * (p_ll * v1_rr + p_rr * v1_ll)
+
+    return SVector(f1, f2, f3)
 end
