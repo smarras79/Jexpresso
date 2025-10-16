@@ -645,7 +645,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 wθ[iface,i,j,1] = 0.0
                                 #@info z_sfc, τ_f[iface, i,j,1], τ_f[iface, i,j,2]
                                 F_surf[i,j,2] = τ_f[iface, i,j,1] #-0.5
-                                F_surf[i,j,3] = 0.0 #τ_f[iface, i,j,2] #0.0
+                                F_surf[i,j,3] = τ_f[iface, i,j,2] #0.0
                                 F_surf[i,j,5] = 0.12
                                 
                                 #=user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],

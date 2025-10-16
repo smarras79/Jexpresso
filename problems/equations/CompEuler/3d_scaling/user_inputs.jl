@@ -4,13 +4,13 @@ function user_inputs()
     # User define your inputs below: the order doesn't matter
     #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.01,
+        :Δt                   => 0.1,
         :tinit                => 0.0,
-        :tend                 => 1.0,
+        :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
-        :diagnostics_at_times => (1.0),
-        # :diagnostics_at_times => (5, 100:100:1000...),        
+	#:diagnostics_at_times => (1.0),
+         :diagnostics_at_times => (0:5:1000),
         :lsource              => true,
         #---------------------------------------------------------------------------
         # restart options
@@ -26,19 +26,19 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 8,      # Polynomial order
+        :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         #:lwall_model          => true,
         :lvisc                => false, #false by default
-        :visc_model           => AV(), #VREM(), #SMAG(),
-        # :visc_model           => SMAG(),
+        #:visc_model           => AV(), #VREM(), #SMAG(),
+        :visc_model           => SMAG(),
         #:visc_model           => VREM(),
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587],
-        :μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],
-        # :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        #:μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],
+         :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output/",
+        :output_dir          => "/scratch/smarras/hw59/scaling/",
         :loverwrite_output   => true,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

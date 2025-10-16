@@ -147,7 +147,6 @@ function warp_mesh_3D!(mesh,inputs)
         ztop = mesh.zmax
         am = mesh.xmax - mesh.xmin
       	hm = inputs[:h_mount]
-        xc = inputs[:c_mount]
         for ip = 1:mesh.npoin
             x = mesh.x[ip]
             zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*x/am))
