@@ -1150,7 +1150,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                             s = """
                             Check boundary elements! size(mesh.facet_cell_ids[iface],1) ≠ 1 
                                 """
-                            @info iface_bdy, iface, mesh.x[mesh.poin_in_face[iface, igl,jgl]], mesh.y[mesh.poin_in_face[iface, igl,jgl]], mesh.z[mesh.poin_in_face[iface, igl,jgl]]
+                            @info iface_bdy, mesh.face_type[iface], mesh.x[mesh.poin_in_face[iface, igl,jgl]], mesh.y[mesh.poin_in_face[iface, igl,jgl]], mesh.z[mesh.poin_in_face[iface, igl,jgl]]
                             @error s
                         end
                         # @info "face point number", mesh.poin_in_face[iface,igl,jgl],iface,igl,jgl
@@ -1397,6 +1397,54 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #end 
 end
 
+
+function find_gip_owner_v1(a)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    size = MPI.Comm_size(comm)
+    
+    # Gather all elements from all ranks to rank 0
+    all_elements = MPI.gather(a, comm)
+    
+    if rank == 0
+        # Flatten the gathered list
+        flat_elements = vcat(all_elements...)
+        # all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
+        all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
+
+        # Create a dictionary to store the smallest rank for each element
+        element_owner_map = Dict{Int, Int}()
+        ownership_counts  = zeros(Int64, size)
+        for i in 1:length(flat_elements)
+            el = flat_elements[i]
+            owner = all_owners[i]
+            if !haskey(element_owner_map, el)
+                element_owner_map[el] = owner
+            else
+                # Conflict: element already seen on another rank
+                # Choose the rank with fewer owned elements
+                current_owner = element_owner_map[el]
+                if ownership_counts[owner] < ownership_counts[current_owner]
+                    element_owner_map[el] = owner
+                end
+                ownership_counts[element_owner_map[el]] += 1
+            end
+        end
+        # Map the owners back to the original elements in each rank's vector
+        all_owners_result = [element_owner_map[el] for el in flat_elements]
+        
+        # Split the ownership result according to the original vectors
+        chunked_owners = [all_owners_result[sum(length.(all_elements)[1:i-1])+1:sum(length.(all_elements)[1:i])] for i in 1:size]
+    else
+        chunked_owners = nothing
+    end
+
+    # Scatter the ownership chunks back to all ranks
+    element_owners = MPI.scatter(chunked_owners, comm)
+
+    return element_owners
+    
+end
 
 function find_gip_owner(a)
     comm = MPI.COMM_WORLD
