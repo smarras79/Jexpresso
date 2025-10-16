@@ -4,15 +4,15 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.02, #0.065,
+        :Δt                   => 0.045,
         :tinit                => 0.0,
         :tend                 => 10800.0,
-	#:lrestart             => false,
+	:lrestart             => false,
 	#:restart_output_file_path => "",
-	:restart_time         => 10800,
-	:diagnostics_at_times => (0.0:5.0:10800.0),
+	#:restart_time         => 10800,
+	:diagnostics_at_times => (0:5:10800.0),
         :lsource              => true,
-        :sounding_file        => "./data_files/input_sounding_teamx_u10_ridge100_noheader.dat",
+        :sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge100_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -36,15 +36,25 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
-        #---------------------------------------------------------------------------
-	# Mountain
-        #---------------------------------------------------------------------------
-	:lwarp => true,
-	:mount_type => "LESICP",
-	:h_mount => 1000.0,
-	:a_mount => 10240.0,
+        :gmsh_filename_c  => "./meshes/gmsh_grids/scaling_32x32x32.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
+	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
+
+        # Warping:
+        :lwarp => true,
+        :mount_type => "LESICP",
+        :h_mount => 100.0,
+        :a_mount => 10240.0,
+
+        # Stretching factors:
+        :lstretch => false,
+        :stretch_factor => 1.15,
+        :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
+        :first_zelement_size => 10.0,
+        :zlevel_transition => 2000.0,
+        
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -56,13 +66,14 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP4",
+        :output_dir          => "/scratch/smarras/smarras/output/LESICP4_scaling-8nodes-64x32x36_10kmX10kmX3km/",
+        #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => true,
+        :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
