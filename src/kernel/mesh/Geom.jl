@@ -216,7 +216,7 @@ function get_vals(crd::CyclingReverseDict, key::Int; all = false, first = false,
 end
 
 # for non-periodic only
-mutable struct AssemblerCache_v3
+mutable struct AssemblerCache
     # Index communication buffers
     recv_idx_buffers::Vector{Vector{Int}}
     # combined_recv_idx::Vector{Int}
@@ -237,9 +237,9 @@ mutable struct AssemblerCache_v3
     requests_back::MPI.MultiRequest
 end
 
-function setup_assembler_v3(SD, a, index_a, owner_a)
+function setup_assembler(SD, a, index_a, owner_a)
 
-    # if SD == NSD_1D() return nothing end
+    if SD == NSD_1D() return nothing end
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
@@ -387,14 +387,14 @@ function setup_assembler_v3(SD, a, index_a, owner_a)
     n_req = sum(send_data_sizes .> 0) + sum(recv_data_sizes .> 0)
     n_req_back = sum(recv_data_sizes .> 0) + sum(send_data_sizes .> 0)
 
-    return AssemblerCache_v3( recv_idx_buffers, recvback_idx_buffers,
+    return AssemblerCache( recv_idx_buffers, recvback_idx_buffers,
             send_i,send_data_buffers,recv_data_buffers, send_data_sizes, recv_data_sizes,
             MPI.MultiRequest(n_req),
             MPI.MultiRequest(n_req_back))
 end
 
 
-function assemble_mpi_v3!(a, cache::AssemblerCache_v3)
+function assemble_mpi!(a, cache::AssemblerCache)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
