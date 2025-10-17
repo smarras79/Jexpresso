@@ -287,6 +287,22 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, Î
                 metrics.Jef[iedge, k] = Jef_val
                 metrics.nx[iedge, k] = dy * mag_inv
                 metrics.ny[iedge, k] = -dx * mag_inv
+                e = mesh.bdy_edge_in_elem[iedge]
+                idx1 = 0
+                idx2 = 0
+                for j=1:N+1
+                    for i=1:N+1
+                        if (mesh.connijk[e,i,j] == ip)
+                            idx1 = i
+                            idx2 = j
+                        end
+                    end
+                end
+                if (idx1 + metrics.nx[iedge, k] < 1 || idx1 + metrics.nx[iedge, k] > N+1 || idx2 + metrics.ny[iedge, k] < 1 || idx2 + metrics.ny[iedge, k] > N+1)
+                    metrics.nx[iedge, k] = - metrics.nx[iedge, k]
+                    metrics.ny[iedge, k] = - metrics.ny[iedge, k]
+                end
+
             end
         end
     else
@@ -563,6 +579,26 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, Î
                 nx_face[i, j] = nx_comp * norm_inv
                 ny_face[i, j] = ny_comp * norm_inv
                 nz_face[i, j] = nz_comp * norm_inv
+                e = mesh.bdy_face_in_elem[iface]
+                idx1 = 0
+                idx2 = 0
+                idx3 = 0
+                for o=1:mesh.ngl
+                    for n=1:mesh.ngl
+                        for m=1:mesh.ngl
+                            if (mesh.connijk[e,m,n,o] == ip)
+                                    idx1 = m
+                                    idx2 = n
+                                    idx3 = o
+                            end
+                        end
+                    end
+                end
+                if (idx1 + metrics.nx[iface, i, j] < 1 || idx1 + metrics.nx[iface, i, j] > N+1 || idx2 + metrics.ny[iface, i, j] < 1 || idx2 + metrics.ny[iface, i, j] > N+1 || idx3 + metrics.nz[iface, i, j] < 1 || idx3 + metrics.nz[iface, i, j] > N+1)
+                    metrics.nx[iface, i, j] = - metrics.nx[iface, i, j]
+                    metrics.ny[iface, i, j] = - metrics.ny[iface, i, j]
+                    metrics.nz[iface, i, j] = - metrics.nz[iface, i, j] 
+                end
             end
         end
     else
