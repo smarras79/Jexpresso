@@ -10,7 +10,7 @@ function user_inputs()
 	:lrestart             => false,
 	#:restart_output_file_path => "",
 	#:restart_time         => 10800,
-	:diagnostics_at_times => (0.0:5.0:10800.0),
+	:diagnostics_at_times => (0.0:0.2:10800.0),
         :lsource              => true,
         :sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
@@ -37,7 +37,8 @@ function user_inputs()
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
         #:gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/",
 
         # Warping:
         :lwarp => false,
