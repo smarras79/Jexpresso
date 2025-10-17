@@ -535,7 +535,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, Î
                 # More efficient neighbor point determination
                 i_neighbor = (i < N1) ? i + 1 : i - 1
                 j_neighbor = (j < N1) ? j + 1 : j - 1
-                
+                ip = poin_face[i,j]
                 ip1 = poin_face[i_neighbor, j]
                 ip2 = poin_face[i, j_neighbor]
                 
