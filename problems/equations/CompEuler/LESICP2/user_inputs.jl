@@ -4,13 +4,13 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.04,
+        :Δt                   => 0.05,
         :tinit                => 0.0,
         :tend                 => 10800.0,
-	:lrestart             => false,
+	:lrestart             => true,
 	#:restart_output_file_path => "",
-	#:restart_time         => 10800,
-	:diagnostics_at_times => (0:5:10800.0),
+	:restart_time         => 1000,
+	:diagnostics_at_times => (1200:100:10800.0),
         :lsource              => true,
         :sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
         #---------------------------------------------------------------------------
@@ -36,11 +36,42 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename_c  => "./meshes/gmsh_grids/scaling_32x32x32.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
+	:gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
+
+        # Warping:
+        :lwarp => false,
+        :mount_type => "agnesi",
+        :a_mount => 4000.0,
+        :h_mount => 1000.0,
+        :c_mount => 5000.0,
+        :lsource              => true,
+        :sounding_file        => "./data_files/input_sounding_teamx_u10_flat_noheader.dat",
+        #---------------------------------------------------------------------------
+        #Integration and quadrature properties
+        #---------------------------------------------------------------------------
+        :interpolation_nodes  =>"lgl",
+        :nop                  => 4,      # Polynomial order
+        #---------------------------------------------------------------------------
+        # Physical parameters/constants:
+        #---------------------------------------------------------------------------
+        :lwall_model          => true,
+        :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
+        :bdy_fluxes           => true,
+        :lvisc                => true, #false by default
+        #visc_model           => VREM(),
+	:visc_model           => SMAG(),
+        #:visc_model           => AV(),
+        # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
+        #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 10, 10, 10, 15], #horizontal viscosity constant for momentum
+        #---------------------------------------------------------------------------
+        # Mesh paramters and files:
+        #---------------------------------------------------------------------------
+	:lwarmup          => true,
+        :lread_gmsh       => true, #If false, a 1D problem will be enforced
+	:gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
 
         # Warping:
         :lwarp => false,
@@ -67,8 +98,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP2_scaling-8nodes-64x32x36_10kmX10kmX3km-SMAGO/",
-        #:output_dir          => "./output",
+        :output_dir          => "/scratch/smarras/smarras/output/LESICP2_scaling-8nodes-64x64x36_10kmX10kmX3km-SMAGO/",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
