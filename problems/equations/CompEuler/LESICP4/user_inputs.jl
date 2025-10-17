@@ -4,12 +4,12 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.045,
+        :Δt                   => 0.05,
         :tinit                => 0.0,
         :tend                 => 10800.0,
 	:lrestart             => false,
 	#:restart_output_file_path => "",
-	#:restart_time         => 10800,
+	:restart_time         => 250,
 	:diagnostics_at_times => (0:5:10800.0),
         :lsource              => true,
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge100_noheader.dat",
@@ -36,7 +36,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename_c  => "./meshes/gmsh_grids/scaling_32x32x32.msh",
+        :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
 	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
