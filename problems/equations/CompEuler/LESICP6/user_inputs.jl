@@ -10,7 +10,7 @@ function user_inputs()
 	:lrestart             => false,
 	#:restart_output_file_path => "",
 	#:restart_time         => 10800,
-	:diagnostics_at_times => (500:5:10800.0),
+	:diagnostics_at_times => (0:1:10800.0),
         :lsource              => true,
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge1000_noheader.dat",
         #---------------------------------------------------------------------------
@@ -34,13 +34,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-	:lwarmup          => true,
+	:lwarmup          => false,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
         :gmsh_filename_c  => "./meshes/gmsh_grids/scaling_32x32x32.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
+	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
 
         # Warping:
         :lwarp => true,
@@ -66,8 +66,8 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP6_scaling-8nodes-64x32x36_10kmX10kmX3km/",
-        #:output_dir          => "./output",
+        #:output_dir          => "/scratch/smarras/smarras/output/LESICP6_scaling-8nodes-64x32x36_10kmX10kmX3km/",
+        :output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
