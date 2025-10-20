@@ -1005,18 +1005,18 @@ function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, 
     
 end
 
-function DSS_global_normals!(nx, ny, nz, mesh, pM, SD::NSD_1D) nothing end
+function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_1D) nothing end
 
-function DSS_global_normals!(nx, ny, nz, mesh, pM, SD::NSD_2D) nothing end
+function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D) nothing end
 
-function DSS_global_normals!(nx, ny, nz, mesh, pM, SD::NSD_3D)
+function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
 
     normals = zeros(Float64, mesh.npoin, 4)
 
     @inbounds for iface = 1:mesh.nfaces_bdy
 
         poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
-        for j = 1:ngl, i = 1:ngl
+        for j = 1:mesh.ngl, i = 1:mesh.ngl
             ip = poin_face[i, j]
 
             normals[ip, 1] += nx[iface, i, j]
@@ -1026,14 +1026,15 @@ function DSS_global_normals!(nx, ny, nz, mesh, pM, SD::NSD_3D)
         end
     end
 
+    pM = setup_assembler(sem.mesh.SD, normals, sem.mesh.ip2gip, sem.mesh.gip2owner)
     if pM != nothing
         assemble_mpi!(@view(normals[:,:]),pM)
     end
-
+    
     @inbounds for iface = 1:mesh.nfaces_bdy
 
         poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
-        for j = 1:ngl, i = 1:ngl
+        for j = 1:mesh.ngl, i = 1:mesh.ngl
             ip = poin_face[i, j]
 
             nx[iface, i, j] = normals[ip, 1]/normals[ip, 4]
@@ -1207,7 +1208,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     
     pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
 
-    DSS_global_normals!(metrics.nx, metrics.ny, metrics.nz, mesh, pM, SD)
+    DSS_global_normals!(metrics.nx, metrics.ny, metrics.nz, mesh, SD)
     
     if (inputs[:ladapt] == true)
         @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
