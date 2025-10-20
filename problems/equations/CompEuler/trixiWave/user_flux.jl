@@ -5,31 +5,51 @@ function user_flux!(F, G, SD::NSD_1D,
                     ::CL, ::TOTAL; neqs=1, ip=1)
 
     PhysConst = PhysicalConst{Float64}()
-    
+
     ρ  = q[1]
     ρu = q[2]
     ρE = q[3]
     E  = ρE/ρ
     u  = ρu/ρ
-    
+
     Temp = (E - 0.5*u*u)/PhysConst.cv
     Press = perfectGasLaw_ρTtoP(PhysConst; ρ=ρ, Temp=Temp)
-    
+
     #@info " FLUX USER: " Temp Press ρ
     F[1] = ρu
     F[2] = ρu*u + Press
     F[3] = ρE*u + Press*u
-    
+
+end
+
+function flux(q)
+    PhysConst = PhysicalConst{Float64}()
+
+    ρ  = q[1]
+    ρu = q[2]
+    ρE = q[3]
+    E  = ρE/ρ
+    u  = ρu/ρ
+
+    Temp = (E - 0.5*u*u)/PhysConst.cv
+    Press = perfectGasLaw_ρTtoP(PhysConst; ρ=ρ, Temp=Temp)
+
+    #@info " FLUX USER: " Temp Press ρ
+    return SVector(ρu,
+            ρu*u + Press,
+            ρE*u + Press*u)
 end
 
 function user_volume_flux(u_ll, u_rr)
          flux_ranocha(u_ll, u_rr)
         # flux_kennedy_gruber(u_ll, u_rr)
         # flux_chandrashekar(u_ll, u_rr)
+        # flux_central(u_ll, u_rr)
 end
 
 function flux_ranocha(u_ll, u_rr)
-        PhysConst = PhysicalConst{Float64}()
+
+    PhysConst = PhysicalConst{Float64}()
 
     rho_ll, rho_v1_ll, rho_e_ll = u_ll
     rho_rr, rho_v1_rr, rho_e_rr = u_rr
@@ -61,6 +81,11 @@ function flux_ranocha(u_ll, u_rr)
          0.5f0 * (p_ll * v1_rr + p_rr * v1_ll)
 
     return SVector(f1, f2, f3)
+end
+
+function flux_central(u_ll, u_rr)
+
+    return 0.5f0 * (flux(u_ll) + flux(u_rr))
 end
 
 @inline function flux_kennedy_gruber(u_ll, u_rr)

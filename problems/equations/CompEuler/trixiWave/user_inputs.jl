@@ -6,15 +6,15 @@ function user_inputs()
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
         :ode_solver          => SSPRK54(),
-        :tend                 => 2.0,
-        :Δt                   => 1.0e-4,
+        :tend                 => 0.4,
+        :Δt                   => 1.6781e-02,
         :diagnostics_at_times => (0:0.1:2.0),
         :output_dir          => "./",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 4,     # Polynomial order
+        :nop                 => 3,     # Polynomial order
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
         #---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :xmin          => -2.0,
         :xmax          => 2.0,
-        :nelx          =>  20,
+        :nelx          =>  33,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
