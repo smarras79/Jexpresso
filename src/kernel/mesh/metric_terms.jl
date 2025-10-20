@@ -380,7 +380,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 # Precompute basis function values for current (i,j,k)
                 @simd for idx = 1:Q1
                     temp_basis[idx, 1] = dψ[i, idx]  # dψ_i
-                    temp_basis[idx, 2] = ψ[j, idx]   # ψ_j  
+                    temp_basis[idx, 2] =  ψ[j, idx]  # ψ_j  
                     temp_basis[idx, 3] = dψ[j, idx]  # dψ_j
                 end
                 
@@ -418,7 +418,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
             
             # Optimized Jacobian calculations with better memory access
-            Je_iel = @view metrics.Je[iel, :, :, :]
+            Je_iel   = @view metrics.Je[iel, :, :, :]
             dξdx_iel = @view metrics.dξdx[iel, :, :, :]
             dξdy_iel = @view metrics.dξdy[iel, :, :, :]
             dξdz_iel = @view metrics.dξdz[iel, :, :, :]
