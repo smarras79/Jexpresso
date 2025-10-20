@@ -1026,7 +1026,7 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
         end
     end
 
-    pM = setup_assembler(sem.mesh.SD, normals, sem.mesh.ip2gip, sem.mesh.gip2owner)
+    pM = setup_assembler(mesh.SD, normals, mesh.ip2gip, mesh.gip2owner)
     if pM != nothing
         assemble_mpi!(@view(normals[:,:]),pM)
     end
