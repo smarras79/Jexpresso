@@ -647,14 +647,17 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 θ_inside = uaux[ip1,   5]/ρ
                                 θ_sfc    = uaux[ipsfc, 5]/ρ
                                 z_sfc    = coords[ipsfc, 3]
-                                z_inside = coords[ip1,   3]
-
-
+                                                                
+                                Δx = coords[ip1, 1] - coords[ipsfc, 1]
+                                Δy = coords[ip1, 2] - coords[ipsfc, 2]
+                                Δz = coords[ip1, 3] - coords[ipsfc, 3]
+                                z_inside = abs(Δx*nx + Δy*ny + Δz*nz) 
+                                
                                 CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside)
-                                #wθ[iface,i,j,1] = 0.0
-                                F_surf[i,j,2] = τ_f[iface, i,j,1] #-0.5
-                                F_surf[i,j,3] = τ_f[iface, i,j,2] #0.0
-                                F_surf[i,j,4] = τ_f[iface, i,j,3] #0.0
+                                
+                                F_surf[i,j,2] = τ_f[iface,i,j,1]
+                                F_surf[i,j,3] = τ_f[iface,i,j,2]
+                                F_surf[i,j,4] = τ_f[iface,i,j,3]
                                 F_surf[i,j,5] = 0.12
                                 
                             else

@@ -10,7 +10,7 @@ function user_inputs()
 	:lrestart             => false,
 	#:restart_output_file_path => "",
 	:restart_time         => 250,
-	:diagnostics_at_times => (0:5:10800.0),
+	:diagnostics_at_times => (0:1:10800.0),
         :lsource              => true,
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge1000_noheader.dat",
         #---------------------------------------------------------------------------
@@ -27,8 +27,6 @@ function user_inputs()
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
         #:visc_model           => AV(),
-        :ivisc_equations      => [1, 2, 3, 4, 5],
-        # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
         :μ                    => [0.0, 10, 10, 10, 15], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
@@ -40,7 +38,6 @@ function user_inputs()
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
 	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
 
         # Warping:
         :lwarp => true,

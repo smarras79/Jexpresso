@@ -4,12 +4,12 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.05,
+        :Δt                   => 0.04,
         :tinit                => 0.0,
         :tend                 => 10800.0,
 	:lrestart             => false,
 	#:restart_output_file_path => "",
-	:restart_time         => 250,
+	:restart_time         => 7500,
 	:diagnostics_at_times => (0:5:10800.0),
         :lsource              => true,
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge100_noheader.dat",
