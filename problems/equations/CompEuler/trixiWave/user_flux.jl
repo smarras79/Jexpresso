@@ -22,11 +22,15 @@ function user_flux!(F, G, SD::NSD_1D,
     
 end
 
-## Ranocha flux
 function user_volume_flux(u_ll, u_rr)
-    # Unpack left and right state
+        # flux_ranocha(u_ll, u_rr)
+        # flux_kennedy_gruber(u_ll, u_rr)
+        flux_chandrashekar(u_ll, u_rr)
+end
 
-    PhysConst = PhysicalConst{Float64}()
+function flux_ranocha(u_ll, u_rr)
+
+        PhysConst = PhysicalConst{Float64}()
 
     rho_ll, rho_v1_ll, rho_e_ll = u_ll
     rho_rr, rho_v1_rr, rho_e_rr = u_rr
@@ -58,7 +62,71 @@ function user_volume_flux(u_ll, u_rr)
          0.5f0 * (p_ll * v1_rr + p_rr * v1_ll)
 
     return SVector(f1, f2, f3)
+end
 
+@inline function flux_kennedy_gruber(u_ll, u_rr)
+    PhysConst = PhysicalConst{Float64}()
+
+    rho_ll, rho_v1_ll, rho_e_ll = u_ll
+    rho_rr, rho_v1_rr, rho_e_rr = u_rr
+    v1_ll = rho_v1_ll/rho_ll
+    v1_rr = rho_v1_rr/rho_rr
+
+    Temp_ll = (rho_e_ll/rho_ll - 0.5*v1_ll*v1_ll)/PhysConst.cv
+    Temp_rr = (rho_e_rr/rho_rr - 0.5*v1_rr*v1_rr)/PhysConst.cv
+
+    p_ll = perfectGasLaw_ρTtoP(PhysConst; ρ=rho_ll, Temp=Temp_ll)
+    p_rr = perfectGasLaw_ρTtoP(PhysConst; ρ=rho_rr, Temp=Temp_rr)
+
+    # Average each factor of products in flux
+    rho_avg = 0.5f0 * (rho_ll + rho_rr)
+    v1_avg = 0.5f0 * (v1_ll + v1_rr)
+    p_avg = 0.5f0 * (p_ll + p_rr)
+    e_avg = 0.5f0 * (rho_e_ll / rho_ll + rho_e_rr / rho_rr)
+
+    # Ignore orientation since it is always "1" in 1D
+    f1 = rho_avg * v1_avg
+    f2 = rho_avg * v1_avg * v1_avg + p_avg
+    f3 = (rho_avg * e_avg + p_avg) * v1_avg
+
+    return SVector(f1, f2, f3)
+end
+
+@inline function flux_chandrashekar(u_ll, u_rr)
+    PhysConst = PhysicalConst{Float64}()
+
+    rho_ll, rho_v1_ll, rho_e_ll = u_ll
+    rho_rr, rho_v1_rr, rho_e_rr = u_rr
+    v1_ll = rho_v1_ll/rho_ll
+    v1_rr = rho_v1_rr/rho_rr
+
+    Temp_ll = (rho_e_ll/rho_ll - 0.5*v1_ll*v1_ll)/PhysConst.cv
+    Temp_rr = (rho_e_rr/rho_rr - 0.5*v1_rr*v1_rr)/PhysConst.cv
+
+    p_ll = perfectGasLaw_ρTtoP(PhysConst; ρ=rho_ll, Temp=Temp_ll)
+    p_rr = perfectGasLaw_ρTtoP(PhysConst; ρ=rho_rr, Temp=Temp_rr)
+    beta_ll = 0.5f0 * rho_ll / p_ll
+    beta_rr = 0.5f0 * rho_rr / p_rr
+    specific_kin_ll = 0.5f0 * (v1_ll^2)
+    specific_kin_rr = 0.5f0 * (v1_rr^2)
+
+    # Compute the necessary mean values
+    rho_avg = 0.5f0 * (rho_ll + rho_rr)
+    rho_mean = ln_mean(rho_ll, rho_rr)
+    beta_mean = ln_mean(beta_ll, beta_rr)
+    beta_avg = 0.5f0 * (beta_ll + beta_rr)
+    v1_avg = 0.5f0 * (v1_ll + v1_rr)
+    p_mean = 0.5f0 * rho_avg / beta_avg
+    velocity_square_avg = specific_kin_ll + specific_kin_rr
+
+    # Calculate fluxes
+    # Ignore orientation since it is always "1" in 1D
+    f1 = rho_mean * v1_avg
+    f2 = f1 * v1_avg + p_mean
+    f3 = f1 * 0.5f0 * (1 / (PhysConst.cp/PhysConst.cv - 1) / beta_mean - velocity_square_avg) +
+         f2 * v1_avg
+
+    return SVector(f1, f2, f3)
 end
 
 ## Functions from Trixi.jl
