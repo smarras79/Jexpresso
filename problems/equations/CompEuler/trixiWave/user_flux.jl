@@ -23,13 +23,12 @@ function user_flux!(F, G, SD::NSD_1D,
 end
 
 function user_volume_flux(u_ll, u_rr)
-        # flux_ranocha(u_ll, u_rr)
+         flux_ranocha(u_ll, u_rr)
         # flux_kennedy_gruber(u_ll, u_rr)
-        flux_chandrashekar(u_ll, u_rr)
+        # flux_chandrashekar(u_ll, u_rr)
 end
 
 function flux_ranocha(u_ll, u_rr)
-
         PhysConst = PhysicalConst{Float64}()
 
     rho_ll, rho_v1_ll, rho_e_ll = u_ll
@@ -161,4 +160,33 @@ end
     else
         return log(y / x) / (y - x)
     end
+end
+
+@inline function cons2entropy(u)
+    PhysConst = PhysicalConst{Float64}()
+    rho, rho_v1, rho_e = u
+    gamma = PhysConst.cp/PhysConst.cv
+    v1 = rho_v1 / rho
+    v_square = v1^2
+    p = (gamma- 1) * (rho_e - 0.5f0 * rho * v_square)
+    s = log(p) - gamma * log(rho)
+    rho_p = rho / p
+
+    w1 = (gamma - s) * 1/(gamma-1) -
+         0.5f0 * rho_p * v_square
+    w2 = rho_p * v1
+    w3 = -rho_p
+
+    return SVector(w1, w2, w3)
+end
+
+@inline function entropy_thermodynamic(cons)
+    PhysConst = PhysicalConst{Float64}()
+    gamma = PhysConst.cp/PhysConst.cv
+    p = (gamma - 1) * (cons[3] - 0.5f0 * (cons[2]^2) / cons[1])
+
+    # Thermodynamic entropy
+    s = log(p) - gamma * log(cons[1])
+
+    return s
 end

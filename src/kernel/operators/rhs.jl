@@ -565,6 +565,11 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=coords[ip,1], y=0.0, xmax=xmax,xmin=xmin)
             end
+         #   @show params.M[ip]
+         #   @show size(params.M)
+         #   @show size(params.uaux[ip,:])
+
+
         end
 
         lkep = true
@@ -576,7 +581,6 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                                  iel, params.CL, params.QT, SD, params.AD)
         else
 
-            
             D = build_differentiation_matrix(SD,
                                              params.basis.ψ, params.basis.dψ, params.ω,
                                              params.mesh,
@@ -592,6 +596,17 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
             
         end
     end
+
+        entropy_integral = 0.0
+        for iel = 1:nelem
+            for i = 1:ngl
+                ip = connijk[iel,i,1]
+                integral = params.M[ip] * entropy_thermodynamic(params.uaux[ip,:])
+                #integral = params.ω[i] * entropy_thermodynamic(params.uaux[ip,:])
+                entropy_integral += + integral
+            end
+        end
+        @show abs(entropy_integral)
 end
 
 function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
