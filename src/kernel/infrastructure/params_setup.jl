@@ -254,6 +254,9 @@ function params_setup(sem,
         visc_coeff = KernelAbstractions.allocate(backend, TFloat, 1)
         visc_coeff = [0.0]
     end
+
+    # setup timer
+    # timers = create_timer_dict(["DSS_global_RHS!", "inviscid_rhs_el!", "viscous_rhs_el!", "_build_rhs!"], comm; skip_first_n=10)
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------

@@ -1015,6 +1015,12 @@ function DSS_global_RHS!(RHS, pM, neqs)
     
 end
 
+function DSS_global_RHS_pvector!(RHS, pM, neqs)
+    for i = 1:neqs
+       DSS_global_RHS_v0!(@view(RHS[:,i]), pM)
+    end
+end
+
 function DSS_global_RHS_v0!(M, pM)
     # # @info ip2gip
 
@@ -1057,6 +1063,41 @@ function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
     return pM
     
 end
+
+function DSS_global_mass_pvector!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+    # @info ip2gip
+    row_partition = map(parts) do part
+        row_partition = LocalIndices(gnpoin,part,ip2gip,gip2owner)
+        # gM = M
+        row_partition
+    end
+    pM = pvector(values->@view(M[:]), row_partition)
+    # map(parts,local_values(pM)) do part,values
+    #     # if part == 1
+    #         @info values
+    # #     end
+    # end
+
+    # map(partition(pM),row_partition) do values, indices
+    #     local_index_to_owner = local_to_owner(indices)
+    #     @info local_index_to_owner
+    #     # for lid in 1:length(local_index_to_owner)
+    #     #     owner = local_index_to_owner[lid]
+    #     #     @test values[lid] == 10*owner
+    #     # end
+    # end
+
+
+    assemble!(pM) |> wait
+    consistent!(pM) |> wait
+    M = map(local_values(pM)) do values
+        M = values
+        M
+    end
+    return pM
+end
+
+
 
 function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
                         ldss_laplace=false, ldss_differentiation=false, backend = CPU(), interp)
