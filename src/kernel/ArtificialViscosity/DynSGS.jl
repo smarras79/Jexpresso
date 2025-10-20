@@ -56,7 +56,15 @@ function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::ShallowWater, q, 
 
 end
 
-function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q2, rhs, Δt, mesh,metrics)
+function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q2, rhs, Δt, mesh, metrics, VT::DSGS) nothing end
+
+function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q2, rhs, Δt, mesh, metrics, VT::VREM) nothing end
+
+function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q2, rhs, Δt, mesh, metrics, VT::SMAG) nothing end
+
+function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q2, rhs, Δt, mesh, metrics, VT::WALE) nothing end
+
+function compute_viscosity!(μ::Vector{Float64}, ::NSD_1D, PT::AdvDiff, q, q1, q2, rhs, Δt, mesh, metrics, VT::DSGS)
 
     #compute domain averages
     ρ_avg  = 0.0
