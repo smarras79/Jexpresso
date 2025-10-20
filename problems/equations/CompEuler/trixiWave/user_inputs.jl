@@ -33,11 +33,11 @@ function user_inputs()
         :outformat         => "png", #choice: "png", "ascii" (default is ascii)
         :loverwrite_output => true,
         :output_dir        => "./output",
-        #:output_dir        => "./test/CI-ref/", 
+        #:output_dir        => "./test/CI-ref/",
         #---------------------------------------------------------------------------
         # 1D (lread_gmsh => faluse): the grid is built by jexpresso
         #---------------------------------------------------------------------------
-        :xmin          => 0.0,
+        :xmin          => -2.0,
         :xmax          => 2.0,
         :nelx          =>  20,
     ) #Dict
@@ -46,5 +46,5 @@ function user_inputs()
     #---------------------------------------------------------------------------
 
     return inputs
-    
+
 end
