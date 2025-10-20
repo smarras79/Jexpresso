@@ -372,7 +372,8 @@ function _build_rhs!(RHS, u, params, time)
     ymin    = params.mesh.ymin
     ymax    = params.mesh.ymax
     zmin    = params.mesh.zmin
-    zmax    = params.mesh.zmax    
+    zmax    = params.mesh.zmax
+    Δt      = params.Δt
 
     if SD == NSD_1D()
         comm = MPI.COMM_WORLD
@@ -405,7 +406,6 @@ function _build_rhs!(RHS, u, params, time)
     resetbdyfluxToZero!(params)
     apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
                                          params.mesh.coords,
-                                         #params.mesh.x, params.mesh.y, params.mesh.z, 
                                          params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
                                          params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
                                          params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
@@ -466,11 +466,13 @@ function _build_rhs!(RHS, u, params, time)
     if (params.inputs[:lvisc] == true)
         
         resetRHSToZero_viscous!(params, SD)
+            
+        #compute_viscosity!(params.μsgs, SD,
+        #                   params.uaux, params.qp.qnm1, params.qp.qnm2, @view(params.RHS[:,:]),
+        #                   Δt, params.mesh, params.metrics, VT)
         
         viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
-        # time_function!(params.timers["viscous_rhs_el!"], viscous_rhs_el!, u, params, params.mesh.connijk, params.qp.qe, SD)
         
-        # @info "start DSS_rhs_viscous"
         if inputs[:ladapt] == true
             DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk,
                                params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
@@ -498,10 +500,16 @@ function _build_rhs!(RHS, u, params, time)
     
     DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
     # time_function!(params.timers["DSS_global_RHS!"], DSS_global_RHS!, @view(params.RHS[:,:]), params.pM, params.neqs)
-
+    
+    #if (rem(time, Δt) == 0 && time > 0.0)
+    if (time > 0.0)
+        params.qp.qnm1 .= params.qp.qnm2
+        params.qp.qnm2 .= params.uaux
+    end
+    
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
-        # @info "ieq", ieq
+        
         if inputs[:ladapt] == true
             
             DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, selectdim(params.rhs_el, ndims(params.rhs_el), ieq), params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
@@ -942,7 +950,8 @@ function _expansion_inviscid_KEP!(u, neqs, ngl,
             
             for ieq = 1:neqs
                 # Average flux between points i and j
-                f_ij = 0.5 * (F[i, ieq] + F[j, ieq])
+                f_ij = 0.5 * (F[i, ieq] + F[j, ieq]) #Average point test towards two-point solition
+                #f_ij = F[i, ieq] #identical as usual  _expansion_inviscid!()
                 du_i[ieq] += 2.0 * dψ[j, i] * f_ij
             end
         end
@@ -953,31 +962,6 @@ function _expansion_inviscid_KEP!(u, neqs, ngl,
     end
 end
 
-function _expansion_inviscid_KEP_v1_working!(u, neqs, ngl,
-                                  dψ, ω,
-                                  F, S, D,
-                                  rhs_el, uilgl,
-                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
-    
-    for i = 1:ngl
-        
-        du_i = zeros(neqs)
-        
-        for j = 1:ngl
-            
-            # Use pre-computed flux at point j
-            # f_ij = F[j, :] for all equations
-            
-            for ieq = 1:neqs
-                du_i[ieq] += 2.0 * dψ[j, i] * F[j, ieq]
-            end
-        end
-        
-        for ieq = 1:neqs
-            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
-        end
-    end
-end
 
 function _expansion_inviscid_KEP_v0!(u, neqs, ngl,
                                      dψ, ω,
