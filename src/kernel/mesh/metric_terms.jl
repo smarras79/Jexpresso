@@ -499,8 +499,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 
                 @turbo for l = 1:ngl, k = 1:ngl
                     dψ_i_k = dψ[i, k]
-                    ψ_i_k = ψ[i, k]
-                    ψ_j_l = ψ[j, l]
+                    ψ_i_k  = ψ[i, k]
+                    ψ_j_l  = ψ[j, l]
                     dψ_j_l = dψ[j, l]
                     
                     a = dψ_i_k * ψ_j_l

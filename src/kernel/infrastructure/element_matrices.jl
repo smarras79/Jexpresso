@@ -1005,6 +1005,46 @@ function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, 
     
 end
 
+function DSS_global_normals!(nx, ny, nz, mesh, pM, SD::NSD_1D) nothing end
+
+function DSS_global_normals!(nx, ny, nz, mesh, pM, SD::NSD_2D) nothing end
+
+function DSS_global_normals!(nx, ny, nz, mesh, pM, SD::NSD_3D)
+
+    normals = zeros(Float64, mesh.npoin, 4)
+
+    @inbounds for iface = 1:mesh.nfaces_bdy
+
+        poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
+        for j = 1:ngl, i = 1:ngl
+            ip = poin_face[i, j]
+
+            normals[ip, 1] += nx[iface, i, j]
+            normals[ip, 2] += ny[iface, i, j]
+            normals[ip, 3] += nz[iface, i, j]
+            normals[ip, 4] += 1
+        end
+    end
+
+    if pM != nothing
+        assemble_mpi!(@view(normals[:,:]),pM)
+    end
+
+    @inbounds for iface = 1:mesh.nfaces_bdy
+
+        poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
+        for j = 1:ngl, i = 1:ngl
+            ip = poin_face[i, j]
+
+            nx[iface, i, j] = normals[ip, 1]/normals[ip, 4]
+            ny[iface, i, j] = normals[ip, 2]/normals[ip, 4]
+            nz[iface, i, j] = normals[ip, 3]/normals[ip, 4]
+            
+        end
+    end
+    
+end
+
 
 
 function DSS_global_RHS!(RHS, pM, neqs)
@@ -1058,7 +1098,7 @@ function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
     pM = setup_assembler(SD, M, ip2gip, gip2owner)
     #check_memory(" in sem_setup after setup_assembler.")
     
-    @time assemble_mpi!(M,pM)
+    assemble_mpi!(M,pM)
 
     return pM
     
@@ -1166,6 +1206,8 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     end
     
     pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+
+    DSS_global_normals!(metrics.nx, metrics.ny, metrics.nz, mesh, pM, SD)
     
     if (inputs[:ladapt] == true)
         @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
