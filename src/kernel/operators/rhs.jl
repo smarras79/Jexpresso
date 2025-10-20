@@ -542,9 +542,10 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                              @view(params.uprimitive[i,:]),
                              params.SOL_VARS_TYPE)
 
-            user_flux!(@view(params.F[i,:]), @view(params.G[i,:]), SD,
+            user_flux!(@view(params.F[i,:]),
+                       @view(params.G[i,:]), SD,
                        @view(params.uaux[ip,:]),
-                       @view(qe[ip,:]),         #pref
+                       @view(qe[ip,:]),
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
                        neqs=params.neqs, ip=ip)
@@ -552,7 +553,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
             if lsource
                 user_source!(@view(params.S[i,:]),
                              @view(params.uaux[ip,:]),
-                             @view(qe[ip,:]),          #ρref 
+                             @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=coords[ip,1], y=0.0, xmax=xmax,xmin=xmin)
             end
@@ -575,13 +576,12 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                                              ngl-1,
                                              Float64)
             #print_matrix(D) #seems ok
-            
-            _expansion_inviscid_KEP!(@view(uilgl[iel,:,:]),
-                                     params.neqs, ngl, params.mesh.nelem,
-                                     params.basis.ψ, params.basis.dψ, params.ω,
-                                     params.F, params.S, D, 
-                                     params.rhs_el,
+            _expansion_inviscid_KEP!(u, params.neqs, ngl,
+                                     params.basis.dψ, params.ω,
+                                     params.F, params.S, D,
+                                     params.rhs_el, uilgl,
                                      iel, params.CL, params.QT, SD, params.AD)
+            
         end
     end
 end
@@ -927,45 +927,94 @@ function _expansion_inviscid!(u, neqs, ngl,
 end
 
 
-function _expansion_inviscid_KEP!(u, neqs, ngl, nelem,
-                                  ψ, dψ, ω,
+
+function _expansion_inviscid_KEP!(u, neqs, ngl,
+                                  dψ, ω,
                                   F, S, D,
-                                  rhs_el,
+                                  rhs_el, uilgl,
                                   iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
-
     
-    
-   # for ieq = 1:neqs
-   #     for i=1:ngl
-   #         dFdξ = 0.0
-   #         for k = 1:ngl
-   #             dFdξ += dψ[k,i]*F[k,ieq]
-   #         end
-   #         rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*S[i,ieq]
-   #     end
-   # end
-
-    for ilgl = 1:ngl
+    for i = 1:ngl
         
-        #for i in axes(du, 2)
-	u_i = SVector(u[1, i], u[2, i], u[3, i])
-	du_i = zero(u_i)
-	
-	for j in axes(du, 2)
-	    u_j = SVector(u[1, j], u[2, j], u[3, j])
-
-	    direction = 1 # x direction
-	     f = volume_flux(u_i, u_j, direction, equations)
-            # f = user_flux(u_j) #standard strong form CG
-	    du_i += 2 * D[i, j] * f
-	end
-
-	du[1, i] = du_i[1]
-	du[2, i] = du_i[2]
-	du[3, i] = du_i[3]
+        du_i = zeros(neqs)
+        
+        for j = 1:ngl
+            
+            for ieq = 1:neqs
+                # Average flux between points i and j
+                f_ij = 0.5 * (F[i, ieq] + F[j, ieq])
+                du_i[ieq] += 2.0 * dψ[j, i] * f_ij
+            end
+        end
+        
+        for ieq = 1:neqs
+            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
+        end
     end
+end
 
+function _expansion_inviscid_KEP_v1_working!(u, neqs, ngl,
+                                  dψ, ω,
+                                  F, S, D,
+                                  rhs_el, uilgl,
+                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
     
+    for i = 1:ngl
+        
+        du_i = zeros(neqs)
+        
+        for j = 1:ngl
+            
+            # Use pre-computed flux at point j
+            # f_ij = F[j, :] for all equations
+            
+            for ieq = 1:neqs
+                du_i[ieq] += 2.0 * dψ[j, i] * F[j, ieq]
+            end
+        end
+        
+        for ieq = 1:neqs
+            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
+        end
+    end
+end
+
+function _expansion_inviscid_KEP_v0!(u, neqs, ngl,
+                                     dψ, ω,
+                                     F, S,
+                                     rhs_el, uilgl,
+                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+    
+    # Loop over grid points i in the element
+    for i = 1:ngl
+        
+        # Get the conservative variables at grid point i
+        u_i = @view uilgl[:, i, iel]  # neqs-dimensional vector
+        
+        # Initialize accumulator for the split form
+        du_i = zeros(neqs)
+        
+        # Loop over grid points j for the two-point flux split form
+        for j = 1:ngl
+            # Get the conservative variables at grid point j
+            u_j = @view uilgl[:, j, iel]  # neqs-dimensional vector
+            
+            # Compute two-point volume flux between states i and j
+            # You need to implement this function based on your flux type
+            f_ij = compute_two_point_flux(u_i, u_j)
+            
+            # Accumulate: 2 * D[i,j] * f_ij
+            # Using dψ as the derivative matrix
+            for ieq = 1:neqs
+                du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
+            end
+        end
+        
+        # Update RHS with the split form contribution
+        for ieq = 1:neqs
+            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
+        end
+    end
 end
 
 
@@ -2505,7 +2554,7 @@ function saturation_adjustment(uaux, qe, z, connijk, nelem, ngl, neqs, thermo_pa
 end
 
 @inline function flux_ranocha(u_ll, u_rr, orientation::Integer,
-                              equations::CompressibleEulerEquations1D)
+                              equations)
     # Unpack left and right state
     rho_ll, v1_ll, p_ll = cons2prim(u_ll, equations)
     rho_rr, v1_rr, p_rr = cons2prim(u_rr, equations)
