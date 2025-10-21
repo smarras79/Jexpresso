@@ -601,14 +601,10 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
     end
 
         entropy_integral = 0.0
-        h = 2/12
-        mass_matrix = h * [1/6, 5/12, 5/12, 1/6]
-        k = 0
         for iel = 1:nelem
             for i = 1:ngl-1
-                k = k + 1
                 ip = connijk[iel,i,1]
-                integral = mass_matrix[i] * entropy_thermodynamic(params.uaux[k,:])
+                integral = params.M[ip] * entropy_thermodynamic(params.uaux[ip,:])
                 entropy_integral +=  integral
             end
         end
