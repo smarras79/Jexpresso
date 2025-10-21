@@ -213,5 +213,5 @@ end
     # Thermodynamic entropy
     s = log(p) - gamma * log(cons[1])
 
-    return s
+    return -s * cons[1] * 1/(gamma -1)
 end

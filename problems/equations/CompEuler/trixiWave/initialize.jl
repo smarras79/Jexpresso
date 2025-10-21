@@ -23,13 +23,13 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
 
 
     	for ip = 1:mesh.npoin
-
         x  = mesh.x[ip]
-        # ρ, v, p = initial_wave(x)
-        ρ, v, p = initial_condition_weak_blast_wave(x)
+        ρ, v, p = initial_wave(x)
+        #ρ, v, p = initial_condition_weak_blast_wave(x)
+
 	    q.qn[ip,1] = ρ
-            q.qn[ip,2] = ρ*v
-            q.qn[ip,3] = p/(PhysConst.γ - 1.0) + 0.5*ρ*v^2
+        q.qn[ip,2] = ρ*v
+        q.qn[ip,3] = p/(PhysConst.γ - 1.0) + 0.5*ρ*v^2
 
         end
     else

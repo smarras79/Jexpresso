@@ -587,26 +587,63 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                                              ngl-1,
                                              ngl-1,
                                              Float64)
+
             #print_matrix(D) #seems ok
             _expansion_inviscid_KEP!(u, params.neqs, ngl,
                                      params.basis.dψ, params.ω,
                                      params.F, params.S, D,
                                      params.rhs_el, uilgl,
                                      iel, params.CL, params.QT, SD, params.AD, params.uaux, connijk, iel)
+          
             
         end
+      
     end
 
         entropy_integral = 0.0
+        h = 2/12
+        mass_matrix = h * [1/6, 5/12, 5/12, 1/6]
+        k = 0
         for iel = 1:nelem
-            for i = 1:ngl
+            for i = 1:ngl-1
+                k = k + 1
                 ip = connijk[iel,i,1]
-                integral = params.M[ip] * entropy_thermodynamic(params.uaux[ip,:])
-                #integral = params.ω[i] * entropy_thermodynamic(params.uaux[ip,:])
-                entropy_integral += + integral
+                integral = mass_matrix[i] * entropy_thermodynamic(params.uaux[k,:])
+                entropy_integral +=  integral
             end
         end
-        @show abs(entropy_integral)
+        @show (abs(entropy_integral) -0.0009813727105688597)
+end
+
+function _expansion_inviscid_KEP!(u, neqs, ngl,
+                                  dψ, ω,
+                                  F, S, D,
+                                  rhs_el, uilgl,
+                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal, uaux, connijk, el)
+    for i = 1:ngl
+        ip = connijk[el,i,1]
+
+        du_i = zeros(neqs)
+        
+        for j = 1:ngl 
+                jp = connijk[el,j,1]
+
+            #  for ieq = 1:neqs
+            #      # Average flux between points i and j
+            #      f_ij = 0.5 * (F[i, ieq] + F[j, ieq]) #Average point test towards two-point solition
+            #      #f_ij = F[i, ieq] #identical as usual  _expansion_inviscid!()
+            #      du_i[ieq] += 2.0 * dψ[j, i] * f_ij
+            #  end
+             f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:])
+             for ieq = 1:neqs
+             du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq] * 0
+             end
+        end
+        
+        for ieq = 1:neqs
+            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
+        end
+    end
 end
 
 function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
@@ -951,37 +988,7 @@ end
 
 
 
-function _expansion_inviscid_KEP!(u, neqs, ngl,
-                                  dψ, ω,
-                                  F, S, D,
-                                  rhs_el, uilgl,
-                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal, uaux, connijk, el)
-    
-    for i = 1:ngl
-        ip = connijk[el,i,1]
 
-        du_i = zeros(neqs)
-        
-        for j = 1:ngl  
-                jp = connijk[el,j,1]
-
-            #  for ieq = 1:neqs
-            #      # Average flux between points i and j
-            #      f_ij = 0.5 * (F[i, ieq] + F[j, ieq]) #Average point test towards two-point solition
-            #      #f_ij = F[i, ieq] #identical as usual  _expansion_inviscid!()
-            #      du_i[ieq] += 2.0 * dψ[j, i] * f_ij
-            #  end
-            f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:])
-             for ieq = 1:neqs
-             du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
-             end
-        end
-        
-        for ieq = 1:neqs
-            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
-        end
-    end
-end
 
 
 function _expansion_inviscid_KEP_v0!(u, neqs, ngl,
