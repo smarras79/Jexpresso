@@ -632,7 +632,7 @@ function _expansion_inviscid_KEP!(u, neqs, ngl,
             #  end
              f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:])
              for ieq = 1:neqs
-             du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq] * 0
+             du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
              end
         end
         
