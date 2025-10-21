@@ -1,9 +1,5 @@
 function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
-    """
-
-                        """
-    @info " Initialize fields for 1D Sod tube ........................ "
-
+    
     #---------------------------------------------------------------------------------
     # Solution variables:
     #
@@ -12,7 +8,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     #
     #---------------------------------------------------------------------------------
     qvars    = ["ρ", "ρu", "ρe"]
-    qoutvars = ["ρ", "u", "p", "T"]
+    qoutvars = ["ρ", "u", "p"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
 
@@ -21,15 +17,19 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     PhysConst = PhysicalConst{Float64}()
     if (inputs[:backend] == CPU())
 
+        xc = 0.5*(mesh.xmax + mesh.xmin)
+        for iel_g = 1:mesh.nelem, i=1:mesh.ngl
+            
+            ip = mesh.connijk[iel_g,i,1]
+            x = mesh.coords[ip,1]
 
-    	for ip = 1:mesh.npoin
-        x  = mesh.x[ip]
-        ρ, v, p = initial_wave(x)
-        #ρ, v, p = initial_condition_weak_blast_wave(x)
-
+            ρ, v, p = initial_wave(x)
+            #ρ, v, p = initial_condition_weak_blast_wave(x)
+            #ρ, v, p = initial_gaussian(x, xc)
+            
 	    q.qn[ip,1] = ρ
-        q.qn[ip,2] = ρ*v
-        q.qn[ip,3] = p/(PhysConst.γ - 1.0) + 0.5*ρ*v^2
+            q.qn[ip,2] = ρ*v
+            q.qn[ip,3] = p/PhysConst.γm1 + 0.5*ρ*v^2
 
         end
     else
@@ -75,4 +75,21 @@ function initial_condition_weak_blast_wave(x)
     p = r > 0.5f0 ? one(RealT) : convert(RealT, 1.245)
 
     return rho, v1, p
+end
+
+function initial_gaussian(x, xc)
+
+    ρ0 = 1.0
+    p0 = 1.0
+    u  = 0.0
+    A  = 0.1
+    γ  = 1.4
+    σ2  = 0.1^2
+
+    ex = -(x - xc)^2/σ2
+    ρ = ρ0
+    p = p0 + A*exp(-0.5*ex)
+    p = 2^ex
+    
+    return ρ, u, p
 end

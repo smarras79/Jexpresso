@@ -8,15 +8,19 @@ function user_inputs()
         :ode_solver          => SSPRK54(),
         :tend                 => 0.4,
         :Δt                   => 1.6781e-04,
-        :diagnostics_at_times => (0:0.1:0.4),
+        :diagnostics_at_times => (0:0.05:0.4),
         :output_dir          => "./",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 3,     # Polynomial order
+        :nop                 => 4,     # Polynomial order
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
+        #---------------------------------------------------------------------------
+        # Entropy/energy preserving discretizations:
+        #---------------------------------------------------------------------------
+        #:lkep => true
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
@@ -39,7 +43,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :xmin          => 0.0,
         :xmax          => 2.0,
-        :nelx          =>  12,
+        :nelx          =>  12
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
