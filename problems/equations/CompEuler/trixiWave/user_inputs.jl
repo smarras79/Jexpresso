@@ -6,7 +6,7 @@ function user_inputs()
         # IMPORTANT NOTICE: DO NOT FORGET the "," at the end of each entry!!!
         #---------------------------------------------------------------------------
         :ode_solver          => SSPRK54(),
-        :tend                 => 0.4,
+        :tend                 => 2.0,
         :Δt                   => 1.6781e-04,
         :diagnostics_at_times => (0:0.1:2.0),
         :output_dir          => "./",
@@ -14,7 +14,7 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes => "lgl", # Choice: "lgl", "cg", "cgl"
-        :nop                 => 3,     # Polynomial order
+        :nop                 => 4,     # Polynomial order
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
         #---------------------------------------------------------------------------
