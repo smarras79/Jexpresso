@@ -288,17 +288,19 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, Î
                 metrics.nx[iedge, k] = dy * mag_inv
                 metrics.ny[iedge, k] = -dx * mag_inv
                 e = mesh.bdy_edge_in_elem[iedge]
+                ip2 = mesh.connijk[e,2,2]
                 idx1 = 0
                 idx2 = 0
-                for j=1:N+1
+                #=for j=1:N+1
                     for i=1:N+1
                         if (mesh.connijk[e,i,j] == ip)
                             idx1 = i
                             idx2 = j
                         end
                     end
-                end
-                if (idx1 + metrics.nx[iedge, k] < 1 || idx1 + metrics.nx[iedge, k] > N+1 || idx2 + metrics.ny[iedge, k] < 1 || idx2 + metrics.ny[iedge, k] > N+1)
+                end=#
+                #if (idx1 + metrics.nx[iedge, k] < 1 || idx1 + metrics.nx[iedge, k] > N+1 || idx2 + metrics.ny[iedge, k] < 1 || idx2 + metrics.ny[iedge, k] > N+1)
+                if (metrics.nx[iedge, k]*(mesh.x[ip2]-mesh.x[ip]) + metrics.ny[iedge, k]*(mesh.y[ip2] -mesh.y[ip]) > 0)
                     metrics.nx[iedge, k] = - metrics.nx[iedge, k]
                     metrics.ny[iedge, k] = - metrics.ny[iedge, k]
                 end

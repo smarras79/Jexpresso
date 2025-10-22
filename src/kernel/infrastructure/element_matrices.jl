@@ -1007,11 +1007,67 @@ end
 
 function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_1D) nothing end
 
-function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D) nothing end
+function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D)
+   normals = zeros(Float64, mesh.npoin, 2)
 
+    @inbounds for iedge = 1:mesh.nedges_bdy
+
+        poin_edge = @view mesh.poin_in_bdy_edge[iedge, :]
+        for i = 1:mesh.ngl
+            ip = poin_edge[i]
+            #if (mesh.bdy_face_type[iface] != "periodicx" && mesh.bdy_face_type[iface] != "periodicy" && mesh.bdy_face_type[iface] != "periodicz")
+            normals[ip, 1] += nx[iedge, i]
+            normals[ip, 2] += ny[iedge, i]
+            #end
+        end
+    end
+
+    pM = setup_assembler(mesh.SD, normals, mesh.ip2gip, mesh.gip2owner)
+    if pM != nothing
+        assemble_mpi!(@view(normals[:,:]),pM)
+    end
+    @inbounds for iedge = 1:mesh.nedges_bdy
+
+        poin_edge = @view mesh.poin_in_bdy_edge[iedge, :]
+        for i = 1:mesh.ngl
+            ip = poin_edge[i]
+            #@info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], sqrt(nx[iface, i, j]*nx[iface, i, j]+ny[iface, i, j]*ny[iface, i, j]+nz[iface, i, j]*nz[iface, i, j])
+            mag = sqrt(normals[ip, 1]^2+ normals[ip, 2]^2)
+            normx=0
+            normy=0
+            if (mag > 0)
+
+                normx = normals[ip, 1]/mag
+                normy = normals[ip, 2]/mag
+                #=if (abs(mesh.x[ip] - 1000) < 1)
+                    @info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], normx, normy, normz, normals[ip, 1], normals[ip, 2], normals[ip, 3], mesh.bdy_face_type[iface], mesh.z[ip], mesh.y[ip]
+                    @info mag
+                end=#
+            end
+            if mesh.bdy_edge_type[iedge] != "periodicx" && (abs(nx[iedge, i] - normx) < 0.25)
+                nx[iedge, i] = normx
+            end
+            if mesh.bdy_edge_type[iedge] != "periodicy" && (abs(ny[iedge, i] - normy) < 0.25)
+                ny[iedge, i] = normy
+            end
+
+            #makesure vectors are unit vectors 
+            mag = sqrt(nx[iedge, i]^2 + ny[iedge, i]^2)
+            if (mag > 0)
+                nx[iedge, i] = nx[iedge, i]/mag
+                ny[iedge, i] = ny[iedge, i]/mag
+            end
+            #@info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], sqrt(nx[iface, i, j]*nx[iface, i, j]+ny[iface, i, j]*ny[iface, i, j]+nz[iface, i, j]*nz[iface, i, j])
+            #@info normals[ip,1], normals[ip,2], normals[ip,3], normals[ip,4]
+
+        end
+    end
+
+end
+ 
 function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
 
-    normals = zeros(Float64, mesh.npoin, 4)
+    normals = zeros(Float64, mesh.npoin, 3)
 
     @inbounds for iface = 1:mesh.nfaces_bdy
 
@@ -1022,7 +1078,6 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
                 normals[ip, 1] += nx[iface, i, j]
                 normals[ip, 2] += ny[iface, i, j]
                 normals[ip, 3] += nz[iface, i, j]
-                normals[ip, 4] += 1
             #end
 	end
     end
