@@ -1018,43 +1018,58 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
         poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
         for j = 1:mesh.ngl, i = 1:mesh.ngl
             ip = poin_face[i, j]
-
-            normals[ip, 1] += nx[iface, i, j]
-            normals[ip, 2] += ny[iface, i, j]
-            normals[ip, 3] += nz[iface, i, j]
-            normals[ip, 4] += 1
-	    end
+            #if (mesh.bdy_face_type[iface] != "periodicx" && mesh.bdy_face_type[iface] != "periodicy" && mesh.bdy_face_type[iface] != "periodicz")
+                normals[ip, 1] += nx[iface, i, j]
+                normals[ip, 2] += ny[iface, i, j]
+                normals[ip, 3] += nz[iface, i, j]
+                normals[ip, 4] += 1
+            #end
+	end
     end
-
-    @inbounds for iface = 1:mesh.nfaces_bdy
-        poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
-        for j = 1:mesh.ngl, i = 1:mesh.ngl
-            ip = poin_face[i, j]
-
-	    @info normals[ip,1], normals[ip,2], normals[ip,3], normals[ip,4]
-end
-end	
-
-
-@mystop
-	    
 
     pM = setup_assembler(mesh.SD, normals, mesh.ip2gip, mesh.gip2owner)
     if pM != nothing
         assemble_mpi!(@view(normals[:,:]),pM)
     end
-    
     @inbounds for iface = 1:mesh.nfaces_bdy
 
         poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
         for j = 1:mesh.ngl, i = 1:mesh.ngl
             ip = poin_face[i, j]
+            #@info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], sqrt(nx[iface, i, j]*nx[iface, i, j]+ny[iface, i, j]*ny[iface, i, j]+nz[iface, i, j]*nz[iface, i, j])
+            mag = sqrt(normals[ip, 1]^2+ normals[ip, 2]^2 + normals[ip, 3]^2)
+            normx=0
+            normy=0
+            normz=0
+            if (mag > 0)
+            
+                normx = normals[ip, 1]/mag
+                normy = normals[ip, 2]/mag
+                normz = normals[ip, 3]/mag
+                #=if (abs(mesh.x[ip] - 1000) < 1)
+                    @info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], normx, normy, normz, normals[ip, 1], normals[ip, 2], normals[ip, 3], mesh.bdy_face_type[iface], mesh.z[ip], mesh.y[ip]
+                    @info mag
+                end=#
+            end
+            if mesh.bdy_face_type[iface] != "periodicx" && (abs(nx[iface, i, j] - normx) < 0.25)
+                nx[iface, i, j] = normx
+            end
+            if mesh.bdy_face_type[iface] != "periodicy" && (abs(ny[iface, i, j] - normy) < 0.25)
+                ny[iface, i, j] = normy
+            end
+            if mesh.bdy_face_type[iface] != "periodicz" && (abs(nz[iface, i, j] - normz) < 0.25)
+                nz[iface, i, j] = normz
+            end
 
-            nx[iface, i, j] = normals[ip, 1]/normals[ip, 4]
-            ny[iface, i, j] = normals[ip, 2]/normals[ip, 4]
-            nz[iface, i, j] = normals[ip, 3]/normals[ip, 4]
-
-	    @info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], sqrt(nx[iface, i, j]*nx[iface, i, j]+ny[iface, i, j]*ny[iface, i, j]+nz[iface, i, j]*nz[iface, i, j])
+            #makesure vectors are unit vectors 
+            mag = sqrt(nx[iface, i, j]^2 + ny[iface, i, j]^2 + nz[iface, i, j]^2)
+            if (mag > 0) 
+                nx[iface, i, j] = nx[iface, i, j]/mag
+                ny[iface, i, j] = ny[iface, i, j]/mag
+                nz[iface, i, j] = nz[iface, i, j]/mag
+            end
+            #@info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], sqrt(nx[iface, i, j]*nx[iface, i, j]+ny[iface, i, j]*ny[iface, i, j]+nz[iface, i, j]*nz[iface, i, j])
+            #@info normals[ip,1], normals[ip,2], normals[ip,3], normals[ip,4]
 
         end
     end

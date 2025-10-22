@@ -583,7 +583,9 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, Î
                 idx1 = 0
                 idx2 = 0
                 idx3 = 0
-                for o=1:mesh.ngl
+                #find arbitrary interior point
+                ip3 = mesh.connijk[e,2,2,2]
+                #=for o=1:mesh.ngl
                     for n=1:mesh.ngl
                         for m=1:mesh.ngl
                             if (mesh.connijk[e,m,n,o] == ip)
@@ -593,8 +595,9 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, Î
                             end
                         end
                     end
-                end
-                if (idx1 + metrics.nx[iface, i, j] < 1 || idx1 + metrics.nx[iface, i, j] > N+1 || idx2 + metrics.ny[iface, i, j] < 1 || idx2 + metrics.ny[iface, i, j] > N+1 || idx3 + metrics.nz[iface, i, j] < 1 || idx3 + metrics.nz[iface, i, j] > N+1)
+                end=#
+                #if (idx1 + metrics.nx[iface, i, j] < 1 || idx1 + metrics.nx[iface, i, j] > N+1 || idx2 + metrics.ny[iface, i, j] < 1 || idx2 + metrics.ny[iface, i, j] > N+1 || idx3 + metrics.nz[iface, i, j] < 1 || idx3 + metrics.nz[iface, i, j] > N+1)
+                if (metrics.nx[iface, i, j]*(mesh.x[ip3]-mesh.x[ip])+ metrics.ny[iface, i, j]*(mesh.y[ip3]-mesh.y[ip]) + metrics.nz[iface, i, j]*(mesh.z[ip3]-mesh.z[ip]) > 0)
                     metrics.nx[iface, i, j] = - metrics.nx[iface, i, j]
                     metrics.ny[iface, i, j] = - metrics.ny[iface, i, j]
                     metrics.nz[iface, i, j] = - metrics.nz[iface, i, j] 

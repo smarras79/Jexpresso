@@ -44,11 +44,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #:lwarmup             => true,
         # Warping:
-        :lwarp => false,
+        :lwarp => true,
         :mount_type => "agnesi",
-        :a_mount => 4000.0,
-        :h_mount => 1000.0,
-        :c_mount => 5000.0,
+        :a_mount => 1000.0,
+        :h_mount => 300.0,
+        :c_mount => 1500.0,
 
         # Stretching factors:
         :lstretch => true,
@@ -81,7 +81,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => true,
+        :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
