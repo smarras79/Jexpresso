@@ -297,6 +297,14 @@ function params_setup(sem,
         
     else
         pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+
+        # row_partition = map(sem.mesh.parts) do part
+        #     row_partition = LocalIndices(sem.mesh.gnpoin,part,sem.mesh.ip2gip,sem.mesh.gip2owner)
+        #     # gM = M
+        #     row_partition
+        # end
+        # pM = pvector(values->@view(sem.matrix.M[:]), row_partition)
+        
         params = (backend,
                   T, inputs,
                   uaux, vaux,
@@ -323,6 +331,7 @@ function params_setup(sem,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
+                  #   timers,
                   sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end
 

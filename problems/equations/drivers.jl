@@ -475,8 +475,6 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
         u∂τ[iskel] = u[is]
         @info iskel, is, u∂τ[iskel]
     end
-
-@mystop
     
      for iel=1:mesh.nelem
          #

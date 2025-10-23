@@ -167,9 +167,6 @@ function get_boundary_faces(model,nsd,dim)
   findall(x -> x>0, facet_to_tag)
 end
 
-
-
-
 mutable struct CyclingReverseDict
     mapping::Dict{Int, Vector{Int}}
     counters::Dict{Int, Int}
