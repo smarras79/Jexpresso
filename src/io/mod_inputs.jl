@@ -198,7 +198,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lwarp] = false
     end
 
-    if inputs[:lwarp] = true
+    if inputs[:lwarp] == true
         if(!haskey(inputs,:z_transition_start))
             inputs[:z_transition_start] = -1000.0
         end
@@ -676,6 +676,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
 
     if(!haskey(inputs, :lsponge))
         inputs[:lsponge] = false
+    end
+    if(!haskey(inputs, :zsponge))
+        inputs[:zsponge] = 14000.0
     end
     if  inputs[:lsponge] == true
         if(!haskey(inputs, :zsponge))
