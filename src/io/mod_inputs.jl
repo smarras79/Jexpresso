@@ -674,6 +674,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         @error s
     end
 
+    if(!haskey(inputs, :lsponge))
+        inputs[:lsponge] = false
+    end
+    if  inputs[:lsponge] == true
+        if(!haskey(inputs, :zsponge))
+            inputs[:zsponge] = 14000.0
+        end
+    end
+
     if(!haskey(inputs, :lmoist))
         inputs[:lmoist] = false
     end
