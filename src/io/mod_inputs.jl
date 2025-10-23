@@ -197,6 +197,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs,:lwarp))
         inputs[:lwarp] = false
     end
+
+    if inputs[:lwarp] = true
+        if(!haskey(inputs,:z_transition_start))
+            inputs[:z_transition_start] = -1000.0
+        end
+        if(!haskey(inputs,:z_transition_end))
+             inputs[:z_transition_end] = 2200.0
+        end
+    end
     
     if(!haskey(inputs,:lstretch))
         inputs[:lstretch] = false
