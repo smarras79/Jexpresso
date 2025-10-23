@@ -187,8 +187,8 @@ function warp_mesh_3D!(mesh,inputs)
 
 
     # Parameters for damping control
-    z_transition_start = -1000  # Height where damping starts (30% of domain)
-    z_transition_end = 2200    # Height where grid becomes fully flat (60% of domain)
+    z_transition_start = inputs[:z_transition_start]  # Height where damping starts (30% of domain)
+    z_transition_end = inputs[:z_transition_end]    # Height where grid becomes fully flat (60% of domain)
     
     for ip = 1:mesh.npoin
         sigma[ip] = mesh.z[ip]
@@ -204,10 +204,10 @@ function warp_mesh_3D!(mesh,inputs)
             
             # Cosine (or 'Raised Cosine') Damping Function
             # This function smoothly transitions from 1.0 (at progress=0) to 0.0 (at progress=1)
-            #damping_factor = 0.5 * (1.0 + cospi(progress))
+            damping_factor = 0.5 * (1.0 + cospi(progress))
 
             # Exponential damping (faster transition)
-            damping_factor = exp(-0.25 * progress)
+            #damping_factor = exp(-0.25 * progress)
 
             # Cubic damping (smoother)
             #damping_factor = (1.0 - progress)^3
