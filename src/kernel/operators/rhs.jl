@@ -589,7 +589,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                                      iel, params.CL, params.QT, SD, params.AD,
                                      params.uaux, connijk, iel)
 
-            entropy_integral = 0.0
+            #=entropy_integral = 0.0
             for iel = 1:nelem
                 for i = 1:ngl-1
                     ip = connijk[iel,i,1]
@@ -597,13 +597,9 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                     entropy_integral +=  integral
                 end
             end
-            @show (abs(entropy_integral) -0.0009813727105688597)
-            
-            
+            @show (abs(entropy_integral) -0.0009813727105688597)=#
         end
-      
     end
-
     
 end
 
@@ -1493,7 +1489,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                 rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇u_kl
                 rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇u_kl
             end
-        end  
+        end
     end
 end
 

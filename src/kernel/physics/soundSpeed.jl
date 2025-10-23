@@ -95,7 +95,7 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_2D; visc=[0
         
         Δs2      = Δs*Δs
         μ        = maximum(visc)
-        λ        = 2.0 #free parameter
+        λ        = 1.0 #free parameter
         cfl_visc = dt*λ*μ/Δs2 #Viscous CFL
         
         println_rank(" #  Advective CFL: ", cfl_u;    msg_rank = rank) #, suppress = mesh.msg_suppress)

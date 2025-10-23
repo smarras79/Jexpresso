@@ -175,12 +175,49 @@ function warp_mesh_3D!(mesh,inputs)
        =#
     end
 
+    #for ip = 1:mesh.npoin
+    #    sigma[ip] = mesh.z[ip]
+    #    z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+    #    mesh.z[ip] = z
+    #end
+
+    
+    ##
+    # Parameters for damping control
+    z_transition_start = 1500.0 #ztop * 0.3  # Height where damping starts (30% of domain)
+    z_transition_end = 2250.0 #ztop * 0.6    # Height where grid becomes fully flat (60% of domain)
+
+    ##
     for ip = 1:mesh.npoin
         sigma[ip] = mesh.z[ip]
-        z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-        mesh.z[ip] = z
+        
+        # Original warped coordinate (follows topography)
+        z_warped = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+        
+        # Flat coordinate (horizontal levels, no topography influence)
+        z_flat = sigma[ip]
+        
+        # Calculate damping factor based on height
+        if z_warped <= z_transition_start
+            # Full warping below transition start
+            damping_factor = 1.0
+        elseif z_warped >= z_transition_end
+            # No warping (fully flat) above transition end
+            damping_factor = 0.0
+        else
+            # Smooth transition using cosine function
+            # This creates an S-curve for smooth damping
+            progress = (z_warped - z_transition_start) / (z_transition_end - z_transition_start)
+            damping_factor = 0.5 * (1.0 + cos(π * progress))
+        end
+        
+        # Blend warped and flat coordinates using damping factor
+        mesh.z[ip] = damping_factor * z_warped + (1.0 - damping_factor) * z_flat
     end
+    
+    
 end
+
 
 function warp_phys_grid!(x,y,z,ncol,nlay)
     if (inputs[:mount_type] == "real topography")
