@@ -4,14 +4,16 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.03,
+        :Δt                   => 0.04,
         :tinit                => 0.0,
         :tend                 => 10800.0,
 	:lrestart             => false,
 	#:restart_output_file_path => "",
 	:restart_time         => 250,
-	:diagnostics_at_times => (0:1:10800.0),
+	:diagnostics_at_times => (0:5:10800.0),
         :lsource              => true,
+	:lsponge              => true,
+	:zsponge              => 2500.0,
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge1000_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -32,18 +34,21 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-	:lwarmup          => true,
+	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
         :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
+	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
 
         # Warping:
         :lwarp => true,
         :mount_type => "LESICP",
         :h_mount => 1000.0,
         :a_mount => 10240.0,
+	:z_transition_start => -1000.0,
+	:z_transition_end => 2200.0,
 
         # Stretching factors:
         :lstretch => false,
@@ -63,7 +68,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP6_scaling-8nodes-64x32x36_10kmX10kmX3km/",
+        :output_dir          => "/scratch/smarras/smarras/output/LESICP6_scaling-8nodes-64x16x36_10kmX10kmX3dot5km/",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,

@@ -198,7 +198,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lwarp] = false
     end
 
-    if inputs[:lwarp] = true
+    if inputs[:lwarp] == true
         if(!haskey(inputs,:z_transition_start))
             inputs[:z_transition_start] = -1000.0
         end
