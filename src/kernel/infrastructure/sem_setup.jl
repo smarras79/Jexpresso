@@ -1,9 +1,10 @@
 include("../mesh/restructure_for_periodicity.jl")
 
-function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, partitioned_model_coarse = nothing, omesh = nothing)
+function sem_setup(inputs::Dict, nparts, distribute, args...)
     
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
+    adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
     fx        = zeros(Float64,1,1)
     fy        = zeros(Float64,1,1)
@@ -37,7 +38,7 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     if isnothing(adapt_flags)
         mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
     else
-        mesh, partitioned_model, n2o_ele_map = mod_mesh_mesh_driver(inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, omesh)
+        mesh, partitioned_model, uaux_new = mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
     end
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
         mesh.coords[:,1] .= (@view(mesh.coords[:,1]) .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
@@ -91,7 +92,6 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
         ω   = ξω.ω
     end
     SD = mesh.SD
-    
     #--------------------------------------------------------
     # Build Lagrange polynomials:
     #
@@ -284,10 +284,10 @@ function sem_setup(inputs::Dict, nparts, distribute, adapt_flags = nothing, part
     #--------------------------------------------------------
     if isnothing(adapt_flags)
         return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
-                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, partitioned_model, nparts, distribute)
+                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model
     else
         return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
-                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, partitioned_model, nparts, distribute), n2o_ele_map
+                connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model, uaux_new
     end
     
 end

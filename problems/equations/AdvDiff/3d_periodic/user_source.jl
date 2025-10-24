@@ -3,7 +3,7 @@ function user_source!(S,
                       qe,
                       npoin::Int64,
                       ::CL, ::TOTAL;
-                      neqs=1)
+                      neqs=1,karg...)
     
     PhysConst = PhysicalConst{Float64}()
         
@@ -20,7 +20,7 @@ function user_source!(S,
                       qe,
                       npoin::Int64,
                       ::CL, ::PERT;
-                      neqs=1)
+                      neqs=1, karg...)
 
     PhysConst = PhysicalConst{Float64}()
 

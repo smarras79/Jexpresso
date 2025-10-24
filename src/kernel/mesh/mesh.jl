@@ -1,27 +1,10 @@
 using .JeGeometry
-using Gridap
-using Gridap.Arrays
-using Gridap.Arrays: Table
-using Gridap.Geometry
-using Gridap.Fields
-using Gridap.ReferenceFEs
-using Gridap.CellData
-using Gridap.Adaptivity
-using Gridap.Geometry: GridMock
-using GridapDistributed
-using PartitionedArrays
-using GridapGmsh
-using GridapP4est
-using Test
 
 export St_mesh
 export mod_mesh_mesh_driver
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
-const VERTEX_NODES = UInt64(1)
-const EDGE_NODES   = UInt64(2)
-const FACE_NODES   = UInt64(4)
 
 include("warping.jl")
 include("stretching.jl")
@@ -173,23 +156,61 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     pgip_ghost = KernelAbstractions.zeros(backend, TInt, 0)
     pgip_owner = KernelAbstractions.zeros(backend, TInt, 0)
+    pgip_local = KernelAbstractions.zeros(backend, TInt, 0)
     cgip_ghost = KernelAbstractions.zeros(backend, TInt, 0)
     cgip_owner = KernelAbstractions.zeros(backend, TInt, 0)
+    cgip_local = KernelAbstractions.zeros(backend, TInt, 0)
+
+    q_local_c  = KernelAbstractions.zeros(backend, TFloat, 0)
+    q_local_p  = KernelAbstractions.zeros(backend, TFloat, 0)
+
+
+    # non_conforming_facets arrays
+    cip         = KernelAbstractions.zeros(backend, TInt, 0)
+    pip         = KernelAbstractions.zeros(backend, TInt, 0)
+    lfid        = KernelAbstractions.zeros(backend, TInt, 0)
+    half1       = KernelAbstractions.zeros(backend, TInt, 0)
+    half2       = KernelAbstractions.zeros(backend, TInt, 0)
+    IPc_list    = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    IPp_list    = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    IPc_list_pg = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    IPp_list_cg = KernelAbstractions.zeros(backend, TInt, 0, 0)
+    # non_conforming_facets arrays for own child facet, ghost parent facet 
+    cip_pg   = KernelAbstractions.zeros(backend, TInt, 0)
+    lfid_pg  = KernelAbstractions.zeros(backend, TInt, 0)
+    half1_pg = KernelAbstractions.zeros(backend, TInt, 0)
+    half2_pg = KernelAbstractions.zeros(backend, TInt, 0)
+    IPpg_list= KernelAbstractions.zeros(backend, TInt, 0, 0)
+    # non_conforming_facets arrays for ghost child facet, own parent facet
+    pip_cg   = KernelAbstractions.zeros(backend, TInt, 0)
+    lfid_cg  = KernelAbstractions.zeros(backend, TInt, 0)
+    half1_cg = KernelAbstractions.zeros(backend, TInt, 0)
+    half2_cg = KernelAbstractions.zeros(backend, TInt, 0)
+    IPcg_list= KernelAbstractions.zeros(backend, TInt, 0, 0)
+
+    num_ncf::Union{TInt, Missing}    = 0
+    num_ncf_pg::Union{TInt, Missing} = 0
+    num_ncf_cg::Union{TInt, Missing} = 0
+
+    lneed_redistribute::Bool = false
 
     msg_suppress::Bool = false
 
 end
 
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
+const Finalize = GridapP4est.Finalize
+const pXest_copy = GridapP4est.pXest_copy
+const get_glue_components = GridapDistributed.get_glue_components
 
 
-function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, adapt_flags = nothing, partitioned_model_coarse = nothing, omesh = nothing)
-
+function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::Int64, @nospecialize(distribute), args...)
     # determine backend
     backend = CPU()
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     mpi_size = MPI.Comm_size(comm)
+    adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
     
     #
     # Read GMSH grid from file
@@ -200,7 +221,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.rank       = rank
     ladaptive       = inputs[:ladapt]
     linitial_refine = inputs[:linitial_refine]
-    lamr_mesh       = !isnothing(adapt_flags)
+    lamr_mesh       = !isnothing(adapt_flags) 
     if isnothing(adapt_flags)
     
         if ladaptive == false && linitial_refine == false
@@ -220,14 +241,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 flags = zeros(Cint,length(indices))
                 flags.=nothing_flag
                 # @info flags
-                # flags[250] = refine_flag
+                # flags[1] = refine_flag
+                # flags[1:4:end] .= refine_flag
                 # if rank == 2
-                    # flags[1:3:end] .= refine_flag
                     # flags[1] = refine_flag
                 # end
                 flags
             end
-            partitioned_model, glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags);
+            partitioned_model, glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags)
             # partitioned_model, glue_redistribute = redistribute(partitioned_model)
             # glue_adapt = get_adaptivity_glue(partitioned_model.dmodel)
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
@@ -240,26 +261,43 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             dtopology      = get_grid_topology(dmodel)
         end
     else
-        ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
-            flags  = zeros(Cint,length(indices))
-            flags .= nothing_flag
-            flags[1:length(adapt_flags)] = adapt_flags
-            flags
+        if (omesh.lneed_redistribute)
+            partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
+        else
+            ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
+                flags  = zeros(Cint,length(indices))
+                flags .= nothing_flag
+                flags[1:length(adapt_flags)] = adapt_flags
+                flags
+            end
+            discrete_model = map(local_views(partitioned_model_coarse.dmodel.models)) do adapt_model
+                                    Gridap.Geometry.UnstructuredDiscreteModel(get_grid(adapt_model), get_grid_topology(adapt_model), get_face_labeling(adapt_model))
+                                end
+            gdmodel = GridapDistributed.GenericDistributedDiscreteModel(discrete_model,get_cell_gids(partitioned_model_coarse))
+            discrete_partitioned_model_coarse = OctreeDistributedDiscreteModel(
+                                            partitioned_model_coarse.parts,
+                                            gdmodel,
+                                            partitioned_model_coarse.non_conforming_glue,
+                                            partitioned_model_coarse.coarse_model,
+                                            partitioned_model_coarse.ptr_pXest_connectivity,
+                                            pXest_copy(partitioned_model_coarse.pXest_type, partitioned_model_coarse.ptr_pXest),
+                                            partitioned_model_coarse.pXest_type,
+                                            partitioned_model_coarse.pXest_refinement_rule_type,
+                                            partitioned_model_coarse.owns_ptr_pXest_connectivity,
+                                            partitioned_model_coarse.gc_ref)
+            partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
+            cmodel = local_views(discrete_partitioned_model_coarse.dmodel.models).item_ref[]
+            cell_gids_c = local_views(partition(get_cell_gids(discrete_partitioned_model_coarse))).item_ref[]
+            model_coarse  = DiscreteModelPortion(cmodel, own_to_local(cell_gids_c))
         end
-
-        partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags);
         cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
         dmodel = local_views(partitioned_model.dmodel.models).item_ref[]
-        cmodel = local_views(partitioned_model_coarse.dmodel.models).item_ref[]
-        cell_gids_c = local_views(partition(get_cell_gids(partitioned_model_coarse))).item_ref[]
         # @info rank, own_to_local(cell_gids), local_to_own(cell_gids), local_to_global(cell_gids)
         model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
-        model_coarse  = DiscreteModelPortion(cmodel, own_to_local(cell_gids_c))
         dtopology      = get_grid_topology(dmodel)
 
         mesh.msg_suppress = true
-    end
-
+    end 
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
     
@@ -303,10 +341,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # Write the partitioned model to a VTK file
     # vtk_directory = "./coarse/" 
     # writevtk(partitioned_model_coarse, vtk_directory)
-    vtk_directory = "./refine/"
-    if ladaptive == true
-        writevtk(partitioned_model.dmodel, vtk_directory)
-    end
+    # # if omesh.lneed_redistribute == true
+    #     vtk_directory = "./refine/"
+    #     writevtk(partitioned_model.dmodel, vtk_directory)
+    # # end
 
     #dump(topology)
     #
@@ -352,17 +390,98 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.gnelem        = num_faces(partitioned_model,ELEM_flg)
 
 
+
     mesh.npoin_linear = num_faces(model,POIN_flg)    
     mesh.npoin        = mesh.npoin_linear         #This will be updated for the high order grid
     mesh.nedges       = num_faces(model,EDGE_flg)
     mesh.nfaces       = num_faces(model,FACE_flg)   
     mesh.nelem        = num_faces(model,ELEM_flg)
 
+
+    #
+    # element refinement level
+    #
+    mesh.ad_lvl = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem))
+    if ladaptive == true
+        
+        if isnothing(adapt_flags)
+            glue = local_views(glue_adapt).item_ref[]
+            nelem_c        = num_faces(model_coarse,ELEM_flg)
+            r_c_flags = local_views(ref_coarse_flags).item_ref[]
+            for i in 1:nelem_c
+                elem_idx = glue.o2n_faces_map[i]
+                for j in elem_idx
+                    mesh.ad_lvl[j] = 0
+                    if r_c_flags[i] == 1
+                        mesh.ad_lvl[j] += 1
+                    elseif r_c_flags[i] == 2
+                        mesh.ad_lvl[j] -= 1
+                    end
+                end
+            end
+        elseif !omesh.lneed_redistribute
+            glue = local_views(glue_adapt).item_ref[]
+            r_c_flags = local_views(ref_coarse_flags).item_ref[]
+            for i = 1:omesh.nelem
+                elem_idx = glue.o2n_faces_map[i]
+                for j in elem_idx
+                    mesh.ad_lvl[j] = omesh.ad_lvl[i]
+                    if r_c_flags[i] == 1
+                        mesh.ad_lvl[j] += 1
+                    elseif r_c_flags[i] == 2
+                        mesh.ad_lvl[j] = mesh.ad_lvl[j] > 0 ? mesh.ad_lvl[j] - 1 : 0
+                    end
+                end
+            end
+        elseif omesh.lneed_redistribute
+
+            lids_rcv, lids_snd, parts_rcv, parts_snd, new2old = GridapDistributed.get_glue_components(glue_redistribute,Val(false))
+            id2send      = local_views(lids_snd).item_ref[]
+            num2send     = id2send.ptrs[end]-1
+            ad_lvl2send  = KernelAbstractions.zeros(backend, TInt, Int64(num2send))
+            ad_lvl2owner = KernelAbstractions.zeros(backend, TInt, Int64(num2send))
+            cnt = 1
+            for (i, part) in enumerate(local_views(parts_snd).item_ref[])
+                for idx in getindex(id2send, i)
+                    ad_lvl2send[cnt]  = omesh.ad_lvl[idx]
+                    ad_lvl2owner[cnt] = part-1
+                    cnt += 1
+                end
+            end
+            
+            ad_lvl2recv, ad_lvl2recver = send_and_receive(ad_lvl2send, ad_lvl2owner, comm)
+
+            id2recv = local_views(lids_rcv).item_ref[]
+            cnt = 1
+            for (i, part) in enumerate(local_views(parts_rcv).item_ref[])
+                for idx in getindex(id2recv, i)
+                    mesh.ad_lvl[idx]  = ad_lvl2recv[cnt]
+                    if part-1 != ad_lvl2recver[cnt]
+                        @mystop("part-1 != ad_lvl2recver[cnt]")
+                    end
+                    cnt += 1
+                end
+            end
+            for (id, n2o_id) in enumerate(local_views(new2old).item_ref[])
+                if n2o_id == 0
+                    continue
+                end
+                mesh.ad_lvl[id] = omesh.ad_lvl[n2o_id]
+            end
+        end
+    end
+    # @info rank, mesh.ad_lvl 
+    #
+    # end element refinement level
+    #
+
+        mesh.lneed_redistribute = measure_elements_per_rank(mesh.nelem)
+
     mesh.nelem_bdy    = length(get_boundary_cells(model,mesh.nsd))
     mesh.nfaces_bdy   = length(get_boundary_faces(model,mesh.nsd,FACE_flg))
     mesh.nedges_bdy   = length(get_boundary_faces(model,mesh.nsd,EDGE_flg))
     
-    mesh.nelem_int    = mesh.nelem - mesh.nelem_bdy
+    mesh.nelem_int    = mesh.nelem  - mesh.nelem_bdy
     mesh.nfaces_int   = mesh.nfaces - mesh.nfaces_bdy
     mesh.nedges_int   = mesh.nedges - mesh.nedges_bdy
 
@@ -383,17 +502,18 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 MPI.Barrier(comm)
                     if i == rank
                         open("./mesh.log", "a+") do f
-                        println(f, "   # Rank                       : ", rank)
-                        println(f, "     # N. points                : ", mesh.npoin_linear)
-                        println(f, "     # N. elements              : ", mesh.nelem)
-                        println(f, "     # N. edges                 : ", mesh.nedges)
-                        println(f, "     # N. faces                 : ", mesh.nfaces)    
-                        println(f, "     # N. internal elem         : ", mesh.nelem_int)
-                        println(f, "     # N. internal edges        : ", mesh.nedges_int) 
-                        println(f, "     # N. internal faces        : ", mesh.nfaces_int)    
-                        println(f, "     # N. boundary elem         : ", mesh.nelem_bdy)
-                        println(f, "     # N. boundary edges        : ", mesh.nedges_bdy)
-                        println(f, "     # N. boundary faces        : ", mesh.nfaces_bdy)
+                            println(f, "   # Rank                       : ", rank)
+                            println(f, "     # N. points                : ", mesh.npoin_linear)
+                            println(f, "     # N. elements              : ", mesh.nelem)
+                            println(f, "     # N. edges                 : ", mesh.nedges)
+                            println(f, "     # N. faces                 : ", mesh.nfaces)    
+                            println(f, "     # N. internal elem         : ", mesh.nelem_int)
+                            println(f, "     # N. internal edges        : ", mesh.nedges_int) 
+                            println(f, "     # N. internal faces        : ", mesh.nfaces_int)    
+                            println(f, "     # N. boundary elem         : ", mesh.nelem_bdy)
+                            println(f, "     # N. boundary edges        : ", mesh.nedges_bdy)
+                            println(f, "     # N. boundary faces        : ", mesh.nfaces_bdy)
+                        close(f)
                     end
                 end              
             end
@@ -401,6 +521,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         end
             println_rank(" # GMSH LINEAR GRID PROPERTIES ...................... END"; msg_rank = rank, suppress = mesh.msg_suppress)
     end
+    MPI.Barrier(comm)
+    println_rank(" # GMSH LINEAR GRID PROPERTIES ...................... END"; msg_rank = rank)
 
     ngl                     = mesh.nop + 1
     tot_linear_poin         = mesh.npoin_linear
@@ -434,7 +556,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         println_rank(" # N. total high order points       : ", sum_npoin; msg_rank = rank, suppress = mesh.msg_suppress)
         println_rank(" # N. max high order points         : ", max_npoin, ", ", max_npoin_rank; msg_rank = rank, suppress = mesh.msg_suppress)
         if mesh.msg_suppress == false
-            for i = 0 : mpi_size
+            for i = 0 : mpi_size-1
                 MPI.Barrier(comm)
                 if i == rank
                     open("./mesh.log", "a+") do f
@@ -443,6 +565,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                         println(f, "     # N. faces internal points   : ", tot_faces_internal_nodes)
                         println(f, "     # N. volumes internal points : ", tot_vol_internal_nodes)
                         println(f, "     # N. total high order points : ", mesh.npoin)
+                    close(f)
                     end
                 end
             end
@@ -501,45 +624,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.facet_cell_ids    = get_faces(topology, mesh.nsd-1, mesh.nsd)
     
     mesh.edge_g_color::Array{Int64, 1} = zeros(Int64, mesh.nedges)
-    
-    #
-    # element refinement level
-    #
-    mesh.ad_lvl = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem))
-    if ladaptive == true
-        nelem_c = num_faces(model_coarse,ELEM_flg)
-
-        glue = local_views(glue_adapt).item_ref[]
-        r_c_flags = local_views(ref_coarse_flags).item_ref[]
-        if isnothing(adapt_flags)
-            for i in 1:nelem_c
-                elem_idx = glue.o2n_faces_map[i]
-                for j in elem_idx
-                    mesh.ad_lvl[j] = 0
-                    if r_c_flags[i] == 1
-                        mesh.ad_lvl[j] += 1
-                    elseif r_c_flags[i] == 2
-                        mesh.ad_lvl[j] -= 1
-                    end
-                end
-            end
-        else
-            for i = 1:omesh.nelem
-                elem_idx = glue.o2n_faces_map[i]
-                for j in elem_idx
-                    mesh.ad_lvl[j] = omesh.ad_lvl[i]
-                    if r_c_flags[i] == 1
-                        mesh.ad_lvl[j] += 1
-                    elseif r_c_flags[i] == 2
-                        mesh.ad_lvl[j] = mesh.ad_lvl[j] > 0 ? mesh.ad_lvl[j] - 1 : 0
-                    end
-                end
-            end
-        end
-    end
-    # @info rank, mesh.ad_lvl
-
-
+ 
     if (mesh.nsd == 1)
         nothing
     elseif (mesh.nsd == 2)
@@ -631,18 +716,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             for kk = 1:mesh.nelem)
         
         #
-        #Use NodeNumbering.jl
-        #
-        #adjacency = create_adjacency_graph(elements, element_types)
-        #degrees = node_degrees(adjacency)
-        #neworder = RCM(adjacency, degrees, tot_linear_poin, tot_linear_poin)
-        #finalorder = renumbering(neworder)
-        #RCM_adjacency = create_RCM_adjacency(adjacency, finalorder)
-        #newmatrix = adjacency_visualization(RCM_adjacency)
-        #display(UnicodePlots.heatmap(newmatrix))
-        
-        
-        #
         # Rewrite coordinates in RCM order:
         #
         #open("./COORDS_LO_$rank.dat", "w") do f
@@ -673,7 +746,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     lgl = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, backend)
 
 
-
     println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ "; msg_rank = rank, suppress = mesh.msg_suppress)
     #
     # Edges
@@ -693,6 +765,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     # NOTICE: in 2D we consider only edges. faces are the elements.
     #         
     add_high_order_nodes_volumes!(mesh, lgl, mesh.SD, elm2pelm)
+    
 
     for ip = mesh.npoin_linear+1:mesh.npoin
         mesh.x[ip] = mesh.x_ho[ip]
@@ -722,6 +795,23 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     pedge2edge = Dict(val => idx for (idx, val) in enumerate(edge2pedge))
     pface2face = Dict(val => idx for (idx, val) in enumerate(face2pface))
     pelm2elm = Dict(val => idx for (idx, val) in enumerate(elm2pelm))
+
+    # non_conforming_facets arrays
+    mesh.cip      = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.pip      = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.lfid     = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.half1    = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.half2    = KernelAbstractions.zeros(backend, TInt, 0)
+    # non_conforming_facets arrays for own child facet, ghost parent facet 
+    mesh.cip_pg   = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.lfid_pg  = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.half1_pg = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.half2_pg = KernelAbstractions.zeros(backend, TInt, 0)
+    # non_conforming_facets arrays for ghost child facet, own parent facet
+    mesh.pip_cg   = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.lfid_cg  = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.half1_cg = KernelAbstractions.zeros(backend, TInt, 0)
+    mesh.half2_cg = KernelAbstractions.zeros(backend, TInt, 0)
     # mesh.non_conforming_facets = [KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0) for _ in 1:num_hanging_facets]
     if ladaptive == true
      
@@ -733,9 +823,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 cfacet = idx+num_regular_facets
                 cid = facet_cell_pids[cfacet][1]
                 pid, lfacetid, half = hanging_facet_glue[idx]
+
+                if pid == -1
+                    continue
+                end
+
                 pfacet = cell_fecet_pids[pid][lfacetid-offset]
-                gfacet_p = local_to_global(edgids)[pfacet]
-                gfacet_c = local_to_global(edgids)[cfacet]
                 if (lfacetid == 7) || (lfacetid == 8)
                     half = 3-half
                 end
@@ -770,7 +863,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 end
                 # @info rank, cfacet, pfacet, [pid, lfacetid, half], gfacet_c, gfacet_p
                 # mesh.non_conforming_facets[idx] = [cfacet, pfacet, lfacetid-offset, half]
-                push!(mesh.non_conforming_facets, [cfacet, cid, pfacet, pid, lfacetid - offset, half])
+                push!(mesh.non_conforming_facets, [cid, pid, lfacetid - offset, half])
             end
             # reorder mesh.non_conforming_facets_parents_ghost and mesh.non_conforming_facets_children_ghost in rank orders\
             sorted_idx = sortperm(gpfacets_owner)
@@ -786,9 +879,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
             mesh.non_conforming_facets_children_ghost .= mesh.non_conforming_facets_children_ghost[sorted_idx]
             # @info "edge2pedge", rank, edge2pedge
             ghost_p_or_c = 1
-            mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm)
+            mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
+            mesh.pgip_local = send_and_receive(mesh.pgip_ghost, mesh.pgip_owner, comm)[1]
+            mesh.q_local_p = KernelAbstractions.zeros(backend(), TFloat, length(mesh.pgip_local))
             ghost_p_or_c = 2
-            mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm)
+            mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
+            mesh.cgip_local = send_and_receive(mesh.cgip_ghost, mesh.cgip_owner, comm)[1]
+            mesh.q_local_c = KernelAbstractions.zeros(backend(), TFloat, length(mesh.cgip_local))
 
         elseif mesh.nsd == 3
             offset = 20
@@ -799,20 +896,13 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                 cfacet = idx+num_regular_facets
                 cid = facet_cell_pids[cfacet][1]
                 pid, lfacetid, half = hanging_facet_glue[idx]
+                if pid == -1
+                    continue
+                end
                 
                 pfacet     = cell_fecet_pids[pid][lfacetid-offset]
                 gfacet_p   = local_to_global(fgids)[pfacet]
                 gfacet_c   = local_to_global(fgids)[cfacet]
-                if (cfacet ∈ f2pf) && (pfacet ∉ f2pf)
-                    pfacet = -pfacet
-                end
-                if (cfacet ∉ f2pf) && (pfacet ∈ f2pf)
-                    cfacet = -cfacet
-                end
-                if (cfacet ∉ f2pf) && (pfacet ∉ f2pf)
-                    pfacet = -pfacet
-                    cfacet = -cfacet
-                end
                 if (lfacetid-offset == 1) || (lfacetid-offset == 2) 
                     if half == 1
                         half_1 = 1
@@ -856,10 +946,167 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
                         half_2 = 1
                     end
                 end
-                push!(mesh.non_conforming_facets, [cfacet, cid, pfacet, pid, lfacetid - offset, half_1, half_2])
+                # own child facet, ghost parent facet 
+                if (cfacet ∈ f2pf) && (pfacet ∉ f2pf)
+                    # add ghost ip
+                    gpid = local_to_global(elgids)[pid]
+                    # push!(gpfacets_ghost, gfacet_p)
+                    push!(gpelm_ghost, gpid)
+                    push!(gpfacets_ghost, lfacetid - offset)
+                    push!(gpfacets_owner, local_to_owner(fgids)[pfacet]-1)
+                    pfacet = -pfacet
+                    push!(mesh.non_conforming_facets_parents_ghost, [cid, lfacetid - offset, half_1, half_2])
+                    push!(mesh.cip_pg, cid)
+                    push!(mesh.lfid_pg, lfacetid - offset)
+                    push!(mesh.half1_pg, half_1)
+                    push!(mesh.half2_pg, half_2)
+                    continue
+                end
+                # ghost child facet, own parent facet
+                if (cfacet ∉ f2pf) && (pfacet ∈ f2pf)
+                    gcid = local_to_global(elgids)[cid]
+                    push!(gcelm_ghost, gcid)
+                    push!(gcfacets_ghost, lfacetid - offset)
+                    # push!(gcfacets_ghost, gfacet_c)
+                    push!(gcfacets_owner, local_to_owner(fgids)[cfacet]-1)
+                    cfacet = -cfacet
+                    push!(mesh.non_conforming_facets_children_ghost, [pid, lfacetid - offset, half_1, half_2])
+                    push!(mesh.pip_cg, pid)
+                    push!(mesh.lfid_cg, lfacetid - offset)
+                    push!(mesh.half1_cg, half_1)
+                    push!(mesh.half2_cg, half_2)
+                    continue
+                end
+                # ghost child facet, ghost parent facet
+                if (cfacet ∉ f2pf) && (pfacet ∉ f2pf)
+                    pfacet = -pfacet
+                    cfacet = -cfacet
+                    continue
+                end
+                push!(mesh.non_conforming_facets, [cid, pid, lfacetid - offset, half_1, half_2])
+                push!(mesh.cip, cid)
+                push!(mesh.pip, pid)
+                push!(mesh.lfid, lfacetid - offset)
+                push!(mesh.half1, half_1)
+                push!(mesh.half2, half_2)
+                # @info rank, cfacet, pfacet, facet_glue
+                # comm_ip = intersect(mesh.conn[pid,:], mesh.conn[cid,:])
+                # @info "coords: ",  mesh.x[mesh.conn[pid,1:8]], mesh.y[mesh.conn[pid,1:8]], mesh.z[mesh.conn[pid,1:8]]
+                # @info "comm_coord", mesh.x[comm_ip], mesh.y[comm_ip], mesh.z[comm_ip] 
+                
+            end
+            mesh.num_ncf    = length(mesh.cip)
+            mesh.num_ncf_pg = length(mesh.cip_pg)
+            mesh.num_ncf_cg = length(mesh.pip_cg)
+
+            # reorder mesh.non_conforming_facets_parents_ghost and mesh.non_conforming_facets_children_ghost in rank orders\
+            sorted_idx = sortperm(gpfacets_owner)
+            sort!(gpfacets_owner)
+            gpelm_ghost    .= gpelm_ghost[sorted_idx]
+            gpfacets_ghost .= gpfacets_ghost[sorted_idx]
+            mesh.non_conforming_facets_parents_ghost .= mesh.non_conforming_facets_parents_ghost[sorted_idx]
+
+            sorted_idx = sortperm(gcfacets_owner)
+            sort!(gcfacets_owner)
+            gcelm_ghost    .= gcelm_ghost[sorted_idx]
+            gcfacets_ghost .= gcfacets_ghost[sorted_idx]
+            mesh.non_conforming_facets_children_ghost .= mesh.non_conforming_facets_children_ghost[sorted_idx]
+            # @info "edge2pedge", rank, edge2pedge
+            ghost_p_or_c = 1
+            mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
+            mesh.pgip_local = send_and_receive(mesh.pgip_ghost, mesh.pgip_owner, comm)[1]
+            mesh.q_local_p = KernelAbstractions.zeros(backend, TFloat, length(mesh.pgip_local))
+            ghost_p_or_c = 2
+            mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
+            mesh.cgip_local = send_and_receive(mesh.cgip_ghost, mesh.cgip_owner, comm)[1]
+            mesh.q_local_c = KernelAbstractions.zeros(backend, TFloat, length(mesh.cgip_local))
+            
+            # create list of IP for ncf
+            
+            ngl2 = ngl * ngl
+            mesh.IPc_list    = KernelAbstractions.zeros(backend, TInt, ngl2, mesh.num_ncf)
+            mesh.IPp_list    = KernelAbstractions.zeros(backend, TInt, ngl2, mesh.num_ncf)
+            mesh.IPc_list_pg = KernelAbstractions.zeros(backend, TInt, ngl2, mesh.num_ncf_pg)
+            mesh.IPp_list_cg = KernelAbstractions.zeros(backend, TInt, ngl2, mesh.num_ncf_cg)
+            for (idx,ncf) in enumerate(mesh.non_conforming_facets)
+                cell_ip_child, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
+                if (local_parent_facet_id == 1) # front
+                    l = 1:ngl; m = ngl; n = 1:ngl
+                    mesh.IPc_list[:,idx] .= reshape(mesh.connijk[cell_ip_child,  l, ngl, n], :)
+                    mesh.IPp_list[:,idx] .= reshape(mesh.connijk[cell_ip_parent, l, 1,   n], :)
+                elseif (local_parent_facet_id == 2) # back
+                    l = 1:ngl; m = 1; n = 1:ngl
+                    mesh.IPc_list[:,idx] .= reshape(mesh.connijk[cell_ip_child,  l, 1,   n], :)
+                    mesh.IPp_list[:,idx] .= reshape(mesh.connijk[cell_ip_parent, l, ngl, n], :)
+                elseif (local_parent_facet_id == 3) # bottom
+                    l = 1:ngl; m = 1:ngl; n = ngl
+                    mesh.IPc_list[:,idx] .= reshape(mesh.connijk[cell_ip_child,  l, m, ngl], :)
+                    mesh.IPp_list[:,idx] .= reshape(mesh.connijk[cell_ip_parent, l, m, 1  ], :)
+                elseif (local_parent_facet_id == 4) # top
+                    l = 1:ngl; m = 1:ngl; n = 1
+                    mesh.IPc_list[:,idx] .= reshape(mesh.connijk[cell_ip_child,  l, m, 1  ], :)
+                    mesh.IPp_list[:,idx] .= reshape(mesh.connijk[cell_ip_parent, l, m, ngl], :)
+                elseif (local_parent_facet_id == 5) # right
+                    l = 1; m = 1:ngl; n = 1:ngl
+                    mesh.IPc_list[:,idx] .= reshape(mesh.connijk[cell_ip_child,  1,   m, n], :)
+                    mesh.IPp_list[:,idx] .= reshape(mesh.connijk[cell_ip_parent, ngl, m, n], :)
+                elseif (local_parent_facet_id == 6) # left
+                    l = ngl; m = 1:ngl; n = 1:ngl
+                    mesh.IPc_list[:,idx] .= reshape(mesh.connijk[cell_ip_child,  ngl, m, n], :)
+                    mesh.IPp_list[:,idx] .= reshape(mesh.connijk[cell_ip_parent, 1,   m, n], :)
+                end
+            end
+
+            for (idx,ncf) in enumerate(mesh.non_conforming_facets_parents_ghost)
+                cell_ip_child, local_parent_facet_id, half_1, half_2 = ncf
+                if (local_parent_facet_id == 1) # front
+                    l = 1:ngl; m = ngl; n = 1:ngl
+                    mesh.IPc_list_pg[:,idx] .= reshape(mesh.connijk[cell_ip_child,  l, ngl, n], :)
+                elseif (local_parent_facet_id == 2) # back
+                    l = 1:ngl; m = 1; n = 1:ngl
+                    mesh.IPc_list_pg[:,idx] .= reshape(mesh.connijk[cell_ip_child,  l, 1,   n], :)
+                elseif (local_parent_facet_id == 3) # bottom
+                    l = 1:ngl; m = 1:ngl; n = ngl
+                    mesh.IPc_list_pg[:,idx] .= reshape(mesh.connijk[cell_ip_child,  l, m, ngl], :)
+                elseif (local_parent_facet_id == 4) # top
+                    l = 1:ngl; m = 1:ngl; n = 1
+                    mesh.IPc_list_pg[:,idx] .= reshape(mesh.connijk[cell_ip_child,  l, m, 1  ], :)
+                elseif (local_parent_facet_id == 5) # right
+                    l = 1; m = 1:ngl; n = 1:ngl
+                    mesh.IPc_list_pg[:,idx] .= reshape(mesh.connijk[cell_ip_child,  1,   m, n], :)
+                elseif (local_parent_facet_id == 6) # left
+                    l = ngl; m = 1:ngl; n = 1:ngl
+                    mesh.IPc_list_pg[:,idx] .= reshape(mesh.connijk[cell_ip_child,  ngl, m, n], :)
+                end
+            end
+
+            for (idx,ncf) in enumerate(mesh.non_conforming_facets_children_ghost)
+                cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
+                if (local_parent_facet_id == 1) # front
+                    l = 1:ngl; m = ngl; n = 1:ngl
+                    mesh.IPp_list_cg[:,idx] .= reshape(mesh.connijk[cell_ip_parent, l, 1,   n], :)
+                elseif (local_parent_facet_id == 2) # back
+                    l = 1:ngl; m = 1; n = 1:ngl
+                    mesh.IPp_list_cg[:,idx] .= reshape(mesh.connijk[cell_ip_parent, l, ngl, n], :)
+                elseif (local_parent_facet_id == 3) # bottom
+                    l = 1:ngl; m = 1:ngl; n = ngl
+                    mesh.IPp_list_cg[:,idx] .= reshape(mesh.connijk[cell_ip_parent, l, m, 1  ], :)
+                elseif (local_parent_facet_id == 4) # top
+                    l = 1:ngl; m = 1:ngl; n = 1
+                    mesh.IPp_list_cg[:,idx] .= reshape(mesh.connijk[cell_ip_parent, l, m, ngl], :)
+                elseif (local_parent_facet_id == 5) # right
+                    l = 1; m = 1:ngl; n = 1:ngl
+                    mesh.IPp_list_cg[:,idx] .= reshape(mesh.connijk[cell_ip_parent, ngl, m, n], :)
+                elseif (local_parent_facet_id == 6) # left
+                    l = ngl; m = 1:ngl; n = 1:ngl
+                    mesh.IPp_list_cg[:,idx] .= reshape(mesh.connijk[cell_ip_parent, 1,   m, n], :)
+                end
             end
         end
     end
+
+
+
 
     mesh.gnpoin    = MPI.Allreduce(maximum(mesh.ip2gip), MPI.MAX, comm)
     mesh.gip2owner = find_gip_owner(mesh.ip2gip)
@@ -879,7 +1126,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
     for (ip, gip) in enumerate(mesh.ip2gip)
         mesh.gip2ip[gip] = ip
-    end
+    end 
     #----------------------------------------------------------------------
     # Extract boundary edges and faces nodes:
     #----------------------------------------------------------------------
@@ -1210,7 +1457,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #----------------------------------------------------------------------
     # END Extract boundary edges and faces nodes
     #----------------------------------------------------------------------
-
     #----------------------------------------------------------------------
     # periodicity_restructure for MPI
     #----------------------------------------------------------------------
@@ -1323,7 +1569,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         end
 
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. "; msg_rank = rank, suppress = mesh.msg_suppress)
-        
+     
         restructure4periodicity_3D_sorted!(mesh, norx, "periodicx")
         restructure4periodicity_3D_sorted!(mesh, nory, "periodicy")
         restructure4periodicity_3D_sorted!(mesh, norz, "periodicz")
@@ -1332,7 +1578,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
 
         #check_memory(" AFTER restructure4periodicity before GC")
         
-        GC.gc()  # Force garbage since the grid being read may be large and we want to remove any memory usage not necessary for this.
+        # GC.gc()  # Force garbage since the grid being read may be large and we want to remove any memory usage not necessary for this.
         #check_memory(" AFTER restructure4periodicity")
     
 
@@ -1378,7 +1624,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #----------------------------------------------------------------------
     # END Extract boundary edges and faces nodes
     #----------------------------------------------------------------------
-
+ 
     #
     #
     # Free memory of obsolete arrays
@@ -1386,7 +1632,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.x_ho = zeros(1)
     mesh.y_ho = zeros(1)
     mesh.z_ho = zeros(1)
-    GC.gc()
+    # @time GC.gc()
     #
     # END Free memory of obsolete arrays
     #
@@ -1399,12 +1645,82 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     #open("./COORDS_GLOBAL.dat", "w") do f
     #    for ip = 1:mesh.npoin
     #        #@printf(" %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
-    #
+    #        @printf(f, " %.6f %.6f %.6f %d\n", mesh.x[ip],  mesh.y[ip], mesh.z[ip], ip)
+    #    end
+    #end #f
+    
+    # write_vtk_grid_only(mesh.SD, mesh, "VTK_grid", "./", parts, nparts)
+
+    #show(stdout, "text/plain", mesh.conn')
+    println_rank(" # POPULATE GRID with SPECTRAL NODES ............................ DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
+    if isnothing(adapt_flags)
+        return partitioned_model
+    else
+        if (omesh.lneed_redistribute)
+            return partitioned_model, glue_redistribute
+        else
+            return partitioned_model, glue.n2o_faces_map[mesh.nsd+1]
+        end
+    end
+
     #writevtk(model,"gmsh_grid")
     #    end
     #end 
 end
 
+function measure_elements_per_rank(local_elements)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    nprocs = MPI.Comm_size(comm)
+    needs_redistribution = false
+    
+    # Gather element counts from all ranks
+    all_counts = MPI.Allgather(local_elements, comm)
+    if rank == 0
+        # Calculate load balance metrics
+        total_elements = sum(all_counts)
+        avg_elements = total_elements / nprocs
+        max_elements = maximum(all_counts)
+        min_elements = minimum(all_counts)
+        
+        println("\nLoad Balance Analysis:")
+        println("Total elements: $total_elements")
+        println("Average per rank: $(round(avg_elements, digits=2))")
+        println("Max elements: $max_elements")
+        println("Min elements: $min_elements")
+        println("Load imbalance ratio: $(round(max_elements/avg_elements, digits=3))")
+        
+        # Check if redistribution is needed
+        imbalance_threshold = 1.2  # 20% imbalance threshold
+        needs_redistribution = (max_elements / avg_elements) > imbalance_threshold
+        
+    end
+    needs_redistribution = MPI.bcast(needs_redistribution, 0, comm)
+    return needs_redistribution
+    
+end
+
+function _handle_optional_args4amr(optional_args...)
+    n_args = length(optional_args)
+    
+    # Default values
+    adapt_flags              = nothing
+    partitioned_model_coarse = nothing  
+    omesh                    = nothing
+    
+    # Assign based on number of arguments provided
+    if n_args >= 1
+        adapt_flags = optional_args[1]
+    end
+    if n_args >= 2
+        partitioned_model_coarse = optional_args[2]
+    end
+    if n_args >= 3
+        omesh = optional_args[3]
+    end
+    
+    return adapt_flags, partitioned_model_coarse, omesh
+end
 
 function find_gip_owner_v1(a)
     comm = MPI.COMM_WORLD
@@ -1768,7 +2084,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
             
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
-            gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
             
             mesh.poin_in_edge[iedge_g,        1] = ip1
             mesh.poin_in_edge[iedge_g, mesh.ngl] = ip2
@@ -1784,7 +2099,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
                 gip = gtot_linear_poin + (edge2pedge[iedge_g]) * (ngl - 2)
                 operator = -
             end
-
             #@printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
@@ -1956,11 +2270,20 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
             #
             ip1 = mesh.conn_unique_edges[iedge_g][1]
             ip2 = mesh.conn_unique_edges[iedge_g][2]
-            gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
+
             #ip1 = mesh.conn_edge_el[1, iedge_el, iel]
             #ip2 = mesh.conn_edge_el[2, iedge_el, iel]
             mesh.poin_in_edge[iedge_g,        1] = ip1
             mesh.poin_in_edge[iedge_g, mesh.ngl] = ip2
+
+            gip1, gip2 = mesh.ip2gip[ip1], mesh.ip2gip[ip2]
+            if gip1 > gip2
+                gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
+                operator = +
+            else
+                gip = gtot_linear_poin + (edge2pedge[iedge_g]) * (ngl - 2)
+                operator = -
+            end
             
             x1, y1, z1 = mesh.x[ip1], mesh.y[ip1], mesh.z[ip1]
             x2, y2, z2 = mesh.x[ip2], mesh.y[ip2], mesh.z[ip2]
@@ -1980,7 +2303,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
                 #@printf(f, " %.6f %.6f %.6f %d %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip, gip)
                 #@printf( " %.6f %.6f %.6f %d\n", mesh.x_ho[ip],  mesh.y_ho[ip], mesh.z_ho[ip], ip)
                 ip  = ip + 1
-                gip = gip + 1
+                gip = operator(gip , 1)
             end
         end
     #end #end f
@@ -3087,28 +3410,54 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
 end
 
 
-function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = nothing, partitioned_model_coarse = nothing, omesh = nothing)
+function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    
-    partitioned_model = nothing
+    adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
+    partitioned_model        = nothing
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
         
         println_rank(" # Read gmsh grid and populate with high-order points "; msg_rank = rank, suppress = omesh == !isnothing)
         
-        # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
-        mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
-                                    nop=TInt(inputs[:nop]),
-                                    ngr=TInt(inputs[:nop_laguerre]+1),
-                                    SD=NSD_1D())
+        
         
         # Read gmsh grid using the GridapGmsh reader
         n2o_ele_map = nothing
         if isnothing(adapt_flags)
+            # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
+            mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
+                                        nop=TInt(inputs[:nop]),
+                                        ngr=TInt(inputs[:nop_laguerre]+1),
+                                        SD=NSD_1D())
             partitioned_model = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute)
         else
-            partitioned_model, n2o_ele_map = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute, adapt_flags, partitioned_model_coarse, omesh)
+            # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
+            mesh_tmp = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
+                                        nop=TInt(inputs[:nop]),
+                                        ngr=TInt(inputs[:nop_laguerre]+1),
+                                        SD=NSD_1D())
+            @time partitioned_model_tmp, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_tmp, inputs, nparts, distribute, args...)
+            uaux    = args[end]
+            project = args[end-1]
+            interp  = args[end-2]
+            uaux_refined = KernelAbstractions.zeros(CPU(),  TFloat, (mesh_tmp.npoin, size(uaux, 2)))
+            p8est_transfer_q!(uaux_refined, uaux, omesh.ad_lvl, mesh_tmp.ad_lvl, mesh_tmp, omesh, n2o_ele_map_tmp, interp, project, mesh_tmp.SD)
+            if (mesh_tmp.lneed_redistribute)
+                # Initialize mesh struct: the arrays length will be increased in mod_mesh_read_gmsh
+                mesh = St_mesh{TInt,TFloat, CPU()}(nsd=TInt(inputs[:nsd]),
+                                            nop=TInt(inputs[:nop]),
+                                            ngr=TInt(inputs[:nop_laguerre]+1),
+                                            SD=NSD_1D())
+                partitioned_model, glue_redistribute = mod_mesh_read_gmsh!(mesh, inputs, nparts, distribute, adapt_flags, partitioned_model_tmp, mesh_tmp)
+                uaux_new = KernelAbstractions.zeros(CPU(),  TFloat, (mesh.npoin, size(uaux, 2)))
+                redistributed_q!(uaux_new, uaux_refined, glue_redistribute, mesh.connijk, mesh_tmp.connijk, mesh.ngl, mesh.SD)
+            else
+                mesh = mesh_tmp
+                partitioned_model = partitioned_model_tmp
+                uaux_new = uaux_refined
+            end
+                
         end
 
         # WARNING: this will be removed when x,y,z is fulyl replaced by coords
@@ -3190,7 +3539,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, adapt_flags = no
     if isnothing(adapt_flags)
         return mesh, partitioned_model
     else
-        return mesh, partitioned_model, n2o_ele_map
+        return mesh, partitioned_model, uaux_new
     end
         
 end
@@ -3350,7 +3699,161 @@ function get_bdy_poin_in_face_on_edges!(mesh::St_mesh, isboundary_face, SD::NSD_
     end
 end
 
+function send_and_receive!(combined_recv_data, data2send, send_targets, comm)
+    size = MPI.Comm_size(comm)
+    rank = MPI.Comm_rank(comm)
+    T = eltype(data2send)
+
+    # Validate inputs
+    length(data2send) == length(send_targets) || 
+        error("data2send and send_targets must have the same size")
+
+    # Pre-allocate and organize data more efficiently
+    send_counts = zeros(Int, size)
+    
+    # Count items per destination in single pass
+    @inbounds for target in send_targets
+        (0 ≤ target < size) || error("send_targets contains invalid rank")
+        send_counts[target + 1] += 1
+    end
+
+    # Pre-allocate send buffers with exact sizes
+    send_buffers = [Vector{T}(undef, send_counts[i]) for i in 1:size]
+    send_indices = ones(Int, size)  # Track insertion positions
+    
+    # Fill send buffers in single pass
+    @inbounds for (data, target) in zip(data2send, send_targets)
+        idx = target + 1
+        send_buffers[idx][send_indices[idx]] = data
+        send_indices[idx] += 1
+    end
+
+    # Communicate sizes
+    recv_sizes = MPI.Alltoall(MPI.UBuffer(send_counts, 1), comm)
+    
+    # Pre-allocate receive buffers
+    recv_buffers = [Vector{T}(undef, recv_sizes[i]) for i in 1:size]
+    
+    # Pre-calculate total receive size to avoid dynamic resizing
+    total_recv_size = sum(recv_sizes)
+    fill!(combined_recv_data, zero(T))
+    original_senders = Vector{Int}(undef, total_recv_size)
+
+    # Communicate data with pre-allocated request vector
+    max_requests = 2 * count(x -> x > 0, send_counts) + 2 * count(x -> x > 0, recv_sizes)
+    requests = Vector{MPI.Request}(undef, max_requests)
+    req_idx = 0
+
+    @inbounds for i in 0:size-1
+        if send_counts[i+1] > 0
+            req_idx += 1
+            requests[req_idx] = MPI.Isend(send_buffers[i+1], i, 0, comm)
+        end
+        if recv_sizes[i+1] > 0
+            req_idx += 1
+            requests[req_idx] = MPI.Irecv!(recv_buffers[i+1], i, 0, comm)
+        end
+    end
+
+    # Wait for communication (only for actual requests)
+    if req_idx > 0
+        resize!(requests, req_idx)
+        MPI.Waitall!(requests)
+    end
+
+    # Efficiently combine received data without intermediate allocations
+    write_idx = 1
+    @inbounds for i in 0:size-1
+        recv_count = recv_sizes[i+1]
+        if recv_count > 0
+            # Copy data directly into pre-allocated arrays
+            copyto!(combined_recv_data, write_idx, recv_buffers[i+1], 1, recv_count)
+            fill!(view(original_senders, write_idx:write_idx+recv_count-1), i)
+            write_idx += recv_count
+        end
+    end
+
+    return combined_recv_data, original_senders
+end
+
 function send_and_receive(data2send, send_targets, comm)
+    size = MPI.Comm_size(comm)
+    rank = MPI.Comm_rank(comm)
+    T = eltype(data2send)
+
+    # Validate inputs
+    length(data2send) == length(send_targets) || 
+        error("data2send and send_targets must have the same size")
+
+    # Pre-allocate and organize data more efficiently
+    send_counts = zeros(Int, size)
+    
+    # Count items per destination in single pass
+    @inbounds for target in send_targets
+        (0 ≤ target < size) || error("send_targets contains invalid rank")
+        send_counts[target + 1] += 1
+    end
+
+    # Pre-allocate send buffers with exact sizes
+    send_buffers = [Vector{T}(undef, send_counts[i]) for i in 1:size]
+    send_indices = ones(Int, size)  # Track insertion positions
+    
+    # Fill send buffers in single pass
+    @inbounds for (data, target) in zip(data2send, send_targets)
+        idx = target + 1
+        send_buffers[idx][send_indices[idx]] = data
+        send_indices[idx] += 1
+    end
+
+    # Communicate sizes
+    recv_sizes = MPI.Alltoall(MPI.UBuffer(send_counts, 1), comm)
+    
+    # Pre-allocate receive buffers
+    recv_buffers = [Vector{T}(undef, recv_sizes[i]) for i in 1:size]
+    
+    # Pre-calculate total receive size to avoid dynamic resizing
+    total_recv_size = sum(recv_sizes)
+    combined_recv_data = Vector{T}(undef, total_recv_size)
+    original_senders = Vector{Int}(undef, total_recv_size)
+
+    # Communicate data with pre-allocated request vector
+    max_requests = 2 * count(x -> x > 0, send_counts) + 2 * count(x -> x > 0, recv_sizes)
+    requests = Vector{MPI.Request}(undef, max_requests)
+    req_idx = 0
+
+    @inbounds for i in 0:size-1
+        if send_counts[i+1] > 0
+            req_idx += 1
+            requests[req_idx] = MPI.Isend(send_buffers[i+1], i, 0, comm)
+        end
+        if recv_sizes[i+1] > 0
+            req_idx += 1
+            requests[req_idx] = MPI.Irecv!(recv_buffers[i+1], i, 0, comm)
+        end
+    end
+
+    # Wait for communication (only for actual requests)
+    if req_idx > 0
+        resize!(requests, req_idx)
+        MPI.Waitall!(requests)
+    end
+
+    # Efficiently combine received data without intermediate allocations
+    write_idx = 1
+    @inbounds for i in 0:size-1
+        recv_count = recv_sizes[i+1]
+        if recv_count > 0
+            # Copy data directly into pre-allocated arrays
+            copyto!(combined_recv_data, write_idx, recv_buffers[i+1], 1, recv_count)
+            fill!(view(original_senders, write_idx:write_idx+recv_count-1), i)
+            write_idx += recv_count
+        end
+    end
+
+    return combined_recv_data, original_senders
+end
+
+function send_and_receive_old(data2send, send_targets, comm)
     size = MPI.Comm_size(comm)
     rank = MPI.Comm_rank(comm)
 
@@ -3358,13 +3861,12 @@ function send_and_receive(data2send, send_targets, comm)
 
     # Validate inputs
     if length(data2send) != length(send_targets)
-        @info rank, data2send, send_targets
+        @info rank, length(data2send), length(send_targets)
         error("data2send and send_targets must have the same size")
     end
 
     # Organize data to send
     send_data = Dict(i => T[] for i in 0:size-1)
-    send_data_order = Dict(i => T[] for i in 0:size-1)
     for (data, owner) in zip(data2send, send_targets)
         if owner < 0 || owner >= size
             error("send_targets contains invalid rank")
@@ -3411,18 +3913,13 @@ function send_and_receive(data2send, send_targets, comm)
     return combined_recv_data, original_senders
 end
 
-function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm, ip2gip, ngl, ghost_p_or_c, comm)
+function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm, ip2gip, ngl, ghost_p_or_c, comm, SD::NSD_2D)
     rank = MPI.Comm_rank(comm)
-    # @info "gfacets_ghost, gfacets_owner", rank, gfacets_ghost, gfacets_owner
     gelm_recv, original_senders = send_and_receive(gelm_ghost, gfacets_owner, comm)
     gfacets_recv = send_and_receive(gfacets_ghost, gfacets_owner, comm)[1]
-    # @info "gfacets_recv, original_senders", rank,  gfacets_recv, original_senders
-    # println("Rank $rank gfacets_recv: $gfacets_recv")
+    println("Rank $rank gfacets_recv: $gfacets_recv")
     lcells = [pelm2elm[x] for x in gelm_recv]
-    # @info "lcells", rank, lcells 
     lfacets = gfacets_recv
-    # @info "lfacets", rank, lfacets 
-    # lfacets = global_to_local(facetsids)[vcat(gfacets_recv...)]
     nlfacets    = size(lfacets,1)
     ips_send    = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl)
     ips_targets = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl)
@@ -3444,7 +3941,6 @@ function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm,
             if ghost_p_or_c == 1
                 IP .= conn[lcell, ngl, n]
             elseif ghost_p_or_c == 2
-                # @info rank, IP, conn, lcell, m 
                 IP .= conn[lcell, 1, n]
             end
         elseif (lfacet == 3)
@@ -3465,15 +3961,159 @@ function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm,
             end
         end
         for ip in IP
+            ips_send[cnt] = ip2gip[ip]
+            ips_targets[cnt] = original_senders[i]
+            cnt += 1
+        end
+    end
+    ips_recv, ips_owner  = send_and_receive(ips_send, ips_targets, comm)
+
+    return ips_recv, ips_owner
+end
+
+
+function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm, ip2gip, ngl, ghost_p_or_c, comm, SD::NSD_3D)
+    rank = MPI.Comm_rank(comm)
+    gelm_recv, original_senders = send_and_receive(gelm_ghost, gfacets_owner, comm)
+    gfacets_recv = send_and_receive(gfacets_ghost, gfacets_owner, comm)[1]
+    lcells = [pelm2elm[x] for x in gelm_recv]
+    lfacets = gfacets_recv
+    nlfacets    = size(lfacets,1)
+    ips_send    = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl * ngl)
+    ips_targets = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl * ngl)
+    IP          = KernelAbstractions.zeros(CPU(), TInt, ngl, ngl)
+    cnt = 1
+    for (i, (lfacet, lcell)) in enumerate(zip(lfacets, lcells))
+
+        if (lfacet == 1) #front
+            l = 1:ngl
+            m = 1
+            n = 1:ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, l, 1, n]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, l, ngl, n]
+            end
+        elseif (lfacet == 2) #back
+            l = 1:ngl
+            m = ngl
+            n = 1:ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, l, ngl, n]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, l, 1, n]
+            end
+        elseif (lfacet == 3) #bottom
+            l = 1:ngl
+            m = 1:ngl
+            n = 1
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, l, m, 1]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, l, m, ngl]
+            end
+        elseif (lfacet == 4) #top
+            l = 1:ngl
+            m = 1:ngl
+            n = ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, l, m, ngl]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, l, m, 1]
+            end
+        elseif (lfacet == 5) #right
+            l = ngl
+            m = 1:ngl
+            n = 1:ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, ngl, m, n]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, 1, m, n]
+            end
+        elseif (lfacet == 6) #left
+            l = 1
+            m = 1:ngl
+            n = 1:ngl
+            if ghost_p_or_c == 1
+                IP .= conn[lcell, 1, m, n]
+            elseif ghost_p_or_c == 2
+                IP .= conn[lcell, ngl, m, n]
+            end
+        end
+        for ip in IP
             # @info rank, ip, cnt,i, lfacet, lcell
             ips_send[cnt] = ip2gip[ip]
             ips_targets[cnt] = original_senders[i]
             cnt += 1
         end
     end
-    # @info "ips_send, ips_targets", rank, ips_send, ips_targets
     ips_recv, ips_owner  = send_and_receive(ips_send, ips_targets, comm)
-    # @info "ips_recv, ips_owner", rank, ips_recv, ips_owner
 
     return ips_recv, ips_owner
+end
+
+function redistributed_q!(u, u_old, glue_redistribute, connijk, old_connijk, ngl, SD::NSD_3D)
+
+    neq = size(u_old,2)
+    lids_rcv, lids_snd, parts_rcv, parts_snd, new2old = GridapDistributed.get_glue_components(glue_redistribute,Val(false))
+    id2send      = local_views(lids_snd).item_ref[]
+    num2send     = id2send.ptrs[end]-1
+    u2send  = KernelAbstractions.zeros(CPU(), TFloat, Int64(num2send * ngl*ngl*ngl*neq))
+    u2owner = KernelAbstractions.zeros(CPU(), TInt, Int64(num2send * ngl*ngl*ngl*neq))
+    cnt = 1
+    for (i, part) in enumerate(local_views(parts_snd).item_ref[])
+        for idx in getindex(id2send, i)
+            for l = 1:ngl
+                for m = 1:ngl
+                    for n = 1:ngl
+                        ip = old_connijk[idx,l,m,n]
+                        for ieq = 1:neq
+                            u2send[cnt]  = u_old[ip,ieq]
+                            u2owner[cnt] = part-1
+                            cnt += 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    u2recv, u2recver = send_and_receive(u2send, u2owner, comm)
+
+    id2recv = local_views(lids_rcv).item_ref[]
+    cnt = 1
+    for (i, part) in enumerate(local_views(parts_rcv).item_ref[])
+        for idx in getindex(id2recv, i)
+            for l = 1:ngl
+                for m = 1:ngl
+                    for n = 1:ngl
+                        ip = connijk[idx,l,m,n]
+                        for ieq = 1:neq
+                            u[ip,ieq]  = u2recv[cnt]
+                            if part-1 != u2recver[cnt]
+                                @mystop("part-1 != u2recver[cnt]")
+                            end
+                            cnt += 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for (id, n2o_id) in enumerate(local_views(new2old).item_ref[])
+        if n2o_id == 0
+            continue
+        end
+        for l = 1:ngl
+            for m = 1:ngl
+                for n = 1:ngl
+                    old_ip = old_connijk[n2o_id,l,m,n]
+                    new_ip = connijk[id,l,m,n]
+                    for ieq = 1:neq
+                        u[new_ip,ieq]  = u_old[old_ip,ieq]
+                    end
+                end
+            end
+        end
+    end
 end

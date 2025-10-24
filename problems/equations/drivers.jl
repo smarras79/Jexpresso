@@ -2,15 +2,14 @@ function driver(nparts,
                 distribute,
                 inputs::Dict,
                 OUTPUT_DIR::String,
-                TFloat)
-    
+                TFloat) 
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
     
     if inputs[:lwarmup] == true
         if rank == 0
             println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
-	end
+	    end
         input_mesh = inputs[:gmsh_filename]
         inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
         sem_dummy = sem_setup(inputs, nparts, distribute)
@@ -33,7 +32,7 @@ function driver(nparts,
     end
     #check_memory(" Before sem_setup.")
                 
-    sem = sem_setup(inputs, nparts, distribute)
+    sem, partitioned_model = sem_setup(inputs, nparts, distribute)
 
     #check_memory(" After sem_setup.")
     
@@ -47,32 +46,17 @@ function driver(nparts,
     # println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
-    if (sem.mesh.SD != NSD_1D())
-        if rank == 0
-            @info " # COMPUTE conformity4ncf_q!"
-        end
-        pre_allocation_q = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
-        conformity4ncf_q!(qp.qn, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
-                          sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
-                          qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
-        
-        conformity4ncf_q!(qp.qe, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
-                          sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
-                          qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
-        
-        MPI.Barrier(comm)
-        
-        if rank == 0
-            @info " # COMPUTE conformity4ncf_q! .... END"
-        end
-    end
 
-    if (inputs[:ladapt] == true) && (inputs[:amr] == true)
+    if (inputs[:lamr] == true)
         amr_freq = inputs[:amr_freq]
         Δt_amr   = amr_freq * inputs[:Δt]
         tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
     else
         tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+    end
+
+    if rank == 0
+        @info " Params_setup .................................."
     end
     params, u =  params_setup(sem,
                               qp,
@@ -80,14 +64,46 @@ function driver(nparts,
                               OUTPUT_DIR,
                               TFloat,
                               tspan)
+
+    if rank == 0
+        @info " Params_setup .................................. END"
+    end
     
+    # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
+    # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
+    if (sem.mesh.SD != NSD_1D())
+        if rank == 0
+            @info "start conformity4ncf_q!"
+        end
+        pM = setup_assembler(params.mesh.SD, params.qp.qn, params.mesh.ip2gip, params.mesh.gip2owner)
+        @time conformity4ncf_q!(params.qp.qn, params.rhs_el_tmp, @view(params.utmp[:,:]), params.vaux, 
+                                                                       pM, params.q_el, params.q_el_pro, 
+                                                                       params.q_ghost_p, params.q_ghost_c,
+                                                                       params.mesh.SD, 
+                                                                       params.QT, params.mesh.connijk,
+                                                                       params.mesh, params.Minv, 
+                                                                       params.metrics.Je, params.ω, params.AD, 
+                                                                       params.neqs, params.interp, params; ladapt = inputs[:ladapt])
+        @time conformity4ncf_q!(params.qp.qe, params.rhs_el_tmp, @view(params.utmp[:,:]), params.vaux, 
+                                                                       pM, params.q_el, params.q_el_pro, 
+                                                                       params.q_ghost_p, params.q_ghost_c,
+                                                                       params.mesh.SD, 
+                                                                       params.QT, params.mesh.connijk, 
+                                                                       params.mesh, params.Minv, 
+                                                                       params.metrics.Je, params.ω, params.AD, 
+                                                                       params.neqs, params.interp, params; ladapt = inputs[:ladapt])
+        
+        MPI.Barrier(comm)
+        if rank == 0
+            @info "end conformity4ncf_q!"
+        end
+    end
     if !inputs[:llinsolve]
         #
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
         #
-        @time solution = time_loop!(inputs, params, u)
+        @time solution = time_loop!(inputs, params, u, partitioned_model)
         # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
-        
     else
         #
         # Problems that lead to Ax = b
@@ -145,7 +161,8 @@ function driver(nparts,
                     elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
                 elseif inputs[:lsparse]
                     println(" # Solve x=inv(A)*b: sparse storage")
-                    @time params.qp.qn = sem.matrix.L\RHS
+                    
+                    @time params.qp.qn = sem.matrix.L \ RHS
                 end
             end
             

@@ -202,7 +202,7 @@ function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp,
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
     
     nvar     = size(varnames, 1)
-    noutvar  = max(nvar, size(outvarnames,1))
+    noutvar  = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     new_size = size(mesh.x,1)
     if (mesh.nelem_semi_inf > 0)
         subelem = Array{Int64}(undef, mesh.nelem*(mesh.ngl-1)^2+mesh.nelem_semi_inf*(mesh.ngl-1)*(mesh.ngr-1), 4)
@@ -298,7 +298,7 @@ function write_vtk(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
     if (isa(outvarnames, Tuple) || isa(outvarnames, String)) outvarnames = collect(outvarnames) end
     
     nvar    = size(varnames, 1)
-    noutvar = max(nvar, size(outvarnames,1))
+    noutvar = size(outvarnames,1) #max(nvar, size(outvarnames,1))
     npoin   = mesh.npoin
     
     xx = zeros(size(mesh.x,1))

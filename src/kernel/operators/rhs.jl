@@ -1,5 +1,7 @@
 using Distributions
 
+#using InteractiveUtils
+const PHYS_CONST = PhysicalConst{Float64}()
 #---------------------------------------------------------------------------
 # Optimized (more coud possibly be done)
 #---------------------------------------------------------------------------
@@ -11,7 +13,6 @@ function RHStoDU!(du, RHS, neqs, npoin)
 end
 
 function u2uaux!(uaux, u, neqs, npoin)
-
     for i=1:neqs
         idx = (i-1)*npoin
         uaux[:,i] = view(u, idx+1:i*npoin)
@@ -30,6 +31,25 @@ function uaux2u!(u, uaux, neqs, npoin)
     end
     
 end
+
+function micro2rhs!(rhs,dhldt,dqtdt,dqpdt,::NSD_2D)
+
+    @view(rhs[:,:,:,4]) .= @view(rhs[:,:,:,4]) .- @view(dhldt[:,:,:])
+    @view(rhs[:,:,:,5]) .= @view(rhs[:,:,:,5]) .+ @view(dqtdt[:,:,:])
+    @view(rhs[:,:,:,6]) .= @view(rhs[:,:,:,6]) .+ @view(dqpdt[:,:,:])
+
+end
+
+
+function micro2rhs!(rhs,dhldt,dqtdt,dqpdt,::NSD_3D)
+
+    @view(rhs[:,:,:,:,5]) .= @view(rhs[:,:,:,:,5]) .- @view(dhldt[:,:,:,:])
+    @view(rhs[:,:,:,:,6]) .= @view(rhs[:,:,:,:,6]) .+ @view(dqtdt[:,:,:,:])
+    @view(rhs[:,:,:,:,7]) .= @view(rhs[:,:,:,:,7]) .+ @view(dqpdt[:,:,:,:])
+
+end 
+
+
 
 function resetRHSToZero_inviscid!(params)
     fill!(params.rhs_el, zero(params.T))   
@@ -391,16 +411,23 @@ function _build_rhs!(RHS, u, params, time)
         if (params.laguerre)
             reset_laguerre_filters!(params)
             filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
-                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je)
+                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = inputs[:ladapt])
         else
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE)
+            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
         end
     end
-    
+
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     if inputs[:ladapt] == true
-        conformity4ncf_q!(params.uaux, params.pM, SD, QT, params.mesh.connijk, params.mesh, params.Minv, params.metrics.Je, params.ω, AD, neqs, params.interp)
+        conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux, 
+                            params.pM, params.q_el, params.q_el_pro, 
+                            params.q_ghost_p, params.q_ghost_c,
+                            params.mesh.SD, 
+                            params.QT, params.mesh.connijk,
+                            params.mesh, params.Minv, 
+                            params.metrics.Je, params.ω, params.AD, 
+                            params.neqs, params.interp, params)
     end
     
     resetbdyfluxToZero!(params)
@@ -432,15 +459,16 @@ function _build_rhs!(RHS, u, params, time)
                                                params.mp.Pg, params.mp.Tabs, params.mp.qi, @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
                                                params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
                                                params.metrics, params.ω, params.basis.dψ, SD, params.SOL_VARS_TYPE)
-            if (SD == NSD_3D())
+            #=@time if (SD == NSD_3D())
                 params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt
                 params.rhs_el[:,:,:,:,6] .+= params.mp.dqtdt
                 params.rhs_el[:,:,:,:,7] .+= params.mp.dqpdt
             else
-                params.rhs_el[:,:,:,4] .-= params.mp.dhldt
-                params.rhs_el[:,:,:,5] .+= params.mp.dqtdt
-                params.rhs_el[:,:,:,6] .+= params.mp.dqpdt
-            end
+                @time @view(params.rhs_el[:,:,:,4]) .-= params.mp.dhldt[:,:,:]
+                @time @view(params.rhs_el[:,:,:,5]) .+= @view(params.mp.dqtdt[:,:,:])
+                @time @view(params.rhs_el[:,:,:,6]) .= @view(params.rhs_el[:,:,:,6]) .+ @view(params.mp.dqpdt[:,:,:])
+            end=#
+            micro2rhs!(params.rhs_el,params.mp.dhldt, params.mp.dqtdt, params.mp.dqpdt, SD)
         end
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
@@ -450,15 +478,21 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
     
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, SD)
+    # inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, SD)
     # time_function!(params.timers["inviscid_rhs_el!"], inviscid_rhs_el!, u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, SD)
+    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
+                     params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
     
     if inputs[:ladapt] == true
-        DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+        DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, 
+                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
+                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+                           params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           ngl-1, neqs, params.interp)
     end
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
-
 
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
@@ -474,10 +508,12 @@ function _build_rhs!(RHS, u, params, time)
         viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
         if inputs[:ladapt] == true
-            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk,
-                               params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                               params.mesh.non_conforming_facets_parents_ghost,
-                               params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner,
+            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk, params.mesh.poin_in_edge, 
+                               params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                               params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
+                               params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+                               params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                               params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
                                ngl-1, neqs, params.interp)
         end
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
@@ -512,13 +548,19 @@ function _build_rhs!(RHS, u, params, time)
         
         if inputs[:ladapt] == true
             
-            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, selectdim(params.rhs_el, ndims(params.rhs_el), ieq), params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                                params.mesh.non_conforming_facets_children_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, ngl-1, params.interp)
+            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, selectdim(params.rhs_el, ndims(params.rhs_el), ieq), 
+                                params.mesh.connijk, params.mesh.poin_in_edge, 
+                                params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
+                                params.mesh.non_conforming_facets_children_ghost, params.mesh.pip_cg, params.mesh.lfid_cg, params.mesh.half1_cg, params.mesh.half2_cg, 
+                                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.mesh.q_local_c, params.q_ghost_c, 
+                                params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
+                                params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, params.mesh.cgip_local,
+                                ngl-1, params.interp)
         end
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
+function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
 
@@ -594,7 +636,10 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
+function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64},
+                            coords, 
+                            lsource, S_micro_vec, qn_vec, flux_lw_vec,
+                            flux_sw_vec, SD::NSD_2D)
     
     PhysConst = PhysicalConst{Float64}()
 
@@ -645,12 +690,15 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
                              ymax=ymax)
                 
                 if (params.inputs[:lmoist])
-                    add_micro_precip_sources!(params.mp, params.mp.flux_lw[ip],
-                                              params.mp.flux_sw[ip], params.mp.Tabs[ip],
-                                              params.mp.S_micro[ip],
-                                              @view(params.S[i,j,:]), @view(params.uaux[ip,:]),
-                                              params.mp.qn[ip], @view(qe[ip,:]),
-                                              SD, params.SOL_VARS_TYPE)
+                    S_micro::Float64 = @inbounds S_micro_vec[ip]
+                    flux_lw::Float64 = @inbounds flux_lw_vec[ip]
+                    flux_sw::Float64 = @inbounds flux_sw_vec[ip]
+                    qn::Float64 = @inbounds qn_vec[ip]
+                    add_micro_precip_sources!(@view(params.S[i,j,:]),
+                                                @view(params.uaux[ip,:]),
+                                                @view(qe[ip,:]),
+                                                S_micro, qn, flux_lw, flux_sw, PHYS_CONST,
+                                                SD, params.SOL_VARS_TYPE)
                 end
             end
 
@@ -701,11 +749,11 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
 
     #= SM params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
     params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]=#
-
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_3D)
-    
+function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_3D)
+   
+    PhysConst = PhysicalConst{Float64}()
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmin = params.xmin; xmax = params.xmax; zmax = params.zmax 
     for iel = 1:params.mesh.nelem
@@ -745,16 +793,15 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_3D)
                              xmax=xmax, xmin=xmin, zmax=zmax)
                 
                 if (params.inputs[:lmoist])
-                    add_micro_precip_sources!(params.mp,
-                                              params.mp.flux_lw[ip],
-                                              params.mp.flux_sw[ip],
-                                              params.mp.Tabs[ip],
-                                              params.mp.S_micro[ip],
-                                              @view(params.S[i,j,k,:]),
-                                              @view(params.uaux[ip,:]),
-                                              params.mp.qn[ip],
-                                              @view(qe[ip,:]),
-                                              SD, params.SOL_VARS_TYPE)
+                    S_micro::Float64 = @inbounds S_micro_vec[ip]
+                    flux_lw::Float64 = @inbounds flux_lw_vec[ip]
+                    flux_sw::Float64 = @inbounds flux_sw_vec[ip]
+                    qn::Float64 = @inbounds qn_vec[ip]
+                    add_micro_precip_sources!(@view(params.S[i,j,k,:]),
+                                                @view(params.uaux[ip,:]),
+                                                @view(qe[ip,:]),
+                                                S_micro, qn, flux_lw, flux_sw, PhysConst,
+                                                SD, params.SOL_VARS_TYPE)
                     if (params.inputs[:LST])
                         large_scale_source!(@view(params.uaux[ip,:]),
                                             @view(qe[ip,:]),
@@ -2474,20 +2521,31 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     
 end
 
-function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ, ::NSD_3D)
+function compute_vertical_derivative_q!(dqdz::Array{Float64,4}, q::Array{Float64,4}, iel::Int64, ngl::Int64, Je::Array{Float64,4}, 
+        dξdz::Array{Float64,4}, dηdz::Array{Float64,4}, dζdz::Array{Float64,4}, ω::Vector{Float64}, dψ::Matrix{Float64}, ::NSD_3D)
+    
+    local ωJac::Float64
+    local dHdξ::Float64
+    local dHdη::Float64
+    local dHdζ::Float64
+    local dξdz_ij::Float64
+    local dηdz_ij::Float64
+    local dζdz_ij::Float64
+    local dHdz::Float64
+    local auxi::Float64
 
     for k=1:ngl
         for j=1:ngl
             for i=1:ngl
-                ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                @inbounds ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
                 
                 dHdξ = 0.0
                 dHdη = 0.0
                 dHdζ = 0.0
                 @turbo for m = 1:ngl
-                    dHdξ += dψ[m,i]*q[m,j,k]
-                    dHdη += dψ[m,j]*q[i,m,k]
-                    dHdζ += dψ[m,k]*q[i,j,m]
+                    dHdξ += dψ[m,i]*q[m,j,k,1]
+                    dHdη += dψ[m,j]*q[i,m,k,1]
+                    dHdζ += dψ[m,k]*q[i,j,m,1]
                 end
                 dξdz_ij = dξdz[iel,i,j,k]
                 dηdz_ij = dηdz[iel,i,j,k]
@@ -2502,7 +2560,7 @@ function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζ
     end
 end
 
-function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdy, dηdy, ω, dψ, ::NSD_2D)
+function compute_vertical_derivative_q!(dqdz, q, iel::Int64, ngl::Int64, Je, dξdy, dηdy, ω, dψ, ::NSD_2D)
     for j=1:ngl
         for i=1:ngl
             ωJac = ω[i]*ω[j]*Je[iel,i,j]
@@ -2510,8 +2568,8 @@ function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdy, dηdy, ω,
             dHdξ = 0.0    
             dHdη = 0.0
             @turbo for m = 1:ngl
-                dHdξ += dψ[m,i]*q[m,j]
-                dHdη += dψ[m,j]*q[i,m]
+                dHdξ += dψ[m,i]*q[m,j,1]
+                dHdη += dψ[m,j]*q[i,m,1]
             end
             dξdy_ij = dξdy[iel,i,j]      
             dηdy_ij = dηdy[iel,i,j]      
