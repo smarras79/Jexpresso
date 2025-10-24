@@ -572,7 +572,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
 
         end
 
-        lkep = true
+        lkep = inputs[:lkep]
         if !lkep
             _expansion_inviscid!(u, params.neqs, ngl,
                                  params.basis.dψ, params.ω,
@@ -581,32 +581,30 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                                  iel, params.CL, params.QT, SD, params.AD)
         else
 
-            D = build_differentiation_matrix(SD,
-                                             params.basis.ψ, params.basis.dψ, params.ω,
-                                             params.mesh,
-                                             ngl-1,
-                                             ngl-1,
-                                             Float64)
-
             #print_matrix(D) #seems ok
             _expansion_inviscid_KEP!(u, params.neqs, ngl,
                                      params.basis.dψ, params.ω,
                                      params.F, params.S, D,
                                      params.rhs_el, uilgl,
-                                     iel, params.CL, params.QT, SD, params.AD, params.uaux, connijk, iel)    
+                                     iel, params.CL, params.QT, SD, params.AD,
+                                     params.uaux, connijk, iel)
+
+            entropy_integral = 0.0
+            for iel = 1:nelem
+                for i = 1:ngl-1
+                    ip = connijk[iel,i,1]
+                    integral = params.M[ip] * entropy_thermodynamic(params.uaux[ip,:])
+                    entropy_integral +=  integral
+                end
+            end
+            @show (abs(entropy_integral) -0.0009813727105688597)
+            
+            
         end
       
     end
 
-        entropy_integral = 0.0
-        for iel = 1:nelem
-            for i = 1:ngl-1
-                ip = connijk[iel,i,1]
-                integral = params.M[ip] * entropy_thermodynamic(params.uaux[ip,:])
-                entropy_integral +=  integral
-            end
-        end
-        @show abs(entropy_integral)-0.00098137271056886
+    
 end
 
 function _expansion_inviscid_KEP!(u, neqs, ngl,
@@ -624,7 +622,7 @@ function _expansion_inviscid_KEP!(u, neqs, ngl,
 
              f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:])
              for ieq = 1:neqs
-             du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
+                 du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
              end
         end
         

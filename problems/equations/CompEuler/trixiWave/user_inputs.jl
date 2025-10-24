@@ -7,8 +7,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver          => SSPRK54(),
         :tend                 => 0.4,
-        :Δt                   => 1.6781e-06,
-        :diagnostics_at_times => (0:0.1:2.0),
+        :Δt                   => 1.6781e-04,
+        :diagnostics_at_times => (0:0.05:0.4),
         :output_dir          => "./",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -17,6 +17,10 @@ function user_inputs()
         :nop                 => 3,     # Polynomial order
         :lsource             => false,
         :lperiodic_1d        => true, #false by default
+        #---------------------------------------------------------------------------
+        # Entropy/energy preserving discretizations:
+        #---------------------------------------------------------------------------
+        #:lkep => true
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------

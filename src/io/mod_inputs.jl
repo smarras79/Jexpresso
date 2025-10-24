@@ -551,8 +551,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lsaturation] = false
     end
 
+    #
+    # Entropy methods
+    #
+    if(!haskey(inputs, :lkep))
+        inputs[:lkep] = false
+    end
     
-
     #
     # Array of user-defined constant with a user-given meaning. For example, this is used in drivers for the elliptic problems
     #

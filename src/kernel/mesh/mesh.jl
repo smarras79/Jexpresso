@@ -912,10 +912,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         for iedge = 1:mesh.nedges #total nedges
             
             #mesh.edge_in_elem[iedge] = mesh.facet_cell_ids[iedge]
-            @info "iedge ", iedge, " belongs to element ", mesh.facet_cell_ids[iedge] #mesh.edge_in_elem[iedge]
-             for igl = 1:mesh.ngl
-                    @info "iedge " , iedge, " has points ", mesh.poin_in_edge[iedge, igl]
-             end
+            #@info "iedge ", iedge, " belongs to element ", mesh.facet_cell_ids[iedge] #mesh.edge_in_elem[iedge]
+            #for igl = 1:mesh.ngl
+            #        @info "iedge " , iedge, " has points ", mesh.poin_in_edge[iedge, igl]
+            #end
             
             if isboundary_edge[iedge] == true
                 # if rank == 1
