@@ -580,7 +580,13 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                                  params.rhs_el,
                                  iel, params.CL, params.QT, SD, params.AD)
         else
-
+			  De = build_differentiation_matrix(SD,
+                                             params.basis.ψ, params.basis.dψ, params.ω,
+                                             params.mesh,
+                                             ngl-1,
+                                             ngl-1,
+                                             Float64)
+	#D  = DSS_generic_matrix(SD, De, mesh, TFloat)
             #print_matrix(D) #seems ok
             _expansion_inviscid_KEP!(u, params.neqs, ngl,
                                      params.basis.dψ, params.ω,
@@ -589,6 +595,10 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                                      iel, params.CL, params.QT, SD, params.AD,
                                      params.uaux, connijk, iel)
 
+      
+    end
+    
+        end
             entropy_integral = 0.0
             for iel = 1:nelem
                 for i = 1:ngl-1
@@ -597,14 +607,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                     entropy_integral +=  integral
                 end
             end
-            @show (abs(entropy_integral) -0.0009813727105688597)
-            
-            
-        end
-      
-    end
-
-    
+            @show (abs(entropy_integral) - 0.0005316269031707917)
 end
 
 function _expansion_inviscid_KEP!(u, neqs, ngl,
@@ -612,22 +615,21 @@ function _expansion_inviscid_KEP!(u, neqs, ngl,
                                   F, S, D,
                                   rhs_el, uilgl,
                                   iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal, uaux, connijk, el)
+
     for i = 1:ngl
         ip = connijk[el,i,1]
-
         du_i = zeros(neqs)
         
         for j = 1:ngl 
              jp = connijk[el,j,1]
-
              f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:])
              for ieq = 1:neqs
-                 du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
+                 du_i[ieq] += 2.0 *  dψ[j, i] * f_ij[ieq]
              end
         end
         
         for ieq = 1:neqs
-            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
+            rhs_el[iel, i, ieq] -=  ω[i] *du_i[ieq] - ω[i] * S[i, ieq]
         end
     end
 end
