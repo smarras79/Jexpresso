@@ -4,11 +4,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => RDPK3SpFSAL49(), #CarpenterKennedy2N54(), #ORK256(), #SSPRK54(),
-        :Δt                   => 0.0002,
+	:ode_solver           => CarpenterKennedy2N54(),#SSPRK54(), #RDPK3SpFSAL49(), #ORK256(), #SSPRK54(),
+        :Δt                   => 0.001,
         :tinit                => 0.0,
         :tend                 => 10.0,
-        :diagnostics_at_times => (0.0:0.25:10.0),
+        :diagnostics_at_times => (0.0:0.05:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
@@ -23,18 +23,18 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => false, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 1.0, 1.0, 2.0], #horizontal viscosity constant for momentum
-        #:visc_model           => VREM(),
-        :visc_model           => DSMAG(),
+        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
+        #:visc_model           => VREM(), 
+        :visc_model    => VREM(), #SMAG(), #AV(), #SMAG(), AV(), DSMAG(), VREM()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x20_unitsquare.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_40x40_unitsquare.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------

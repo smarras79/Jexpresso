@@ -593,9 +593,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                                      params.basis.dψ, params.ω,
                                      params.F, params.S, D,
                                      params.rhs_el, uilgl,
-                                     iel, params.CL, params.QT, SD, params.AD, params.uaux, connijk, iel)
-          
-            
+                                     iel, params.CL, params.QT, SD, params.AD, params.uaux, connijk, iel)    
         end
       
     end
@@ -608,7 +606,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                 entropy_integral +=  integral
             end
         end
-        @show (abs(entropy_integral) -0.0009813727105688597)
+        @show abs(entropy_integral)-0.00098137271056886
 end
 
 function _expansion_inviscid_KEP!(u, neqs, ngl,
@@ -622,14 +620,8 @@ function _expansion_inviscid_KEP!(u, neqs, ngl,
         du_i = zeros(neqs)
         
         for j = 1:ngl 
-                jp = connijk[el,j,1]
+             jp = connijk[el,j,1]
 
-            #  for ieq = 1:neqs
-            #      # Average flux between points i and j
-            #      f_ij = 0.5 * (F[i, ieq] + F[j, ieq]) #Average point test towards two-point solition
-            #      #f_ij = F[i, ieq] #identical as usual  _expansion_inviscid!()
-            #      du_i[ieq] += 2.0 * dψ[j, i] * f_ij
-            #  end
              f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:])
              for ieq = 1:neqs
              du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
@@ -721,18 +713,27 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         params.metrics.dηdx, params.metrics.dηdy,
         iel, params.CL, params.QT, SD, params.AD)       
         =#
-        
+        lkep = true
         if lkep
-            
-            _expansion_inviscid_KEP_twopoint!(u_element_wise,
-                                              params.uprimitive,
-                                              params.neqs, params.mesh.ngl,
-                                              params.basis.dψ, params.ω,
-                                              params.F, params.G, params.S,
-                                              params.metrics.Je,
-                                              params.metrics.dξdx, params.metrics.dξdy,
-                                              params.metrics.dηdx, params.metrics.dηdy,
-                                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+                 _expansion_inviscid_KEP_2D!(u,
+                                 params.neqs, params.mesh.ngl,
+                                 params.basis.dψ, params.ω,
+                                 params.F, params.G, params.S,
+                                 params.metrics.Je,
+                                 params.metrics.dξdx, params.metrics.dξdy,
+                                 params.metrics.dηdx, params.metrics.dηdy,
+                                 params.rhs_el, iel, params.CL, params.QT, SD, params.AD, params.uaux, connijk)
+
+
+            # _expansion_inviscid_KEP_twopoint!(u_element_wise,
+            #                                   params.uprimitive,
+            #                                   params.neqs, params.mesh.ngl,
+            #                                   params.basis.dψ, params.ω,
+            #                                   params.F, params.G, params.S,
+            #                                   params.metrics.Je,
+            #                                   params.metrics.dξdx, params.metrics.dξdy,
+            #                                   params.metrics.dηdx, params.metrics.dηdy,
+            #                                   params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
             
         else
             _expansion_inviscid!(u,
@@ -750,6 +751,79 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
     #= SM params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
     params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]=#
 
+end
+
+
+function _expansion_inviscid_KEP_1D!(u, neqs, ngl,
+                                  dψ, ω,
+                                  F, S, D,
+                                  rhs_el, uilgl,
+                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal, uaux, connijk, el)
+    for i = 1:ngl
+        ip = connijk[el,i,1]
+
+        du_i = zeros(neqs)
+        
+        for j = 1:ngl 
+             jp = connijk[el,j,1]
+
+             f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:])
+             for ieq = 1:neqs
+             du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
+             end
+        end
+        
+        for ieq = 1:neqs
+            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
+        end
+    end
+end
+
+function _expansion_inviscid_KEP_2D!(u, neqs, ngl, dψ, ω,
+                              F, G, S,
+                              Je,
+                              dξdx, dξdy,
+                              dηdx, dηdy,
+                              rhs_el, iel,
+                              ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal, uaux, connijk)
+    dFdx = zeros(length(neqs),1)
+    dGdy = zeros(length(neqs),1)
+
+        for j=1:ngl
+            for i=1:ngl
+                ip = connijk[iel,i,j]
+                ωJac = ω[i]*ω[j]*Je[iel,i,j]
+                
+                dFdξ = zeros(neqs,1)
+                dFdx = zeros(neqs,1)
+                dFdη = zeros(neqs,1)
+                dGdξ = zeros(neqs,1)
+                dGdy = zeros(neqs,1)
+                dGdη = zeros(neqs,1)
+                 for k = 1:ngl
+                    kjp = connijk[iel,k, j]
+        	    ikp = connijk[iel,i, k]
+                    F_ik, G_ik = user_volume_flux(uaux[ip,:], uaux[ikp,:])
+                    F_kj, G_kj = user_volume_flux(uaux[ip,:], uaux[kjp,:])
+                   @. dFdξ = dFdξ + 2 * dψ[k,i]*F_kj 
+                   @. dFdη = dFdη + 2 * dψ[k,j]*F_ik
+                    
+                   @. dGdξ = dGdξ + 2 * dψ[k,i]*G_kj
+                   @. dGdη = dGdη + 2 * dψ[k,j]*G_ik
+                end
+                dξdx_ij = dξdx[iel,i,j]
+                dξdy_ij = dξdy[iel,i,j]
+                dηdx_ij = dηdx[iel,i,j]
+                dηdy_ij = dηdy[iel,i,j]
+                
+              @. dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
+
+              @. dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
+                for ieq=1:neqs    
+                    rhs_el[iel,i,j,ieq] -=  ωJac*((dFdx[ieq] + dGdy[ieq]) - S[i,j,ieq])
+                end
+            end
+        end
 end
 
 function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_3D)
