@@ -57,6 +57,35 @@ function user_flux!(F, G, SD::NSD_2D, q, qe,
     G[4] = ρθ*v
 end
 
+function user_flux!(F, G, SD::NSD_2D,
+                    q,
+                    qe,
+                    mesh::St_mesh,
+                    ::CL, ::THETA; neqs=4, ip=1)
+    
+    PhysConst = PhysicalConst{Float64}()
+                
+    ρ  = q[1] 
+    ρu = q[2]
+    ρv = q[3]
+    ρθ = q[4] 
+    
+    θ  = ρθ/ρ
+    u  = ρu/ρ
+    v  = ρv/ρ
+    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    Press = Press 
+    
+    F[1] = ρu
+    F[2] = ρu*u + Press
+    F[3] = ρv*u
+    F[4] = ρθ*u
+    
+    G[1] = ρv
+    G[2] = ρu*v
+    G[3] = ρv*v + Press
+    G[4] = ρθ*v
+end
 
 function user_flux!(F, G, SD::NSD_2D,
                     q,
@@ -110,7 +139,8 @@ end
 
 
 @inline function user_volume_flux(u_ll, u_rr)
-	flux_ranocha(u_ll, u_rr)
+	flux_artiano_ec(u_ll, u_rr)
+	# flux_ranocha(u_ll, u_rr)
 #	flux_kennedy_gruber(u_ll, u_rr)
 #        flux_central(u_ll, u_rr)
 end
@@ -144,6 +174,42 @@ function flux(q)
     g2 = ρu*v
     g3 = ρv*v .+ Pressure
     g4 = v*(ke + γ*Pressure/γm1)
+
+    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
+end
+
+@inline function flux_artiano_ec(u_ll, u_rr)
+    # Unpack left and right state
+
+    PhysConst = PhysicalConst{Float64}()
+    rho_ll, rho_v1_ll, rho_v2_ll, rho_theta_ll = u_ll
+    rho_rr, rho_v1_rr, rho_v2_rr, rho_theta_rr = u_rr
+    v1_ll = rho_v1_ll/rho_ll
+    v1_rr = rho_v1_rr/rho_rr
+    v2_rr = rho_v2_rr/rho_rr
+    v2_ll = rho_v2_ll/rho_ll
+
+    p_ll = PhysConst.pref * (rho_theta_ll * PhysConst.Rair/PhysConst.pref)^(PhysConst.cp/PhysConst.cv) 
+    p_rr = PhysConst.pref * (rho_theta_rr * PhysConst.Rair/PhysConst.pref)^(PhysConst.cp/PhysConst.cv) 
+
+
+
+    # Compute the necessary mean values
+    rho_mean = ln_mean(rho_ll, rho_rr)
+    v1_avg = 0.5f0 * (v1_ll + v1_rr)
+    v2_avg = 0.5f0 * (v2_ll + v2_rr)
+    p_avg = 0.5f0 * (p_ll + p_rr)
+
+    # Calculate fluxes depending on normal_direction
+    f1 = rho_mean * 0.5f0 * v1_avg 
+    f2 = f1 * v1_avg + p_avg 
+    f3 = f1 * v2_avg + p_avg 
+    f4 = f1 * inv_ln_mean(rho_ll / rho_theta_ll, rho_rr / rho_theta_rr)
+
+    g1 = rho_mean * 0.5f0 * v1_avg 
+    g2 = f1 * v1_avg + p_avg 
+    g3 = f1 * v2_avg + p_avg 
+    g4 = f1 * inv_ln_mean(rho_ll / rho_theta_ll, rho_rr / rho_theta_rr)
 
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end

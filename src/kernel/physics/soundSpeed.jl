@@ -30,6 +30,38 @@ function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::TOTAL)
     return max_c
 end
 
+function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::THETA)
+
+    # Physical constants
+    PhysConst = PhysicalConst{Float32}()
+    pos::TInt = 2
+    if (SD == NSD_2D())
+        pos = 3
+    elseif (SD == NSD_3D())
+        pos = 4
+    end
+    # Initialize arrays
+    ρ = integrator.u[1:npoin]
+    if (size(mp.Tabs,1)>1)
+        pos_p = neqs+1
+        Tabs = mp.Tabs[1:npoin]
+        p = p_m
+    else
+	θ = (integrator.u[pos*npoin+1:(pos+1)*npoin]) / ρ
+        # Compute pressure using vectorized operation
+        p = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
+    end
+
+    # Compute speed of sound using vectorized operation
+
+    c = sqrt.(PhysConst.γ .* p ./ ρ)
+
+    # Find the maximum speed of sound
+    max_c = maximum(c)
+
+    return max_c
+end
+
 function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::PERT)
 
     # Physical constants

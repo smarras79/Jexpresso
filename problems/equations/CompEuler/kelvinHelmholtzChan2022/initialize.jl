@@ -44,12 +44,19 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             ρref = ρ
             pref = p
             eref = e
+	    theta = PhysConst.pref / PhysConst.Rair *
+                exp(PhysConst.cv / PhysConst.cp * log(p / PhysConst.pref))/ρ
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[ip,1] = ρ   - ρref
                 q.qn[ip,2] = ρ*u - ρref*u
                 q.qn[ip,3] = ρ*v - ρref*v
                 q.qn[ip,4] = ρ*e - ρref*e
                 q.qn[ip,end] = p-pref
+                q.qn[ip,1] = ρ  
+                q.qn[ip,2] = ρ*u 
+                q.qn[ip,3] = ρ*v 
+                q.qn[ip,4] = ρ*theta 
+                q.qn[ip,end] = p
                 
                 #Store initial background state for plotting and analysis of pertuebations
                 q.qe[ip,1] = ρref
@@ -57,7 +64,21 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[ip,3] = v
                 q.qe[ip,4] = ρref*eref
                 q.qe[ip,end] = pref
-            else
+			elseif inputs[:SOL_VARS_TYPE] == THETA()
+		q.qn[ip,1] = ρ  
+                q.qn[ip,2] = ρ*u 
+                q.qn[ip,3] = ρ*v 
+                q.qn[ip,4] = ρ*theta 
+                q.qn[ip,end] = p
+                
+                #Store initial background state for plotting and analysis of pertuebations
+                q.qe[ip,1] = ρref
+                q.qe[ip,2] = u
+                q.qe[ip,3] = v
+                q.qe[ip,4] = ρref*eref
+                q.qe[ip,end] = pref
+
+	   else
                 q.qn[ip,1] = ρ
                 q.qn[ip,2] = ρ*u
                 q.qn[ip,3] = ρ*v
@@ -70,6 +91,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[ip,3] = ρref*v
                 q.qe[ip,4] = ρref*eref
                 q.qe[ip,end] = pref
+				
             end
             #end
         end

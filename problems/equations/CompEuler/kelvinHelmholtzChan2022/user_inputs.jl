@@ -14,7 +14,7 @@ function user_inputs()
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => false, 
-        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+:SOL_VARS_TYPE        => THETA(), #PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ function user_inputs()
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
         #:visc_model           => VREM(), 
-        :visc_model    => VREM(), #SMAG(), #AV(), #SMAG(), AV(), DSMAG(), VREM()
+		:visc_model    =>SMAG(), #VREM(), #SMAG(), #AV(), #SMAG(), AV(), DSMAG(), VREM()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
