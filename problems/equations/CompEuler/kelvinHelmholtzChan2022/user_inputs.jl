@@ -14,7 +14,7 @@ function user_inputs()
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => false, 
-:SOL_VARS_TYPE        => THETA(), #PERT(), #TOTAL() is default
+	:SOL_VARS_TYPE        => THETA(), #PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -23,10 +23,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        :lvisc                => false, #false by default NOTICE: works only for Inexact
         :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
         #:visc_model           => VREM(), 
-		:visc_model    =>SMAG(), #VREM(), #SMAG(), #AV(), #SMAG(), AV(), DSMAG(), VREM()
+        :visc_model    => SMAG(), #VREM(), #SMAG(), #AV(), #SMAG(), AV(), DSMAG(), VREM()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -39,8 +39,8 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => false,
-        :mu_x                => 0.1,
-        :mu_y                => 0.1,
+        :mu_x                => 0.05,
+        :mu_y                => 0.05,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters

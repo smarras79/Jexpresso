@@ -33,7 +33,6 @@ function user_primitives!(u, qe, uprimitive, ::THETA)
     u  = ρu/ρ
     v  = ρv/ρ
     p = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-
     uprimitive[1] = ρ
     uprimitive[2] = u
     uprimitive[3] = v

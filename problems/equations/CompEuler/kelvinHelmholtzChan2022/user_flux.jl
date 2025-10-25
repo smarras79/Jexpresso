@@ -74,7 +74,6 @@ function user_flux!(F, G, SD::NSD_2D,
     u  = ρu/ρ
     v  = ρv/ρ
     Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-    Press = Press 
     
     F[1] = ρu
     F[2] = ρu*u + Press
@@ -139,11 +138,14 @@ end
 
 
 @inline function user_volume_flux(u_ll, u_rr)
+	#flux_artiano_etec(u_ll, u_rr)
 	flux_artiano_ec(u_ll, u_rr)
-	# flux_ranocha(u_ll, u_rr)
+#	flux_artiano_tec(u_ll, u_rr)
+#       flux_ranocha(u_ll, u_rr)
 #	flux_kennedy_gruber(u_ll, u_rr)
-#        flux_central(u_ll, u_rr)
+#       flux_central(u_ll, u_rr)
 end
+
 
 
 function flux(q)
@@ -178,6 +180,36 @@ function flux(q)
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end
 
+@inline function flux_artiano_etec(u_ll, u_rr)
+# Compute the necessary mean values
+    PhysConst = PhysicalConst{Float64}()
+    rho_ll, rho_v1_ll, rho_v2_ll, rho_theta_ll = u_ll
+    rho_rr, rho_v1_rr, rho_v2_rr, rho_theta_rr = u_rr
+    v1_ll = rho_v1_ll/rho_ll
+    v1_rr = rho_v1_rr/rho_rr
+    v2_rr = rho_v2_rr/rho_rr
+    v2_ll = rho_v2_ll/rho_ll
+
+    p_ll = PhysConst.pref * (rho_theta_ll * PhysConst.Rair/PhysConst.pref)^(PhysConst.cp/PhysConst.cv) 
+    p_rr = PhysConst.pref * (rho_theta_rr * PhysConst.Rair/PhysConst.pref)^(PhysConst.cp/PhysConst.cv) 
+    gammamean = stolarsky_mean(rho_theta_ll, rho_theta_rr, PhysConst.cp/PhysConst.cv)
+    v1_avg = 0.5f0 * (v1_ll + v1_rr)
+    v2_avg = 0.5f0 * (v2_ll + v2_rr)
+    p_avg = 0.5f0 * (p_ll + p_rr)
+
+    # Calculate fluxes depending on normal_direction
+    f4 = gammamean * 0.5f0 * v1_avg 
+    f1 = f4 * ln_mean(rho_ll / rho_theta_ll, rho_rr / rho_theta_rr)
+    f2 = f1 * v1_avg + p_avg 
+    f3 = f1 * v2_avg 
+
+    g4 = gammamean * 0.5f0 * v2_avg 
+    g1 = g4 * ln_mean(rho_ll / rho_theta_ll, rho_rr / rho_theta_rr)
+    g2 = g1 * v1_avg 
+    g3 = g1 * v2_avg + p_avg 
+    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
+end
+
 @inline function flux_artiano_ec(u_ll, u_rr)
     # Unpack left and right state
 
@@ -192,8 +224,6 @@ end
     p_ll = PhysConst.pref * (rho_theta_ll * PhysConst.Rair/PhysConst.pref)^(PhysConst.cp/PhysConst.cv) 
     p_rr = PhysConst.pref * (rho_theta_rr * PhysConst.Rair/PhysConst.pref)^(PhysConst.cp/PhysConst.cv) 
 
-
-
     # Compute the necessary mean values
     rho_mean = ln_mean(rho_ll, rho_rr)
     v1_avg = 0.5f0 * (v1_ll + v1_rr)
@@ -203,15 +233,47 @@ end
     # Calculate fluxes depending on normal_direction
     f1 = rho_mean * 0.5f0 * v1_avg 
     f2 = f1 * v1_avg + p_avg 
-    f3 = f1 * v2_avg + p_avg 
+    f3 = f1 * v2_avg 
     f4 = f1 * inv_ln_mean(rho_ll / rho_theta_ll, rho_rr / rho_theta_rr)
 
-    g1 = rho_mean * 0.5f0 * v1_avg 
-    g2 = f1 * v1_avg + p_avg 
-    g3 = f1 * v2_avg + p_avg 
-    g4 = f1 * inv_ln_mean(rho_ll / rho_theta_ll, rho_rr / rho_theta_rr)
+    g1 = rho_mean * 0.5f0 * v2_avg 
+    g2 = g1 * v1_avg 
+    g3 = g1 * v2_avg + p_avg 
+    g4 = g1 * inv_ln_mean(rho_ll / rho_theta_ll, rho_rr / rho_theta_rr)
 
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
+end
+
+@inline function flux_artiano_tec(u_ll, u_rr)
+
+    PhysConst = PhysicalConst{Float64}()
+    rho_ll, rho_v1_ll, rho_v2_ll, rho_theta_ll = u_ll
+    rho_rr, rho_v1_rr, rho_v2_rr, rho_theta_rr = u_rr
+    v1_ll = rho_v1_ll/rho_ll
+    v1_rr = rho_v1_rr/rho_rr
+    v2_rr = rho_v2_rr/rho_rr
+    v2_ll = rho_v2_ll/rho_ll
+
+    p_ll = PhysConst.pref * (rho_theta_ll * PhysConst.Rair/PhysConst.pref)^(PhysConst.cp/PhysConst.cv) 
+    p_rr = PhysConst.pref * (rho_theta_rr * PhysConst.Rair/PhysConst.pref)^(PhysConst.cp/PhysConst.cv) 
+    # Compute the necessary mean values
+    rho_mean = ln_mean(rho_ll, rho_rr)
+    gammamean = stolarsky_mean(rho_theta_ll, rho_theta_rr, PhysConst.cp/PhysConst.cv)
+    v1_avg = 0.5f0 * (v1_ll + v1_rr)
+    v2_avg = 0.5f0 * (v2_ll + v2_rr)
+    p_avg = 0.5f0 * (p_ll + p_rr)
+
+    # Calculate fluxes depending on normal_direction
+    f1 = rho_mean * 0.5f0 * v1_avg 
+    f2 = f1 * v1_avg + p_avg 
+    f3 = f1 * v2_avg 
+    f4 = gammamean * 0.5f0 * v1_avg 
+
+    g1 = rho_mean * 0.5f0 * v2_avg 
+    g2 = g1 * v1_avg 
+    g3 = g1 * v2_avg + p_avg 
+    g4 = gammamean * 0.5f0 * v2_avg 
+	return SVector(f1, f2, f3, f4), SVector(g1,g2,g3,g4)
 end
 
 function flux_central(u_ll, u_rr)
@@ -251,9 +313,9 @@ end
         f3 = f1 * v2_avg
 	f4 = f1 * (velocity_square_avg + inv_rho_p_mean /(PhysConst.γ - 1)) + 0.5f0 * (p_ll * v1_rr + p_rr * v1_ll)
         g1 = rho_mean * v2_avg
-        g2 = f1 * v1_avg
-        g3 = f1 * v2_avg + p_avg
-	g4 = f1 * (velocity_square_avg + inv_rho_p_mean /(PhysConst.γ - 1)) + 0.5f0 * (p_ll * v2_rr + p_rr * v2_ll)
+        g2 = g1 * v1_avg
+        g3 = g1 * v2_avg + p_avg
+	g4 = g1 * (velocity_square_avg + inv_rho_p_mean /(PhysConst.γ - 1)) + 0.5f0 * (p_ll * v2_rr + p_rr * v2_ll)
 
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end
@@ -326,5 +388,29 @@ end
                          convert(RealT, 2 / 7)) / (x + y)
     else
         return log(y / x) / (y - x)
+    end
+end
+
+@inline stolarsky_mean(x::Real, y::Real, gamma::Real) = stolarsky_mean(promote(x, y)...,
+                                                                       gamma)
+
+@inline function stolarsky_mean(x::RealT, y::RealT, gamma::Real) where {RealT <: Real}
+    epsilon_f2 = convert(RealT, 1.0e-4)
+    f2 = (x * (x - 2 * y) + y * y) / (x * (x + 2 * y) + y * y) # f2 = f^2
+    if f2 < epsilon_f2
+        # convenience coefficients
+        c1 = convert(RealT, 1 / 3) * (gamma - 2)
+        c2 = convert(RealT, -1 / 15) * (gamma + 1) * (gamma - 3) * c1
+        c3 = convert(RealT, -1 / 21) * (2 * gamma * (gamma - 2) - 9) * c2
+        return 0.5f0 * (x + y) * @evalpoly(f2, 1, c1, c2, c3)
+    else
+        if gamma isa Integer
+            yg = y^(gamma - 1)
+            xg = x^(gamma - 1)
+        else
+            yg = exp((gamma - 1) * log(y)) # equivalent to y^gamma but faster for non-integers
+            xg = exp((gamma - 1) * log(x)) # equivalent to x^gamma but faster for non-integers
+        end
+        return (gamma - 1) * (yg * y - xg * x) / (gamma * (yg - xg))
     end
 end
