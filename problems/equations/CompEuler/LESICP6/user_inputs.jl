@@ -36,7 +36,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
+        :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
@@ -61,9 +61,9 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.025,
-        :mu_y                => 0.015,
-	:mu_z                => 0.01,
+        :mu_x                => 0.5,
+        :mu_y                => 0.5,
+	:mu_z                => 0.5,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
