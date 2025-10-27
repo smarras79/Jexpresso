@@ -1,20 +1,19 @@
 function user_inputs()
-    
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-	:ode_solver           => CarpenterKennedy2N54(), #RDPK3SpFSAL49(), #SSPRK54(),  #ORK256(), #SSPRK54(),
-	:ode_adaptive_solver  => false, #true,
-        :Δt                   => 0.002,
+	:ode_solver           => CarpenterKennedy2N54(),#RDPK3SpFSAL49(),SSPRK54(),  #ORK256(), #SSPRK54(),
+	:ode_adaptive_solver  => false,
+        :Δt                   => 0.005,
         :tinit                => 0.0,
         :tend                 => 10.0,
-        :diagnostics_at_times => (0.0:0.001:10.0),
+        :diagnostics_at_times => (0.0:0.2:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
-        :lsource              => false, 
+        :lsource              => false,
 	:SOL_VARS_TYPE        => THETA(), #PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -24,11 +23,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lkep                => true,
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 0.002, 0.002, 0.02], #horizontal viscosity constant for momentum
-        #:visc_model           => VREM(), 
-        :visc_model    => AV(), #VREM(), #SMAG(), #AV(), #SMAG(), AV(), DSMAG(), VREM()
+        #:lkep                => true,
+        :lvisc               => true, #false by default NOTICE: works only for Inexact
+        :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
+        #:μ                   => [0.0, 0.0001, 0.0001, 0.0001], #horizontal viscosity constant for momentum
+        #:visc_model           => VREM(),
+        :visc_model    => SMAG(), #AV(), #SMAG(), AV(), DSMAG(), VREM()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -72,7 +72,5 @@ function user_inputs()
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
     #---------------------------------------------------------------------------
-
     return inputs
-    
 end

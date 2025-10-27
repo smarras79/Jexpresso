@@ -53,7 +53,6 @@ function apply_boundary_conditions_neumann!(u, uaux, t,qe,
 
     build_custom_bcs_neumann!(SD, t,
                               @view(coords[:,:]),
-                              #x, y, z,
                               nx, ny, nz, npoin, npoin_linear, 
                               poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                               xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
@@ -201,10 +200,14 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
     #          That
     for iedge = 1:nedges_bdy 
         iel  = bdy_edge_in_elem[iedge]
-        
-        if  bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodicz" &&
-            bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" &&
+
+        if  !occursin("periodic",  bdy_edge_type[iedge]) &&
             bdy_edge_type[iedge] != "Laguerre"
+            
+        #if  bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodicz" &&
+        #    bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodicz" &&
+        #    bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" &&
+        #    bdy_edge_type[iedge] != "Laguerre"
             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
                 nx_l = nx[iedge,k]
@@ -354,9 +357,13 @@ function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, coords, nx, ny, nz,
 
     for iedge = 1:nedges_bdy
 
-        if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
-            bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "periodic3" &&
-            bdy_edge_type[iedge] != "Laguerre")
+        
+        if  !occursin("periodic",  bdy_edge_type[iedge]) &&
+            bdy_edge_type[iedge] != "Laguerre"
+            
+        #if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
+        #    bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "periodic3" &&
+        #    bdy_edge_type[iedge] != "Laguerre")
             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
                 nx_l = nx[iedge,k]
@@ -464,9 +471,13 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
     
     for iedge = 1:nedges_bdy
 
-        if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
-            bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "periodic3" &&
-            bdy_edge_type[iedge] != "Laguerre")
+        
+        if  !occursin("periodic",  bdy_edge_type[iedge]) &&
+            bdy_edge_type[iedge] != "Laguerre"
+            
+        #if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
+        #    bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "periodic3" &&
+        #    bdy_edge_type[iedge] != "Laguerre")
             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
                 nx_l = nx[iedge,k]
@@ -534,9 +545,11 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
     #for ip = 1:npoin
     PhysConst = PhysicalConst{Float64}()
     for iface = 1:nfaces_bdy
-        if (bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodic1" &&
-            bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodic2" &&
-            bdy_face_type[iface] != "periodicy" && bdy_face_type[iface] != "periodic3" )
+        
+        if !occursin("periodic",  bdy_edge_face[iface])
+        #if (bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodic1" &&
+        #    bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodic2" &&
+        #    bdy_face_type[iface] != "periodicy" && bdy_face_type[iface] != "periodic3" )
             for i=1:ngl
                 for j=1:ngl
                     fill!(qbdy, 4325789.0)

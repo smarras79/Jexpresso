@@ -92,12 +92,12 @@ function time_loop!(inputs, params, u)
             println_rank(" #  t=", integrator.t; msg_rank = rank)
 
             #CFL
-            computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
-                       integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
-                       params.mesh.Δeffective_s,
-                       integrator,
-                       params.SD; visc=inputs[:μ])
-            
+           #= computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
+            integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
+            params.mesh.Δeffective_s,
+            integrator,
+            params.SD; visc=inputs[:μ])
+            =#
             write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
@@ -107,13 +107,14 @@ function time_loop!(inputs, params, u)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
+            
         end
     end
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
     cb         = DiscreteCallback(condition, affect!)    
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
-    CallbackSet(cb)#,cb_rad)
+    #CallbackSet(cb)#,cb_rad)
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------

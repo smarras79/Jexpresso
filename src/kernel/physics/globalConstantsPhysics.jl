@@ -14,7 +14,7 @@ using Parameters
     γm1::T      = γ - 1.0
     κ::T        = 0.026  # W/(m·K) - thermal conductivity of air at 293 K
     ν::T        = 1.0e-5
-    Pr::T       = 0.7
+    Pr::T       = 0.71
     Pr_t::T     = 0.7 #Turbulent Pr number
     Prnum::T    = 0.1
     pref::T     = 100000.0 #Pa
@@ -27,6 +27,8 @@ using Parameters
     Ri_crit::T  = 0.25                     #Critical Richardson number
     C_s::T      = 0.21                     #Smagorinsky constant
 
+    μ_mol      = 1.81e-5      # Dynamic viscosity [Pa·s] or [kg/(m·s)]
+    k_thermal  = 0.0257       # Thermal conductivity [W/(m·K)]
     karman      = 0.4
     
     #Gravity
