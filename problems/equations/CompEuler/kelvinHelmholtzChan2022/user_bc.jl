@@ -1,39 +1,28 @@
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
-    
-    # else
-    qnl = nx*q[2] + ny*q[3]
-    # end
-    qbdy[2] = q[2] - qnl*nx
-    qbdy[3] = q[3] - qnl*ny
+
+    if occursin("free", tag)
+        qnl     = nx*q[2] + ny*q[3]
+        qbdy[2] = q[2] - qnl*nx
+        qbdy[3] = q[3] - qnl*ny
+    end
     
 end
 
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::THETA)
-    
-    # else
-    qnl = nx*q[2] + ny*q[3]
-    # end
-    qbdy[2] = q[2] - qnl*nx
-    qbdy[3] = q[3] - qnl*ny
-    
+
+    if occursin("free", tag)
+        qnl     = nx*q[2] + ny*q[3]
+        qbdy[2] = q[2] - qnl*nx
+        qbdy[3] = q[3] - qnl*ny
+    end
 end
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
-#    if (tag == "free_slip")
-    
-    qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
-    qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
-    qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
-    
-      #else 
-       # qbdy[2] = 0.0
-        #qbdy[3] = 0.0
-      #end
-      #if (abs(x) > 119500.0 && y < 0.1)
-      #  qbdy[2] = 0.0
-      #  qbdy[3] = 0.0
-      #end
-     #@info coords,nx,ny,qbdy[2],qbdy[3] 
-  # return qbdy #, flags
+
+    if occursin("free", tag)
+        qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
+        qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
+        qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
+    end
     
 end
 

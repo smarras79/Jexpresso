@@ -532,6 +532,8 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
 
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
 
+    lkep = inputs[:lkep]
+    
     for iel=1:nelem   
         for i=1:ngl
             ip = connijk[iel,i,1]
@@ -572,7 +574,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
 
         end
 
-        lkep = inputs[:lkep]
+       
         if !lkep
             _expansion_inviscid!(u, params.neqs, ngl,
                                  params.basis.dψ, params.ω,

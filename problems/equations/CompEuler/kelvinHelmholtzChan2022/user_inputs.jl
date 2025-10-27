@@ -6,7 +6,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	:ode_solver           => RDPK3SpFSAL49(), #CarpenterKennedy2N54(),#SSPRK54(),  #ORK256(), #SSPRK54(),
 	:ode_adaptive_solver  => true,
-        :Δt                   => 0.001,
+        :Δt                   => 0.002,
         :tinit                => 0.0,
         :tend                 => 10.0,
         :diagnostics_at_times => (0.0:0.05:10.0),
@@ -24,9 +24,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lkep                => true,
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 0.1, 0.1, 0.1], #horizontal viscosity constant for momentum
+        :lkep                => false,
+        :lvisc                => false, #false by default NOTICE: works only for Inexact
+        :μ                   => [0.0, 0.002, 0.002, 0.002], #horizontal viscosity constant for momentum
         #:visc_model           => VREM(), 
         :visc_model    => AV(), #VREM(), #SMAG(), #AV(), #SMAG(), AV(), DSMAG(), VREM()
         #---------------------------------------------------------------------------

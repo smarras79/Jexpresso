@@ -168,18 +168,18 @@ end
 
 @inline function user_turbo_volume_flux(u_ll, u_rr)
 	#flux_artiano_etec(u_ll, u_rr)
-#	flux_artiano_ec(u_ll, u_rr)
+	flux_artiano_ec(u_ll, u_rr)
 #	flux_artiano_tec(u_ll, u_rr)
-       flux_turbo_ranocha(u_ll, u_rr)
+#       flux_turbo_ranocha(u_ll, u_rr)
 #	flux_kennedy_gruber(u_ll, u_rr)
 #       flux_central(u_ll, u_rr)
 end
 
 @inline function user_volume_flux(u_ll, u_rr)
 	#flux_artiano_etec(u_ll, u_rr)
-#	flux_artiano_ec(u_ll, u_rr)
+	flux_artiano_ec(u_ll, u_rr)
 #	flux_artiano_tec(u_ll, u_rr)
-       flux_ranocha(u_ll, u_rr)
+#       flux_ranocha(u_ll, u_rr)
 #	flux_kennedy_gruber(u_ll, u_rr)
 #       flux_central(u_ll, u_rr)
 end

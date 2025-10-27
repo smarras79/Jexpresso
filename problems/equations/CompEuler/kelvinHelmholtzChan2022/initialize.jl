@@ -49,7 +49,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             pref = p
             eref = e
 	    thetaref = theta
-	   
+	    
             if inputs[:SOL_VARS_TYPE] == PERT()
                 q.qn[ip,1] = ρ   - ρref
                 q.qn[ip,2] = ρ*u - ρref*u
@@ -68,7 +68,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qe[ip,3] = v
                 q.qe[ip,4] = ρref*eref
                 q.qe[ip,end] = pref
-		elseif inputs[:SOL_VARS_TYPE] == THETA()
+	    elseif inputs[:SOL_VARS_TYPE] == THETA()
 		q.qn[ip,1] = ρ  
                 q.qn[ip,2] = ρ*u 
                 q.qn[ip,3] = ρ*v 

@@ -24,6 +24,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
+        :lkep                 => false,
         :lvisc                => true, #false by default NOTICE: works only for Inexact       
         :visc_model           => AV(),
         :μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
