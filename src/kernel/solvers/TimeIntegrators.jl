@@ -100,8 +100,6 @@ function time_loop!(inputs, params, u, args...)
                         integrator,
                         integrator.p.SD; visc=inputs[:μ])
             end
-            @info sizeof(integrator.u)
-            @info sizeof(params.uaux)
             write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,

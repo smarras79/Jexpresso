@@ -1159,10 +1159,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         for iedge = 1:mesh.nedges #total nedges
             
             #mesh.edge_in_elem[iedge] = mesh.facet_cell_ids[iedge]
-            @info "iedge ", iedge, " belongs to element ", mesh.facet_cell_ids[iedge] #mesh.edge_in_elem[iedge]
-             for igl = 1:mesh.ngl
-                    @info "iedge " , iedge, " has points ", mesh.poin_in_edge[iedge, igl]
-             end
+            # @info "iedge ", iedge, " belongs to element ", mesh.facet_cell_ids[iedge] #mesh.edge_in_elem[iedge]
+            #  for igl = 1:mesh.ngl
+            #         @info "iedge " , iedge, " has points ", mesh.poin_in_edge[iedge, igl]
+            #  end
             
             if isboundary_edge[iedge] == true
                 # if rank == 1
@@ -3461,6 +3461,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
         end
 
         # WARNING: this will be removed when x,y,z is fulyl replaced by coords
+        mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
         mesh.coords[:,1] = mesh.x[:]
         if mesh.nsd > 1
             mesh.coords[:,2] = mesh.y[:]

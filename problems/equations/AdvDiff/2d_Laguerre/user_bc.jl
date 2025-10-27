@@ -36,6 +36,8 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::Abst
      #    b = -1
      #  end
      #  qnl = a*(sqrt(2)/2)*q[2] + b*(sqrt(2)/2)*q[3]
+    x = coords[1]
+    y = coords[2]
     if (y < 0.01)
         qbdy[1] = 0.0#0.025*sinpi(2*30*t/5000.0)
     end
@@ -52,6 +54,8 @@ end
 
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
 #    if (tag == "free_slip")
+    x = coords[1]
+    y = coords[2]
     if (y < 0.01)
         qbdy[1] = 0.0#0.025*sinpi(2*30*t/5000.0)
     end
@@ -83,6 +87,8 @@ end
 
 function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,qbdy,lpert)
     T = eltype(q)
+    x = coords[1]
+    y = coords[2]
     if (y < 0.01)
         return T(0.0)#0.025*sinpi(2*30*t/5000.0)
     end
