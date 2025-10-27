@@ -380,7 +380,7 @@ end
     v1_avg = 0.5f0 * (v1_ll + v1_rr)
     v2_avg = 0.5f0 * (v2_ll + v2_rr)
     p_avg = 0.5f0 * (p_ll + p_rr)
-
+    
     # Calculate fluxes depending on normal_direction
     f1 = rho_mean * 0.5f0 * v1_avg 
     f2 = f1 * v1_avg + p_avg 

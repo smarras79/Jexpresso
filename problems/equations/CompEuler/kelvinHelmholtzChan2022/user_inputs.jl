@@ -6,10 +6,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	:ode_solver           => RDPK3SpFSAL49(), #CarpenterKennedy2N54(),#SSPRK54(),  #ORK256(), #SSPRK54(),
 	:ode_adaptive_solver  => true,
-        :Δt                   => 0.002,
+        :Δt                   => 0.0005,
         :tinit                => 0.0,
         :tend                 => 10.0,
-        :diagnostics_at_times => (0.0:0.05:10.0),
+        :diagnostics_at_times => (0.0:0.001:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
@@ -24,9 +24,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lkep                => false,
-        :lvisc                => false, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 0.002, 0.002, 0.002], #horizontal viscosity constant for momentum
+        :lkep                => true,
+        :lvisc                => true, #false by default NOTICE: works only for Inexact
+        :μ                   => [0.0, 0.001, 0.001, 0.01], #horizontal viscosity constant for momentum
         #:visc_model           => VREM(), 
         :visc_model    => AV(), #VREM(), #SMAG(), #AV(), #SMAG(), AV(), DSMAG(), VREM()
         #---------------------------------------------------------------------------

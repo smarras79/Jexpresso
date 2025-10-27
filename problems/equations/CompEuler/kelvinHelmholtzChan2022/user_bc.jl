@@ -1,6 +1,6 @@
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::TOTAL)
 
-    if occursin("free", tag)
+    if !occursin("periodic", tag)
         qnl     = nx*q[2] + ny*q[3]
         qbdy[2] = q[2] - qnl*nx
         qbdy[3] = q[3] - qnl*ny
@@ -10,7 +10,7 @@ end
 
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe,::THETA)
 
-    if occursin("free", tag)
+    if !occursin("periodic", tag)
         qnl     = nx*q[2] + ny*q[3]
         qbdy[2] = q[2] - qnl*nx
         qbdy[3] = q[3] - qnl*ny
@@ -18,7 +18,7 @@ function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::Abst
 end
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
 
-    if occursin("free", tag)
+    if !occursin("periodic", tag)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
         qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
         qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
