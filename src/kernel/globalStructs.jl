@@ -1,11 +1,12 @@
 #-------------------------------------------------------------------------------------------
 # Solution variables
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, backend}
+Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend}
 
     u    = KernelAbstractions.zeros(backend, T, dims1)
     uaux = KernelAbstractions.zeros(backend, T, dims2)
     vaux = KernelAbstractions.zeros(backend, T, dims3) #generic auxiliary array for general use
+    fluxaux = KernelAbstractions.zeros(backend, T, dims4) #generic auxiliary array for general use
     
 end
 function allocate_uODE(SD, npoin, T, backend; neqs=1)
@@ -13,8 +14,9 @@ function allocate_uODE(SD, npoin, T, backend; neqs=1)
     dims1 = (Int64(npoin)*Int64(neqs))
     dims2 = (Int64(npoin), Int64(neqs+1))
     dims3 = (Int64(npoin))
+    dims4 = (Int64(npoin), Int64(neqs+2))
 
-    uODE = St_uODE{T, dims1, dims2, dims3, backend}()
+    uODE = St_uODE{T, dims1, dims2, dims3, dims4, backend}()
     
     return uODE
 end

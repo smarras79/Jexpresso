@@ -67,6 +67,7 @@ function params_setup(sem,
     u            = uODE.u
     uaux         = uODE.uaux
     vaux         = uODE.vaux
+    fluxaux      = uODE.fluxaux
     F            = fluxes.F
     G            = fluxes.G
     H            = fluxes.H
@@ -264,7 +265,7 @@ function params_setup(sem,
         inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
-                  uaux, vaux,
+                  uaux, vaux, 
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
@@ -299,7 +300,7 @@ function params_setup(sem,
         pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend,
                   T, inputs,
-                  uaux, vaux,
+                  uaux, vaux, fluxaux,
                   ubdy, gradu, bdy_flux,                   
                   RHS, RHS_visc,
                   fijk, ∇f_el,

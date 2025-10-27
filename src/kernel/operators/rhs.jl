@@ -664,14 +664,17 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
-            
+           lkep = true 
+	  if lkep == true
+	#   user_fluxaux!(@view(params.fluxaux[ip,:]), SD, @view(params.uaux[ip,:]), params.SOL_VARS_TYPE)
+	  else
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
                        @view(qe[ip,:]),         #pref
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
                        neqs=params.neqs, ip=ip)
-            
+	  end
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
@@ -720,7 +723,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
                                  params.metrics.Je,
                                  params.metrics.dξdx, params.metrics.dξdy,
                                  params.metrics.dηdx, params.metrics.dηdy,
-                                 params.rhs_el, iel, params.CL, params.QT, SD, params.AD, params.uaux, connijk)
+                                 params.rhs_el, iel, params.CL, params.QT, SD, params.AD, params.uaux, params.fluxaux, connijk)
 
 
             # _expansion_inviscid_KEP_twopoint!(u_element_wise,
@@ -783,7 +786,7 @@ function _expansion_inviscid_KEP_2D!(u, neqs, ngl, dψ, ω,
                               dξdx, dξdy,
                               dηdx, dηdy,
                               rhs_el, iel,
-                              ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal, uaux, connijk)
+                              ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal, uaux, fluxaux, connijk)
     dFdx = zeros(length(neqs),1)
     dGdy = zeros(length(neqs),1)
 
@@ -803,6 +806,8 @@ function _expansion_inviscid_KEP_2D!(u, neqs, ngl, dψ, ω,
         	    ikp = connijk[iel,i, k]
                     F_ik, G_ik = user_volume_flux(uaux[ip,:], uaux[ikp,:])
                     F_kj, G_kj = user_volume_flux(uaux[ip,:], uaux[kjp,:])
+                    #F_ik, G_ik = user_turbo_volume_flux(fluxaux[ip,:], fluxaux[ikp,:])
+                    #F_kj, G_kj = user_turbo_volume_flux(fluxaux[ip,:], fluxaux[kjp,:])
                    @. dFdξ = dFdξ + 2 * dψ[k,i]*F_kj 
                    @. dFdη = dFdη + 2 * dψ[k,j]*F_ik
                     
