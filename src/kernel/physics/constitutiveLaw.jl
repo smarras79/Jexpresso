@@ -5,7 +5,6 @@ end
 
 
 function perfectGasLaw_ρTtoP(PhysConst::PhysicalConst; ρ=1.25, Temp=300.0)
-    
     return ρ*PhysConst.Rair*Temp #Press
 end
 

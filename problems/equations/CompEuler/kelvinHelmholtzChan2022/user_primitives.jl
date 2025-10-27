@@ -20,6 +20,25 @@ function user_primitives!(u,qe,uprimitive,::TOTAL)
     
 end
 
+
+function user_primitives!(u, qe, uprimitive, ::THETA) 
+    PhysConst = PhysicalConst{Float64}()
+                
+    ρ  = u[1] 
+    ρu = u[2]
+    ρv = u[3]
+    ρθ = u[4] 
+    
+    θ  = ρθ/ρ
+    u  = ρu/ρ
+    v  = ρv/ρ
+    p = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    uprimitive[1] = ρ
+    uprimitive[2] = u
+    uprimitive[3] = v
+    uprimitive[4] = p
+end
+
 function user_primitives!(u,qe,uprimitive,::PERT)
     uprimitive[1] = u[1]+qe[1]
     uprimitive[2] = u[2]/(u[1]+qe[1])

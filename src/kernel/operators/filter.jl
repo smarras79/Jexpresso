@@ -78,6 +78,85 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_la
     uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)  
 end
 
+
+function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::THETA; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1))   
+
+    u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
+
+    ## Subtract background velocity
+    #qv = copy(q)
+    uaux[:,2:3] .= uaux[:,2:3] .- params.qp.qe[:,2:3]
+    ## store Dimension of MxM object
+
+    ## Loop through the elements
+
+    for e=1:params.mesh.nelem
+        for j=1:params.mesh.ngl
+            for i=1:params.mesh.ngl
+                ip = connijk[e,i,j]
+                for m =1:params.neqs
+                    params.q_t[m,i,j] = uaux[ip,m]
+                end
+            end
+        end
+        
+        ### Construct local derivatives for prognostic variables
+        
+        for m=1:params.neqs
+            
+            ##KSI Derivative
+            for i=1:params.mesh.ngl
+                for j=1:params.mesh.ngl
+                    params.q_ti[i,j] = 0.0
+                    for k=1:params.mesh.ngl
+                        params.q_ti[i,j] += params.fx[i,k] * params.q_t[m,k,j]
+                    end
+                end
+            end
+
+
+            ## ETA Derivative
+            ## this is allocating
+            #params.fqf[m,:,:] .= params.q_ti * params.fy_t
+            for i=1:params.mesh.ngl
+                for j=1:params.mesh.ngl
+                    params.fqf[m,i,j] = 0.0
+                    for k=1:params.mesh.ngl
+                        params.fqf[m,i,j] += params.q_ti[i,k] * params.fy_t[k,j]
+                    end
+                end
+            end
+
+            ## ETA Derivative
+            
+
+        end
+        
+        ## Do Numerical Integration
+
+        for j=1:params.mesh.ngl
+            for i=1:params.mesh.ngl
+                ip = params.mesh.connijk[e,i,j]
+                for m=1:params.neqs
+                    params.b[e,i,j,m] += params.fqf[m,i,j] * params.ω[i]*params.ω[j]*Je[e,i,j]
+                end
+            end
+        end
+    end
+    
+    DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
+
+    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
+    for ieq=1:params.neqs
+        divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
+    end
+    
+    uaux[:,1:params.neqs] .= params.B[:,1:params.neqs]
+    uaux[:,2:3] .+= params.qp.qe[:,2:3]
+
+    uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)  
+end
+
 function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag=zeros(TFloat,1,1,1), Je_lag=zeros(TFloat,1,1,1))
     
     u2uaux!(@view(uaux[:,:]), u, params.neqs, params.mesh.npoin)
