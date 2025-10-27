@@ -545,6 +545,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     #
+    # Kinetic Energy or Entropy Preserving
+    #
+    if(!haskey(inputs, :lkep))
+        inputs[:lkep] = false
+    end
+    
+    #
     # saturation adjustment:
     #
     if(!haskey(inputs, :lsaturation))

@@ -664,17 +664,17 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
-           lkep = true 
-	  if lkep == true
-	#   user_fluxaux!(@view(params.fluxaux[ip,:]), SD, @view(params.uaux[ip,:]), params.SOL_VARS_TYPE)
-	  else
-            user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
-                       @view(params.uaux[ip,:]),
-                       @view(qe[ip,:]),         #pref
-                       params.mesh,
-                       params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip)
-	  end
+            lkep = inputs[:lkep]
+	    if lkep == true
+	        #   user_fluxaux!(@view(params.fluxaux[ip,:]), SD, @view(params.uaux[ip,:]), params.SOL_VARS_TYPE)
+	    else
+                user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
+                           @view(params.uaux[ip,:]),
+                           @view(qe[ip,:]),         #pref
+                           params.mesh,
+                           params.CL, params.SOL_VARS_TYPE;
+                           neqs=params.neqs, ip=ip)
+	    end
             if lsource
                 user_source!(@view(params.S[i,j,:]),
                              @view(params.uaux[ip,:]),
@@ -714,7 +714,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         params.metrics.dηdx, params.metrics.dηdy,
         iel, params.CL, params.QT, SD, params.AD)       
         =#
-        lkep = true
+        lkep = inputs[:lkep]
         if lkep
                  _expansion_inviscid_KEP_2D!(u,
                                  params.neqs, params.mesh.ngl,
@@ -1558,11 +1558,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             dηdx_kl = dηdx[iel,k,l]
             dηdy_kl = dηdy[iel,k,l]
             
-            auxi = dqdξ*dξdx_kl + dqdη*dηdx_kl
-            dqdx = visc_coeffieq[ieq]*auxi
-            
-            auxi = dqdξ*dξdy_kl + dqdη*dηdy_kl
-            dqdy = visc_coeffieq[ieq]*auxi
+            dqdx = visc_coeffieq[ieq]*(dqdξ*dξdx_kl + dqdη*dηdx_kl)
+            dqdy = visc_coeffieq[ieq]*(dqdξ*dξdy_kl + dqdη*dηdy_kl)
             
             ∇ξ∇u_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
             ∇η∇u_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
