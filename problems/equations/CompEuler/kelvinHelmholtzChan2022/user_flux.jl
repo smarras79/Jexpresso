@@ -17,7 +17,7 @@ function user_flux!(F, G, SD::NSD_2D, q, qe,
     
     velomagsq = (u*u + v*v)
     ke        = 0.5*ρ*velomagsq
-    Pressure  = γm1*(ρe - velomagsq)
+    Pressure  = γm1*(ρe - ke)
     
     F[1] = ρu
     F[2] = ρu*u .+ Pressure
@@ -86,6 +86,35 @@ function user_flux!(F, G, SD::NSD_2D,
     G[4] = ρθ*v
 end
 
+
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL)
+    
+    PhysConst = PhysicalConst{Float64}()
+                
+    ρ  = q[1] 
+    ρu = q[2]
+    ρv = q[3]
+    ρe = q[4]
+
+    e  = ρe/ρ
+    u  = ρu/ρ
+    v  = ρv/ρ
+
+    γ   = PhysConst.γ
+    γm1 = γ - 1.0
+    
+    velomagsq = (u*u + v*v)
+    ke        = 0.5*ρ*velomagsq
+    p  = γm1*(ρe - velomagsq)
+    aux[1] = ρ
+    aux[2] = u
+    aux[3] = v
+    aux[4] = p
+    aux[5] = log(ρ)
+    aux[6] = log(p)
+end
+
+
 function user_flux!(F, G, SD::NSD_2D,
                     q,
                     qe,
@@ -137,11 +166,20 @@ function user_flux_gpu(q,qe,PhysConst,lpert)
 end
 
 
+@inline function user_turbo_volume_flux(u_ll, u_rr)
+	#flux_artiano_etec(u_ll, u_rr)
+#	flux_artiano_ec(u_ll, u_rr)
+#	flux_artiano_tec(u_ll, u_rr)
+       flux_turbo_ranocha(u_ll, u_rr)
+#	flux_kennedy_gruber(u_ll, u_rr)
+#       flux_central(u_ll, u_rr)
+end
+
 @inline function user_volume_flux(u_ll, u_rr)
 	#flux_artiano_etec(u_ll, u_rr)
-	flux_artiano_ec(u_ll, u_rr)
+#	flux_artiano_ec(u_ll, u_rr)
 #	flux_artiano_tec(u_ll, u_rr)
-#       flux_ranocha(u_ll, u_rr)
+       flux_ranocha(u_ll, u_rr)
 #	flux_kennedy_gruber(u_ll, u_rr)
 #       flux_central(u_ll, u_rr)
 end
@@ -165,7 +203,7 @@ function flux(q)
     
     velomagsq = (u*u + v*v)
     ke        = 0.5*ρ*velomagsq
-    Pressure  = γm1*(ρe - velomagsq)
+    Pressure  = γm1*(ρe - ke)
     
     f1 = ρu
     f2 = ρu*u .+ Pressure
@@ -177,6 +215,119 @@ function flux(q)
     g3 = ρv*v .+ Pressure
     g4 = v*(ke + γ*Pressure/γm1)
 
+    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
+end
+
+function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL)
+    
+    PhysConst = PhysicalConst{Float64}()
+                
+    ρ  = q[1] 
+    ρu = q[2]
+    ρv = q[3]
+    ρe = q[4]
+
+    e  = ρe/ρ
+    u  = ρu/ρ
+    v  = ρv/ρ
+
+    gamma = PhysConst.cp/PhysConst.cv
+    p = (gamma - 1) * (ρe- 0.5f0 * (ρu^2 + ρv^2) / ρ)
+    aux[1] = ρ
+    aux[2] = u
+    aux[3] = v
+    aux[4] = p
+    aux[5] = log(ρ)
+    aux[6] = log(p)
+end
+
+@inline function flux_ranocha(u_ll, u_rr)
+
+    PhysConst = PhysicalConst{Float64}()
+    rho_ll, rho_v1_ll, rho_v2_ll, rho_e_ll = u_ll
+    rho_rr, rho_v1_rr, rho_v2_rr, rho_e_rr = u_rr
+    v1_ll = rho_v1_ll/rho_ll
+    v1_rr = rho_v1_rr/rho_rr
+    v2_rr = rho_v2_rr/rho_rr
+    v2_ll = rho_v2_ll/rho_ll
+   
+    gamma = PhysConst.cp/PhysConst.cv
+    p_ll = (gamma - 1) * (rho_e_ll - 0.5f0 * (rho_v1_ll^2 + rho_v2_ll^2) / rho_ll)
+    p_rr = (gamma - 1) * (rho_e_rr - 0.5f0 * (rho_v1_rr^2 + rho_v2_rr^2) / rho_rr)
+
+    # Compute the necessary mean values
+    rho_mean = ln_mean(rho_ll, rho_rr)
+    # Algebraically equivalent to `inv_ln_mean(rho_ll / p_ll, rho_rr / p_rr)`
+    # in exact arithmetic since
+    #     log((ϱₗ/pₗ) / (ϱᵣ/pᵣ)) / (ϱₗ/pₗ - ϱᵣ/pᵣ)
+    #   = pₗ pᵣ log((ϱₗ pᵣ) / (ϱᵣ pₗ)) / (ϱₗ pᵣ - ϱᵣ pₗ)
+    inv_rho_p_mean = p_ll * p_rr * inv_ln_mean(rho_ll * p_rr, rho_rr * p_ll)
+    v1_avg = 0.5f0 * (v1_ll + v1_rr)
+    v2_avg = 0.5f0 * (v2_ll + v2_rr)
+    p_avg = 0.5f0 * (p_ll + p_rr)
+    velocity_square_avg = 0.5f0 * (v1_ll * v1_rr + v2_ll * v2_rr)
+
+    # Calculate fluxes depending on orientation
+        f1 = rho_mean * v1_avg
+        f2 = f1 * v1_avg + p_avg
+        f3 = f1 * v2_avg
+	f4 = f1 * (velocity_square_avg + inv_rho_p_mean /(PhysConst.γ - 1)) + 0.5f0 * (p_ll * v1_rr + p_rr * v1_ll)
+        g1 = rho_mean * v2_avg
+        g2 = g1 * v1_avg
+        g3 = g1 * v2_avg + p_avg
+	g4 = g1 * (velocity_square_avg + inv_rho_p_mean /(PhysConst.γ - 1)) + 0.5f0 * (p_ll * v2_rr + p_rr * v2_ll)
+
+    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
+end
+
+@inline function flux_turbo_ranocha(u_ll, u_rr)
+    PhysConst = PhysicalConst{Float64}()
+	rho_ll, v1_ll, v2_ll, p_ll, log_rho_ll, log_p_ll = u_ll
+	rho_rr, v1_rr, v2_rr, p_rr, log_rho_rr, log_p_rr = u_rr
+	    x1 = rho_ll
+            log_x1 = log_rho_ll
+            y1 = rho_rr
+            log_y1 = log_rho_rr
+            x1_plus_y1 = x1 + y1
+            y1_minus_x1 = y1 - x1
+            z1 = y1_minus_x1^2 / x1_plus_y1^2
+            special_path1 = x1_plus_y1 / (2 + z1 * (2 / 3 + z1 * (2 / 5 + 2 / 7 * z1)))
+            regular_path1 = y1_minus_x1 / (log_y1 - log_x1)
+            rho_mean = ifelse(z1 < 1.0e-4, special_path1, regular_path1)
+
+            # Algebraically equivalent to `inv_ln_mean(rho_ll / p_ll, rho_rr / p_rr)`
+            # in exact arithmetic since
+            #     log((ϱₗ/pₗ) / (ϱᵣ/pᵣ)) / (ϱₗ/pₗ - ϱᵣ/pᵣ)
+            #   = pₗ pᵣ log((ϱₗ pᵣ) / (ϱᵣ pₗ)) / (ϱₗ pᵣ - ϱᵣ pₗ)
+            # inv_rho_p_mean = p_ll * p_rr * inv_ln_mean(rho_ll * p_rr, rho_rr * p_ll)
+            x2 = rho_ll * p_rr
+            log_x2 = log_rho_ll + log_p_rr
+            y2 = rho_rr * p_ll
+            log_y2 = log_rho_rr + log_p_ll
+            x2_plus_y2 = x2 + y2
+            y2_minus_x2 = y2 - x2
+            z2 = y2_minus_x2^2 / x2_plus_y2^2
+            special_path2 = (2 + z2 * (2 / 3 + z2 * (2 / 5 + 2 / 7 * z2))) / x2_plus_y2
+            regular_path2 = (log_y2 - log_x2) / y2_minus_x2
+            inv_rho_p_mean = p_ll * p_rr * ifelse(z2 < 1.0e-4, special_path2, regular_path2)
+
+            v1_avg = 0.5 * (v1_ll + v1_rr)
+            v2_avg = 0.5 * (v2_ll + v2_rr)
+            p_avg = 0.5 * (p_ll + p_rr)
+            velocity_square_avg = 0.5 * (v1_ll * v1_rr + v2_ll * v2_rr)
+	    gamma = PhysConst.cp/PhysConst.cv
+            # Calculate fluxes depending on Cartesian orientation
+            f1 = rho_mean * v1_avg
+            f2 = f1 * v1_avg + p_avg
+            f3 = f1 * v2_avg
+            f4 = f1 *
+		(velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) +
+                 0.5 * (p_ll * v1_rr + p_rr * v1_ll)
+
+            g1 = rho_mean * v2_avg
+            g2 = g1 * v1_avg 
+	    g3 = g1 * v2_avg + p_avg
+            g4 = g1 * (velocity_square_avg + inv_rho_p_mean * 1/(gamma - 1)) + 0.5f0 * (p_ll * v2_rr + p_rr * v2_ll)
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end
 
@@ -280,46 +431,6 @@ function flux_central(u_ll, u_rr)
 
     return 0.5f0 .* (flux(u_ll) .+ flux(u_rr))
 end
-@inline function flux_ranocha(u_ll, u_rr)
-
-    PhysConst = PhysicalConst{Float64}()
-    rho_ll, rho_v1_ll, rho_v2_ll, rho_e_ll = u_ll
-    rho_rr, rho_v1_rr, rho_v2_rr, rho_e_rr = u_rr
-    v1_ll = rho_v1_ll/rho_ll
-    v1_rr = rho_v1_rr/rho_rr
-    v2_rr = rho_v2_rr/rho_rr
-    v2_ll = rho_v2_ll/rho_ll
-    Temp_ll = (rho_e_ll/rho_ll - 0.5*v1_ll*v1_ll)/PhysConst.cv
-    Temp_rr = (rho_e_rr/rho_rr - 0.5*v1_rr*v1_rr)/PhysConst.cv
-
-    p_ll = perfectGasLaw_ρTtoP(PhysConst; ρ=rho_ll, Temp=Temp_ll)
-    p_rr = perfectGasLaw_ρTtoP(PhysConst; ρ=rho_rr, Temp=Temp_rr)
-
-    # Compute the necessary mean values
-    rho_mean = ln_mean(rho_ll, rho_rr)
-    # Algebraically equivalent to `inv_ln_mean(rho_ll / p_ll, rho_rr / p_rr)`
-    # in exact arithmetic since
-    #     log((ϱₗ/pₗ) / (ϱᵣ/pᵣ)) / (ϱₗ/pₗ - ϱᵣ/pᵣ)
-    #   = pₗ pᵣ log((ϱₗ pᵣ) / (ϱᵣ pₗ)) / (ϱₗ pᵣ - ϱᵣ pₗ)
-    inv_rho_p_mean = p_ll * p_rr * inv_ln_mean(rho_ll * p_rr, rho_rr * p_ll)
-    v1_avg = 0.5f0 * (v1_ll + v1_rr)
-    v2_avg = 0.5f0 * (v2_ll + v2_rr)
-    p_avg = 0.5f0 * (p_ll + p_rr)
-    velocity_square_avg = 0.5f0 * (v1_ll * v1_rr + v2_ll * v2_rr)
-
-    # Calculate fluxes depending on orientation
-        f1 = rho_mean * v1_avg
-        f2 = f1 * v1_avg + p_avg
-        f3 = f1 * v2_avg
-	f4 = f1 * (velocity_square_avg + inv_rho_p_mean /(PhysConst.γ - 1)) + 0.5f0 * (p_ll * v1_rr + p_rr * v1_ll)
-        g1 = rho_mean * v2_avg
-        g2 = g1 * v1_avg
-        g3 = g1 * v2_avg + p_avg
-	g4 = g1 * (velocity_square_avg + inv_rho_p_mean /(PhysConst.γ - 1)) + 0.5f0 * (p_ll * v2_rr + p_rr * v2_ll)
-
-    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
-end
-
 
 @inline function flux_kennedy_gruber(u_ll, u_rr)
     PhysConst = PhysicalConst{Float64}()
