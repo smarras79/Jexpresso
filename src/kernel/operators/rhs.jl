@@ -637,13 +637,12 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
     PhysConst = PhysicalConst{Float64}()
 
     u_element_wise = zeros(params.mesh.ngl, params.mesh.ngl, params.neqs)
-
-    lkep = false
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
-    for iel = 1:params.mesh.nelem
 
-       
+    lkep = params.inputs[:lkep]
+    for iel = 1:params.mesh.nelem
+        
         if lkep
             for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
                 ip = connijk[iel,i,j]
@@ -664,8 +663,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
-            lkep = inputs[:lkep]
-	    if lkep == true
+            if lkep
 	        #   user_fluxaux!(@view(params.fluxaux[ip,:]), SD, @view(params.uaux[ip,:]), params.SOL_VARS_TYPE)
 	    else
                 user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
@@ -714,7 +712,6 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         params.metrics.dηdx, params.metrics.dηdy,
         iel, params.CL, params.QT, SD, params.AD)       
         =#
-        lkep = inputs[:lkep]
         if lkep
                  _expansion_inviscid_KEP_2D!(u,
                                  params.neqs, params.mesh.ngl,
