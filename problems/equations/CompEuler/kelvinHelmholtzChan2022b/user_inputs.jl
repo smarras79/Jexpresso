@@ -8,7 +8,7 @@ function user_inputs()
         :Δt                   => 0.005,
         :tinit                => 0.0,
         :tend                 => 10.0,
-        :diagnostics_at_times => (0.0:0.2:10.0),
+        :diagnostics_at_times => (0.0:0.1:10.0),
         :restart_time         => 0.0,
         :lrestart             => false,
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
@@ -23,7 +23,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        #:lkep                => true,
+        :lkep                => true,
         :lvisc               => true, #false by default NOTICE: works only for Inexact
         :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
         #:μ                   => [0.0, 0.0001, 0.0001, 0.0001], #horizontal viscosity constant for momentum
