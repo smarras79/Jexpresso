@@ -2,7 +2,7 @@ function user_flux!(F, G, SD::NSD_1D,
                     q,
                     qe,
                     mesh::St_mesh,
-                    ::CL, ::TOTAL; neqs=4)
+                    ::CL, ::TOTAL; neqs=4, kwargs...)
 
     U = qe[2]
     H = qe[1]
@@ -18,7 +18,7 @@ function user_flux!(F, G, SD::NSD_1D,
                     q,
                     qe,
                     mesh::St_mesh,
-                    ::CL, ::PERT; neqs=4)
+                    ::CL, ::PERT; neqs=4, kwargs...)
 
     U = qe[2]
     H = qe[1]

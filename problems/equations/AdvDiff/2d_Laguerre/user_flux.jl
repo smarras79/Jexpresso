@@ -2,7 +2,7 @@ function user_flux!(F, G, SD::NSD_2D,
                     q,
                     qe,
                     mesh::St_mesh,
-                    ::CL, ::TOTAL; neqs=1, ip=1)
+                    ::CL, ::TOTAL; neqs=1, ip=1, kwargs...)
     
     u = 0.5
     v = 1.0
@@ -19,7 +19,7 @@ function user_flux!(F, G, SD::NSD_2D,
                     q,
                     qe,
                     mesh::St_mesh,
-                    ::CL, ::PERT; neqs=1, ip=1)
+                    ::CL, ::PERT; neqs=1, ip=1, kwargs...)
     
     u = 0.5
     v = 1.0
@@ -37,7 +37,7 @@ function user_flux!(F, G, SD::NSD_2D,
                     q,
                     qe,
                     mesh::St_mesh,
-                    ::NCL, ::AbstractPert; neqs=1, ip=1)
+                    ::NCL, ::AbstractPert; neqs=1, ip=1, kwargs...)
     
     u = 0.5
     v = 1.0

@@ -74,6 +74,37 @@ function params_setup(sem,
     rhs_diffξ_el = rhs.rhs_diffξ_el
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
+
+    poisson_struct = allocate_poisson(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=[:l_incompressible])
+    poisson = poisson_struct.poisson
+    
+    #------------------------------------------------------------------------------------
+    # Additional data storage for user_flux, currently only useful for incompressible 2D
+    #------------------------------------------------------------------------------------
+    F_data_struct = allocate_F_data(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible])
+    F_data = F_data_struct.F_data
+
+    number_st = allocate_number(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible])
+    number = number_st.number
+
+    # --------------------------------------------------------
+    # JBZ: poisson equation's rhs allocation
+    rhs_p    = allocate_rhs_p(sem.mesh.SD,
+                          sem.mesh.nelem,
+                          sem.mesh.npoin,
+                          sem.mesh.ngl,
+                          T, backend, inputs[:l_incompressible] ;
+                          neqs=qp.neqs)
+    RHS_p = rhs_p.RHS_p
+    rhs_el_p = rhs_p.rhs_el_p
+    rhs_laplacian_el_p = rhs_p.rhs_laplacian_el_p
+    RHS_laplacian_p = rhs_p.RHS_laplacian_p
+
+
+    # JBZ: poisson equation's boundary integral (segment) allocation
+    segment_p = allocate_segment_p(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible])
+    seg_p = segment_p.seg_p
+
     
     #------------------------------------------------------------------------------------
     # boundary flux arrays
@@ -287,12 +318,17 @@ function params_setup(sem,
         params = (backend,
                   T, inputs,
                   uaux, vaux,
+                  poisson, # for main variable in poission equation
+                  F_data, #for additional user_flux data (incompressible)
+                  number, # count which time step
                   ubdy, gradu, bdy_flux,                   
                   RHS, RHS_visc,
                   fijk, ∇f_el,
                   rhs_el, rhs_diff_el,
                   rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                   uprimitive,
+                  RHS_p, rhs_el_p, rhs_laplacian_el_p, RHS_laplacian_p, #for poission equation in NS equation
+                  seg_p, #for boundary integral in NS equation
                   F, G, H, S,
                   F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv, M_edge_inv = sem.matrix.M_edge_inv,
                   flux_gpu, source_gpu, qbdy_gpu,

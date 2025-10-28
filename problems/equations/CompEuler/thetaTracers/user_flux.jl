@@ -2,7 +2,7 @@ function user_flux!(F, G, SD::NSD_2D,
                     q,
                     qe,
                     mesh::St_mesh,
-                    ::CL, ::TOTAL; neqs=6, ip=1)
+                    ::CL, ::TOTAL; neqs=6, ip=1, kwargs...)
 
     PhysConst = PhysicalConst{Float64}()
     
@@ -35,7 +35,7 @@ function user_flux!(F, G, SD::NSD_2D,
                     q,
                     qe,
                     mesh::St_mesh,
-                    ::CL, ::PERT; neqs=5, ip=1)
+                    ::CL, ::PERT; neqs=5, ip=1, kwargs...)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -73,7 +73,7 @@ function user_flux!(F, G, SD::NSD_2D,
                     q,
                     qe,
                     mesh::St_mesh,
-                    ::NCL, ::AbstractPert; neqs=5, ip=1)
+                    ::NCL, ::AbstractPert; neqs=5, ip=1, kwargs...)
     
     PhysConst = PhysicalConst{Float64}()
                 
