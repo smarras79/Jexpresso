@@ -86,11 +86,11 @@ function draw_results(params, Coef, time, result)
             end
         end
 
-        ind = sortperm(reshape(res[1,:],(1,maximum(connijk))), dims = 2)
-        println("================================================")
-        println(res[2,ind])
-        println(res[3,ind])
-        println("================================================")
+        # ind = sortperm(reshape(res[1,:],(1,maximum(connijk))), dims = 2)
+        # println("================================================")
+        # println(res[2,ind])
+        # println(res[3,ind])
+        # println("================================================")
         #if (count2>10 && count2<1200)
 
             #str = "result_$(lpad(count2, 5, '0'))"
