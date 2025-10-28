@@ -7,7 +7,7 @@ function user_inputs()
         :tend                 => 10,
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #MSRK5(), #SSPRK54(),
         :Δt                   => 5e-3,
-        :ndiagnostics_outputs => 10,
+        :diagnostics_at_times => (0:1:10),
         :case                 => "rtb",
         :lsource              => false,
         #---------------------------------------------------------------------------

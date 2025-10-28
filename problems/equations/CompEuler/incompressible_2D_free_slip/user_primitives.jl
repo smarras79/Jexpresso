@@ -14,3 +14,9 @@ end
         return T(u[1]), T(u[2]/u[1]), T(u[3]/u[1]), T(u[4]/u[1])
     end
 end=#
+
+function user_uout!(ip, ET, uout, u, qe; kwargs...)
+
+    uout[1] = u[1] #ω
+end
+
