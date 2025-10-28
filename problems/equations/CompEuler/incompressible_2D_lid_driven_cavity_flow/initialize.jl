@@ -12,7 +12,8 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # 
     #---------------------------------------------------------------------------------
     qvars = ("ω")
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
+    qoutvars = ["ω", "u", "v"]
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU())    
         PhysConst = PhysicalConst{Float64}()
@@ -41,17 +42,6 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             error(" ERROR: CompEuler: initialize.jl:\n assign value to inputs[:case]")
         end
 
-        #
-        # Write reference to VTK:
-        #  
-        if (inputs[:lwrite_initial] == true)
-            outvarsref = Array{Union{Nothing, String}}(nothing, q.neqs)
-            for i = 1:length(outvarsref)
-                outvarsref[i] = string(qvars[i], "_ref")
-            end
-            write_vtk_ref(SD, mesh, q.qe, "REFERENCE_state", inputs[:output_dir]; nvar=length(q.qe[1,:]), outvarsref=outvarsref)
-        end
-    
     end
     @info " Initialize fields for 2D incompressible NS of vorticity-stream function form ........................ DONE "
     

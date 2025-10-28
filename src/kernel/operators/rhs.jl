@@ -414,12 +414,8 @@ function _build_rhs!(RHS, u, params, time)
     
     resetbdyfluxToZero!(params)
 
-    if (inputs[:l_incompressible] && inputs[:l_vort_stream])
+    if (inputs[:l_incompressible] && inputs[:l_vort_stream] && "LID" in params.mesh.bdy_edge_type)
          
-        if ("LID" in params.mesh.bdy_edge_type)
-            # draw velocity or stream function
-            result = "velocity" # Coef
-            draw_results(params, @view(params.poisson[:,1]), time, result)
             params.number[1,1] = params.number[1,1] + 1
             
             compute_boundary(params, @view(params.poisson[:,1]), u, time,
@@ -428,15 +424,6 @@ function _build_rhs!(RHS, u, params, time)
                             params.mesh.connijk,
                             params.metrics.dxdξ, params.metrics.dydξ,
                             params.metrics.dxdη, params.metrics.dydη)
-        else
-            apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
-                               params.mesh.x, params.mesh.y, params.mesh.z, params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
-                               params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
-                               params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
-                               xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
-                               params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, params.mesh.bdy_edge_type, params.mesh.bdy_face_type,
-                              params.ω, neqs, params.inputs, AD, SD)
-        end
     else
 
         apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
@@ -578,7 +565,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
     for iel = 1:params.mesh.nelem
 
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
-             ip = connijk[iel,k,l]
+            ip = connijk[iel,i,j]
             ip_F_data = 1
             if (params.inputs[:l_incompressible] && params.inputs[:l_vort_stream])
                 ip_F_data = ip
