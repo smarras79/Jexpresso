@@ -77,6 +77,8 @@ include(joinpath( "kernel", "elementLearningStructs.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))
 
+include(joinpath( "kernel", "physics", "incompressible.jl"))
+
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysics.jl"))
