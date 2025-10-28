@@ -578,7 +578,11 @@ function inviscid_rhs_el!(u, params, connijk, qe, x, y, z, lsource, SD::NSD_2D)
     for iel = 1:params.mesh.nelem
 
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
-            ip = connijk[iel,i,j]
+             ip = connijk[iel,k,l]
+            ip_F_data = 1
+            if (params.inputs[:l_incompressible] && params.inputs[:l_vort_stream])
+                ip_F_data = ip
+            end
             
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
