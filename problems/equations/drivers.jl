@@ -141,7 +141,7 @@ function driver(nparts,
         
         usol = inputs[:lelementLearning] ? params.qp.qn : solution.u
         args = (params.SD, usol, params.uaux, 0.0, 1,
-                     sem.mesh, nothing,
+                     sem.mesh, nothing, nothing,
                      nothing, nothing,
                      0.0, 0.0, 0.0,
                      OUTPUT_DIR, inputs,

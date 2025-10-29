@@ -284,6 +284,9 @@ function params_setup(sem,
         pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
                   uaux, vaux,
+                  poisson, # for main variable in poission equation
+                  F_data, #for additional user_flux data (incompressible)
+                  number,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
