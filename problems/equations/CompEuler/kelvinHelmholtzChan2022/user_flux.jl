@@ -13,7 +13,7 @@ function user_flux!(F, G, SD::NSD_2D, q, qe,
     v  = ρv/ρ
 
     γ   = PhysConst.γ
-    γm1 = γ - 1.0
+    γm1 = PhysConst.γm1
     
     velomagsq = (u*u + v*v)
     ke        = 0.5*ρ*velomagsq
@@ -166,22 +166,45 @@ function user_flux_gpu(q,qe,PhysConst,lpert)
 end
 
 
-@inline function user_turbo_volume_flux(u_ll, u_rr)
-	#flux_artiano_etec(u_ll, u_rr)
+@inline function user_turbo_volume_flux(u_ll, u_rr, volume_flux)
+
+    if volume_flux == "etec"
+	flux_artiano_etec(u_ll, u_rr)
+    elseif volume_flux == "ec"
 	flux_artiano_ec(u_ll, u_rr)
-#	flux_artiano_tec(u_ll, u_rr)
-#       flux_turbo_ranocha(u_ll, u_rr)
-#	flux_kennedy_gruber(u_ll, u_rr)
-#       flux_central(u_ll, u_rr)
+    elseif volume_flux == "tec"
+	flux_artiano_tec(u_ll, u_rr)
+    elseif volume_flux == "ranocha"
+        flux_turbo_ranocha(u_ll, u_rr)
+    elseif volume_flux == "gruber"
+        flux_kennedy_gruber(u_ll, u_rr)
+    elseif volume_flux == "central"
+        flux_central(u_ll, u_rr)
+    else
+        #default
+        flux_turbo_ranocha(u_ll, u_rr)
+    end
 end
 
-@inline function user_volume_flux(u_ll, u_rr)
-	#flux_artiano_etec(u_ll, u_rr)
+@inline function user_volume_flux(u_ll, u_rr, volume_flux)
+
+    if volume_flux == "etec"
+	flux_artiano_etec(u_ll, u_rr)
+    elseif volume_flux == "ec"
 	flux_artiano_ec(u_ll, u_rr)
-#	flux_artiano_tec(u_ll, u_rr)
-#       flux_ranocha(u_ll, u_rr)
-#	flux_kennedy_gruber(u_ll, u_rr)
-#       flux_central(u_ll, u_rr)
+    elseif volume_flux == "tec"
+	flux_artiano_tec(u_ll, u_rr)
+    elseif volume_flux == "ranocha"
+        flux_turbo_ranocha(u_ll, u_rr)
+    elseif volume_flux == "gruber"
+        flux_kennedy_gruber(u_ll, u_rr)
+    elseif volume_flux == "central"
+        flux_central(u_ll, u_rr)
+    else
+        #default
+        flux_turbo_ranocha(u_ll, u_rr)
+    end
+
 end
 
 

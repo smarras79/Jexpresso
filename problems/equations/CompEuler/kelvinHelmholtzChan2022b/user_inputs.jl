@@ -5,7 +5,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
 	:ode_solver           => CarpenterKennedy2N54(),#RDPK3SpFSAL49(),SSPRK54(),  #ORK256(), #SSPRK54(),
 	:ode_adaptive_solver  => false,
-        :Δt                   => 0.005,
+        :Δt                   => 0.0025,
         :tinit                => 0.0,
         :tend                 => 10.0,
         :diagnostics_at_times => (0.0:0.1:10.0),
@@ -23,12 +23,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lkep                => true,
-        :lvisc               => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
-        #:μ                   => [0.0, 0.0001, 0.0001, 0.0001], #horizontal viscosity constant for momentum
-        #:visc_model           => VREM(),
-        :visc_model    => SMAG(), #AV(), #SMAG(), AV(), DSMAG(), VREM()
+        #:lkep          => true,
+        :volume_flux   => "gruber",
+        :lvisc         => true, #false by default NOTICE: works only for Inexact
+        #:μ             => [0.0, 1.0, 1.0, 1.0], #values for Smagorinsky
+        #:μ             => [0.0, 0.005, 0.005, 0.01], #values for AV
+        :μ             => [0.0, 0.005, 0.005, 0.1], #values for AV
+        :visc_model    => AV(), #SMAG(), AV(), DSMAG(), VREM()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -50,7 +51,7 @@ function user_inputs()
         :outformat           => "vtk",
         :loverwrite_output   => true,
         :lwrite_initial      => true,
-        :output_dir          => "./output",
+        :output_dir          => "./output-THETA-AV",
         #:output_dir          => "./test/CI-run",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

@@ -550,6 +550,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lkep))
         inputs[:lkep] = false
     end
+    if inputs[:lkep] == true
+         if(!haskey(inputs, :volume_flux))
+             inputs[:volume_flux] = "ranocha"
+         end
+    end
     
     #
     # saturation adjustment:

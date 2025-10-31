@@ -3,7 +3,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     if rank == 0
-        @info " Initialize fields for 2D CompEuler with θ equation ........................ "
+        @info " Initialize fields for 2D CompEuler ........................ "
     end
     
     #---------------------------------------------------------------------------------
@@ -133,7 +133,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         k(q.qn, q.qe, mesh.x, mesh.y, xc, rθ, yc, θref, θc, PhysConst,lpert; ndrange = (mesh.npoin))
     end
     if rank == 0
-        @info " Initialize fields for 2D CompEuler with θ equation ........................ DONE "
+        @info " Initialize fields for 2D CompEuler........................ DONE "
     end
     
     return q
