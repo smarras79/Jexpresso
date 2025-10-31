@@ -1576,6 +1576,129 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           inputs, rhs_el,
                           iel, ieq,
                           QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+
+    #
+    # Constants for Richardson stability correction
+    #
+    PhysConst  = PhysicalConst{Float32}()
+    Pr_t       = PhysConst.Pr_t
+    #
+    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
+    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
+    # Very unstable:    Pr_t ≈ 1/3
+    #
+    κ          = PhysConst.κ
+    cp         = PhysConst.cp
+    C_s        = PhysConst.C_s
+    C_s2       = C_s^2
+    
+    for l = 1:ngl
+        for k = 1:ngl
+            ωJac = ω[k]*ω[l]*Je[iel,k,l]
+
+            # Quantities for Smagorinsky 
+            dudξ = 0.0; dudη = 0.0
+            dvdξ = 0.0; dvdη = 0.0
+            @turbo for ii = 1:ngl
+                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+
+                dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+            end
+            dξdx_kl = dξdx[iel,k,l]
+            dξdy_kl = dξdy[iel,k,l]
+            dηdx_kl = dηdx[iel,k,l]
+            dηdy_kl = dηdy[iel,k,l]
+
+            #u
+            dudx = dudξ*dξdx_kl + dudη*dηdx_kl
+            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+            
+            #v
+            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
+            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+            
+            # Smagorinsky
+            # Strain rate tensor (symmetric part of velocity gradient)
+            S11 = dudx
+            S22 = dvdy
+            S12 = 0.5 * (dudy + dvdx)
+            S21 = S12
+            
+            # Rotation tensor (anti-symmetric part)
+            #Ω12 = 0.5 * (dudy - dvdx)
+            #Ω21 = -Ω12
+            
+            # Strain rate magnitude
+            Sij = sqrt(0.5 * (S11*S11 + S22*S22) + S12*S12)
+            S2  = Sij*Sij
+
+            # Filter width calculation
+            Je_cbrt = cbrt(Je[iel,k,l])
+            Δ       = Je_cbrt / (ngl-1)
+            Δ2      = Δ * Δ
+            
+            # Base Smagorinsky eddy viscosity
+            ν_t_base = C_s2 * Δ2 * Sij
+            ν_t = ν_t_base
+            
+            # END Smagorinsky
+
+            # Compute scalar gradient for diffusion iequation by iequation
+            dqdξ = 0.0; dqdη = 0.0
+            @turbo for ii = 1:ngl
+                dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+            end
+            # Transform scalar gradient to physical coordinates
+            dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
+            dqdy_phys = dqdξ*dξdy_kl + dqdη*dηdy_kl
+
+            
+            # Determine effective diffusivity based on scalar type
+            # TODO: Replace this logic with proper equation identification
+            # Common orderings:
+            # - Conservative: [ρ, ρu, ρv, ρw, ρE] or [ρ, ρu, ρv, ρw, ρE, ρθ]
+            # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
+            if ieq == 4  # Assuming potential temperature equation is at index 5
+                # For temperature: use thermal diffusivity (ν_t / Pr_t)
+                ρ           = uprimitiveieq[k,l,1]                
+                α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
+                α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
+                effective_diffusivity = ρ * cp * (α_turbulent + α_molecular)
+                
+            else
+                # For momentum equations: use momentum diffusivity
+                effective_diffusivity = visc_coeffieq[ieq] * ν_t
+            end
+            
+            # Apply effective diffusivity to scalar gradients
+            dqdx = effective_diffusivity * dqdx_phys
+            dqdy = effective_diffusivity * dqdy_phys
+            
+            ∇ξ∇q_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
+            ∇η∇q_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
+            
+            @turbo for i = 1:ngl
+                dhdξ_ik = dψ[i,k]
+                dhdη_il = dψ[i,l]
+                
+                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl
+                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇q_kl
+            end
+        end  
+    end
+end
+
+function _expansion_visc_head!(rhs_diffξ_el, rhs_diffη_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy,
+                          dηdx, dηdy,
+                          inputs, rhs_el,
+                          iel, ieq,
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
     
     #
     # Constants for Richardson stability correction
@@ -1627,7 +1750,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             
             # CORRECT Strain rate magnitude calculation
             # |S| = sqrt(2 * S_ij * S_ij)
-            S_ij_S_ij = S11*S11 + S22*S22 + 2.0 * S12*S12
+            S_ij_S_ij = S11*S11 + S22*S22 + 2.0*S12*S12
             Sij = sqrt(2.0 * S_ij_S_ij)
             
             # Filter width calculation
