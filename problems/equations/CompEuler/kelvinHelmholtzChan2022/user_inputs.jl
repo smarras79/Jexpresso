@@ -27,7 +27,8 @@ function user_inputs()
         #:volume_flux   => "gruber",
         :lvisc         => true, #false by default NOTICE: works only for Inexact
         #:μ             => [0.0, 1.0, 1.0, 2.0], #values for Smagorinsky
-        :μ             => [0.0, 0.001, 0.001, 0.1], #values for AV
+        #:μ             => [0.0, 0.001, 0.001, 0.1], # AV with Ene Eq.
+        :μ             => [0.0, 0.001, 0.001, 0.01], # AV with theta eq.
         :visc_model    => AV(), #SMAG(), VREM()
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
