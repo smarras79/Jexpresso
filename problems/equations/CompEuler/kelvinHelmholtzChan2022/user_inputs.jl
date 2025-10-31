@@ -14,7 +14,7 @@ function user_inputs()
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => false,
-	#:SOL_VARS_TYPE        => THETA(), #PERT(), #TOTAL() is default
+	:SOL_VARS_TYPE        => THETA(), #PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ function user_inputs()
         :outformat           => "vtk",
         :loverwrite_output   => true,
         :lwrite_initial      => true,
-        :output_dir          => "./output-SMAG-eneEq",
+        :output_dir          => "./output-ThetaEq-AV",
         #:output_dir          => "./test/CI-run",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
