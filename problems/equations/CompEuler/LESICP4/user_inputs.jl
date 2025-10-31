@@ -4,14 +4,16 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.04,
-        :tinit                => 0.0,
+        :Δt                   => 0.05,
+        :tinit                => 0,
         :tend                 => 10800.0,
 	:lrestart             => false,
 	#:restart_output_file_path => "",
-	:restart_time         => 7500,
-	:diagnostics_at_times => (0:5:10800.0),
+	:restart_time         => 500,
+	:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
         :lsource              => true,
+	:lsponge              => true,
+	:zsponge              => 2500.0,
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge100_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
@@ -27,26 +29,25 @@ function user_inputs()
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
         #:visc_model           => AV(),
-        :ivisc_equations      => [1, 2, 3, 4, 5],
-        # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 10, 10, 10, 15], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 5, 5, 5, 5], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
-	:lwarmup          => true,
+	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
+        :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
-
+	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
+	
         # Warping:
         :lwarp => true,
         :mount_type => "LESICP",
         :h_mount => 100.0,
         :a_mount => 10240.0,
+	:z_transition_start => -1000.0,
+	:z_transition_end => 2200.0,
 
         # Stretching factors:
         :lstretch => false,
@@ -58,15 +59,16 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        #:lfilter             => true,
-        #:mu_x                => 0.01,
-        #:mu_y                => 0.01,
-        #:filter_type         => "erf",
+        :lfilter             => false,
+        :mu_x                => 0.5,
+        :mu_y                => 0.5,
+	:mu_z                => 0.5,
+        :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP4_scaling-8nodes-64x32x36_10kmX10kmX3km/",
+        :output_dir          => "/scratch/smarras/smarras/output/LESICP4_scaling-8nodes-64x16x36_10kmX10kmX3dot5km/",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,

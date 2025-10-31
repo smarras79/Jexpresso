@@ -5,12 +5,12 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.04,
-        :tinit                => 0.0,
+        :tinit                => 1750,
         :tend                 => 10800.0,
-	:lrestart             => false,
+	:lrestart             => true,
 	#:restart_output_file_path => "",
-	:restart_time         => 250,
-	:diagnostics_at_times => (0:5:10800.0),
+	:restart_time         => 1750,
+	:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
         :lsource              => true,
 	:lsponge              => true,
 	:zsponge              => 2500.0,
@@ -30,7 +30,7 @@ function user_inputs()
         :visc_model           => SMAG(),
         #:visc_model           => AV(),
         #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 10, 10, 10, 15], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -38,10 +38,9 @@ function user_inputs()
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
         :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
-
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
+	
         # Warping:
         :lwarp => true,
         :mount_type => "LESICP",
