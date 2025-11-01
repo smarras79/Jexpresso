@@ -1635,8 +1635,10 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             S2  = Sij*Sij
 
             # Filter width calculation
-            Je_cbrt = cbrt(Je[iel,k,l])
-            Δ       = Je_cbrt / (ngl-1)
+            #Je_cbrt = cbrt(Je[iel,k,l])
+            #Δ       = Je_cbrt / (ngl-1)
+            @info Δ
+            
             Δ2      = Δ * Δ
             
             # Base Smagorinsky eddy viscosity
