@@ -1576,7 +1576,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           inputs, rhs_el,
                           iel, ieq,
                           QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
-
+			  
     #
     # Constants for Richardson stability correction
     #
@@ -1631,16 +1631,13 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             #Ω21 = -Ω12
             
             # Strain rate magnitude
-            Sij = sqrt(0.5 * (S11*S11 + S22*S22) + S12*S12)
-            S2  = Sij*Sij
-
+	    # |S| = sqrt(2 * S_ij * S_ij)
+            S_ij_S_ij = S11*S11 + S22*S22 + 2.0*S12*S12
+            Sij = sqrt(2.0 * S_ij_S_ij)
+            
             # Filter width calculation
-            #Je_cbrt = cbrt(Je[iel,k,l])
-            #Δ       = Je_cbrt / (ngl-1)
-            @info Δ
-            
             Δ2      = Δ * Δ
-            
+
             # Base Smagorinsky eddy viscosity
             ν_t_base = C_s2 * Δ2 * Sij
             ν_t = ν_t_base
