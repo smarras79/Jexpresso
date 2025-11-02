@@ -123,9 +123,9 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Some domain parameters
     #------------------------------------------------------------------------------------
-    xmax = sem.mesh.xmax xmin = sem.mesh.xmin
-    ymax = sem.mesh.ymax ymin = sem.mesh.ymin
-    zmax = sem.mesh.zmax zmin = sem.mesh.zmin
+    xmax = sem.mesh.xmax; xmin = sem.mesh.xmin
+    ymax = sem.mesh.ymax; ymin = sem.mesh.ymin
+    zmax = sem.mesh.zmax; zmin = sem.mesh.zmin
     
     #------------------------------------------------------------------------------------
     # Laguerre arrays

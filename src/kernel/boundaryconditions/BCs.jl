@@ -601,7 +601,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                 end
             
             else
-                if (coords[poin_in_bdy_face[iface,3,3], 3] == zmin) # FOR YT THIS WOULDN'T WORK WITH TOPOGRAPHY
+                #if (coords[poin_in_bdy_face[iface,3,3], 3] == zmin) # FOR YT THIS WOULDN'T WORK WITH TOPOGRAPHY
                     for i = 1:ngl
                         for j = 1:ngl
                             
@@ -638,11 +638,11 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 v_inside = uaux[ip1,   3]/ρ                                
                                 w_inside = uaux[ip1,   4]/ρ
 
-                                vprojectedaux = u_inside*nx + v_inside*ny + w_inside*nz
+                                vprojectedaux = u_inside*nx[iface,i,j] + v_inside*ny[iface,i,j] + w_inside*nz[iface,i,j]
                                 
-                                u_inside = u_inside - vprojectedaux*nx
-                                v_inside = v_inside - vprojectedaux*ny
-                                w_inside = w_inside - vprojectedaux*nz
+                                u_inside = u_inside - vprojectedaux*nx[iface,i,j]
+                                v_inside = v_inside - vprojectedaux*ny[iface,i,j]
+                                w_inside = w_inside - vprojectedaux*nz[iface,i,j]
                                 
                                 θ_inside = uaux[ip1,   5]/ρ
                                 θ_sfc    = uaux[ipsfc, 5]/ρ
@@ -651,7 +651,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 Δx = coords[ip1, 1] - coords[ipsfc, 1]
                                 Δy = coords[ip1, 2] - coords[ipsfc, 2]
                                 Δz = coords[ip1, 3] - coords[ipsfc, 3]
-                                z_inside = abs(Δx*nx + Δy*ny + Δz*nz) 
+                                z_inside = abs(Δx*nx[iface,i,j] + Δy*ny[iface,i,j] + Δz*nz[iface,i,j]) 
                                 
                                 CM_MOST!(@view(τ_f[iface,i,j,:]), @view(wθ[iface,i,j,1]), ρ, u_inside, v_inside, w_inside, θ_inside, θ_sfc, z_inside)
                                 
@@ -673,7 +673,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                             end
                         end
                     end
-                 end
+                 #end
             end
             compute_surface_integral!(S_face, F_surf, ω, Jef, iface, ngl)            
         end
