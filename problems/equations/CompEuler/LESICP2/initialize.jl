@@ -104,13 +104,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                         q.qn[ip,5] = ρ*θ
                         q.qn[ip,end] = p
 
-                        #Store initial background state for plotting and analysis of pertuebations
-                        q.qe[ip,1] = q.qn[ip,1]
-                        q.qe[ip,2] = q.qn[ip,2]
-                        q.qe[ip,3] = q.qn[ip,3]
-                        q.qe[ip,4] = q.qn[ip,4]
-                        q.qe[ip,5] = q.qn[ip,5]
-                        q.qe[ip,end] = q.qn[ip,end]
+			q.qe[ip,1] = q.qn[ip,1]
+                	q.qe[ip,2] = q.qn[ip,2]
+                	q.qe[ip,3] = q.qn[ip,3]
+                	q.qe[ip,4] = q.qn[ip,4]
+                	q.qe[ip,5] = q.qn[ip,5]
+                	q.qe[ip,6] = q.qn[ip,end]
                     end
                 end
             end    
