@@ -78,8 +78,8 @@ function user_source!(S,
         S[3] -= f * u_vel
 
         if lgeostrophic == true
-            U_geo = 10.0
-            V_geo = 0.0
+            U_geo = qe[2]/qe[1] #10.0
+            V_geo = qe[3]/qe[1] #0.0
             S[2] += q[1] * f * V_geo
             S[3] -= q[1] * f * U_geo
         end
