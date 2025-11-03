@@ -4,13 +4,13 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.05,
+        :Δt                   => 0.025,
         :tinit                => 0,
         :tend                 => 10800.0,
 	:lrestart             => false,
 	#:restart_output_file_path => "",
 	:restart_time         => 500,
-	:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
+	:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:250:8500...,  9000:10:10800.0...),
         :lsource              => true,
 	:lsponge              => true,
 	:zsponge              => 2500.0,
@@ -68,14 +68,14 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP2_scaling-8nodes-64x16x36_10kmX10kmX3dot5km/",
+        :output_dir          => "/scratch/smarras/smarras/output/LESICP2_scaling-8nodes-128x128x72_10kmX10kmX3dot5km/",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => false,
+        :linitial_refine     => true,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
