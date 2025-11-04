@@ -1575,7 +1575,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
 			  
     #
     # Constants for Richardson stability correction
@@ -1697,7 +1697,7 @@ function _expansion_visc_head!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     #
     # Constants for Richardson stability correction
@@ -1814,7 +1814,7 @@ function _expansion_visc_v1!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     #
     # Constants for Richardson stability correction
@@ -1952,7 +1952,7 @@ function _expansion_visc_ok_for_theta!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     #
     # Constants for Richardson stability correction
@@ -2068,7 +2068,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::DSMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::DSMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
@@ -2243,7 +2243,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::WALE, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::WALE, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
 
     #
     # Constants:
@@ -2382,7 +2382,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::VREM, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::VREM, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
 
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
@@ -2511,7 +2511,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
-                          QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0, vargs...)
 
     PhysConst = PhysicalConst{Float32}()
     MPConst   = MicrophysicalConst{Float32}()
@@ -2583,7 +2583,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
-                          QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal; Δ=1.0, vargs...)
     
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
@@ -2731,7 +2731,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords,
                           poin_in_bdy_face, elem_to_face, bdy_face_type, 
-                          QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal; Δ=1.0, vargs...)
 
     #
     # Constants for Richardson stability correction
@@ -2932,7 +2932,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                            connijk,
                            coords,
                            poin_in_bdy_face, elem_to_face, bdy_face_type,
-                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0)
+                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     nothing
     
