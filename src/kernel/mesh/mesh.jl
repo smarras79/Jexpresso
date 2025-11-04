@@ -141,7 +141,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     nparts              = 1
     
     #Auxiliary arrays for boundary conditions
-    
+    edge_in_elem              = KernelAbstractions.zeros(backend, TInt, 0)
     bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, 0, 0)
     internal_poin_in_bdy_edge = KernelAbstractions.zeros(backend, TInt, 0, 0)
@@ -462,8 +462,9 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
     mesh.gip2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.npoin))*local_views(parts).item_ref[]
     
     mesh.conn_edge_el              = KernelAbstractions.zeros(backend, TInt, 2, Int64(mesh.NEDGES_EL), Int64(mesh.nelem))    
-    mesh.conn_face_el              = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))  
-    mesh.bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))  
+    mesh.conn_face_el              = KernelAbstractions.zeros(backend, TInt,  4, Int64(mesh.NFACES_EL), Int64(mesh.nelem))
+    mesh.edge_in_elem              = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges))
+    mesh.bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy))
     mesh.poin_in_edge              = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges), Int64(mesh.ngl))
     mesh.poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt,  Int64(mesh.nedges_bdy), Int64(mesh.ngl))
     mesh.internal_poin_in_edge     = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nedges),     Int64(mesh.ngl-2))
@@ -909,6 +910,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         end
         iedge_bdy = 1
         for iedge = 1:mesh.nedges #total nedges
+            
+            #mesh.edge_in_elem[iedge] = mesh.facet_cell_ids[iedge]
+            # @info "iedge ", iedge, " belongs to element ", mesh.facet_cell_ids[iedge] #mesh.edge_in_elem[iedge]
+            #  for igl = 1:mesh.ngl
+            #         @info "iedge " , iedge, " has points ", mesh.poin_in_edge[iedge, igl]
+            #  end
+            
+            
             if isboundary_edge[iedge] == true
                 # if rank == 1
                 #     @info mesh.x[mesh.poin_in_edge[iedge, 1]], mesh.y[mesh.poin_in_edge[iedge, 1]]
