@@ -89,7 +89,7 @@ function rhs!(du, u, params, time)
     
     if (backend == CPU())
         _build_rhs!(@view(params.RHS[:,:]), u, params, time)
-        # time_function!(params.timers["_build_rhs!"], _build_rhs!, @view(params.RHS[:,:]), u, params, time)
+        #time_function!(params.timers["_build_rhs!"], _build_rhs!, @view(params.RHS[:,:]), u, params, time)
 
         if (params.laguerre) 
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
@@ -973,7 +973,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
                              params.metrics.dηdx, params.metrics.dηdy,
                              params.inputs, params.rhs_el,
                              iel, ieq, params.QT, params.VT, SD, params.AD;
-                             Δ=Δ)
+                             Δ=Δ, T=Float16)
         end
         
     end

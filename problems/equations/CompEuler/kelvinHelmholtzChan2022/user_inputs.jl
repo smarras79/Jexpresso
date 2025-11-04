@@ -19,21 +19,26 @@ function user_inputs()
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 7,      # Polynomial order
+        :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         #:μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
-        :μ                   => [0.0, 0.125, 0.125, 0.125], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
         :visc_model           => SMAG(),
+        #---------------------------------------------------------------------------
+        # LKEP:
+        #---------------------------------------------------------------------------
+        #:lkep        => true,
+        :volume_flux => "ec",
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_40x40_unitsquare.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_40x40_unitsquare.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------

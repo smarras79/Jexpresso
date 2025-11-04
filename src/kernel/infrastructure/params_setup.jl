@@ -257,7 +257,7 @@ function params_setup(sem,
     end
 
     # setup timer
-    # timers = create_timer_dict(["DSS_global_RHS!", "inviscid_rhs_el!", "viscous_rhs_el!", "_build_rhs!"], comm; skip_first_n=10)
+    #timers = create_timer_dict(["DSS_global_RHS!", "inviscid_rhs_el!", "viscous_rhs_el!", "_build_rhs!"], comm; skip_first_n=10)
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
@@ -324,6 +324,7 @@ function params_setup(sem,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
+                  #timers, 
                   sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end
 
