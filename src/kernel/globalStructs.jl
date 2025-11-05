@@ -54,6 +54,8 @@ end
 # rhs
 #-------------------------------------------------------------------------------------------
 Base.@kwdef mutable struct St_rhs{T <: AbstractFloat, dims1, dims2, backend}
+
+    #T1::Type=Float16
     
     RHS          = KernelAbstractions.zeros(backend,  T, dims1)         
     RHS_visc     = KernelAbstractions.zeros(backend,  T, dims1)

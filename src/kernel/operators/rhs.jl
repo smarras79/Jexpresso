@@ -89,7 +89,7 @@ function rhs!(du, u, params, time)
     
     if (backend == CPU())
         _build_rhs!(@view(params.RHS[:,:]), u, params, time)
-        # time_function!(params.timers["_build_rhs!"], _build_rhs!, @view(params.RHS[:,:]), u, params, time)
+        #time_function!(params.timers["_build_rhs!"], _build_rhs!, @view(params.RHS[:,:]), u, params, time)
 
         if (params.laguerre) 
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
@@ -973,7 +973,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
                              params.metrics.dηdx, params.metrics.dηdy,
                              params.inputs, params.rhs_el,
                              iel, ieq, params.QT, params.VT, SD, params.AD;
-                             Δ=Δ)
+                             Δ=Δ, T=Float16)
         end
         
     end
@@ -1575,7 +1575,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
 			  
     #
     # Constants for Richardson stability correction
@@ -1665,7 +1665,12 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                 ρ           = uprimitiveieq[k,l,1]                
                 α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
                 α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
-                effective_diffusivity = ρ * cp * (α_turbulent + α_molecular) * visc_coeffieq[ieq]
+               
+                if inputs[:SOL_VARS_TYPE] == THETA()
+                    effective_diffusivity = (α_turbulent) * visc_coeffieq[ieq]
+                else
+                    effective_diffusivity = ρ * cp * (α_turbulent + α_molecular) * visc_coeffieq[ieq]
+                end
                 
             else
                 # For momentum equations: use momentum diffusivity
@@ -1697,7 +1702,7 @@ function _expansion_visc_head!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     #
     # Constants for Richardson stability correction
@@ -1814,7 +1819,7 @@ function _expansion_visc_v1!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     #
     # Constants for Richardson stability correction
@@ -1952,7 +1957,7 @@ function _expansion_visc_ok_for_theta!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     #
     # Constants for Richardson stability correction
@@ -2068,7 +2073,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::DSMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::DSMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
@@ -2243,7 +2248,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::WALE, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::WALE, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
 
     #
     # Constants:
@@ -2382,7 +2387,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::VREM, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::VREM, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
 
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
@@ -2511,7 +2516,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
-                          QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0, vargs...)
 
     PhysConst = PhysicalConst{Float32}()
     MPConst   = MicrophysicalConst{Float32}()
@@ -2583,7 +2588,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
-                          QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal; Δ=1.0, vargs...)
     
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
@@ -2731,7 +2736,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords,
                           poin_in_bdy_face, elem_to_face, bdy_face_type, 
-                          QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal; Δ=1.0, vargs...)
 
     #
     # Constants for Richardson stability correction
@@ -2932,7 +2937,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                            connijk,
                            coords,
                            poin_in_bdy_face, elem_to_face, bdy_face_type,
-                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0)
+                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     nothing
     
