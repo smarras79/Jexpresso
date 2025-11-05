@@ -14,7 +14,7 @@ function allocate_uODE(SD, npoin, T, backend; neqs=1)
     dims1 = (Int64(npoin)*Int64(neqs))
     dims2 = (Int64(npoin), Int64(neqs+1))
     dims3 = (Int64(npoin))
-    dims4 = (Int64(npoin), Int64(neqs+2))
+    dims4 = (Int64(npoin), Int64(neqs+3))
 
     uODE = St_uODE{T, dims1, dims2, dims3, dims4, backend}()
     

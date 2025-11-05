@@ -264,6 +264,31 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL)
     aux[6] = log(p)
 end
 
+
+function user_fluxaux!(aux, SD::NSD_2D, q, ::THETA, ::artiano_ec)
+    
+    PhysConst = PhysicalConst{Float64}()
+                
+    rho  = q[1] 
+    rho_u = q[2]
+    rho_v = q[3]
+    rho_theta = q[4]
+
+    theta  = rho_theta/rho
+    u  = rho_u/rho
+    v  = rho_v/rho
+
+    p = perfectGasLaw_ρθtoP(PhysConst, ρ=rho, θ=theta)
+
+    aux[1] = rho
+    aux[2] = u
+    aux[3] = v
+    aux[4] = p
+    aux[5] = rho_theta
+    aux[6] = log(rho)
+    aux[7] = log(rho_theta)
+end
+
 @inline function flux_ranocha(u_ll, u_rr)
 
     PhysConst = PhysicalConst{Float64}()
@@ -303,8 +328,56 @@ end
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end
 
-@inline function flux_turbo_ranocha(u_ll, u_rr)
+
+@inline function flux_turbo(u_ll, u_rr, ::artiano_ec)
     PhysConst = PhysicalConst{Float64}()
+	rho_ll, v1_ll, v2_ll, p_ll, rho_theta_ll, log_rho_ll, log_rho_theta_ll = u_ll
+	rho_rr, v1_rr, v2_rr, p_rr, rho_theta_rr, log_rho_rr, log_rho_theta_rr = u_rr
+	    x1 = rho_ll
+            log_x1 = log_rho_ll
+            y1 = rho_rr
+            log_y1 = log_rho_rr
+            x1_plus_y1 = x1 + y1
+            y1_minus_x1 = y1 - x1
+            z1 = y1_minus_x1^2 / x1_plus_y1^2
+            special_path1 = x1_plus_y1 / (2 + z1 * (2 / 3 + z1 * (2 / 5 + 2 / 7 * z1)))
+            regular_path1 = y1_minus_x1 / (log_y1 - log_x1)
+            rho_mean = ifelse(z1 < 1.0e-4, special_path1, regular_path1)
+
+            # algebraically equivalent to `inv_ln_mean(rho_ll / p_ll, rho_rr / p_rr)`
+            # in exact arithmetic since
+            #     log((ϱₗ/pₗ) / (ϱᵣ/pᵣ)) / (ϱₗ/pₗ - ϱᵣ/pᵣ)
+            #   = pₗ pᵣ log((ϱₗ pᵣ) / (ϱᵣ pₗ)) / (ϱₗ pᵣ - ϱᵣ pₗ)
+            # inv_rho_p_mean = p_ll * p_rr * inv_ln_mean(rho_ll * p_rr, rho_rr * p_ll)
+            x2 = rho_ll * rho_theta_rr
+            log_x2 = log_rho_ll + log_rho_theta_rr
+            y2 = rho_rr * rho_theta_ll
+            log_y2 = log_rho_rr + log_rho_theta_ll
+            x2_plus_y2 = x2 + y2
+            y2_minus_x2 = y2 - x2
+            z2 = y2_minus_x2^2 / x2_plus_y2^2
+            special_path2 = (2 + z2 * (2 / 3 + z2 * (2 / 5 + 2 / 7 * z2))) / x2_plus_y2
+            regular_path2 = (log_y2 - log_x2) / y2_minus_x2
+            inv_rho_p_mean = rho_theta_ll * rho_theta_rr * ifelse(z2 < 1.0e-4, special_path2, regular_path2)
+
+            v1_avg = 0.5 * (v1_ll + v1_rr)
+            v2_avg = 0.5 * (v2_ll + v2_rr)
+            p_avg = 0.5 * (p_ll + p_rr)
+            # calculate fluxes depending on cartesian orientation
+            f1 = rho_mean * v1_avg
+            f2 = f1 * v1_avg + p_avg
+            f3 = f1 * v2_avg
+            f4 = f1 * inv_rho_p_mean
+
+            g1 = rho_mean * v2_avg
+            g2 = g1 * v1_avg 
+	    g3 = g1 * v2_avg + p_avg
+	    g4 = g1 * inv_rho_p_mean
+    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
+end
+
+@inline function flux_turbo_ranocha(u_ll, u_rr)
+    physconst = physicalconst{float64}()
 	rho_ll, v1_ll, v2_ll, p_ll, log_rho_ll, log_p_ll = u_ll
 	rho_rr, v1_rr, v2_rr, p_rr, log_rho_rr, log_p_rr = u_rr
 	    x1 = rho_ll
@@ -318,7 +391,7 @@ end
             regular_path1 = y1_minus_x1 / (log_y1 - log_x1)
             rho_mean = ifelse(z1 < 1.0e-4, special_path1, regular_path1)
 
-            # Algebraically equivalent to `inv_ln_mean(rho_ll / p_ll, rho_rr / p_rr)`
+            # algebraically equivalent to `inv_ln_mean(rho_ll / p_ll, rho_rr / p_rr)`
             # in exact arithmetic since
             #     log((ϱₗ/pₗ) / (ϱᵣ/pᵣ)) / (ϱₗ/pₗ - ϱᵣ/pᵣ)
             #   = pₗ pᵣ log((ϱₗ pᵣ) / (ϱᵣ pₗ)) / (ϱₗ pᵣ - ϱᵣ pₗ)
@@ -338,8 +411,8 @@ end
             v2_avg = 0.5 * (v2_ll + v2_rr)
             p_avg = 0.5 * (p_ll + p_rr)
             velocity_square_avg = 0.5 * (v1_ll * v1_rr + v2_ll * v2_rr)
-	    gamma = PhysConst.cp/PhysConst.cv
-            # Calculate fluxes depending on Cartesian orientation
+	    gamma = physconst.cp/physconst.cv
+            # calculate fluxes depending on cartesian orientation
             f1 = rho_mean * v1_avg
             f2 = f1 * v1_avg + p_avg
             f3 = f1 * v2_avg

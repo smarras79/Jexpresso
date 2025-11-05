@@ -662,7 +662,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
             if lkep
-	        #   user_fluxaux!(@view(params.fluxaux[ip,:]), SD, @view(params.uaux[ip,:]), params.SOL_VARS_TYPE)
+	        user_fluxaux!(@view(params.fluxaux[ip,:]), SD, @view(params.uaux[ip,:]), params.SOL_VARS_TYPE, params.volume_flux)
 	    else
                 user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                            @view(params.uaux[ip,:]),
@@ -721,7 +721,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
                                         params.metrics.dηdx, params.metrics.dηdy,
                                         params.rhs_el, iel, params.CL, params.QT, SD,
                                         params.AD, params.uaux, params.fluxaux, connijk,
-                                        params.inputs[:volume_flux])
+                                        params.volume_flux)
 
 
             # _expansion_inviscid_KEP_twopoint!(u_element_wise,
@@ -802,10 +802,11 @@ function _expansion_inviscid_KEP_2D!(u, neqs, ngl, dψ, ω,
                  for k = 1:ngl
                     kjp = connijk[iel,k, j]
         	    ikp = connijk[iel,i, k]
-                    F_ik, G_ik = user_volume_flux(uaux[ip,:], uaux[ikp,:], volume_flux_type)
-                    F_kj, G_kj = user_volume_flux(uaux[ip,:], uaux[kjp,:], volume_flux_type)
-                    #F_ik, G_ik = user_turbo_volume_flux(fluxaux[ip,:], fluxaux[ikp,:])
-                    #F_kj, G_kj = user_turbo_volume_flux(fluxaux[ip,:], fluxaux[kjp,:])
+                   # F_ik, G_ik = user_volume_flux(uaux[ip,:], uaux[ikp,:], volume_flux_type)
+                   # F_kj, G_kj = user_volume_flux(uaux[ip,:], uaux[kjp,:], volume_flux_type)
+                    F_ik, G_ik = flux_turbo(fluxaux[ip,:], fluxaux[ikp,:], volume_flux_type)
+                    F_kj, G_kj = flux_turbo(fluxaux[ip,:], fluxaux[kjp,:], volume_flux_type)
+
                    @. dFdξ = dFdξ + 2 * dψ[k,i]*F_kj 
                    @. dFdη = dFdη + 2 * dψ[k,j]*F_ik
                     

@@ -4,7 +4,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        :ode_solver           => SSPRK43(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+	:ode_adaptive_solver => true,
         :Δt                   => 0.0003,
         :tinit                => 0.0,
         :tend                 => 10.0,
@@ -14,24 +15,24 @@ function user_inputs()
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => false, 
-        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+        :SOL_VARS_TYPE        => THETA(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 4,      # Polynomial order
+        :nop                 => 5,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         #:μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
-        :μ                   => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 0.5, 0.5, 0.5], #horizontal viscosity constant for momentum
         :visc_model           => SMAG(),
         #---------------------------------------------------------------------------
         # LKEP:
         #---------------------------------------------------------------------------
-        #:lkep        => true,
-        :volume_flux => "ec",
+        :lkep        => true,
+	:volume_flux => artiano_ec(),
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
