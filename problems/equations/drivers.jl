@@ -220,7 +220,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     nelpoints    = size(mesh.conn)[2]
     elnbdypoints = nelpoints - nelintpoints
     
-    for iel=1:mesh.nelem
+    for iel=1:1 #mesh.nelem
         #
         # A∂oᵥₒ
         #
@@ -517,27 +517,23 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     # 1. Set B∂τ∂τ := A∂τ∂τ
     #
     Nsamp = inputs[:Nsamp]
-    c0 = 0.1
+    μ = 0.1
     a  = zeros(TFloat, mesh.ngl^2)
-
+    
     T2  = zeros(size(EL.Avovo)[1], size(EL.Avovb)[2])
     T1  = zeros(size(EL.Avovb)[2], size(EL.Avovb)[2])
     Bie = similar(T2)
     
     for isamp = 1:Nsamp
 
-        # 2.a
-        r = rand(c0:c0+1.0)   
-        ### rand(Uniform(c0, c0+1)) #use this for uniform distribution. using Distributions
-
-        # 2.b
-        a[:] .= r
-   
+        # 2.a/b
+        a[:] .= rand(μ:μ + 1.0)
+        
         # 2.c
         EL.input_tensor[:, isamp] .= a[:]
 
         # 2.d        
-        for iel = 1:mesh.nelem
+        for iel = 1:1 #mesh.nelem
             
             Avbvo = transpose(EL.Avovb[:,:,iel])
             
@@ -555,6 +551,10 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
             
         end
     end
+
+    # NOW I ADD THE ML code
+    
+    
    # @mystop(" drivers.jl L557")
 end
 
