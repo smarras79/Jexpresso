@@ -94,8 +94,17 @@ function driver(nparts,
         #
         RHS = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
 
+        EL = allocate_elemLearning(sem.amesh.nelem, sem.mesh.ngl,
+                                   sem.mesh.length∂O,
+                                   sem.mesh.length∂τ,
+                                   sem.mesh.lengthΓ,
+                                   TFloat, inputs[:backend];
+                                   Nsamp=inputs[:Nsamp])
+        
         if (inputs[:backend] == CPU())
-          
+
+            for isamp=1:inputs[:Nsamp]
+                
             Minv          = diagm(sem.matrix.Minv)
             sem.matrix.L .= Minv * sem.matrix.L
             
@@ -113,25 +122,27 @@ function driver(nparts,
                     sem.matrix.L[ip,ip] += inputs[:rconst][1]
                 end
             end
-            
-            apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
-                                                 params.mesh.coords,
-                                                 params.metrics.nx,
-                                                 params.metrics.ny,
-                                                 params.metrics.nz,
-                                                 sem.mesh.npoin, params.mesh.npoin_linear, 
-                                                 params.mesh.poin_in_bdy_edge,
-                                                 params.mesh.poin_in_bdy_face,
-                                                 params.mesh.nedges_bdy,
-                                                 params.mesh.nfaces_bdy,
-                                                 params.mesh.ngl, params.mesh.ngr,
-                                                 params.mesh.nelem_semi_inf,
-                                                 params.basis.ψ, params.basis.dψ,
-                                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                                 RHS, 0.0, params.ubdy,
-                                                 params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
-                                                 params.mesh.bdy_edge_type,
-                                                 params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
+
+            if inputs[:lelementLearning] == false
+                apply_boundary_conditions_lin_solve!(sem.matrix.L, 0.0, params.qp.qe,
+                                                     params.mesh.coords,
+                                                     params.metrics.nx,
+                                                     params.metrics.ny,
+                                                     params.metrics.nz,
+                                                     sem.mesh.npoin, params.mesh.npoin_linear, 
+                                                     params.mesh.poin_in_bdy_edge,
+                                                     params.mesh.poin_in_bdy_face,
+                                                     params.mesh.nedges_bdy,
+                                                     params.mesh.nfaces_bdy,
+                                                     params.mesh.ngl, params.mesh.ngr,
+                                                     params.mesh.nelem_semi_inf,
+                                                     params.basis.ψ, params.basis.dψ,
+                                                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                                     RHS, 0.0, params.ubdy,
+                                                     params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
+                                                     params.mesh.bdy_edge_type,
+                                                     params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
+            end
             
             #-----------------------------------------------------
             # Element-learning infrastructure
@@ -142,12 +153,16 @@ function driver(nparts,
                 #params.qp.qn = sem.matrix.L\RHS
             else
                 if inputs[:lelementLearning]
-                    elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
+
+                    
+                    elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS, params.ubdy, EL; isamp=1)
+                    
                 elseif inputs[:lsparse]
                     println(" # Solve x=inv(A)*b: sparse storage")
                     @time params.qp.qn = sem.matrix.L\RHS
                 end
             end
+            end #isamp loop
             
             #-----------------------------------------------------
             # END Element-learning infrastructure
@@ -205,22 +220,23 @@ function driver(nparts,
 
 end
 
-function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
+function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy, EL; isamp=1)
     
     mesh.lengthO =  mesh.length∂O +  mesh.lengthIo
-    
+    #=
     EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
                                mesh.length∂O,
                                mesh.length∂τ,
                                mesh.lengthΓ,
                                TFloat, inputs[:backend];
                                Nsamp=inputs[:Nsamp])
+    =#
     
     nelintpoints = (mesh.ngl-2)*(mesh.ngl-2)
     nelpoints    = size(mesh.conn)[2]
     elnbdypoints = nelpoints - nelintpoints
     
-    for iel=1:1 #mesh.nelem
+    for iel=1:mesh.nelem
         #
         # A∂oᵥₒ
         #
@@ -454,7 +470,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     #
     # uvb ⊂ u∂τ  SHUKAI meeting
     #
-
+#=
     @info "mesh.cell_face_ids "
     @info mesh.cell_face_ids, size(mesh.cell_face_ids)
     @info "mesh.facet_cell_ids"
@@ -468,7 +484,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     end
 
     @info "-----"
-    
+    =#
     uvb = zeros(Float64, mesh.nelem, elnbdypoints)
     u∂τ = zeros(Float64, length(mesh.∂τ))
     for iskel = 1:length(mesh.∂τ)
@@ -517,14 +533,14 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     # 1. Set B∂τ∂τ := A∂τ∂τ
     #
     Nsamp = inputs[:Nsamp]
-    μ = 0.1
+    μ  = 0.1
     a  = zeros(TFloat, mesh.ngl^2)
     
     T2  = zeros(size(EL.Avovo)[1], size(EL.Avovb)[2])
     T1  = zeros(size(EL.Avovb)[2], size(EL.Avovb)[2])
     Bie = similar(T2)
     
-    for isamp = 1:Nsamp
+    #for isamp = 1:Nsamp
 
         # 2.a/b
         a[:] .= rand(μ:μ + 1.0)
@@ -547,10 +563,10 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
             
             # 2.e
             # Output tensor:
-            EL.output_tensor[:, isamp] .= vec(Bie[:])  # Bie = -T2ie
+            EL.output_tensor[:, isamp] .= vec(Bie)  # Bie = -T2ie
             
         end
-    end
+    #end
 
     # NOW I ADD THE ML code
     
