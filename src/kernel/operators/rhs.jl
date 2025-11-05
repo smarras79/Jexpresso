@@ -1665,7 +1665,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                 ρ           = uprimitiveieq[k,l,1]                
                 α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
                 α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
-                effective_diffusivity = ρ * cp * (α_turbulent + α_molecular)
+                effective_diffusivity = ρ * cp * (α_turbulent + α_molecular) * visc_coeffieq[ieq]
                 
             else
                 # For momentum equations: use momentum diffusivity
