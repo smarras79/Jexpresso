@@ -814,3 +814,1091 @@
      # N. faces internal points   : 1800
      # N. volumes internal points : 1800
      # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 1638
+     # N. elements              : 1500
+     # N. edges                 : 3137
+     # N. faces                 : 1500
+     # N. internal elem         : 1230
+     # N. internal edges        : 2863
+     # N. internal faces        : 1230
+     # N. boundary elem         : 270
+     # N. boundary edges        : 274
+     # N. boundary faces        : 270
+   # Rank                         : 0
+     # N. edges internal points   : 9411
+     # N. faces internal points   : 13500
+     # N. volumes internal points : 13500
+     # N. total high order points : 24549
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321
+   # Rank                       : 0
+     # N. points                : 231
+     # N. elements              : 200
+     # N. edges                 : 430
+     # N. faces                 : 200
+     # N. internal elem         : 144
+     # N. internal edges        : 370
+     # N. internal faces        : 144
+     # N. boundary elem         : 56
+     # N. boundary edges        : 60
+     # N. boundary faces        : 56
+   # Rank                         : 0
+     # N. edges internal points   : 1290
+     # N. faces internal points   : 1800
+     # N. volumes internal points : 1800
+     # N. total high order points : 3321

@@ -28,7 +28,10 @@ using OrdinaryDiffEq: solve
 using SnoopCompile
 using LinearSolve
 using LinearSolve: solve
-#using HYPRE
+using Krylov
+using AlgebraicMultigrid
+using SparseArrays
+import SciMLOperators as SMO
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
                  SplitODEProblem
