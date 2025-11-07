@@ -406,7 +406,6 @@ function _build_rhs!(RHS, u, params, time)
     resetbdyfluxToZero!(params)
     apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
                                          params.mesh.coords,
-                                         #params.mesh.x, params.mesh.y, params.mesh.z, 
                                          params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
                                          params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
                                          params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
@@ -564,7 +563,6 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
             ip = connijk[iel,i,j]
             
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
-
             
             # b. Use the map to find the global point index
             global_point_idx = connijk[iel, i, j]

@@ -9,12 +9,12 @@ function user_inputs()
         :lsource              => true, 
         :llinsolve            => true,
         :lelementLearning     => true,
-        :Nsamp                => 4,
+        :Nsamp                => 10,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 3,      # Polynomial order
+        :nop                 => 12,      # Polynomial order
         #:nop_laguerre        => 14,
         #:xfac_laguerre       => 0.25,
         #:yfac_laguerre       => 0.0,

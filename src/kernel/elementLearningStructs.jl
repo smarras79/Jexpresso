@@ -64,3 +64,23 @@ function allocate_elemLearning(nelem, ngl, length∂O, length∂τ, lengthΓ, T,
     
     return elemLearning
 end
+
+function write_MLtensor(tensor_column, buffer, total_cols_written, fname)
+    
+    push!(buffer, tensor_column)
+    data = hcat(buffer...)
+    col_names = ["x$(i)" for i in (total_cols_written+1):(total_cols_written+length(buffer))]
+    df = DataFrame(data, col_names)
+    if total_cols_written == 0
+        # First write - create file with headers
+        CSV.write(fname, df, transform=(col, val) -> round(val, digits=6))
+    else
+        # Append columns horizontally by reading, concatenating, and writing
+        existing = CSV.read(fname, DataFrame)
+        combined = hcat(existing, df)
+        CSV.write(fname, combined, transform=(col, val) -> round(val, digits=6))
+    end
+    total_cols_written += length(buffer)
+    buffer = Vector{Vector{Float64}}()
+    
+end

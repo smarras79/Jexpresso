@@ -117,10 +117,17 @@ function driver(nparts,
             end
             for isamp=1:inputs[:Nsamp]
                 #
-                # L*q = M*RHS See algo 12.18 of Giraldo's book
+                # L*q = M*RHS   See algo 12.18 of Giraldo's book
                 #
                 #Minv          = diagm(sem.matrix.Minv)
                 #sem.matrix.L .= Minv * sem.matrix.L
+                
+                # 2.a/b
+                μ             = 1
+                avisc         = zeros(TFloat, sem.mesh.ngl^2)
+                ranvisc       = isamp*μ #+ 10*rand()
+                avisc[:]     .= ranvisc
+                sem.matrix.L .= ranvisc*sem.matrix.L
                 
                 for ip =1:sem.mesh.npoin
                     RHS[ip] = user_source!(RHS[ip],
@@ -173,6 +180,7 @@ function driver(nparts,
                         
                         @time elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh,
                                                    sem.matrix.L, RHS, EL,
+                                                   avisc,
                                                    bufferin, bufferout;
                                                    isamp=isamp,
                                                    total_cols_writtenin=total_cols_writtenin,
@@ -261,6 +269,7 @@ end
 
 function elementLearning_Axb!(u, uaux, mesh::St_mesh,
                               A, ubdy, EL,
+                              avisc, 
                               bufferin, bufferout;
                               isamp=1,
                               total_cols_writtenin=0,
@@ -576,20 +585,13 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     # ML: input/outpute tensors to use in training (?):
     #
     # 1. Set B∂τ∂τ := A∂τ∂τ
-    #
-    Nsamp = inputs[:Nsamp]
-    μ  = 0.1
-    a  = zeros(TFloat, mesh.ngl^2)
-    
+    #    
     T2  = zeros(size(EL.Avovo)[1], size(EL.Avovb)[2])
     T1  = zeros(size(EL.Avovb)[2], size(EL.Avovb)[2])
     Bie = similar(T2)
-   
-    # 2.a/b
-    a[:] .= rand(μ:μ + 1.0)
     
     # 2.c
-    EL.input_tensor[:, isamp] .= a[:]
+    EL.input_tensor[:, isamp] .= avisc[:]
 
     # 2.d        
     for iel = 1:1 #mesh.nelem
@@ -602,7 +604,6 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
         
         # T1 = Avbvo[:,:,iel]⋅T2 = - Avbvo⋅A⁻¹ᵥₒᵥₒ⋅Avovb
         LinearAlgebra.mul!(@view(T1[:,:]), @view(Avbvo[:,:]), @view(T2[:,:]))
-
         
         # 2.e
         # Output tensor:
@@ -612,39 +613,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     #------------------------------------------------------------------------
     # Write input/output_bufferin.csv
     #------------------------------------------------------------------------
-    # input_bufferin:
-    push!(bufferin, EL.input_tensor[:, isamp])
-    data = hcat(bufferin...)
-    col_names = ["x$(i)" for i in (total_cols_writtenin+1):(total_cols_writtenin+length(bufferin))]
-    df = DataFrame(data, col_names)
-    if total_cols_writtenin == 0
-        # First write - create file with headers
-        CSV.write("input_tensor.csv", df, transform=(col, val) -> round(val, digits=4))
-    else
-        # Append columns horizontally by reading, concatenating, and writing
-        existing = CSV.read("input_tensor.csv", DataFrame)
-        combined = hcat(existing, df)
-        CSV.write("input_tensor.csv", combined, transform=(col, val) -> round(val, digits=6))
-    end
-    total_cols_writtenin += length(bufferin)
-    bufferin = Vector{Vector{Float64}}()
-    
-    # output_bufferout:
-    push!(bufferout, EL.output_tensor[:, isamp])
-    data = hcat(bufferout...)
-    col_names = ["x$(i)" for i in (total_cols_writtenout+1):(total_cols_writtenout+length(bufferout))]
-    df = DataFrame(data, col_names)
-    if total_cols_writtenout == 0
-        # First write - create file with headers
-        CSV.write("output_tensor.csv", df, transform=(col, val) -> round(val, digits=4))
-    else
-        # Append columns horizontally by reading, concatenating, and writing
-        existing = CSV.read("output_tensor.csv", DataFrame)
-        combined = hcat(existing, df)
-        CSV.write("output_tensor.csv", combined, transform=(col, val) -> round(val, digits=6))
-    end
-    total_cols_writtenout += length(bufferout)
-    bufferout = Vector{Vector{Float64}}()
+    write_MLtensor(@view(EL.input_tensor[:, isamp]), bufferin, total_cols_writtenin, "input_tensor.csv")
+    write_MLtensor(@view(EL.output_tensor[:, isamp]), bufferout, total_cols_writtenout, "output_tensor.csv")
     #------------------------------------------------------------------------
     # END write input/output_buffer.csv
     #------------------------------------------------------------------------
@@ -652,19 +622,3 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     #!!!!!  ML code GOES HERE !!!!!
     
 end
-
-#
-    #= GLOBAL VERSION (eq 10)
-    # BC = A⁻¹ᵢₒᵢₒ⋅Aᵢₒ∂τ
-    dims = (mesh.lengthIo, mesh.length∂τ)
-    BC = similar(EL.AIoIo, dims);
-    LinearAlgebra.mul!(BC, invAIoIo, EL.AIo∂τ)
-
-    # ABC = A∂Oᵢₒ⋅BC
-    dims = (mesh.length∂O, mesh.length∂τ)
-    ABC  = similar(EL.AIoIo, dims)
-    LinearAlgebra.mul!(ABC, EL.A∂OIo, BC)
-    
-    EL.B∂O∂τ .= EL.A∂O∂τ .- ABC
-    globalB∂O∂τ = copy(EL.B∂O∂τ)
-    =#

@@ -21,7 +21,7 @@ function user_source!(S,
     beta  = 0.0 #1.0
     gamma = 0.0 #1.0
     
-    f     = - beta*(cos(x/L) * exp(-x/L)*cos(y))/L - sin(x/L)*exp(-x/L)*cos(y)
+    f   = - beta*(cos(x/L) * exp(-x/L)*cos(y))/L - sin(x/L)*exp(-x/L)*cos(y)
     
     u_e = gamma*sin(x/L)*exp(-x/L)*cos(y)
     
