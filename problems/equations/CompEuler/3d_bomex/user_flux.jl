@@ -3,7 +3,7 @@ function user_flux!(F, G, H,
                     qe,
                     mesh::St_mesh, param_set,
                     ::CL, ::TOTAL; neqs=4, ip=1,
-                    x=0.0, y=0.0, z=0.0)
+                    x=0.0, y=0.0, z=0.0, kwargs...)
 
     # PhysConst = PhysicalConst{Float64}()
     T  = eltype(q)
@@ -60,7 +60,7 @@ function user_flux!(F, G, H,
                     q,
                     qe,
                     mesh::St_mesh,
-                    ::CL, ::PERT; neqs=4, ip=1)
+                    ::CL, ::PERT; neqs=4, ip=1, kwargs...)
 
    
     @mystop("woring in progress: case BOMEX user_flux! PERT not implemented!")
