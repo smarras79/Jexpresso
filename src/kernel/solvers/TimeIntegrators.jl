@@ -13,6 +13,7 @@ function time_loop!(inputs, params, u)
     # Runtime callbacks
     #------------------------------------------------------------------------
     dosetimes    = inputs[:diagnostics_at_times]
+    #cfltimes     = inputs[:cfl_at_times]
     idx_ref      = Ref{Int}(0)
     c            = Float64(0.0)
     restart_time = inputs[:restart_time]
@@ -25,10 +26,14 @@ function time_loop!(inputs, params, u)
             return false
         end
     end
+     function do_timeprint!(integrator)
+        println(" t=", integrator.t)
 
+     end
+    
     function do_radiation!(integrator)
         println(" doing two stream radiation heat flux calculations at t=", integrator.t)
-        #@info "doing rad test"
+        
         compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
     end
 
@@ -67,9 +72,9 @@ function time_loop!(inputs, params, u)
 
         println_rank(" #  writing restart ........................ DONE"; msg_rank = rank)
     end
-    # #------------------------------------------------------------------------
-    # #  config
-    # #------------------------------------------------------------------------
+    #------------------------------------------------------------------------
+    # config
+    #------------------------------------------------------------------------
     ret_dosetime_ref  = Ref{Bool}(false)
     function condition(u, t, integrator)
         idx  = findfirst(x -> x == t, dosetimes)
@@ -81,8 +86,7 @@ function time_loop!(inputs, params, u)
         end
 
         tol = 1e-6
-        # ret_amrtime_ref = abs(mod(t, Δt_amr)) < tol
-        # return (ret_dosetime_ref[] || ret_amrtime_ref[])
+        
         return ret_dosetime_ref[]
     end
     function affect!(integrator)
@@ -92,12 +96,12 @@ function time_loop!(inputs, params, u)
             println_rank(" #  t=", integrator.t; msg_rank = rank)
 
             #CFL
-           #= computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
-            integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
-            params.mesh.Δeffective_s,
-            integrator,
-            params.SD; visc=inputs[:μ])
-            =#
+            computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
+                       integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
+                       params.mesh.Δeffective_s,
+                       integrator,
+                       params.SD; visc=inputs[:μ])
+            
             write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
@@ -119,9 +123,9 @@ function time_loop!(inputs, params, u)
     # END runtime callbacks
     #------------------------------------------------------------------------
 
-    #
+    #------------------------------------------------------------------------
     # Write initial conditions:
-    #
+    #------------------------------------------------------------------------
     idx  = (inputs[:tinit] == 0.0) ? 0 : findfirst(x -> x == inputs[:tinit], dosetimes)
     if idx ≠ nothing
         if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
@@ -136,8 +140,9 @@ function time_loop!(inputs, params, u)
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     end
     
-    #
+    #------------------------------------------------------------------------
     # Simulation
+<<<<<<< HEAD
     #
     limex = false
     if limex
@@ -171,6 +176,19 @@ function time_loop!(inputs, params, u)
     Main.final_simulation_time[1] = solution.t
     @show solution.t
     end
+=======
+    #------------------------------------------------------------------------
+    solution = solve(prob,
+                     inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                     #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
+                     callback = CallbackSet(cb, cb_restart), tstops = dosetimes,
+                     save_everystep = false,
+                     adaptive=inputs[:ode_adaptive_solver],
+                     saveat = range(inputs[:tinit],
+                                    inputs[:tend],
+                                    length=inputs[:ndiagnostics_outputs]));
+    
+>>>>>>> bd48c1fbb64854411f292b3294ac887d132e8dc6
     
     if inputs[:ladapt] == true
         while solution.t[end] < inputs[:tend]
@@ -186,9 +204,8 @@ function time_loop!(inputs, params, u)
     end
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
-    # MPI.Barrier(comm)
-    # report_all_timers(params.timers)
-    # MPI.Barrier(comm)
-    
+    #MPI.Barrier(comm)
+    #report_all_timers(params.timers)
+    #MPI.Barrier(comm)
     return solution
 end

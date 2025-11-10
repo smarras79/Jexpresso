@@ -89,7 +89,7 @@ function rhs!(du, u, params, time)
     
     if (backend == CPU())
         _build_rhs!(@view(params.RHS[:,:]), u, params, time)
-        # time_function!(params.timers["_build_rhs!"], _build_rhs!, @view(params.RHS[:,:]), u, params, time)
+        #time_function!(params.timers["_build_rhs!"], _build_rhs!, @view(params.RHS[:,:]), u, params, time)
 
         if (params.laguerre) 
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
@@ -567,14 +567,8 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=coords[ip,1], y=0.0, xmax=xmax,xmin=xmin)
             end
-         #   @show params.M[ip]
-         #   @show size(params.M)
-         #   @show size(params.uaux[ip,:])
-
-
         end
-
-       
+        
         if !lkep
             _expansion_inviscid!(u, params.neqs, ngl,
                                  params.basis.dψ, params.ω,
@@ -588,14 +582,13 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                                               ngl-1,
                                               ngl-1,
                                               Float64)
-	    #D  = DSS_generic_matrix(SD, De, mesh, TFloat)
-            #print_matrix(D) #seems ok
+
             _expansion_inviscid_KEP!(u, params.neqs, ngl,
                                      params.basis.dψ, params.ω,
                                      params.F, params.S, D,
                                      params.rhs_el, uilgl,
                                      iel, params.CL, params.QT, SD, params.AD,
-                                     params.uaux, connijk, iel)
+                                     params.uaux, connijk, iel, params.inputs[:volume_flux])
 
             #=entropy_integral = 0.0
             for iel = 1:nelem
@@ -614,7 +607,9 @@ function _expansion_inviscid_KEP!(u, neqs, ngl,
                                   dψ, ω,
                                   F, S, D,
                                   rhs_el, uilgl,
-                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal, uaux, connijk, el)
+                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal,
+                                  uaux, connijk, el,
+                                  volume_flux_type)
 
     for i = 1:ngl
         ip = connijk[el,i,1]
@@ -622,7 +617,7 @@ function _expansion_inviscid_KEP!(u, neqs, ngl,
         
         for j = 1:ngl 
              jp = connijk[el,j,1]
-             f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:])
+             f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:], volume_flux_type)
              for ieq = 1:neqs
                  du_i[ieq] += 2.0 *  dψ[j, i] * f_ij[ieq]
              end
@@ -667,7 +662,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
             if lkep
-	        #   user_fluxaux!(@view(params.fluxaux[ip,:]), SD, @view(params.uaux[ip,:]), params.SOL_VARS_TYPE)
+	        user_fluxaux!(@view(params.fluxaux[ip,:]), SD, @view(params.uaux[ip,:]), params.SOL_VARS_TYPE, params.volume_flux)
 	    else
                 user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                            @view(params.uaux[ip,:]),
@@ -724,7 +719,9 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
                                         params.metrics.Je,
                                         params.metrics.dξdx, params.metrics.dξdy,
                                         params.metrics.dηdx, params.metrics.dηdy,
-                                        params.rhs_el, iel, params.CL, params.QT, SD, params.AD, params.uaux, params.fluxaux, connijk)
+                                        params.rhs_el, iel, params.CL, params.QT, SD,
+                                        params.AD, params.uaux, params.fluxaux, connijk,
+                                        params.volume_flux)
 
 
             # _expansion_inviscid_KEP_twopoint!(u_element_wise,
@@ -760,7 +757,7 @@ function _expansion_inviscid_KEP_1D!(u, neqs, ngl,
                                   dψ, ω,
                                   F, S, D,
                                   rhs_el, uilgl,
-                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal, uaux, connijk, el)
+                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal, uaux, connijk, el, volume_flux_type)
     for i = 1:ngl
         ip = connijk[el,i,1]
 
@@ -769,7 +766,7 @@ function _expansion_inviscid_KEP_1D!(u, neqs, ngl,
         for j = 1:ngl 
              jp = connijk[el,j,1]
 
-             f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:])
+             f_ij = user_volume_flux(uaux[ip,:], uaux[jp,:], volume_flux_type)
              for ieq = 1:neqs
              du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
              end
@@ -787,7 +784,7 @@ function _expansion_inviscid_KEP_2D!(u, neqs, ngl, dψ, ω,
                               dξdx, dξdy,
                               dηdx, dηdy,
                               rhs_el, iel,
-                              ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal, uaux, fluxaux, connijk)
+                              ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal, uaux, fluxaux, connijk, volume_flux_type)
     dFdx = zeros(length(neqs),1)
     dGdy = zeros(length(neqs),1)
 
@@ -805,10 +802,11 @@ function _expansion_inviscid_KEP_2D!(u, neqs, ngl, dψ, ω,
                  for k = 1:ngl
                     kjp = connijk[iel,k, j]
         	    ikp = connijk[iel,i, k]
-                    F_ik, G_ik = user_volume_flux(uaux[ip,:], uaux[ikp,:])
-                    F_kj, G_kj = user_volume_flux(uaux[ip,:], uaux[kjp,:])
-                    #F_ik, G_ik = user_turbo_volume_flux(fluxaux[ip,:], fluxaux[ikp,:])
-                    #F_kj, G_kj = user_turbo_volume_flux(fluxaux[ip,:], fluxaux[kjp,:])
+                   # F_ik, G_ik = user_volume_flux(uaux[ip,:], uaux[ikp,:], volume_flux_type)
+                   # F_kj, G_kj = user_volume_flux(uaux[ip,:], uaux[kjp,:], volume_flux_type)
+				F_ik, G_ik = flux_turbo(@view(fluxaux[ip,:]), @view(fluxaux[ikp,:]), volume_flux_type)
+				F_kj, G_kj = flux_turbo(@view(fluxaux[ip,:]), @view(fluxaux[kjp,:]), volume_flux_type)
+
                    @. dFdξ = dFdξ + 2 * dψ[k,i]*F_kj 
                    @. dFdη = dFdη + 2 * dψ[k,j]*F_ik
                     
@@ -976,7 +974,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
                              params.metrics.dηdx, params.metrics.dηdy,
                              params.inputs, params.rhs_el,
                              iel, ieq, params.QT, params.VT, SD, params.AD;
-                             Δ=Δ)
+                             Δ=Δ, T=Float16)
         end
         
     end
@@ -1060,16 +1058,11 @@ function _expansion_inviscid!(u, neqs, ngl,
     end
 end
 
-
-
-
-
-
 function _expansion_inviscid_KEP_v0!(u, neqs, ngl,
                                      dψ, ω,
                                      F, S,
                                      rhs_el, uilgl,
-                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+                                     iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
     
     # Loop over grid points i in the element
     for i = 1:ngl
@@ -1576,206 +1569,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     end
 end
 
-#
-# RHS with SMAG 2D
-#
-
-function _expansion_visc_not_working!(rhs_diffξ_el, rhs_diffη_el,
-                          uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je,
-                          dξdx, dξdy,
-                          dηdx, dηdy,
-                          inputs, rhs_el,
-                          iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
-
-    #
-    # Corrected Smagorinsky Implementation for Spectral Elements
-    #
-    PhysConst  = PhysicalConst{Float32}()
-    Pr_t       = PhysConst.Pr_t        # Turbulent Prandtl number (~0.7-0.85)
-    Pr         = PhysConst.Pr          # Molecular Prandtl number (~0.71 for air)
-    cp         = PhysConst.cp          # Specific heat at constant pressure
-    C_s        = PhysConst.C_s         # Smagorinsky constant (~0.16-0.20)
-    C_s2       = C_s^2
-
-    # Molecular transport properties
-    μ_mol      = PhysConst.μ_mol      # Molecular dynamic viscosity [Pa·s or kg/m/s]
-    k_thermal  = PhysConst.k          # Thermal conductivity [W/m/K]
-
-    for l = 1:ngl
-        for k = 1:ngl
-            ωJac = ω[k]*ω[l]*Je[iel,k,l]
-            
-            # Extract primitive variables at this point
-            ρ_kl = uprimitiveieq[k,l,1]
-            u_kl = uprimitiveieq[k,l,2]
-            v_kl = uprimitiveieq[k,l,3]
-            θ_kl = uprimitiveieq[k,l,4]  # Potential temperature (or T)
-            
-            # ============================================
-            # STEP 1: Compute velocity gradients
-            # ============================================
-            dudξ = 0.0; dudη = 0.0
-            dvdξ = 0.0; dvdη = 0.0
-            @turbo for ii = 1:ngl
-                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
-                dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
-                
-                dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
-                dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
-            end
-            
-            # Metric terms
-            dξdx_kl = dξdx[iel,k,l]
-            dξdy_kl = dξdy[iel,k,l]
-            dηdx_kl = dηdx[iel,k,l]
-            dηdy_kl = dηdy[iel,k,l]
-            
-            # Transform to physical coordinates
-            dudx = dudξ*dξdx_kl + dudη*dηdx_kl
-            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
-            
-            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
-            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
-            
-            # ============================================
-            # STEP 2: Compute Smagorinsky eddy viscosity
-            # ============================================
-            # Strain rate tensor (symmetric part)
-            S11 = dudx
-            S22 = dvdy
-            S12 = 0.5 * (dudy + dvdx)
-            
-            # Strain rate magnitude: |S| = sqrt(2 * S_ij * S_ij)
-            # For 2D: S_ij * S_ij = S11² + S22² + 2*S12²
-            S_ij_S_ij = S11*S11 + S22*S22 + 2.0*S12*S12
-            Sij = sqrt(2.0 * S_ij_S_ij)
-            
-            # Option 2: If you have characteristic element size stored
-            # Δ = Δ_element[iel] / (ngl - 1)
-            Δ2 = Δ * Δ
-            
-            # Eddy viscosity
-            ν_t = C_s2 * Δ2 * Sij
-            
-            # Molecular kinematic viscosity
-            ν_mol = μ_mol / ρ_kl
-            
-            # Total effective viscosity
-            ν_eff = ν_mol + ν_t
-            
-            # ============================================
-            # STEP 3: Handle different equations
-            # ============================================
-            if ieq == 2  # u-momentum equation
-                # ========================================
-                # Stress tensor approach for momentum
-                # ========================================
-                # Total stress tensor: τ_ij = 2*ρ*ν_eff*S_ij
-                τ11 = 2.0 * ρ_kl * ν_eff * S11
-                τ22 = 2.0 * ρ_kl * ν_eff * S22
-                τ12 = 2.0 * ρ_kl * ν_eff * S12
-                
-                # For u-momentum, we need: ∂τ11/∂x + ∂τ12/∂y
-                # We already have the gradients in computational space
-                # So we compute the stress divergence
-                
-                # Transform stress divergence to computational coordinates
-                # ∂τ11/∂x + ∂τ12/∂y
-                flux_x = τ11
-                flux_y = τ12
-                
-                flux_ξ = (dξdx_kl*flux_x + dξdy_kl*flux_y) * ωJac
-                flux_η = (dηdx_kl*flux_x + dηdy_kl*flux_y) * ωJac
-                
-                @turbo for i = 1:ngl
-                    dhdξ_ik = dψ[i,k]
-                    dhdη_il = dψ[i,l]
-                    
-                    # Note: Sign depends on your formulation (weak form)
-                    rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * flux_ξ
-                    rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * flux_η
-                end
-                
-            elseif ieq == 3  # v-momentum equation
-                # ========================================
-                # Stress tensor for v-momentum
-                # ========================================
-                τ11 = 2.0 * ρ_kl * ν_eff * S11
-                τ22 = 2.0 * ρ_kl * ν_eff * S22
-                τ12 = 2.0 * ρ_kl * ν_eff * S12
-                
-                # For v-momentum, we need: ∂τ12/∂x + ∂τ22/∂y
-                flux_x = τ12
-                flux_y = τ22
-                
-                flux_ξ = (dξdx_kl*flux_x + dξdy_kl*flux_y) * ωJac
-                flux_η = (dηdx_kl*flux_x + dηdy_kl*flux_y) * ωJac
-                
-                @turbo for i = 1:ngl
-                    dhdξ_ik = dψ[i,k]
-                    dhdη_il = dψ[i,l]
-                    
-                    rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * flux_ξ
-                    rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * flux_η
-                end
-                
-            elseif ieq == 4  # Temperature/Potential temperature equation
-                # ========================================
-                # Scalar diffusion for temperature
-                # ========================================
-                # Compute temperature gradient
-                dθdξ = 0.0; dθdη = 0.0
-                @turbo for ii = 1:ngl
-                    dθdξ += dψ[ii,k]*uprimitiveieq[ii,l,4]
-                    dθdη += dψ[ii,l]*uprimitiveieq[k,ii,4]
-                end
-                
-                dθdx = dθdξ*dξdx_kl + dθdη*dηdx_kl
-                dθdy = dθdξ*dξdy_kl + dθdη*dηdy_kl
-                
-                # Molecular thermal diffusivity
-                α_mol = k_thermal / (ρ_kl * cp)
-                
-                # Turbulent thermal diffusivity
-                α_t = ν_t / Pr_t
-                
-                # Total effective thermal diffusivity
-                α_eff = α_mol + α_t
-                
-                # Heat flux: q = -ρ*cp*α*∇θ (or for temperature equation)
-                # Simplified: effective diffusion
-                flux_x = ρ_kl * cp * α_eff * dθdx
-                flux_y = ρ_kl * cp * α_eff * dθdy
-                
-                # Apply viscosity coefficient if present
-                flux_x *= visc_coeffieq[ieq]
-                flux_y *= visc_coeffieq[ieq]
-                
-                flux_ξ = (dξdx_kl*flux_x + dξdy_kl*flux_y) * ωJac
-                flux_η = (dηdx_kl*flux_x + dηdy_kl*flux_y) * ωJac
-                
-                @turbo for i = 1:ngl
-                    dhdξ_ik = dψ[i,k]
-                    dhdη_il = dψ[i,l]
-                    
-                    rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * flux_ξ
-                    rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * flux_η
-                end
-                
-            elseif ieq == 1  # Density equation
-                # Usually no diffusion for continuity equation
-                # Skip or handle as needed
-                
-            end
-        
-    end  # l loop
-end  # k loop
-
-    
-end
-
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
@@ -1783,7 +1576,251 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
+			  
+    #
+    # Constants for Richardson stability correction
+    #
+    PhysConst  = PhysicalConst{Float32}()
+    Pr_t       = PhysConst.Pr_t
+    #
+    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
+    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
+    # Very unstable:    Pr_t ≈ 1/3
+    #
+    κ          = PhysConst.κ
+    cp         = PhysConst.cp
+    C_s        = PhysConst.C_s
+    C_s2       = C_s^2
+    
+    for l = 1:ngl
+        for k = 1:ngl
+            ωJac = ω[k]*ω[l]*Je[iel,k,l]
+
+            # Quantities for Smagorinsky 
+            dudξ = 0.0; dudη = 0.0
+            dvdξ = 0.0; dvdη = 0.0
+            @turbo for ii = 1:ngl
+                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+
+                dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+            end
+            dξdx_kl = dξdx[iel,k,l]
+            dξdy_kl = dξdy[iel,k,l]
+            dηdx_kl = dηdx[iel,k,l]
+            dηdy_kl = dηdy[iel,k,l]
+
+            #u
+            dudx = dudξ*dξdx_kl + dudη*dηdx_kl
+            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+            
+            #v
+            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
+            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+            
+            # Smagorinsky
+            # Strain rate tensor (symmetric part of velocity gradient)
+            S11 = dudx
+            S22 = dvdy
+            S12 = 0.5 * (dudy + dvdx)
+            S21 = S12
+            
+            # Rotation tensor (anti-symmetric part)
+            #Ω12 = 0.5 * (dudy - dvdx)
+            #Ω21 = -Ω12
+            
+            # Strain rate magnitude
+	    # |S| = sqrt(2 * S_ij * S_ij)
+            S_ij_S_ij = S11*S11 + S22*S22 + 2.0*S12*S12
+            Sij = sqrt(2.0 * S_ij_S_ij)
+            
+            # Filter width calculation
+            Δ2      = Δ * Δ
+
+            # Base Smagorinsky eddy viscosity
+            ν_t_base = C_s2 * Δ2 * Sij
+            ν_t = ν_t_base
+            
+            # END Smagorinsky
+
+            # Compute scalar gradient for diffusion iequation by iequation
+            dqdξ = 0.0; dqdη = 0.0
+            @turbo for ii = 1:ngl
+                dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+            end
+            # Transform scalar gradient to physical coordinates
+            dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
+            dqdy_phys = dqdξ*dξdy_kl + dqdη*dηdy_kl
+
+            
+            # Determine effective diffusivity based on scalar type
+            # TODO: Replace this logic with proper equation identification
+            # Common orderings:
+            # - Conservative: [ρ, ρu, ρv, ρw, ρE] or [ρ, ρu, ρv, ρw, ρE, ρθ]
+            # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
+            if ieq == 4  # Assuming potential temperature equation is at index 5
+                # For temperature: use thermal diffusivity (ν_t / Pr_t)
+                ρ           = uprimitiveieq[k,l,1]                
+                α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
+                α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
+               
+                if inputs[:SOL_VARS_TYPE] == THETA()
+                    effective_diffusivity = (α_turbulent) * visc_coeffieq[ieq]
+                else
+                    effective_diffusivity = ρ * cp * (α_turbulent + α_molecular) * visc_coeffieq[ieq]
+                end
+                
+            else
+                # For momentum equations: use momentum diffusivity
+                effective_diffusivity = visc_coeffieq[ieq] * ν_t
+            end
+            
+            # Apply effective diffusivity to scalar gradients
+            dqdx = effective_diffusivity * dqdx_phys
+            dqdy = effective_diffusivity * dqdy_phys
+            
+            ∇ξ∇q_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
+            ∇η∇q_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
+            
+            @turbo for i = 1:ngl
+                dhdξ_ik = dψ[i,k]
+                dhdη_il = dψ[i,l]
+                
+                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl
+                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇q_kl
+            end
+        end  
+    end
+end
+
+function _expansion_visc_head!(rhs_diffξ_el, rhs_diffη_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy,
+                          dηdx, dηdy,
+                          inputs, rhs_el,
+                          iel, ieq,
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
+    
+    #
+    # Constants for Richardson stability correction
+    #
+    PhysConst  = PhysicalConst{Float32}()
+    Pr_t       = PhysConst.Pr_t
+    #
+    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
+    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
+    # Very unstable:    Pr_t ≈ 1/3
+    #
+    κ          = PhysConst.κ
+    cp         = PhysConst.cp
+    C_s        = PhysConst.C_s
+    C_s2       = C_s^2
+    
+    for l = 1:ngl
+        for k = 1:ngl
+            ωJac = ω[k]*ω[l]*Je[iel,k,l]
+
+            # Quantities for Smagorinsky 
+            dudξ = 0.0; dudη = 0.0
+            dvdξ = 0.0; dvdη = 0.0
+            @turbo for ii = 1:ngl
+                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+
+                dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+            end
+            dξdx_kl = dξdx[iel,k,l]
+            dξdy_kl = dξdy[iel,k,l]
+            dηdx_kl = dηdx[iel,k,l]
+            dηdy_kl = dηdy[iel,k,l]
+
+            #u
+            dudx = dudξ*dξdx_kl + dudη*dηdx_kl
+            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+            
+            #v
+            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
+            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+            
+            # Smagorinsky
+            # Strain rate tensor (symmetric part of velocity gradient)
+            S11 = dudx
+            S22 = dvdy
+            S12 = 0.5 * (dudy + dvdx)
+            
+            # CORRECT Strain rate magnitude calculation
+            # |S| = sqrt(2 * S_ij * S_ij)
+            S_ij_S_ij = S11*S11 + S22*S22 + 2.0*S12*S12
+            Sij = sqrt(2.0 * S_ij_S_ij)
+            
+            # Filter width calculation
+            Δ2      = Δ * Δ
+            
+            # Base Smagorinsky eddy viscosity
+            ν_t_base = C_s2 * Δ2 * Sij
+            ν_t = ν_t_base
+            
+            # END Smagorinsky
+
+            # Compute scalar gradient for diffusion iequation by iequation
+            dqdξ = 0.0; dqdη = 0.0
+            @turbo for ii = 1:ngl
+                dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+            end
+            # Transform scalar gradient to physical coordinates
+            dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
+            dqdy_phys = dqdξ*dξdy_kl + dqdη*dηdy_kl
+
+            
+            # Determine effective diffusivity based on scalar type
+            # TODO: Replace this logic with proper equation identification
+            # Common orderings:
+            # - Conservative: [ρ, ρu, ρv, ρw, ρE] or [ρ, ρu, ρv, ρw, ρE, ρθ]
+            # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
+            if ieq == 4  # Assuming potential temperature equation is at index 5
+                # For temperature: use thermal diffusivity (ν_t / Pr_t)
+                ρ           = uprimitiveieq[k,l,1]                
+                α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
+                α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
+                effective_diffusivity = visc_coeffieq[ieq] * α_turbulent
+                
+            else
+                # For momentum equations: use momentum diffusivity
+                effective_diffusivity = visc_coeffieq[ieq] * ν_t
+            end
+                        
+            # Apply effective diffusivity to scalar gradients
+            dqdx = effective_diffusivity * dqdx_phys
+            dqdy = effective_diffusivity * dqdy_phys
+            
+            ∇ξ∇q_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
+            ∇η∇q_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
+            
+            @turbo for i = 1:ngl
+                dhdξ_ik = dψ[i,k]
+                dhdη_il = dψ[i,l]
+                
+                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl
+                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇q_kl
+            end
+        end  
+    end
+end
+
+function _expansion_visc_v1!(rhs_diffξ_el, rhs_diffη_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy,
+                          dηdx, dηdy,
+                          inputs, rhs_el,
+                          iel, ieq,
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     #
     # Constants for Richardson stability correction
@@ -1839,7 +1876,145 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             Sij = sqrt(2.0 * S_ij_S_ij)
             
             # Filter width calculation
-            Δ2      = Δ * Δ
+            Δ2 = Δ * Δ
+            
+            # Base Smagorinsky eddy viscosity
+            ν_t_base = C_s2 * Δ2 * Sij
+            ν_t = ν_t_base
+            
+            # END Smagorinsky
+
+            # Compute scalar gradient for diffusion iequation by iequation
+            dqdξ = 0.0; dqdη = 0.0
+            @turbo for ii = 1:ngl
+                dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
+                dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
+
+            end
+            # Transform scalar gradient to physical coordinates
+            dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
+            dqdy_phys = dqdξ*dξdy_kl + dqdη*dηdy_kl
+            
+            # Determine effective diffusivity based on scalar type
+            # Common orderings:
+            # - Conservative: [ρ, ρu, ρv, ρE] (indices 1-4)
+            # - Primitive: [ρ, u, v, θ] or [ρ, u, v, e] where e is specific energy
+            #
+            # For 2D compressible NS with energy:
+            # ieq = 1: density (ρ) - no diffusion typically
+            # ieq = 2: u-momentum - uses ν_t
+            # ieq = 3: v-momentum - uses ν_t  
+            # ieq = 4: energy (E, e, or θ) - uses thermal diffusivity α
+            
+            ρ = uprimitiveieq[k,l,1]
+            
+            if ieq == 4  # Energy or potential temperature equation
+                # For energy/temperature equations: use thermal diffusivity
+                # α_total = α_molecular + α_turbulent
+                # where:
+                #   α_molecular = κ / (ρ * cp)  [molecular thermal diffusivity]
+                #   α_turbulent = ν_t / Pr_t    [turbulent thermal diffusivity]
+                #
+                # Total effective thermal diffusivity for compressible energy equation
+                α_molecular = κ / (ρ * cp)
+                α_turbulent = ν_t / Pr_t
+                
+                # Effective thermal diffusivity (combining molecular and turbulent)
+                effective_diffusivity = visc_coeffieq[ieq] * (α_turbulent + α_molecular)
+                
+            elseif ieq >= 2 && ieq <= 3  # Momentum equations (u, v)
+                # For momentum equations: use momentum diffusivity
+                # Dynamic viscosity: μ = ρ * ν_t (for incompressible analogy)
+                # For consistency with momentum diffusion, use ν_t directly
+                effective_diffusivity = visc_coeffieq[ieq] * ν_t
+                
+            else  # ieq == 1 (density) or other
+                # Typically no diffusion for continuity equation
+                effective_diffusivity = 0.0
+            end
+            
+            # Apply effective diffusivity to scalar gradients
+            dqdx = effective_diffusivity * dqdx_phys
+            dqdy = effective_diffusivity * dqdy_phys
+            
+            ∇ξ∇q_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
+            ∇η∇q_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
+            
+            @turbo for i = 1:ngl
+                dhdξ_ik = dψ[i,k]
+                dhdη_il = dψ[i,l]
+                
+                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl
+                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇q_kl
+            end
+        end  
+    end
+end
+
+function _expansion_visc_ok_for_theta!(rhs_diffξ_el, rhs_diffη_el,
+                          uprimitiveieq, visc_coeffieq, ω,
+                          ngl, dψ, Je,
+                          dξdx, dξdy,
+                          dηdx, dηdy,
+                          inputs, rhs_el,
+                          iel, ieq,
+                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
+    
+    #
+    # Constants for Richardson stability correction
+    #
+    PhysConst  = PhysicalConst{Float32}()
+    Pr_t       = PhysConst.Pr_t
+    #
+    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
+    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
+    # Very unstable:    Pr_t ≈ 1/3
+    #
+    κ          = PhysConst.κ
+    cp         = PhysConst.cp
+    C_s        = PhysConst.C_s
+    C_s2       = C_s^2
+    
+    for l = 1:ngl
+        for k = 1:ngl
+            ωJac = ω[k]*ω[l]*Je[iel,k,l]
+
+            # Quantities for Smagorinsky 
+            dudξ = 0.0; dudη = 0.0
+            dvdξ = 0.0; dvdη = 0.0
+            @turbo for ii = 1:ngl
+                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
+                dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
+
+                dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
+                dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
+            end
+            dξdx_kl = dξdx[iel,k,l]
+            dξdy_kl = dξdy[iel,k,l]
+            dηdx_kl = dηdx[iel,k,l]
+            dηdy_kl = dηdy[iel,k,l]
+
+            #u
+            dudx = dudξ*dξdx_kl + dudη*dηdx_kl
+            dudy = dudξ*dξdy_kl + dudη*dηdy_kl
+            
+            #v
+            dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
+            dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
+            
+            # Smagorinsky
+            # Strain rate tensor (symmetric part of velocity gradient)
+            S11 = dudx
+            S22 = dvdy
+            S12 = 0.5 * (dudy + dvdx)
+            
+            # CORRECT Strain rate magnitude calculation
+            # |S| = sqrt(2 * S_ij * S_ij)
+            S_ij_S_ij = S11*S11 + S22*S22 + 2.0 * S12*S12
+            Sij = sqrt(2.0 * S_ij_S_ij)
+            
+            # Filter width calculation
+            Δ2 = Δ * Δ
             
             # Base Smagorinsky eddy viscosity
             ν_t_base = C_s2 * Δ2 * Sij
@@ -1869,12 +2044,11 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                 α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
                 α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
                 effective_diffusivity = visc_coeffieq[ieq] * (α_turbulent + α_molecular)
-                
             else
                 # For momentum equations: use momentum diffusivity
                 effective_diffusivity = visc_coeffieq[ieq] * ν_t
             end
-                        
+            
             # Apply effective diffusivity to scalar gradients
             dqdx = effective_diffusivity * dqdx_phys
             dqdy = effective_diffusivity * dqdy_phys
@@ -1900,7 +2074,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::DSMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::DSMAG, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
@@ -2075,7 +2249,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::WALE, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::WALE, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
 
     #
     # Constants:
@@ -2214,7 +2388,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::VREM, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::VREM, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
 
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
@@ -2343,7 +2517,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
-                          QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0, vargs...)
 
     PhysConst = PhysicalConst{Float32}()
     MPConst   = MicrophysicalConst{Float32}()
@@ -2415,7 +2589,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
-                          QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal; Δ=1.0, vargs...)
     
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
@@ -2563,7 +2737,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords,
                           poin_in_bdy_face, elem_to_face, bdy_face_type, 
-                          QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal; Δ=1.0, vargs...)
 
     #
     # Constants for Richardson stability correction
@@ -2764,7 +2938,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                            connijk,
                            coords,
                            poin_in_bdy_face, elem_to_face, bdy_face_type,
-                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0)
+                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
     nothing
     

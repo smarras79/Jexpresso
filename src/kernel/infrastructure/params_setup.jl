@@ -257,7 +257,7 @@ function params_setup(sem,
     end
 
     # setup timer
-    # timers = create_timer_dict(["DSS_global_RHS!", "inviscid_rhs_el!", "viscous_rhs_el!", "_build_rhs!"], comm; skip_first_n=10)
+    #timers = create_timer_dict(["DSS_global_RHS!", "inviscid_rhs_el!", "viscous_rhs_el!", "_build_rhs!"], comm; skip_first_n=10)
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
@@ -313,7 +313,7 @@ function params_setup(sem,
                   flux_micro, source_micro, adjusted, Pm,
                   q_t, q_ti, q_tij, fqf, b, B,
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
-                  sem.SOL_VARS_TYPE, 
+                  sem.SOL_VARS_TYPE,sem.volume_flux, 
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
@@ -324,6 +324,7 @@ function params_setup(sem,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
+                  #timers, 
                   sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end
 
