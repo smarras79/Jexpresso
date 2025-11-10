@@ -10,7 +10,7 @@
      # N. boundary edges        : 128
      # N. boundary faces        : 124
    # Rank                         : 0
-     # N. edges internal points   : 6336
-     # N. faces internal points   : 9216
-     # N. volumes internal points : 9216
-     # N. total high order points : 16641
+     # N. edges internal points   : 10560
+     # N. faces internal points   : 25600
+     # N. volumes internal points : 25600
+     # N. total high order points : 37249

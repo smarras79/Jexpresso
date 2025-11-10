@@ -269,7 +269,7 @@ function your_solver_with_timing(inputs, prob_params, comm=MPI.COMM_WORLD)
     u0 = prob_params[:u0]
     tspan = (inputs[:tinit], inputs[:tend])
     prob = ODEProblem(your_ode_function!, u0, tspan, prob_params[:p])
-    
+    @show "sono qui QUIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"    
     solution = solve(prob,
                      inputs[:ode_solver], 
                      dt=Float32(inputs[:Δt]),

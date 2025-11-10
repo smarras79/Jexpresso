@@ -154,7 +154,7 @@ function time_loop!(inputs, params, u)
         println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
         @mystop("TimeIntegrators.jl WIP on IMEX by Simone (obsolete)")
     else
-        solution = solve(prob,
+        solution = init(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
                          callback = CallbackSet(cb, cb_restart), tstops = dosetimes,
@@ -163,6 +163,13 @@ function time_loop!(inputs, params, u)
                          saveat = range(inputs[:tinit],
                                         inputs[:tend],
                                         length=inputs[:ndiagnostics_outputs]));
+    try
+      OrdinaryDiffEq.solve!(solution)
+    catch e
+      @info "Blow-up" solution.t e
+    end
+    Main.final_simulation_time[1] = solution.t
+    @show solution.t
     end
     
     if inputs[:ladapt] == true

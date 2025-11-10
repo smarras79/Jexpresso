@@ -168,25 +168,115 @@ end
 
 @inline function user_turbo_volume_flux(u_ll, u_rr)
 	#flux_artiano_etec(u_ll, u_rr)
-	flux_artiano_ec(u_ll, u_rr)
+#	flux_artiano_ec(u_ll, u_rr)
 #	flux_artiano_tec(u_ll, u_rr)
 #       flux_turbo_ranocha(u_ll, u_rr)
+	flux_kg(u_ll, u_rr)
 #	flux_kennedy_gruber(u_ll, u_rr)
 #       flux_central(u_ll, u_rr)
 end
 
 @inline function user_volume_flux(u_ll, u_rr)
-	#flux_artiano_etec(u_ll, u_rr)
-	flux_artiano_ec(u_ll, u_rr)
-#	flux_artiano_tec(u_ll, u_rr)
-#       flux_ranocha(u_ll, u_rr)
-#	flux_kennedy_gruber(u_ll, u_rr)
-#       flux_central(u_ll, u_rr)
+	flux_ranocha(u_ll, u_rr)
 end
 
 
 
-function flux(q)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function flux(q) 
+    PhysConst = PhysicalConst{Float64}()
+                
+    ρ  = q[1] 
+    ρu = q[2]
+    ρv = q[3]
+    ρθ = q[4] 
+    
+    θ  = ρθ/ρ
+    u  = ρu/ρ
+    v  = ρv/ρ
+    Press = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
+    
+    f1 = ρu
+    f2 = ρu*u + Press
+    f3 = ρv*u
+    f4 = ρθ*u
+    
+    g1 = ρv
+    g2 = ρu*v
+    g3 = ρv*v + Press
+    g4 = ρθ*v
+    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
+
+end
+
+
+
+function flux_totalenergy(q)
     PhysConst = PhysicalConst{Float64}()
     
     ρ  = q[1]
@@ -239,6 +329,41 @@ function user_fluxaux!(aux, SD::NSD_2D, q, ::TOTAL)
     aux[4] = p
     aux[5] = log(ρ)
     aux[6] = log(p)
+end
+
+
+@inline function flux_kg(u_ll, u_rr)
+    # Unpack left and right state
+
+    PhysConst = PhysicalConst{Float64}()
+    rho_ll, rho_v1_ll, rho_v2_ll, rho_theta_ll = u_ll
+    rho_rr, rho_v1_rr, rho_v2_rr, rho_theta_rr = u_rr
+    v1_ll = rho_v1_ll/rho_ll
+    v1_rr = rho_v1_rr/rho_rr
+    v2_rr = rho_v2_rr/rho_rr
+    v2_ll = rho_v2_ll/rho_ll
+
+    p_ll = PhysConst.pref * (rho_theta_ll * PhysConst.Rair/PhysConst.pref)^(PhysConst.cp/PhysConst.cv) 
+    p_rr = PhysConst.pref * (rho_theta_rr * PhysConst.Rair/PhysConst.pref)^(PhysConst.cp/PhysConst.cv) 
+
+    # Compute the necessary mean values
+    rho_avg = 0.5f0 *  ( rho_ll + rho_rr)
+    v1_avg = 0.5f0 * (v1_ll + v1_rr)
+    v2_avg = 0.5f0 * (v2_ll + v2_rr)
+    p_avg = 0.5f0 * (p_ll + p_rr)
+    theta_avg = 0.5f0 * ( rho_theta_ll/rho_ll + rho_theta_rr/rho_rr) 
+    # Calculate fluxes depending on normal_direction
+    f1 = rho_avg * 0.5f0 * v1_avg 
+    f2 = f1 * v1_avg + p_avg 
+    f3 = f1 * v2_avg 
+    f4 = f1 * theta_avg 
+
+    g1 = rho_avg * 0.5f0 * v2_avg 
+    g2 = g1 * v1_avg 
+    g3 = g1 * v2_avg + p_avg 
+    g4 = g1 * theta_avg 
+
+    return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 end
 
 @inline function flux_ranocha(u_ll, u_rr)
@@ -436,10 +561,10 @@ end
     PhysConst = PhysicalConst{Float64}()
     rho_ll, rho_v1_ll, rho_v2_ll, rho_e_ll = u_ll
     rho_rr, rho_v1_rr, rho_v2_rr, rho_e_rr = u_rr
-	v1_ll = rho_v1_ll/rho_ll
-	v1_rr = rho_v1_rr/rho_rr
-	v2_rr = rho_v2_rr/rho_rr
-	v2_ll = rho_v2_ll/rho_ll
+    v1_ll = rho_v1_ll/rho_ll
+    v1_rr = rho_v1_rr/rho_rr
+    v2_rr = rho_v2_rr/rho_rr
+    v2_ll = rho_v2_ll/rho_ll
     Temp_ll = (rho_e_ll/rho_ll - 0.5*v1_ll*v1_ll)/PhysConst.cv
     Temp_rr = (rho_e_rr/rho_rr - 0.5*v1_rr*v1_rr)/PhysConst.cv
 

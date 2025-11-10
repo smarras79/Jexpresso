@@ -16,8 +16,7 @@ function user_primitives!(u,qe,uprimitive,::TOTAL)
     uprimitive[1] = ρ
     uprimitive[2] = u
     uprimitive[3] = v
-    uprimitive[4] = T
-    
+    uprimitive[4] = T 
 end
 
 
