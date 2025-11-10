@@ -532,7 +532,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :Pr))
         inputs[:Pr] = 0.7
     end
-
+    
 
     #
     # Viscous models:
@@ -674,22 +674,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lprecip))
         inputs[:lprecip] = false
     end
+
     
     if(!haskey(inputs, :energy_equation))
         inputs[:energy_equation] = "theta"
         inputs[:δtotal_energy] = 0.0
-    else
-        if (lowercase(inputs[:equation_set]) == "totalenergy" ||
-            lowercase(inputs[:equation_set]) == "totalene"    ||
-            lowercase(inputs[:equation_set]) == "totene"      ||
-            lowercase(inputs[:equation_set]) == "tene")
-            inputs[:δtotal_energy] = 1.0
-        else
-            #Default
-            inputs[:energy_equation] = "theta"
-            inputs[:δtotal_energy] = 0.0
-        end
     end
+
     if(!haskey(inputs, :CL))
         # :CL stands for Conservation Law.
         # :CL => CL()  means that we solve dq/dt + \nabla.F(q) = S(q)
@@ -714,7 +705,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :sol_vars_names))
-        inputs[:sol_vars_names] = ("rho", "rho.u", "rho.v", "rho.theta")
+        inputs[:sol_vars_names] = ("q1", "q2", "q3", "q4")
     end
     
     if(!haskey(inputs, :case))
