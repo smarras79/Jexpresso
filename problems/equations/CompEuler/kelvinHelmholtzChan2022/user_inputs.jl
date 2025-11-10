@@ -4,7 +4,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK43(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        :ode_solver           => RDPK3SpFSAL49(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
 	:ode_adaptive_solver => true,
         :Δt                   => 0.0003,
         :tinit                => 0.0,

@@ -142,7 +142,6 @@ function time_loop!(inputs, params, u)
     
     #------------------------------------------------------------------------
     # Simulation
-<<<<<<< HEAD
     #
     limex = false
     if limex
@@ -176,7 +175,6 @@ function time_loop!(inputs, params, u)
     Main.final_simulation_time[1] = solution.t
     @show solution.t
     end
-=======
     #------------------------------------------------------------------------
     solution = solve(prob,
                      inputs[:ode_solver], dt=Float32(inputs[:Δt]),
@@ -188,7 +186,6 @@ function time_loop!(inputs, params, u)
                                     inputs[:tend],
                                     length=inputs[:ndiagnostics_outputs]));
     
->>>>>>> bd48c1fbb64854411f292b3294ac887d132e8dc6
     
     if inputs[:ladapt] == true
         while solution.t[end] < inputs[:tend]
