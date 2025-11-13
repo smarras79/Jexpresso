@@ -76,7 +76,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::TOTAL; connijk_la
     end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
 
-    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
+    DSS_global_RHS!(@view(params.B[:,:]), params.g_dss_cache, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
     end
@@ -222,7 +222,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
         #end
     end
 
-    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
+    DSS_global_RHS!(@view(params.B[:,:]), params.g_dss_cache, params.neqs)
 
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
@@ -358,7 +358,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag
     end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, ngl, params.neqs, SD, params.AD)
 
-    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
+    DSS_global_RHS!(@view(params.B[:,:]), params.g_dss_cache, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
         if ladapt == true
@@ -475,7 +475,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
                            params.mesh.ngl-1, params.neqs, params.interp)
     end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
-    DSS_global_RHS!(@view(params.B[:,:]), params.pM, params.neqs)
+    DSS_global_RHS!(@view(params.B[:,:]), params.g_dss_cache, params.neqs)
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
         if ladapt == true

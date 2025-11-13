@@ -64,8 +64,13 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     #--------------------------------------------------------
     # Build interpolation and quadrature points/weights
     #--------------------------------------------------------
-    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])    
-    interp, project = build_projection_1d(ξω.ξ)
+    ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], mesh.nop, inputs[:backend])   
+    if length(args) > 3
+        interp  = args[4]
+        project = args[5]
+    else
+        interp, project = build_projection_1d(ξω.ξ)
+    end
     
     ξ,ω = ξω.ξ, ξω.ω
     if lexact_integration

@@ -162,7 +162,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     cgip_local = KernelAbstractions.zeros(backend, TInt, 0)
 
     q_local_c  = KernelAbstractions.zeros(backend, TFloat, 0)
-    q_local_p  = KernelAbstractions.zeros(backend, TFloat, 0)
 
 
     # non_conforming_facets arrays
@@ -225,17 +224,42 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     if isnothing(adapt_flags)
     
         if ladaptive == false && linitial_refine == false
-            partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+            if rank != 0
+                # Redirect stdout to /dev/null on non-zero ranks
+                redirect_stdout(open("/dev/null", "w")) do
+                    partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+                end
+            else
+                partitioned_model = GmshDiscreteModel(parts, inputs[:gmsh_filename], renumber=true)
+            end
             model = local_views(partitioned_model).item_ref[]
         elseif linitial_refine == true
-            gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-            partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
+
+            if rank != 0
+                # Redirect stdout to /dev/null on non-zero ranks
+                redirect_stdout(open("/dev/null", "w")) do
+                    gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+                    partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
+                end
+            else
+                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+                partitioned_model = UniformlyRefinedForestOfOctreesDiscreteModel(parts, gmodel, inputs[:init_refine_lvl])
+            end
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
             dmodel = local_views(partitioned_model).item_ref[]
             model  = DiscreteModelPortion(dmodel, own_to_local(cell_gids))
         elseif ladaptive == true && linitial_refine == false
-            gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
-            partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
+
+            if rank != 0
+                # Redirect stdout to /dev/null on non-zero ranks
+                redirect_stdout(open("/dev/null", "w")) do
+                    gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+                    partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
+                end
+            else
+                gmodel = GmshDiscreteModel(inputs[:gmsh_filename], renumber=true)
+                partitioned_model_coarse = OctreeDistributedDiscreteModel(parts,gmodel)
+            end
             
             ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
                 flags = zeros(Cint,length(indices))
@@ -248,7 +272,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 # end
                 flags
             end
-            partitioned_model, glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags)
+            if rank != 0
+                # Redirect stdout to /dev/null on non-zero ranks
+                redirect_stdout(open("/dev/null", "w")) do
+                    partitioned_model, glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags)
+                end
+            else
+                partitioned_model, glue_adapt=Gridap.Adaptivity.adapt(partitioned_model_coarse,ref_coarse_flags)
+            end
             # partitioned_model, glue_redistribute = redistribute(partitioned_model)
             # glue_adapt = get_adaptivity_glue(partitioned_model.dmodel)
             cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
@@ -262,7 +293,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         end
     else
         if (omesh.lneed_redistribute)
-            partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
+            if rank != 0
+                # Redirect stdout to /dev/null on non-zero ranks
+                redirect_stdout(open("/dev/null", "w")) do
+                    partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
+                end
+            else
+                partitioned_model, glue_redistribute = redistribute(partitioned_model_coarse)
+            end
         else
             ref_coarse_flags = map(parts,partition(get_cell_gids(partitioned_model_coarse.dmodel))) do rank,indices
                 flags  = zeros(Cint,length(indices))
@@ -285,7 +323,14 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                                             partitioned_model_coarse.pXest_refinement_rule_type,
                                             partitioned_model_coarse.owns_ptr_pXest_connectivity,
                                             partitioned_model_coarse.gc_ref)
-            partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
+            if rank != 0
+                # Redirect stdout to /dev/null on non-zero ranks
+                redirect_stdout(open("/dev/null", "w")) do
+                    partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
+                end
+            else
+                partitioned_model,glue_adapt=Gridap.Adaptivity.adapt(discrete_partitioned_model_coarse,ref_coarse_flags)
+            end
             cmodel = local_views(discrete_partitioned_model_coarse.dmodel.models).item_ref[]
             cell_gids_c = local_views(partition(get_cell_gids(discrete_partitioned_model_coarse))).item_ref[]
             model_coarse  = DiscreteModelPortion(cmodel, own_to_local(cell_gids_c))
@@ -373,7 +418,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         elm2pelm     = Geometry.get_face_to_parent_face(model,ELEM_flg)
     end
     # @info rank, p2pp, point2ppoint
-    if ladaptive == true
+    if lamr_mesh == true
         hanging_vert_glue  = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[1]
         hanging_facet_glue = local_views(partitioned_model.non_conforming_glue).item_ref[].hanging_faces_glue[mesh.nsd]
         num_regular_facets = local_views(partitioned_model.non_conforming_glue).item_ref[].num_regular_faces[mesh.nsd]
@@ -813,7 +858,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     mesh.half1_cg = KernelAbstractions.zeros(backend, TInt, 0)
     mesh.half2_cg = KernelAbstractions.zeros(backend, TInt, 0)
     # mesh.non_conforming_facets = [KernelAbstractions.zeros(backend, TInt, 0, 0, 0, 0) for _ in 1:num_hanging_facets]
-    if ladaptive == true
+    if lamr_mesh == true
      
         cell_fecet_pids = get_faces(dtopology, mesh.nsd, mesh.nsd-1) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
         facet_cell_pids = get_faces(dtopology, mesh.nsd-1, mesh.nsd) #edge map from local to global numbering i.e. iedge_g = cell_edge_ids[1:NELEM][1:NEDGES_EL]
@@ -877,15 +922,91 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             gcelm_ghost    .= gcelm_ghost[sorted_idx]
             gcfacets_ghost .= gcfacets_ghost[sorted_idx]
             mesh.non_conforming_facets_children_ghost .= mesh.non_conforming_facets_children_ghost[sorted_idx]
-            # @info "edge2pedge", rank, edge2pedge
             ghost_p_or_c = 1
             mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
             mesh.pgip_local = send_and_receive(mesh.pgip_ghost, mesh.pgip_owner, comm)[1]
-            mesh.q_local_p = KernelAbstractions.zeros(backend(), TFloat, length(mesh.pgip_local))
             ghost_p_or_c = 2
             mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
             mesh.cgip_local = send_and_receive(mesh.cgip_ghost, mesh.cgip_owner, comm)[1]
-            mesh.q_local_c = KernelAbstractions.zeros(backend(), TFloat, length(mesh.cgip_local))
+            mesh.q_local_c = KernelAbstractions.zeros(backend, TFloat, length(mesh.cgip_local))
+
+            # create list of IP for ncf
+            
+            mesh.num_ncf    = length(mesh.non_conforming_facets)
+            mesh.num_ncf_pg = length(mesh.non_conforming_facets_parents_ghost)
+            mesh.num_ncf_cg = length(mesh.non_conforming_facets_children_ghost)
+
+            mesh.IPc_list    = KernelAbstractions.zeros(backend, TInt, ngl, mesh.num_ncf)
+            mesh.IPp_list    = KernelAbstractions.zeros(backend, TInt, ngl, mesh.num_ncf)
+            mesh.IPc_list_pg = KernelAbstractions.zeros(backend, TInt, ngl, mesh.num_ncf_pg)
+            mesh.IPp_list_cg = KernelAbstractions.zeros(backend, TInt, ngl, mesh.num_ncf_cg)
+
+            for (idx,ncf) in enumerate(mesh.non_conforming_facets)
+                cell_ip_child, cell_ip_parent, local_parent_facet_id, half = ncf
+                if (local_parent_facet_id == 1)
+                    m = ngl
+                    n = 1:ngl
+                    mesh.IPc_list[:,idx] .= reshape(mesh.connijk[cell_ip_child, ngl, n], :)
+                    mesh.IPp_list[:,idx] .= reshape(mesh.connijk[cell_ip_parent, 1, n], :)
+                elseif (local_parent_facet_id == 2)
+                    m = 1
+                    n = 1:ngl
+                    mesh.IPc_list[:,idx] .= reshape(mesh.connijk[cell_ip_child, 1, n], :)
+                    mesh.IPp_list[:,idx] .= reshape(mesh.connijk[cell_ip_parent, ngl, n], :)
+                elseif (local_parent_facet_id == 3) 
+                    m = 1:ngl
+                    n = 1
+                    mesh.IPc_list[:,idx] .= reshape(mesh.connijk[cell_ip_child, m, 1], :)
+                    mesh.IPp_list[:,idx] .= reshape(mesh.connijk[cell_ip_parent, m, ngl], :)
+                elseif (local_parent_facet_id == 4)
+                    m = 1:ngl
+                    n = ngl
+                    mesh.IPc_list[:,idx] .= reshape(mesh.connijk[cell_ip_child, m, ngl], :)
+                    mesh.IPp_list[:,idx] .= reshape(mesh.connijk[cell_ip_parent, m, 1], :)
+                end
+            end
+
+            for (idx,ncf) in enumerate(mesh.non_conforming_facets_parents_ghost)
+                cell_ip_child, local_parent_facet_id, half = ncf
+                if (local_parent_facet_id == 1)
+                    m = ngl
+                    n = 1:ngl
+                    mesh.IPc_list_pg[:,idx] .= reshape(mesh.connijk[cell_ip_child, ngl, n], :)
+                elseif (local_parent_facet_id == 2)
+                    m = 1
+                    n = 1:ngl
+                    mesh.IPc_list_pg[:,idx] .= reshape(mesh.connijk[cell_ip_child, 1, n], :)
+                elseif (local_parent_facet_id == 3) 
+                    m = 1:ngl
+                    n = 1
+                    mesh.IPc_list_pg[:,idx] .= reshape(mesh.connijk[cell_ip_child, m, 1], :)
+                elseif (local_parent_facet_id == 4)
+                    m = 1:ngl
+                    n = ngl
+                    mesh.IPc_list_pg[:,idx] .= reshape(mesh.connijk[cell_ip_child, m, ngl], :)
+                end
+            end
+
+            for (idx,ncf) in enumerate(mesh.non_conforming_facets_children_ghost)
+                cell_ip_parent, local_parent_facet_id, half = ncf
+                if (local_parent_facet_id == 1)
+                    m = ngl
+                    n = 1:ngl
+                    mesh.IPp_list_cg[:,idx] .= reshape(mesh.connijk[cell_ip_parent, 1, n], :)
+                elseif (local_parent_facet_id == 2)
+                    m = 1
+                    n = 1:ngl
+                    mesh.IPp_list_cg[:,idx] .= reshape(mesh.connijk[cell_ip_parent, ngl, n], :)
+                elseif (local_parent_facet_id == 3) 
+                    m = 1:ngl
+                    n = 1
+                    mesh.IPp_list_cg[:,idx] .= reshape(mesh.connijk[cell_ip_parent, m, ngl], :)
+                elseif (local_parent_facet_id == 4)
+                    m = 1:ngl
+                    n = ngl
+                    mesh.IPp_list_cg[:,idx] .= reshape(mesh.connijk[cell_ip_parent, m, 1], :)
+                end
+            end
 
         elseif mesh.nsd == 3
             offset = 20
@@ -905,45 +1026,33 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
                 gfacet_c   = local_to_global(fgids)[cfacet]
                 if (lfacetid-offset == 1) || (lfacetid-offset == 2) 
                     if half == 1
-                        half_1 = 1
-                        half_2 = 2
+                        half_1 = 1; half_2 = 2
                     elseif half == 2
-                        half_1 = 2
-                        half_2 = 2
+                        half_1 = 2; half_2 = 2
                     elseif half == 3
-                        half_1 = 1
-                        half_2 = 1
+                        half_1 = 1; half_2 = 1
                     elseif half == 4
-                        half_1 = 2
-                        half_2 = 1
+                        half_1 = 2; half_2 = 1
                     end
                 elseif (lfacetid-offset == 3) || (lfacetid-offset == 4) 
                     if half == 1
-                        half_1 = 1
-                        half_2 = 2
+                        half_1 = 1; half_2 = 2
                     elseif half == 2
-                        half_1 = 2
-                        half_2 = 2
+                        half_1 = 2; half_2 = 2
                     elseif half == 3
-                        half_1 = 1
-                        half_2 = 1
+                        half_1 = 1; half_2 = 1
                     elseif half == 4
-                        half_1 = 2
-                        half_2 = 1
+                        half_1 = 2; half_2 = 1
                     end
                 elseif (lfacetid-offset == 5) || (lfacetid-offset == 6)
                     if half == 1
-                        half_1 = 2
-                        half_2 = 2
+                        half_1 = 2; half_2 = 2
                     elseif half == 2
-                        half_1 = 2
-                        half_2 = 1
+                        half_1 = 2; half_2 = 1
                     elseif half == 3
-                        half_1 = 1
-                        half_2 = 2
+                        half_1 = 1; half_2 = 2
                     elseif half == 4
-                        half_1 = 1
-                        half_2 = 1
+                        half_1 = 1; half_2 = 1
                     end
                 end
                 # own child facet, ghost parent facet 
@@ -1015,7 +1124,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             ghost_p_or_c = 1
             mesh.pgip_ghost, mesh.pgip_owner = get_ghost_ips(gpelm_ghost, gpfacets_ghost, gpfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
             mesh.pgip_local = send_and_receive(mesh.pgip_ghost, mesh.pgip_owner, comm)[1]
-            mesh.q_local_p = KernelAbstractions.zeros(backend, TFloat, length(mesh.pgip_local))
             ghost_p_or_c = 2
             mesh.cgip_ghost, mesh.cgip_owner = get_ghost_ips(gcelm_ghost, gcfacets_ghost, gcfacets_owner, mesh.connijk, pelm2elm, mesh.ip2gip, ngl, ghost_p_or_c, comm, mesh.SD)
             mesh.cgip_local = send_and_receive(mesh.cgip_ghost, mesh.cgip_owner, comm)[1]
@@ -3437,7 +3545,7 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                                         nop=TInt(inputs[:nop]),
                                         ngr=TInt(inputs[:nop_laguerre]+1),
                                         SD=NSD_1D())
-            @time partitioned_model_tmp, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_tmp, inputs, nparts, distribute, args...)
+            partitioned_model_tmp, n2o_ele_map_tmp = mod_mesh_read_gmsh!(mesh_tmp, inputs, nparts, distribute, args...)
             uaux    = args[end]
             project = args[end-1]
             interp  = args[end-2]
@@ -3700,421 +3808,4 @@ function get_bdy_poin_in_face_on_edges!(mesh::St_mesh, isboundary_face, SD::NSD_
     end
 end
 
-function send_and_receive!(combined_recv_data, data2send, send_targets, comm)
-    size = MPI.Comm_size(comm)
-    rank = MPI.Comm_rank(comm)
-    T = eltype(data2send)
 
-    # Validate inputs
-    length(data2send) == length(send_targets) || 
-        error("data2send and send_targets must have the same size")
-
-    # Pre-allocate and organize data more efficiently
-    send_counts = zeros(Int, size)
-    
-    # Count items per destination in single pass
-    @inbounds for target in send_targets
-        (0 ≤ target < size) || error("send_targets contains invalid rank")
-        send_counts[target + 1] += 1
-    end
-
-    # Pre-allocate send buffers with exact sizes
-    send_buffers = [Vector{T}(undef, send_counts[i]) for i in 1:size]
-    send_indices = ones(Int, size)  # Track insertion positions
-    
-    # Fill send buffers in single pass
-    @inbounds for (data, target) in zip(data2send, send_targets)
-        idx = target + 1
-        send_buffers[idx][send_indices[idx]] = data
-        send_indices[idx] += 1
-    end
-
-    # Communicate sizes
-    recv_sizes = MPI.Alltoall(MPI.UBuffer(send_counts, 1), comm)
-    
-    # Pre-allocate receive buffers
-    recv_buffers = [Vector{T}(undef, recv_sizes[i]) for i in 1:size]
-    
-    # Pre-calculate total receive size to avoid dynamic resizing
-    total_recv_size = sum(recv_sizes)
-    fill!(combined_recv_data, zero(T))
-    original_senders = Vector{Int}(undef, total_recv_size)
-
-    # Communicate data with pre-allocated request vector
-    max_requests = 2 * count(x -> x > 0, send_counts) + 2 * count(x -> x > 0, recv_sizes)
-    requests = Vector{MPI.Request}(undef, max_requests)
-    req_idx = 0
-
-    @inbounds for i in 0:size-1
-        if send_counts[i+1] > 0
-            req_idx += 1
-            requests[req_idx] = MPI.Isend(send_buffers[i+1], i, 0, comm)
-        end
-        if recv_sizes[i+1] > 0
-            req_idx += 1
-            requests[req_idx] = MPI.Irecv!(recv_buffers[i+1], i, 0, comm)
-        end
-    end
-
-    # Wait for communication (only for actual requests)
-    if req_idx > 0
-        resize!(requests, req_idx)
-        MPI.Waitall!(requests)
-    end
-
-    # Efficiently combine received data without intermediate allocations
-    write_idx = 1
-    @inbounds for i in 0:size-1
-        recv_count = recv_sizes[i+1]
-        if recv_count > 0
-            # Copy data directly into pre-allocated arrays
-            copyto!(combined_recv_data, write_idx, recv_buffers[i+1], 1, recv_count)
-            fill!(view(original_senders, write_idx:write_idx+recv_count-1), i)
-            write_idx += recv_count
-        end
-    end
-
-    return combined_recv_data, original_senders
-end
-
-function send_and_receive(data2send, send_targets, comm)
-    size = MPI.Comm_size(comm)
-    rank = MPI.Comm_rank(comm)
-    T = eltype(data2send)
-
-    # Validate inputs
-    length(data2send) == length(send_targets) || 
-        error("data2send and send_targets must have the same size")
-
-    # Pre-allocate and organize data more efficiently
-    send_counts = zeros(Int, size)
-    
-    # Count items per destination in single pass
-    @inbounds for target in send_targets
-        (0 ≤ target < size) || error("send_targets contains invalid rank")
-        send_counts[target + 1] += 1
-    end
-
-    # Pre-allocate send buffers with exact sizes
-    send_buffers = [Vector{T}(undef, send_counts[i]) for i in 1:size]
-    send_indices = ones(Int, size)  # Track insertion positions
-    
-    # Fill send buffers in single pass
-    @inbounds for (data, target) in zip(data2send, send_targets)
-        idx = target + 1
-        send_buffers[idx][send_indices[idx]] = data
-        send_indices[idx] += 1
-    end
-
-    # Communicate sizes
-    recv_sizes = MPI.Alltoall(MPI.UBuffer(send_counts, 1), comm)
-    
-    # Pre-allocate receive buffers
-    recv_buffers = [Vector{T}(undef, recv_sizes[i]) for i in 1:size]
-    
-    # Pre-calculate total receive size to avoid dynamic resizing
-    total_recv_size = sum(recv_sizes)
-    combined_recv_data = Vector{T}(undef, total_recv_size)
-    original_senders = Vector{Int}(undef, total_recv_size)
-
-    # Communicate data with pre-allocated request vector
-    max_requests = 2 * count(x -> x > 0, send_counts) + 2 * count(x -> x > 0, recv_sizes)
-    requests = Vector{MPI.Request}(undef, max_requests)
-    req_idx = 0
-
-    @inbounds for i in 0:size-1
-        if send_counts[i+1] > 0
-            req_idx += 1
-            requests[req_idx] = MPI.Isend(send_buffers[i+1], i, 0, comm)
-        end
-        if recv_sizes[i+1] > 0
-            req_idx += 1
-            requests[req_idx] = MPI.Irecv!(recv_buffers[i+1], i, 0, comm)
-        end
-    end
-
-    # Wait for communication (only for actual requests)
-    if req_idx > 0
-        resize!(requests, req_idx)
-        MPI.Waitall!(requests)
-    end
-
-    # Efficiently combine received data without intermediate allocations
-    write_idx = 1
-    @inbounds for i in 0:size-1
-        recv_count = recv_sizes[i+1]
-        if recv_count > 0
-            # Copy data directly into pre-allocated arrays
-            copyto!(combined_recv_data, write_idx, recv_buffers[i+1], 1, recv_count)
-            fill!(view(original_senders, write_idx:write_idx+recv_count-1), i)
-            write_idx += recv_count
-        end
-    end
-
-    return combined_recv_data, original_senders
-end
-
-function send_and_receive_old(data2send, send_targets, comm)
-    size = MPI.Comm_size(comm)
-    rank = MPI.Comm_rank(comm)
-
-    T = eltype(data2send)
-
-    # Validate inputs
-    if length(data2send) != length(send_targets)
-        @info rank, length(data2send), length(send_targets)
-        error("data2send and send_targets must have the same size")
-    end
-
-    # Organize data to send
-    send_data = Dict(i => T[] for i in 0:size-1)
-    for (data, owner) in zip(data2send, send_targets)
-        if owner < 0 || owner >= size
-            error("send_targets contains invalid rank")
-        end
-        push!(send_data[owner], data)
-    end
-
-    # Prepare send sizes and receive sizes
-    send_sizes = [length(send_data[i]) for i in 0:size-1]
-    recv_sizes = MPI.Alltoall(MPI.UBuffer(send_sizes, 1), comm)
-
-    # Prepare buffers for sending and receiving data
-    send_buffers = [send_data[i] for i in 0:size-1]
-    recv_buffers = [Vector{T}(undef, recv_sizes[i+1]) for i in 0:size-1]
-
-    # Communicate data
-    requests = MPI.Request[]
-    for i in 0:size-1
-        if send_sizes[i+1] > 0
-            push!(requests, MPI.Isend(send_buffers[i+1], i, 0, comm))
-        end
-        if recv_sizes[i+1] > 0
-            push!(requests, MPI.Irecv!(recv_buffers[i+1], i, 0, comm))
-        end
-    end
-
-    # Wait for all communication to complete
-    MPI.Waitall!(requests)
-
-    # Combine received data into a single vector
-    combined_recv_data = T[]
-    original_senders   = Int[]
-    for i in 0:size-1
-        if recv_sizes[i+1] > 0
-            append!(combined_recv_data, recv_buffers[i+1])
-            append!(original_senders, fill(i, recv_sizes[i+1]))
-        end
-    end
-
-    # # Output the combined data and source list
-    # println("Processor $rank received combined data: ", combined_recv_data)
-    # println("Processor $rank data sources: ", original_senders)
-
-    return combined_recv_data, original_senders
-end
-
-function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm, ip2gip, ngl, ghost_p_or_c, comm, SD::NSD_2D)
-    rank = MPI.Comm_rank(comm)
-    gelm_recv, original_senders = send_and_receive(gelm_ghost, gfacets_owner, comm)
-    gfacets_recv = send_and_receive(gfacets_ghost, gfacets_owner, comm)[1]
-    println("Rank $rank gfacets_recv: $gfacets_recv")
-    lcells = [pelm2elm[x] for x in gelm_recv]
-    lfacets = gfacets_recv
-    nlfacets    = size(lfacets,1)
-    ips_send    = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl)
-    ips_targets = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl)
-    IP          = KernelAbstractions.zeros(CPU(), TInt, ngl)
-    cnt = 1
-    for (i, (lfacet, lcell)) in enumerate(zip(lfacets, lcells))
-
-        if (lfacet == 1)
-            m = ngl
-            n = 1:ngl
-            if ghost_p_or_c == 1
-                IP .= conn[lcell, 1, n]
-            elseif ghost_p_or_c == 2
-                IP .= conn[lcell, ngl, n]
-            end
-        elseif (lfacet == 2)
-            m = 1
-            n = 1:ngl
-            if ghost_p_or_c == 1
-                IP .= conn[lcell, ngl, n]
-            elseif ghost_p_or_c == 2
-                IP .= conn[lcell, 1, n]
-            end
-        elseif (lfacet == 3)
-            m = 1:ngl
-            n = 1
-            if ghost_p_or_c == 1
-                IP .= conn[lcell, m, ngl]
-            elseif ghost_p_or_c == 2
-                IP .= conn[lcell, m, 1]
-            end
-        elseif (lfacet == 4)
-            m = 1:ngl
-            n = ngl
-            if ghost_p_or_c == 1
-                IP .= conn[lcell, m, 1]
-            elseif ghost_p_or_c == 2
-                IP .= conn[lcell, m, ngl]
-            end
-        end
-        for ip in IP
-            ips_send[cnt] = ip2gip[ip]
-            ips_targets[cnt] = original_senders[i]
-            cnt += 1
-        end
-    end
-    ips_recv, ips_owner  = send_and_receive(ips_send, ips_targets, comm)
-
-    return ips_recv, ips_owner
-end
-
-
-function get_ghost_ips(gelm_ghost, gfacets_ghost, gfacets_owner, conn, pelm2elm, ip2gip, ngl, ghost_p_or_c, comm, SD::NSD_3D)
-    rank = MPI.Comm_rank(comm)
-    gelm_recv, original_senders = send_and_receive(gelm_ghost, gfacets_owner, comm)
-    gfacets_recv = send_and_receive(gfacets_ghost, gfacets_owner, comm)[1]
-    lcells = [pelm2elm[x] for x in gelm_recv]
-    lfacets = gfacets_recv
-    nlfacets    = size(lfacets,1)
-    ips_send    = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl * ngl)
-    ips_targets = KernelAbstractions.zeros(CPU(), TInt, nlfacets * ngl * ngl)
-    IP          = KernelAbstractions.zeros(CPU(), TInt, ngl, ngl)
-    cnt = 1
-    for (i, (lfacet, lcell)) in enumerate(zip(lfacets, lcells))
-
-        if (lfacet == 1) #front
-            l = 1:ngl
-            m = 1
-            n = 1:ngl
-            if ghost_p_or_c == 1
-                IP .= conn[lcell, l, 1, n]
-            elseif ghost_p_or_c == 2
-                IP .= conn[lcell, l, ngl, n]
-            end
-        elseif (lfacet == 2) #back
-            l = 1:ngl
-            m = ngl
-            n = 1:ngl
-            if ghost_p_or_c == 1
-                IP .= conn[lcell, l, ngl, n]
-            elseif ghost_p_or_c == 2
-                IP .= conn[lcell, l, 1, n]
-            end
-        elseif (lfacet == 3) #bottom
-            l = 1:ngl
-            m = 1:ngl
-            n = 1
-            if ghost_p_or_c == 1
-                IP .= conn[lcell, l, m, 1]
-            elseif ghost_p_or_c == 2
-                IP .= conn[lcell, l, m, ngl]
-            end
-        elseif (lfacet == 4) #top
-            l = 1:ngl
-            m = 1:ngl
-            n = ngl
-            if ghost_p_or_c == 1
-                IP .= conn[lcell, l, m, ngl]
-            elseif ghost_p_or_c == 2
-                IP .= conn[lcell, l, m, 1]
-            end
-        elseif (lfacet == 5) #right
-            l = ngl
-            m = 1:ngl
-            n = 1:ngl
-            if ghost_p_or_c == 1
-                IP .= conn[lcell, ngl, m, n]
-            elseif ghost_p_or_c == 2
-                IP .= conn[lcell, 1, m, n]
-            end
-        elseif (lfacet == 6) #left
-            l = 1
-            m = 1:ngl
-            n = 1:ngl
-            if ghost_p_or_c == 1
-                IP .= conn[lcell, 1, m, n]
-            elseif ghost_p_or_c == 2
-                IP .= conn[lcell, ngl, m, n]
-            end
-        end
-        for ip in IP
-            # @info rank, ip, cnt,i, lfacet, lcell
-            ips_send[cnt] = ip2gip[ip]
-            ips_targets[cnt] = original_senders[i]
-            cnt += 1
-        end
-    end
-    ips_recv, ips_owner  = send_and_receive(ips_send, ips_targets, comm)
-
-    return ips_recv, ips_owner
-end
-
-function redistributed_q!(u, u_old, glue_redistribute, connijk, old_connijk, ngl, SD::NSD_3D)
-
-    neq = size(u_old,2)
-    lids_rcv, lids_snd, parts_rcv, parts_snd, new2old = GridapDistributed.get_glue_components(glue_redistribute,Val(false))
-    id2send      = local_views(lids_snd).item_ref[]
-    num2send     = id2send.ptrs[end]-1
-    u2send  = KernelAbstractions.zeros(CPU(), TFloat, Int64(num2send * ngl*ngl*ngl*neq))
-    u2owner = KernelAbstractions.zeros(CPU(), TInt, Int64(num2send * ngl*ngl*ngl*neq))
-    cnt = 1
-    for (i, part) in enumerate(local_views(parts_snd).item_ref[])
-        for idx in getindex(id2send, i)
-            for l = 1:ngl
-                for m = 1:ngl
-                    for n = 1:ngl
-                        ip = old_connijk[idx,l,m,n]
-                        for ieq = 1:neq
-                            u2send[cnt]  = u_old[ip,ieq]
-                            u2owner[cnt] = part-1
-                            cnt += 1
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    u2recv, u2recver = send_and_receive(u2send, u2owner, comm)
-
-    id2recv = local_views(lids_rcv).item_ref[]
-    cnt = 1
-    for (i, part) in enumerate(local_views(parts_rcv).item_ref[])
-        for idx in getindex(id2recv, i)
-            for l = 1:ngl
-                for m = 1:ngl
-                    for n = 1:ngl
-                        ip = connijk[idx,l,m,n]
-                        for ieq = 1:neq
-                            u[ip,ieq]  = u2recv[cnt]
-                            if part-1 != u2recver[cnt]
-                                @mystop("part-1 != u2recver[cnt]")
-                            end
-                            cnt += 1
-                        end
-                    end
-                end
-            end
-        end
-    end
-    for (id, n2o_id) in enumerate(local_views(new2old).item_ref[])
-        if n2o_id == 0
-            continue
-        end
-        for l = 1:ngl
-            for m = 1:ngl
-                for n = 1:ngl
-                    old_ip = old_connijk[n2o_id,l,m,n]
-                    new_ip = connijk[id,l,m,n]
-                    for ieq = 1:neq
-                        u[new_ip,ieq]  = u_old[old_ip,ieq]
-                    end
-                end
-            end
-        end
-    end
-end

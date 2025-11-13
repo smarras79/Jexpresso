@@ -47,7 +47,7 @@ function soundSpeed(npoin, mp, p_m, neqs, integrator, SD, ::PERT)
         Tabs = mp.Tabs[1:npoin]
         p = p_m
     else
-        θ = (integrator.u[pos*npoin+1:(pos+1)*npoin] + integrator.p.q.qe[pos*npoin+1:(pos+1)*npoin])./ρ
+        θ = (integrator.u[pos*npoin+1:(pos+1)*npoin] + integrator.p.qp.qe[pos*npoin+1:(pos+1)*npoin])./ρ
         # Compute pressure using vectorized operation
         p = perfectGasLaw_ρθtoP(PhysConst, ρ, θ)
     end

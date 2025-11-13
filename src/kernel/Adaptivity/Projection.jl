@@ -1797,6 +1797,119 @@ function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn
     end
 end
 
+function DSS_nc_gather_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray,
+                            non_conforming_facets,
+                            non_conforming_facets_parents_ghost, cache_ghost_p,
+                            Mg, M_gatter_tmp, M_gather_ghost,
+                            IPc_list, IPp_list, IPc_list_pg,
+                            ip2gip, gip2ip, gip_gather_ghost, gip_local, N, neqs, interp)
+    ngl = N+1
+
+    #     3
+    #   -----
+    # 1|     |2
+    #  |     |
+    #   -----
+    #     4
+
+    # half 1 top, half 2 bottom
+    for (idx, ncf) in enumerate(non_conforming_facets)
+
+        cell_ip_child, cell_ip_parent, local_parent_facet_id, half = ncf
+        if (local_parent_facet_id == 1)
+            m = ngl
+            n = 1:ngl
+        elseif (local_parent_facet_id == 2)
+            m = 1
+            n = 1:ngl
+        elseif (local_parent_facet_id == 3)
+            m = 1:ngl
+            n = 1
+        elseif (local_parent_facet_id == 4)
+            m = 1:ngl
+            n = ngl
+        end
+        IPc  = @view(IPc_list[:,idx])
+        IPp  = @view(IPp_list[:,idx])
+        Lt  = @view(interp[:,:,half])'
+        for ieq = 1:neqs
+            fill!(Mg, zero(TFloat))
+            fill!(M_gatter_tmp, zero(TFloat))
+
+            
+            Mg[:] .= Mel[cell_ip_child,m,n,ieq] #if inexact
+            for i = 1:ngl
+                ipc = IPc[i]
+                ipp = IPp[i]
+                if ipc == ipp
+                    continue
+                end
+                for j = 1:ngl
+                    M_gatter_tmp[j] += Lt[j,i] * Mg[i]
+                end
+                
+            end
+            for j = 1:ngl
+                ipp = IPp[j]
+                M[ipp,ieq] += M_gatter_tmp[j]
+            end
+        end
+    end
+
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    fill!(M_gather_ghost, zero(TFloat))
+    
+    for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
+        cell_ip_child, local_parent_facet_id, half = ncf
+        if (local_parent_facet_id == 1)
+            m = ngl
+            n = 1:ngl
+        elseif (local_parent_facet_id == 2)
+            m = 1
+            n = 1:ngl
+        elseif (local_parent_facet_id == 3)
+            m = 1:ngl
+            n = 1
+        elseif (local_parent_facet_id == 4)
+            m = 1:ngl
+            n = ngl
+        end
+
+        IPc  = @view(IPc_list_pg[:,idx])
+        Lt   = @view(interp[:,:,half])'
+        
+        for ieq = 1:neqs
+            fill!(Mg, zero(TFloat))
+            fill!(M_gatter_tmp, zero(TFloat))
+
+            Mg[:] .= Mel[cell_ip_child,m,n,ieq] #if inexact
+
+
+            for i = 1:ngl
+                ipc = ip2gip[IPc[i]]
+                ipp = gip_gather_ghost[(idx-1) * ngl + i]
+                if ipc == ipp
+                    continue
+                end
+                for j = 1:ngl
+                    ipp = (idx-1) * ngl + j
+                    M_gather_ghost[ipp, ieq] += Lt[j,i] * Mg[i]
+                end
+                
+            end
+        end
+    end
+    for ieq in 1:neqs
+        send_and_receive!(cache_ghost_p, @view(M_gather_ghost[:,ieq]))
+        for (gip, m_value) in zip(gip_local, cache_ghost_p.combined_recv_data)
+            M[gip2ip[gip], ieq] += m_value
+        end
+    end
+end
+
+
 function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, conn_facets::AbstractArray,
                              non_conforming_facets, non_conforming_facets_children_ghost, ip2gip, gip2ip, gip_scatter_ghost, gip_scatter_owner, N, interp)
     ngl = N+1
@@ -1910,37 +2023,90 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact, Mel::AbstractArray, con
     end
 end
 
-function conformity4ncf_q!(q, pM, SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, interp; ladapt = true) nothing end
+function DSS_nc_scatter_rhs!(M, SD::NSD_2D, QT::Inexact,
+                             non_conforming_facets,
+                             non_conforming_facets_children_ghost, cache_ghost_c,
+                             Ms, M_scatter_tmp, M_scatter_ghost,
+                             IPc_list, IPp_list, IPp_list_cg,
+                             gip2ip, gip_local, N, interp)
+    ngl = N+1
 
-function conformity4ncf_q!(q, pM, SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, interp; ladapt = true)
-    nelem = mesh.nelem
-    npoin = mesh.npoin
-    ngl = mesh.ngl
-    fill!(rhs_el, zero(T))
-    fill!(uaux, zero(T))
-    vaux = []
-    for ieq = 1:neqs
-        for iel = 1:nelem
+    for (idx, ncf) in enumerate(non_conforming_facets)
+        cell_ip_child, cell_ip_parent, local_parent_facet_id, half = ncf
+        if (local_parent_facet_id == 1)
+            m = ngl
+            n = 1:ngl
+        elseif (local_parent_facet_id == 2)
+            m = 1
+            n = 1:ngl
+        elseif (local_parent_facet_id == 3)
+            m = 1:ngl
+            n = 1
+        elseif (local_parent_facet_id == 4)
+            m = 1:ngl
+            n = ngl
+        end
+
+        IPc = @view(IPc_list[:,idx])
+        IPp = @view(IPp_list[:,idx])
+        
+        L   = @view(interp[:,:,half])
+
+        fill!(Ms, zero(TFloat))
+        fill!(M_scatter_tmp, zero(TFloat))
+        @turbo for j = 1:ngl
+            ipp = IPp[j]
+            Ms[j] = M[ipp]
             for i = 1:ngl
-                for j = 1:ngl
-                    ip = conn[iel,i,j]
-                    ωJac = ω[i]*ω[j]*Je[iel,i,j]
-                    rhs_el[iel,i,j,ieq] = ωJac*q[ip,ieq]
-                    uaux[ip,ieq] += ωJac*q[ip,ieq]
-                end
+                M_scatter_tmp[i] += L[i,j] * Ms[j]
             end
         end
-    end
-    DSS_nc_gather_rhs!(uaux, SD, QT, rhs_el, conn, mesh.poin_in_edge, mesh.non_conforming_facets,
-                       mesh.non_conforming_facets_parents_ghost, mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, ngl-1, neqs, interp)
-    DSS_global_RHS!(@view(uaux[:,:]), pM, neqs)
-    for ieq=1:neqs
-        divide_by_mass_matrix!(@view(uaux[:,ieq]), vaux, Minv, neqs, npoin, AD)
-        DSS_nc_scatter_rhs!(@view(uaux[:,ieq]), SD, QT, rhs_el[:,:,:,ieq], conn, mesh.poin_in_edge, mesh.non_conforming_facets,
-                            mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, ngl-1, interp)
-        q[:,ieq] .= uaux[:,ieq]
+        for i = 1:ngl
+            ipc = IPc[i]
+            M[ipc] = M_scatter_tmp[i]
+        end
     end
 
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+
+    for (idx, ncf) in enumerate(non_conforming_facets_children_ghost)
+        cell_ip_parent, local_parent_facet_id, half = ncf
+        if (local_parent_facet_id == 1)
+            m = ngl
+            n = 1:ngl
+        elseif (local_parent_facet_id == 2)
+            m = 1
+            n = 1:ngl
+        elseif (local_parent_facet_id == 3)
+            m = 1:ngl
+            n = 1
+        elseif (local_parent_facet_id == 4)
+            m = 1:ngl
+            n = ngl
+        end
+
+        IPp = @view(IPp_list_cg[:,idx])
+        L   = @view(interp[:,:,half])
+
+        fill!(Ms, TFloat(0.0))
+        fill!(M_scatter_tmp, TFloat(0.0))
+        @turbo for j = 1:ngl
+            ipp = IPp[j]
+            Ms[j] = M[ipp]
+            for i = 1:ngl
+                M_scatter_tmp[i] += L[i,j] * Ms[j]
+            end
+        end
+        for i = 1:ngl
+            ipc = (idx - 1) * ngl + i
+            M_scatter_ghost[ipc] = M_scatter_tmp[i]
+        end
+    end
+    send_and_receive!(cache_ghost_c, M_scatter_ghost)
+    for (gip, m_value) in zip(gip_local, cache_ghost_c.combined_recv_data)
+        M[gip2ip[gip]] = m_value
+    end
 end
 
 
@@ -2456,6 +2622,160 @@ function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn
     end
 end
 
+function DSS_nc_gather_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray,
+                            non_conforming_facets,
+                            non_conforming_facets_parents_ghost, cache_ghost_p,
+                            Mg, M_gatter_tmp, M_gather_ghost,
+                            IPc_list, IPp_list, IPc_list_pg,
+                            ip2gip, gip2ip, gip_gather_ghost, gip_local, N, neqs, interp)
+    
+    ngl          = N+1
+    ngl2         = ngl * ngl
+    
+
+    # half 1 top, half 2 bottom
+    for (idx, ncf) in enumerate(non_conforming_facets)
+
+        # cell_ip_child         = cip[idx]
+        # cell_ip_parent        = pip[idx] 
+        # local_parent_facet_id = lfid[idx] 
+        # half_1                = half1[idx]
+        # half_2                = half2[idx]
+        cell_ip_child, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
+        if (local_parent_facet_id == 1) # front
+            l = 1:ngl; m = ngl; n = 1:ngl
+        elseif (local_parent_facet_id == 2) # back
+            l = 1:ngl; m = 1; n = 1:ngl
+        elseif (local_parent_facet_id == 3) # bottom
+            l = 1:ngl; m = 1:ngl; n = ngl
+        elseif (local_parent_facet_id == 4) # top
+            l = 1:ngl; m = 1:ngl; n = 1
+        elseif (local_parent_facet_id == 5) # right
+            l = 1; m = 1:ngl; n = 1:ngl
+        elseif (local_parent_facet_id == 6) # left
+            l = ngl; m = 1:ngl; n = 1:ngl
+        end
+
+        IPc  = @view(IPc_list[:,idx])
+        IPp  = @view(IPp_list[:,idx])
+
+        Lt_1 = @view(interp[:,:,half_1])'
+        Lt_2 = @view(interp[:,:,half_2])'
+
+        for ieq = 1:neqs
+            fill!(Mg, zero(TFloat))
+            fill!(M_gatter_tmp, zero(TFloat))
+            cnt = 1
+            for k in n
+                for j in m
+                    for i in l
+                        Mg[cnt] = Mel[cell_ip_child,i,j,k,ieq]
+                        cnt    += 1
+                    end
+                end
+            end
+            
+            for i2 = 1:ngl
+                for i1 = 1:ngl
+                    i   = i1 + (i2 - 1) * ngl
+                    ipc = IPc[i]
+                    ipp = IPp[i]
+                    if ipc == ipp
+                        continue
+                    # M_gatter_tmp[i] -= Mg[i]
+                    end
+                    for j2 = 1:ngl
+                        for j1 = 1:ngl
+                            j                = j1 + (j2 - 1) * ngl
+                            M_gatter_tmp[j] += Lt_1[j1,i1] * Lt_2[j2,i2] * Mg[i]
+                        end
+                    end
+                end
+            end
+            for j2 = 1:ngl
+                for j1 = 1:ngl
+                    j           = j1 + (j2 - 1) * ngl
+                    ipp         = IPp[j]
+                    M[ipp,ieq] += M_gatter_tmp[j]
+                end
+            end
+        end
+    end
+
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    # M_gather_ghost = cache_ghost_p.data2send
+    fill!(M_gather_ghost, zero(TFloat))
+
+    
+    for (idx, ncf) in enumerate(non_conforming_facets_parents_ghost)
+        cell_ip_child, local_parent_facet_id, half_1, half_2 = ncf
+        if (local_parent_facet_id == 1) # front
+            l = 1:ngl; m = ngl; n = 1:ngl
+        elseif (local_parent_facet_id == 2) # back
+            l = 1:ngl; m = 1; n = 1:ngl
+        elseif (local_parent_facet_id == 3) # bottom
+            l = 1:ngl; m = 1:ngl; n = ngl
+        elseif (local_parent_facet_id == 4) # top
+            l = 1:ngl; m = 1:ngl; n = 1
+        elseif (local_parent_facet_id == 5) # right
+            l = 1; m = 1:ngl; n = 1:ngl
+        elseif (local_parent_facet_id == 6) # left
+            l = ngl; m = 1:ngl; n = 1:ngl
+        end
+        IPc  = @view(IPc_list_pg[:,idx])
+        Lt_1 = @view(interp[:,:,half_1])'
+        Lt_2 = @view(interp[:,:,half_2])'
+        for ieq = 1:neqs
+            fill!(Mg, zero(TFloat))
+            fill!(M_gatter_tmp, zero(TFloat))
+            cnt = 1
+            for k in n
+                for j in m
+                    for i in l
+                        Mg[cnt] = Mel[cell_ip_child,i,j,k,ieq]
+                        cnt    += 1
+                    end
+                end
+            end
+            
+            for i2 = 1:ngl
+                for i1 = 1:ngl
+                    i   = i1 + (i2 - 1) * ngl
+                    ipc = ip2gip[IPc[i]]
+                    ipp = gip_gather_ghost[(idx-1) * ngl2 + i]
+                    if ipc == ipp
+                        continue
+                    # M_gatter_tmp[i] -= Mg[i]
+                    end
+                    for j2 = 1:ngl
+                        for j1 = 1:ngl
+                            j                = j1 + (j2 - 1) * ngl
+                            M_gatter_tmp[j] += Lt_1[j1,i1] * Lt_2[j2,i2] * Mg[i]
+                        end
+                    end
+                end
+            end
+            for j2 = 1:ngl
+                for j1 = 1:ngl
+                    j                        = j1 + (j2 - 1) * ngl
+                    ipp                      = (idx-1) * ngl2 + j
+                    M_gather_ghost[ipp,ieq] += M_gatter_tmp[j]
+                end
+            end
+        end
+    end
+
+
+    for ieq in 1:neqs
+        send_and_receive!(cache_ghost_p, @view(M_gather_ghost[:,ieq]))
+        for (gip, m_value) in zip(gip_local, cache_ghost_p.combined_recv_data)
+            M[gip2ip[gip], ieq] += m_value
+        end
+    end
+end
+
 function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, conn_facets::AbstractArray,
                              non_conforming_facets, cip, pip, lfid, half1, half2,
                              non_conforming_facets_children_ghost, pip_cg, lfid_cg, half1_cg, half2_cg, 
@@ -2518,7 +2838,11 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, con
     rank = MPI.Comm_rank(comm)
 
     for (idx, ncf) in enumerate(non_conforming_facets_children_ghost)
-        cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
+        cell_ip_parent        = pip_cg[idx] 
+        local_parent_facet_id = lfid_cg[idx] 
+        half_1                = half1_cg[idx]
+        half_2                = half2_cg[idx]
+        # cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
         if (local_parent_facet_id == 1) # front
             l = 1:ngl; m = ngl; n = 1:ngl
         elseif (local_parent_facet_id == 2) # back
@@ -2566,9 +2890,176 @@ function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, con
     end
 end
 
+function DSS_nc_scatter_rhs!(M, SD::NSD_3D, QT::Inexact,
+                             non_conforming_facets,
+                             non_conforming_facets_children_ghost, cache_ghost_c,
+                             Ms, M_scatter_tmp, M_scatter_ghost,
+                             IPc_list, IPp_list, IPp_list_cg,
+                             gip2ip, gip_local, N, interp)
+    ngl           = N+1
+    ngl2          = ngl * ngl
+    
+    # half 1 top, half 2 bottom
+    for (idx, ncf) in enumerate(non_conforming_facets)
 
-function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, pM, Mg, M_gatter_tmp, q_ghost_p, q_ghost_c,
-                           SD::NSD_3D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, interp, params; ladapt = true)
+        # cell_ip_child         = cip[idx]
+        # cell_ip_parent        = pip[idx] 
+        # local_parent_facet_id = lfid[idx] 
+        # half_1                = half1[idx]
+        # half_2                = half2[idx]
+        cell_ip_child, cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
+        if (local_parent_facet_id == 1) # front
+            l = 1:ngl; m = ngl; n = 1:ngl
+        elseif (local_parent_facet_id == 2) # back
+            l = 1:ngl; m = 1; n = 1:ngl
+        elseif (local_parent_facet_id == 3) # bottom
+            l = 1:ngl; m = 1:ngl; n = ngl
+        elseif (local_parent_facet_id == 4) # top
+            l = 1:ngl; m = 1:ngl; n = 1
+        elseif (local_parent_facet_id == 5) # right
+            l = 1; m = 1:ngl; n = 1:ngl
+        elseif (local_parent_facet_id == 6) # left
+            l = ngl; m = 1:ngl; n = 1:ngl
+        end
+
+        IPc = @view(IPc_list[:,idx])
+        IPp = @view(IPp_list[:,idx])
+
+        L_1 = @view(interp[:,:,half_1])
+        L_2 = @view(interp[:,:,half_2])
+
+        fill!(Ms, zero(TFloat))
+        fill!(M_scatter_tmp, zero(TFloat))
+        for j2 = 1:ngl
+            for j1 = 1:ngl
+                j = j1 + (j2 - 1) * ngl
+                ipp = IPp[j]
+                Ms[j] = M[ipp]
+                for i2 = 1:ngl
+                    for i1 = 1:ngl
+                        i = i1 + (i2 - 1) * ngl
+                        M_scatter_tmp[i] += L_1[i1,j1] * L_2[i2,j2] * Ms[j]
+                    end
+                end
+            end
+        end
+        for i = 1:ngl2
+            ipc = IPc[i]
+            M[ipc] = M_scatter_tmp[i]
+        end
+    end
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    # M_scatter_ghost = cache_ghost_c.data2send
+
+    for (idx, ncf) in enumerate(non_conforming_facets_children_ghost)
+        cell_ip_parent, local_parent_facet_id, half_1, half_2 = ncf
+        if (local_parent_facet_id == 1) # front
+            l = 1:ngl; m = ngl; n = 1:ngl
+        elseif (local_parent_facet_id == 2) # back
+            l = 1:ngl; m = 1; n = 1:ngl
+        elseif (local_parent_facet_id == 3) # bottom
+            l = 1:ngl; m = 1:ngl; n = ngl
+        elseif (local_parent_facet_id == 4) # top
+            l = 1:ngl; m = 1:ngl; n = 1
+        elseif (local_parent_facet_id == 5) # right
+            l = 1; m = 1:ngl; n = 1:ngl
+        elseif (local_parent_facet_id == 6) # left
+            l = ngl; m = 1:ngl; n = 1:ngl
+        end
+        
+        IPp = @view(IPp_list_cg[:,idx])
+        L_1 = @view(interp[:,:,half_1])
+        L_2 = @view(interp[:,:,half_2])
+
+        fill!(Ms, TFloat(0.0))
+        fill!(M_scatter_tmp, TFloat(0.0))
+
+        for j2 = 1:ngl
+            for j1 = 1:ngl
+                j     = j1 + (j2 - 1) * ngl
+                ipp   = IPp[j]
+                Ms[j] = M[ipp]
+                for i2 = 1:ngl
+                    for i1 = 1:ngl
+                        i                 = i1 + (i2 - 1) * ngl
+                        M_scatter_tmp[i] += L_1[i1,j1] * L_2[i2,j2] * Ms[j]
+                    end
+                end
+            end
+        end
+        for i = 1:ngl2
+            ipc                  = (idx - 1) * ngl2 + i
+            M_scatter_ghost[ipc] = M_scatter_tmp[i]
+        end
+    end
+    # @info rank, length(M_scatter_ghost)
+    send_and_receive!(cache_ghost_c, M_scatter_ghost)
+    # gip_local1 = send_and_receive(gip_scatter_ghost, gip_scatter_owner, comm)[1]
+    for (gip, m_value) in zip(gip_local, cache_ghost_c.combined_recv_data)
+        M[gip2ip[gip]] = m_value
+    end
+end
+
+function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache, 
+                           SD::NSD_1D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs, params; ladapt = true) nothing end
+
+function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache, 
+                           SD::NSD_2D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs,
+                           q_el, q_el_pro,
+                           cache_ghost_p, q_ghost_p,
+                           cache_ghost_c, q_ghost_c,
+                           interp; ladapt = true)
+    nelem = mesh.nelem
+    npoin = mesh.npoin
+    ngl = mesh.ngl
+    T = eltype(q)
+    fill!(q_el_tmp, zero(T))
+    fill!(q_tmp, zero(T))
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for i = 1:ngl
+                for j = 1:ngl
+                    ip = conn[iel,i,j]
+                    ωJac = ω[i]*ω[j]*Je[iel,i,j]
+                    q_el_tmp[iel,i,j,ieq] = ωJac*q[ip,ieq]
+                    q_tmp[ip,ieq] += ωJac*q[ip,ieq]
+                end
+            end
+        end
+    end
+    if ladapt == true
+        DSS_nc_gather_rhs!(q_tmp, SD, QT, q_el_tmp,
+                           mesh.non_conforming_facets,
+                           mesh.non_conforming_facets_parents_ghost, cache_ghost_p,
+                           q_el, q_el_pro, q_ghost_p,
+                           mesh.IPc_list, mesh.IPp_list, mesh.IPc_list_pg,
+                           mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_local, ngl-1, neqs, interp)
+    end
+    DSS_global_RHS!(@view(q_tmp[:,:]), g_dss_cache, neqs)
+    for ieq=1:neqs
+        divide_by_mass_matrix!(@view(q_tmp[:,ieq]), vaux, Minv, neqs, npoin, AD)
+        if ladapt == true
+            DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT,
+                                mesh.non_conforming_facets,
+                                mesh.non_conforming_facets_children_ghost, cache_ghost_c,
+                                q_el, q_el_pro, q_ghost_c,
+                                mesh.IPc_list, mesh.IPp_list, mesh.IPp_list_cg,
+                                mesh.gip2ip, mesh.cgip_local, ngl-1, interp)
+        end
+        q[:,ieq] .= @view(q_tmp[:,ieq])
+    end
+
+end
+
+
+function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
+                           SD::NSD_3D, QT::Inexact, conn::AbstractArray, mesh, Minv, Je, ω, AD, neqs,
+                           q_el, q_el_pro,
+                           cache_ghost_p, q_ghost_p,
+                           cache_ghost_c, q_ghost_c,
+                           interp; ladapt = true)
     nelem = mesh.nelem
     npoin = mesh.npoin
     ngl = mesh.ngl
@@ -2590,27 +3081,38 @@ function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, pM, Mg, M_gatter_tmp, q_gho
         end
     end
     if (ladapt == true)
-        DSS_nc_gather_rhs!(q_tmp, SD, QT, q_el_tmp, conn, mesh.poin_in_edge,
-                       mesh.non_conforming_facets, mesh.cip, mesh.pip, mesh.lfid, mesh.half1, mesh.half2,
-                       mesh.non_conforming_facets_parents_ghost, mesh.cip_pg, mesh.lfid_pg, mesh.half1_pg, mesh.half2_pg,
-                       params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p,
-                       mesh.IPc_list, mesh.IPp_list, mesh.IPc_list_pg,
-                       mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, mesh.pgip_local, ngl-1, neqs, interp)
+        # DSS_nc_gather_rhs!(q_tmp, SD, QT, q_el_tmp, conn, mesh.poin_in_edge,
+        #                mesh.non_conforming_facets, mesh.cip, mesh.pip, mesh.lfid, mesh.half1, mesh.half2,
+        #                mesh.non_conforming_facets_parents_ghost, mesh.cip_pg, mesh.lfid_pg, mesh.half1_pg, mesh.half2_pg,
+        #                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p,
+        #                mesh.IPc_list, mesh.IPp_list, mesh.IPc_list_pg,
+        #                mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, mesh.pgip_local, ngl-1, neqs, interp)
+        DSS_nc_gather_rhs!(q_tmp, SD, QT, q_el_tmp,
+                           mesh.non_conforming_facets,
+                           mesh.non_conforming_facets_parents_ghost, cache_ghost_p,
+                           q_el, q_el_pro, q_ghost_p,
+                           mesh.IPc_list, mesh.IPp_list, mesh.IPc_list_pg,
+                           mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_local, ngl-1, neqs, interp)
     end
-    DSS_global_RHS!(@view(q_tmp[:,:]), pM, neqs)
+    DSS_global_RHS!(@view(q_tmp[:,:]), g_dss_cache, neqs)
     for ieq = 1:neqs
         divide_by_mass_matrix!(@view(q_tmp[:,ieq]), vaux, Minv, neqs, npoin, AD)
         if (ladapt == true)
-            DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT, @view(q_el_tmp[:,:,:,:,ieq]), conn, mesh.poin_in_edge,
-                                mesh.non_conforming_facets, mesh.cip, mesh.pip, mesh.lfid, mesh.half1, mesh.half2,
-                                mesh.non_conforming_facets_children_ghost, mesh.pip_cg, mesh.lfid_cg, mesh.half1_cg, mesh.half2_cg, 
-                                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.mesh.q_local_c, params.q_ghost_c, 
+            # DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT, @view(q_el_tmp[:,:,:,:,ieq]), conn, mesh.poin_in_edge,
+            #                     mesh.non_conforming_facets, mesh.cip, mesh.pip, mesh.lfid, mesh.half1, mesh.half2,
+            #                     mesh.non_conforming_facets_children_ghost, mesh.pip_cg, mesh.lfid_cg, mesh.half1_cg, mesh.half2_cg, 
+            #                     params.q_el, params.q_el_pro, params.mesh.q_local_c, params.q_ghost_c, 
+            #                     mesh.IPc_list, mesh.IPp_list, mesh.IPp_list_cg,
+            #                     mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, mesh.cgip_local, ngl-1, params.interp)
+            DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT,
+                                mesh.non_conforming_facets,
+                                mesh.non_conforming_facets_children_ghost, cache_ghost_c,
+                                q_el, q_el_pro, q_ghost_c,
                                 mesh.IPc_list, mesh.IPp_list, mesh.IPp_list_cg,
-                                mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, mesh.cgip_local, ngl-1, interp)
+                                mesh.gip2ip, mesh.cgip_local, ngl-1, interp)
         end
         q[:,ieq] .= @view(q_tmp[:,ieq])
     end
-
 end
 
 function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts, distribute)
@@ -2676,6 +3178,72 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
     @mystop("my stop at mesh.jl L135")
 end
 
+
+function adapt4periodicity!(adapt_flags, mesh, SD::NSD_2D)
+    ngl = mesh.ngl
+    aux_flags   = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
+    bdry_el2ips = Dict{Int64,Array{Int64, 1}}()
+    for (iedge_bdy, type) in enumerate(mesh.bdy_edge_type)
+        if (type == "periodicx") || (type == "periodicy") || (type == "periodicz")
+            iel = mesh.bdy_edge_in_elem[iface_bdy]
+            flag = adapt_flags[iel]
+            aux::TFloat = 0.0
+            if flag == refine_flag
+                aux = 1.0
+            elseif flag == coarsen_flag
+                aux == -1.0
+            end
+            for k=1:ngl
+                    ip = mesh.poin_in_bdy_edge[iface_bdy,k]
+                    aux_flags[ip] = aux
+                    ip_list = get!(bdry_el2ips, iel, Int64[])
+                    push!(ip_list, ip)
+            end
+            # ip = mesh.poin_in_bdy_face[iface_bdy,2,2]
+            # @info iel, flag, aux_flags[ip], mesh.x[ip], mesh.y[ip], mesh.z[ip]
+        end
+    end
+    # for (iel, ips) in bdry_el2ips
+    #     flags = aux_flags[ips]
+    #     if iel == 1 || iel == 3 || iel == 7 || iel == 9
+    #         @info iel, flags, mesh.ip2gip[ips]
+    #     end
+    # end
+
+    g_dss_cache = DSS_global_mass!(SD, aux_flags, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    # @info "after DSS_global_mass!"
+    for (iel, ips) in bdry_el2ips
+        flags = aux_flags[ips]
+        # if iel == 1 || iel == 3 || iel == 7 || iel == 9
+        #     @info iel, flags, mesh.ip2gip[ips]
+        # end
+        if any(flags .> 0.5)
+            adapt_flags[iel] = refine_flag
+            continue
+        end
+        if all(flags .< -0.5)
+            adapt_flags[iel] = coarsen_flag
+            continue
+        end
+        adapt_flags[iel] = nothing_flag
+    end
+    # for (iface_bdy, type) in enumerate(mesh.bdy_face_type)
+    #     if (type == "periodicx") || (type == "periodicy") || (type == "periodicz")
+    #         iel = mesh.bdy_face_in_elem[iface_bdy]
+    #         ip = mesh.poin_in_bdy_face[iface_bdy,2,2]
+    #         if aux_flags[ip] > 0.5
+    #             adapt_flags[iel] = refine_flag
+    #         elseif aux_flags[ip] < -0.5
+    #             adapt_flags[iel] = coarsen_flag
+    #         else
+    #             adapt_flags[iel] = nothing_flag
+    #         end
+    #         @info iel, adapt_flags[iel], aux_flags[ip], mesh.x[ip], mesh.y[ip], mesh.z[ip]
+    #     end
+    # end
+
+end
+
 function adapt4periodicity!(adapt_flags, mesh, SD::NSD_3D)
     ngl = mesh.ngl
     aux_flags   = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
@@ -2709,7 +3277,7 @@ function adapt4periodicity!(adapt_flags, mesh, SD::NSD_3D)
     #     end
     # end
 
-    pM = DSS_global_mass!(SD, aux_flags, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    g_dss_cache = DSS_global_mass!(SD, aux_flags, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     # @info "after DSS_global_mass!"
     for (iel, ips) in bdry_el2ips
         flags = aux_flags[ips]
@@ -2780,31 +3348,6 @@ function amr_strategy!(args...)
                               OUTPUT_DIR,
                               TFloat,
                               tspan)
-    if rank == 0
-        @info "start conformity4ncf_q!"
-    end
-    pM = setup_assembler(params.mesh.SD, params.qp.qn, params.mesh.ip2gip, params.mesh.gip2owner)
-    conformity4ncf_q!(params.qp.qn, params.rhs_el_tmp, @view(params.utmp[:,:]), params.vaux, 
-                                                                   pM, params.q_el, params.q_el_pro, 
-                                                                   params.q_ghost_p, params.q_ghost_c,
-                                                                   params.mesh.SD, 
-                                                                   params.QT, params.mesh.connijk,
-                                                                   params.mesh, params.Minv, 
-                                                                   params.metrics.Je, params.ω, params.AD, 
-                                                                   params.neqs, params.interp, params)
-    conformity4ncf_q!(params.qp.qe, params.rhs_el_tmp, @view(params.utmp[:,:]), params.vaux, 
-                                                                   pM, params.q_el, params.q_el_pro, 
-                                                                   params.q_ghost_p, params.q_ghost_c,
-                                                                   params.mesh.SD, 
-                                                                   params.QT, params.mesh.connijk, 
-                                                                   params.mesh, params.Minv, 
-                                                                   params.metrics.Je, params.ω, params.AD, 
-                                                                   params.neqs, params.interp, params)
-    
-    MPI.Barrier(comm)
-    if rank == 0
-        @info "end conformity4ncf_q!"
-    end
     
     uaux2u!(nu, uaux_new, nparams.neqs, nparams.mesh.npoin)
     prob = ODEProblem(rhs!,
@@ -2815,4 +3358,131 @@ function amr_strategy!(args...)
     
     return prob, partitioned_model_new
     # GC.gc()
+end
+
+
+function redistributed_q!(u, u_old, glue_redistribute, connijk, old_connijk, ngl, SD::NSD_2D)
+
+    neq = size(u_old,2)
+    lids_rcv, lids_snd, parts_rcv, parts_snd, new2old = GridapDistributed.get_glue_components(glue_redistribute,Val(false))
+    id2send      = local_views(lids_snd).item_ref[]
+    num2send     = id2send.ptrs[end]-1
+    u2send  = KernelAbstractions.zeros(CPU(), TFloat, Int64(num2send * ngl*ngl*neq))
+    u2owner = KernelAbstractions.zeros(CPU(), TInt, Int64(num2send * ngl*ngl*neq))
+    cnt = 1
+    for (i, part) in enumerate(local_views(parts_snd).item_ref[])
+        for idx in getindex(id2send, i)
+            for l = 1:ngl
+                for m = 1:ngl
+                    ip = old_connijk[idx,l,m]
+                    for ieq = 1:neq
+                        u2send[cnt]  = u_old[ip,ieq]
+                        u2owner[cnt] = part-1
+                        cnt += 1
+                    end
+                end
+            end
+        end
+    end
+    
+    u2recv, u2recver = send_and_receive(u2send, u2owner, comm)
+
+    id2recv = local_views(lids_rcv).item_ref[]
+    cnt = 1
+    for (i, part) in enumerate(local_views(parts_rcv).item_ref[])
+        for idx in getindex(id2recv, i)
+            for l = 1:ngl
+                for m = 1:ngl
+                    ip = connijk[idx,l,m]
+                    for ieq = 1:neq
+                        u[ip,ieq]  = u2recv[cnt]
+                        if part-1 != u2recver[cnt]
+                            @mystop("part-1 != u2recver[cnt]")
+                        end
+                        cnt += 1
+                    end
+                end
+            end
+        end
+    end
+    for (id, n2o_id) in enumerate(local_views(new2old).item_ref[])
+        if n2o_id == 0
+            continue
+        end
+        for l = 1:ngl
+            for m = 1:ngl
+                old_ip = old_connijk[n2o_id,l,m]
+                new_ip = connijk[id,l,m]
+                for ieq = 1:neq
+                    u[new_ip,ieq]  = u_old[old_ip,ieq]
+                end
+            end
+        end
+    end
+end
+
+function redistributed_q!(u, u_old, glue_redistribute, connijk, old_connijk, ngl, SD::NSD_3D)
+
+    neq = size(u_old,2)
+    lids_rcv, lids_snd, parts_rcv, parts_snd, new2old = GridapDistributed.get_glue_components(glue_redistribute,Val(false))
+    id2send      = local_views(lids_snd).item_ref[]
+    num2send     = id2send.ptrs[end]-1
+    u2send  = KernelAbstractions.zeros(CPU(), TFloat, Int64(num2send * ngl*ngl*ngl*neq))
+    u2owner = KernelAbstractions.zeros(CPU(), TInt, Int64(num2send * ngl*ngl*ngl*neq))
+    cnt = 1
+    for (i, part) in enumerate(local_views(parts_snd).item_ref[])
+        for idx in getindex(id2send, i)
+            for l = 1:ngl
+                for m = 1:ngl
+                    for n = 1:ngl
+                        ip = old_connijk[idx,l,m,n]
+                        for ieq = 1:neq
+                            u2send[cnt]  = u_old[ip,ieq]
+                            u2owner[cnt] = part-1
+                            cnt += 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    u2recv, u2recver = send_and_receive(u2send, u2owner, comm)
+
+    id2recv = local_views(lids_rcv).item_ref[]
+    cnt = 1
+    for (i, part) in enumerate(local_views(parts_rcv).item_ref[])
+        for idx in getindex(id2recv, i)
+            for l = 1:ngl
+                for m = 1:ngl
+                    for n = 1:ngl
+                        ip = connijk[idx,l,m,n]
+                        for ieq = 1:neq
+                            u[ip,ieq]  = u2recv[cnt]
+                            if part-1 != u2recver[cnt]
+                                @mystop("part-1 != u2recver[cnt]")
+                            end
+                            cnt += 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for (id, n2o_id) in enumerate(local_views(new2old).item_ref[])
+        if n2o_id == 0
+            continue
+        end
+        for l = 1:ngl
+            for m = 1:ngl
+                for n = 1:ngl
+                    old_ip = old_connijk[n2o_id,l,m,n]
+                    new_ip = connijk[id,l,m,n]
+                    for ieq = 1:neq
+                        u[new_ip,ieq]  = u_old[old_ip,ieq]
+                    end
+                end
+            end
+        end
+    end
 end

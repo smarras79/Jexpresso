@@ -8,8 +8,10 @@ function params_setup(sem,
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     println_rank(" # Build arrays and params ................................ "; msg_rank = rank, suppress = sem.mesh.msg_suppress)
-    if rank == 0
+    if rank == 0 && tspan[1] == T(inputs[:tinit])
         @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
+    elseif rank == 0 && tspan[1] != T(inputs[:tinit])
+        @info " " tspan[1] tspan[end]
     end
 
     backend = inputs[:backend]
@@ -93,14 +95,15 @@ function params_setup(sem,
     rhs_el_tmp   = rhs.rhs_el_tmp
 
     #------------------------------------------------------------------------------------
-    # non conforming faces arrays
+    # non conforming faces arrays and mpi cache
     #------------------------------------------------------------------------------------
     q_el      = ncf_arrays.q_el
     q_el_pro  = ncf_arrays.q_el_pro 
     q_ghost_p = ncf_arrays.q_ghost_p 
     q_ghost_c = ncf_arrays.q_ghost_c 
-    L_1       = ncf_arrays.L_1 
-    L_2       = ncf_arrays.L_2 
+    # mpi cache for ncf
+    cache_ghost_p = SendReceiveCache(comm, @view(q_ghost_p[:, 1]), sem.mesh.pgip_owner)
+    cache_ghost_c = SendReceiveCache(comm, q_ghost_c, sem.mesh.cgip_owner)
     #------------------------------------------------------------------------------------
     # boundary flux arrays
     #------------------------------------------------------------------------------------
@@ -245,6 +248,38 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Populate solution arrays
     #------------------------------------------------------------------------------------
+    if (sem.mesh.SD != NSD_1D()) && !(sem.mesh.lLaguerre)
+        if rank == 0
+            @info "start conformity4ncf_q!"
+        end
+        g_dss_cache_qp = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        conformity4ncf_q!(qp.qn, rhs_el_tmp, @view(utmp[:,:]), vaux, 
+                          g_dss_cache_qp,
+                          sem.mesh.SD, 
+                          sem.QT, sem.mesh.connijk,
+                          sem.mesh, sem.matrix.Minv, 
+                          sem.metrics.Je, sem.ω, sem.AD, 
+                          qp.neqs,
+                          q_el, q_el_pro,
+                          cache_ghost_p, q_ghost_p,
+                          cache_ghost_c, q_ghost_c,
+                          sem.interp; ladapt = inputs[:ladapt])
+        conformity4ncf_q!(qp.qe, rhs_el_tmp, @view(utmp[:,:]), vaux, 
+                          g_dss_cache_qp,
+                          sem.mesh.SD, 
+                          sem.QT, sem.mesh.connijk, 
+                          sem.mesh, sem.matrix.Minv, 
+                          sem.metrics.Je, sem.ω, sem.AD, 
+                          qp.neqs,
+                          q_el, q_el_pro,
+                          cache_ghost_p, q_ghost_p,
+                          cache_ghost_c, q_ghost_c,
+                          sem.interp; ladapt = inputs[:ladapt])
+        MPI.Barrier(comm)
+        if rank == 0
+            @info "end conformity4ncf_q!"
+        end
+    end
     for i=1:qp.neqs
         idx = (i-1)*sem.mesh.npoin
         u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
@@ -276,13 +311,21 @@ function params_setup(sem,
     end
 
     # setup timer
-    # timers = create_timer_dict(["DSS_global_RHS!", "inviscid_rhs_el!", "viscous_rhs_el!", "_build_rhs!"], comm; skip_first_n=10)
+    timers = create_timer_dict(["conformity4ncf_q!",
+                                "DSS_global_RHS!",
+                                "DSS_nc_gather_rhs!",
+                                "DSS_nc_scatter_rhs!",
+                                "DSS_nc_scatter_rhs!2",
+                                "inviscid_rhs_el!",
+                                "viscous_rhs_el!",
+                                "_build_rhs!"],
+                                comm; skip_first_n=10)
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
     if (sem.mesh.lLaguerre ||
         inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
-        pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
                   uaux, vaux, utmp,
                   ubdy, gradu, bdy_flux, #for B.C.
@@ -311,12 +354,13 @@ function params_setup(sem,
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, VT = inputs[:visc_model], visc_coeff,
                   WM,
-                  sem.matrix.M, sem.matrix.Minv, pM=pM, tspan,
+                  sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
-                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
+                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
+                  timers)
         
     else
-        pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend,
                   T, inputs,
                   uaux, vaux, utmp,
@@ -330,7 +374,8 @@ function params_setup(sem,
                   F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv, M_edge_inv = sem.matrix.M_edge_inv,
                   flux_gpu, source_gpu, qbdy_gpu,
                   flux_micro, source_micro, adjusted, Pm,
-                  q_el, q_el_pro, q_ghost_p, q_ghost_c, L_1, L_2,
+                  q_el, q_el_pro, q_ghost_p, q_ghost_c,
+                  cache_ghost_p, cache_ghost_c,
                   q_t, q_ti, q_tij, fqf, b, B,
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
                   sem.SOL_VARS_TYPE, 
@@ -338,12 +383,13 @@ function params_setup(sem,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
                   thermo_params, VT = inputs[:visc_model], visc_coeff,
-                  sem.matrix.M, sem.matrix.Minv, pM=pM,
+                  sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
+                  timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute)
     end
 

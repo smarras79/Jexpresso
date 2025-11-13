@@ -71,33 +71,7 @@ function driver(nparts,
     
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
-    if (sem.mesh.SD != NSD_1D())
-        if rank == 0
-            @info "start conformity4ncf_q!"
-        end
-        pM = setup_assembler(params.mesh.SD, params.qp.qn, params.mesh.ip2gip, params.mesh.gip2owner)
-        @time conformity4ncf_q!(params.qp.qn, params.rhs_el_tmp, @view(params.utmp[:,:]), params.vaux, 
-                                                                       pM, params.q_el, params.q_el_pro, 
-                                                                       params.q_ghost_p, params.q_ghost_c,
-                                                                       params.mesh.SD, 
-                                                                       params.QT, params.mesh.connijk,
-                                                                       params.mesh, params.Minv, 
-                                                                       params.metrics.Je, params.ω, params.AD, 
-                                                                       params.neqs, params.interp, params; ladapt = inputs[:ladapt])
-        @time conformity4ncf_q!(params.qp.qe, params.rhs_el_tmp, @view(params.utmp[:,:]), params.vaux, 
-                                                                       pM, params.q_el, params.q_el_pro, 
-                                                                       params.q_ghost_p, params.q_ghost_c,
-                                                                       params.mesh.SD, 
-                                                                       params.QT, params.mesh.connijk, 
-                                                                       params.mesh, params.Minv, 
-                                                                       params.metrics.Je, params.ω, params.AD, 
-                                                                       params.neqs, params.interp, params; ladapt = inputs[:ladapt])
-        
-        MPI.Barrier(comm)
-        if rank == 0
-            @info "end conformity4ncf_q!"
-        end
-    end
+    
     if !inputs[:llinsolve]
         #
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS

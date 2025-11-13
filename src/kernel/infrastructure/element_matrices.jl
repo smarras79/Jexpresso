@@ -997,40 +997,40 @@ end
 
 
 
-function DSS_global_RHS!(RHS, pM, neqs)
+function DSS_global_RHS!(RHS, g_dss_cache, neqs)
 
-    if pM === nothing return end
+    if g_dss_cache === nothing return end
     
-    assemble_mpi!(@view(RHS[:,:]),pM)
+    assemble_mpi!(@view(RHS[:,:]),g_dss_cache)
     
 end
 
-function DSS_global_RHS_pvector!(RHS, pM, neqs)
+function DSS_global_RHS_pvector!(RHS, g_dss_cache, neqs)
     for i = 1:neqs
-       DSS_global_RHS_v0!(@view(RHS[:,i]), pM)
+       DSS_global_RHS_v0!(@view(RHS[:,i]), g_dss_cache)
     end
 end
 
-function DSS_global_RHS_v0!(M, pM)
+function DSS_global_RHS_v0!(M, g_dss_cache)
     # # @info ip2gip
 
-    # pM = pvector(values->@view(M[:]), row_partition)
+    # g_dss_cache = pvector(values->@view(M[:]), row_partition)
     sizeM = length(M)
-    # pM = map(parts, local_values(pM)) do part, localpM
+    # g_dss_cache = map(parts, local_values(g_dss_cache)) do part, localpM
     #     @info part, length(localpM), sizeM
     #     localpM = copy(M)
     # end
 
-    map( partition(pM)) do values
+    map( partition(g_dss_cache)) do values
         for i = 1:sizeM
             values[i] = M[i]
         end
     end
 
 
-    assemble!(pM) |> wait
-    consistent!(pM) |> wait
-    map(local_values(pM)) do values
+    assemble!(g_dss_cache) |> wait
+    consistent!(g_dss_cache) |> wait
+    map(local_values(g_dss_cache)) do values
         for i = 1:sizeM
             M[i] = values[i]
         end
@@ -1045,12 +1045,12 @@ function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
     end
     
     #check_memory(" in sem_setup before setup_assembler.")
-    pM = setup_assembler(SD, M, ip2gip, gip2owner)
+    g_dss_cache = setup_assembler(SD, M, ip2gip, gip2owner)
     #check_memory(" in sem_setup after setup_assembler.")
     
-    assemble_mpi!(M,pM)
+    assemble_mpi!(M,g_dss_cache)
 
-    return pM
+    return g_dss_cache
     
 end
 
@@ -1061,14 +1061,14 @@ function DSS_global_mass_pvector!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin
         # gM = M
         row_partition
     end
-    pM = pvector(values->@view(M[:]), row_partition)
-    # map(parts,local_values(pM)) do part,values
+    g_dss_cache = pvector(values->@view(M[:]), row_partition)
+    # map(parts,local_values(g_dss_cache)) do part,values
     #     # if part == 1
     #         @info values
     # #     end
     # end
 
-    # map(partition(pM),row_partition) do values, indices
+    # map(partition(g_dss_cache),row_partition) do values, indices
     #     local_index_to_owner = local_to_owner(indices)
     #     @info local_index_to_owner
     #     # for lid in 1:length(local_index_to_owner)
@@ -1078,13 +1078,13 @@ function DSS_global_mass_pvector!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin
     # end
 
 
-    assemble!(pM) |> wait
-    consistent!(pM) |> wait
-    M = map(local_values(pM)) do values
+    assemble!(g_dss_cache) |> wait
+    consistent!(g_dss_cache) |> wait
+    M = map(local_values(g_dss_cache)) do values
         M = values
         M
     end
-    return pM
+    return g_dss_cache
 end
 
 
@@ -1154,7 +1154,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     
     if (inputs[:ladapt] == true)
         DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
@@ -1163,7 +1163,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     if (inputs[:bdy_fluxes])
         if SD == NSD_3D()
             M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
-            assemble_mpi!(M_surf,pM)
+            assemble_mpi!(M_surf,g_dss_cache)
             M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
             mass_inverse!(M_surf_inv, M_surf, QT)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
@@ -1171,7 +1171,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         else
             M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
             M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
-            assemble_mpi!(M_edge,pM)
+            assemble_mpi!(M_edge,g_dss_cache)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
             mass_inverse!(M_edge_inv, M_edge, QT)
         end
@@ -1263,7 +1263,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    return (; Me, De, Le, M, Minv, pM, D, L, M_surf_inv, M_edge_inv)
+    return (; Me, De, Le, M, Minv, g_dss_cache, D, L, M_surf_inv, M_edge_inv)
 end
 
 
@@ -1308,7 +1308,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     if (inputs[:bdy_fluxes])
         if SD == NSD_3D()
             M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
-            assemble_mpi!(M_surf,pM)
+            assemble_mpi!(M_surf,g_dss_cache)
             M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
             mass_inverse!(M_surf_inv, M_surf, QT)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
@@ -1316,7 +1316,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         else
             M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
             M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
-            assemble_mpi!(M_edge,pM)
+            assemble_mpi!(M_edge,g_dss_cache)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
             mass_inverse!(M_edge_inv, M_edge, QT)
         end
@@ -1345,7 +1345,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
         
         @time DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
-        pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+        g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     else
         if (typeof(SD) == NSD_1D)
             k = build_mass_matrix_1d_gpu!(backend)
@@ -1447,7 +1447,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
     end
 
-    return (; Me, De, Le, M, Minv, M_edge_inv, M_surf_inv, pM, D, L)
+    return (; Me, De, Le, M, Minv, M_edge_inv, M_surf_inv, g_dss_cache, D, L)
 end
 
 function mass_inverse!(Minv, M::AbstractVector, QT)

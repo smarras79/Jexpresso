@@ -456,14 +456,12 @@ function allocate_gpuMoist(SD, npoin, nelem, ngl, T, backend, lmoist; neqs=1)
 end
 
 
-Base.@kwdef mutable struct St_ncfArrays{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend}
+Base.@kwdef mutable struct St_ncfArrays{T <: AbstractFloat, dims1, dims2, dims3, backend}
 
     q_el      = KernelAbstractions.zeros(backend, T, dims1)
     q_el_pro  = KernelAbstractions.zeros(backend, T, dims1)
     q_ghost_p = KernelAbstractions.zeros(backend, T, dims2)
     q_ghost_c = KernelAbstractions.zeros(backend, T, dims3)
-    L_1       = KernelAbstractions.zeros(backend, T, dims4)
-    L_2       = KernelAbstractions.zeros(backend, T, dims4)
 end
 
 function allocate_ncfArrays(SD, num_ncf_pg, num_ncf_cg, ngl, T, backend; neqs=1)
@@ -478,8 +476,7 @@ function allocate_ncfArrays(SD, num_ncf_pg, num_ncf_cg, ngl, T, backend; neqs=1)
         dims2 = (Int64(num_ncf_pg * (ngl2)), Int64(neqs))
         dims3 = (Int64(num_ncf_cg * (ngl2)))
     end
-    dims4 = (Int64(ngl), Int64(ngl))
-    ncf_arrays = St_ncfArrays{T, dims1, dims2, dims3, dims4, backend}()
+    ncf_arrays = St_ncfArrays{T, dims1, dims2, dims3, backend}()
 
     return ncf_arrays
 end

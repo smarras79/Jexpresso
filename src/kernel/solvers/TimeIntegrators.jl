@@ -176,13 +176,16 @@ function time_loop!(inputs, params, u, args...)
                                 save_everystep = false,
                                 adaptive=inputs[:ode_adaptive_solver],
                                 saveat = []);
+            MPI.Barrier(comm)
+            report_all_timers(prob.p.timers)
+            MPI.Barrier(comm)
         end
     end
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
-    # MPI.Barrier(comm)
-    # report_all_timers(params.timers)
-    # MPI.Barrier(comm)
+    MPI.Barrier(comm)
+    report_all_timers(params.timers)
+    MPI.Barrier(comm)
     
     return solution
 end

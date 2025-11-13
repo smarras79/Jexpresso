@@ -9,7 +9,7 @@ function user_inputs()
         :tend                 => 1000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
-        :diagnostics_at_times => (0:100:1000),
+        :diagnostics_at_times => (100:100:1000),
         # :diagnostics_at_times => (5, 100:100:1000...),        
         :lsource              => true,
         #---------------------------------------------------------------------------
@@ -32,13 +32,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         #:lwall_model          => true,
         :lvisc                => true, #false by default
-        #:visc_model           => AV(), #VREM(), #SMAG(),
-        :visc_model           => SMAG(),
+        :visc_model           => AV(), #VREM(), #SMAG(),
+        # :visc_model           => SMAG(),
         #:visc_model           => VREM(),
         # smagorinsky, cs = 0.23, input cs^2 for momentum cs^2/Pr for other equations, where Pr = 1/3
         #:μ                    => [0.1587, 0.0529, 0.0529, 0.0529, 0.1587],
-        #:μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
+        :μ                    => [0.0, 60.0, 60.0, 60.0, 60.0],
+        # :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0],
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ function user_inputs()
         :c_mount => 5000.0,
 
         # Stretching factors:
-        :lstretch => true,
+        :lstretch => false,
         :stretch_factor => 1.5,
         :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
         :first_zelement_size => 250.0,
@@ -81,7 +81,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => true,
+        :linitial_refine     => false,
         :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
@@ -91,7 +91,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # AMR parameters
         #---------------------------------------------------------------------------
-        :amr_freq            => 200,
+        :amr_freq            => 100,
         :amr_max_level       => 1,
         #---------------------------------------------------------------------------
     ) #Dict
