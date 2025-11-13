@@ -98,7 +98,13 @@ function time_loop!(inputs, params, u)
         # Initialize averaging window if first sample
         if integrator.p.sample_count[] == 0
             integrator.p.t_start[] = integrator.t
+
+            # IMPORTANT: Reset accumulation arrays to zero at start of averaging
+            fill!(integrator.p.q_tavg, 0.0)
+            fill!(integrator.p.q2_tavg, 0.0)
+
             println_rank(" # Starting time averaging at t=", integrator.t; msg_rank = rank)
+            println_rank(" #   Reset accumulation arrays to zero"; msg_rank = rank)
         end
 
         # Accumulate time-averaged quantities
