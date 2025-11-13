@@ -76,20 +76,22 @@ function time_loop!(inputs, params, u)
     end
 
     # Time averaging callback
+    # Accumulate whenever condition is true (within averaging window)
     function tavg_condition(u, t, integrator)
         if !ltavg
             return false
         end
-        # Check if we're in the averaging window
-        if t < tavg_start_time || t > tavg_end_time
+        # Check if we're within the averaging window
+        in_window = (t >= tavg_start_time && t <= tavg_end_time)
+        if !in_window
             return false
         end
-        # Trigger at every n-th timestep
+
+        # Apply sampling frequency: only trigger every N-th call
         tavg_timestep_counter[] += 1
-        if mod(tavg_timestep_counter[], tavg_every_n) == 0
-            return true
-        end
-        return false
+        should_sample = (mod(tavg_timestep_counter[], tavg_every_n) == 0)
+
+        return should_sample
     end
 
     function do_tavg!(integrator)
@@ -117,6 +119,11 @@ function time_loop!(inputs, params, u)
 
         integrator.p.sample_count[] += 1
         integrator.p.t_end[] = integrator.t
+
+        # Print progress every 100 samples
+        if mod(integrator.p.sample_count[], 100) == 0
+            println_rank(" # Time-averaging: ", integrator.p.sample_count[], " samples at t=", integrator.t; msg_rank = rank)
+        end
     end
     # #------------------------------------------------------------------------
     # #  config
@@ -238,8 +245,18 @@ function time_loop!(inputs, params, u)
         println_rank(" #   Averaging window: t=", params.t_start[], " to t=", params.t_end[]; msg_rank = rank)
 
         # Compute the mean by dividing accumulated values by sample count
-        q_tavg_mean_2d  = params.q_tavg  ./ params.sample_count[]
-        q2_tavg_mean_2d = params.q2_tavg ./ params.sample_count[]
+        n_samples = params.sample_count[]
+        println_rank(" #   Dividing by n_samples = ", n_samples; msg_rank = rank)
+
+        q_tavg_mean_2d  = params.q_tavg  ./ n_samples
+        q2_tavg_mean_2d = params.q2_tavg ./ n_samples
+
+        # Debug: print sample values to verify averaging
+        if rank == 0 && params.mesh.npoin > 0
+            println_rank(" #   Sample check - accumulated[1,1] = ", params.q_tavg[1,1]; msg_rank = rank)
+            println_rank(" #   Sample check - mean[1,1] = ", q_tavg_mean_2d[1,1]; msg_rank = rank)
+            println_rank(" #   Sample check - ratio = ", params.q_tavg[1,1] / q_tavg_mean_2d[1,1]; msg_rank = rank)
+        end
 
         # Compute variance: Var(X) = E[X²] - E[X]²
         q_tavg_var_2d = q2_tavg_mean_2d .- (q_tavg_mean_2d .^ 2)
