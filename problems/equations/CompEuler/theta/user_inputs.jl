@@ -13,7 +13,14 @@ function user_inputs()
         :lrestart             => false,
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
-        :lsource              => true, 
+        :lsource              => true,
+        #---------------------------------------------------------------------------
+        # time-average tracking
+        #---------------------------------------------------------------------------
+        :ltavg => true,
+        :tavg_start_time => 100.0,      # Start averaging at t=100
+        :tavg_end_time => 1000.0,       # Stop averaging at t=500
+        :tavg_every_n_timesteps => 1,  # Sample every timestep
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
