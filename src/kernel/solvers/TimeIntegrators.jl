@@ -100,11 +100,16 @@ function time_loop!(inputs, params, u)
         end
 
         # Accumulate time-averaged quantities
-        # Convert ODE state vector to auxiliary format for easier access
-        for ip = 1:integrator.p.mesh.npoin
-            for ieq = 1:integrator.p.qp.neqs
-                iglobal = (ip-1)*integrator.p.qp.neqs + ieq
-                val = integrator.p.uaux[ip, ieq]
+        # Read directly from ODE state vector u with proper indexing
+        npoin = integrator.p.mesh.npoin
+        neqs = integrator.p.qp.neqs
+
+        for ieq = 1:neqs
+            # u is stored as: [all points for eq1, all points for eq2, ...]
+            # So for equation ieq, the data starts at index (ieq-1)*npoin + 1
+            idx_start = (ieq-1)*npoin
+            for ip = 1:npoin
+                val = integrator.u[idx_start + ip]
                 integrator.p.q_tavg[ip, ieq] += val
                 integrator.p.q2_tavg[ip, ieq] += val * val
             end
