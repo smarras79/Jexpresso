@@ -144,6 +144,16 @@ function params_setup(sem,
     b      = filter.b
     B      = filter.B
 
+    #------------------------------------------------------------------------------------
+    # Time averaging arrays
+    #------------------------------------------------------------------------------------
+    tavg = allocate_TimeAverage(sem.mesh.SD, sem.mesh.npoin, T, backend; neqs=qp.neqs, ltavg=inputs[:ltavg])
+    q_tavg       = tavg.q_tavg
+    q2_tavg      = tavg.q2_tavg
+    sample_count = tavg.sample_count
+    t_start      = tavg.t_start
+    t_end        = tavg.t_end
+
     #------------------------------------------------------------------------------------  
     # B.C. arrays
     #------------------------------------------------------------------------------------
@@ -303,12 +313,12 @@ function params_setup(sem,
                   flux_lag_gpu, source_lag_gpu,
                   qbdy_lag_gpu,
                   RHS, RHS_visc,
-                  F_lag, G_lag, S_lag, 
+                  F_lag, G_lag, S_lag,
                   F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv, M_edge_inv = sem.matrix.M_edge_inv,
                   rhs_el_lag,
                   rhs_diff_el_lag,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
-                  RHS_lag, RHS_visc_lag, uprimitive_lag, 
+                  RHS_lag, RHS_visc_lag, uprimitive_lag,
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD,
                   sem.SOL_VARS_TYPE,
                   neqs=qp.neqs,
@@ -316,12 +326,13 @@ function params_setup(sem,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
 		  basis=sem.basis[1], basis_lag = sem.basis[2],
                   ω = sem.ω[1], ω_lag = sem.ω[2],
-                  metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
+                  metrics = sem.metrics[1], metrics_lag = sem.metrics[2],
                   inputs, VT = inputs[:visc_model], visc_coeff,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, pM=pM, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
-                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
+                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t,
+                  q_tavg, q2_tavg, sample_count, t_start, t_end, laguerre=true)
         
     else
         pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -337,7 +348,7 @@ function params_setup(sem,
                   poisson, # for main variable in poission equation
                   F_data, #for additional user_flux data (incompressible)
                   number, # count which time step
-                  ubdy, gradu, bdy_flux,                   
+                  ubdy, gradu, bdy_flux,
                   RHS, RHS_visc,
                   fijk, ∇f_el,
                   rhs_el, rhs_diff_el,
@@ -350,8 +361,8 @@ function params_setup(sem,
                   flux_gpu, source_gpu, qbdy_gpu,
                   flux_micro, source_micro, adjusted, Pm,
                   q_t, q_ti, q_tij, fqf, b, B,
-                  SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD, 
-                  sem.SOL_VARS_TYPE, 
+                  SD=sem.mesh.SD, sem.QT, sem.CL, sem.PT, sem.AD,
+                  sem.SOL_VARS_TYPE,
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
@@ -360,7 +371,8 @@ function params_setup(sem,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,
                   phys_grid = sem.phys_grid,
-                  qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
+                  qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t,
+                  q_tavg, q2_tavg, sample_count, t_start, t_end, laguerre=false,
                   OUTPUT_DIR,
                   #   timers,
                   sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)

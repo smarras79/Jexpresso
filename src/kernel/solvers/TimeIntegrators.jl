@@ -17,7 +17,14 @@ function time_loop!(inputs, params, u)
     c            = Float64(0.0)
     restart_time = inputs[:restart_time]
     rad_time     = inputs[:radiation_time_step]
-    lnew_mesh    = true   
+    lnew_mesh    = true
+
+    # Time averaging variables
+    tavg_timestep_counter = Ref{Int}(0)
+    tavg_start_time       = inputs[:tavg_start_time]
+    tavg_end_time         = inputs[:tavg_end_time]
+    tavg_every_n          = inputs[:tavg_every_n_timesteps]
+    ltavg                 = inputs[:ltavg]   
     function two_stream_condition(u, t, integrator)
         if (rem(t,rad_time) < 1e-3)
             return true
@@ -67,6 +74,45 @@ function time_loop!(inputs, params, u)
 
         println_rank(" #  writing restart ........................ DONE"; msg_rank = rank)
     end
+
+    # Time averaging callback
+    function tavg_condition(u, t, integrator)
+        if !ltavg
+            return false
+        end
+        # Check if we're in the averaging window
+        if t < tavg_start_time || t > tavg_end_time
+            return false
+        end
+        # Trigger at every n-th timestep
+        tavg_timestep_counter[] += 1
+        if mod(tavg_timestep_counter[], tavg_every_n) == 0
+            return true
+        end
+        return false
+    end
+
+    function do_tavg!(integrator)
+        # Initialize averaging window if first sample
+        if integrator.p.sample_count[] == 0
+            integrator.p.t_start[] = integrator.t
+            println_rank(" # Starting time averaging at t=", integrator.t; msg_rank = rank)
+        end
+
+        # Accumulate time-averaged quantities
+        # Convert ODE state vector to auxiliary format for easier access
+        for ip = 1:integrator.p.mesh.npoin
+            for ieq = 1:integrator.p.qp.neqs
+                iglobal = (ip-1)*integrator.p.qp.neqs + ieq
+                val = integrator.p.uaux[ip, ieq]
+                integrator.p.q_tavg[ip, ieq] += val
+                integrator.p.q2_tavg[ip, ieq] += val * val
+            end
+        end
+
+        integrator.p.sample_count[] += 1
+        integrator.p.t_end[] = integrator.t
+    end
     # #------------------------------------------------------------------------
     # #  config
     # #------------------------------------------------------------------------
@@ -110,10 +156,11 @@ function time_loop!(inputs, params, u)
         end
     end
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
-    cb         = DiscreteCallback(condition, affect!)    
+    cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
-    CallbackSet(cb)#,cb_rad)
+    cb_tavg    = DiscreteCallback(tavg_condition, do_tavg!)
+    CallbackSet(cb, cb_tavg)#,cb_rad)
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------
@@ -156,18 +203,18 @@ function time_loop!(inputs, params, u)
         solution = solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = CallbackSet(cb, cb_restart), tstops = dosetimes,
+                         callback = CallbackSet(cb, cb_restart, cb_tavg), tstops = dosetimes,
                          save_everystep = false,
                          adaptive=inputs[:ode_adaptive_solver],
                          saveat = range(inputs[:tinit],
                                         inputs[:tend],
                                         length=inputs[:ndiagnostics_outputs]));
     end
-    
+
     if inputs[:ladapt] == true
         while solution.t[end] < inputs[:tend]
             prob = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end])
-            
+
             solution = solve(prob,
                              inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                              callback = cb_amr, tstops = dosetimes,
@@ -176,8 +223,53 @@ function time_loop!(inputs, params, u)
                              saveat = []);
         end
     end
-    
+
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
+
+    # Write time-averaged output if enabled
+    if ltavg && params.sample_count[] > 0
+        println_rank(" # Writing time-averaged output .................... "; msg_rank = rank)
+        println_rank(" #   Samples collected: ", params.sample_count[]; msg_rank = rank)
+        println_rank(" #   Averaging window: t=", params.t_start[], " to t=", params.t_end[]; msg_rank = rank)
+
+        # Compute the mean by dividing accumulated values by sample count
+        q_tavg_mean  = params.q_tavg  ./ params.sample_count[]
+        q2_tavg_mean = params.q2_tavg ./ params.sample_count[]
+
+        # Compute variance: Var(X) = E[X²] - E[X]²
+        q_tavg_var = q2_tavg_mean .- (q_tavg_mean .^ 2)
+
+        # Create output directory for time-averaged data
+        tavg_output_dir = joinpath(inputs[:output_dir], "time_averaged")
+        if rank == 0 && !isdir(tavg_output_dir)
+            mkpath(tavg_output_dir)
+        end
+        MPI.Barrier(comm)
+
+        # Write mean
+        write_output(params.SD, q_tavg_mean, q_tavg_mean, params.t_end[], 1,
+                     params.mesh, params.mp,
+                     params.connijk_original, params.poin_in_bdy_face_original,
+                     params.x_original, params.y_original, params.z_original,
+                     tavg_output_dir, inputs,
+                     params.qp.qvars,
+                     params.qp.qoutvars,
+                     inputs[:outformat];
+                     nvar=params.qp.neqs, qexact=params.qp.qe, case="mean")
+
+        # Write variance
+        write_output(params.SD, q_tavg_var, q_tavg_var, params.t_end[], 2,
+                     params.mesh, params.mp,
+                     params.connijk_original, params.poin_in_bdy_face_original,
+                     params.x_original, params.y_original, params.z_original,
+                     tavg_output_dir, inputs,
+                     params.qp.qvars,
+                     params.qp.qoutvars,
+                     inputs[:outformat];
+                     nvar=params.qp.neqs, qexact=params.qp.qe, case="variance")
+
+        println_rank(" # Writing time-averaged output .................... DONE"; msg_rank = rank)
+    end
     # MPI.Barrier(comm)
     # report_all_timers(params.timers)
     # MPI.Barrier(comm)
