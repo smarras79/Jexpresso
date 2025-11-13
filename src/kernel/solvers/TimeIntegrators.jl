@@ -95,16 +95,19 @@ function time_loop!(inputs, params, u)
     end
 
     function do_tavg!(integrator)
-        # Initialize averaging window if first sample
-        if integrator.p.sample_count[] == 0
+        # Detect if this is a new run: either first time (sample_count==0) or time went backwards (new simulation)
+        if integrator.p.sample_count[] == 0 || integrator.t < integrator.p.t_start[]
+            # Reset everything for new averaging window
+            integrator.p.sample_count[] = 0
             integrator.p.t_start[] = integrator.t
+            tavg_timestep_counter[] = 0  # Also reset the timestep counter
 
             # IMPORTANT: Reset accumulation arrays to zero at start of averaging
             fill!(integrator.p.q_tavg, 0.0)
             fill!(integrator.p.q2_tavg, 0.0)
 
-            println_rank(" # Starting time averaging at t=", integrator.t; msg_rank = rank)
-            println_rank(" #   Reset accumulation arrays to zero"; msg_rank = rank)
+            println_rank(" # Starting NEW time averaging window at t=", integrator.t; msg_rank = rank)
+            println_rank(" #   Reset sample_count, timestep_counter, and accumulation arrays to zero"; msg_rank = rank)
         end
 
         # Accumulate time-averaged quantities
