@@ -3511,6 +3511,8 @@ function mod_mesh_build_mesh!(mesh::St_mesh, interpolation_nodes, backend)
         mesh.x = x
         #mesh.coords[:,1] = x[:]
     end 
+    mesh.coords = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin), Int64(mesh.nsd))
+    mesh.coords[:,1] = mesh.x[:]
     #plot_1d_grid(mesh)
     resize!(mesh.y, (mesh.npoin))
     println(" # BUILD LINEAR CARTESIAN GRID ............................ DONE")
