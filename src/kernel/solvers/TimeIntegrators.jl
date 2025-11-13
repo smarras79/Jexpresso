@@ -238,11 +238,20 @@ function time_loop!(inputs, params, u)
         println_rank(" #   Averaging window: t=", params.t_start[], " to t=", params.t_end[]; msg_rank = rank)
 
         # Compute the mean by dividing accumulated values by sample count
-        q_tavg_mean  = params.q_tavg  ./ params.sample_count[]
-        q2_tavg_mean = params.q2_tavg ./ params.sample_count[]
+        q_tavg_mean_2d  = params.q_tavg  ./ params.sample_count[]
+        q2_tavg_mean_2d = params.q2_tavg ./ params.sample_count[]
 
         # Compute variance: Var(X) = E[X²] - E[X]²
-        q_tavg_var = q2_tavg_mean .- (q_tavg_mean .^ 2)
+        q_tavg_var_2d = q2_tavg_mean_2d .- (q_tavg_mean_2d .^ 2)
+
+        # Convert from 2D (npoin, neqs) to flat (npoin*neqs) format for write_output
+        npoin = params.mesh.npoin
+        neqs = params.qp.neqs
+        q_tavg_mean_flat = zeros(npoin * neqs)
+        q_tavg_var_flat  = zeros(npoin * neqs)
+
+        uaux2u!(q_tavg_mean_flat, q_tavg_mean_2d, neqs, npoin)
+        uaux2u!(q_tavg_var_flat, q_tavg_var_2d, neqs, npoin)
 
         # Create output directory for time-averaged data
         tavg_output_dir = joinpath(inputs[:output_dir], "time_averaged")
@@ -251,8 +260,8 @@ function time_loop!(inputs, params, u)
         end
         MPI.Barrier(comm)
 
-        # Write mean
-        write_output(params.SD, q_tavg_mean, q_tavg_mean, params.t_end[], 1,
+        # Write mean (pass flat array as sol, 2D array as uaux)
+        write_output(params.SD, q_tavg_mean_flat, q_tavg_mean_2d, params.t_end[], 1,
                      params.mesh, params.mp,
                      params.connijk_original, params.poin_in_bdy_face_original,
                      params.x_original, params.y_original, params.z_original,
@@ -262,8 +271,8 @@ function time_loop!(inputs, params, u)
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe, case="mean")
 
-        # Write variance
-        write_output(params.SD, q_tavg_var, q_tavg_var, params.t_end[], 2,
+        # Write variance (pass flat array as sol, 2D array as uaux)
+        write_output(params.SD, q_tavg_var_flat, q_tavg_var_2d, params.t_end[], 2,
                      params.mesh, params.mp,
                      params.connijk_original, params.poin_in_bdy_face_original,
                      params.x_original, params.y_original, params.z_original,
