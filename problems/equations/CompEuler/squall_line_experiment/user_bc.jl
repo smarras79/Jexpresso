@@ -1,5 +1,5 @@
 function user_bc_dirichlet!(q,
-                            x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
+                            coords,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
                             nx, ny, nz,
@@ -24,7 +24,7 @@ function user_bc_dirichlet!(q,
 end
 
 function user_bc_dirichlet!(q,
-                            x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
+                            coords,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
                             nx, ny, nz,
@@ -47,12 +47,12 @@ function user_bc_dirichlet!(q,
     end
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, z::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
 end
 
-function user_bc_dirichlet_gpu(q,qe,x,y,z,t,nx,ny,nz,qbdy,lpert)
+function user_bc_dirichlet_gpu(q,qe,coords,t,nx,ny,nz,qbdy,lpert)
     T = eltype(q)
     if ((z < T(0.1) || z > T(24000) - T(10)) && ( x < T(-40000) + T(10) || x > T(40000) - T(10)) ) || (abs(nx) >T(0.1))
         return T(0.0), T(0.0), T(0.0), T(0.0), T(0.0), T(0.0), T(0.0)

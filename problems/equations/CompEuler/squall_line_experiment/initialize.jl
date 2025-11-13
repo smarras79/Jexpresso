@@ -123,7 +123,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 T = θ1 / (PhysConst.pref/pref)^(PhysConst.Rair/PhysConst.cp)
                 Tv = T*(1+0.61*qv_ref) 
                 Tv_ref = Tref*(1+0.61*qv_ref) 
-                ρ    = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
+                ρ    = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,     Press=pref) #kg/m³
                 ρref = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
                 hl = PhysConst.cp*T + PhysConst.g*z
                 hl_ref = PhysConst.cp*Tref + PhysConst.g*z

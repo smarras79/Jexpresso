@@ -167,23 +167,59 @@ function get_boundary_faces(model,nsd,dim)
   findall(x -> x>0, facet_to_tag)
 end
 
+mutable struct CyclingReverseDict
+    mapping::Dict{Int, Vector{Int}}
+    counters::Dict{Int, Int}
+    repeated_keys::Vector{Int}
+end
 
+function CyclingReverseDict(a::Vector)
+    mapping = Dict{Int, Vector{Int}}()
+    repeated_keys = Int[]
+    for (i, val) in enumerate(a)
+        if haskey(mapping, val)
+            if length(mapping[val]) == 1
+                push!(repeated_keys, val)
+            end
+            push!(mapping[val], i)
+        else
+            mapping[val] = [i]
+        end
+    end
+    CyclingReverseDict(mapping, Dict{Int, Int}(), repeated_keys)
+end
 
+function get_repeated_keys(crd::CyclingReverseDict)
+    return crd.repeated_keys
+end
+
+function get_vals(crd::CyclingReverseDict, key::Int; all = false, first = false, order = true)
+    indices = crd.mapping[key]
+    if all == true
+        return indices
+    end
+    if first == true
+        return indices[1]
+    end
+    if order == true
+        # Get current counter for this key (default to 0)
+        counter = get(crd.counters, key, 0)
+        # Get the index to return
+        result = indices[counter % length(indices) + 1]
+        # Increment counter
+        crd.counters[key] = counter + 1
+        return result
+    end
+end
+
+# for non-periodic only
 mutable struct AssemblerCache
-    global_max_index::Int
-    index_a::Vector{Int}
-    owner_a::Vector{Int}
-
     # Index communication buffers
     recv_idx_buffers::Vector{Vector{Int}}
     # combined_recv_idx::Vector{Int}
 
     # Send-back buffers
     recvback_idx_buffers::Vector{Vector{Int}}
-    # combined_recv_back_idx::Vector{Int}
-
-    sum_array_1D::Vector{Float64}
-    sum_array_2D::Matrix{Float64}
 
     # auxiliary
     send_i::Vector{Vector{Int}} 
@@ -193,6 +229,9 @@ mutable struct AssemblerCache
     recv_data_sizes::Vector{Int}
     # i_local::Dict{Int, Vector{Int}}
 
+    # Preallocated requests
+    requests::MPI.MultiRequest
+    requests_back::MPI.MultiRequest
 end
 
 function setup_assembler(SD, a, index_a, owner_a)
@@ -207,24 +246,30 @@ function setup_assembler(SD, a, index_a, owner_a)
 
     m = size(a, 2)
 
-    # i_local = Dict{Int,  Vector{Int}}()
-    # for (i, idx) in enumerate(index_a)
-    #     owner = owner_a[i]
-    #     if owner == rank
-    #         idx_i = get!(i_local, idx, Int[])
-    #         push!(idx_i, i)
-    #     end
-    # end
-    # filter!(p -> !isempty(p.second), i_local)
 
     send_idx = Dict(i => Int[] for i in 0:rank_sz-1)
     send_i = [Int[] for i in 0:rank_sz-1]
+    # send list remote
     for (i, idx) in enumerate(index_a)
         owner = owner_a[i]
         if owner != rank
             buf_idx = get!(send_idx, owner, Int[])
             push!(buf_idx, idx)
             push!(send_i[owner+1], i)
+        end
+    end
+    # send list local (for periodic)
+    a_g2l_idx      = CyclingReverseDict(index_a)
+    a_g2l_repeated = get_repeated_keys(a_g2l_idx)
+    for idx in a_g2l_repeated
+        local_idx = get_vals(a_g2l_idx, idx; all = true)[2:end]
+        for i in local_idx
+            owner = owner_a[i]
+            if owner == rank
+                buf_idx = get!(send_idx, owner, Int[])
+                push!(buf_idx, idx)
+                push!(send_i[owner+1], i)
+            end
         end
     end
 
@@ -249,15 +294,8 @@ function setup_assembler(SD, a, index_a, owner_a)
     end
 
     # Wait for all communication to complete
-    MPI.Waitall!(requests)
+    MPI.Waitall(requests)
 
-    # Combine received data into a single vector
-    # combined_recv_idx = Int[]
-    # for i in 0:rank_sz-1
-    #     if recv_idx_sizes[i+1] > 0
-    #         append!(combined_recv_idx, recv_idx_buffers[i+1])
-    #     end
-    # end
 
     # send data back to original ranks
     sendback_idx = Dict(i => Int[] for i in 0:rank_sz-1)
@@ -293,35 +331,63 @@ function setup_assembler(SD, a, index_a, owner_a)
 
 
     # Wait for all communication to complete
-    MPI.Waitall!(requests_back)
+    MPI.Waitall(requests_back)
 
 
 
-    # Combine received data into a single vector
-    # combined_recv_back_idx = Int[]
+    # needed_indices = Set{Int}()
+    
+    # # 2. Add all indices from recv_idx_buffers
+    # for i in 0:rank_sz-1
+    #     if recv_idx_sizes[i+1] > 0
+    #         for idx in recv_idx_buffers[i+1]
+    #             push!(needed_indices, idx)
+    #         end
+    #     end
+    # end
+    
+    # # 3. Add all indices from recvback_idx_buffers
     # for i in 0:rank_sz-1
     #     if recvback_idx_sizes[i+1] > 0
-    #         append!(combined_recv_back_idx, recvback_idx_buffers[i+1])
+    #         for idx in recvback_idx_buffers[i+1]
+    #             push!(needed_indices, idx)
+    #         end
     #     end
     # end
 
 
-    sum_array_1D = zeros(Float64, global_max_index)
-    sum_array_2D = zeros(Float64, global_max_index, m)
+    # change recv_idx_buffers and recvback_idx_buffers to local_idx
+    for rk in 1:rank_sz
+        recv_idx_buffers_rk     = recv_idx_buffers[rk]
+        recvback_idx_buffers_rk = recvback_idx_buffers[rk]
+        for (i,idx) in enumerate(recv_idx_buffers_rk)
+            recv_idx_buffers_rk[i] = get_vals(a_g2l_idx, idx; first = true)
+        end
+        if rk-1 == rank
+            for (i,idx) in enumerate(recvback_idx_buffers_rk)
+                recvback_idx_buffers_rk[i] = send_i[rk][i]
+            end
+        else
+            for (i,idx) in enumerate(recvback_idx_buffers_rk)
+                recvback_idx_buffers_rk[i] = get_vals(a_g2l_idx, idx)
+            end
+        end
+    end
 
-    
     send_data_sizes = [send_idx_sizes[i+1] * m for i in 0:rank_sz-1]
     recv_data_sizes = [recv_idx_sizes[i+1] * m for i in 0:rank_sz-1]
 
     send_data_buffers = [zeros(Float64, send_idx_sizes[i+1] * m) for i in 0:rank_sz-1]
     recv_data_buffers = [zeros(Float64, recv_idx_sizes[i+1] * m) for i in 0:rank_sz-1]
 
+    # Preallocate requests for assemble function
+    n_req = sum(send_data_sizes .> 0) + sum(recv_data_sizes .> 0)
+    n_req_back = sum(recv_data_sizes .> 0) + sum(send_data_sizes .> 0)
 
-
-    cache = AssemblerCache(global_max_index, index_a, owner_a, recv_idx_buffers,
-            recvback_idx_buffers, sum_array_1D, sum_array_2D,
-             send_i,send_data_buffers,recv_data_buffers, send_data_sizes, recv_data_sizes)
-    return cache
+    return AssemblerCache( recv_idx_buffers, recvback_idx_buffers,
+            send_i,send_data_buffers,recv_data_buffers, send_data_sizes, recv_data_sizes,
+            MPI.MultiRequest(n_req),
+            MPI.MultiRequest(n_req_back))
 end
 
 
@@ -335,56 +401,22 @@ function assemble_mpi!(a, cache::AssemblerCache)
     n = size(a, 1)
     m = is1D ? 1 : size(a, 2)
 
-    if is1D
-        fill!(cache.sum_array_1D, zero(T))
-    else
-        fill!(cache.sum_array_2D, zero(T))
-
-    end
-
-
-
-
-    @inbounds for (i, idx) in enumerate(cache.index_a)
-        owner = cache.owner_a[i]
-        if owner == rank
-            if is1D
-                cache.sum_array_1D[idx] += a[i]
-            else
-                for j = 1:m
-                    cache.sum_array_2D[idx, j] += a[i, j]
-                end
-            end
-        end
-    end
-
-
     for i in 0:rank_sz-1
         fill!(cache.send_data_buffers[i+1], zero(T))
     end
 
     @inbounds for owner = 0:rank_sz-1
-            buf_data = cache.send_data_buffers[owner+1]
-            send_i_local = cache.send_i[owner+1]
-            if is1D
-                for (i,idx) in enumerate(send_i_local)
-                    buf_data[i] = a[idx]
-                end
-            else
+        buf_data = cache.send_data_buffers[owner+1]
+        send_i_local = cache.send_i[owner+1]
 
-                for (i,idx) in enumerate(send_i_local)
-                    for j = 1:m
-                    buf_data[(i-1)*m + j] = a[idx,j]
-                end
+        for (i,idx) in enumerate(send_i_local)
+            for j = 1:m
+                buf_data[(i-1)*m + j] = a[idx,j]
             end
         end
     end
-    # send_data_sizes = [length(cache.send_data_buffers[i+1]) for i in 0:rank_sz-1]
-    # recv_data_sizes = MPI.Alltoall(MPI.UBuffer(send_data_sizes, 1), comm)
-    MPI.Barrier(comm)
+    # MPI.Barrier(comm)
 
-    # Prepare buffers for sending and receiving data
-    # recv_data_buffers = [Vector{T}(undef, recv_data_sizes[i+1]) for i in 0:rank_sz-1]
 
     for i in 0:rank_sz-1
         fill!(cache.recv_data_buffers[i+1], zero(T))
@@ -392,37 +424,27 @@ function assemble_mpi!(a, cache::AssemblerCache)
 
 
     # Communicate data
-    requests = MPI.Request[]
-    for i in 0:rank_sz-1
+    req_idx = 1
+    @inbounds for i in 0:rank_sz-1
         if cache.send_data_sizes[i+1] > 0
-            push!(requests, MPI.Isend(cache.send_data_buffers[i+1], i, 0, comm))
+            MPI.Isend(cache.send_data_buffers[i+1], comm, cache.requests[req_idx]; dest=i, tag=0)
+            req_idx += 1
         end
         if cache.recv_data_sizes[i+1] > 0
-            push!(requests, MPI.Irecv!(cache.recv_data_buffers[i+1], i, 0, comm))
+            MPI.Irecv!(cache.recv_data_buffers[i+1], comm, cache.requests[req_idx]; source=i, tag=0)
+            req_idx += 1
         end
     end
 
     # Wait for all communication to complete
-    MPI.Waitall!(requests)
+    MPI.Waitall(cache.requests)
 
-    # Combine received data into a single vector
-    # combined_recv_data = vcat(cache.recv_data_buffers...)
-    # combined_recv_data = T[]
-    # for i in 0:rank_sz-1
-    #     if recv_data_sizes[i+1] > 0
-    #         append!(combined_recv_data, cache.recv_data_buffers[i+1])
-    #     end
-    # end
     @inbounds for rk in 0:rank_sz-1
         if cache.recv_data_sizes[rk+1] > 0
             buffer = cache.recv_data_buffers[rk+1]
-            for (i, idx) in enumerate(cache.recv_idx_buffers[rk+1])
-                if is1D
-                    cache.sum_array_1D[idx] += buffer[i]
-                else
-                    for j = 1:m
-                        cache.sum_array_2D[idx, j] += buffer[(i-1)*m+j]
-                    end
+            for (i, local_idx) in enumerate(cache.recv_idx_buffers[rk+1])
+                for j = 1:m
+                    a[local_idx, j] += buffer[(i-1)*m+j]
                 end
             end
         end
@@ -430,23 +452,19 @@ function assemble_mpi!(a, cache::AssemblerCache)
 
     # send data back to original ranks
     sendback_data_buffers = cache.recv_data_buffers
-    @inbounds for i in 0:rank_sz-1
-        if cache.recv_data_sizes[i+1] > 0
-            buf_data = sendback_data_buffers[i+1]
-            for (j, idx) in enumerate(cache.recv_idx_buffers[i+1])
-                if is1D
-                    buf_data[j] = cache.sum_array_1D[idx]
-                else
-                    for k = 1:m
-                        buf_data[(j-1)*m+k] = cache.sum_array_2D[idx, k]
-                    end
+    @inbounds for rk in 0:rank_sz-1
+        if cache.recv_data_sizes[rk+1] > 0
+            buf_data = sendback_data_buffers[rk+1]
+            for (i, local_idx) in enumerate(cache.recv_idx_buffers[rk+1])
+                for j = 1:m
+                    buf_data[(i-1)*m+j] = a[local_idx, j]
                 end
             end
         end
     end
     sendback_data_sizes = cache.recv_data_sizes
     recvback_data_sizes = cache.send_data_sizes
-    MPI.Barrier(comm)
+    # MPI.Barrier(comm)
 
 
 
@@ -455,53 +473,30 @@ function assemble_mpi!(a, cache::AssemblerCache)
 
 
     # Communicate back data
-    requests_back = MPI.Request[]
+    req_idx = 1
     @inbounds for i in 0:rank_sz-1
         if sendback_data_sizes[i+1] > 0
-            push!(requests_back, MPI.Isend(sendback_data_buffers[i+1], i, 2, comm))
+            MPI.Isend(sendback_data_buffers[i+1], comm, cache.requests_back[req_idx]; dest=i, tag=2)
+            req_idx += 1
         end
         if recvback_data_sizes[i+1] > 0
-            push!(requests_back, MPI.Irecv!(recvback_data_buffers[i+1], i, 2, comm))
+            MPI.Irecv!(recvback_data_buffers[i+1], comm, cache.requests_back[req_idx]; source=i, tag=2)
+            req_idx += 1
         end
     end
 
 
     # Wait for all communication to complete
-    MPI.Waitall!(requests_back)
+    MPI.Waitall(cache.requests_back)
 
 
-    # Combine received data into a single vector
-    # combined_recv_back_data = vcat(recvback_data_buffers...)
-#     @time begin 
-#     combined_recv_back_data = T[]
-#     for i in 0:rank_sz-1
-#         if recvback_data_sizes[i+1] > 0
-#             append!(combined_recv_back_data, recvback_data_buffers[i+1])
-#         end
-#     end
-# end
     @inbounds for rk = 0:rank_sz-1
         if recvback_data_sizes[rk+1] > 0
             buffer = recvback_data_buffers[rk+1]
-            for (i, idx) in enumerate(cache.recvback_idx_buffers[rk+1])
-                if is1D
-                    cache.sum_array_1D[idx] = buffer[i]
-                else
-                    for j = 1:m
-                        cache.sum_array_2D[idx, j] = buffer[(i-1)*m+j]
-                    end
+            for (i, local_idx) in enumerate(cache.recvback_idx_buffers[rk+1])
+                for j = 1:m
+                    a[local_idx, j] = buffer[(i-1)*m+j]
                 end
-            end
-        end
-    end
-
-
-    @inbounds for (i, idx) in enumerate(cache.index_a)
-        if is1D
-            a[i] = cache.sum_array_1D[idx]
-        else
-            for j = 1:m
-                a[i, j] = cache.sum_array_2D[idx, j]
             end
         end
     end

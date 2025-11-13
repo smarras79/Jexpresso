@@ -154,10 +154,10 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Some domain parameters
     #------------------------------------------------------------------------------------
-    xmax = maximum(sem.mesh.x); xmin = minimum(sem.mesh.x)
-    ymax = maximum(sem.mesh.y); ymin = minimum(sem.mesh.y)
-    zmax = maximum(sem.mesh.z); zmin = minimum(sem.mesh.z)
-
+    xmax = sem.mesh.xmax; xmin = sem.mesh.xmin
+    ymax = sem.mesh.ymax; ymin = sem.mesh.ymin
+    zmax = sem.mesh.zmax; zmin = sem.mesh.zmin
+        
     #------------------------------------------------------------------------------------
     # Laguerre arrays
     #------------------------------------------------------------------------------------
@@ -237,7 +237,10 @@ function params_setup(sem,
     # Allocate large scale tendencies arrays
     #------------------------------------------------------------------------------------
     LST = allocate_LargeScaleTendencies(sem.mesh.npoin, sem.mesh, inputs, T, backend; lLST=inputs[:LST])
-    
+    #------------------------------------------------------------------------------------
+    # Allocate wall model arrays
+    #------------------------------------------------------------------------------------
+    WM = allocate_Wall_model(sem.mesh.nfaces_bdy, sem.mesh.ngl, T, backend; lwall_model=inputs[:lwall_model])
     #------------------------------------------------------------------------------------
     # Allocate Thermodynamic params for bomex case
     #------------------------------------------------------------------------------------
@@ -276,6 +279,9 @@ function params_setup(sem,
         visc_coeff = KernelAbstractions.allocate(backend, TFloat, 1)
         visc_coeff = [0.0]
     end
+
+    # setup timer
+    # timers = create_timer_dict(["DSS_global_RHS!", "inviscid_rhs_el!", "viscous_rhs_el!", "_build_rhs!"], comm; skip_first_n=10)
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
@@ -312,12 +318,19 @@ function params_setup(sem,
                   ω = sem.ω[1], ω_lag = sem.ω[2],
                   metrics = sem.metrics[1], metrics_lag = sem.metrics[2], 
                   inputs, VT = inputs[:visc_model], visc_coeff,
+                  WM,
                   sem.matrix.M, sem.matrix.Minv, pM=pM, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
         
     else
         pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
+        # row_partition = map(sem.mesh.parts) do part
+        #     row_partition = LocalIndices(sem.mesh.gnpoin,part,sem.mesh.ip2gip,sem.mesh.gip2owner)
+        #     # gM = M
+        #     row_partition
+        # end
+        # pM = pvector(values->@view(sem.matrix.M[:]), row_partition)
         params = (backend,
                   T, inputs,
                   uaux, vaux,
@@ -345,9 +358,11 @@ function params_setup(sem,
                   thermo_params, VT = inputs[:visc_model], visc_coeff,
                   sem.matrix.M, sem.matrix.Minv, pM=pM,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
+                  WM,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
+                  #   timers,
                   sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
     end
 

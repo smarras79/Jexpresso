@@ -9,11 +9,12 @@ function user_inputs()
         :lsource              => true, 
         :llinsolve            => true,
         :lelementLearning     => true,
+        :Nsamp                => 10,
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
         :interpolation_nodes =>"lgl",
-        :nop                 => 3,      # Polynomial order
+        :nop                 => 12,      # Polynomial order
         #:nop_laguerre        => 14,
         #:xfac_laguerre       => 0.25,
         #:yfac_laguerre       => 0.0,
@@ -27,9 +28,9 @@ function user_inputs()
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_2x1.msh",
-        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_2x2.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_1x1.msh",
+        ##:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_2x2.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT_3x3.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/square_dirichletT.msh",
         #---------------------------------------------------------------------------
         # grid modification parameters
@@ -42,7 +43,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output_standard/",
+        :output_dir          => "./output/",
         :loverwrite_output   => true,
         #---------------------------------------------------------------------------
     ) #Dict

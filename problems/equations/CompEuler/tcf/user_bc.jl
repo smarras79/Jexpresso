@@ -1,5 +1,5 @@
 function user_bc_dirichlet!(q,
-                            x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
+                            coords,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
                             nx, ny, nz,
@@ -24,7 +24,7 @@ function user_bc_dirichlet!(q,
 end
 
 function user_bc_dirichlet!(q,
-                            x::AbstractFloat, y::AbstractFloat, z::AbstractFloat,
+                            coords,
                             t::AbstractFloat, tag,
                             qbdy::AbstractArray,
                             nx, ny, nz,
@@ -39,7 +39,7 @@ function user_bc_dirichlet!(q,
     qbdy[4] = (q[4]+qe[4] - qnl*nz) - qe[4]
 end
 
-function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, y::AbstractFloat, z::AbstractFloat, t::AbstractFloat, tag::String, inputs::Dict)
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs::Dict)
     flux = zeros(size(q,2),1)
     return flux
 end

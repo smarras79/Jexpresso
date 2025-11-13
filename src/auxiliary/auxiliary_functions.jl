@@ -1,3 +1,79 @@
+function check_memory(label)
+    rank = MPI.Comm_rank(MPI.COMM_WORLD)
+    free_gb = Sys.free_memory() / 2^30
+    
+    # Get total system memory
+    total_gb = Sys.total_memory() / 2^30
+    used_gb = total_gb - free_gb
+    used_pct = (used_gb / total_gb) * 100
+    
+    # Get this process's memory usage
+    rss_gb = Sys.maxrss() / 2^20 / 1024  # Convert KB to GB
+    
+    max_used_gb           = MPI.Allreduce(used_gb, MPI.MAX, comm)
+    local_used_gb_has_max = (AlmostEqual(max_used_gb, used_gb)) ? rank : 0
+    max_used_gb_rank      = MPI.Allreduce(local_used_gb_has_max, MPI.MAX, comm)
+    hostname = ""
+    
+    # Check cgroup limit
+    try
+        limit = parse(Int, read("/sys/fs/cgroup/memory/memory.limit_in_bytes", String))
+        usage = parse(Int, read("/sys/fs/cgroup/memory/memory.usage_in_bytes", String))
+        limit_gb = limit / 2^30
+        usage_gb = usage / 2^30
+        cgroup_pct = (usage_gb / limit_gb) * 100
+        
+        # println("")
+        # println(" Rank $rank at $label:")
+        # println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
+        # println("   CGroup: $(round(usage_gb, digits=2))/$(round(limit_gb, digits=2))GB ($(round(cgroup_pct, digits=1))%)")
+        # println("   Process RSS: $(round(rss_gb, digits=2))GB")
+        # println("")
+
+        if rank == max_used_gb_rank
+            hostname = gethostname()
+            println("")
+            println(" Rank $rank at $label:")
+            println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
+            println("   CGroup: $(round(usage_gb, digits=2))/$(round(limit_gb, digits=2))GB ($(round(cgroup_pct, digits=1))%)")
+            println("   Process RSS: $(round(rss_gb, digits=2))GB")
+            println("   Max used mem: $(round(max_used_gb, digits=2))/$(max_used_gb_rank) in host $(hostname)")
+            println("")
+        end
+    catch
+        # println("")
+        # println(" Rank $rank at $label:")
+        # println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
+        # println("   Process RSS: $(round(rss_gb, digits=2))GB")
+        # println("")
+
+        if rank == max_used_gb_rank
+            hostname = gethostname()
+            println("")
+            println(" Rank $rank at $label:")
+            println("   System: $(round(used_gb, digits=2))/$(round(total_gb, digits=2))GB used ($(round(used_pct, digits=1))%), $(round(free_gb, digits=2))GB free")
+            println("   Process RSS: $(round(rss_gb, digits=2))GB")
+            println("   Max used mem: $(round(max_used_gb, digits=2))/$(max_used_gb_rank) in host $(hostname)")
+            println("")
+        end
+    end
+    flush(stdout)
+end
+
+function get_memory_usage(position_string::String)
+
+    GC.gc()  # Force garbage collection first for more accurate reading
+    stats = Base.gc_num()
+    
+    bytes = stats.allocd
+    mib =  bytes / (1024^2)
+    
+    println(RED_FG(string(" ----- Total memory allocated so far ($position_string): $mib MB")))
+    
+    #return mib  # Total allocated memory in bytes
+end
+
+
 function remove_arrays!(matrix::Matrix{Int64}, rows_to_remove::Matrix{Int64})
     """
         Removes specific rows from a matrix (Matrix{Int64}).

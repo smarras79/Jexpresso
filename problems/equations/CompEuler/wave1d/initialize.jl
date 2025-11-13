@@ -12,7 +12,11 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     # 
     #---------------------------------------------------------------------------------
     qvars = ["u", "v"]
-    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
+    q = define_q(SD,
+                 mesh.nelem, mesh.npoin, mesh.ngl,
+                 qvars,
+                 TFloat, inputs[:backend];
+                 neqs=length(qvars))
     #---------------------------------------------------------------------------------
     if (inputs[:backend] == CPU()) 
         σ = Float64(0.15)
@@ -21,7 +25,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
             for i=1:mesh.ngl
             
                 ip = mesh.connijk[iel_g,i,1]
-                x = mesh.x[ip]
+                x = mesh.coords[ip,1]
 
                 ex = -(x - 1)^2/σ2
                 q.qn[ip,1] = 2^ex
@@ -38,7 +42,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
         σ = TFloat(0.15)
         σ2= σ*σ
         k = initialize_gpu!(inputs[:backend])
-        k(q.qn, q.qe, mesh.x, σ2; ndrange = (mesh.npoin))
+        k(q.qn, q.qe, mesh.coords[:,1], σ2; ndrange = (mesh.npoin))
     end
     
     @info " Initialize fields for 1D adv diff ........................ DONE "

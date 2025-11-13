@@ -35,22 +35,29 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
-    if(!haskey(inputs, :l_incompressible))
-       inputs[:l_incompressible] = false
+    if(!haskey(inputs, :lwall_model))
+       inputs[:lwall_model] = false
     end
 
-    if(!haskey(inputs, :l_vort_stream))
-       inputs[:l_vort_stream] = false
+    if(!haskey(inputs, :ifirst_wall_node_index))
+         inputs[:ifirst_wall_node_index] = 2 #default is the first LGL point above the surface node along the vertical direction of the surface element
     end
-
-    if(!haskey(inputs, :bulk_fluxes))
-       inputs[:bulk_fluxes] = false
-    end
-
+    
+    
     if(!haskey(inputs, :bdy_fluxes))
        inputs[:bdy_fluxes] = false
     end
 
+    if(!haskey(inputs, :bulk_fluxes))
+        inputs[:bulk_fluxes] = false
+    else
+        if inputs[:bulk_fluxes]  == true
+            if inputs[:bdy_fluxes]  == false
+                inputs[:bdy_fluxes]  = true
+            end
+        end
+    end
+    
     if(!haskey(inputs, :LST))
        inputs[:LST] = false
     end
@@ -112,7 +119,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :lsparse))
-      inputs[:lsparse] = false
+      inputs[:lsparse] = true
     end
 
     if(!haskey(inputs, :plot_vlines))
@@ -191,6 +198,51 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lwarp] = false
     end
 
+    if inputs[:lwarp] == true
+        if(!haskey(inputs,:z_transition_start))
+            inputs[:z_transition_start] = -1000.0
+        end
+        if(!haskey(inputs,:z_transition_end))
+             inputs[:z_transition_end] = 2200.0
+        end
+    end
+    
+    if(!haskey(inputs,:lstretch))
+        inputs[:lstretch] = false
+    end
+    
+    if inputs[:lstretch] == true
+        if(!haskey(inputs,:stretch_type))
+            inputs[:stretch_type] = "powerlaw"
+        else
+            if inputs[:stretch_type] == "fixed_first"
+                if(!haskey(inputs, :first_zelement_size))
+                    inputs[:first_zelement_size] = 1.0;
+                end
+            elseif (inputs[:stretch_type] == "fixed_first_twoblocks_weak" ||
+                inputs[:stretch_type] == "fixed_first_twoblocks_strong" ||
+                inputs[:stretch_type] == "fixed_first_twoblocks_strong_weak")
+                
+                if(!haskey(inputs, :first_zelement_size))
+                    inputs[:first_zelement_size] = 1.0;
+                end
+                if(!haskey(inputs, :max_zelement_size_bottom))
+                    inputs[:max_zelement_size_bottom] = 1.0;
+                end
+                if(!haskey(inputs, :zlevel_transition))
+                    inputs[:zlevel_transition] = 1000000000.0
+                end
+                if(!haskey(inputs, :uniform_zelement_size))
+                    inputs[:uniform_zelement_size] = 1.0
+                end
+                if(!haskey(inputs, :max_zelement_size_top))
+                    inputs[:max_zelement_size_top] = 1.0;
+                end
+            end
+            
+        end
+    end
+    
     if(!haskey(inputs,:mount_type))
         inputs[:lagnesi] = "agnesi"
     end
@@ -244,6 +296,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
             inputs[:outformat] = VTK()
         elseif lowercase(inputs[:outformat]) == "hdf5" || lowercase(inputs[:outformat]) == "h5"
             inputs[:outformat] = HDF5()
+        elseif lowercase(inputs[:outformat]) == "netcdf" || lowercase(inputs[:outformat]) == "netcdf"
+            inputs[:outformat] = NETCDF()
         end
     end
 
@@ -264,11 +318,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
 
     #Restart:
-    if (haskey(inputs, :lrestart))
-        if(inputs[:lrestart] == true && !haskey(inputs, :restart_input_file_path))
-            mod_inputs_check(inputs, :restart_input_file_path, "e")
-        end
-    else
+    if (!haskey(inputs, :lrestart))
         inputs[:lrestart] = false
     end
     #
@@ -283,6 +333,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     
     if(!haskey(inputs, :radiation_time_step))
         inputs[:radiation_time_step] = inputs[:Δt]*100
+    end
+
+    if(!haskey(inputs, :restart_time))
+        inputs[:restart_time] = 0.0
     end
 
     #mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
@@ -386,6 +440,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     if (!haskey(inputs, :lelementLearning))
         inputs[:lelementLearning] = false
+    else
+        if (!haskey(inputs, :Nsamp))
+            inputs[:Nsamp] = 1
+        end
     end
     
     #
@@ -418,6 +476,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lwrite_initial] = false
     end
 
+    if (!haskey(inputs, :gmsh_filename_c))
+        inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+    end
+
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         
@@ -434,6 +496,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     else
         mod_inputs_check(inputs, :gmsh_filename, "e")
+        mod_inputs_check(inputs, :gmsh_filename_c, "e")
         
         mod_inputs_check(inputs, :nsd,  Int8(3), "-")
         mod_inputs_check(inputs, :nelx,  Int8(2), "-")
@@ -453,6 +516,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         #@warn s
         
     end #lread_gmsh
+
+    if (!haskey(inputs, :lwarmup))
+        inputs[:lwarmup] = false
+    end
     #
     # Some physical constants and parameters:
     #
@@ -609,6 +676,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
               """
         
         @error s
+    end
+
+    if(!haskey(inputs, :lsponge))
+        inputs[:lsponge] = false
+    end
+    if(!haskey(inputs, :zsponge))
+        inputs[:zsponge] = 14000.0
+    end
+    if  inputs[:lsponge] == true
+        if(!haskey(inputs, :zsponge))
+            inputs[:zsponge] = 14000.0
+        end
     end
 
     if(!haskey(inputs, :lmoist))

@@ -12,6 +12,7 @@ using Revise
 using BenchmarkTools
 using Dates
 using DelimitedFiles
+using CSV, DataFrames
 using DataStructures
 using LoopVectorization
 using ElasticArrays
@@ -31,6 +32,7 @@ using LinearSolve: solve
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
                  SplitODEProblem
+using HDF5
 import SciMLBase: get_du, get_tmp_cache, u_modified!,
                   AbstractODEIntegrator, init, step!, check_error,
                   get_proposed_dt, set_proposed_dt!,
@@ -38,6 +40,7 @@ import SciMLBase: get_du, get_tmp_cache, u_modified!,
 import ClimaParams as CP
 import Thermodynamics as TD
 import Thermodynamics.Parameters as TP
+
 
 import ClimaComms
 @static pkgversion(ClimaComms) >= v"0.6" && ClimaComms.@import_required_backends
@@ -59,7 +62,6 @@ using RRTMGP.ArtifactPaths
 using UnicodePlots
 using Printf
 using NCDatasets
-using MPI
 
 TInt   = Int64
 TFloat = Float64
@@ -77,7 +79,7 @@ include(joinpath( "kernel", "elementLearningStructs.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))
 
-include(joinpath( "kernel", "physics", "incompressible.jl"))
+include(joinpath( "kernel", "ArtificialViscosity","Wall_model.jl"))
 
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
@@ -94,6 +96,10 @@ include(joinpath( "kernel", "physics", "constitutiveLaw.jl"))
 include(joinpath( "kernel", "physics", "large_scale.jl"))
 
 include(joinpath( "kernel", "physics", "largescaleStructs.jl"))
+
+include(joinpath( "kernel", "physics", "turbul.jl"))
+
+include(joinpath( "kernel", "physics", "CM_MOST.jl"))
 
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
@@ -123,15 +129,21 @@ include(joinpath( "kernel", "operators", "operators.jl"))
 
 include(joinpath( "kernel", "operators", "rhs.jl"))
 
+include(joinpath( "kernel", "operators", "rhs_2point.jl"))
+
 include(joinpath( "kernel", "operators", "rhs_gpu.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_laguerre_gpu.jl"))
 
+include(joinpath( "kernel", "operators", "imex2d.jl"))
+
+include(joinpath( "kernel", "operators", "imex.jl"))
+
+include(joinpath( "kernel", "operators", "rhs_laguerre.jl"))
+
+include(joinpath( "kernel", "operators", "filter.jl"))
+
 include(joinpath( "kernel", "solvers", "TimeIntegrators.jl"))
-
-include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
-
-include(joinpath("kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
 
@@ -154,6 +166,7 @@ include(joinpath( "io", "soundings.jl"))
 include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 
 include(joinpath( "auxiliary", "checks.jl"))
+include(joinpath( "auxiliary", "timing.jl"))
 
 include("./run.jl")
 
