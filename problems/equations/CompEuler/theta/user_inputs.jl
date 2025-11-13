@@ -5,7 +5,7 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(),
-        :Δt                   => 0.25,
+        :Δt                   => 0.5,
         :tinit                => 0.0,
         :tend                 => 1000.0,
         :diagnostics_at_times => (0:100:1000),
@@ -25,10 +25,9 @@ function user_inputs()
         :lvisc                => true, #false by default NOTICE: works only for Inexact
         #:μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
         #:visc_model           => AV(),
-        #:visc_model           => WALE(),
-        :visc_model           => VREM(),
+        #:visc_model           => VREM(),
         :visc_model           => SMAG(),
-        :μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 1.0, 1.0, 5.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

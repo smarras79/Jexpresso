@@ -555,6 +555,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:visc_model] = AV() #Default is artificial viscosity with constant coefficient
     end
 
+    
+    if(!haskey(inputs, :lrichardson))
+        inputs[:lrichardson] = false #Default is artificial viscosity with constant coefficient
+    end
+
     #
     # saturation adjustment:
     #
