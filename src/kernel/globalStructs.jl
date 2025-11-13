@@ -453,4 +453,30 @@ function allocate_gpuMoist(SD, npoin, nelem, ngl, T, backend, lmoist; neqs=1)
     return gpuMoist
 end
 
+#-------------------------------------------------------------------------------------------
+# Time averaging
+#-------------------------------------------------------------------------------------------
+Base.@kwdef mutable struct St_TimeAverage{T <: AbstractFloat, dims1, backend}
+
+    q_tavg      = KernelAbstractions.zeros(backend, T, dims1)  # Time-averaged solution
+    q2_tavg     = KernelAbstractions.zeros(backend, T, dims1)  # Time-averaged squared solution (for variance)
+    sample_count = Ref{Int}(0)                                  # Number of samples accumulated
+    t_start     = Ref{T}(0.0)                                   # Start time of averaging window
+    t_end       = Ref{T}(0.0)                                   # End time of averaging window
+
+end
+
+function allocate_TimeAverage(SD, npoin, T, backend; neqs=1, ltavg=false)
+
+    if ltavg
+        dims1 = (Int64(npoin), Int64(neqs))
+    else
+        dims1 = (1, 1)
+    end
+
+    tavg = St_TimeAverage{T, dims1, backend}()
+
+    return tavg
+end
+
 

@@ -355,7 +355,26 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     else
         inputs[:ndiagnostics_outputs] = 0
     end
-    
+
+    #
+    # Time averaging:
+    #
+    if(!haskey(inputs, :ltavg))
+        inputs[:ltavg] = false  # Disable time averaging by default
+    end
+
+    if(!haskey(inputs, :tavg_start_time))
+        inputs[:tavg_start_time] = 0.0  # Start averaging from beginning by default
+    end
+
+    if(!haskey(inputs, :tavg_end_time))
+        inputs[:tavg_end_time] = inputs[:tend]  # Average until end by default
+    end
+
+    if(!haskey(inputs, :tavg_every_n_timesteps))
+        inputs[:tavg_every_n_timesteps] = 1  # Sample every timestep by default
+    end
+
     if(!haskey(inputs, :lexact_integration))
         inputs[:lexact_integration] = false #Default integration rule is INEXACT
     end

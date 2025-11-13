@@ -113,7 +113,17 @@ function params_setup(sem,
     b      = filter.b
     B      = filter.B
 
-    #------------------------------------------------------------------------------------  
+    #------------------------------------------------------------------------------------
+    # Time averaging arrays
+    #------------------------------------------------------------------------------------
+    tavg = allocate_TimeAverage(sem.mesh.SD, sem.mesh.npoin, T, backend; neqs=qp.neqs, ltavg=inputs[:ltavg])
+    q_tavg       = tavg.q_tavg
+    q2_tavg      = tavg.q2_tavg
+    sample_count = tavg.sample_count
+    t_start      = tavg.t_start
+    t_end        = tavg.t_end
+
+    #------------------------------------------------------------------------------------
     # B.C. arrays
     #------------------------------------------------------------------------------------
     gradu    = KernelAbstractions.zeros(backend, T, 2, 1, 1)
@@ -287,7 +297,8 @@ function params_setup(sem,
                   WM,
                   sem.matrix.M, sem.matrix.Minv, pM=pM, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
-                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
+                  qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t,
+                  q_tavg, q2_tavg, sample_count, t_start, t_end, laguerre=true)
         
     else
         pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -321,7 +332,8 @@ function params_setup(sem,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
                   WM,
                   phys_grid = sem.phys_grid,
-                  qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
+                  qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t,
+                  q_tavg, q2_tavg, sample_count, t_start, t_end, laguerre=false,
                   OUTPUT_DIR,
                   #   timers,
                   sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
