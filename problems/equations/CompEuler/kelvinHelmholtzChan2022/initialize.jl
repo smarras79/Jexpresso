@@ -40,9 +40,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             vmagsq = u*u + v*v
             ρe     = p/PhysConst.γm1 + 0.5*ρ*vmagsq # E = ρ*e
             e      = ρe/ρ
-            
-	    rho_theta = PhysConst.pref / PhysConst.Rair * exp(PhysConst.cv / PhysConst.cp * log(p / PhysConst.pref))
-	    rho_theta = (p/PhysConst.pref)^(PhysConst.cv/PhysConst.cp) * PhysConst.pref/PhysConst.Rair
+	    rho_theta = (p/PhysConst.C0)^(PhysConst.cv/PhysConst.cp)
 	    theta = rho_theta/ρ
 
             ρref = ρ

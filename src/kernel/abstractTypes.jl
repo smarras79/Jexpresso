@@ -78,7 +78,9 @@ struct ranocha <: AbstractVolumeFlux end
 struct artiano_ec <: AbstractVolumeFlux end
 struct artiano_etec <: AbstractVolumeFlux end
 struct artiano_tec <: AbstractVolumeFlux end
-
+struct kennedy_gruber <: AbstractVolumeFlux end
+struct central_euler <: AbstractVolumeFlux end
+struct central_theta <: AbstractVolumeFlux end
 
 # Boundary flags/conditions
 #

@@ -167,11 +167,11 @@ function time_loop!(inputs, params, u)
                          saveat = range(inputs[:tinit],
                                         inputs[:tend],
                                         length=inputs[:ndiagnostics_outputs]));
-    try
+#    try
       OrdinaryDiffEq.solve!(solution)
-    catch e
-      @info "Blow-up" solution.t e
-    end
+#    catch e
+ #     @info "Blow-up" solution.t e
+#    end
     Main.final_simulation_time[1] = solution.t
     @show solution.t
     end

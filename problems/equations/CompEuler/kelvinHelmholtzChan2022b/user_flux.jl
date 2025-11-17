@@ -166,20 +166,11 @@ function user_flux_gpu(q,qe,PhysConst,lpert)
 end
 
 
-<<<<<<< HEAD
-@inline function user_turbo_volume_flux(u_ll, u_rr)
-	#flux_artiano_etec(u_ll, u_rr)
-#	flux_artiano_ec(u_ll, u_rr)
-#	flux_artiano_tec(u_ll, u_rr)
-#       flux_turbo_ranocha(u_ll, u_rr)
-	flux_kg(u_ll, u_rr)
-#	flux_kennedy_gruber(u_ll, u_rr)
-#       flux_central(u_ll, u_rr)
-end
 
 @inline function user_volume_flux(u_ll, u_rr)
 	flux_ranocha(u_ll, u_rr)
-=======
+end
+
 @inline function user_turbo_volume_flux(u_ll, u_rr, volume_flux)
 
     if volume_flux == "etec"
@@ -219,76 +210,7 @@ end
         flux_turbo_ranocha(u_ll, u_rr)
     end
 
->>>>>>> bd48c1fbb64854411f292b3294ac887d132e8dc6
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function flux(q) 
     PhysConst = PhysicalConst{Float64}()
@@ -315,7 +237,6 @@ function flux(q)
     return SVector(f1, f2, f3, f4), SVector(g1, g2, g3, g4)
 
 end
-
 
 
 function flux_totalenergy(q)
