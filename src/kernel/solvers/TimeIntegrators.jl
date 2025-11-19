@@ -95,18 +95,6 @@ function time_loop!(inputs, params, u)
     end
 
     function do_tavg!(integrator)
-        # DEBUG: Print state at entry
-        println_rank(" # do_tavg! called at t=", integrator.t, " sample_count=", integrator.p.sample_count[], " t_start=", integrator.p.t_start[]; msg_rank = rank)
-
-        # Check array values at entry (sample a few points)
-        if integrator.p.sample_count[] == 0
-            arr_sum = sum(integrator.p.q_tavg)
-            println_rank(" #   FIRST SAMPLE: q_tavg array sum at entry = ", arr_sum; msg_rank = rank)
-            if abs(arr_sum) > 1e-10
-                println_rank(" #   WARNING: Arrays not zero at start! Forcing reset."; msg_rank = rank)
-            end
-        end
-
         # Detect if this is a new run: either first time (sample_count==0) or time went backwards (new simulation)
         should_reset = (integrator.p.sample_count[] == 0) || (integrator.t < integrator.p.t_start[])
 
@@ -114,16 +102,13 @@ function time_loop!(inputs, params, u)
             # Reset everything for new averaging window
             integrator.p.sample_count[] = 0
             integrator.p.t_start[] = integrator.t
-            tavg_timestep_counter[] = 0  # Also reset the timestep counter
+            tavg_timestep_counter[] = 0
 
-            # IMPORTANT: Reset accumulation arrays to zero at start of averaging
+            # Reset accumulation arrays to zero
             fill!(integrator.p.q_tavg, 0.0)
             fill!(integrator.p.q2_tavg, 0.0)
 
-            # Verify reset worked
-            arr_sum_after = sum(integrator.p.q_tavg)
-            println_rank(" # Starting NEW time averaging window at t=", integrator.t; msg_rank = rank)
-            println_rank(" #   Reset complete. Array sum after reset = ", arr_sum_after; msg_rank = rank)
+            println_rank(" # Starting time averaging at t=", integrator.t; msg_rank = rank)
         end
 
         # Accumulate time-averaged quantities
@@ -145,11 +130,9 @@ function time_loop!(inputs, params, u)
         integrator.p.sample_count[] += 1
         integrator.p.t_end[] = integrator.t
 
-        # Print first few samples for debugging, then every 100
-        if integrator.p.sample_count[] <= 3 || mod(integrator.p.sample_count[], 100) == 0
-            # Print current accumulated sum for first sample
-            arr_sum = sum(integrator.p.q_tavg)
-            println_rank(" # Time-averaging sample ", integrator.p.sample_count[], " at t=", integrator.t, " - accumulated sum=", arr_sum; msg_rank = rank)
+        # Print progress every 100 samples
+        if mod(integrator.p.sample_count[], 100) == 0
+            println_rank(" # Time-averaging: ", integrator.p.sample_count[], " samples at t=", integrator.t; msg_rank = rank)
         end
     end
     # #------------------------------------------------------------------------
@@ -273,43 +256,13 @@ function time_loop!(inputs, params, u)
 
         # Compute the mean by dividing accumulated values by sample count
         n_samples = params.sample_count[]
-        println_rank(" #   Dividing by n_samples = ", n_samples; msg_rank = rank)
-
-        q_tavg_mean_2d  = params.q_tavg  ./ n_samples
-        q2_tavg_mean_2d = params.q2_tavg ./ n_samples
-
-        # Debug: print sample values to verify averaging
-        if rank == 0 && params.mesh.npoin > 0
-            println_rank(" #   Sample check - accumulated[1,1] = ", params.q_tavg[1,1]; msg_rank = rank)
-            println_rank(" #   Sample check - mean[1,1] = ", q_tavg_mean_2d[1,1]; msg_rank = rank)
-            println_rank(" #   Sample check - ratio = ", params.q_tavg[1,1] / q_tavg_mean_2d[1,1]; msg_rank = rank)
-        end
-
-        # Compute variance: Var(X) = E[X²] - E[X]²
-        q_tavg_var_2d = q2_tavg_mean_2d .- (q_tavg_mean_2d .^ 2)
-
-        # DEBUG: Check variance computation
-        if rank == 0 && params.mesh.npoin > 0
-            println_rank(" #   Variance check - E[X^2] = q2_mean[1,1] = ", q2_tavg_mean_2d[1,1]; msg_rank = rank)
-            println_rank(" #   Variance check - E[X]^2 = mean[1,1]^2 = ", q_tavg_mean_2d[1,1]^2; msg_rank = rank)
-            println_rank(" #   Variance check - Var = E[X^2] - E[X]^2 = ", q_tavg_var_2d[1,1]; msg_rank = rank)
-        end
+        q_tavg_mean_2d = params.q_tavg ./ n_samples
 
         # Convert from 2D (npoin, neqs) to flat (npoin*neqs) format for write_output
         npoin = params.mesh.npoin
         neqs = params.qp.neqs
         q_tavg_mean_flat = zeros(npoin * neqs)
-        q_tavg_var_flat  = zeros(npoin * neqs)
-
         uaux2u!(q_tavg_mean_flat, q_tavg_mean_2d, neqs, npoin)
-        uaux2u!(q_tavg_var_flat, q_tavg_var_2d, neqs, npoin)
-
-        # DEBUG: Verify flat arrays have correct values after conversion
-        if rank == 0
-            println_rank(" #   DEBUG: q_tavg_mean_flat[1] = ", q_tavg_mean_flat[1]; msg_rank = rank)
-            println_rank(" #   DEBUG: q_tavg_var_flat[1] = ", q_tavg_var_flat[1]; msg_rank = rank)
-            println_rank(" #   Mean and variance flat arrays should match 2D values above"; msg_rank = rank)
-        end
 
         # Create output directory for time-averaged data
         tavg_output_dir = joinpath(inputs[:output_dir], "time_averaged")
@@ -318,7 +271,7 @@ function time_loop!(inputs, params, u)
         end
         MPI.Barrier(comm)
 
-        # Write mean (pass flat array as sol, 2D array as uaux)
+        # Write mean
         write_output(params.SD, q_tavg_mean_flat, q_tavg_mean_2d, params.t_end[], 1,
                      params.mesh, params.mp,
                      params.connijk_original, params.poin_in_bdy_face_original,
@@ -328,17 +281,6 @@ function time_loop!(inputs, params, u)
                      params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe, case="mean")
-
-        # Write variance (pass flat array as sol, 2D array as uaux)
-        write_output(params.SD, q_tavg_var_flat, q_tavg_var_2d, params.t_end[], 2,
-                     params.mesh, params.mp,
-                     params.connijk_original, params.poin_in_bdy_face_original,
-                     params.x_original, params.y_original, params.z_original,
-                     tavg_output_dir, inputs,
-                     params.qp.qvars,
-                     params.qp.qoutvars,
-                     inputs[:outformat];
-                     nvar=params.qp.neqs, qexact=params.qp.qe, case="variance")
 
         println_rank(" # Writing time-averaged output .................... DONE"; msg_rank = rank)
     end
