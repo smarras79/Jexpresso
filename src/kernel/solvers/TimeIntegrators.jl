@@ -110,18 +110,19 @@ function time_loop!(inputs, params, u)
             println_rank(" # Starting time averaging at t=", integrator.t; msg_rank = rank)
         end
 
-        # Accumulate time-averaged quantities (non-allocating)
-        # Read directly from ODE state vector u with proper indexing
+        # Copy u to pre-allocated CPU buffer (single bulk copy, non-allocating)
         npoin = integrator.p.mesh.npoin
         neqs = integrator.p.qp.neqs
+        u_cpu = integrator.p.u_cpu
+        copyto!(u_cpu, integrator.u)
+
+        # Accumulate time-averaged quantities (non-allocating)
         q_tavg = integrator.p.q_tavg
-        u = integrator.u
 
         @inbounds for ieq = 1:neqs
-            # u is stored as: [all points for eq1, all points for eq2, ...]
             idx_start = (ieq-1)*npoin
             @simd for ip = 1:npoin
-                q_tavg[ip, ieq] += u[idx_start + ip]
+                q_tavg[ip, ieq] += u_cpu[idx_start + ip]
             end
         end
 
