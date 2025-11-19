@@ -297,6 +297,15 @@ function time_loop!(inputs, params, u)
         uaux2u!(q_tavg_mean_flat, q_tavg_mean_2d, neqs, npoin)
         uaux2u!(q_tavg_var_flat, q_tavg_var_2d, neqs, npoin)
 
+        # DEBUG: Verify flat array has correct values after conversion
+        if rank == 0
+            # The flat array stores [all eq1 points, all eq2 points, ...]
+            # So first value should be at index 1
+            println_rank(" #   DEBUG: q_tavg_mean_flat[1] = ", q_tavg_mean_flat[1]; msg_rank = rank)
+            println_rank(" #   DEBUG: q_tavg_mean_2d[1,1] = ", q_tavg_mean_2d[1,1]; msg_rank = rank)
+            println_rank(" #   These should be equal (both should be mean, not accumulated)"; msg_rank = rank)
+        end
+
         # Create output directory for time-averaged data
         tavg_output_dir = joinpath(inputs[:output_dir], "time_averaged")
         if rank == 0 && !isdir(tavg_output_dir)
