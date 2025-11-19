@@ -288,6 +288,13 @@ function time_loop!(inputs, params, u)
         # Compute variance: Var(X) = E[X²] - E[X]²
         q_tavg_var_2d = q2_tavg_mean_2d .- (q_tavg_mean_2d .^ 2)
 
+        # DEBUG: Check variance computation
+        if rank == 0 && params.mesh.npoin > 0
+            println_rank(" #   Variance check - E[X^2] = q2_mean[1,1] = ", q2_tavg_mean_2d[1,1]; msg_rank = rank)
+            println_rank(" #   Variance check - E[X]^2 = mean[1,1]^2 = ", q_tavg_mean_2d[1,1]^2; msg_rank = rank)
+            println_rank(" #   Variance check - Var = E[X^2] - E[X]^2 = ", q_tavg_var_2d[1,1]; msg_rank = rank)
+        end
+
         # Convert from 2D (npoin, neqs) to flat (npoin*neqs) format for write_output
         npoin = params.mesh.npoin
         neqs = params.qp.neqs
@@ -297,13 +304,11 @@ function time_loop!(inputs, params, u)
         uaux2u!(q_tavg_mean_flat, q_tavg_mean_2d, neqs, npoin)
         uaux2u!(q_tavg_var_flat, q_tavg_var_2d, neqs, npoin)
 
-        # DEBUG: Verify flat array has correct values after conversion
+        # DEBUG: Verify flat arrays have correct values after conversion
         if rank == 0
-            # The flat array stores [all eq1 points, all eq2 points, ...]
-            # So first value should be at index 1
             println_rank(" #   DEBUG: q_tavg_mean_flat[1] = ", q_tavg_mean_flat[1]; msg_rank = rank)
-            println_rank(" #   DEBUG: q_tavg_mean_2d[1,1] = ", q_tavg_mean_2d[1,1]; msg_rank = rank)
-            println_rank(" #   These should be equal (both should be mean, not accumulated)"; msg_rank = rank)
+            println_rank(" #   DEBUG: q_tavg_var_flat[1] = ", q_tavg_var_flat[1]; msg_rank = rank)
+            println_rank(" #   Mean and variance flat arrays should match 2D values above"; msg_rank = rank)
         end
 
         # Create output directory for time-averaged data
