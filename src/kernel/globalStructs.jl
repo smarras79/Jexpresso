@@ -458,8 +458,7 @@ end
 #-------------------------------------------------------------------------------------------
 Base.@kwdef mutable struct St_TimeAverage{T <: AbstractFloat}
 
-    q_tavg::Matrix{T}            # Time-averaged solution (CPU array)
-    u_cpu::Vector{T}             # Pre-allocated CPU buffer for copying u
+    q_tavg::Matrix{T}                  # Time-averaged solution (CPU array)
     sample_count::Base.RefValue{Int}   # Number of samples accumulated
     t_start::Base.RefValue{T}          # Start time of averaging window
     t_end::Base.RefValue{T}            # End time of averaging window
@@ -470,15 +469,12 @@ function allocate_TimeAverage(SD, npoin, T, backend; neqs=1, ltavg=false)
 
     if ltavg
         q_tavg = zeros(T, Int64(npoin), Int64(neqs))
-        u_cpu = Vector{T}(undef, Int64(npoin) * Int64(neqs))  # Buffer for bulk copy
     else
         q_tavg = zeros(T, 1, 1)  # Minimal allocation when disabled
-        u_cpu = Vector{T}(undef, 1)
     end
 
     tavg = St_TimeAverage{T}(
         q_tavg = q_tavg,
-        u_cpu = u_cpu,
         sample_count = Ref{Int}(0),
         t_start = Ref{T}(0.0),
         t_end = Ref{T}(0.0)

@@ -118,7 +118,6 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     tavg = allocate_TimeAverage(sem.mesh.SD, sem.mesh.npoin, T, backend; neqs=qp.neqs, ltavg=inputs[:ltavg])
     q_tavg       = tavg.q_tavg
-    u_cpu        = tavg.u_cpu
     sample_count = tavg.sample_count
     t_start      = tavg.t_start
     t_end        = tavg.t_end
@@ -298,7 +297,7 @@ function params_setup(sem,
                   sem.matrix.M, sem.matrix.Minv, pM=pM, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t,
-                  q_tavg, u_cpu, sample_count, t_start, t_end, laguerre=true)
+                  q_tavg, sample_count, t_start, t_end, laguerre=true)
         
     else
         pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
@@ -333,7 +332,7 @@ function params_setup(sem,
                   WM,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t,
-                  q_tavg, u_cpu, sample_count, t_start, t_end, laguerre=false,
+                  q_tavg, sample_count, t_start, t_end, laguerre=false,
                   OUTPUT_DIR,
                   #   timers,
                   sem.interp, sem.project, sem.partitioned_model, sem.nparts, sem.distribute)
