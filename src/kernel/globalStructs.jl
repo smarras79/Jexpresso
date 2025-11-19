@@ -456,24 +456,29 @@ end
 #-------------------------------------------------------------------------------------------
 # Time averaging
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_TimeAverage{T <: AbstractFloat, dims1, backend}
+Base.@kwdef mutable struct St_TimeAverage{T <: AbstractFloat}
 
-    q_tavg       = KernelAbstractions.zeros(backend, T, dims1)  # Time-averaged solution
-    sample_count = Ref{Int}(0)                                   # Number of samples accumulated
-    t_start      = Ref{T}(0.0)                                   # Start time of averaging window
-    t_end        = Ref{T}(0.0)                                   # End time of averaging window
+    q_tavg::Matrix{T}            # Time-averaged solution (CPU array)
+    sample_count::Base.RefValue{Int}   # Number of samples accumulated
+    t_start::Base.RefValue{T}          # Start time of averaging window
+    t_end::Base.RefValue{T}            # End time of averaging window
 
 end
 
 function allocate_TimeAverage(SD, npoin, T, backend; neqs=1, ltavg=false)
 
     if ltavg
-        dims1 = (Int64(npoin), Int64(neqs))
+        q_tavg = zeros(T, Int64(npoin), Int64(neqs))
     else
-        dims1 = (1, 1)
+        q_tavg = zeros(T, 1, 1)  # Minimal allocation when disabled
     end
 
-    tavg = St_TimeAverage{T, dims1, backend}()
+    tavg = St_TimeAverage{T}(
+        q_tavg = q_tavg,
+        sample_count = Ref{Int}(0),
+        t_start = Ref{T}(0.0),
+        t_end = Ref{T}(0.0)
+    )
 
     return tavg
 end
