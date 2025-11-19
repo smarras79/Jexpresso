@@ -95,44 +95,30 @@ function time_loop!(inputs, params, u)
     end
 
     function do_tavg!(integrator)
-        # Detect if this is a new run: either first time (sample_count==0) or time went backwards (new simulation)
-        should_reset = (integrator.p.sample_count[] == 0) || (integrator.t < integrator.p.t_start[])
-
-        if should_reset
-            # Reset everything for new averaging window
+        # Detect if this is a new run
+        if (integrator.p.sample_count[] == 0) || (integrator.t < integrator.p.t_start[])
             integrator.p.sample_count[] = 0
             integrator.p.t_start[] = integrator.t
             tavg_timestep_counter[] = 0
-
-            # Reset accumulation array to zero
             fill!(integrator.p.q_tavg, 0.0)
-
             println_rank(" # Starting time averaging at t=", integrator.t; msg_rank = rank)
         end
 
-        # Copy u to pre-allocated CPU buffer (single bulk copy, non-allocating)
+        # Accumulate directly from integrator.u (non-allocating for CPU arrays)
         npoin = integrator.p.mesh.npoin
         neqs = integrator.p.qp.neqs
-        u_cpu = integrator.p.u_cpu
-        copyto!(u_cpu, integrator.u)
-
-        # Accumulate time-averaged quantities (non-allocating)
         q_tavg = integrator.p.q_tavg
+        u = integrator.u
 
         @inbounds for ieq = 1:neqs
             idx_start = (ieq-1)*npoin
             @simd for ip = 1:npoin
-                q_tavg[ip, ieq] += u_cpu[idx_start + ip]
+                q_tavg[ip, ieq] += u[idx_start + ip]
             end
         end
 
         integrator.p.sample_count[] += 1
         integrator.p.t_end[] = integrator.t
-
-        # Print progress every 100 samples
-        if mod(integrator.p.sample_count[], 100) == 0
-            println_rank(" # Time-averaging: ", integrator.p.sample_count[], " samples at t=", integrator.t; msg_rank = rank)
-        end
     end
     # #------------------------------------------------------------------------
     # #  config
