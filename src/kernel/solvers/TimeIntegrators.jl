@@ -104,26 +104,24 @@ function time_loop!(inputs, params, u)
             integrator.p.t_start[] = integrator.t
             tavg_timestep_counter[] = 0
 
-            # Reset accumulation arrays to zero
+            # Reset accumulation array to zero
             fill!(integrator.p.q_tavg, 0.0)
-            fill!(integrator.p.q2_tavg, 0.0)
 
             println_rank(" # Starting time averaging at t=", integrator.t; msg_rank = rank)
         end
 
-        # Accumulate time-averaged quantities
+        # Accumulate time-averaged quantities (non-allocating)
         # Read directly from ODE state vector u with proper indexing
         npoin = integrator.p.mesh.npoin
         neqs = integrator.p.qp.neqs
+        q_tavg = integrator.p.q_tavg
+        u = integrator.u
 
-        for ieq = 1:neqs
+        @inbounds for ieq = 1:neqs
             # u is stored as: [all points for eq1, all points for eq2, ...]
-            # So for equation ieq, the data starts at index (ieq-1)*npoin + 1
             idx_start = (ieq-1)*npoin
-            for ip = 1:npoin
-                val = integrator.u[idx_start + ip]
-                integrator.p.q_tavg[ip, ieq] += val
-                integrator.p.q2_tavg[ip, ieq] += val * val
+            @simd for ip = 1:npoin
+                q_tavg[ip, ieq] += u[idx_start + ip]
             end
         end
 
@@ -254,15 +252,15 @@ function time_loop!(inputs, params, u)
         println_rank(" #   Samples collected: ", params.sample_count[]; msg_rank = rank)
         println_rank(" #   Averaging window: t=", params.t_start[], " to t=", params.t_end[]; msg_rank = rank)
 
-        # Compute the mean by dividing accumulated values by sample count
+        # Compute the mean by dividing accumulated values in-place (non-allocating)
         n_samples = params.sample_count[]
-        q_tavg_mean_2d = params.q_tavg ./ n_samples
+        params.q_tavg ./= n_samples
 
         # Convert from 2D (npoin, neqs) to flat (npoin*neqs) format for write_output
         npoin = params.mesh.npoin
         neqs = params.qp.neqs
-        q_tavg_mean_flat = zeros(npoin * neqs)
-        uaux2u!(q_tavg_mean_flat, q_tavg_mean_2d, neqs, npoin)
+        q_tavg_mean_flat = Vector{Float64}(undef, npoin * neqs)
+        uaux2u!(q_tavg_mean_flat, params.q_tavg, neqs, npoin)
 
         # Create output directory for time-averaged data
         tavg_output_dir = joinpath(inputs[:output_dir], "time_averaged")
@@ -272,7 +270,7 @@ function time_loop!(inputs, params, u)
         MPI.Barrier(comm)
 
         # Write mean
-        write_output(params.SD, q_tavg_mean_flat, q_tavg_mean_2d, params.t_end[], 1,
+        write_output(params.SD, q_tavg_mean_flat, params.q_tavg, params.t_end[], 1,
                      params.mesh, params.mp,
                      params.connijk_original, params.poin_in_bdy_face_original,
                      params.x_original, params.y_original, params.z_original,

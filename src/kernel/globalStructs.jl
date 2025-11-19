@@ -458,11 +458,10 @@ end
 #-------------------------------------------------------------------------------------------
 Base.@kwdef mutable struct St_TimeAverage{T <: AbstractFloat, dims1, backend}
 
-    q_tavg      = KernelAbstractions.zeros(backend, T, dims1)  # Time-averaged solution
-    q2_tavg     = KernelAbstractions.zeros(backend, T, dims1)  # Time-averaged squared solution (for variance)
-    sample_count = Ref{Int}(0)                                  # Number of samples accumulated
-    t_start     = Ref{T}(0.0)                                   # Start time of averaging window
-    t_end       = Ref{T}(0.0)                                   # End time of averaging window
+    q_tavg       = KernelAbstractions.zeros(backend, T, dims1)  # Time-averaged solution
+    sample_count = Ref{Int}(0)                                   # Number of samples accumulated
+    t_start      = Ref{T}(0.0)                                   # Start time of averaging window
+    t_end        = Ref{T}(0.0)                                   # End time of averaging window
 
 end
 
