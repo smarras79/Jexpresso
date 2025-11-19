@@ -95,8 +95,22 @@ function time_loop!(inputs, params, u)
     end
 
     function do_tavg!(integrator)
+        # DEBUG: Print state at entry
+        println_rank(" # do_tavg! called at t=", integrator.t, " sample_count=", integrator.p.sample_count[], " t_start=", integrator.p.t_start[]; msg_rank = rank)
+
+        # Check array values at entry (sample a few points)
+        if integrator.p.sample_count[] == 0
+            arr_sum = sum(integrator.p.q_tavg)
+            println_rank(" #   FIRST SAMPLE: q_tavg array sum at entry = ", arr_sum; msg_rank = rank)
+            if abs(arr_sum) > 1e-10
+                println_rank(" #   WARNING: Arrays not zero at start! Forcing reset."; msg_rank = rank)
+            end
+        end
+
         # Detect if this is a new run: either first time (sample_count==0) or time went backwards (new simulation)
-        if integrator.p.sample_count[] == 0 || integrator.t < integrator.p.t_start[]
+        should_reset = (integrator.p.sample_count[] == 0) || (integrator.t < integrator.p.t_start[])
+
+        if should_reset
             # Reset everything for new averaging window
             integrator.p.sample_count[] = 0
             integrator.p.t_start[] = integrator.t
@@ -106,8 +120,10 @@ function time_loop!(inputs, params, u)
             fill!(integrator.p.q_tavg, 0.0)
             fill!(integrator.p.q2_tavg, 0.0)
 
+            # Verify reset worked
+            arr_sum_after = sum(integrator.p.q_tavg)
             println_rank(" # Starting NEW time averaging window at t=", integrator.t; msg_rank = rank)
-            println_rank(" #   Reset sample_count, timestep_counter, and accumulation arrays to zero"; msg_rank = rank)
+            println_rank(" #   Reset complete. Array sum after reset = ", arr_sum_after; msg_rank = rank)
         end
 
         # Accumulate time-averaged quantities
@@ -129,9 +145,11 @@ function time_loop!(inputs, params, u)
         integrator.p.sample_count[] += 1
         integrator.p.t_end[] = integrator.t
 
-        # Print progress every 100 samples
-        if mod(integrator.p.sample_count[], 100) == 0
-            println_rank(" # Time-averaging: ", integrator.p.sample_count[], " samples at t=", integrator.t; msg_rank = rank)
+        # Print first few samples for debugging, then every 100
+        if integrator.p.sample_count[] <= 3 || mod(integrator.p.sample_count[], 100) == 0
+            # Print current accumulated sum for first sample
+            arr_sum = sum(integrator.p.q_tavg)
+            println_rank(" # Time-averaging sample ", integrator.p.sample_count[], " at t=", integrator.t, " - accumulated sum=", arr_sum; msg_rank = rank)
         end
     end
     # #------------------------------------------------------------------------
