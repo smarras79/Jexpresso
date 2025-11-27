@@ -67,7 +67,15 @@ using MPI
 
 TInt   = Int64
 TFloat = Float64
+SFloat = Float32
 cpu    = true
+
+#function LinearAlgebra.ldiv!(y::AbstractVector{Float64}, F::Any, x::AbstractVector{Float64})
+#    xsingle = Float32.(x)
+
+#    ysingle = xsingle
+#    y = Float64.(ysingle)
+#end
 
 using DocStringExtensions
 
@@ -136,6 +144,8 @@ include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
 include(joinpath("kernel", "operators", "filter.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
+
+include(joinpath( "kernel", "solvers", "MyPrec.jl"))
 
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 

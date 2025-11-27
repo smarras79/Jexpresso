@@ -1,16 +1,11 @@
 function user_inputs()
     # Coefficients of the method
     alpha = Array{Float64, 1}(undef, 2)
-    alpha[2] = 4. / 3.
-    alpha[1] = - 1. / 3.
+    alpha[1] = 4. / 3.
+    alpha[2] = - 1. / 3.
     beta = Array{Float64, 1}(undef, 2)
-    beta[2] = 2.
-    beta[1] = -1.
-
-    alpha = Array{Float64, 1}(undef, 1)
-    alpha[1] = 1.
-    beta = Array{Float64, 1}(undef, 1)
-    beta[1] = 1.
+    beta[1] = 2.
+    beta[2] = - 1.
 
     # Polynomial order
     nop = 4
@@ -19,9 +14,9 @@ function user_inputs()
     solver_par = Dict(:restart  => true,
                       :memory   => 10,
                       :verbose  => 1,
-                      :abstol   => 1.e-06,
-                      :reltol   => 1.e-06,
-                      :maxiters => 100,
+                      :atol     => 1.e-10,
+                      :rtol     => 1.e-10,
+                      :itmax    => 100,
                       :prec     => SmoothedAggregationPreconBuilder()
                       )
 
@@ -58,53 +53,48 @@ function user_inputs()
     end
 
     # Bcs application
-    function bcs_fun!(u, time, params)
-        SD      = params.SD
-        AD      = params.AD
-        neqs    = params.neqs
-        xmin    = params.mesh.xmin
-        xmax    = params.mesh.xmax
-        ymin    = params.mesh.ymin
-        ymax    = params.mesh.ymax
-        zmin    = params.mesh.zmin
-        zmax    = params.mesh.zmax
-
-        resetbdyfluxToZero!(params)
-        apply_boundary_conditions!(u, params.uaux, time, params.qp.qe,
-                                   params.mesh.x, params.mesh.y, params.mesh.z,
-                                   params.metrics.nx, params.metrics.ny, params.metrics.nz,
-                                   params.mesh.npoin, params.mesh.npoin_linear, 
-                                   params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face,
-                                   params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
-                                   params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ,
-                                   params.basis.dψ, xmax, ymax, zmax, xmin, ymin, zmin, params.RHS,
-                                   params.rhs_el, params.ubdy, params.mesh.connijk_lag,
-                                   params.mesh.bdy_edge_in_elem, params.mesh.bdy_edge_type,
-                                   params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
-                                   params.mesh.connijk, params.metrics.Jef, params.S_face,
-                                   params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv,
-                                   params.Minv, params.mp.Tabs, params.mp.qn,
-                                   params.ω, neqs, params.inputs, AD, SD)
+    function bcs_fun!(u, L, time, params, sem, qp)
+        apply_boundary_conditions_lin_solve!(L, time, params.qp.qe,
+                                             params.mesh.x, params.mesh.y, params.mesh.z,
+                                             params.metrics.nx,
+                                             params.metrics.ny,
+                                             params.metrics.nz,
+                                             sem.mesh.npoin, params.mesh.npoin_linear, 
+                                             params.mesh.poin_in_bdy_edge,
+                                             params.mesh.poin_in_bdy_face,
+                                             params.mesh.nedges_bdy,
+                                             params.mesh.nfaces_bdy,
+                                             params.mesh.ngl, params.mesh.ngr,
+                                             params.mesh.nelem_semi_inf,
+                                             params.basis.ψ, params.basis.dψ,
+                                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                             u, 0.0, params.ubdy,
+                                             params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem,
+                                             params.mesh.bdy_edge_type,
+                                             params.ω, qp.neqs, params.inputs, params.AD, sem.mesh.SD)
     end
 
     # Building fast waves operator
-    function build_L!(u, time, params)
+    function build_L(u, time, params)
         SD      = params.SD
         basis   = params.basis
         ω       = params.ω
-        mesh    = params.sem.mesh
-        metrics = params.sem.metrics
+        mesh    = params.mesh
+        metrics = params.metrics
         N       = nop
-        Q       = N + 1
+        Q       = N
         backend = CPU()
 
         Le = KernelAbstractions.zeros(backend, TFloat, 1, 1)
         L  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
 
-        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh, metrics, N, Q, TFloat)
-        L = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
+        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh.nelem, mesh, metrics, N, Q, TFloat)
 
-        DSS_laplace!(L, SD, Le, ω, mesh, metrics, N, TFloat; llump = true)
+        L = DSS_laplace_sparse(mesh, Le)
+        assemble_diffusion_matrix_threaded!(mesh, Le)
+        L = - L
+
+        return L
     end
 
     inputs = Dict(
@@ -113,6 +103,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :tend                 => 4.0, #2π,
         :Δt                   => 0.005,#8.75e-4,
+        :Δt_expl              => 0.0025,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :diagnostics_at_times => (4.0),
         :output_dir          => "./output/",
@@ -127,6 +118,7 @@ function user_inputs()
         #Building matrices
         #---------------------------------------------------------------------------
         :ldss_laplace        => true,
+        :lsparse             => true,
         :ldss_differentiation => false,#true, # with true I get error (DSS_generic_matrix not defined)
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
@@ -174,20 +166,21 @@ function user_inputs()
         # IMEX method
         #---------------------------------------------------------------------------
         :method             => "multistep",
-        :delta              => 0,
-        :k                  => 1,    # add check on k>=1
+        :delta              => 1,
+        :k                  => 2,
         :coeff              => Dict(
+                                   # IMEX
                                    :xi       => 2. / 3.,
                                    :alpha    => alpha,
                                    :beta     => beta,
                                ),
-        :lsolver            => "GMRES",#LinearSolve.KrylovJL_GMRES(),
-        :solver_par         => solver_par,
+        :lsolver            => nothing,#"GMRES",#LinearSolve.KrylovJL_GMRES(),
+        :sp                 => solver_par,
         :S_fun              => S_fun!,
         :L_fun              => L_fun!,
         :bcs_fun            => bcs_fun!,
         :upd_L              => false,
-        :build_L            => build_L!,
+        :build_L            => build_L,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
