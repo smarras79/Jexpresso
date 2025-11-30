@@ -66,6 +66,51 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:LST_files] = ("./data_files/LS_heat_forcing.dat","./data_files/LS_rad_cooling.dat","./data_files/LS_vapor_forcing.dat")
     end
 
+    # ERA5 data integration parameters
+    if(!haskey(inputs, :lERA5))
+       inputs[:lERA5] = false
+    end
+
+    if(!haskey(inputs, :era5_file))
+       inputs[:era5_file] = "empty"
+    end
+
+    if(!haskey(inputs, :era5_target_lat))
+       inputs[:era5_target_lat] = 0.0
+    end
+
+    if(!haskey(inputs, :era5_target_lon))
+       inputs[:era5_target_lon] = 0.0
+    end
+
+    if(!haskey(inputs, :era5_time_index))
+       inputs[:era5_time_index] = 1
+    end
+
+    if(!haskey(inputs, :era5_var_names))
+       inputs[:era5_var_names] = Dict()
+    end
+
+    if(!haskey(inputs, :era5_pressure_levels))
+       inputs[:era5_pressure_levels] = nothing
+    end
+
+    if(!haskey(inputs, :era5_lat_range))
+       inputs[:era5_lat_range] = (nothing, nothing)
+    end
+
+    if(!haskey(inputs, :era5_lon_range))
+       inputs[:era5_lon_range] = (nothing, nothing)
+    end
+
+    if(!haskey(inputs, :lERA5_forcing))
+       inputs[:lERA5_forcing] = false
+    end
+
+    if(!haskey(inputs, :era5_nudging_timescale))
+       inputs[:era5_nudging_timescale] = 3600.0  # Default: 1 hour nudging timescale
+    end
+
     if(!haskey(inputs, :nlay_pg))
        inputs[:nlay_pg] = 10
     end

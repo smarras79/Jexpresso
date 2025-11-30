@@ -117,6 +117,8 @@ include(joinpath( "kernel", "physics", "turbul.jl"))
 
 include(joinpath( "kernel", "physics", "CM_MOST.jl"))
 
+include(joinpath( "kernel", "physics", "era5Structs.jl"))
+
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
@@ -180,6 +182,8 @@ include(joinpath( "io", "Extract_topo.jl"))
 include(joinpath( "io", "print_matrix.jl"))
 
 include(joinpath( "io", "soundings.jl"))
+
+include(joinpath( "io", "era5_reader.jl"))
 
 include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 
