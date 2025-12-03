@@ -1,3 +1,15 @@
+# ANNOUNCEMENT:
+
+Dear all, 
+
+as we have noticed an increased interest in Jexpresso (this is amazing, thank you for this!), we are working on making sure that the default master branch can be cloned and run without issues with incompatible dependencies versions. 
+Up to now the fixes had to be made by hand if one didn't have the correct packages versions, but we will soon push a version that automates it.
+
+Moreover, we have added **ERA5** reading capabilities and the branch for that will be merged soon into master, as well as an improved handling of boundary conditions from the user's perspective.
+
+Thank you for being patient and for your interest in the Jexpresso!
+
+
 # <img src="./assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
 
 | **Documentation** |
