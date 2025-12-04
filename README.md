@@ -7,7 +7,7 @@
 | [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/smarras79/Jexpresso/actions?query=workflow%3ACI)
 | **Contacts**  |
 | [![Simone Marras](https://img.shields.io/badge/Simone%20Marras-smarras%40njit.edu-8e7cc3)](mailto:smarras@njit.edu) |
-| [![Yassine Tissaoui](https://img.shields.io/badge/Yassine%20Tissaoui-yt277%40njit.edu-8e7cc3)](mailto:yt277@njit.edu) |
+| [![Yassine Tissaoui](https://img.shields.io/badge/Yassine%20Tissaoui-tissaoui%40wisc.edu-8e7cc3)](mailto:tissaoui@wisc.edu) |
 | [![Hang Wang](https://img.shields.io/badge/Hang%20Wang-hang.wang%40njit.edu-8e7cc3)](mailto:hang.wang@njit.edu) |
 | **Citation** |
 | [![DOI](https://img.shields.io/badge/article-arXiv:2401.05624-green)](https://doi.org/10.48550/arXiv.2401.05624) |
@@ -15,7 +15,23 @@
 # JEXPRESSO
 A CPU and GPU research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this will always be WIP! Contact us to join the team of developers!
 
-Suggested Julia version: 1.11.2
+Suggested Julia version: 1.11.2 or higher.
+
+Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
+
+```
+MPI 0.20.22
+MPIPreferences 0.1.11
+PackageCompiler 2.2.1
+Thermodynamics 0.12.7
+PrettyTables 2.4.0
+Crayons 4.1.1
+UnicodePlots 3.7.2
+Gridap v0.18.12
+GridapDistributed v0.4.7
+GridapGmsh v0.7.2
+GridapP4est v0.3.11
+```
 
 If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
 
@@ -29,6 +45,16 @@ Please cite Jexpresso using:
   pages={129080},
   year = {2024},
   journal = {App. Math. Comput.},
+}
+
+@inproceedings{marrasJexpresso,
+  author    = {S. Marras and Y. Tissaoui and H. Wang and S. Stechmann}
+  title     = {JEXPRESSO V0. 1: A JULIA-LANGUAGE, USER-FRIENDLY, MULTI-PHYSICS PARALLEL SOLVER FOR THE SOLUTION OF CONSERVATIONS LAWS ON CPUs AND GPUs.},
+  booktitle = {Proceedings of the 36th Parallel CFD international conference 2025},
+  year      = {2025},
+  address   = {Merida, Yucatan, Mexico},
+  month     = {November},
+  organization = {UNAM},
 }
 ```
 
@@ -99,7 +125,7 @@ $${\bf q}=\begin{bmatrix}
 \rho c1\\
 ...\\
 \rho cN
-\end{bmatrix}\quad {\bf F}1=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F1}=\begin{bmatrix}
 \rho u\\
 \rho u^2 + p\\
 \rho u v\\
@@ -107,7 +133,7 @@ $${\bf q}=\begin{bmatrix}
 \rho u c1\\
 ...\\
 \rho u cN
-\end{bmatrix}\quad {\bf F}2=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F2}=\begin{bmatrix}
 \rho v\\
 \rho v u\\
 \rho v^2 + p\\
@@ -153,7 +179,7 @@ $${\bf q}=\begin{bmatrix}
 \rho v^2 + p\\
 \rho v w\\
 \rho v \theta\\
-\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
+\end{bmatrix}\quad {\bf F3}=\begin{bmatrix}
 \rho w\\
 \rho w u\\
 \rho w v\\
@@ -175,12 +201,31 @@ w_{xx} + w_{yy} + w_{zz}\\
 
 
 If you are interested in contributing, please get in touch:
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu)
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)
 
 
 # Some notes on using JEXPRESSO
 
 To install and run the code assume Julia 1.11.2
+
+Start by cloning Jexpresso and JexpressoMeshes:
+
+```bash
+git clone https://github.com/smarras79/Jexpresso.git
+```
+
+```bash
+git clone https://github.com/smarras79/JexpressoMeshes.git
+```
+    
+```bash
+cd Jexpresso
+```
+
+```bash
+ln -s ../JexpressoMeshes/meshes .
+```
+
 
 ## Setup with CPUs
 
@@ -203,12 +248,19 @@ include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
-Example of cloud simulations (please contact us to run this because its branch has not been merged into master yet)
+## Shallow comuli:
+Example of shallow cumuli simulations (right) for the type of Barbados clouds shown on the left: (picture taken from [P. Blossey webpage](https://www.atmos.washington.edu/~bloss/) from U. Washington)
 
-<img src="assets/bomex.png"
+<img src="assets/barbados.jpg"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
 
+## Turbulent ABL
+Example of coarse simulation of the turbulent atmospheric boundary layer. Domain size: 10240m X 10240m X 3000m using 64x64x24 spectral elements of order 4.
+Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected Smagorinsky.
+<img src="assets/ABLfullDomain.gif"
+     alt="Markdown icon"
+     style="float: left; margin-right: 5px;" />
 
 Examples available in this branch:
 
@@ -245,7 +297,6 @@ include("./src/Jexpresso.jl")
      style="float: left; margin-right: 7px;" />
 
 
-
 For ready to run tests, there are the currently available equations names:
 
 * CompEuler (option with total energy and theta formulation)
@@ -255,19 +306,7 @@ Details will be given in the documentation (still WIP). Write us if you need hel
 
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
-
-Test 3: 2D advection-diffusion equation
-
-The problem is defined in [`problems/equations/AdvDiff/kopriva`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/kpriva) and by default output will be written to `output/AdvDiff/kopriva`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "AdvDiff", "kopriva");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/ad2d-4s-line.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
+## Laguerre semi-infinite element test suite
 
 Test 4: Shallow cumuli simulation with BOMEX conditions:
 
@@ -387,4 +426,4 @@ Files can be written to VTK (recommended) or png (png is now only used for 1D re
 modify ./src/io/plotting/jplots.jl accordinly.
 
 ## Contacts
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:yt277@njit.edu), [Hang Wang](mailto:hang.wang@njit.edu)
+[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)
