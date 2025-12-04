@@ -106,10 +106,10 @@ end
 
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
-    
+    # for @timers, do not delete
+    timers = params.timers
     if (backend == CPU())
-        # _build_rhs!(@view(params.RHS[:,:]), u, params, time)
-        time_function!(params.timers["_build_rhs!"], _build_rhs!, @view(params.RHS[:,:]), u, params, time)
+        _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
         if (params.laguerre) 
             build_rhs_laguerre!(@view(params.RHS_lag[:,:]), u, params, time)
@@ -394,6 +394,8 @@ function _build_rhs!(RHS, u, params, time)
     zmin    = params.mesh.zmin
     zmax    = params.mesh.zmax
     Δt      = params.Δt
+    # for @timers, do not delete
+    timers  = params.timers
 
     if SD == NSD_1D()
         comm = MPI.COMM_WORLD
@@ -420,18 +422,7 @@ function _build_rhs!(RHS, u, params, time)
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     if inputs[:ladapt] == true
-        # conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux, 
-        #                     params.g_dss_cache,
-        #                     params.mesh.SD, 
-        #                     params.QT, params.mesh.connijk,
-        #                     params.mesh, params.Minv, 
-        #                     params.metrics.Je, params.ω, params.AD, 
-        #                     params.neqs,
-        #                     params.q_el, params.q_el_pro,
-        #                     params.cache_ghost_p, params.q_ghost_p,
-        #                     params.cache_ghost_c, params.q_ghost_c,
-        #                     params.interp)
-        time_function!(params.timers["conformity4ncf_q!"], conformity4ncf_q!, params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux, 
+        conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux, 
                             params.g_dss_cache,
                             params.mesh.SD, 
                             params.QT, params.mesh.connijk,
@@ -492,21 +483,11 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
     
-    # inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, SD)
-    time_function!(params.timers["inviscid_rhs_el!"], inviscid_rhs_el!, u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
+    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
                      params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
-    # inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
-    #                  params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
     
     if inputs[:ladapt] == true
-        # DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, 
-        #                    params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
-        #                    params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
-        #                    params.q_el, params.q_el_pro, params.q_ghost_p, 
-        #                    params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
-        #                    params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
-        #                    ngl-1, neqs, params.interp)
-        time_function!(params.timers["DSS_nc_gather_rhs!"], DSS_nc_gather_rhs!, params.RHS, SD, QT, params.rhs_el,
+        DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el,
                            params.mesh.non_conforming_facets,
                            params.mesh.non_conforming_facets_parents_ghost, params.cache_ghost_p,
                            params.q_el, params.q_el_pro, params.q_ghost_p,
@@ -526,17 +507,9 @@ function _build_rhs!(RHS, u, params, time)
         #                   params.uaux, params.qp.qnm1, params.qp.qnm2, @view(params.RHS[:,:]),
         #                   Δt, params.mesh, params.metrics, VT)
         
-        # viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
-        time_function!(params.timers["viscous_rhs_el!"], viscous_rhs_el!, u, params, params.mesh.connijk, params.qp.qe, SD)
+        viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         if inputs[:ladapt] == true
-            # DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk, params.mesh.poin_in_edge, 
-            #                    params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
-            #                    params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
-            #                    params.q_el, params.q_el_pro, params.q_ghost_p, 
-            #                    params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
-            #                    params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
-            #                    ngl-1, neqs, params.interp)
-            time_function!(params.timers["DSS_nc_gather_rhs!"], DSS_nc_gather_rhs!, params.RHS_visc, SD, QT, params.rhs_diff_el,
+            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
                            params.mesh.non_conforming_facets,
                            params.mesh.non_conforming_facets_parents_ghost, params.cache_ghost_p,
                            params.q_el, params.q_el_pro, params.q_ghost_p,
@@ -561,8 +534,7 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
     
-    # DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
-    time_function!(params.timers["DSS_global_RHS!"], DSS_global_RHS!, @view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+    DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
     
     #if (rem(time, Δt) == 0 && time > 0.0)
     if (time > 0.0)
@@ -575,15 +547,7 @@ function _build_rhs!(RHS, u, params, time)
         
         if inputs[:ladapt] == true
             
-            # DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, selectdim(params.rhs_el, ndims(params.rhs_el), ieq), 
-            #                     params.mesh.connijk, params.mesh.poin_in_edge, 
-            #                     params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
-            #                     params.mesh.non_conforming_facets_children_ghost, params.mesh.pip_cg, params.mesh.lfid_cg, params.mesh.half1_cg, params.mesh.half2_cg, 
-            #                     params.q_el, params.q_el_pro, params.mesh.q_local_c, params.q_ghost_c, 
-            #                     params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
-            #                     params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, params.mesh.cgip_local,
-            #                     ngl-1, params.interp)
-            time_function!(params.timers["DSS_nc_scatter_rhs!2"], DSS_nc_scatter_rhs!, @view(params.RHS[:,ieq]), SD, QT,
+            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT,
                                 params.mesh.non_conforming_facets,
                                 params.mesh.non_conforming_facets_children_ghost, params.cache_ghost_c,
                                 params.q_el, params.q_el_pro, params.q_ghost_c,

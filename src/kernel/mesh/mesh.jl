@@ -3696,11 +3696,11 @@ function compute_element_size_driver(mesh::St_mesh, SD, T, backend)
     mesh.Δeffective_s = TFloat(mesh.Δelem_s/mesh.nop)
     mesh.Δeffective_l = TFloat(mesh.Δelem_l/mesh.nop)
 
-    println_rank(" # "; msg_rank = rank, suppress = mesh.msg_suppress)
-    println_rank(" # ELEMENT SIZES:"; msg_rank = rank, suppress = mesh.msg_suppress)
-    println_rank(" #   The smallest element has size: ", mesh.Δelem_s, " and effective resolution ", mesh.Δeffective_s; msg_rank = rank, suppress = mesh.msg_suppress)
-    println_rank(" #   The biggest  element has size: ", mesh.Δelem_l, " and effective resolution ", mesh.Δeffective_l; msg_rank = rank, suppress = mesh.msg_suppress)
-    println_rank(" # "; msg_rank = rank, suppress = mesh.msg_suppress)
+    println_rank(" # "; msg_rank = rank, suppress = false)
+    println_rank(" # ELEMENT SIZES:"; msg_rank = rank, suppress = false)
+    println_rank(" #   The smallest element has size: ", mesh.Δelem_s, " and effective resolution ", mesh.Δeffective_s; msg_rank = rank, suppress = false)
+    println_rank(" #   The biggest  element has size: ", mesh.Δelem_l, " and effective resolution ", mesh.Δeffective_l; msg_rank = rank, suppress = false)
+    println_rank(" # "; msg_rank = rank, suppress = false)
 end
 
 #------------------------------------------------------------------------------------
