@@ -4,17 +4,19 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.0315,
+        :Δt                   => 0.05,
         :tinit                => 0.0,
         :tend                 => 10800.0,
 	:lrestart             => false,
 	#:restart_output_file_path => "",
 	:restart_time         => 500,
-	:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:100:8500...,  9000:10:10800.0...),
-        :lsource              => true,
+	#:diagnostics_at_times => (11500.0:10.0:15000.0),
+	:diagnostics_at_times => (0.0:10.0:10800.0),
+	#:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:100:8500...,  9000:10:10800.0...),
+	:lsource              => true,
 	:lsponge              => true,
 	:zsponge              => 2500.0,
-        :sounding_file        =>"./data_files/input_sounding_teamx_u00_ridge1000_noheader.dat",
+        :sounding_file        =>"./data_files/input_sounding_teamx_u00_flat_noheader.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -29,20 +31,17 @@ function user_inputs()
         :lvisc                => true, #false by default
         :visc_model           => SMAG(),
         #:visc_model           => AV(),
-        #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
+        #:μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum	
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
-        :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
-        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x64x36_10kmX10kmX3dot5km.msh",
+	:gmsh_filename    => "./meshes/gmsh_grids/LESICP_16x16x36.msh",
 	
         # Warping:
-        :lwarp => true,
+        :lwarp => false,
         :mount_type => "LESICP",
         :h_mount => 1000.0,
         :a_mount => 10240.0,
@@ -60,15 +59,15 @@ function user_inputs()
         # Filter parameters
         #---------------------------------------------------------------------------
         :lfilter             => true,
-        :mu_x                => 0.5,
-        :mu_y                => 0.5,
-	:mu_z                => 0.5,
+        :mu_x                => 0.1,
+        :mu_y                => 0.1,
+	:mu_z                => 0.1,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP5_64x64x36_10kmX10kmX3dot5km/",
+        :output_dir          => "/scratch/smarras/smarras/output/LESICP2_64x16x36_10kmX5kmX3dot5km-coarse",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,

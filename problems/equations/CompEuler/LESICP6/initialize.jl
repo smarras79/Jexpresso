@@ -17,6 +17,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     qoutvars = ["ρ", "u", "v", "w", "θ", "p"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
+
     if inputs[:lrestart] == true
         #
         # READ RESTART HDF5:
@@ -103,13 +104,13 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                         q.qn[ip,5] = ρ*θ
                         q.qn[ip,end] = p
 
-                        #Store initial background state for plotting and analysis of pertuebations
-                        q.qe[ip,1] = 0.0*ρref
-                        q.qe[ip,2] = 0.0*u
-                        q.qe[ip,3] = 0.0*v
-                        q.qe[ip,4] = 0.0*w
-                        q.qe[ip,5] = 0.0*ρref*θ
-                        q.qe[ip,end] = 0.0*pref
+			q.qe[ip,1] = q.qn[ip,1]
+                	q.qe[ip,2] = q.qn[ip,2]
+                	q.qe[ip,3] = q.qn[ip,3]
+                	q.qe[ip,4] = q.qn[ip,4]
+                	q.qe[ip,5] = q.qn[ip,5]
+                	q.qe[ip,6] = q.qn[ip,end]
+
                     end
                 end
             end    
@@ -315,12 +316,12 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 q.qn[ip,6] = Press
                 
                 #Store initial data_interpolate state for plotting and analysis of perturbations
-                q.qe[ip,1] = 0.0*ρ
-                q.qe[ip,2] = 0.0*ρ*u
-                q.qe[ip,3] = 0.0*ρ*v
-                q.qe[ip,4] = 0.0*ρ*w
-                q.qe[ip,5] = 0.0*ρ*θ
-                q.qe[ip,6] = 0.0*Press
+                q.qe[ip,1] = q.qn[ip,1]
+                q.qe[ip,2] = q.qn[ip,2]
+                q.qe[ip,3] = q.qn[ip,3]
+                q.qe[ip,4] = q.qn[ip,4]
+                q.qe[ip,5] = q.qn[ip,5]
+                q.qe[ip,6] = q.qn[ip,6]
             end
         end
     end
