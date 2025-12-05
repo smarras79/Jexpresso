@@ -166,6 +166,10 @@ function time_loop!(inputs, params, u, args...)
                                         length=inputs[:ndiagnostics_outputs]));
     end
     
+    MPI.Barrier(comm)
+    report_all_timers(params.timers)
+    MPI.Barrier(comm)
+    
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
             @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
@@ -183,9 +187,6 @@ function time_loop!(inputs, params, u, args...)
     end
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
-    MPI.Barrier(comm)
-    report_all_timers(params.timers)
-    MPI.Barrier(comm)
     
     return solution
 end

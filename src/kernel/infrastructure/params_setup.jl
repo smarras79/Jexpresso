@@ -311,15 +311,7 @@ function params_setup(sem,
     end
 
     # setup timer
-    timers = create_timer_dict(["conformity4ncf_q!",
-                                "DSS_global_RHS!",
-                                "DSS_nc_gather_rhs!",
-                                "DSS_nc_scatter_rhs!",
-                                "DSS_nc_scatter_rhs!2",
-                                "inviscid_rhs_el!",
-                                "viscous_rhs_el!",
-                                "_build_rhs!"],
-                                comm; skip_first_n=10)
+    timers = Dict{String, MPIFunctionTimer}()
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------

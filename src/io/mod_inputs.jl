@@ -681,6 +681,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:δtotal_energy] = 0.0
     end
 
+    if(!haskey(inputs, :lrichardson))
+        inputs[:lrichardson] = false
+    end
+
     if(!haskey(inputs, :CL))
         # :CL stands for Conservation Law.
         # :CL => CL()  means that we solve dq/dt + \nabla.F(q) = S(q)
