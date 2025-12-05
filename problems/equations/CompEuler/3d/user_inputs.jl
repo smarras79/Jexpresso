@@ -7,8 +7,6 @@ function user_inputs()
         :Δt                   => 0.5,
         :tinit                => 0.0,
         :tend                 => 1000.0,
-        #:tinit                => 100.0,
-        #:tend                 => 1000.0,
         :diagnostics_at_times => (100:100:1000),
         # :diagnostics_at_times => (5, 100:100:1000...),        
         :lsource              => true,
