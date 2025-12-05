@@ -37,8 +37,8 @@ function user_inputs()
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
         #:gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",
-	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x10_10kmX5kmX2dot5km.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x32x24_zmax3000.msh",       
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x10_10kmX5kmX2dot5km.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------

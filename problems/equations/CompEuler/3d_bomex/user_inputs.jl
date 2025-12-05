@@ -16,6 +16,7 @@ function user_inputs()
         :case                 => "bomex",
         :lsaturation          => true,
         :lsource              => true,
+        :lcompute_CFL         => false,
         # :backend              => CUDABackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

@@ -63,6 +63,20 @@ using UnicodePlots
 using Printf
 using NCDatasets
 
+using Gridap
+using Gridap.Arrays
+using Gridap.Arrays: Table
+using Gridap.Geometry
+using Gridap.Fields
+using Gridap.ReferenceFEs
+using Gridap.CellData
+using Gridap.Adaptivity
+using Gridap.Geometry: GridMock
+using GridapDistributed
+using PartitionedArrays
+using GridapGmsh
+using GridapP4est
+
 TInt   = Int64
 TFloat = Float64
 cpu    = true
@@ -73,11 +87,15 @@ include(joinpath( "..", "problems", "equations", "AbstractEquations.jl"))
 
 include(joinpath( "macros", "je_macros.jl"))
 
+include(joinpath( "auxiliary", "timing.jl"))
+
 include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "elementLearningStructs.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))
+
+include(joinpath( "kernel", "ArtificialViscosity","viscousStructs.jl"))
 
 include(joinpath( "kernel", "ArtificialViscosity","Wall_model.jl"))
 
@@ -149,6 +167,8 @@ include(joinpath( "kernel", "solvers", "Axb.jl"))
 
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 
+include(joinpath( "kernel", "mpi", "mpi_communications.jl"))
+
 include(joinpath( "io", "mod_inputs.jl"))
 
 include(joinpath( "io", "mod_print_io.jl"))
@@ -168,6 +188,8 @@ include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 include(joinpath( "auxiliary", "checks.jl"))
 
 include("./run.jl")
+
+export @timers
 
 # Run the test
 # test_create_2d_projection_matrices_numa2d()

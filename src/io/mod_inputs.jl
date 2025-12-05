@@ -431,6 +431,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     if (!haskey(inputs, :lelementLearning))
         inputs[:lelementLearning] = false
+    else
+        if (!haskey(inputs, :elNsamp))
+            inputs[:elNsamp] = 1
+        end
     end
     
     #
@@ -462,11 +466,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lwrite_initial))
         inputs[:lwrite_initial] = false
     end
-
-    if (!haskey(inputs, :gmsh_filename_c))
-        inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
-    end
-
+  
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         
@@ -482,9 +482,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
         
     else
-        mod_inputs_check(inputs, :gmsh_filename, "e")
-        mod_inputs_check(inputs, :gmsh_filename_c, "e")
-        
+        mod_inputs_check(inputs, :gmsh_filename, "e")       
         mod_inputs_check(inputs, :nsd,  Int8(3), "-")
         mod_inputs_check(inputs, :nelx,  Int8(2), "-")
         mod_inputs_check(inputs, :xmin, Float64(-1.0), "-")
@@ -506,6 +504,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
 
     if (!haskey(inputs, :lwarmup))
         inputs[:lwarmup] = false
+    else
+        if (!haskey(inputs, :gmsh_filename_c) && inputs[:lread_gmsh] == true)
+            inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+        end
     end
     #
     # Some physical constants and parameters:
@@ -530,7 +532,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :Pr))
         inputs[:Pr] = 0.7
     end
-
+    
 
     #
     # Viscous models:
@@ -672,22 +674,17 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lprecip))
         inputs[:lprecip] = false
     end
+
     
     if(!haskey(inputs, :energy_equation))
         inputs[:energy_equation] = "theta"
         inputs[:δtotal_energy] = 0.0
-    else
-        if (lowercase(inputs[:equation_set]) == "totalenergy" ||
-            lowercase(inputs[:equation_set]) == "totalene"    ||
-            lowercase(inputs[:equation_set]) == "totene"      ||
-            lowercase(inputs[:equation_set]) == "tene")
-            inputs[:δtotal_energy] = 1.0
-        else
-            #Default
-            inputs[:energy_equation] = "theta"
-            inputs[:δtotal_energy] = 0.0
-        end
     end
+
+    if(!haskey(inputs, :lrichardson))
+        inputs[:lrichardson] = false
+    end
+
     if(!haskey(inputs, :CL))
         # :CL stands for Conservation Law.
         # :CL => CL()  means that we solve dq/dt + \nabla.F(q) = S(q)
@@ -712,7 +709,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :sol_vars_names))
-        inputs[:sol_vars_names] = ("rho", "rho.u", "rho.v", "rho.theta")
+        inputs[:sol_vars_names] = ("q1", "q2", "q3", "q4")
     end
     
     if(!haskey(inputs, :case))
@@ -744,12 +741,22 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     # AMR
+    
+    if(!haskey(inputs, :lamr))
+        inputs[:lamr] = false
+    end
+
+
     if(!haskey(inputs, :ladapt))
         inputs[:ladapt] = false
     end
 
     if(!haskey(inputs, :linitial_refine))
         inputs[:linitial_refine] = false
+    end
+
+    if(!haskey(inputs, :init_refine_lvl))
+        inputs[:init_refine_lvl] = 0
     end
         
     if(!haskey(inputs, :amr_max_level))

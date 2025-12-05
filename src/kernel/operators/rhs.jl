@@ -1,6 +1,7 @@
 using Distributions
-#using InteractiveUtils
 
+#using InteractiveUtils
+const PHYS_CONST = PhysicalConst{Float64}()
 #---------------------------------------------------------------------------
 # Optimized (more coud possibly be done)
 #---------------------------------------------------------------------------
@@ -8,11 +9,10 @@ function RHStoDU!(du, RHS, neqs, npoin)
     for i=1:neqs
         idx = (i-1)*npoin
         du[idx+1:i*npoin] = @view RHS[:,i]
-    end  
+    end
 end
 
 function u2uaux!(uaux, u, neqs, npoin)
-
     for i=1:neqs
         idx = (i-1)*npoin
         uaux[:,i] = view(u, idx+1:i*npoin)
@@ -31,6 +31,25 @@ function uaux2u!(u, uaux, neqs, npoin)
     end
     
 end
+
+function micro2rhs!(rhs,dhldt,dqtdt,dqpdt,::NSD_2D)
+
+    @view(rhs[:,:,:,4]) .= @view(rhs[:,:,:,4]) .- @view(dhldt[:,:,:])
+    @view(rhs[:,:,:,5]) .= @view(rhs[:,:,:,5]) .+ @view(dqtdt[:,:,:])
+    @view(rhs[:,:,:,6]) .= @view(rhs[:,:,:,6]) .+ @view(dqpdt[:,:,:])
+
+end
+
+
+function micro2rhs!(rhs,dhldt,dqtdt,dqpdt,::NSD_3D)
+
+    @view(rhs[:,:,:,:,5]) .= @view(rhs[:,:,:,:,5]) .- @view(dhldt[:,:,:,:])
+    @view(rhs[:,:,:,:,6]) .= @view(rhs[:,:,:,:,6]) .+ @view(dqtdt[:,:,:,:])
+    @view(rhs[:,:,:,:,7]) .= @view(rhs[:,:,:,:,7]) .+ @view(dqpdt[:,:,:,:])
+
+end 
+
+
 
 function resetRHSToZero_inviscid!(params)
     fill!(params.rhs_el, zero(params.T))   
@@ -87,7 +106,8 @@ end
 
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
-    
+    # for @timers, do not delete
+    timers = params.timers
     if (backend == CPU())
         _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
@@ -345,7 +365,7 @@ function rhs!(du, u, params, time)
                 @inbounds params.RHS .+= params.RHS_visc
             end
             #@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
-            DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
+            DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
 
             k1 = RHStodu_gpu!(backend)
             k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
@@ -372,7 +392,10 @@ function _build_rhs!(RHS, u, params, time)
     ymin    = params.mesh.ymin
     ymax    = params.mesh.ymax
     zmin    = params.mesh.zmin
-    zmax    = params.mesh.zmax    
+    zmax    = params.mesh.zmax
+    Δt      = params.Δt
+    # for @timers, do not delete
+    timers  = params.timers
 
     if SD == NSD_1D()
         comm = MPI.COMM_WORLD
@@ -390,22 +413,31 @@ function _build_rhs!(RHS, u, params, time)
         if (params.laguerre)
             reset_laguerre_filters!(params)
             filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE;
-                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je)
+                    connijk_lag = params.mesh.connijk_lag, Je_lag = params.metrics_lag.Je, ladapt = inputs[:ladapt])
         else
-            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE)
+            filter!(u, params, time, params.uaux, params.mesh.connijk, params.metrics.Je, SD, params.SOL_VARS_TYPE; ladapt = inputs[:ladapt])
         end
     end
-    
+
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     if inputs[:ladapt] == true
-        conformity4ncf_q!(params.uaux, params.pM, SD, QT, params.mesh.connijk, params.mesh, params.Minv, params.metrics.Je, params.ω, AD, neqs, params.interp)
+        conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux, 
+                            params.g_dss_cache,
+                            params.mesh.SD, 
+                            params.QT, params.mesh.connijk,
+                            params.mesh, params.Minv, 
+                            params.metrics.Je, params.ω, params.AD, 
+                            params.neqs,
+                            params.q_el, params.q_el_pro,
+                            params.cache_ghost_p, params.q_ghost_p,
+                            params.cache_ghost_c, params.q_ghost_c,
+                            params.interp)
     end
     
     resetbdyfluxToZero!(params)
     apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
                                          params.mesh.coords,
-                                         #params.mesh.x, params.mesh.y, params.mesh.z, 
                                          params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
                                          params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
                                          params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
@@ -432,15 +464,16 @@ function _build_rhs!(RHS, u, params, time)
                                                params.mp.Pg, params.mp.Tabs, params.mp.qi, @view(params.uaux[:,1]), @view(params.qp.qe[:,1]), 
                                                params.mesh.nelem, params.mesh.ngl, params.mesh.connijk, params.H,
                                                params.metrics, params.ω, params.basis.dψ, SD, params.SOL_VARS_TYPE)
-            if (SD == NSD_3D())
+            #=@time if (SD == NSD_3D())
                 params.rhs_el[:,:,:,:,5] .-= params.mp.dhldt
                 params.rhs_el[:,:,:,:,6] .+= params.mp.dqtdt
                 params.rhs_el[:,:,:,:,7] .+= params.mp.dqpdt
             else
-                params.rhs_el[:,:,:,4] .-= params.mp.dhldt
-                params.rhs_el[:,:,:,5] .+= params.mp.dqtdt
-                params.rhs_el[:,:,:,6] .+= params.mp.dqpdt
-            end
+                @time @view(params.rhs_el[:,:,:,4]) .-= params.mp.dhldt[:,:,:]
+                @time @view(params.rhs_el[:,:,:,5]) .+= @view(params.mp.dqtdt[:,:,:])
+                @time @view(params.rhs_el[:,:,:,6]) .= @view(params.rhs_el[:,:,:,6]) .+ @view(params.mp.dqpdt[:,:,:])
+            end=#
+            micro2rhs!(params.rhs_el,params.mp.dhldt, params.mp.dqtdt, params.mp.dqpdt, SD)
         end
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
@@ -450,14 +483,18 @@ function _build_rhs!(RHS, u, params, time)
         uaux2u!(u, params.uaux, params.neqs, params.mesh.npoin)
     end
     
-    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, SD)
+    inviscid_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, lsource, 
+                     params.mp.S_micro, params.mp.qn, params.mp.flux_lw, params.mp.flux_sw, SD)
     
     if inputs[:ladapt] == true
-        DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el, params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, ngl-1, neqs, params.interp)
+        DSS_nc_gather_rhs!(params.RHS, SD, QT, params.rhs_el,
+                           params.mesh.non_conforming_facets,
+                           params.mesh.non_conforming_facets_parents_ghost, params.cache_ghost_p,
+                           params.q_el, params.q_el_pro, params.q_ghost_p,
+                           params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_local, ngl-1, neqs, params.interp)
     end
     DSS_rhs!(params.RHS, params.rhs_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
-
 
     #-----------------------------------------------------------------------------------
     # Viscous rhs:
@@ -465,16 +502,19 @@ function _build_rhs!(RHS, u, params, time)
     if (params.inputs[:lvisc] == true)
         
         resetRHSToZero_viscous!(params, SD)
+            
+        #compute_viscosity!(params.μsgs, SD,
+        #                   params.uaux, params.qp.qnm1, params.qp.qnm2, @view(params.RHS[:,:]),
+        #                   Δt, params.mesh, params.metrics, VT)
         
         viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
-        
-        # @info "start DSS_rhs_viscous"
         if inputs[:ladapt] == true
-            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el, params.mesh.connijk,
-                               params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                               params.mesh.non_conforming_facets_parents_ghost,
-                               params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner,
-                               ngl-1, neqs, params.interp)
+            DSS_nc_gather_rhs!(params.RHS_visc, SD, QT, params.rhs_diff_el,
+                           params.mesh.non_conforming_facets,
+                           params.mesh.non_conforming_facets_parents_ghost, params.cache_ghost_p,
+                           params.q_el, params.q_el_pro, params.q_ghost_p,
+                           params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_local, ngl-1, neqs, params.interp)
         end
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
@@ -494,27 +534,54 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
     
-    DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
-
+    DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
+    
+    #if (rem(time, Δt) == 0 && time > 0.0)
+    if (time > 0.0)
+        params.qp.qnm1 .= params.qp.qnm2
+        params.qp.qnm2 .= params.uaux
+    end
+    
     for ieq=1:neqs
         divide_by_mass_matrix!(@view(params.RHS[:,ieq]), params.vaux, params.Minv, neqs, npoin, AD)
-        # @info "ieq", ieq
+        
         if inputs[:ladapt] == true
             
-            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT, selectdim(params.rhs_el, ndims(params.rhs_el), ieq), params.mesh.connijk, params.mesh.poin_in_edge, params.mesh.non_conforming_facets,
-                                params.mesh.non_conforming_facets_children_ghost, params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, ngl-1, params.interp)
+            DSS_nc_scatter_rhs!(@view(params.RHS[:,ieq]), SD, QT,
+                                params.mesh.non_conforming_facets,
+                                params.mesh.non_conforming_facets_children_ghost, params.cache_ghost_c,
+                                params.q_el, params.q_el_pro, params.q_ghost_c,
+                                params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
+                                params.mesh.gip2ip, params.mesh.cgip_local, ngl-1, params.interp)
         end
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
+function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_1D)
     
-    #u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+    u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
+
+    ngl   = params.mesh.ngl
+    npoin = params.mesh.npoin
+    nelem = params.mesh.nelem
+    neqs  = params.neqs
     
+    D     = zeros(Float64, ngl, ngl)
+    uilgl = zeros(Float64, neqs, ngl, nelem)
+
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
-    for iel=1:params.mesh.nelem
-        
-        for i=1:params.mesh.ngl
+
+    for iel=1:nelem   
+        for i=1:ngl
+            ip = connijk[iel,i,1]
+            
+            uilgl[1:neqs,i,iel] .= params.uaux[ip,1:neqs]
+        end
+    end
+    
+    
+    for iel=1:nelem   
+        for i=1:ngl
             ip = connijk[iel,i,1]
             
             user_primitives!(@view(params.uaux[ip,:]),
@@ -522,9 +589,10 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
                              @view(params.uprimitive[i,:]),
                              params.SOL_VARS_TYPE)
 
-            user_flux!(@view(params.F[i,:]), @view(params.G[i,:]), SD,
+            user_flux!(@view(params.F[i,:]),
+                       @view(params.G[i,:]), SD,
                        @view(params.uaux[ip,:]),
-                       @view(qe[ip,:]),         #pref
+                       @view(qe[ip,:]),
                        params.mesh,
                        params.CL, params.SOL_VARS_TYPE;
                        neqs=params.neqs, ip=ip)
@@ -532,44 +600,70 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_1D)
             if lsource
                 user_source!(@view(params.S[i,:]),
                              @view(params.uaux[ip,:]),
-                             @view(qe[ip,:]),          #ρref 
+                             @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
                              neqs=params.neqs, x=coords[ip,1], y=0.0, xmax=xmax,xmin=xmin)
             end
         end
-        
-        _expansion_inviscid!(u, params.neqs, params.mesh.ngl,
-                             params.basis.dψ, params.ω,
-                             params.F, params.S,
-                             params.rhs_el,
-                             iel, params.CL, params.QT, SD, params.AD)
-        
+
+        lkep = true
+        if !lkep
+            _expansion_inviscid!(u, params.neqs, ngl,
+                                 params.basis.dψ, params.ω,
+                                 params.F, params.S,
+                                 params.rhs_el,
+                                 iel, params.CL, params.QT, SD, params.AD)
+        else
+
+            
+            D = build_differentiation_matrix(SD,
+                                             params.basis.ψ, params.basis.dψ, params.ω,
+                                             params.mesh,
+                                             ngl-1,
+                                             ngl-1,
+                                             Float64)
+            #print_matrix(D) #seems ok
+            _expansion_inviscid_KEP!(u, params.neqs, ngl,
+                                     params.basis.dψ, params.ω,
+                                     params.F, params.S, D,
+                                     params.rhs_el, uilgl,
+                                     iel, params.CL, params.QT, SD, params.AD)
+            
+        end
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
+function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64},
+                            coords, 
+                            lsource, S_micro_vec, qn_vec, flux_lw_vec,
+                            flux_sw_vec, SD::NSD_2D)
     
     PhysConst = PhysicalConst{Float64}()
 
     u_element_wise = zeros(params.mesh.ngl, params.mesh.ngl, params.neqs)
+
+    lkep = false
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
-        
-        for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
-            ip = connijk[iel,i,j]
-            
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
 
-            
-            # b. Use the map to find the global point index
-            global_point_idx = connijk[iel, i, j]
-            
-            # c. Find the starting index for this point's data in the flat vector `u`
-            start_idx = (global_point_idx - 1) * params.neqs + 1
-            
-            # d. Copy the 'neqs' variables (ρ, ρu, ρv, E) from u to your 4D array
-            u_element_wise[i, j, :] = u[start_idx : start_idx + params.neqs - 1]
+       
+        if lkep
+            for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
+                ip = connijk[iel,i,j]
+                
+                user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+                
+                
+                # b. Use the map to find the global point index
+                global_point_idx = connijk[iel, i, j]
+                
+                # c. Find the starting index for this point's data in the flat vector `u`
+                start_idx = (global_point_idx - 1) * params.neqs + 1
+                
+                # d. Copy the 'neqs' variables (ρ, ρu, ρv, E) from u to your 4D array
+                u_element_wise[i, j, :] = u[start_idx : start_idx + params.neqs - 1]
+            end
         end
         
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
@@ -593,12 +687,15 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
                              ymax=ymax)
                 
                 if (params.inputs[:lmoist])
-                    add_micro_precip_sources!(params.mp, params.mp.flux_lw[ip],
-                                              params.mp.flux_sw[ip], params.mp.Tabs[ip],
-                                              params.mp.S_micro[ip],
-                                              @view(params.S[i,j,:]), @view(params.uaux[ip,:]),
-                                              params.mp.qn[ip], @view(qe[ip,:]),
-                                              SD, params.SOL_VARS_TYPE)
+                    S_micro::Float64 = @inbounds S_micro_vec[ip]
+                    flux_lw::Float64 = @inbounds flux_lw_vec[ip]
+                    flux_sw::Float64 = @inbounds flux_sw_vec[ip]
+                    qn::Float64 = @inbounds qn_vec[ip]
+                    add_micro_precip_sources!(@view(params.S[i,j,:]),
+                                                @view(params.uaux[ip,:]),
+                                                @view(qe[ip,:]),
+                                                S_micro, qn, flux_lw, flux_sw, PHYS_CONST,
+                                                SD, params.SOL_VARS_TYPE)
                 end
             end
 
@@ -621,8 +718,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
         params.metrics.dηdx, params.metrics.dηdy,
         iel, params.CL, params.QT, SD, params.AD)       
         =#
-
-        lkep = false
+        
         if lkep
             
             _expansion_inviscid_KEP_twopoint!(u_element_wise,
@@ -635,15 +731,6 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
                                               params.metrics.dηdx, params.metrics.dηdy,
                                               params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
             
-           #= _expansion_inviscid_KEP!(u, 
-                                     params.uprimitive,
-                                     params.neqs, params.mesh.ngl,
-                                     params.basis.dψ, params.ω,
-                                     params.F, params.G, params.S,
-                                     params.metrics.Je,
-                                     params.metrics.dξdx, params.metrics.dξdy,
-                                     params.metrics.dηdx, params.metrics.dηdy,
-                                     params.rhs_el, iel, params.CL, params.QT, SD, params.AD)=#
         else
             _expansion_inviscid!(u,
                                  params.neqs, params.mesh.ngl,
@@ -659,11 +746,11 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_2D)
 
     #= SM params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
     params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]=#
-
 end
 
-function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_3D)
-    
+function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_3D)
+   
+    PhysConst = PhysicalConst{Float64}()
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     xmin = params.xmin; xmax = params.xmax; zmax = params.zmax 
     for iel = 1:params.mesh.nelem
@@ -703,16 +790,15 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, SD::NSD_3D)
                              xmax=xmax, xmin=xmin, zmax=zmax)
                 
                 if (params.inputs[:lmoist])
-                    add_micro_precip_sources!(params.mp,
-                                              params.mp.flux_lw[ip],
-                                              params.mp.flux_sw[ip],
-                                              params.mp.Tabs[ip],
-                                              params.mp.S_micro[ip],
-                                              @view(params.S[i,j,k,:]),
-                                              @view(params.uaux[ip,:]),
-                                              params.mp.qn[ip],
-                                              @view(qe[ip,:]),
-                                              SD, params.SOL_VARS_TYPE)
+                    S_micro::Float64 = @inbounds S_micro_vec[ip]
+                    flux_lw::Float64 = @inbounds flux_lw_vec[ip]
+                    flux_sw::Float64 = @inbounds flux_sw_vec[ip]
+                    qn::Float64 = @inbounds qn_vec[ip]
+                    add_micro_precip_sources!(@view(params.S[i,j,k,:]),
+                                                @view(params.uaux[ip,:]),
+                                                @view(qe[ip,:]),
+                                                S_micro, qn, flux_lw, flux_sw, PhysConst,
+                                                SD, params.SOL_VARS_TYPE)
                     if (params.inputs[:LST])
                         large_scale_source!(@view(params.uaux[ip,:]),
                                             @view(qe[ip,:]),
@@ -788,7 +874,13 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_2D)
 
             user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
         end
-  
+
+        # WIP: DSGS
+        # compute_viscosity!(params.μsgs, SD, params.PT,
+        #                    @view(params.uaux[ip,:]),
+        #                    q1, q2,
+        #                    rhs, params.Δt, params.mesh, params.metrics)
+        
         for ieq = 1:params.neqs
             _expansion_visc!(params.rhs_diffξ_el,
                              params.rhs_diffη_el,
@@ -874,7 +966,7 @@ function _expansion_inviscid!(u, neqs, ngl,
                               F, S,
                               rhs_el,
                               iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
-    
+
     for ieq = 1:neqs
         for i=1:ngl
             dFdξ = 0.0
@@ -882,6 +974,73 @@ function _expansion_inviscid!(u, neqs, ngl,
                 dFdξ += dψ[k,i]*F[k,ieq]
             end
             rhs_el[iel,i,ieq] -= ω[i]*dFdξ - ω[i]*S[i,ieq]
+        end
+    end
+end
+
+
+
+function _expansion_inviscid_KEP!(u, neqs, ngl,
+                                  dψ, ω,
+                                  F, S, D,
+                                  rhs_el, uilgl,
+                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+    
+    for i = 1:ngl
+        
+        du_i = zeros(neqs)
+        
+        for j = 1:ngl
+            
+            for ieq = 1:neqs
+                # Average flux between points i and j
+                f_ij = 0.5 * (F[i, ieq] + F[j, ieq]) #Average point test towards two-point solition
+                #f_ij = F[i, ieq] #identical as usual  _expansion_inviscid!()
+                du_i[ieq] += 2.0 * dψ[j, i] * f_ij
+            end
+        end
+        
+        for ieq = 1:neqs
+            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
+        end
+    end
+end
+
+
+function _expansion_inviscid_KEP_v0!(u, neqs, ngl,
+                                     dψ, ω,
+                                     F, S,
+                                     rhs_el, uilgl,
+                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
+    
+    # Loop over grid points i in the element
+    for i = 1:ngl
+        
+        # Get the conservative variables at grid point i
+        u_i = @view uilgl[:, i, iel]  # neqs-dimensional vector
+        
+        # Initialize accumulator for the split form
+        du_i = zeros(neqs)
+        
+        # Loop over grid points j for the two-point flux split form
+        for j = 1:ngl
+            # Get the conservative variables at grid point j
+            u_j = @view uilgl[:, j, iel]  # neqs-dimensional vector
+            
+            # Compute two-point volume flux between states i and j
+            # You need to implement this function based on your flux type
+            f_ij = compute_two_point_flux(u_i, u_j)
+            
+            # Accumulate: 2 * D[i,j] * f_ij
+            # Using dψ as the derivative matrix
+            for ieq = 1:neqs
+                du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
+            end
+        end
+        
+        # Update RHS with the split form contribution
+        for ieq = 1:neqs
+            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
         end
     end
 end
@@ -1372,23 +1531,10 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT, SD::NSD_2D, ::ContGal; Δ=1.0, vargs...)
     
-    #
-    # Constants for Richardson stability correction
-    #
-    PhysConst  = PhysicalConst{Float32}()
-    Pr_t       = PhysConst.Pr_t
-    #
-    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
-    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
-    # Very unstable:    Pr_t ≈ 1/3
-    #
-    κ          = PhysConst.κ
-    cp         = PhysConst.cp
-    C_s        = PhysConst.C_s
-    C_s2       = C_s^2
-    
+    PhysConst = PhysicalConst{Float32}()
+    Δ2        = Δ^2    
     for l = 1:ngl
         for k = 1:ngl
             ωJac = ω[k]*ω[l]*Je[iel,k,l]
@@ -1399,7 +1545,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             @turbo for ii = 1:ngl
                 dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
                 dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
-
                 dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
                 dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
             end
@@ -1415,27 +1560,14 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             #v
             dvdx = dvdξ*dξdx_kl + dvdη*dηdx_kl
             dvdy = dvdξ*dξdy_kl + dvdη*dηdy_kl
-            
-            # Smagorinsky
-            # Strain rate tensor (symmetric part of velocity gradient)
-            S11 = dudx
-            S22 = dvdy
-            S12 = 0.5 * (dudy + dvdx)
-            
-            # CORRECT Strain rate magnitude calculation
-            # |S| = sqrt(2 * S_ij * S_ij)
-            S_ij_S_ij = S11*S11 + S22*S22 + 2.0 * S12*S12
-            Sij = sqrt(2.0 * S_ij_S_ij)
-            
-            # Filter width calculation
-            Δ2      = Δ * Δ
-            
-            # Base Smagorinsky eddy viscosity
-            ν_t_base = C_s2 * Δ2 * Sij
-            ν_t = ν_t_base
-            
-            # END Smagorinsky
 
+            effective_diffusivity =  SGS_diffusivity(visc_coeffieq, ieq,
+                                                     uprimitiveieq[k,l,1],
+                                                     dudx, dvdy, dudy, dvdx,
+                                                     PhysConst, Δ2,
+                                                     inputs, 
+                                                     VT, SD)
+            
             # Compute scalar gradient for diffusion iequation by iequation
             dqdξ = 0.0; dqdη = 0.0
             @turbo for ii = 1:ngl
@@ -1445,25 +1577,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
             # Transform scalar gradient to physical coordinates
             dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
             dqdy_phys = dqdξ*dξdy_kl + dqdη*dηdy_kl
-
             
-            # Determine effective diffusivity based on scalar type
-            # TODO: Replace this logic with proper equation identification
-            # Common orderings:
-            # - Conservative: [ρ, ρu, ρv, ρw, ρE] or [ρ, ρu, ρv, ρw, ρE, ρθ]
-            # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
-            if ieq == 4  # Assuming potential temperature equation is at index 5
-                # For temperature: use thermal diffusivity (ν_t / Pr_t)
-                ρ           = uprimitiveieq[k,l,1]                
-                α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
-                α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
-                effective_diffusivity = visc_coeffieq[ieq] * α_turbulent
-                
-            else
-                # For momentum equations: use momentum diffusivity
-                effective_diffusivity = visc_coeffieq[ieq] * ν_t
-            end
-                        
+            
             # Apply effective diffusivity to scalar gradients
             dqdx = effective_diffusivity * dqdx_phys
             dqdy = effective_diffusivity * dqdy_phys
@@ -1489,7 +1604,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::SMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::DSMAG, SD::NSD_2D, ::ContGal; Δ=1.0)
     
     PhysConst  = PhysicalConst{Float32}()
     Pr_t       = PhysConst.Pr_t
@@ -1793,132 +1908,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     end
 end
 
-#
-# RHS with Vreman 2D
-#
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
-                          uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je,
-                          dξdx, dξdy,
-                          dηdx, dηdy,
-                          inputs, rhs_el,
-                          iel, ieq,
-                          QT::Inexact, VT::VREM, SD::NSD_2D, ::ContGal; Δ=1.0)
-
-    PhysConst  = PhysicalConst{Float32}()
-    Pr_t       = PhysConst.Pr_t
-    #
-    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
-    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
-    # Very unstable:    Pr_t ≈ 1/3
-    #
-    κ          = PhysConst.κ
-    cp         = PhysConst.cp
-    C_s        = PhysConst.C_s
-    C_s2       = C_s^2
-    C_vrem     = 2.5 * C_s2  # Vreman coefficient
-    eps_vreman = 1.0e-14  # Safety epsilon
-    
-    for l = 1:ngl
-        for k = 1:ngl
-            Je_kl = Je[iel,k,l]
-            ωJac = ω[k]*ω[l]*Je_kl
-
-            # Filter width calculation (isotropic)
-            Δ2      = Δ * Δ
-            
-            # Velocity gradients in computational space
-            dudξ = 0.0; dudη = 0.0
-            dvdξ = 0.0; dvdη = 0.0
-            @turbo for ii = 1:ngl
-                dudξ += dψ[ii,k]*uprimitiveieq[ii,l,2]
-                dudη += dψ[ii,l]*uprimitiveieq[k,ii,2]
-                dvdξ += dψ[ii,k]*uprimitiveieq[ii,l,3]
-                dvdη += dψ[ii,l]*uprimitiveieq[k,ii,3]
-            end
-            
-            # Metric terms
-            dξdx_kl = dξdx[iel,k,l]
-            dξdy_kl = dξdy[iel,k,l]
-            dηdx_kl = dηdx[iel,k,l]
-            dηdy_kl = dηdy[iel,k,l]
-
-            # Transform to physical space
-            u11 = dudξ*dξdx_kl + dudη*dηdx_kl  # dudx
-            u12 = dudξ*dξdy_kl + dudη*dηdy_kl  # dudy
-            u21 = dvdξ*dξdx_kl + dvdη*dηdx_kl  # dvdx
-            u22 = dvdξ*dξdy_kl + dvdη*dηdy_kl  # dvdy
-
-            # Vreman β tensor
-            β11 = Δ2 * (u11*u11 + u12*u12)
-            β12 = Δ2 * (u11*u21 + u12*u22)
-            β22 = Δ2 * (u21*u21 + u22*u22)
-
-            B_β = β11*β22 - β12*β12
-            
-            # Frobenius norm squared of velocity gradient
-            u_ij_u_ij = u11*u11 + u12*u12 + u21*u21 + u22*u22
-            
-            # Vreman eddy viscosity with safety checks
-            # At the top, after line 13
-           
-            if u_ij_u_ij > eps_vreman && B_β > 0.0
-                ν_t = C_vrem * sqrt(B_β / u_ij_u_ij)
-            else
-                ν_t = 0.0
-            end
-            
-            # Scalar gradient
-            dqdξ = 0.0; dqdη = 0.0
-            @turbo for ii = 1:ngl
-                dqdξ += dψ[ii,k]*uprimitiveieq[ii,l,ieq]
-                dqdη += dψ[ii,l]*uprimitiveieq[k,ii,ieq]
-            end
-            
-            dqdx_phys = dqdξ*dξdx_kl + dqdη*dηdx_kl
-            dqdy_phys = dqdξ*dξdy_kl + dqdη*dηdy_kl
-            
-            # Effective diffusivity
-            if ieq == 4
-                ρ           = uprimitiveieq[k,l,1]                
-                #α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
-                α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
-
-                effective_diffusivity = visc_coeffieq[ieq] * α_turbulent
-            else
-                effective_diffusivity = visc_coeffieq[ieq] * ν_t
-            end
-
-            #=if iel == 1 && k == 1 && l == 1 && ieq == 2
-                @show C_s
-                @show Pr_t
-                @show effective_diffusivity
-                @show α_turbulent
-                @show Δ
-                @show ν_t
-                @show sqrt(B_β / u_ij_u_ij)  # Before multiplying by C_vrem
-            end=#
-            
-            dqdx = effective_diffusivity * dqdx_phys
-            dqdy = effective_diffusivity * dqdy_phys
-            
-            ∇ξ∇q_kl = (dξdx_kl*dqdx + dξdy_kl*dqdy)*ωJac
-            ∇η∇q_kl = (dηdx_kl*dqdx + dηdy_kl*dqdy)*ωJac     
-            
-            @turbo for i = 1:ngl
-                dhdξ_ik = dψ[i,k]
-                dhdη_il = dψ[i,l]
-                
-                rhs_diffξ_el[iel,i,l,ieq] -= dhdξ_ik * ∇ξ∇q_kl
-                rhs_diffη_el[iel,k,i,ieq] -= dhdη_il * ∇η∇q_kl
-            end
-        end  
-    end
-end
-#
-# END RHS with Vreman 2D
-#
-
 function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je,
@@ -1992,42 +1981,33 @@ end
 
 
 function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
-                          uprimitiveieq, visc_coeffieq, ω,
-                          ngl, dψ, Je,
-                          dξdx, dξdy, dξdz,
-                          dηdx, dηdy, dηdz,
-                          dζdx, dζdy, dζdz,
-                          inputs,
-                          rhs_el,
-                          iel, ieq,
-                          τ_f, wθ, lwall_model,
-                          connijk,
-                          coords, 
-                          poin_in_bdy_face, elem_to_face, bdy_face_type,
-                          QT::Inexact, VT::VREM, SD::NSD_3D, ::ContGal; Δ=1.0)
+                           uprimitiveieq, visc_coeffieq, ω,
+                           ngl, dψ, Je,
+                           dξdx, dξdy, dξdz,
+                           dηdx, dηdy, dηdz,
+                           dζdx, dζdy, dζdz,
+                           inputs,
+                           rhs_el,
+                           iel, ieq,
+                           τ_f, wθ, lwall_model,
+                           connijk,
+                           coords, 
+                           poin_in_bdy_face, elem_to_face, bdy_face_type,
+                           QT::Inexact, VT, SD::NSD_3D, ::ContGal; Δ=1.0, vargs...)
     
     PhysConst  = PhysicalConst{Float32}()
-    Pr_t       = PhysConst.Pr_t
-    κ          = PhysConst.κ
-    cp         = PhysConst.cp
-    C_s        = PhysConst.C_s
-    C_s2       = C_s^2
-    C_vrem     = 2.5 * C_s2  # Vreman coefficient
-    eps_vreman = 1.0e-14  # Safety epsilon
-    
+    Δ2         = Δ * Δ
     for m = 1:ngl
         for l = 1:ngl
             for k = 1:ngl
                 Je_klm = Je[iel,k,l,m]
                 ωJac = ω[k]*ω[l]*ω[m]*Je_klm
                 
-                # Filter width calculation (isotropic)
-                Δ2      = Δ * Δ
-            #    @info Δ
                 # Velocity gradients in computational space
                 dudξ = 0.0; dudη = 0.0; dudζ = 0.0
                 dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
                 dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
+                dθdξ = 0.0; dθdη = 0.0; dθdζ = 0.0
                 @turbo for ii = 1:ngl
                     dudξ += dψ[ii,k]*uprimitiveieq[ii,l,m,2]
                     dudη += dψ[ii,l]*uprimitiveieq[k,ii,m,2]
@@ -2040,15 +2020,22 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     dwdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,4]
                     dwdη += dψ[ii,l]*uprimitiveieq[k,ii,m,4]
                     dwdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,4]
+                    
+                    # Potential temperature gradients
+                    dθdξ += dψ[ii,k]*uprimitiveieq[ii,l,m,5]
+                    dθdη += dψ[ii,l]*uprimitiveieq[k,ii,m,5]
+                    dθdζ += dψ[ii,m]*uprimitiveieq[k,l,ii,5]
                 end
                 
                 # Metric terms
                 dξdx_klm = dξdx[iel,k,l,m]
                 dξdy_klm = dξdy[iel,k,l,m]
                 dξdz_klm = dξdz[iel,k,l,m]
+
                 dηdx_klm = dηdx[iel,k,l,m]
                 dηdy_klm = dηdy[iel,k,l,m]
                 dηdz_klm = dηdz[iel,k,l,m]
+
                 dζdx_klm = dζdx[iel,k,l,m]
                 dζdy_klm = dζdy[iel,k,l,m]
                 dζdz_klm = dζdz[iel,k,l,m]
@@ -2066,30 +2053,6 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 u32 = dwdξ*dξdy_klm + dwdη*dηdy_klm + dwdζ*dζdy_klm  # ∂w/∂y
                 u33 = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm  # ∂w/∂z
                 
-                # Vreman β tensor (3D)
-                # β_ij = Δ_m^2 * u_im * u_jm (sum over m=1,2,3)
-                β11 = Δ2 * (u11*u11 + u12*u12 + u13*u13)
-                β12 = Δ2 * (u11*u21 + u12*u22 + u13*u23)
-                β13 = Δ2 * (u11*u31 + u12*u32 + u13*u33)
-                β22 = Δ2 * (u21*u21 + u22*u22 + u23*u23)
-                β23 = Δ2 * (u21*u31 + u22*u32 + u23*u33)
-                β33 = Δ2 * (u31*u31 + u32*u32 + u33*u33)
-                
-                # B_β for 3D
-                B_β = β11*β22 + β11*β33 + β22*β33 - (β12*β12 + β13*β13 + β23*β23)
-                
-                # Frobenius norm squared of 3x3 velocity gradient tensor
-                u_ij_u_ij = u11*u11 + u12*u12 + u13*u13 +
-                            u21*u21 + u22*u22 + u23*u23 +
-                            u31*u31 + u32*u32 + u33*u33
-                
-                # Vreman eddy viscosity with safety checks
-                if u_ij_u_ij > eps_vreman && B_β > 0.0
-                    ν_t = C_vrem * sqrt(B_β / u_ij_u_ij)
-                else
-                    ν_t = 0.0
-                end
-                
                 # Scalar gradient in computational space
                 dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
                 @turbo for ii = 1:ngl
@@ -2102,18 +2065,19 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                 dqdx_phys = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
                 dqdy_phys = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
                 dqdz_phys = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
+
+                # Transform potential temperature derivatives to physical coordinates
+                dθdz = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
                 
-                # Effective diffusivity
-                if ieq == 5  # Energy equation (shifted by 1 due to w at index 4)
-                    ρ           = uprimitiveieq[k,l,m,1]                
-                    α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
-                    α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
-                    
-                    effective_diffusivity = visc_coeffieq[ieq] * α_turbulent
-                    #effective_diffusivity = visc_coeffieq[ieq] * ρ * cp * (α_molecular + α_turbulent)
-                else
-                    effective_diffusivity = visc_coeffieq[ieq] * ν_t
-                end
+                effective_diffusivity = SGS_diffusivity(visc_coeffieq, ieq,
+                                                        uprimitiveieq[k,l,m,1], 
+                                                        u11, u12, u13,
+                                                        u21, u22, u23,
+                                                        u31, u32, u33,
+                                                        uprimitiveieq[k,l,m,5], dθdz, 
+                                                        PhysConst, Δ2,
+                                                        inputs, 
+                                                        VT, SD)
                 
                 # Apply diffusivity to scalar gradients
                 dqdx = effective_diffusivity * dqdx_phys
@@ -2138,204 +2102,7 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
         end  
     end
 end
-               
-function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
-                          uprimitive, visc_coeffieq, ω,
-                          ngl, dψ, Je,
-                          dξdx, dξdy, dξdz,
-                          dηdx, dηdy, dηdz,
-                          dζdx, dζdy, dζdz,
-                          inputs,
-                          rhs_el,
-                          iel, ieq,
-                          τ_f, wθ, lwall_model,
-                          connijk,
-                          coords,
-                          poin_in_bdy_face, elem_to_face, bdy_face_type, 
-                          QT::Inexact, VT::SMAG, SD::NSD_3D, ::ContGal; Δ=1.0)
 
-    #
-    # Constants for Richardson stability correction
-    #
-    PhysConst = PhysicalConst{Float32}()
-    Pr_t      = PhysConst.Pr_t            # Turbulent Prandtl number
-    g         = PhysConst.g               # Gravitational acceleration (m/s²)
-    Ri_crit   = PhysConst.Ri_crit         # Critical Richardson number
-    C_s       = PhysConst.C_s             # Smagorinsky constant (typical range: 0.1-0.2)
-    
-    for m = 1:ngl
-        for l = 1:ngl
-            for k = 1:ngl
-                ωJac = ω[k]*ω[l]*ω[m]*Je[iel,k,l,m]
-                
-                # Initialize velocity gradients
-                dudξ = 0.0; dudη = 0.0; dudζ = 0.0
-                dvdξ = 0.0; dvdη = 0.0; dvdζ = 0.0
-                dwdξ = 0.0; dwdη = 0.0; dwdζ = 0.0
-                
-                # Initialize potential temperature gradients
-                dθdξ = 0.0; dθdη = 0.0; dθdζ = 0.0
-
-                @turbo for ii = 1:ngl
-                    # Velocity gradients
-                    dudξ += dψ[ii,k]*uprimitive[ii,l,m,2]
-                    dudη += dψ[ii,l]*uprimitive[k,ii,m,2]
-                    dudζ += dψ[ii,m]*uprimitive[k,l,ii,2]
-
-                    dvdξ += dψ[ii,k]*uprimitive[ii,l,m,3]
-                    dvdη += dψ[ii,l]*uprimitive[k,ii,m,3]
-                    dvdζ += dψ[ii,m]*uprimitive[k,l,ii,3]
-
-                    dwdξ += dψ[ii,k]*uprimitive[ii,l,m,4]
-                    dwdη += dψ[ii,l]*uprimitive[k,ii,m,4]
-                    dwdζ += dψ[ii,m]*uprimitive[k,l,ii,4]
-                    
-                    # Potential temperature gradients
-                    dθdξ += dψ[ii,k]*uprimitive[ii,l,m,5]
-                    dθdη += dψ[ii,l]*uprimitive[k,ii,m,5]
-                    dθdζ += dψ[ii,m]*uprimitive[k,l,ii,5]
-                end
-                
-                # Cache metric derivatives for efficiency
-                dξdx_klm = dξdx[iel,k,l,m]
-                dξdy_klm = dξdy[iel,k,l,m]
-                dξdz_klm = dξdz[iel,k,l,m]
-                
-                dηdx_klm = dηdx[iel,k,l,m]
-                dηdy_klm = dηdy[iel,k,l,m]
-                dηdz_klm = dηdz[iel,k,l,m]
-                
-                dζdx_klm = dζdx[iel,k,l,m]
-                dζdy_klm = dζdy[iel,k,l,m]
-                dζdz_klm = dζdz[iel,k,l,m]
-
-                # Transform velocity derivatives to physical coordinates
-                dudx = dudξ*dξdx_klm + dudη*dηdx_klm + dudζ*dζdx_klm
-                dvdx = dvdξ*dξdx_klm + dvdη*dηdx_klm + dvdζ*dζdx_klm
-                dwdx = dwdξ*dξdx_klm + dwdη*dηdx_klm + dwdζ*dζdx_klm
-                
-                dudy = dudξ*dξdy_klm + dudη*dηdy_klm + dudζ*dζdy_klm
-                dvdy = dvdξ*dξdy_klm + dvdη*dηdy_klm + dvdζ*dζdy_klm
-                dwdy = dwdξ*dξdy_klm + dwdη*dηdy_klm + dwdζ*dζdy_klm
-                
-                dudz = dudξ*dξdz_klm + dudη*dηdz_klm + dudζ*dζdz_klm
-                dvdz = dvdξ*dξdz_klm + dvdη*dηdz_klm + dvdζ*dζdz_klm
-                dwdz = dwdξ*dξdz_klm + dwdη*dηdz_klm + dwdζ*dζdz_klm
-                
-                # Transform potential temperature derivatives to physical coordinates
-                dθdx = dθdξ*dξdx_klm + dθdη*dηdx_klm + dθdζ*dζdx_klm
-                dθdy = dθdξ*dξdy_klm + dθdη*dηdy_klm + dθdζ*dζdy_klm
-                dθdz = dθdξ*dξdz_klm + dθdη*dηdz_klm + dθdζ*dζdz_klm
-
-                # Strain rate tensor (symmetric part of velocity gradient)
-                S11 = dudx
-                S22 = dvdy
-                S33 = dwdz
-                S12 = 0.5 * (dudy + dvdx)
-                S13 = 0.5 * (dudz + dwdx)
-                S23 = 0.5 * (dvdz + dwdy)
-
-                # Rotation tensor (anti-symmetric part)
-                Ω12 = 0.5 * (dudy - dvdx)
-                Ω13 = 0.5 * (dudz - dwdx)
-                Ω21 = -Ω12
-                Ω23 = 0.5 * (dvdz - dwdy)
-                Ω31 = -Ω13
-                Ω32 = -Ω23
-                
-                # Strain rate magnitude
-                Sij = sqrt(0.5 * (S11*S11 + S22*S22 + S33*S33) + (S12*S12 + S13*S13 + S23*S23))
-                S2  = Sij*Sij
-                
-                # Filter width calculation
-                Δ2      = Δ * Δ
-                # @info Δ
-                
-                # Richardson number calculation for stability correction
-                # Get reference potential temperature (local value)
-                θ_ref = uprimitive[k,l,m,5]
-                
-                # Buoyancy frequency squared: N² = (g/θ) * dθ/dz
-                # Note: assuming z is vertical (modify if different coordinate system)
-                N2 = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
-                
-               
-                # Richardson number: Ri = N²/S²
-                Ri = (S2 > 1e-12 && N2 >= 0.0) ? N2 / S2 : 0.0
-                
-                # Stability function for Richardson correction
-                # Various formulations exist; using a smooth transition
-                f_Ri = if Ri >= Ri_crit
-                    # Stable stratification suppresses turbulence
-                    0.0
-                elseif Ri >= 0.0
-                    # Stable but sub-critical: reduce mixing
-                    (1.0 - Ri/Ri_crit)^2
-                else
-                    # Unstable stratification: enhance mixing
-                    sqrt(1.0 - 16.0*Ri)  # Ri is negative, so this increases mixing
-                end
-                
-                # Apply Richardson stability correction to eddy viscosity
-                # Base Smagorinsky eddy viscosity
-                ν_t_base = (C_s * Δ)^2 * Sij
-                
-                # Richardson-corrected eddy viscosity
-                ν_t = ν_t_base #* f_Ri
-                
-                # Compute scalar gradient for diffusion
-                dqdξ = 0.0; dqdη = 0.0; dqdζ = 0.0
-                
-                @turbo for ii = 1:ngl
-                    dqdξ += dψ[ii,k]*uprimitive[ii,l,m,ieq]
-                    dqdη += dψ[ii,l]*uprimitive[k,ii,m,ieq]
-                    dqdζ += dψ[ii,m]*uprimitive[k,l,ii,ieq]
-                end
-                
-                # Transform scalar gradient to physical coordinates
-                dqdx_phys = dqdξ*dξdx_klm + dqdη*dηdx_klm + dqdζ*dζdx_klm
-                dqdy_phys = dqdξ*dξdy_klm + dqdη*dηdy_klm + dqdζ*dζdy_klm
-                dqdz_phys = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
-                
-                # Determine effective diffusivity based on scalar type
-                # TODO: Replace this logic with proper equation identification
-                # Common orderings:
-                # - Conservative: [ρ, ρu, ρv, ρw, ρE] or [ρ, ρu, ρv, ρw, ρE, ρθ]
-                # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
-                if ieq == 5  # Assuming potential temperature equation is at index 5
-                    # For temperature: use thermal diffusivity (ν_t / Pr_t)
-                    effective_diffusivity = visc_coeffieq[ieq] * ν_t / Pr_t
-                else
-                    # For momentum equations: use momentum diffusivity
-                    effective_diffusivity = visc_coeffieq[ieq] * ν_t
-                end
-                
-                # Apply effective diffusivity to scalar gradients
-                dqdx = effective_diffusivity * dqdx_phys
-                dqdy = effective_diffusivity * dqdy_phys
-                dqdz = effective_diffusivity * dqdz_phys
-                
-                # Transform back to computational coordinates for weak form
-                ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
-                ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
-                ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
-                
-                
-                # Distribute to element RHS arrays
-                @turbo for i = 1:ngl
-                    dhdξ_ik = dψ[i,k]
-                    dhdη_il = dψ[i,l]
-                    dhdζ_im = dψ[i,m]
-                    
-                    rhs_diffξ_el[iel,i,l,m,ieq] -= dhdξ_ik * ∇ξ∇u_klm
-                    rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η∇u_klm
-                    rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ∇u_klm
-                end
-
-            end
-        end
-    end
-end
 
 function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, rhs_el, iel, ieq, QT::Exact, VT, SD::NSD_2D, ::FD)
     nothing
@@ -2359,20 +2126,31 @@ function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
     
 end
 
-function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζdz, ω, dψ, ::NSD_3D)
+function compute_vertical_derivative_q!(dqdz::Array{Float64,4}, q::Array{Float64,4}, iel::Int64, ngl::Int64, Je::Array{Float64,4}, 
+        dξdz::Array{Float64,4}, dηdz::Array{Float64,4}, dζdz::Array{Float64,4}, ω::Vector{Float64}, dψ::Matrix{Float64}, ::NSD_3D)
+    
+    local ωJac::Float64
+    local dHdξ::Float64
+    local dHdη::Float64
+    local dHdζ::Float64
+    local dξdz_ij::Float64
+    local dηdz_ij::Float64
+    local dζdz_ij::Float64
+    local dHdz::Float64
+    local auxi::Float64
 
     for k=1:ngl
         for j=1:ngl
             for i=1:ngl
-                ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                @inbounds ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
                 
                 dHdξ = 0.0
                 dHdη = 0.0
                 dHdζ = 0.0
                 @turbo for m = 1:ngl
-                    dHdξ += dψ[m,i]*q[m,j,k]
-                    dHdη += dψ[m,j]*q[i,m,k]
-                    dHdζ += dψ[m,k]*q[i,j,m]
+                    dHdξ += dψ[m,i]*q[m,j,k,1]
+                    dHdη += dψ[m,j]*q[i,m,k,1]
+                    dHdζ += dψ[m,k]*q[i,j,m,1]
                 end
                 dξdz_ij = dξdz[iel,i,j,k]
                 dηdz_ij = dηdz[iel,i,j,k]
@@ -2387,7 +2165,7 @@ function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdz, dηdz, dζ
     end
 end
 
-function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdy, dηdy, ω, dψ, ::NSD_2D)
+function compute_vertical_derivative_q!(dqdz, q, iel::Int64, ngl::Int64, Je, dξdy, dηdy, ω, dψ, ::NSD_2D)
     for j=1:ngl
         for i=1:ngl
             ωJac = ω[i]*ω[j]*Je[iel,i,j]
@@ -2395,8 +2173,8 @@ function compute_vertical_derivative_q!(dqdz, q, iel, ngl, Je, dξdy, dηdy, ω,
             dHdξ = 0.0    
             dHdη = 0.0
             @turbo for m = 1:ngl
-                dHdξ += dψ[m,i]*q[m,j]
-                dHdη += dψ[m,j]*q[i,m]
+                dHdξ += dψ[m,i]*q[m,j,1]
+                dHdη += dψ[m,j]*q[i,m,1]
             end
             dξdy_ij = dξdy[iel,i,j]      
             dηdy_ij = dηdy[iel,i,j]      
@@ -2420,4 +2198,344 @@ function saturation_adjustment(uaux, qe, z, connijk, nelem, ngl, neqs, thermo_pa
             end
         end
     end
+end
+
+@inline function flux_ranocha(u_ll, u_rr, orientation::Integer,
+                              equations)
+    # Unpack left and right state
+    rho_ll, v1_ll, p_ll = cons2prim(u_ll, equations)
+    rho_rr, v1_rr, p_rr = cons2prim(u_rr, equations)
+    params.uprimitive[i,:]
+
+    # Compute the necessary mean values
+    rho_mean = ln_mean(rho_ll, rho_rr)
+    # Algebraically equivalent to `inv_ln_mean(rho_ll / p_ll, rho_rr / p_rr)`
+    # in exact arithmetic since
+    #     log((ϱₗ/pₗ) / (ϱᵣ/pᵣ)) / (ϱₗ/pₗ - ϱᵣ/pᵣ)
+    #   = pₗ pᵣ log((ϱₗ pᵣ) / (ϱᵣ pₗ)) / (ϱₗ pᵣ - ϱᵣ pₗ)
+    inv_rho_p_mean = p_ll * p_rr * inv_ln_mean(rho_ll * p_rr, rho_rr * p_ll)
+    v1_avg = 0.5f0 * (v1_ll + v1_rr)
+    p_avg = 0.5f0 * (p_ll + p_rr)
+    velocity_square_avg = 0.5f0 * (v1_ll * v1_rr)
+    
+    # Calculate fluxes
+    # Ignore orientation since it is always "1" in 1D
+    f1 = rho_mean * v1_avg
+    f2 = f1 * v1_avg + p_avg
+    f3 = f1 * (velocity_square_avg + inv_rho_p_mean * equations.inv_gamma_minus_one) +
+         0.5f0 * (p_ll * v1_rr + p_rr * v1_ll)
+
+    return SVector(f1, f2, f3)
+end
+
+
+@inline function SGS_diffusivity(visc_coeffieq, ieq,
+                                 ρ, 
+                                 u11, u22, u12, u21,
+                                 PhysConst, Δ2,
+                                 inputs, 
+                                 ::SMAG, ::NSD_2D)
+
+    #
+    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
+    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
+    # Very unstable:    Pr_t ≈ 1/3
+    #
+    Pr_t = PhysConst.Pr_t    
+    κ    = PhysConst.κ
+    cp   = PhysConst.cp
+    C_s  = PhysConst.C_s
+    C_s2 = C_s^2
+    
+    # Smagorinsky
+    # Strain rate tensor (symmetric part of velocity gradient)
+    S11 = u11
+    S22 = u22
+    S12 = 0.5 * (u12 + u21)
+    S21 = S12
+    
+    # Strain rate magnitude
+    # |S| = sqrt(2 * S_ij * S_ij)
+    S_ij_S_ij = S11*S11 + S22*S22 + 2.0*S12*S12
+    Sij       = sqrt(2.0 * S_ij_S_ij)
+    
+    # Base Smagorinsky eddy viscosity
+    ν_t_base = C_s2 * Δ2 * Sij
+    ν_t = ν_t_base
+    # END Smagorinsky
+
+    
+    # Determine effective diffusivity based on scalar type
+    # TODO: Replace this logic with proper equation identification
+    # Common orderings:
+    # - Conservative: [ρ, ρu, ρv, ρE] or [ρ, ρu, ρv, ρE, ρθ]
+    # - Primitive: [ρ, u, v, T] or [ρ, u, v, p, θ]
+    if ieq == 4  # Assuming potential temperature equation is at index 4
+        α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
+        α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
+        
+        if inputs[:energy_equation] == "theta"
+            effective_diffusivity = (α_turbulent) * visc_coeffieq[ieq]
+        else
+            effective_diffusivity = ρ * cp * (α_turbulent + α_molecular) * visc_coeffieq[ieq]
+        end
+        
+    else
+        # For momentum equations: use momentum diffusivity
+        effective_diffusivity = visc_coeffieq[ieq] * ν_t
+    end
+
+    return effective_diffusivity
+end
+
+@inline function SGS_diffusivity(visc_coeffieq, ieq,
+                                 ρ, 
+                                 u11, u12, u13,
+                                 u21, u22, u23,
+                                 u31, u32, u33,
+                                 θ_ref, dθdz, 
+                                 PhysConst, Δ2,
+                                 inputs, 
+                                 ::SMAG, ::NSD_3D)
+
+    #
+    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
+    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
+    # Very unstable:    Pr_t ≈ 1/3
+    #
+    Pr_t      = PhysConst.Pr_t    
+    κ         = PhysConst.κ
+    cp        = PhysConst.cp
+    g         = PhysConst.g       # Gravitational acceleration (m/s²)
+    Ri_crit   = PhysConst.Ri_crit # Critical Richardson number
+    C_s       = PhysConst.C_s
+    C_s2      = C_s^2
+
+    # Strain rate tensor (symmetric part of velocity gradient)
+    S11 = u11
+    S22 = u22
+    S33 = u33
+    S12 = 0.5 * (u12 + u21)
+    S13 = 0.5 * (u13 + u31)
+    S23 = 0.5 * (u23 + u32)
+    
+    # Strain rate magnitude
+    # |S| = sqrt(2 * S_ij * S_ij)
+    S_ij_S_ij  = S11^2 + S22^2 + S33^2 + 2.0*(S12^2 + S13^2 + S23^2)
+    Sij        = sqrt(2.0 * S_ij_S_ij)
+    Sij2       = 2.0 * S_ij_S_ij
+    
+    if inputs[:energy_equation] == "theta" && inputs[:lrichardson]
+        
+        # Buoyancy frequency squared: N² = (g/θ) * dθ/dz
+        # Note: assuming z is vertical (modify if different coordinate system)
+        N2 = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
+        
+        # Richardson number: Ri = N²/S²
+        Ri = (Sij2 > 1e-12) ? N2 / Sij2 : 0.0
+        
+        # Stability function for Richardson correction
+        # Various formulations exist; using a smooth transition
+        f_Ri = if Ri >= Ri_crit
+            # Stable stratification suppresses turbulence
+            0.0
+        elseif Ri >= 0.0
+            # Stable but sub-critical: reduce mixing
+            (1.0 - Ri/Ri_crit)^2
+        else
+            # Unstable stratification: enhance mixing
+            min(sqrt(1.0 - 16.0*Ri), 3.0)  # Cap at 3x base mixing
+        end
+    else
+        f_Ri = 1.0
+    end
+    
+    # Apply Richardson stability correction to eddy viscosity
+    # Base Smagorinsky eddy viscosity
+    ν_t_base = C_s2*Δ2 * Sij
+    ν_t = ν_t_base * f_Ri
+    
+    
+    # Determine effective diffusivity based on scalar type
+    # TODO: Replace this logic with proper equation identification
+    # Common orderings:
+    # - Conservative: [ρ, ρu, ρv, ρw, ρE] or [ρ, ρu, ρv, ρw, ρE, ρθ]
+    # - Primitive: [ρ, u, v, w, T] or [ρ, u, v, w, p, θ]
+    if ieq == 5  # Assuming potential temperature equation is at index 5
+        α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
+        α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
+        
+        if inputs[:energy_equation] == "theta"
+            effective_diffusivity = α_turbulent * visc_coeffieq[ieq]
+        else
+            effective_diffusivity = ρ * cp * (α_turbulent + α_molecular) * visc_coeffieq[ieq]
+        end
+    else
+        # For momentum equations: use momentum diffusivity
+        effective_diffusivity = visc_coeffieq[ieq] * ν_t
+    end
+    
+    return effective_diffusivity
+end
+
+@inline function SGS_diffusivity(visc_coeffieq, ieq,
+                                 ρ, 
+                                 u11, u22, u12, u21,
+                                 PhysConst, Δ2,
+                                 inputs, 
+                                 ::VREM, ::NSD_2D)
+
+    Pr_t       = PhysConst.Pr_t
+    #
+    # Neutral/unstable: Pr_t ≈ 0.7 - 0.85
+    # Stable:           Pr_t ≈ 1.0 - 2.0 (usually handled with Richardson corrections)
+    # Very unstable:    Pr_t ≈ 1/3
+    #
+    κ          = PhysConst.κ
+    cp         = PhysConst.cp
+    C_s        = PhysConst.C_s
+    C_s2       = C_s^2
+    C_vrem     = 2.5 * C_s2  # Vreman coefficient
+    eps_vreman = eps(1.0)    # Safety epsilon
+    
+    # Vreman β tensor
+    β11 = Δ2 * (u11*u11 + u12*u12)
+    β12 = Δ2 * (u11*u21 + u12*u22)
+    β22 = Δ2 * (u21*u21 + u22*u22)
+
+    B_β = β11*β22 - β12*β12
+    
+    # Frobenius norm squared of velocity gradient
+    u_ij_u_ij = u11*u11 + u12*u12 + u21*u21 + u22*u22
+    
+    # Vreman eddy viscosity with safety checks
+    # At the top, after line 13
+    
+    if u_ij_u_ij > eps_vreman && B_β > 0.0
+        ν_t = C_vrem * sqrt(B_β / u_ij_u_ij)
+    else
+        ν_t = 0.0
+    end
+    
+    # Determine effective diffusivity based on scalar type
+    # TODO: Replace this logic with proper equation identification
+    # Common orderings:
+    # - Conservative: [ρ, ρu, ρv, ρE] or [ρ, ρu, ρv, ρE, ρθ]
+    # - Primitive: [ρ, u, v, T] or [ρ, u, v, p, θ]
+    if ieq == 4  # Assuming potential temperature equation is at index 4
+        α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
+        α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
+        
+        if inputs[:energy_equation] == "theta"
+            effective_diffusivity = (α_turbulent) * visc_coeffieq[ieq]
+        else
+            effective_diffusivity = ρ * cp * (α_turbulent + α_molecular) * visc_coeffieq[ieq]
+        end
+        
+    else
+        # For momentum equations: use momentum diffusivity
+        effective_diffusivity = visc_coeffieq[ieq] * ν_t
+    end
+
+    return effective_diffusivity
+end
+
+@inline function SGS_diffusivity(visc_coeffieq, ieq,
+                                 ρ, 
+                                 u11, u12, u13,
+                                 u21, u22, u23,
+                                 u31, u32, u33,
+                                 θ_ref, dθdz, 
+                                 PhysConst, Δ2,
+                                 inputs, 
+                                 ::VREM, ::NSD_3D)
+
+    Pr_t       = PhysConst.Pr_t
+    κ          = PhysConst.κ
+    cp         = PhysConst.cp
+    g          = PhysConst.g         # Gravitational acceleration (m/s²)
+    Ri_crit    = PhysConst.Ri_crit   # Critical Richardson number
+    C_s        = PhysConst.C_s
+    C_s2       = C_s^2
+    C_vrem     = 2.5 * C_s2          # Vreman coefficient
+    eps_vreman = eps(1.0)            # Safety epsilon
+
+    # Vreman β tensor (3D)
+    # β_ij = Δ_m^2 * u_im * u_jm (sum over m=1,2,3)
+    β11 = Δ2 * (u11*u11 + u12*u12 + u13*u13)
+    β12 = Δ2 * (u11*u21 + u12*u22 + u13*u23)
+    β13 = Δ2 * (u11*u31 + u12*u32 + u13*u33)
+    β22 = Δ2 * (u21*u21 + u22*u22 + u23*u23)
+    β23 = Δ2 * (u21*u31 + u22*u32 + u23*u33)
+    β33 = Δ2 * (u31*u31 + u32*u32 + u33*u33)
+    
+    # B_β for 3D
+    B_β = β11*β22 + β11*β33 + β22*β33 - (β12*β12 + β13*β13 + β23*β23)
+    
+    # Frobenius norm squared of 3x3 velocity gradient tensor
+    u_ij_u_ij =
+        u11*u11 + u12*u12 + u13*u13 +
+        u21*u21 + u22*u22 + u23*u23 +
+        u31*u31 + u32*u32 + u33*u33
+    
+    if inputs[:energy_equation] == "theta" && inputs[:lrichardson]
+        
+        # Strain rate tensor (symmetric part of velocity gradient)
+        S11 = u11
+        S22 = u22
+        S33 = u33
+        S12 = 0.5 * (u12 + u21)
+        S13 = 0.5 * (u13 + u31)
+        S23 = 0.5 * (u23 + u32)
+        
+        # Strain rate magnitude
+	# |S| = sqrt(2 * S_ij * S_ij)
+        S_ij_S_ij  = S11^2 + S22^2 + S33^2 + 2.0*(S12^2 + S13^2 + S23^2)
+        Sij2        = 2.0 * S_ij_S_ij
+
+        # Buoyancy frequency squared: N² = (g/θ) * dθ/dz
+        # Note: assuming z is vertical (modify if different coordinate system)
+        N2 = abs(θ_ref) > 1e-12 ? (g / θ_ref) * dθdz : 0.0
+        
+        # Richardson number: Ri = N²/S²
+        Ri = (Sij2 > 1e-12) ? N2 / Sij2 : 0.0
+        
+        # Stability function for Richardson correction
+        # Various formulations exist; using a smooth transition
+        f_Ri = if Ri >= Ri_crit
+            # Stable stratification suppresses turbulence
+            0.0
+        elseif Ri >= 0.0
+            # Stable but sub-critical: reduce mixing
+            (1.0 - Ri/Ri_crit)^2
+        else
+            # Unstable stratification: enhance mixing
+            min(sqrt(1.0 - 16.0*Ri), 3.0)  # Cap at 3x base mixing
+        end
+    else
+        f_Ri = 1.0
+    end
+    
+    # Vreman eddy viscosity with safety checks
+    if u_ij_u_ij > eps_vreman && B_β > 0.0
+        ν_t = C_vrem * sqrt(B_β / u_ij_u_ij) * f_Ri
+    else
+        ν_t = 0.0
+    end
+    
+    if ieq == 5  # Assuming potential temperature equation is at index 5
+        α_molecular = κ / (ρ * cp)  # Molecular thermal diffusivity
+        α_turbulent = ν_t / Pr_t    # Turbulent thermal diffusivity
+        
+        if inputs[:energy_equation] == "theta"
+            effective_diffusivity = α_turbulent * visc_coeffieq[ieq]
+        else
+            effective_diffusivity = ρ * cp * (α_turbulent + α_molecular) * visc_coeffieq[ieq]
+        end
+    else
+        # For momentum equations: use momentum diffusivity
+        effective_diffusivity = visc_coeffieq[ieq] * ν_t
+    end
+    
+    return effective_diffusivity
 end

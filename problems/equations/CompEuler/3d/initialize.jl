@@ -17,7 +17,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # 
     #---------------------------------------------------------------------------------
     qvars = ["ρ", "ρu", "ρv", "ρw", "ρθ"]
-    qoutvars = ["ρ", "u", "v", "w", "θ"]
+    qoutvars = ["ρ", "u", "v", "w", "θ", "θp"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
@@ -211,10 +211,9 @@ end
 
 end
 
-function user_get_adapt_flags(inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
-    adapt_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(nelem))
+function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
     ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
-    tol         = 1.0
+    tol         = 301.2
     max_level   = inputs[:amr_max_level] 
     
     for iel = 1:nelem
@@ -231,15 +230,13 @@ function user_get_adapt_flags(inputs, old_ad_lvl, q, qe, connijk, nelem, ngl)
         theta      = q[ips, 5] ./ q[ips, 1]
         theta_ref  = qe[ips, 5] ./ qe[ips, 1]
         dtheta     = theta - theta_ref
-        # @info dtheta
-        if any(dtheta .> tol) && (old_ad_lvl[iel] < max_level)
+        if any(theta .> tol) && (old_ad_lvl[iel] < max_level)
             adapt_flags[iel] = refine_flag
         end
-        if all(dtheta .< tol)
+        if all(theta .< tol)
             adapt_flags[iel] = coarsen_flag
         end
     end
-    return adapt_flags
 end
 
 

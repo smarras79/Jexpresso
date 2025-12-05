@@ -1,7 +1,8 @@
-function time_loop!(inputs, params, u)
+function time_loop!(inputs, params, u, args...)
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+    partitioned_model = args[1]
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
     
     prob = ODEProblem(rhs!,
@@ -28,7 +29,7 @@ function time_loop!(inputs, params, u)
 
     function do_radiation!(integrator)
         println(" doing two stream radiation heat flux calculations at t=", integrator.t)
-        @info "doing rad test"
+        #@info "doing rad test"
         compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
     end
 
@@ -80,7 +81,7 @@ function time_loop!(inputs, params, u)
             ret_dosetime_ref[] = false
         end
 
-        tol             = 1e-6
+        tol = 1e-6
         # ret_amrtime_ref = abs(mod(t, Δt_amr)) < tol
         # return (ret_dosetime_ref[] || ret_amrtime_ref[])
         return ret_dosetime_ref[]
@@ -92,13 +93,14 @@ function time_loop!(inputs, params, u)
             println_rank(" #  t=", integrator.t; msg_rank = rank)
 
             #CFL
-            computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
-                       integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
-                       params.mesh.Δeffective_s,
-                       integrator,
-                       params.SD; visc=inputs[:μ])
-            
-            write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
+            if inputs[:ladapt] == false
+                computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
+                        integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
+                        integrator.p.mesh.Δeffective_s,
+                        integrator,
+                        integrator.p.SD; visc=inputs[:μ])
+            end
+            write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
                          integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
@@ -151,7 +153,7 @@ function time_loop!(inputs, params, u)
             imex_time_step_simple_2d!(u, params, params.mesh.connijk,  params.qp.qe,  params.mesh.coords, inputs[:Δt], inputs[:lsource])
         end
         println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
-        @mystop()
+        @mystop("TimeIntegrators.jl WIP on IMEX by Simone (obsolete)")
     else
         solution = solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),
@@ -164,16 +166,23 @@ function time_loop!(inputs, params, u)
                                         length=inputs[:ndiagnostics_outputs]));
     end
     
-    if inputs[:ladapt] == true
+    MPI.Barrier(comm)
+    report_all_timers(params.timers)
+    MPI.Barrier(comm)
+    
+    if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
-            prob = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end])
+            @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
             
-            solution = solve(prob,
-                             inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                             callback = cb_amr, tstops = dosetimes,
-                             save_everystep = false,
-                             adaptive=inputs[:ode_adaptive_solver],
-                             saveat = []);
+            @time solution = solve(prob,
+                                inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                                callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
+                                save_everystep = false,
+                                adaptive=inputs[:ode_adaptive_solver],
+                                saveat = []);
+            MPI.Barrier(comm)
+            report_all_timers(prob.p.timers)
+            MPI.Barrier(comm)
         end
     end
     

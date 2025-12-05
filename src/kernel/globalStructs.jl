@@ -6,6 +6,7 @@ Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, back
     u    = KernelAbstractions.zeros(backend, T, dims1)
     uaux = KernelAbstractions.zeros(backend, T, dims2)
     vaux = KernelAbstractions.zeros(backend, T, dims3) #generic auxiliary array for general use
+    utmp = KernelAbstractions.zeros(backend, T, dims2) #for conformity use
     
 end
 function allocate_uODE(SD, npoin, T, backend; neqs=1)
@@ -60,6 +61,7 @@ Base.@kwdef mutable struct St_rhs{T <: AbstractFloat, dims1, dims2, backend}
     rhs_diffξ_el = KernelAbstractions.zeros(backend,  T, dims2)
     rhs_diffη_el = KernelAbstractions.zeros(backend,  T, dims2)
     rhs_diffζ_el = KernelAbstractions.zeros(backend,  T, dims2)
+    rhs_el_tmp   = KernelAbstractions.zeros(backend,  T, dims2)
     
 end
 function allocate_rhs(SD, nelem, npoin, ngl, T, backend; neqs=1)
@@ -451,6 +453,32 @@ function allocate_gpuMoist(SD, npoin, nelem, ngl, T, backend, lmoist; neqs=1)
     gpuMoist = St_gpuMoist{T, dims1, dims2, dims3, dims4, backend}()
 
     return gpuMoist
+end
+
+
+Base.@kwdef mutable struct St_ncfArrays{T <: AbstractFloat, dims1, dims2, dims3, backend}
+
+    q_el      = KernelAbstractions.zeros(backend, T, dims1)
+    q_el_pro  = KernelAbstractions.zeros(backend, T, dims1)
+    q_ghost_p = KernelAbstractions.zeros(backend, T, dims2)
+    q_ghost_c = KernelAbstractions.zeros(backend, T, dims3)
+end
+
+function allocate_ncfArrays(SD, num_ncf_pg, num_ncf_cg, ngl, T, backend; neqs=1)
+
+    if SD == NSD_1D() || SD == NSD_2D()
+        dims1 = (Int64(ngl))
+        dims2 = (Int64(num_ncf_pg * (ngl)), Int64(neqs))
+        dims3 = (Int64(num_ncf_cg * (ngl)))
+    elseif SD == NSD_3D()
+        ngl2 = ngl * ngl
+        dims1 = (Int64(ngl * ngl))
+        dims2 = (Int64(num_ncf_pg * (ngl2)), Int64(neqs))
+        dims3 = (Int64(num_ncf_cg * (ngl2)))
+    end
+    ncf_arrays = St_ncfArrays{T, dims1, dims2, dims3, backend}()
+
+    return ncf_arrays
 end
 
 

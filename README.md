@@ -255,53 +255,13 @@ Details will be given in the documentation (still WIP). Write us if you need hel
 
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
-## Laguerre semi-infinite element test suite
-This section contains instructions to run all of the test cases presented in
-
-```
-@article{tissaoui2024,
-  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
-  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
-  volume ={487},
-  pages={129080},
-  year = {2024},
-  journal = {App. Math. Comput.},
-}
-```
-
-Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
-
-The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "CompEuler", "wave1d_lag");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/wave_v_4.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 2: 1D wave train for linearized shallow water equations
-
-The problem is defined in [`problems/equations/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "AdvDiff", "Wave_Train");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/Wave_Train_final.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
 
 Test 3: 2D advection-diffusion equation
 
-The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/equations/AdvDiff/kopriva`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/kpriva) and by default output will be written to `output/AdvDiff/kopriva`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
-push!(empty!(ARGS), "AdvDiff", "2D_laguerre");
+push!(empty!(ARGS), "AdvDiff", "kopriva");
 include("./src/Jexpresso.jl")
 ```
 
@@ -309,46 +269,7 @@ include("./src/Jexpresso.jl")
      alt="Markdown icon"
      style="float: left; margin-right: 7px;" />
 
-Test 4: 2D Helmholtz equation
-
-The problem is defined in [`problems/equations/Helmholtz/case1`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1) and by default output will be written to `output/Helmholtz/case1`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "Helmholtz", "case1");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/Helmholtz_from_jexpresso-line.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 5: Rising thermal bubble with semi-infinite Laguerre elements for outflows
-
-The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "CompEuler", "theta_laguerre");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/48.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 6: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
-
-The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
-
-```bash      
-push!(empty!(ARGS), "CompEuler", "HSmount_Lag");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/wvelo.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 7: Shallow cumuli simulation with BOMEX conditions:
+Test 4: Shallow cumuli simulation with BOMEX conditions:
 
 ```bash
 push!(empty!(ARGS), "CompEuler", "3d_bomex");

@@ -2,15 +2,14 @@ function driver(nparts,
                 distribute,
                 inputs::Dict,
                 OUTPUT_DIR::String,
-                TFloat)
-    
+                TFloat) 
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
     
     if inputs[:lwarmup] == true
         if rank == 0
             println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
-	end
+	    end
         input_mesh = inputs[:gmsh_filename]
         inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
         sem_dummy = sem_setup(inputs, nparts, distribute)
@@ -33,7 +32,7 @@ function driver(nparts,
     end
     #check_memory(" Before sem_setup.")
                 
-    sem = sem_setup(inputs, nparts, distribute)
+    sem, partitioned_model = sem_setup(inputs, nparts, distribute)
 
     #check_memory(" After sem_setup.")
     
@@ -47,32 +46,17 @@ function driver(nparts,
     # println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
-    if rank == 0
-        @info " # COMPUTE conformity4ncf_q!"
-    end
-    #GC.gc()
-    pre_allocation_q = setup_assembler(sem.mesh.SD, qp.qn, sem.mesh.ip2gip, sem.mesh.gip2owner)
-    conformity4ncf_q!(qp.qn, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
-                            sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
-                            qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
-    #check_memory(" After conformity4ncf_q! 1.")
-    
-    conformity4ncf_q!(qp.qe, pre_allocation_q, sem.mesh.SD, sem.QT, sem.mesh.connijk, 
-                            sem.mesh, sem.matrix.Minv, sem.metrics.Je, sem.ω, sem.AD, 
-                            qp.neqs+1, sem.interp; ladapt = inputs[:ladapt])
-    #check_memory(" After conformity4ncf_q! 2.")
-    #GC.gc()
-    MPI.Barrier(comm)
-    if rank == 0
-        @info " # COMPUTE conformity4ncf_q! .... END"
-    end
 
-    if (inputs[:ladapt] == true) && (inputs[:amr] == true)
+    if (inputs[:lamr] == true)
         amr_freq = inputs[:amr_freq]
         Δt_amr   = amr_freq * inputs[:Δt]
         tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
     else
         tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+    end
+
+    if rank == 0
+        @info " Params_setup .................................."
     end
     params, u =  params_setup(sem,
                               qp,
@@ -80,14 +64,20 @@ function driver(nparts,
                               OUTPUT_DIR,
                               TFloat,
                               tspan)
+
+    if rank == 0
+        @info " Params_setup .................................. END"
+    end
+    
+    # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
+    # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
     
     if !inputs[:llinsolve]
         #
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
         #
-        @time solution = time_loop!(inputs, params, u)
+        @time solution = time_loop!(inputs, params, u, partitioned_model)
         # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
-        
     else
         #
         # Problems that lead to Ax = b
@@ -145,7 +135,8 @@ function driver(nparts,
                     elementLearning_Axb!(params.qp.qn, params.uaux, sem.mesh, sem.matrix.L, RHS)
                 elseif inputs[:lsparse]
                     println(" # Solve x=inv(A)*b: sparse storage")
-                    @time params.qp.qn = sem.matrix.L\RHS
+                    
+                    @time params.qp.qn = sem.matrix.L \ RHS
                 end
             end
             
@@ -208,16 +199,17 @@ end
 function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     
     mesh.lengthO =  mesh.length∂O +  mesh.lengthIo
-        
+    
     EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
                                mesh.length∂O,
                                mesh.length∂τ,
                                mesh.lengthΓ,
-                               TFloat, inputs[:backend])
-
+                               TFloat, inputs[:backend]; Nsamp=inputs[:elNsamp])
+    
     nelintpoints = (mesh.ngl-2)*(mesh.ngl-2)
-    nelpoints = size(mesh.conn)[2]
+    nelpoints    = size(mesh.conn)[2]
     elnbdypoints = nelpoints - nelintpoints
+    
     for iel=1:mesh.nelem
         #
         # A∂oᵥₒ
@@ -255,10 +247,8 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
             #
             for j = 1:elnbdypoints
                 jpb = mesh.conn[iel, j]
-                
                 EL.Avovb[ii, j, iel] = A[ipo, jpb]
             end
-            
             ii += 1
         end
     end
@@ -329,9 +319,10 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
             EL.AIo∂τ[io, jτ] = A[io1, jτ1]
         end
     end
+    # inv(AiIoIo)
     invAIoIo = similar(EL.AIoIo)
     invAIoIo = inv(EL.AIoIo)
-
+    
     dims = (mesh.lengthIo, mesh.lengthΓ)
     AIoΓ = similar(EL.AIoIo, dims);
     
@@ -378,7 +369,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
 
         gΓ[iΓ] = ubdy[g1, 1]
     end
-    
+
     #------------------------------------------------------------------------
     # Eq. (11)
     #------------------------------------------------------------------------    
@@ -408,7 +399,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
             AIoΓ[io, iΓ] = A[io1, g1]
         end
     end
-
+    
     #
     # Eq (12)
     #
@@ -422,19 +413,139 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh, A, ubdy)
     uIo = similar(u∂O, dims)
     LinearAlgebra.mul!(uIo, -invAIoIo, (AIou∂O + AIoΓg))
 
-    for io = 1:mesh.lengthIo
+    for io = 1:mesh.lengthIo # all internal without edges
         io1 = mesh.Io[io]
         u[io1] = uIo[io]
     end
-    for io = 1:mesh.length∂O
+    for io = 1:mesh.length∂O # all skeleton no boundaries
         io1 = mesh.∂O[io]
         u[io1] = u∂O[io]
     end
-    for io = 1:mesh.lengthΓ
+    for io = 1:mesh.lengthΓ # # all boundaries
         io1 = mesh.Γ[io]
         u[io1] = gΓ[io]
     end
 
+    skeletonAndbdy = zeros(Int64, length(mesh.∂τ))
+    skeletonAndbdy[1:mesh.length∂O] .= mesh.∂O[:]
+    skeletonAndbdy[mesh.length∂O+1:mesh.length∂O+mesh.lengthΓ] .= mesh.Γ[:]
+
+    
+#    #for iel=1:mesh.nelem
+#        for iedge = 1:4
+#            @info iel, mesh.edge2pedge[iedge]
+#        end
+#    end
+#    @mystop
+#    bdy_edge_in_elem
+#    edge2pedge
+
+    #
+    # uvb ⊂ u∂τ  SHUKAI meeting
+    #
+
+    @info "mesh.cell_face_ids "
+    @info mesh.cell_face_ids, size(mesh.cell_face_ids)
+    @info "mesh.facet_cell_ids"
+    @info mesh.facet_cell_ids, size(mesh.facet_cell_ids)
+
+    for iedge=1:mesh.nedges
+        @info " iedge ", iedge, "belongs to element ",  mesh.facet_cell_ids[iedge]
+    end
+    for iedge=1:mesh.nedges
+        @info " edge ", iedge, " belong to elem ", mesh.edge_in_elem[iedge]
+    end
+
+    @info "-----"
+    
+    uvb = zeros(Float64, mesh.nelem, elnbdypoints)
+    u∂τ = zeros(Float64, length(mesh.∂τ))
+    for iskel = 1:length(mesh.∂τ)
+        is = skeletonAndbdy[iskel]
+#        @info iskel, is
+        u∂τ[iskel] = u[is]
+        @info iskel, is, u∂τ[iskel]
+    end
+
+@mystop
+    
+     for iel=1:mesh.nelem
+         #
+         # 
+         #
+         ii = 1
+         #
+         # Aᵥₒᵥb
+         #
+         for isk = 1:length(mesh.∂τ)
+             ipsk = skeletonAndbdy[isk]
+             
+             for ibdy = 1:elnbdypoints
+                 #jpb = mesh.conn[iel, j]
+                 uvb[iel, ibdy] = u∂τ[ipsk]
+                 @info iel, ibdy, uvb[iel, ibdy]
+             end
+             ii += 1
+         end
+     end
+
+    
+    #=for iel = 1:mesh.nelem
+        for ibdyel = 1:
+        for j1=1:length(mesh.∂τ)
+            jτ1 = skeletonAndbdy[j1]
+            
+            uvb[iel, ibdyel] = u∂τ[jτ1]
+        end
+    end=#
+
+    
+    
+    #
+    # ML: input/outpute tensors to use in training (?):
+    #
+    # 1. Set B∂τ∂τ := A∂τ∂τ
+    #
+    Nsamp = inputs[:elNsamp]
+    c0 = 0.1
+    c1 = 0.5
+    a  = zeros(TFloat, mesh.ngl^2)
+
+    T2 = zeros(size(EL.Avovo)[1], size(EL.Avovb)[2])
+    T1 = zeros(size(EL.Avovb)[2], size(EL.Avovb)[2])
+    
+    for isamp = 1:Nsamp
+
+        # 2.a
+        r0 = rand(c0:c1)        
+        ### rand(Uniform(c0, c1)) #use this for uniform distribution. using Distributions
+
+        # 2.b
+        a[:] .= r0
+   
+        # 2.c
+        EL.input_tensor[:, isamp] .= a[:]
+
+        # 2.d        
+      
+        for iel = 1:mesh.nelem
+            
+            Avbvo = transpose(EL.Avovb[:,:,iel])
+            
+            # T2 = -A⁻¹ᵥₒᵥₒ[:,:,iel]⋅Avovb[:,:,iel]
+            LinearAlgebra.mul!(T2, -inv(EL.Avovo[:,:,iel]), EL.Avovb[:,:,iel])
+            
+            # T1 = Avbvo[:,:,iel]⋅T2 = - Avbvo⋅A⁻¹ᵥₒᵥₒ⋅Avovb
+            LinearAlgebra.mul!(@view(T1[:,:]), @view(Avbvo[:,:]), @view(T2[:,:]))
+
+        end
+
+        # 2.e
+        # Output tensor:
+      #???  output_tensor[:, isamp] .= -T2    # Bie = -T2ie
+        
+    end
+    
 end
 
 #

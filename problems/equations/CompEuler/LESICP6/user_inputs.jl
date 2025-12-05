@@ -4,13 +4,13 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.02, #0.065,
+        :Δt                   => 0.8, #0.065,
         :tinit                => 0.0,
         :tend                 => 10800.0,
 	:lrestart             => false,
 	#:restart_output_file_path => "",
 	#:restart_time         => 10800,
-	:diagnostics_at_times => (0.0:5.0:10800.0),
+	:diagnostics_at_times => (0.0:0.5:10800.0),
         :lsource              => true,
         :sounding_file        => "./data_files/input_sounding_teamx_u10_ridge1000_noheader.dat",
         #---------------------------------------------------------------------------
@@ -37,17 +37,18 @@ function user_inputs()
 	#:lwarmup          => true,
         :lread_gmsh       => true, #If false, a 1D problem will be enforced
         :gmsh_filename_c  => "./meshes/gmsh_grids/LESICP_32x2x24_zmax3000.msh",
-        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
+        #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_80x40x10_10kmX1kmX3km.msh",
+        :gmsh_filename    => "./meshes/gmsh_grids/LESICP_coarse_test.msh",
 
         # Warping:
-        :lwarp => false,
+        :lwarp => true,
         :mount_type => "agnesi",
         :a_mount => 4000.0,
         :h_mount => 1000.0,
         :c_mount => 5000.0,
 
         # Stretching factors:
-        :lstretch => true,
+        :lstretch => false,
         :stretch_factor => 1.25,
         :stretch_type => "fixed_first_twoblocks_strong", #strong means that the top is constrained
         :first_zelement_size => 10.0,

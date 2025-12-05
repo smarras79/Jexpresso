@@ -70,7 +70,7 @@ function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
     Del = zeros(N+1, N+1, mesh.nelem)
 
     for iel=1:mesh.nelem
-        Jac = mesh.Δx[iel]/2
+        #Jac = mesh.Δx[iel]/2
         
         for i=1:N+1
             for iq=1:Q+1, j=1:N+1
@@ -701,8 +701,10 @@ function DSS_laplace_sparse(mesh, Lel)
     for iel = 1:mesh.nelem
         for j = 1:mesh.ngl, i = 1:mesh.ngl
             JP = mesh.connijk[iel, i, j]
+            #JP = mesh.ip2gip[mesh.connijk[iel, i, j]]
             
             for n = 1:mesh.ngl, m = 1:mesh.ngl
+                #IP = mesh.ip2gip[mesh.connijk[iel, m, n]]
                 IP = mesh.connijk[iel, m, n]
                 
                 val = Lel[iel, m, n, i, j]
@@ -716,12 +718,15 @@ function DSS_laplace_sparse(mesh, Lel)
     end
     
     # Create sparse matrix and sum duplicate entries automatically
-    return sparse(I_vec, J_vec, V_vec)
+    return sparse(I_vec, J_vec, V_vec) #Julia native CSC format (good for PETC.jl solvers)
 end
 
 
-
-function assemble_diffusion_matrix_threaded!(mesh, Lel)
+function DSS_laplace_sparse_threaded(mesh, Lel)
+    #
+    # CSC aasembly
+    #
+    
     # Thread-local storage for triplets
     thread_triplets = [Tuple{Int, Int, Float64}[] for _ in 1:nthreads()]
     
@@ -752,22 +757,7 @@ function assemble_diffusion_matrix_threaded!(mesh, Lel)
     J_vec = [t[2] for t in all_triplets]
     V_vec = [t[3] for t in all_triplets]
     
-    return sparse(I_vec, J_vec, V_vec)
-end
-
-
-# Utility function to convert to different sparse formats if needed
-function convert_sparse_format(A::SparseMatrixCSC; format=:CSR)
-    if format == :CSR
-        # Julia's SparseMatrixCSC is essentially CSC format
-        # For true CSR, you'd need to transpose and use rowvals/nzval
-        return A'  # This gives CSR-like access pattern
-    elseif format == :COO
-        I, J, V = findnz(A)
-        return (I, J, V)
-    else
-        return A  # Default CSC format
-    end
+    return sparse(I_vec, J_vec, V_vec) #Julia native CSC format (good for PETC.jl solvers)
 end
 
 # Example usage:
@@ -1007,34 +997,40 @@ end
 
 
 
-function DSS_global_RHS!(RHS, pM, neqs)
+function DSS_global_RHS!(RHS, g_dss_cache, neqs)
 
-    if pM == nothing return end
+    if g_dss_cache === nothing return end
     
-    assemble_mpi!(@view(RHS[:,:]),pM)
+    assemble_mpi!(@view(RHS[:,:]),g_dss_cache)
     
 end
 
-function DSS_global_RHS_v0!(M, pM)
+function DSS_global_RHS_pvector!(RHS, g_dss_cache, neqs)
+    for i = 1:neqs
+       DSS_global_RHS_v0!(@view(RHS[:,i]), g_dss_cache)
+    end
+end
+
+function DSS_global_RHS_v0!(M, g_dss_cache)
     # # @info ip2gip
 
-    # pM = pvector(values->@view(M[:]), row_partition)
+    # g_dss_cache = pvector(values->@view(M[:]), row_partition)
     sizeM = length(M)
-    # pM = map(parts, local_values(pM)) do part, localpM
+    # g_dss_cache = map(parts, local_values(g_dss_cache)) do part, localpM
     #     @info part, length(localpM), sizeM
     #     localpM = copy(M)
     # end
 
-    map( partition(pM)) do values
+    map( partition(g_dss_cache)) do values
         for i = 1:sizeM
             values[i] = M[i]
         end
     end
 
 
-    assemble!(pM) |> wait
-    consistent!(pM) |> wait
-    map(local_values(pM)) do values
+    assemble!(g_dss_cache) |> wait
+    consistent!(g_dss_cache) |> wait
+    map(local_values(g_dss_cache)) do values
         for i = 1:sizeM
             M[i] = values[i]
         end
@@ -1049,14 +1045,49 @@ function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
     end
     
     #check_memory(" in sem_setup before setup_assembler.")
-    pM = setup_assembler(SD, M, ip2gip, gip2owner)
+    g_dss_cache = setup_assembler(SD, M, ip2gip, gip2owner)
     #check_memory(" in sem_setup after setup_assembler.")
     
-    @time assemble_mpi!(M,pM)
+    assemble_mpi!(M,g_dss_cache)
 
-    return pM
+    return g_dss_cache
     
 end
+
+function DSS_global_mass_pvector!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+    # @info ip2gip
+    row_partition = map(parts) do part
+        row_partition = LocalIndices(gnpoin,part,ip2gip,gip2owner)
+        # gM = M
+        row_partition
+    end
+    g_dss_cache = pvector(values->@view(M[:]), row_partition)
+    # map(parts,local_values(g_dss_cache)) do part,values
+    #     # if part == 1
+    #         @info values
+    # #     end
+    # end
+
+    # map(partition(g_dss_cache),row_partition) do values, indices
+    #     local_index_to_owner = local_to_owner(indices)
+    #     @info local_index_to_owner
+    #     # for lid in 1:length(local_index_to_owner)
+    #     #     owner = local_index_to_owner[lid]
+    #     #     @test values[lid] == 10*owner
+    #     # end
+    # end
+
+
+    assemble!(g_dss_cache) |> wait
+    consistent!(g_dss_cache) |> wait
+    M = map(local_values(g_dss_cache)) do values
+        M = values
+        M
+    end
+    return g_dss_cache
+end
+
+
 
 function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
                         ldss_laplace=false, ldss_differentiation=false, backend = CPU(), interp)
@@ -1077,7 +1108,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         Me = KernelAbstractions.zeros(backend, TFloat, (N+1)^3, (N+1)^3, Int64(mesh.nelem))
     end
     if (backend == CPU())
-        @time build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, mesh.Δx, N, Q, TFloat)
+        build_mass_matrix!(Me, SD, QT, basis.ψ, ω, mesh.nelem, metrics.Je, mesh.Δx, N, Q, TFloat)
     else
         if (SD == NSD_1D())
             k = build_mass_matrix_1d_gpu!(backend, (N+1))
@@ -1100,10 +1131,9 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     
     if backend == CPU()
         if (inputs[:ladapt] == true)
-            @time DSS_nc_gather_mass!(M, mesh, SD, QT, Me, mesh.connijk, mesh.poin_in_edge,
-                                      mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
-                                      mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, N, interp)
-            #@info "@time DSS_nc_gather_mass!"
+            DSS_nc_gather_mass!(M, mesh, SD, QT, Me, mesh.connijk, mesh.poin_in_edge,
+                                    mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
+                                    mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, N, interp)
         end
 
         DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
@@ -1124,17 +1154,16 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     
     if (inputs[:ladapt] == true)
-        @time DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
+        DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
                                    mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, N, interp)
-        #@info "@time DSS_nc_scatter_mass!"
     end
     if (inputs[:bdy_fluxes])
         if SD == NSD_3D()
             M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
-            assemble_mpi!(M_surf,pM)
+            assemble_mpi!(M_surf,g_dss_cache)
             M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
             mass_inverse!(M_surf_inv, M_surf, QT)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
@@ -1142,7 +1171,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         else
             M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
             M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
-            assemble_mpi!(M_edge,pM)
+            assemble_mpi!(M_edge,g_dss_cache)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
             mass_inverse!(M_edge_inv, M_edge, QT)
         end
@@ -1167,18 +1196,23 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
                                       N, Q, TFloat)
             
             if (inputs[:lsparse])
-                L = DSS_laplace_sparse(mesh, Le)
-                assemble_diffusion_matrix_threaded!(mesh, Le)
+                @info " DSS sparse"
+                @time L = DSS_laplace_sparse(mesh, Le)
+                @info " DSS sparse .................... DONE"
             else
                 L = KernelAbstractions.zeros(backend,
                                              TFloat,
                                              Int64(mesh.npoin),
                                              Int64(mesh.npoin))
+
+                @info " DSS "
                 DSS_laplace!(L, SD,
                              Le, ω,
                              mesh, metrics,
                              N, TFloat;
                              llump=inputs[:llump])
+                @info " DSS ..... ..................... DONE"
+                
             end
             
         else
@@ -1229,7 +1263,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         end
     end
     
-    return (; Me, De, Le, M, Minv, pM, D, L, M_surf_inv, M_edge_inv)
+    return (; Me, De, Le, M, Minv, g_dss_cache, D, L, M_surf_inv, M_edge_inv)
 end
 
 
@@ -1274,7 +1308,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     if (inputs[:bdy_fluxes])
         if SD == NSD_3D()
             M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
-            assemble_mpi!(M_surf,pM)
+            assemble_mpi!(M_surf,g_dss_cache)
             M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
             mass_inverse!(M_surf_inv, M_surf, QT)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
@@ -1282,7 +1316,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         else
             M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
             M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
-            assemble_mpi!(M_edge,pM)
+            assemble_mpi!(M_edge,g_dss_cache)
             M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
             mass_inverse!(M_edge_inv, M_edge, QT)
         end
@@ -1311,7 +1345,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
         
         @time DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
-        pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+        g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
     else
         if (typeof(SD) == NSD_1D)
             k = build_mass_matrix_1d_gpu!(backend)
@@ -1413,7 +1447,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
     end
 
-    return (; Me, De, Le, M, Minv, M_edge_inv, M_surf_inv, pM, D, L)
+    return (; Me, De, Le, M, Minv, M_edge_inv, M_surf_inv, g_dss_cache, D, L)
 end
 
 function mass_inverse!(Minv, M::AbstractVector, QT)

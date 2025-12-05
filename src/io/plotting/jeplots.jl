@@ -1,7 +1,7 @@
 using Dierckx
+using CairoMakie
 using LaTeXStrings
 using ColorSchemes
-using CairoMakie
 using Makie
 #using Interpolations
 
@@ -25,7 +25,7 @@ journal = {Journal of Open SOurce Software}
 #
 
 function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
-    
+
     npoin = length(q)
     fig, ax, plt = CairoMakie.scatter(x[1:npoin], q[1:npoin];
                                       markersize = 10, color="Blue",
@@ -44,7 +44,10 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
     
     epsi = 1.1
     npoin = mesh.npoin
-        
+
+    qout = reshape(q, npoin, nvar)   # 2D view (3x4) - NO allocation
+    x_coords = mesh.coords[1:npoin, 1]
+    sort_idx = sortperm(x_coords)
     for ivar=1:nvar
         
         idx = (ivar - 1)*npoin
@@ -52,7 +55,8 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
         CairoMakie.activate!(type = "eps")
         fig = Figure(size = (600,400),fontsize=22)
         ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
-        CairoMakie.scatter!(mesh.x[1:npoin], q[idx+1:ivar*npoin]; markersize = 10, color="Blue")
+        
+        CairoMakie.scatterlines!(x_coords[sort_idx], qout[sort_idx, ivar]; markersize = 10, color="Blue")
         vlines = inputs[:plot_vlines]
         hlines = inputs[:plot_hlines]
         axis = inputs[:plot_axis]
@@ -80,6 +84,8 @@ end
 
 
 function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, fig=Figure(),color ="Blue",p=[],marker = :circle, PT=nothing)
+    
+    @print "C"
     
     epsi = 1.1
     npoin = mesh.npoin

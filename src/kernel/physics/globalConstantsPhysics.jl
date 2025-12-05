@@ -42,6 +42,9 @@ using Parameters
     ## molar masses
     Mol_mass_air   = 28.9647      #g/mol
     Mol_mass_water = 18.02        #g/mol
+
+    # Reference pressure used in potential temperature definition... mainly for BMOEX case, very sensitive to pressure
+    potential_temperature_reference_pressure::T = 101325.0 #Pa
 end
 
 using Parameters
