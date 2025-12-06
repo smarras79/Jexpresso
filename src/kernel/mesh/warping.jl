@@ -147,7 +147,6 @@ function warp_mesh_3D!(mesh,inputs)
         ztop = mesh.zmax
         am = mesh.xmax - mesh.xmin
       	hm = inputs[:h_mount]
-        xc = inputs[:c_mount]
         for ip = 1:mesh.npoin
             x = mesh.x[ip]
             zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*x/am))
@@ -161,25 +160,95 @@ function warp_mesh_3D!(mesh,inputs)
             x = mesh.x[ip]
             zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2
         end
-
-    #=elseif (inputs[:mount_type] == "stretching" || inputs[:mount_type] == "bl")
-
-         Yuo need to do detect the vertically aligned nodes to move. 
-        zsurf = zeros(mesh.npoin)
-        sigma = zeros(mesh.npoin)
-        ztop = mesh.zmax
-        
-	dz1 = inputs[:a_mount]
-
-        stretching!(zsurf, ztop, dz1, mesh.npoin)
-       =#
     end
+
+    #=for ip = 1:mesh.npoin
+        sigma[ip] = mesh.z[ip]
+
+        factor = (ztop - mesh.z[ip])/ztop
+        
+        #z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+        z = (ztop - factor*zsurf[ip])/ztop * sigma[ip] + factor*zsurf[ip]
+        
+        mesh.z[ip] = z
+    end=#
+
+
+    # Parameters for damping control
+    z_transition_start = inputs[:z_transition_start]  # Height where damping starts (30% of domain)
+    z_transition_end = inputs[:z_transition_end]    # Height where grid becomes fully flat (60% of domain)
+    
+    for ip = 1:mesh.npoin
+        sigma[ip] = mesh.z[ip]
+        
+        # Original warped coordinate (follows topography)
+        z_warped = zsurf[ip] + sigma[ip] * (ztop - zsurf[ip]) / ztop
+
+        damping_factor = 1.0  # Default: full warping
+
+        if sigma[ip] >= z_transition_start && sigma[ip] <= z_transition_end
+            # Smooth transition between z_transition_start and z_transition_end
+            progress = (sigma[ip] - z_transition_start) / (z_transition_end - z_transition_start)
+            
+            # Cosine (or 'Raised Cosine') Damping Function
+            # This function smoothly transitions from 1.0 (at progress=0) to 0.0 (at progress=1)
+            damping_factor = 0.5 * (1.0 + cospi(progress))
+
+            # Exponential damping (faster transition)
+            #damping_factor = exp(-0.25 * progress)
+
+            # Cubic damping (smoother)
+            #damping_factor = (1.0 - progress)^3
+
+            # Hyperbolic tangent (very smooth)
+            #damping_factor = 0.5 * (1.0 - tanh(5.0 * (progress - 0.5)))
+            
+            
+        elseif sigma[ip] > z_transition_end
+            # No warping above transition end (fully flat)
+            damping_factor = 0.0
+            # else: damping_factor remains 1.0 for sigma[ip] < z_transition_start
+        end
+
+        mesh.z[ip] = sigma[ip] + damping_factor * (z_warped - sigma[ip])
+       
+    end
+    
+    #= Parameters for damping control (in normalized vertical coordinates) 
+    sigma_transition_start = 0  # Start damping at 30% of vertical domain
+    sigma_transition_end = 0.7    # Fully flat at 60% of vertical domain
 
     for ip = 1:mesh.npoin
         sigma[ip] = mesh.z[ip]
-        z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-        mesh.z[ip] = z
-    end
+        zbottom = zsurf[ip]
+        ztop    = mesh.zmax
+        
+        # Normalize sigma to [0,1] range
+        sigma_normalized = (sigma[ip] - zbottom) / (ztop - zbottom)
+        
+        # Calculate damping factor based on normalized vertical position
+        if sigma_normalized <= sigma_transition_start
+            # Full warping below transition start
+            damping_factor = 1.0
+        elseif sigma_normalized >= sigma_transition_end
+            # No warping (fully flat) above transition end
+            damping_factor = 0.0
+        else
+            # Smooth transition using cosine function
+            progress = (sigma_normalized - sigma_transition_start) / (sigma_transition_end - sigma_transition_start)
+            damping_factor = 0.5 * (1.0 + cospi(progress))
+        end
+        
+        # Original warped coordinate (follows topography)
+        z_warped = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+        
+        # Flat coordinate (horizontal levels, no topography influence)
+        z_flat = sigma[ip]
+        
+        # Blend warped and flat coordinates using damping factor
+        mesh.z[ip] = damping_factor * z_warped + (1.0 - damping_factor) * z_flat
+    end=#
+    
 end
 
 function warp_phys_grid!(x,y,z,ncol,nlay)
