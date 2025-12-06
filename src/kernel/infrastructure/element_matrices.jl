@@ -701,10 +701,8 @@ function DSS_laplace_sparse(mesh, Lel)
     for iel = 1:mesh.nelem
         for j = 1:mesh.ngl, i = 1:mesh.ngl
             JP = mesh.connijk[iel, i, j]
-            #JP = mesh.ip2gip[mesh.connijk[iel, i, j]]
             
             for n = 1:mesh.ngl, m = 1:mesh.ngl
-                #IP = mesh.ip2gip[mesh.connijk[iel, m, n]]
                 IP = mesh.connijk[iel, m, n]
                 
                 val = Lel[iel, m, n, i, j]
@@ -877,8 +875,6 @@ function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
         for iel = 1:nelem
             for j = 1:ngl
                 for i = 1:ngl
-                    #I = Ref{Int64}(mesh.connijk[iel,i,j])
-                    #RHS[I[],ieq] += Ref{Float64}(rhs_el[iel,i,j,ieq])[]
                     I = connijk[iel,i,j]
                     RHS[I,ieq] += rhs_el[iel,i,j,ieq]
                 end
@@ -1005,7 +1001,6 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D)
         poin_edge = @view mesh.poin_in_bdy_edge[iedge, :]
         for i = 1:mesh.ngl
             ip = poin_edge[i]
-            #if (mesh.bdy_face_type[iface] != "periodicx" && mesh.bdy_face_type[iface] != "periodicy" && mesh.bdy_face_type[iface] != "periodicz")
             normals[ip, 1] += nx[iedge, i]
             normals[ip, 2] += ny[iedge, i]
             #end
@@ -1021,18 +1016,12 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D)
         poin_edge = @view mesh.poin_in_bdy_edge[iedge, :]
         for i = 1:mesh.ngl
             ip = poin_edge[i]
-            #@info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], sqrt(nx[iface, i, j]*nx[iface, i, j]+ny[iface, i, j]*ny[iface, i, j]+nz[iface, i, j]*nz[iface, i, j])
             mag = sqrt(normals[ip, 1]^2+ normals[ip, 2]^2)
             normx=0
             normy=0
             if (mag > 0)
-
                 normx = normals[ip, 1]/mag
                 normy = normals[ip, 2]/mag
-                #=if (abs(mesh.x[ip] - 1000) < 1)
-                    @info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], normx, normy, normz, normals[ip, 1], normals[ip, 2], normals[ip, 3], mesh.bdy_face_type[iface], mesh.z[ip], mesh.y[ip]
-                    @info mag
-                end=#
             end
             if mesh.bdy_edge_type[iedge] != "periodicx" && (abs(nx[iedge, i] - normx) < 0.25)
                 nx[iedge, i] = normx
@@ -1047,9 +1036,6 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D)
                 nx[iedge, i] = nx[iedge, i]/mag
                 ny[iedge, i] = ny[iedge, i]/mag
             end
-            #@info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], sqrt(nx[iface, i, j]*nx[iface, i, j]+ny[iface, i, j]*ny[iface, i, j]+nz[iface, i, j]*nz[iface, i, j])
-            #@info normals[ip,1], normals[ip,2], normals[ip,3], normals[ip,4]
-
         end
     end
 
@@ -1063,13 +1049,11 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
 
         poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
         for j = 1:mesh.ngl, i = 1:mesh.ngl
-            ip = poin_face[i, j]
-            #if (mesh.bdy_face_type[iface] != "periodicx" && mesh.bdy_face_type[iface] != "periodicy" && mesh.bdy_face_type[iface] != "periodicz")
-                normals[ip, 1] += nx[iface, i, j]
-                normals[ip, 2] += ny[iface, i, j]
-                normals[ip, 3] += nz[iface, i, j]
-            #end
-	end
+            ip              = poin_face[i, j]
+            normals[ip, 1] += nx[iface, i, j]
+            normals[ip, 2] += ny[iface, i, j]
+            normals[ip, 3] += nz[iface, i, j]
+        end
     end
 
     pM = setup_assembler(mesh.SD, normals, mesh.ip2gip, mesh.gip2owner)
@@ -1081,7 +1065,7 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
         poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
         for j = 1:mesh.ngl, i = 1:mesh.ngl
             ip = poin_face[i, j]
-            #@info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], sqrt(nx[iface, i, j]*nx[iface, i, j]+ny[iface, i, j]*ny[iface, i, j]+nz[iface, i, j]*nz[iface, i, j])
+            
             mag = sqrt(normals[ip, 1]^2+ normals[ip, 2]^2 + normals[ip, 3]^2)
             normx=0
             normy=0
@@ -1091,10 +1075,7 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
                 normx = normals[ip, 1]/mag
                 normy = normals[ip, 2]/mag
                 normz = normals[ip, 3]/mag
-                #=if (abs(mesh.x[ip] - 1000) < 1)
-                    @info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], normx, normy, normz, normals[ip, 1], normals[ip, 2], normals[ip, 3], mesh.bdy_face_type[iface], mesh.z[ip], mesh.y[ip]
-                    @info mag
-                end=#
+                
             end
             if mesh.bdy_face_type[iface] != "periodicx" && (abs(nx[iface, i, j] - normx) < 0.25)
                 nx[iface, i, j] = normx
@@ -1113,9 +1094,6 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
                 ny[iface, i, j] = ny[iface, i, j]/mag
                 nz[iface, i, j] = nz[iface, i, j]/mag
             end
-            #@info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], sqrt(nx[iface, i, j]*nx[iface, i, j]+ny[iface, i, j]*ny[iface, i, j]+nz[iface, i, j]*nz[iface, i, j])
-            #@info normals[ip,1], normals[ip,2], normals[ip,3], normals[ip,4]
-
         end
     end
     
@@ -1134,33 +1112,6 @@ function DSS_global_RHS_pvector!(RHS, g_dss_cache, neqs)
        DSS_global_RHS_v0!(@view(RHS[:,i]), g_dss_cache)
     end
 end
-
-function DSS_global_RHS_v0!(M, g_dss_cache)
-    # # @info ip2gip
-
-    # g_dss_cache = pvector(values->@view(M[:]), row_partition)
-    sizeM = length(M)
-    # g_dss_cache = map(parts, local_values(g_dss_cache)) do part, localpM
-    #     @info part, length(localpM), sizeM
-    #     localpM = copy(M)
-    # end
-
-    map( partition(g_dss_cache)) do values
-        for i = 1:sizeM
-            values[i] = M[i]
-        end
-    end
-
-
-    assemble!(g_dss_cache) |> wait
-    consistent!(g_dss_cache) |> wait
-    map(local_values(g_dss_cache)) do values
-        for i = 1:sizeM
-            M[i] = values[i]
-        end
-    end
-end
-
 
 function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
 
@@ -1186,22 +1137,7 @@ function DSS_global_mass_pvector!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin
         row_partition
     end
     g_dss_cache = pvector(values->@view(M[:]), row_partition)
-    # map(parts,local_values(g_dss_cache)) do part,values
-    #     # if part == 1
-    #         @info values
-    # #     end
-    # end
-
-    # map(partition(g_dss_cache),row_partition) do values, indices
-    #     local_index_to_owner = local_to_owner(indices)
-    #     @info local_index_to_owner
-    #     # for lid in 1:length(local_index_to_owner)
-    #     #     owner = local_index_to_owner[lid]
-    #     #     @test values[lid] == 10*owner
-    #     # end
-    # end
-
-
+    
     assemble!(g_dss_cache) |> wait
     consistent!(g_dss_cache) |> wait
     M = map(local_values(g_dss_cache)) do values
