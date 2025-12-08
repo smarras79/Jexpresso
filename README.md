@@ -375,10 +375,10 @@ include("./src/Jexpresso.jl")
 
 Test 4: 2D Helmholtz equation
 
-The problem is defined in [`problems/equations/Helmholtz/case1`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1) and by default output will be written to `output/Helmholtz/case1`. To solve this problem run the following commands from the Julia command line:
+The problem is defined in [`problems/equations/Helmholtz/case1_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1_laguerre) and by default output will be written to `output/Helmholtz/case1_laguerre`. To solve this problem run the following commands from the Julia command line:
 
 ```bash
-push!(empty!(ARGS), "Helmholtz", "case1");
+push!(empty!(ARGS), "Helmholtz", "case1_laguerre");
 include("./src/Jexpresso.jl")
 ```
 

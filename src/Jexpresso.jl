@@ -58,6 +58,7 @@ using RRTMGP.ArtifactPaths
 
 using UnicodePlots
 using Printf
+using NetCDF
 using NCDatasets
 using MPI
 

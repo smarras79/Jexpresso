@@ -85,13 +85,14 @@ function time_loop!(inputs, params, u)
     #
     # Write initial conditions:
     #
-    if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
+    if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end   
     write_output(params.SD, u, params.uaux, inputs[:tinit], 0,
                  params.mesh, params.mp, params.F_data,
                  params.connijk_original, params.poin_in_bdy_face_original,
                  params.x_original, params.y_original, params.z_original,
                  inputs[:output_dir], inputs,
-                 params.qp.qvars, params.qp.qoutvars,
+                 params.qp.qvars,
+                 params.qp.qoutvars,
                  inputs[:outformat];
                  nvar=params.qp.neqs, qexact=params.qp.qe)
     if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
