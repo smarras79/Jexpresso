@@ -97,6 +97,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
         ω   = ξω.ω
     end
     SD = mesh.SD
+    
     #--------------------------------------------------------
     # Build Lagrange polynomials:
     #

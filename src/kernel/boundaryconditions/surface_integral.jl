@@ -13,7 +13,7 @@ end
 function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
 
     for iface = 1:nfaces
-        if (z[poin_in_bdy_face[iface,3,3]] == zmin)
+        #if (z[poin_in_bdy_face[iface,3,3]] == zmin)
             for i = 1:ngl
                 for j = 1:ngl
                     e = bdy_face_in_elem[iface]
@@ -23,7 +23,7 @@ function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin,
                     end
                 end
             end
-        end
+        #end
     end
 
 end

@@ -160,7 +160,8 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
         
         # Find the maximum height and the first layer's height in the original grid.
         ztop = mesh.zmax
-        
+      
+
         # 1. CALCULATE STRETCHING FACTOR for the bottom region.
         # This is the same calculation as before, ensuring the bottom layer meets the size criteria.
         computed_stretch_factor = log(first_cell_size / ztop) / log(sigma_1 / ztop)
@@ -240,6 +241,7 @@ function stretch_mesh_3D!(mesh,inputs, npoin)
 
         # Find the maximum height and the first layer's height in the original grid.
         ztop = mesh.zmax
+
         
         # 1. Initialize local minimum to positive infinity.
         # This is the identity element for the 'min' operation and elegantly

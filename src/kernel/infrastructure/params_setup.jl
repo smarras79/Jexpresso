@@ -93,7 +93,7 @@ function params_setup(sem,
     μsgs         = viscsgs.μ
     
     rhs_el_tmp   = rhs.rhs_el_tmp
-
+    
     #------------------------------------------------------------------------------------
     # non conforming faces arrays and mpi cache
     #------------------------------------------------------------------------------------
@@ -152,10 +152,10 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Some domain parameters
     #------------------------------------------------------------------------------------
-    xmax = maximum(sem.mesh.x); xmin = minimum(sem.mesh.x)
-    ymax = maximum(sem.mesh.y); ymin = minimum(sem.mesh.y)
-    zmax = maximum(sem.mesh.z); zmin = minimum(sem.mesh.z)
-
+    xmax = sem.mesh.xmax; xmin = sem.mesh.xmin
+    ymax = sem.mesh.ymax; ymin = sem.mesh.ymin
+    zmax = sem.mesh.zmax; zmin = sem.mesh.zmin
+        
     #------------------------------------------------------------------------------------
     # Laguerre arrays
     #------------------------------------------------------------------------------------

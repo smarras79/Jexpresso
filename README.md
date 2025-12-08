@@ -1,3 +1,15 @@
+# ANNOUNCEMENT:
+
+Dear all, 
+
+as we have noticed an increased interest in Jexpresso (this is amazing, thank you for this!), we are working on making sure that the default master branch can be cloned and run without issues with incompatible dependencies versions. 
+Up to now the fixes had to be made by hand if one didn't have the correct packages versions, but we will soon push a version that automates it.
+
+Moreover, we have added **ERA5** reading capabilities and the branch for that will be merged soon into master, as well as an improved handling of boundary conditions from the user's perspective.
+
+Thank you for being patient and for your interest in the Jexpresso!
+
+
 # <img src="./assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
 
 | **Documentation** |
@@ -16,6 +28,11 @@
 A CPU and GPU research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this will always be WIP! Contact us to join the team of developers!
 
 Suggested Julia version: 1.11.2 or higher.
+
+# Installation:
+Use the installer as described in [INSTALLATION.md](INSTALLATION.md)
+
+The installer will install all the necessary packages with the correct versions.
 
 Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
 
@@ -38,15 +55,6 @@ If you use Jexpresso please drop us a line to let us know. We'd like to add a li
 Please cite Jexpresso using:
 
 ```
-@article{tissaoui2024,
-  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
-  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
-  volume ={487},
-  pages={129080},
-  year = {2024},
-  journal = {App. Math. Comput.},
-}
-
 @inproceedings{marrasJexpresso,
   author    = {S. Marras and Y. Tissaoui and H. Wang and S. Stechmann}
   title     = {JEXPRESSO V0. 1: A JULIA-LANGUAGE, USER-FRIENDLY, MULTI-PHYSICS PARALLEL SOLVER FOR THE SOLUTION OF CONSERVATIONS LAWS ON CPUs AND GPUs.},
@@ -55,6 +63,15 @@ Please cite Jexpresso using:
   address   = {Merida, Yucatan, Mexico},
   month     = {November},
   organization = {UNAM},
+}
+
+@article{tissaoui2024,
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
+  volume ={487},
+  pages={129080},
+  year = {2024},
+  journal = {App. Math. Comput.},
 }
 ```
 
@@ -297,6 +314,7 @@ include("./src/Jexpresso.jl")
      style="float: left; margin-right: 7px;" />
 
 
+
 For ready to run tests, there are the currently available equations names:
 
 * CompEuler (option with total energy and theta formulation)
@@ -307,8 +325,99 @@ Details will be given in the documentation (still WIP). Write us if you need hel
 More are already implemented but currently only in individual branches. They will be added to master after proper testing.
 
 ## Laguerre semi-infinite element test suite
+This section contains instructions to run all of the test cases presented in
 
-Test 4: Shallow cumuli simulation with BOMEX conditions:
+```
+@article{tissaoui2024,
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
+  volume ={487},
+  pages={129080},
+  year = {2024},
+  journal = {App. Math. Comput.},
+}
+```
+
+Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
+
+The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+push!(empty!(ARGS), "CompEuler", "wave1d_lag");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/wave_v_4.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 2: 1D wave train for linearized shallow water equations
+
+The problem is defined in [`problems/equations/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+push!(empty!(ARGS), "AdvDiff", "Wave_Train");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/Wave_Train_final.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+
+Test 3: 2D advection-diffusion equation
+
+The problem is defined in [`problems/equations/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+push!(empty!(ARGS), "AdvDiff", "2D_laguerre");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/ad2d-4s-line.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 4: 2D Helmholtz equation
+
+The problem is defined in [`problems/equations/Helmholtz/case1_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/Helmholtz/case1_laguerre) and by default output will be written to `output/Helmholtz/case1_laguerre`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+push!(empty!(ARGS), "Helmholtz", "case1_laguerre");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/Helmholtz_from_jexpresso-line.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 5: Rising thermal bubble with semi-infinite Laguerre elements for outflows
+
+The problem is defined in [`problems/equations/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
+
+```bash
+push!(empty!(ARGS), "CompEuler", "theta_laguerre");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/48.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 6: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
+
+The problem is defined in [`problems/equations/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/equations/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
+
+```bash      
+push!(empty!(ARGS), "CompEuler", "HSmount_Lag");
+include("./src/Jexpresso.jl")
+```
+
+<img src="assets/wvelo.png"
+     alt="Markdown icon"
+     style="float: left; margin-right: 7px;" />
+
+Test 7: Shallow cumuli simulation with BOMEX conditions:
 
 ```bash
 push!(empty!(ARGS), "CompEuler", "3d_bomex");
@@ -317,113 +426,3 @@ include("./src/Jexpresso.jl")
 <img src="assets/bomex.png"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
-
-## Setup and Run with MPI
-
-JEXPRESSO supports parallel execution using either OpenMPI or MPICH. Follow these steps to configure and run with your preferred MPI implementation.
-
-### 1. Install MPI Implementation
-
-Choose either OpenMPI or MPICH:
-
-#### OpenMPI Installation
-```bash
-# Ubuntu/Debian
-sudo apt install libopenmpi-dev openmpi-bin
-
-# macOS (Homebrew)
-brew install open-mpi
-
-# Verify installation
-mpiexec --version
-```
-
-#### MPICH Installation
-```bash
-# Ubuntu/Debian
-sudo apt install mpich libmpich-dev
-
-# macOS (Homebrew) 
-brew install mpich
-
-# Verify installation
-mpiexec --version
-```
-
-### 2. Configure MPI Preferences
-
-#### Automatic Configuration (Default Path)
-Use this command when MPI (OpenMPI/MPICH) is installed in standard system paths (`/usr/bin`, `/usr/local/bin`, etc.):
-```bash
-julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary()'
-```
-
-#### Manual Configuration (For Multiple MPI Installations or MPI not in Default Path)
-For MPI installations in non-standard locations (e.g., /opt/openmpi, or custom paths):
-```bash
-julia --project=. -e 'using Pkg; Pkg.add("MPIPreferences"); using MPIPreferences; MPIPreferences.use_system_binary(;extra_paths = ["/where/your/mpi/lib"])'
-```
-If MPI is installed via homebrew on macOS, the MPI lib path is:
-```bash
-/opt/homebrew/lib
-```
-
-### 3. Running with MPI
-
-#### Basic Execution
-```bash
-mpiexec -n <NPROCS> julia --project=. -e 'push!(empty!(ARGS), "<EQUATIONS>", "<CASE_NAME>"); include("./src/Jexpresso.jl")'
-```
-
-#### Implementation-Specific Examples
-```bash
-mpiexec -n 4 julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "3d"); include("./src/Jexpresso.jl")'
-```
-#### Script
-You can simplify the run steps with a `runjexpresso` script like this:
-```bash
-#!/bin/bash
-
-MPIRUN=/YOUR/PATH/TO/mpirun
-JULIA=/YOUR/PATH/TO/julia
-
-$MPIRUN -np $1 $JULIA --project=. -e 'push!(empty!(ARGS), "'"$2"'", "'"$3"'"); include("./src/Jexpresso.jl")' "$@"
-```
-and run it like this:
-```bash
-./runjexpresso 4 CompEuler theta
-```
-
-### Troubleshooting
-
-- **Library conflicts:** Clear existing preferences:
-  ```bash
-  rm -f LocalPreferences.toml
-  ```
-- **Path issues:** Verify paths with:
-  ```bash
-  which mpiexec
-  which mpirun
-  ```
-  You may have to use the full aboslute path to mpiexec or mpirun and to julia like this if necessary:
-  ```
-  /opt/homebrew/Cellar/open-mpi/5.0.6/bin/mpirun -n 4 /Applications/Julia-1.11.app/Contents/Resources/julia/bin/julia --project=. -e 'push!(empty!(ARGS), "CompEuler", "theta"); include("./src/Jexpresso.jl")'
-  ```
-
-
-- **Version mismatches:** Ensure consistent versions:
-  ```bash
-  mpicc --version
-  mpif90 --version
-  ```
-
-
-
-<!-- <img src="assets/mpi_performance_comparison.png" width="700" alt="MPI Performance Comparison"> -->
-
-## Plotting
-Files can be written to VTK (recommended) or png (png is now only used for 1D results). For the png plots, we use [Plots.jl](https://github.com/JuliaPlots/Plots.jl). If you want to use a different package,
-modify ./src/io/plotting/jplots.jl accordinly.
-
-## Contacts
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)

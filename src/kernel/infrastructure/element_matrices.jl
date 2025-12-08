@@ -70,7 +70,6 @@ function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
     Del = zeros(N+1, N+1, mesh.nelem)
 
     for iel=1:mesh.nelem
-        #Jac = mesh.Δx[iel]/2
         
         for i=1:N+1
             for iq=1:Q+1, j=1:N+1
@@ -716,7 +715,7 @@ function DSS_laplace_sparse(mesh, Lel)
     end
     
     # Create sparse matrix and sum duplicate entries automatically
-    return sparse(I_vec, J_vec, V_vec) #Julia native CSC format (good for PETC.jl solvers)
+    return sparse(I_vec, J_vec, V_vec)
 end
 
 
@@ -755,7 +754,22 @@ function DSS_laplace_sparse_threaded(mesh, Lel)
     J_vec = [t[2] for t in all_triplets]
     V_vec = [t[3] for t in all_triplets]
     
-    return sparse(I_vec, J_vec, V_vec) #Julia native CSC format (good for PETC.jl solvers)
+    return sparse(I_vec, J_vec, V_vec)
+end
+
+
+# Utility function to convert to different sparse formats if needed
+function convert_sparse_format(A::SparseMatrixCSC; format=:CSR)
+    if format == :CSR
+        # Julia's SparseMatrixCSC is essentially CSC format
+        # For true CSR, you'd need to transpose and use rowvals/nzval
+        return A'  # This gives CSR-like access pattern
+    elseif format == :COO
+        I, J, V = findnz(A)
+        return (I, J, V)
+    else
+        return A  # Default CSC format
+    end
 end
 
 # Example usage:

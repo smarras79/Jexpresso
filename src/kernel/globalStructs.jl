@@ -480,5 +480,3 @@ function allocate_ncfArrays(SD, num_ncf_pg, num_ncf_cg, ngl, T, backend; neqs=1)
 
     return ncf_arrays
 end
-
-
