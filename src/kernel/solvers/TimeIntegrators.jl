@@ -64,7 +64,7 @@ function time_loop!(inputs, params, u)
                        params.SD; visc=inputs[:μ])
             
             write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
-                         integrator.p.mesh, integrator.p.mp,
+                         integrator.p.mesh, integrator.p.mp, integrator.p.F_data,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
                          integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
                          inputs[:output_dir], inputs,
@@ -87,7 +87,7 @@ function time_loop!(inputs, params, u)
     #
     if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
     write_output(params.SD, u, params.uaux, inputs[:tinit], 0,
-                 params.mesh, params.mp,
+                 params.mesh, params.mp, params.F_data,
                  params.connijk_original, params.poin_in_bdy_face_original,
                  params.x_original, params.y_original, params.z_original,
                  inputs[:output_dir], inputs,
