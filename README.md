@@ -422,7 +422,7 @@ and run it like this:
 <!-- <img src="assets/mpi_performance_comparison.png" width="700" alt="MPI Performance Comparison"> -->
 
 ## Plotting
-Files can be written to VTK (recommended) or png (png is now only used for 1D results). For the png plots, we use [Makie](https://github.com/MakieOrg/Makie.jl). If you want to use a different package,
+Files can be written to VTK (recommended) or png (png is now only used for 1D results). For the png plots, we use [Plots.jl](https://github.com/JuliaPlots/Plots.jl). If you want to use a different package,
 modify ./src/io/plotting/jplots.jl accordinly.
 
 ## Contacts

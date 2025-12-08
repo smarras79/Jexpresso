@@ -1,47 +1,37 @@
 using Dierckx
-using CairoMakie
+using Plots
 using LaTeXStrings
 using ColorSchemes
-using Makie
 #using Interpolations
 
-#= CITE Mackie:
-@article{DanischKrumbiegel2021,
-doi = {10.21105/joss.03349},
-url = {https://doi.org/10.21105/joss.03349},
-year = {2021},
-publisher = {The Open Journal},
-volume = {6},
-number = {65},
-pages = {3349},
-author = {Simon Danisch and Julius Krumbiegel},
-title = {Makie.jl: Flexible high-performance data visualization for Julia},
-journal = {Journal of Open SOurce Software}
-}
-=#
-
 #
-# Curves (1D) or Contours (2D) with PlotlyJS
+# Curves (1D) or Contours (2D) with Plots.jl
 #
 
 function plot_initial(SD::NSD_1D, x, q, ivar, OUTPUT_DIR::String)
 
     npoin = length(q)
-    fig, ax, plt = CairoMakie.scatter(x[1:npoin], q[1:npoin];
-                                      markersize = 10, color="Blue",
-                                      xlabel = "x", ylabel = "q(x)",
-                                      fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),
-                                      axis = (; title = "u", xlabel = "x")
-                                      )
-    
+    plt = Plots.scatter(x[1:npoin], q[1:npoin];
+                        markersize = 5,
+                        color = :blue,
+                        xlabel = "x",
+                        ylabel = "q(x)",
+                        title = "u",
+                        titlefontsize = 24,
+                        guidefontsize = 18,
+                        legendfontsize = 14,
+                        tickfontsize = 14,
+                        legend = false,
+                        size = (800, 600))
+
     fout_name = string(OUTPUT_DIR, "/INIT-", ivar, ".png")
-    
-    save(string(fout_name), fig)
-    fig
+
+    Plots.savefig(plt, string(fout_name))
+    plt
 end
 
 function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, PT=nothing)
-    
+
     epsi = 1.1
     npoin = mesh.npoin
 
@@ -49,72 +39,93 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
     x_coords = mesh.coords[1:npoin, 1]
     sort_idx = sortperm(x_coords)
     for ivar=1:nvar
-        
+
         idx = (ivar - 1)*npoin
-        
-        CairoMakie.activate!(type = "eps")
-        fig = Figure(size = (600,400),fontsize=22)
-        ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
-        
-        CairoMakie.scatterlines!(x_coords[sort_idx], qout[sort_idx, ivar]; markersize = 10, color="Blue")
+
+        plt = Plots.plot(x_coords[sort_idx], qout[sort_idx, ivar];
+                        line = (:blue, 2),
+                        marker = (:circle, 5, :blue),
+                        title = string(outvar[ivar]),
+                        xlabel = "x",
+                        titlefontsize = 22,
+                        guidefontsize = 18,
+                        legendfontsize = 14,
+                        tickfontsize = 14,
+                        legend = false,
+                        size = (600, 400))
+
         vlines = inputs[:plot_vlines]
         hlines = inputs[:plot_hlines]
         axis = inputs[:plot_axis]
         if !(vlines == "empty")
-            for i=1:size(vlines,1) 
-                #vlines!(ax, [-2.5,2.5], color = :red)
-                vlines!(ax,vlines[i], color = :red)
+            for i=1:size(vlines,1)
+                Plots.vline!(plt, [vlines[i]]; color = :red, linestyle = :solid, label = "")
             end
         end
         if !(hlines == "empty")
             for i=1:size(hlines,1)
-                #vlines!(ax, [-2.5,2.5], color = :red)
-                hlines!(ax,hlines[i], color = :red)
+                Plots.hline!(plt, [hlines[i]]; color = :red, linestyle = :solid, label = "")
             end
         end
         if !(axis == "empty")
             idx = (ivar-1)*2
-            CairoMakie.ylims!(ax, axis[1+idx], axis[2+idx])
+            Plots.ylims!(plt, axis[1+idx], axis[2+idx])
         end
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
-        save(string(fout_name), fig)
-        fig
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
+        Plots.savefig(plt, string(fout_name))
+        plt
     end
 end
 
 
-function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, fig=Figure(),color ="Blue",p=[],marker = :circle, PT=nothing)
-    
+function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, fig=nothing, color ="blue", p=[], marker = :circle, PT=nothing)
+
     @print "C"
-    
+
     epsi = 1.1
     npoin = mesh.npoin
-    
+
     for ivar=1:1
         idx = (ivar - 1)*npoin
-        CairoMakie.activate!(type = "eps")
-        if !(p==[]) 
-            ax = Axis(fig[1, 1], title="", xlabel="")
-            hidedecorations!(ax)
-            push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, color=color))
-        else
-            ax = Axis(fig[1, 1], title=string(outvar[ivar]), xlabel="x")
-            push!(p,CairoMakie.scatter!(mesh.x[1:mesh.npoin_original], q[idx+1:(ivar-1)*npoin+mesh.npoin_original];marker = marker, markersize = 10, color=color))
+
+        if fig === nothing
+            fig = Plots.plot(xlabel = "x",
+                           title = string(outvar[ivar]),
+                           titlefontsize = 18,
+                           guidefontsize = 14,
+                           legend = false)
         end
-        p[end].color = color
-        CairoMakie.ylims!(ax, -0.03, 0.03)
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".eps")  
-        save(string(fout_name), fig)
+
+        if !(p==[])
+            # Add to existing plot without decorations
+            Plots.scatter!(fig, mesh.x[1:mesh.npoin_original],
+                         q[idx+1:(ivar-1)*npoin+mesh.npoin_original];
+                         marker = marker,
+                         markersize = 5,
+                         color = color,
+                         label = "")
+        else
+            Plots.scatter!(fig, mesh.x[1:mesh.npoin_original],
+                         q[idx+1:(ivar-1)*npoin+mesh.npoin_original];
+                         marker = marker,
+                         markersize = 5,
+                         color = color,
+                         label = "")
+        end
+
+        Plots.ylims!(fig, -0.03, 0.03)
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".eps")
+        Plots.savefig(fig, string(fout_name))
         fig
     end
 end
 
 
 function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, varnames; iout=1, nvar=1, PT=nothing)
-    
+
     epsi = 1.1
     npoin = mesh.npoin
-    
+
     qout = copy(q)
     qe   = range(0,0,npoin)
 
@@ -128,7 +139,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
         ivar = 2
         idx = (ivar - 1)*npoin
         qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./q[1:npoin]
-        
+
         ivar = 3
         idx = (ivar - 1)*npoin
         γ = 1.4
@@ -152,29 +163,39 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT
             qout[idx+1:ivar*npoin] .= q[idx+1:ivar*npoin] .+ Hb[:,ivar]
         end
     end
-    
+
     for ivar=1:nvar
 
         idx = (ivar - 1)*npoin
-        fig, ax, plt = CairoMakie.scatter(mesh.x[1:npoin], qout[idx+1:ivar*npoin];
-                                          markersize = 10, color="Blue",
-                                          xlabel = "x", ylabel = "q(x)",
-                                          fontsize = 24, fonts = (; regular = "Dejavu", weird = "Blackchancery"),  axis = (; title = string(outvar[ivar]), xlabel = "xx")
-                                          )
+        plt = Plots.scatter(mesh.x[1:npoin], qout[idx+1:ivar*npoin];
+                           markersize = 5,
+                           color = :blue,
+                           xlabel = "x",
+                           ylabel = "q(x)",
+                           title = string(outvar[ivar]),
+                           titlefontsize = 24,
+                           guidefontsize = 18,
+                           legendfontsize = 14,
+                           tickfontsize = 14,
+                           legend = false,
+                           size = (800, 600))
 
-        
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")        
-        save(string(fout_name), fig)
-        fig
+
+        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
+        Plots.savefig(plt, string(fout_name))
+        plt
     end
 end
 
 function plot_1d_grid(mesh::St_mesh)
-    
-    plt = plot() #Clear plot
+
+    plt = Plots.plot() #Clear plot
     for i=1:mesh.npoin
-        display(CairoMakie.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin), markersizes=4, color="Blue"))
-    end 
+        display(Plots.scatter(mesh.x[1:mesh.npoin], zeros(mesh.npoin),
+                             markersize = 4,
+                             color = :blue,
+                             legend = false))
+    end
 end
 
 
@@ -185,10 +206,10 @@ end
 function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; iout=1, nvar=1)
 
     """
-        This function uses the amazing package Mackie to plot arbitrarily gridded
+        This function uses Plots.jl to plot arbitrarily gridded
         unstructured data to filled contour plot
     """
-    
+
     if ("Laguerre" in mesh.bdy_edge_type)
         npoin = mesh.npoin_original
     else
@@ -198,38 +219,43 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-        fig, ax, sol = Makie.tricontourf(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin], colormap = :viridis)
-        
+
+        # Create triangulated contour plot using Plots
+        plt = Plots.scatter(mesh.x[1:npoin], mesh.y[1:npoin];
+                           zcolor = q[idx+1:ivar*npoin],
+                           color = :viridis,
+                           marker = :circle,
+                           markersize = 3,
+                           markerstrokewidth = 0,
+                           colorbar = true,
+                           legend = false,
+                           aspect_ratio = :equal,
+                           size = (800, 600))
+
         minq = minimum(q[idx+1:ivar*npoin])
         maxq = maximum(q[idx+1:ivar*npoin])
 
-        if (maxq > minq) 
+        if (maxq > minq)
             Lx = abs(maximum(mesh.x) - minimum(mesh.x))
             Ly = abs(maximum(mesh.y) - minimum(mesh.y))
             vlines = inputs[:plot_vlines]
             hlines = inputs[:plot_hlines]
             if !(vlines == "empty")
                 for i=1:size(vlines,1)
-                    vlines!(ax,vlines[i], color = :red, linestyle = :dash)
+                    Plots.vline!(plt, [vlines[i]]; color = :red, linestyle = :dash, label = "")
                 end
             end
             if !(hlines == "empty")
                 for i=1:size(hlines,1)
-                    hlines!(ax,hlines[i], color = :red, linestyle = :dash)
+                    Plots.hline!(plt, [hlines[i]]; color = :red, linestyle = :dash, label = "")
                 end
             end
-            
-            if (Ly > Lx)
-                ax.aspect = Lx/Ly; colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
-            else
-                #ax.aspect = Lx/Ly; #colsize!(fig.layout, 1, Aspect(1, Lx/Ly))
-            end      
 
-            Colorbar(fig[1,2], colormap = :viridis,  limits = (minq, maxq))        
-            save(string(fout_name), fig) #, size = (600, 600))
-            fig
+            Plots.clims!(plt, minq, maxq)
+            Plots.savefig(plt, string(fout_name))
+            plt
         end
-        
+
     end
 end
 function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; nvar=1) nothing end
@@ -238,16 +264,16 @@ function plot_triangulation(SD::NSD_3D, mesh::St_mesh, q::Array, title::String, 
 function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String; iout=1, nvar=1, smoothing_factor=1e-3)
 
     xmin = minimum(mesh.x); xmax = maximum(mesh.x);
-    ymin = minimum(mesh.y); ymax = maximum(mesh.y); 
+    ymin = minimum(mesh.y); ymax = maximum(mesh.y);
 
     nxi = 500
     nyi = 500
     npoin = mesh.npoin
     for ivar=1:nvar
         idx = (ivar - 1)*npoin
-        
+
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-        
+
         #Spline2d
         spl = Spline2D(mesh.x[1:npoin], mesh.y[1:npoin], q[idx+1:ivar*npoin]; kx=4, ky=4, s=smoothing_factor)
         xg = LinRange(xmin, xmax, nxi); yg = LinRange(ymin, ymax, nyi);
@@ -255,15 +281,15 @@ function plot_surf3d(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, OUTPUT_
         #End spline2d
 
         #figure:
-        fig = Figure(size=(1200, 400))
-        axs = [Axis3(fig[1, i]; aspect=(1, 1, 1), azimuth=-π/2, elevation=π/2) for i = 1:1]
-        
-        hm = Makie.surface!(axs[1], xg, yg, zspl) # xl="x", yl="y", zl=string("q", ivar)) #, title=title, titlefont=12)
-        #Colorbar(fig[1, 1], hm, height=Relative(0.5))
-        
-        save(string(fout_name), fig)
-        #display(fig)
-        fig
+        plt = Plots.surface(xg, yg, zspl;
+                           color = :viridis,
+                           camera = (0, 90),  # Top-down view similar to Makie's azimuth/elevation
+                           colorbar = true,
+                           legend = false,
+                           size = (1200, 400))
+
+        Plots.savefig(plt, string(fout_name))
+        plt
     end
-    
+
 end
