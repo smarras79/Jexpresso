@@ -55,15 +55,6 @@ If you use Jexpresso please drop us a line to let us know. We'd like to add a li
 Please cite Jexpresso using:
 
 ```
-@article{tissaoui2024,
-  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
-  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
-  volume ={487},
-  pages={129080},
-  year = {2024},
-  journal = {App. Math. Comput.},
-}
-
 @inproceedings{marrasJexpresso,
   author    = {S. Marras and Y. Tissaoui and H. Wang and S. Stechmann}
   title     = {JEXPRESSO V0. 1: A JULIA-LANGUAGE, USER-FRIENDLY, MULTI-PHYSICS PARALLEL SOLVER FOR THE SOLUTION OF CONSERVATIONS LAWS ON CPUs AND GPUs.},
@@ -72,6 +63,15 @@ Please cite Jexpresso using:
   address   = {Merida, Yucatan, Mexico},
   month     = {November},
   organization = {UNAM},
+}
+
+@article{tissaoui2024,
+  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
+  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
+  volume ={487},
+  pages={129080},
+  year = {2024},
+  journal = {App. Math. Comput.},
 }
 ```
 
