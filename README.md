@@ -29,6 +29,11 @@ A CPU and GPU research software for the numerical solution of a system of arbitr
 
 Suggested Julia version: 1.11.2 or higher.
 
+# Installation:
+Use the installer as described in [INSTALLATION.md](INSTALLATION.md)
+
+The installer will install all the necessary packages with the correct versions.
+
 Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
 
 ```
