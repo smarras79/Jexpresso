@@ -36,7 +36,7 @@ REYNOLDS_STRESS="uv,uw,vw"                  # Reynolds stress components
 # ENSURE JULIA PACKAGES ARE INSTALLED
 #=============================================
 echo "Ensuring Julia packages are installed..."
-julia -e 'using Pkg; Pkg.add(["NearestNeighbors", "Makie", "ColorSchemes", "ArgParse", "Dates"])'
+julia -e 'using Pkg; Pkg.add(["NearestNeighbors", "Plots", "ColorSchemes", "ArgParse", "Dates"])'
 
 #=============================================
 # DRY RUN - Check what files will be processed
