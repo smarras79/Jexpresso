@@ -70,12 +70,13 @@ TFloat = Float64
 SFloat = Float32
 cpu    = true
 
-#function LinearAlgebra.ldiv!(y::AbstractVector{Float64}, F::Any, x::AbstractVector{Float64})
+function LinearAlgebra.ldiv!(y::AbstractVector{Float64}, F::Any, x::AbstractVector{Float64})
 #    xsingle = Float32.(x)
+#    MyPrecClass.sol!(F, xsingle, y)
+    MyPrecClass.sol!(F, x, y)
 
-#    ysingle = xsingle
-#    y = Float64.(ysingle)
-#end
+#    y .= Float64.(xsingle)
+end
 
 using DocStringExtensions
 

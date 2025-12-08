@@ -24,12 +24,20 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         (solver_parameters != nothing && haskey(solver_parameters, :itmax)) ? itmax = solver_parameters[:itmax] : itmax = 100
         (solver_parameters != nothing && haskey(solver_parameters, :verbose)) ? verbose = solver_parameters[:verbose] : verbose = 1
         (solver_parameters != nothing && haskey(solver_parameters, :prec)) ? prec = solver_parameters[:prec] : prec = SmoothedAggregationPreconBuilder()
+
+        haskey(inputs, :solver_precision) ? solver_precision = inputs[:solver_precision] : solver_precision = Float64
+
+        haskey(inputs, :prec_sp) ? prec_sp = inputs[:prec_sp] : prec_sp = Dict(:maxiter      => 1,
+                                                                               :abstol       => 1e-8,
+                                                                               :precision    => Float64,
+                                                                               )
     end
 
     # Non-linear parameters
     haskey(inputs, :nl_atol) ? nl_atol = inputs[:nl_atol] : nl_atol = 1.e-05
     haskey(inputs, :nl_rtol) ? nl_rtol = inputs[:nl_rtol] : nl_rtol = 1.e-05
     haskey(inputs, :max_nl_iter) ? max_nl_iter = inputs[:max_nl_iter] : max_nl_iter = 10
+    haskey(inputs, :nl_precision) ? nl_precision = inputs[:nl_precision] : nl_precision = Float64
 
     # IMEX
     # With delta = 0, apply explicit method;
@@ -73,7 +81,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         u_prev = Dict()
         for n_step = 1 : k
             # initialize u_prev in a better way for multistep
-            u_prev[n_step] = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(unkwn))
+            u_prev[n_step] = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
         end
         u_prev[1] .= u
 
@@ -81,11 +89,11 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         if k > 1
             haskey(inputs, :Δt_expl) ? Δt_expl = inputs[:Δt_expl] : Δt_expl = Δt / (k - 1)
             for n_step = 2 : k
-                rhs = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(unkwn))
+                rhs = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
 
                 rhs += u_prev[1]
 
-                s_j = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(unkwn))
+                s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
                 S_fun!(s_j, u_prev[1], t_n, params)
 
                 # explicit Euler
@@ -109,19 +117,19 @@ function imex_time_loop!(inputs, sem, qp, params, u)
     function construct_rhs(inputs, sem, u_prev, t_n)
         if method == "multistep"
             # building rhs
-            rhs = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(unkwn))
+            rhs = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
 
             for n_step = 1 : k
                 rhs += alpha[n_step] * u_prev[n_step]
 
                 # Evaluating S(u_{n-j}) and L(u_{n-j})
                 # s_j and l_j should already be scaled by M_inv
-                s_j = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(unkwn))
+                s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
                 time = t_n - (n_step - 1) * Δt
                 S_fun!(s_j, u_prev[n_step], time, params)
 
                 if delta == 1
-                    l_j = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(unkwn))
+                    l_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
                     L_fun!(l_j, u_prev[n_step], time, params)
                 end
 
@@ -158,7 +166,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
 
     # Initialize solution vector
-    u_next = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(unkwn))
+    u_next = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
 
     #------------------------------------------------------------------------
     # Updating u
@@ -182,7 +190,6 @@ function imex_time_loop!(inputs, sem, qp, params, u)
     # Building L_curr
     #------------------------------------------------------------------------
     L_curr = L_update(u_next, t_n + Δt)
-    L_solver = L_curr
 
     #------------------------------------------------------------------------
     # Simulation
@@ -192,10 +199,10 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
         rhs = construct_rhs(inputs, params, u_prev, t_n)
         # Apply bcs to rhs and L
-        bcs_fun!(rhs, L_solver, t_n + Δt, params, sem, qp)
+        bcs_fun!(rhs, L_curr, t_n + Δt, params, sem, qp)
 
         # construct vector containing non-linear residual
-        nonl_res = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(unkwn))
+        nonl_res = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
         nonl_res .= rhs
 
         nl_norm_0 = norm(nonl_res)
@@ -214,62 +221,32 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
                 # Solving the linear system
                 if lsolve == nothing
-                    prob = LinearProblem(L_solver, nonl_res);
-#                    prob = LinearProblem(L_curr, nonl_res);
-                    prec = SmoothedAggregationPreconBuilder()
-                    workspace = FgmresWorkspace(L_solver, nonl_res; memory = memory)
-#                    workspace = FgmresWorkspace(L_curr, nonl_res; memory = memory)
+                    prec = MyPrecClass.MyPrec(prec_sp[:precision].(solver_precision.(L_curr)),
+                                              RugeStubenAMG(), prec_sp)
 
-
-#function prec!(A, b)
-#    boh = SmoothedAggregationPreconBuilder(A)
-#    sol = AlgebraicMultigrid._solve(boh, b, maxiter = 1, abstol = 1e-6)
-#    x = sol.u
-#    return x
-#end
-#prec = prec!
-
-
-                    strategy = KrylovJL_GMRES(
-                        workspace;
-#                        itmax = itmax,
-                        restart = restart, verbose = verbose,
-                        precs = prec)
-                    sol = solve(prob, strategy, atol = atol, rtol = rtol)
-
-#mg = ruge_stuben(L_solver)
-#prec = aspreconditioner(mg)
-#prec_sp = Dict(
-#    :maxiter => 1,
-#    :abstol  => 1e-8,
-#    )
-#prec = MyPrecClass.MyPrec(L_solver, RugeStubenAMG(), prec_sp)
-
-#(x, stats) = fgmres(L_solver, nonl_res, memory=memory, N=prec, ldiv=true,
-#                    restart=restart, atol=atol, rtol=rtol,
-#                    itmax=itmax, verbose = verbose)
-#@info stats.solved
-#@info stats.niter
+                    (x, stats) = fgmres(solver_precision.(L_curr), solver_precision.(nonl_res),
+                                        memory=memory, N=prec, ldiv=true,
+                                        restart=restart, atol=atol, rtol=rtol,
+                                        itmax=itmax, verbose = verbose)
                 else
-                    sol = lsolve(L_curr, nonl_res)
+                    x = lsolve(solver_precision.(L_curr),
+                               solver_precision.(nonl_res))
                 end
                 @info "Solving linear system... DONE"
 
-                u_next += sol.u
-#                u_next += x
+                u_next += x
 
                 #------------------------------------------------------------------------
                 # Updating L_curr
                 #------------------------------------------------------------------------
                 if delta == 1 && upd_L
                         L_curr = L_update(u_next, t_n + Δt)
-                        L_solver = L_curr
 
                         # Apply bcs to rhs and L
-                        bcs_fun!(rhs, L_solver, t_n + Δt, params, sem, qp)
+                        bcs_fun!(rhs, L_curr, t_n + Δt, params, sem, qp)
                 end
 
-                nonl_res .= rhs - L_solver * u_next
+                nonl_res .= rhs - L_curr * u_next
                 nl_norm_k = norm(nonl_res)
 
                 nl_iter += 1
@@ -280,9 +257,6 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
             # Update solution
             update_u!(u, u_prev, u_next)
-
-            # Initialize solution vector
-            u_next = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(unkwn))
         end
 
         t_n += Δt
@@ -298,14 +272,13 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                      nvar=params.qp.neqs, qexact=params.qp.qe)
 
         # Initialize solution vector
-        u_next = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(unkwn))
+        u_next = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
 
         #------------------------------------------------------------------------
         # Updating L_curr
         #------------------------------------------------------------------------
         if delta == 1 && upd_L && abs(t_n - inputs[:tend]) > 1.e-14 && t_n < inputs[:tend]
             L_curr = L_update(u_next, t_n + Δt)
-            L_solver = L_curr
         end
     end
     

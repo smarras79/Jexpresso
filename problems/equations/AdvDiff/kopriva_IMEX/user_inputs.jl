@@ -20,6 +20,13 @@ function user_inputs()
                       :prec     => SmoothedAggregationPreconBuilder()
                       )
 
+    # Preconditioner parameters
+    prec_sp = Dict(
+        :maxiter      => 1,
+        :abstol       => 1e-8,
+        :precision    => Float32,
+        )
+
     # Source function
     function S_fun!(s_j, u, time, params)
         rhs!(s_j, u, params, time)
@@ -76,23 +83,25 @@ function user_inputs()
 
     # Building fast waves operator
     function build_L(u, time, params)
-        SD      = params.SD
-        basis   = params.basis
-        ω       = params.ω
-        mesh    = params.mesh
-        metrics = params.metrics
-        N       = nop
-        Q       = N
-        backend = CPU()
+        SD         = params.SD
+        basis      = params.basis
+        ω          = params.ω
+        mesh       = params.mesh
+        metrics    = params.metrics
+        visc_coeff = params.visc_coeff
+        N          = nop
+        Q          = N
+        backend    = CPU()
 
         Le = KernelAbstractions.zeros(backend, TFloat, 1, 1)
         L  = KernelAbstractions.zeros(backend, TFloat, 1, 1)
 
-        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh.nelem, mesh, metrics, N, Q, TFloat)
+        Le = build_laplace_matrix(SD, basis.ψ, basis.dψ, ω, mesh.nelem, mesh, metrics,
+                                  N, Q, TFloat)
 
         L = DSS_laplace_sparse(mesh, Le)
         assemble_diffusion_matrix_threaded!(mesh, Le)
-        L = - L
+        L = - visc_coeff[1] * L
 
         return L
     end
@@ -101,9 +110,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 4.0, #2π,
-        :Δt                   => 0.005,#8.75e-4,
-        :Δt_expl              => 0.0025,#8.75e-4,
+        :tend                 => 1.0, #2π,
+        :Δt                   => 0.001,#8.75e-4,
+        :Δt_expl              => 0.0001,#8.75e-4,
         :ode_solver           => SSPRK54(),
         :diagnostics_at_times => (4.0),
         :output_dir          => "./output/",
@@ -139,6 +148,11 @@ function user_inputs()
         :xdisp               => 0.0,
         :ydisp               => 0.0,
         #---------------------------------------------------------------------------
+        # Refinement
+        #---------------------------------------------------------------------------
+        :linitial_refine     => true,
+        :init_refine_lvl     => 1,
+        #---------------------------------------------------------------------------
         # Mountain parameters
         #---------------------------------------------------------------------------
         #:lwarp               => true,
@@ -157,7 +171,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat         => "vtk",
-        :loverwrite_output => false,
+        :loverwrite_output => true,
         :loutput_pert      => true,  #this is only implemented for VTK for now
         :output_dir        => "./output/",
         #:plot_hlines      => [10.0],
@@ -176,6 +190,7 @@ function user_inputs()
                                ),
         :lsolver            => nothing,#"GMRES",#LinearSolve.KrylovJL_GMRES(),
         :sp                 => solver_par,
+        :prec_sp            => prec_sp,
         :S_fun              => S_fun!,
         :L_fun              => L_fun!,
         :bcs_fun            => bcs_fun!,
