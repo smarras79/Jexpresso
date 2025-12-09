@@ -4,14 +4,13 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.03,
-        :tinit                => 11500.0,
-        :tend                 => 15000.0,
+        :Δt                   => 0.04,
+        :tinit                => 1750,
+        :tend                 => 10800.0,
 	:lrestart             => true,
 	#:restart_output_file_path => "",
-	:restart_time         => 500,
-	#:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:100:8500...,  9000:10:10800.0...),
-	:diagnostics_at_times => (10500:10:15000.0),
+	:restart_time         => 1750,
+	:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
         :lsource              => true,
 	:lsponge              => true,
 	:zsponge              => 2500.0,
@@ -31,8 +30,7 @@ function user_inputs()
         :visc_model           => SMAG(),
         #:visc_model           => AV(),
         #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 2.0, 2.0, 2.0, 2.0], #horizontal viscosity constant for momentum
-        #:μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum	
+        :μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------

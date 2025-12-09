@@ -59,7 +59,7 @@ function params_setup(sem,
                              sem.mesh.ngl,
                              T, backend, inputs[:lmoist];
                              neqs=qp.neqs)
-    
+
     ncf_arrays = allocate_ncfArrays(sem.mesh.SD,
                                     sem.mesh.num_ncf_pg,
                                     sem.mesh.num_ncf_cg,
@@ -72,7 +72,6 @@ function params_setup(sem,
     else
         viscsgs = allocate_visc(sem.mesh.SD, 1, 1, 1, T, backend; neqs=1)
     end
-    
     u            = uODE.u
     uaux         = uODE.uaux
     vaux         = uODE.vaux
@@ -285,6 +284,7 @@ function params_setup(sem,
         u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
         qp.qnm1[:,i] = @view(qp.qn[:,i])
         qp.qnm2[:,i] = @view(qp.qn[:,i])
+        
     end
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)

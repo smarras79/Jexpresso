@@ -70,6 +70,7 @@ function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
     Del = zeros(N+1, N+1, mesh.nelem)
 
     for iel=1:mesh.nelem
+        Jac = mesh.Δx[iel]/2
         
         for i=1:N+1
             for iq=1:Q+1, j=1:N+1
@@ -1113,6 +1114,8 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
     
 end
 
+
+
 function DSS_global_RHS!(RHS, g_dss_cache, neqs)
 
     if g_dss_cache === nothing return end
@@ -1126,6 +1129,33 @@ function DSS_global_RHS_pvector!(RHS, g_dss_cache, neqs)
        DSS_global_RHS_v0!(@view(RHS[:,i]), g_dss_cache)
     end
 end
+
+function DSS_global_RHS_v0!(M, pM)
+    # # @info ip2gip
+
+    # pM = pvector(values->@view(M[:]), row_partition)
+    sizeM = length(M)
+    # pM = map(parts, local_values(pM)) do part, localpM
+    #     @info part, length(localpM), sizeM
+    #     localpM = copy(M)
+    # end
+
+    map( partition(pM)) do values
+        for i = 1:sizeM
+            values[i] = M[i]
+        end
+    end
+
+
+    assemble!(pM) |> wait
+    consistent!(pM) |> wait
+    map(local_values(pM)) do values
+        for i = 1:sizeM
+            M[i] = values[i]
+        end
+    end
+end
+
 
 function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
 
@@ -1151,7 +1181,7 @@ function DSS_global_mass_pvector!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin
         row_partition
     end
     g_dss_cache = pvector(values->@view(M[:]), row_partition)
-    
+
     assemble!(g_dss_cache) |> wait
     consistent!(g_dss_cache) |> wait
     M = map(local_values(g_dss_cache)) do values
@@ -1208,6 +1238,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             DSS_nc_gather_mass!(M, mesh, SD, QT, Me, mesh.connijk, mesh.poin_in_edge,
                                     mesh.non_conforming_facets, mesh.non_conforming_facets_parents_ghost,
                                     mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, N, interp)
+
         end
 
         DSS_mass!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
@@ -1273,7 +1304,8 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             
             if (inputs[:lsparse])
                 @info " DSS sparse"
-                @time L = DSS_laplace_sparse(mesh, Le)
+                L = DSS_laplace_sparse(mesh, Le)
+                #assemble_diffusion_matrix_threaded!(mesh, Le)
                 @info " DSS sparse .................... DONE"
             else
                 L = KernelAbstractions.zeros(backend,
@@ -1281,14 +1313,11 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
                                              Int64(mesh.npoin),
                                              Int64(mesh.npoin))
 
-                @info " DSS "
                 DSS_laplace!(L, SD,
                              Le, ω,
                              mesh, metrics,
                              N, TFloat;
                              llump=inputs[:llump])
-                @info " DSS ..... ..................... DONE"
-                
             end
             
         else

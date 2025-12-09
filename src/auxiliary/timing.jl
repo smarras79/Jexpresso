@@ -53,7 +53,6 @@ function time_function!(timer::MPIFunctionTimer, f::Function, args...)
     return result
 end
 
-
 """
     report_timer(timer::MPIFunctionTimer; name::String="Function")
 

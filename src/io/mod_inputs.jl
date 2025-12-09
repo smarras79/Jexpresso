@@ -197,6 +197,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs,:lwarp))
         inputs[:lwarp] = false
     end
+
+    if inputs[:lwarp] == true
+        if(!haskey(inputs,:z_transition_start))
+            inputs[:z_transition_start] = -1000.0
+        end
+        if(!haskey(inputs,:z_transition_end))
+             inputs[:z_transition_end] = 2200.0
+        end
+    end
     
     if(!haskey(inputs,:lstretch))
         inputs[:lstretch] = false
@@ -432,8 +441,8 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if (!haskey(inputs, :lelementLearning))
         inputs[:lelementLearning] = false
     else
-        if (!haskey(inputs, :elNsamp))
-            inputs[:elNsamp] = 1
+        if (!haskey(inputs, :Nsamp))
+            inputs[:Nsamp] = 1
         end
     end
     
@@ -466,7 +475,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lwrite_initial))
         inputs[:lwrite_initial] = false
     end
-  
+
+    if (!haskey(inputs, :gmsh_filename_c))
+        inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+    end
+
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         
@@ -482,7 +495,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
         
     else
-        mod_inputs_check(inputs, :gmsh_filename, "e")       
+        mod_inputs_check(inputs, :gmsh_filename, "e")
+        mod_inputs_check(inputs, :gmsh_filename_c, "e")
+        
         mod_inputs_check(inputs, :nsd,  Int8(3), "-")
         mod_inputs_check(inputs, :nelx,  Int8(2), "-")
         mod_inputs_check(inputs, :xmin, Float64(-1.0), "-")
@@ -532,7 +547,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :Pr))
         inputs[:Pr] = 0.7
     end
-    
+
 
     #
     # Viscous models:
@@ -542,6 +557,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
     if(!haskey(inputs, :visc_model))
         inputs[:visc_model] = AV() #Default is artificial viscosity with constant coefficient
+    end
+
+    
+    if(!haskey(inputs, :lrichardson))
+        inputs[:lrichardson] = false #Default is artificial viscosity with constant coefficient
     end
 
     #
@@ -667,6 +687,18 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         @error s
     end
 
+    if(!haskey(inputs, :lsponge))
+        inputs[:lsponge] = false
+    end
+    if(!haskey(inputs, :zsponge))
+        inputs[:zsponge] = 14000.0
+    end
+    if  inputs[:lsponge] == true
+        if(!haskey(inputs, :zsponge))
+            inputs[:zsponge] = 14000.0
+        end
+    end
+
     if(!haskey(inputs, :lmoist))
         inputs[:lmoist] = false
     end
@@ -674,7 +706,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lprecip))
         inputs[:lprecip] = false
     end
-
     
     if(!haskey(inputs, :energy_equation))
         inputs[:energy_equation] = "theta"
@@ -684,7 +715,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :lrichardson))
         inputs[:lrichardson] = false
     end
-
     if(!haskey(inputs, :CL))
         # :CL stands for Conservation Law.
         # :CL => CL()  means that we solve dq/dt + \nabla.F(q) = S(q)
@@ -754,7 +784,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :linitial_refine))
         inputs[:linitial_refine] = false
     end
-
+        
     if(!haskey(inputs, :init_refine_lvl))
         inputs[:init_refine_lvl] = 0
     end

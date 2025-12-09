@@ -287,6 +287,24 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 metrics.Jef[iedge, k] = Jef_val
                 metrics.nx[iedge, k] = dy * mag_inv
                 metrics.ny[iedge, k] = -dx * mag_inv
+                e = mesh.bdy_edge_in_elem[iedge]
+                ip2 = mesh.connijk[e,2,2]
+                idx1 = 0
+                idx2 = 0
+                #=for j=1:N+1
+                    for i=1:N+1
+                        if (mesh.connijk[e,i,j] == ip)
+                            idx1 = i
+                            idx2 = j
+                        end
+                    end
+                end=#
+                #if (idx1 + metrics.nx[iedge, k] < 1 || idx1 + metrics.nx[iedge, k] > N+1 || idx2 + metrics.ny[iedge, k] < 1 || idx2 + metrics.ny[iedge, k] > N+1)
+                if (metrics.nx[iedge, k]*(mesh.x[ip2]-mesh.x[ip]) + metrics.ny[iedge, k]*(mesh.y[ip2] -mesh.y[ip]) > 0)
+                    metrics.nx[iedge, k] = - metrics.nx[iedge, k]
+                    metrics.ny[iedge, k] = - metrics.ny[iedge, k]
+                end
+
             end
         end
     else
@@ -364,7 +382,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 # Precompute basis function values for current (i,j,k)
                 @simd for idx = 1:Q1
                     temp_basis[idx, 1] = dψ[i, idx]  # dψ_i
-                    temp_basis[idx, 2] = ψ[j, idx]   # ψ_j  
+                    temp_basis[idx, 2] =  ψ[j, idx]  # ψ_j  
                     temp_basis[idx, 3] = dψ[j, idx]  # dψ_j
                 end
                 
@@ -402,7 +420,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
             
             # Optimized Jacobian calculations with better memory access
-            Je_iel = @view metrics.Je[iel, :, :, :]
+            Je_iel   = @view metrics.Je[iel, :, :, :]
             dξdx_iel = @view metrics.dξdx[iel, :, :, :]
             dξdy_iel = @view metrics.dξdy[iel, :, :, :]
             dξdz_iel = @view metrics.dξdz[iel, :, :, :]
@@ -483,8 +501,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 
                 @turbo for l = 1:ngl, k = 1:ngl
                     dψ_i_k = dψ[i, k]
-                    ψ_i_k = ψ[i, k]
-                    ψ_j_l = ψ[j, l]
+                    ψ_i_k  = ψ[i, k]
+                    ψ_j_l  = ψ[j, l]
                     dψ_j_l = dψ[j, l]
                     
                     a = dψ_i_k * ψ_j_l
@@ -519,7 +537,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 # More efficient neighbor point determination
                 i_neighbor = (i < N1) ? i + 1 : i - 1
                 j_neighbor = (j < N1) ? j + 1 : j - 1
-                
+                ip = poin_face[i,j]
                 ip1 = poin_face[i_neighbor, j]
                 ip2 = poin_face[i, j_neighbor]
                 
@@ -563,6 +581,29 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 nx_face[i, j] = nx_comp * norm_inv
                 ny_face[i, j] = ny_comp * norm_inv
                 nz_face[i, j] = nz_comp * norm_inv
+                e = mesh.bdy_face_in_elem[iface]
+                idx1 = 0
+                idx2 = 0
+                idx3 = 0
+                #find arbitrary interior point
+                ip3 = mesh.connijk[e,2,2,2]
+                #=for o=1:mesh.ngl
+                    for n=1:mesh.ngl
+                        for m=1:mesh.ngl
+                            if (mesh.connijk[e,m,n,o] == ip)
+                                    idx1 = m
+                                    idx2 = n
+                                    idx3 = o
+                            end
+                        end
+                    end
+                end=#
+                #if (idx1 + metrics.nx[iface, i, j] < 1 || idx1 + metrics.nx[iface, i, j] > N+1 || idx2 + metrics.ny[iface, i, j] < 1 || idx2 + metrics.ny[iface, i, j] > N+1 || idx3 + metrics.nz[iface, i, j] < 1 || idx3 + metrics.nz[iface, i, j] > N+1)
+                if (metrics.nx[iface, i, j]*(mesh.x[ip3]-mesh.x[ip])+ metrics.ny[iface, i, j]*(mesh.y[ip3]-mesh.y[ip]) + metrics.nz[iface, i, j]*(mesh.z[ip3]-mesh.z[ip]) > 0)
+                    metrics.nx[iface, i, j] = - metrics.nx[iface, i, j]
+                    metrics.ny[iface, i, j] = - metrics.ny[iface, i, j]
+                    metrics.nz[iface, i, j] = - metrics.nz[iface, i, j] 
+                end
             end
         end
     else

@@ -127,13 +127,13 @@ function time_loop!(inputs, params, u, args...)
     if idx ≠ nothing
         if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
         write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
-                    params.mesh, params.mp,
-                    params.connijk_original, params.poin_in_bdy_face_original,
-                    params.x_original, params.y_original, params.z_original,
-                    inputs[:output_dir], inputs,
-                    params.qp.qvars, params.qp.qoutvars,
-                    inputs[:outformat];
-                    nvar=params.qp.neqs, qexact=params.qp.qe)
+                     params.mesh, params.mp,
+                     params.connijk_original, params.poin_in_bdy_face_original,
+                     params.x_original, params.y_original, params.z_original,
+                     inputs[:output_dir], inputs,
+                     params.qp.qvars, params.qp.qoutvars,
+                     inputs[:outformat];
+                     nvar=params.qp.neqs, qexact=params.qp.qe)
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     end
     
@@ -153,7 +153,7 @@ function time_loop!(inputs, params, u, args...)
             imex_time_step_simple_2d!(u, params, params.mesh.connijk,  params.qp.qe,  params.mesh.coords, inputs[:Δt], inputs[:lsource])
         end
         println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
-        @mystop("TimeIntegrators.jl WIP on IMEX by Simone (obsolete)")
+        @mystop()
     else
         solution = solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),

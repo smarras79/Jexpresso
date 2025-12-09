@@ -124,7 +124,6 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     nparts              = 1
     
     #Auxiliary arrays for boundary conditions
-    
     edge_in_elem              = KernelAbstractions.zeros(backend, TInt, 0)
     bdy_edge_in_elem          = KernelAbstractions.zeros(backend, TInt, 0)
     poin_in_bdy_edge          = KernelAbstractions.zeros(backend, TInt, 0, 0)
@@ -810,8 +809,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     # NOTICE: in 2D we consider only edges. faces are the elements.
     #         
     add_high_order_nodes_volumes!(mesh, lgl, mesh.SD, elm2pelm)
-    
 
+    
     for ip = mesh.npoin_linear+1:mesh.npoin
         mesh.x[ip] = mesh.x_ho[ip]
         mesh.y[ip] = mesh.y_ho[ip]
@@ -1234,7 +1233,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
     for (ip, gip) in enumerate(mesh.ip2gip)
         mesh.gip2ip[gip] = ip
-    end 
+    end
     #----------------------------------------------------------------------
     # Extract boundary edges and faces nodes:
     #----------------------------------------------------------------------
@@ -1271,6 +1270,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
             #  for igl = 1:mesh.ngl
             #         @info "iedge " , iedge, " has points ", mesh.poin_in_edge[iedge, igl]
             #  end
+            
             
             if isboundary_edge[iedge] == true
                 # if rank == 1
@@ -1565,6 +1565,7 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #----------------------------------------------------------------------
     # END Extract boundary edges and faces nodes
     #----------------------------------------------------------------------
+
     #----------------------------------------------------------------------
     # periodicity_restructure for MPI
     #----------------------------------------------------------------------
@@ -2113,7 +2114,7 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
     # SM here is the issue. COORDS is not being populated correctly at 1D grid generationS
     
     mesh.connijk = KernelAbstractions.zeros(backend, TInt, Int64(mesh.nelem), Int64(mesh.ngl), 1, 1)
-    
+
     #
     # First pass: build coordinates and store IP into poin_in_edge[iedge_g, l]
     #
@@ -2142,7 +2143,6 @@ function  add_high_order_nodes_1D_native_mesh!(mesh::St_mesh, interpolation_node
         end
     end
     mesh.coords[:,1] = copy(mesh.x[:])
-    
     println(" # POPULATE 1D GRID with SPECTRAL NODES ............................ DONE")
     return 
 end
@@ -2207,6 +2207,7 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_2D, backend, e
                 gip = gtot_linear_poin + (edge2pedge[iedge_g]) * (ngl - 2)
                 operator = -
             end
+
             #@printf(" %d: (ip1, ip2) = (%d %d) ", iedge_g, ip1, ip2)
             for l=2:ngl-1
                 ξ = lgl.ξ[l];
@@ -2383,7 +2384,6 @@ function  add_high_order_nodes_edges!(mesh::St_mesh, lgl, SD::NSD_3D, backend, e
             #ip2 = mesh.conn_edge_el[2, iedge_el, iel]
             mesh.poin_in_edge[iedge_g,        1] = ip1
             mesh.poin_in_edge[iedge_g, mesh.ngl] = ip2
-
             gip1, gip2 = mesh.ip2gip[ip1], mesh.ip2gip[ip2]
             if gip1 > gip2
                 gip = gtot_linear_poin + 1 + (edge2pedge[iedge_g] - 1) * (ngl - 2)
@@ -3524,8 +3524,10 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
     
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
-    partitioned_model        = nothing
+    
+    partitioned_model = nothing
     if (haskey(inputs, :lread_gmsh) && inputs[:lread_gmsh]==true)
         
         println_rank(" # Read gmsh grid and populate with high-order points "; msg_rank = rank, suppress = omesh == !isnothing)
@@ -3599,7 +3601,6 @@ function mod_mesh_mesh_driver(inputs::Dict, nparts, distribute, args...)
                                                    connijk = KernelAbstractions.zeros(CPU(), TInt,  Int64(inputs[:nelx]), Int64(inputs[:nop]+1), 1, 1),
                                                    ngr=TInt(inputs[:nop_laguerre]+1),
                                                    SD=NSD_1D())
-                
             else
                 @error( " INPUT ERROR: native grid can only be built in 1D. Use a GMSH generated grid for 2D/3D")
             end

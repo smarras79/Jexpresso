@@ -236,7 +236,7 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_2D,::PERT; connijk_lag
 end=#
 
 
-    uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
+uaux2u!(u, @view(uaux[:,:]), params.neqs, params.mesh.npoin)
 end
 
 function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::PERT; connijk_lag=zeros(TFloat,1,1,1,1), Je_lag=zeros(TFloat,1,1,1,1), ladapt = false)
