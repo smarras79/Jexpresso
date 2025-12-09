@@ -26,10 +26,6 @@
 """
 function user_bc_dirichlet!(q::SubArray{Float64}, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny,qe::SubArray{Float64},::TOTAL)
 
-    #
-    # coords[1:nsd]
-    #
-    
     L = 5.0
     #qbdy[1] = 1.0
     

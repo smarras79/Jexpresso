@@ -110,7 +110,6 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 	q.qe[ip,4] = q.qn[ip,4]
                 	q.qe[ip,5] = q.qn[ip,5]
                 	q.qe[ip,6] = q.qn[ip,end]
-
                     end
                 end
             end    

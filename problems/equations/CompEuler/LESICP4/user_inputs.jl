@@ -4,15 +4,14 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.04,
-        :tinit                => 10500.0,
-        :tend                 => 15000.0,
-	:lrestart             => true,
+        :Δt                   => 0.05,
+        :tinit                => 0,
+        :tend                 => 10800.0,
+	:lrestart             => false,
 	#:restart_output_file_path => "",
 	:restart_time         => 500,
-	#:diagnostics_at_times => (0:10:100..., 1250:500:5000..., 5000:100:8500...,  9000:10:10800.0...),
-	:diagnostics_at_times => (10500:10:15000.0),
-	:lsource              => true,
+	:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
+        :lsource              => true,
 	:lsponge              => true,
 	:zsponge              => 2500.0,
         :sounding_file        =>"./data_files/input_sounding_teamx_u10_ridge100_noheader.dat",
@@ -31,8 +30,7 @@ function user_inputs()
         :visc_model           => SMAG(),
         #:visc_model           => AV(),
         #:μ                    => [0.0, 0.53, 0.53, 0.53, 1.6], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 1.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
-        #:μ                    => [0.0, 10, 10, 10, 10], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 5, 5, 5, 5], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -61,16 +59,16 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => true,
-        :mu_x                => 0.25,
-        :mu_y                => 0.25,
-	:mu_z                => 0.25,
+        :lfilter             => false,
+        :mu_x                => 0.5,
+        :mu_y                => 0.5,
+	:mu_z                => 0.5,
         :filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP4_64x64x36_10kmX10kmX3dot5km-filtered-warmstart/",
+        :output_dir          => "/scratch/smarras/smarras/output/LESICP4_scaling-8nodes-64x16x36_10kmX10kmX3dot5km/",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,

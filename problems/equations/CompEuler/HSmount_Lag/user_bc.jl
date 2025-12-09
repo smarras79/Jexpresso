@@ -39,12 +39,12 @@ end
 
 function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat,qe,::PERT)
 #    if (tag == "free_slip")
-    y = coords[:,2]
-    if (y<=14950) #(abs(x) < 119500.0 && y<= 19950.0)
+      y = coords[:,2]
+if (y<=14950) #(abs(x) < 119500.0 && y<= 19950.0)
         qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
         qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
         qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
-    end
+      end
       #else 
        # qbdy[2] = 0.0
         #qbdy[3] = 0.0

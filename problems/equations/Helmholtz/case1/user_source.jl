@@ -1,9 +1,9 @@
-function user_source(S,
-                     q, 
-                     qe,
-                     npoin::Int64,
-                     ::CL, ::TOTAL;
-                     neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, xmin = -120000, xmax =120000)
+function user_source!(S,
+                      q, 
+                      qe,
+                      npoin::Int64,
+                      ::CL, ::TOTAL;
+                      neqs=1,x=0.0, y=0.0)
 
     PhysConst = PhysicalConst{Float64}()
     
@@ -16,7 +16,7 @@ function user_source(S,
     u_e = -sin(x/L)*exp(-x/L)*cos(y)
     
     S = f - alpha*u_e
-    return S
+  
 end
 
 function user_source_gpu(q, qe, x, y)
