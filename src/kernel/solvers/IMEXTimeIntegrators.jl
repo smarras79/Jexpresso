@@ -80,7 +80,6 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         # Constructing u_prev
         u_prev = Dict()
         for n_step = 1 : k
-            # initialize u_prev in a better way for multistep
             u_prev[n_step] = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
         end
         u_prev[1] .= u
@@ -109,37 +108,79 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                 t_n = t_n + Δt_expl
             end
         end
+    elseif method == "RK"
+        A_RK = coeff[:A_RK]
+        b_RK = coeff[:b_RK]
+        c_RK = coeff[:c_RK]
+
+        A_RK_tilde = coeff[:A_RK_tilde]
+        b_RK_tilde = coeff[:b_RK_tilde]
+        c_RK_tilde = coeff[:c_RK_tilde]
+
+        # Constructing U_stages
+        U_stages = Dict()
+        for j_stages = 1 : k
+            U_stages[j_stages] = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+        end
     end
 
     #------------------------------------------------------------------------
     # Construct rhs
     #------------------------------------------------------------------------
-    function construct_rhs(inputs, sem, u_prev, t_n)
-        if method == "multistep"
-            # building rhs
-            rhs = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+    # Multistep
+    function construct_rhs(inputs, params, u_prev, t_n)
+        # building rhs
+        rhs = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
 
-            for n_step = 1 : k
-                rhs += alpha[n_step] * u_prev[n_step]
+        for n_step = 1 : k
+            rhs += alpha[n_step] * u_prev[n_step]
 
-                # Evaluating S(u_{n-j}) and L(u_{n-j})
-                # s_j and l_j should already be scaled by M_inv
-                s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
-                time = t_n - (n_step - 1) * Δt
-                S_fun!(s_j, u_prev[n_step], time, params)
+            # Evaluating S(u_{n-j}) and L(u_{n-j})
+            # s_j and l_j should already be scaled by M_inv
+            s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+            time = t_n - (n_step - 1) * Δt
+            S_fun!(s_j, u_prev[n_step], time, params)
 
-                if delta == 1
-                    l_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
-                    L_fun!(l_j, u_prev[n_step], time, params)
-                end
-
-                if delta == 1
-                    rhs += lambda * beta[n_step] * (s_j - l_j)
-                else
-                    rhs += lambda * beta[n_step] * s_j
-                end
+            if delta == 1
+                l_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+                L_fun!(l_j, u_prev[n_step], time, params)
             end
 
+            if delta == 1
+                rhs += lambda * beta[n_step] * (s_j - l_j)
+            else
+                rhs += lambda * beta[n_step] * s_j
+            end
+        end
+
+        return rhs
+    end
+
+    # Runge-Kutta
+    function construct_rhs(inputs, params, u_prev, U_stages, t_n, i)
+        # building rhs
+        rhs = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+
+        rhs += u_prev
+
+        for j_stages = 1 : i - 1
+            # Evaluating S(u_{n-j}) and L(u_{n-j})
+            # s_j and l_j should already be scaled by M_inv
+            s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+            time = t_n + c_RK[j_stages] * Δt
+            S_fun!(s_j, U_stages[j_stages], time, params)
+
+            if delta == 1
+                time_tilde = t_n + c_RK_tilde[j_stages] * Δt
+                l_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+                L_fun!(l_j, U_stages[j_stages], time, params)
+            end
+
+            if delta == 1
+                rhs += Δt * (A_RK[i, j_stages] * s_j + (A_RK_tilde[i, j_stages] - A_RK[i, j_stages]) * l_j)
+            else
+                rhs += Δt * A_RK[i, j_stages] * s_j
+            end
         end
 
         return rhs
@@ -149,6 +190,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
     #------------------------------------------------------------------------
     # Construct L
     #------------------------------------------------------------------------
+    # Multistep
     function L_update(u, t_n)
         Is = sparse(1.0I, Int64(unkwn), Int64(unkwn))
 
@@ -164,9 +206,21 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         return L
     end
 
+    # Runge-Kutta
+    function L_update(u, t_n, a_tilde_ii)
+        Is = sparse(1.0I, Int64(unkwn), Int64(unkwn))
 
-    # Initialize solution vector
-    u_next = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+        if delta == 0
+            L = Is
+        else
+            # build_L needs to have included the scaling by inverse of mass matrix
+            L_temp = build_L(u, t_n, params)
+
+            L = Is - Δt * a_tilde_ii * L_temp
+        end
+
+        return L
+    end
 
     #------------------------------------------------------------------------
     # Updating u
@@ -186,31 +240,35 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
     n_step = 0
 
-    #------------------------------------------------------------------------
-    # Building L_curr
-    #------------------------------------------------------------------------
-    L_curr = L_update(u_next, t_n + Δt)
+    # Multistep
+    if method == "multistep"
+        # Initialize solution vector
+        u_next = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
 
-    #------------------------------------------------------------------------
-    # Simulation
-    #------------------------------------------------------------------------
-    while (abs(t_n - inputs[:tend]) > 1.e-14 && t_n < inputs[:tend])
-        println(string("Solving for time ", t_n + Δt))
+        #------------------------------------------------------------------------
+        # Building L_curr
+        #------------------------------------------------------------------------
+        L_curr = L_update(u_next, t_n + Δt)
 
-        rhs = construct_rhs(inputs, params, u_prev, t_n)
-        # Apply bcs to rhs and L
-        bcs_fun!(rhs, L_curr, t_n + Δt, params, sem, qp)
+        #------------------------------------------------------------------------
+        # Simulation
+        #------------------------------------------------------------------------
+        while (abs(t_n - inputs[:tend]) > 1.e-14 && t_n < inputs[:tend])
+            println(string("Solving for time ", t_n + Δt))
 
-        # construct vector containing non-linear residual
-        nonl_res = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
-        nonl_res .= rhs
+            rhs = construct_rhs(inputs, params, u_prev, t_n)
+            # Apply bcs to rhs and L
+            bcs_fun!(rhs, L_curr, t_n + Δt, params, sem, qp)
 
-        nl_norm_0 = norm(nonl_res)
-        nl_norm_k = nl_norm_0
+            # construct vector containing non-linear residual
+            nonl_res = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+            nonl_res .= rhs
 
-        nl_iter = 1
+            nl_norm_0 = norm(nonl_res)
+            nl_norm_k = nl_norm_0
 
-        if method == "multistep"
+            nl_iter = 1
+
             #------------------------------------------------------------------------
             # Non-linear loop
             #------------------------------------------------------------------------
@@ -279,6 +337,107 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         #------------------------------------------------------------------------
         if delta == 1 && upd_L && abs(t_n - inputs[:tend]) > 1.e-14 && t_n < inputs[:tend]
             L_curr = L_update(u_next, t_n + Δt)
+        end
+    elseif method == "RK"
+        #------------------------------------------------------------------------
+        # Simulation
+        #------------------------------------------------------------------------
+        while (abs(t_n - inputs[:tend]) > 1.e-14 && t_n < inputs[:tend])
+            println(string("Solving for time ", t_n + Δt))
+            for i_stages = 1 : k
+                @info "Stage " i_stages
+                time_tilde = t_n + c_RK_tilde[i_stages] * Δt
+
+                #------------------------------------------------------------------------
+                # Building L_curr
+                #------------------------------------------------------------------------
+                L_curr = L_update(U_stages[i_stages], time_tilde, A_RK_tilde[i_stages, i_stages])
+
+                #------------------------------------------------------------------------
+                # Building rhs
+                #------------------------------------------------------------------------
+                rhs = construct_rhs(inputs, params, u, U_stages, t_n, i_stages)
+                # Apply bcs to rhs and L
+                bcs_fun!(rhs, L_curr, time, params, sem, qp)
+
+                # construct vector containing non-linear residual
+                nonl_res = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+                nonl_res .= rhs
+
+                nl_norm_0 = norm(nonl_res)
+                nl_norm_k = nl_norm_0
+
+                nl_iter = 1
+
+                #------------------------------------------------------------------------
+                # Non-linear loop
+                #------------------------------------------------------------------------
+                while (nl_norm_k > nl_atol && (nl_norm_k > nl_rtol * nl_norm_0) && nl_iter < max_nl_iter)
+                    println(string("Non-linear solver: iteration ", nl_iter,", non-linear residual ", nl_norm_k))
+
+                    @info "Solving linear system..."
+
+                    # Solving the linear system
+                    if lsolve == nothing
+                        prec = MyPrecClass.MyPrec(prec_sp[:precision].(solver_precision.(L_curr)),
+                                                  RugeStubenAMG(), prec_sp)
+
+                        (x, stats) = fgmres(solver_precision.(L_curr), solver_precision.(nonl_res),
+                                            memory=memory, N=prec, ldiv=true,
+                                            restart=restart, atol=atol, rtol=rtol,
+                                            itmax=itmax, verbose = verbose)
+                    else
+                        x = lsolve(solver_precision.(L_curr),
+                                   solver_precision.(nonl_res))
+                    end
+                    @info "Solving linear system... DONE"
+
+                    U_stages[i_stages] += x
+
+                    #------------------------------------------------------------------------
+                    # Updating L_curr
+                    #------------------------------------------------------------------------
+                    if delta == 1 && upd_L
+                            L_curr = L_update(U_stages[i_stages], time, A_RK_tilde[i, i])
+
+                            # Apply bcs to rhs and L
+                            bcs_fun!(rhs, L_curr, time, params, sem, qp)
+                    end
+
+                    nonl_res .= rhs - L_curr * U_stages[i_stages]
+                    nl_norm_k = norm(nonl_res)
+
+                    nl_iter += 1
+                end
+                #------------------------------------------------------------------------
+                # End non-linear loop
+                #------------------------------------------------------------------------
+            end
+
+            # Update solution
+            for i_stages = 1 : k
+                s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+                time = t_n + c_RK[i_stages] * Δt
+                S_fun!(s_j, U_stages[i_stages], time, params)
+                u += Δt * b_RK[i_stages] * s_j
+            end
+
+            t_n += Δt
+            n_step += 1
+
+            write_output(params.SD, u, params.uaux, t_n, n_step,
+                         params.mesh, params.mp,
+                         params.connijk_original, params.poin_in_bdy_face_original,
+                         params.x_original, params.y_original, params.z_original,
+                         inputs[:output_dir], inputs,
+                         params.qp.qvars, params.qp.qoutvars,
+                         inputs[:outformat];
+                         nvar=params.qp.neqs, qexact=params.qp.qe)
+
+            # Initialize stages
+            for j_stages = 1 : k
+                U_stages[j_stages] = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+            end
         end
     end
     

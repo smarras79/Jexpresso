@@ -1,11 +1,56 @@
 function user_inputs()
     # Coefficients of the method
+    # multistep
     alpha = Array{Float64, 1}(undef, 2)
     alpha[1] = 4. / 3.
     alpha[2] = - 1. / 3.
     beta = Array{Float64, 1}(undef, 2)
     beta[1] = 2.
     beta[2] = - 1.
+
+    # Runge-Kutta
+    a_32 = 1. / 6. * (3. + 2. * sqrt(2.))
+    A_RK = zeros(3, 3)
+    A_RK[1, 1] = 0.
+    A_RK[1, 2] = 0.
+    A_RK[1, 3] = 0.
+    A_RK[2, 1] = 2. - sqrt(2.)
+    A_RK[2, 2] = 0.
+    A_RK[2, 3] = 0.
+    A_RK[3, 1] = 1. - a_32
+    A_RK[3, 2] = a_32
+    A_RK[3, 3] = 0.
+
+    b_RK = Array{Float64, 1}(undef, 3)
+    b_RK[1] = 1. / (2. * sqrt(2.))
+    b_RK[2] = 1. / (2. * sqrt(2.))
+    b_RK[3] = 1. - 1. / sqrt(2.)
+
+    c_RK = Array{Float64, 1}(undef, 3)
+    c_RK[1] = 0.
+    c_RK[2] = 2. - sqrt(2.)
+    c_RK[3] = 1.
+
+    A_RK_tilde = zeros(3, 3)
+    A_RK_tilde[1, 1] = 0.
+    A_RK_tilde[1, 2] = 0.
+    A_RK_tilde[1, 3] = 0.
+    A_RK_tilde[2, 1] = 1. - 1. / sqrt(2.)
+    A_RK_tilde[2, 2] = 1. - 1. / sqrt(2.)
+    A_RK_tilde[2, 3] = 0.
+    A_RK_tilde[3, 1] = 1. / (2. * sqrt(2.))
+    A_RK_tilde[3, 2] = 1. / (2. * sqrt(2.))
+    A_RK_tilde[3, 3] = 1. - 1. / sqrt(2.)
+
+    b_RK_tilde = Array{Float64, 1}(undef, 3)
+    b_RK_tilde[1] = 1. / (2. * sqrt(2.))
+    b_RK_tilde[2] = 1. / (2. * sqrt(2.))
+    b_RK_tilde[3] = 1. - 1. / sqrt(2.)
+
+    c_RK_tilde = Array{Float64, 1}(undef, 3)
+    c_RK_tilde[1] = 0.
+    c_RK_tilde[2] = 2. - sqrt(2.)
+    c_RK_tilde[3] = 1.
 
     # Polynomial order
     nop = 4
@@ -179,14 +224,23 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # IMEX method
         #---------------------------------------------------------------------------
-        :method             => "multistep",
+        :method             => "RK",
         :delta              => 1,
-        :k                  => 2,
+        :k                  => 3,
+#        :coeff              => Dict(
+#                                   # IMEX Multistep
+#                                   :xi       => 2. / 3.,
+#                                   :alpha    => alpha,
+#                                   :beta     => beta,
+#                               ),
         :coeff              => Dict(
-                                   # IMEX
-                                   :xi       => 2. / 3.,
-                                   :alpha    => alpha,
-                                   :beta     => beta,
+                                   # IMEX RK
+                                   :A_RK        => A_RK,
+                                   :b_RK        => b_RK,
+                                   :c_RK        => c_RK,
+                                   :A_RK_tilde  => A_RK_tilde,
+                                   :b_RK_tilde  => b_RK_tilde,
+                                   :c_RK_tilde  => c_RK_tilde,
                                ),
         :lsolver            => nothing,#"GMRES",#LinearSolve.KrylovJL_GMRES(),
         :sp                 => solver_par,
