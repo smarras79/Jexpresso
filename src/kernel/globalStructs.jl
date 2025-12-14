@@ -455,6 +455,71 @@ function allocate_gpuMoist(SD, npoin, nelem, ngl, T, backend, lmoist; neqs=1)
     return gpuMoist
 end
 
+#-------------------------------------------------------------------------------------------
+# Turbulence Statistics (analogous to dod2d mod_aver.f90)
+#-------------------------------------------------------------------------------------------
+Base.@kwdef mutable struct St_turbulence_stats{T <: AbstractFloat, dims_npoin, dims_ndim, backend}
+
+    # Mean quantities
+    avvel   = KernelAbstractions.zeros(backend, T, dims_npoin)  # Time-averaged velocity (npoin, ndim)
+    avrho   = KernelAbstractions.zeros(backend, T, dims_ndim)   # Time-averaged density (npoin)
+    avpress = KernelAbstractions.zeros(backend, T, dims_ndim)   # Time-averaged pressure (npoin)
+
+    # Second-order moments (velocity squared)
+    avve2   = KernelAbstractions.zeros(backend, T, dims_npoin)  # Velocity squared <u_i * u_i> (npoin, ndim)
+
+    # Reynolds stress components (cross products)
+    # For 2D: avvex[ip,1] = <u*v>
+    # For 3D: avvex[ip,1] = <u*v>, avvex[ip,2] = <u*w>, avvex[ip,3] = <v*w>
+    avvex   = KernelAbstractions.zeros(backend, T, dims_npoin)  # Cross velocity products (npoin, nstress)
+
+    # Pressure variance
+    avpr2   = KernelAbstractions.zeros(backend, T, dims_ndim)   # Pressure squared <p*p> (npoin)
+
+    # Effective viscosity (molecular + SGS)
+    avmueff = KernelAbstractions.zeros(backend, T, dims_ndim)   # Time-averaged effective viscosity (npoin)
+
+    # Temporal accumulation variables
+    acutim  = Ref{T}(zero(T))                                   # Accumulated time for averaging
+    elapsed_time = Ref{T}(zero(T))                              # Elapsed time since start of averaging
+
+    # Control flags
+    l_enabled = Ref{Bool}(false)                                # Flag to enable/disable statistics
+
+end
+
+function allocate_turbulence_stats(SD, npoin, T, backend; l_turbulence_stats=false)
+
+    if l_turbulence_stats
+        if SD == NSD_1D()
+            dims_npoin = (Int64(npoin), 1)          # 1D: only one velocity component
+            dims_ndim  = (Int64(npoin))
+            dims_stress = (Int64(npoin), 1)         # No cross terms in 1D
+        elseif SD == NSD_2D()
+            dims_npoin = (Int64(npoin), 2)          # 2D: u, v
+            dims_ndim  = (Int64(npoin))
+            dims_stress = (Int64(npoin), 1)         # 2D: only <u*v>
+        elseif SD == NSD_3D()
+            dims_npoin = (Int64(npoin), 3)          # 3D: u, v, w
+            dims_ndim  = (Int64(npoin))
+            dims_stress = (Int64(npoin), 3)         # 3D: <u*v>, <u*w>, <v*w>
+        end
+
+        # Allocate with proper stress dimensions
+        turb_stats = St_turbulence_stats{T, dims_npoin, dims_ndim, backend}()
+        # Reallocate avvex with correct stress dimensions
+        turb_stats.avvex = KernelAbstractions.zeros(backend, T, dims_stress)
+
+    else
+        # Allocate minimal dummy arrays when statistics are disabled
+        dims_npoin = (1, 1)
+        dims_ndim  = (1)
+        turb_stats = St_turbulence_stats{T, dims_npoin, dims_ndim, backend}()
+    end
+
+    return turb_stats
+end
+
 
 Base.@kwdef mutable struct St_ncfArrays{T <: AbstractFloat, dims1, dims2, dims3, backend}
 
