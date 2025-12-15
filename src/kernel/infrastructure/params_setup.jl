@@ -141,7 +141,14 @@ function params_setup(sem,
     b      = filter.b
     B      = filter.B
 
-    #------------------------------------------------------------------------------------  
+    #------------------------------------------------------------------------------------
+    # Turbulence statistics arrays
+    #------------------------------------------------------------------------------------
+    l_turbulence_stats = get(inputs, :l_turbulence_stats, false)
+    turb_stats = allocate_turbulence_stats(sem.mesh.SD, sem.mesh.npoin, T, backend;
+                                          l_turbulence_stats=l_turbulence_stats)
+
+    #------------------------------------------------------------------------------------
     # B.C. arrays
     #------------------------------------------------------------------------------------
     gradu    = KernelAbstractions.zeros(backend, T, 2, 1, 1)
@@ -349,8 +356,9 @@ function params_setup(sem,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
+                  turb_stats,
                   timers)
-        
+
     else
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend,
@@ -381,6 +389,7 @@ function params_setup(sem,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
+                  turb_stats,
                   timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute)
     end

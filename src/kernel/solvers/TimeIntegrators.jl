@@ -4,6 +4,9 @@ function time_loop!(inputs, params, u, args...)
     rank = MPI.Comm_rank(comm)
     partitioned_model = args[1]
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
+
+    # Include turbulence statistics module if enabled
+    l_turbulence_stats = get(inputs, :l_turbulence_stats, false)
     
     prob = ODEProblem(rhs!,
                       u,
@@ -68,6 +71,102 @@ function time_loop!(inputs, params, u, args...)
 
         println_rank(" #  writing restart ........................ DONE"; msg_rank = rank)
     end
+
+    #------------------------------------------------------------------------
+    # Turbulence statistics callbacks
+    #------------------------------------------------------------------------
+    if l_turbulence_stats
+        # Get turbulence statistics parameters
+        turb_stats_start_time = get(inputs, :turb_stats_start_time, 0.0)
+        turb_stats_output_times = get(inputs, :turb_stats_output_times, dosetimes)
+        turb_stats_reset_after_output = get(inputs, :turb_stats_reset_after_output, false)
+        turb_stats_initialized = Ref{Bool}(false)
+        turb_stats_idx_ref = Ref{Int}(0)
+
+        # Callback for accumulating statistics every timestep
+        function turb_stats_accumulate_condition(u, t, integrator)
+            return t >= turb_stats_start_time
+        end
+
+        function turb_stats_accumulate_affect!(integrator)
+            # Initialize statistics on first accumulation
+            if !turb_stats_initialized[]
+                if rank == 0
+                    initialize_turbulence_stats!(integrator.p.turb_stats, integrator.t)
+                end
+                turb_stats_initialized[] = true
+            end
+
+            # Get dimension info
+            ndim = (params.SD == NSD_1D()) ? 1 : (params.SD == NSD_2D()) ? 2 : 3
+
+            # Extract fields for accumulation
+            # Note: pressure needs to be extracted from primitive variables or computed
+            # For now, assuming press is available in params.qp.press
+            mueff = get(params, :mueff, nothing)
+
+            # Accumulate statistics
+            accumulate_statistics!(integrator.p.turb_stats,
+                                  integrator.p.uaux,
+                                  integrator.p.qp.press,
+                                  mueff,
+                                  integrator.dt,
+                                  params.mesh.npoin,
+                                  ndim,
+                                  params.SD)
+        end
+
+        # Callback for outputting statistics at specific times
+        function turb_stats_output_condition(u, t, integrator)
+            idx = findfirst(x -> abs(x - t) < 1e-6, turb_stats_output_times)
+            if idx !== nothing
+                turb_stats_idx_ref[] = idx
+                return true
+            else
+                return false
+            end
+        end
+
+        function turb_stats_output_affect!(integrator)
+            if rank == 0
+                println_rank(" # Writing turbulence statistics at t=", integrator.t; msg_rank = rank)
+
+                # Get dimension info
+                ndim = (params.SD == NSD_1D()) ? 1 : (params.SD == NSD_2D()) ? 2 : 3
+
+                # Normalize accumulated statistics
+                normalize_statistics!(integrator.p.turb_stats)
+
+                # Print summary
+                print_turbulence_stats_summary(integrator.p.turb_stats, ndim)
+
+                # Write to ASCII file
+                write_turbulence_stats_ascii(integrator.p.turb_stats,
+                                            params.mesh,
+                                            inputs[:output_dir],
+                                            "turbulence_stats",
+                                            ndim,
+                                            integrator.t)
+
+                # Reset for next window if requested
+                if turb_stats_reset_after_output
+                    reset_turbulence_stats!(integrator.p.turb_stats)
+                end
+            end
+        end
+
+        # Create callbacks
+        cb_turb_accumulate = DiscreteCallback(turb_stats_accumulate_condition,
+                                             turb_stats_accumulate_affect!,
+                                             save_positions=(false, false))
+        cb_turb_output = DiscreteCallback(turb_stats_output_condition,
+                                         turb_stats_output_affect!,
+                                         save_positions=(false, false))
+    end
+    #------------------------------------------------------------------------
+    # END Turbulence statistics callbacks
+    #------------------------------------------------------------------------
+
     # #------------------------------------------------------------------------
     # #  config
     # #------------------------------------------------------------------------
@@ -112,10 +211,16 @@ function time_loop!(inputs, params, u, args...)
         end
     end
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
-    cb         = DiscreteCallback(condition, affect!)    
+    cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
-    CallbackSet(cb)#,cb_rad)
+
+    # Combine all callbacks
+    if l_turbulence_stats
+        callbacks = CallbackSet(cb, cb_turb_accumulate, cb_turb_output)
+    else
+        callbacks = CallbackSet(cb)#,cb_rad)
+    end
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------
@@ -140,14 +245,22 @@ function time_loop!(inputs, params, u, args...)
     #
     # Simulation
     #
+    # Combine diagnostic and statistics output times for tstops
+    if l_turbulence_stats
+        turb_stats_output_times = get(inputs, :turb_stats_output_times, dosetimes)
+        all_tstops = unique(sort([dosetimes..., turb_stats_output_times...]))
+    else
+        all_tstops = dosetimes
+    end
+
     limex = false
     if limex
         ntime_steps = floor(Int32, inputs[:tend]/inputs[:Δt])
-        
+
         # Basic usage
-        u_final = imex_integration_simple_2d!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, 
+        u_final = imex_integration_simple_2d!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords,
                                            inputs[:Δt], ntime_steps, inputs[:lsource])
-        
+
         # Or step-by-step
         for n = 1:ntime_steps
             imex_time_step_simple_2d!(u, params, params.mesh.connijk,  params.qp.qe,  params.mesh.coords, inputs[:Δt], inputs[:lsource])
@@ -157,8 +270,7 @@ function time_loop!(inputs, params, u, args...)
     else
         solution = solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                         #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = CallbackSet(cb, cb_restart), tstops = dosetimes,
+                         callback = callbacks, tstops = all_tstops,
                          save_everystep = false,
                          adaptive=inputs[:ode_adaptive_solver],
                          saveat = range(inputs[:tinit],

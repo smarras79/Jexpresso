@@ -177,6 +177,8 @@ include(joinpath( "io", "write_output.jl"))
 
 include(joinpath( "io", "diagnostics.jl"))
 
+include(joinpath( "io", "turbulence_statistics.jl"))
+
 include(joinpath( "io", "Extract_topo.jl"))
 
 include(joinpath( "io", "print_matrix.jl"))
