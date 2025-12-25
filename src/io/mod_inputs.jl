@@ -476,9 +476,13 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if (!haskey(inputs, :gmsh_filename_c))
-        inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+        if haskey(inputs, :gmsh_filename)
+            inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+        else
+            inputs[:gmsh_filename_c] = "none"
+        end
     end
-
+    
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)
         
@@ -516,13 +520,19 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     end #lread_gmsh
 
+    
     if (!haskey(inputs, :lwarmup))
         inputs[:lwarmup] = false
     else
-        if (!haskey(inputs, :gmsh_filename_c) && inputs[:lread_gmsh] == true)
-            inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+        if !haskey(inputs, :gmsh_filename_c)
+            if haskey(inputs, :gmsh_filename)
+                inputs[:gmsh_filename_c] = inputs[:gmsh_filename]
+            else
+                inputs[:gmsh_filename_c] = "none"
+            end
         end
     end
+    
     #
     # Some physical constants and parameters:
     #
