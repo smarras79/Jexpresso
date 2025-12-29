@@ -425,3 +425,5 @@ include("./src/Jexpresso.jl")
 <img src="assets/bomex.png"
      alt="Markdown icon"
      style="float: left; margin-right: 3.5px;" />
+
+## Run with MPI on a multicore-laptop: [MPI-run](https://github.com/smarras79/Jexpresso/blob/master/INSTALLATION.md#3-running-with-mpi)
