@@ -16,8 +16,10 @@ rm -rf output
 
 ./runjexpresso 8 CompEuler HSmount_Lag
 
+./runjexpresso 1 Elliptic case1
+
 ./runjexpresso 1 Helmholtz case1
 
 ./runjexpresso 1 Helmholtz case1_laguerre
 
-./runjexpresso 4 CompEuler Rayleigh_Benard
+./runjexpresso 4 CompEuler LESICP2-coarse
