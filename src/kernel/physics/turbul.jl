@@ -44,16 +44,21 @@ end
 
 # Fallback Newton method
 function find_uτ_newton_fallback(u2_abs, y2)
+    # Fixed: Define constants in function scope
+    κinv = 2.5    # Inverse of von Karman constant (1/κ)
+    C = 5.5       # Additive constant in log law
+    ν = 1.0e-5    # Kinematic viscosity
+
     function residual_and_derivative(uτ)
         residual = uτ * (κinv * log(y2 * uτ / ν) + C) - u2_abs
         derivative = κinv * log(y2 * uτ / ν) + C + κinv
         return (residual, derivative)
     end
-    
+
     # Initial guess
     uτ_init = u2_abs / (κinv * log(y2 * u2_abs / (ν * 10)) + C)
     uτ_init = max(uτ_init, 1e-8)  # Ensure positive initial guess
-    
+
     try
         uτ_solution = find_zero(residual_and_derivative, uτ_init, Roots.Newton())
         return uτ_solution
