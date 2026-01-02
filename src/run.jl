@@ -9,11 +9,11 @@ using ArgParse
 # 2. Push equations name to ARGS
 #    You need this only when you run a new equations
 #
-#    julia > push!(empty!(ARGS), EQUATIONS::String, EQUATIONS_CASE_NAME::String);
+#    julia > push!(empty!(ARGS), EQUATIONS::String, CASE_NAME::String);
 #    julia > include(./src/Jexpresso.jl)
 #
 #    EQUATIONS is the name of your equations directory as $JEXPRESSO/src/equations/EQUATIONS
-#    EQUATIONS_CASE_NAME is the name of the subdirectory $JEXPRESSO/src/equations/EQUATIONS_CASE_NAME
+#    CASE_NAME is the name of the subdirectory $JEXPRESSO/src/equations/CASE_NAME
 #
 # Ex. To run the Compressible Euler equations in $JEXPRESSO/src/equations/CompEuler/theta
 # 
