@@ -19,5 +19,5 @@ end
 
 function user_uout!(ip, ET, uout, u, qe; kwargs...)
     uout[1] = u[1] #+ qe[1]
-    uout[2] = u[1] #+ qe[2]
+    uout[2] = u[2] #+ qe[2]    
 end

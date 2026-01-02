@@ -7,7 +7,7 @@ function user_source!(S,
     
     PhysConst = PhysicalConst{Float64}()
     xsponge = 5000.0
-    if (x >= 5000.0)#nsponge_points * dsy) #&& dbl >= 0.0)
+    if (x >= 5000.0)
         sponge_coe = 2.0/(1+exp((0.3*(xmax-2.5)-x+2.5)/((xmax)/18)))
     else
         sponge_coe = 0.0

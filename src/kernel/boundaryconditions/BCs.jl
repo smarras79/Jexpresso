@@ -657,6 +657,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 F_surf[i,j,2] = τ_f[iface,i,j,1]
                                 F_surf[i,j,3] = τ_f[iface,i,j,2]
                                 F_surf[i,j,4] = τ_f[iface,i,j,3]
+                                
                                 F_surf[i,j,5] = 0.12
                                 
                             else

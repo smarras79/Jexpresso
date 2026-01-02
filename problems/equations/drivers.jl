@@ -41,7 +41,7 @@ function driver(nparts,
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
     
-    qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+    qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
     #check_memory(" After initialize.")
     # println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")

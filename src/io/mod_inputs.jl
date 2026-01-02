@@ -653,49 +653,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # Define neqs based on the equations being solved
     #------------------------------------------------------------------------
     neqs::Int8 = 1
-    if (lowercase(parsed_equations) == "compeuler")
-        inputs[:equations] = CompEuler()
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-    elseif (lowercase(parsed_equations) == "burgers")
-        inputs[:equations] = Burgers()
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-    elseif (lowercase(parsed_equations) == "shallowwater")
-        inputs[:equations] = ShallowWater()    
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false    
-    elseif (lowercase(parsed_equations) == "advdiff" ||
-        lowercase(parsed_equations) == "advdif" ||
-        lowercase(parsed_equations) == "ad" ||
-        lowercase(parsed_equations) == "adv2d")
-        inputs[:equations] = AdvDiff()
-        inputs[:ldss_laplace] = false
-        inputs[:ldss_differentiation] = false
-    elseif (lowercase(parsed_equations) == "elliptic" ||
-        lowercase(parsed_equations) == "diffusion")
-        inputs[:equations] = Elliptic()
-        inputs[:ldss_laplace] = true
-        inputs[:ldss_differentiation] = false     
-    elseif (lowercase(parsed_equations) == "helmholtz" ||
-        lowercase(parsed_equations) == "diffusion")
-        inputs[:equations] = Helmholtz()
-        inputs[:ldss_laplace] = true
-        inputs[:ldss_differentiation] = false
-    else
-        
-        #inputs[:neqs] = 1 #default
-        
-        s = """
-                jexpresso  user_inputs.jl: equations ", the inputs[:equations] " that you chose is not coded!
-                Chose among:
-                         - "CompEuler"
-                         - "AdvDiff"
-              """
-        
-        @error s
-    end
-
+    
     if(!haskey(inputs, :lsponge))
         inputs[:lsponge] = false
     end

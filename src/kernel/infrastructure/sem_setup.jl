@@ -11,8 +11,7 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     fz        = zeros(Float64,1,1)
     fy_lag    = zeros(Float64,1,1)
     phys_grid = zeros(Float64,1,1)
-    Nξ        = inputs[:nop]   
-    PT        = inputs[:equations]
+    Nξ        = inputs[:nop]
     AD        = inputs[:AD]
     CL        = inputs[:CL]
     
@@ -289,10 +288,10 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     # Build matrices
     #--------------------------------------------------------
     if isnothing(adapt_flags)
-        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
+        return (; QT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model
     else
-        return (; QT, PT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
+        return (; QT, CL, AD, SOL_VARS_TYPE, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model, uaux_new
     end
     
