@@ -264,6 +264,8 @@ include("./src/Jexpresso.jl")
 The path would look like 
 ```$JEXPRESSO/problems/equations/PROBLEM_NAME/PROBLEM_CASE_NAME```
 
+IMPORTANT: ```PROBLEM_NAME``` is arbitrary. The use of ```CompEuler```, ```AdvDiff```, or ```Elliptic``` in the defaults code are just indicative of the problems being solved, but a user can use any arbirtrary name if one wishes to create a new directory.
+
 ## Shallow comuli:
 Example of shallow cumuli simulations (right) for the type of Barbados clouds shown on the left: (picture taken from [P. Blossey webpage](https://www.atmos.washington.edu/~bloss/) from U. Washington)
 
