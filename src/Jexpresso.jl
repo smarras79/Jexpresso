@@ -83,7 +83,7 @@ cpu    = true
 
 using DocStringExtensions
 
-include(joinpath( "..", "problems", "equations", "AbstractEquations.jl"))
+include(joinpath( "..", "problems", "AbstractEquations.jl"))
 
 include(joinpath( "macros", "je_macros.jl"))
 
