@@ -97,7 +97,7 @@ end
 function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
     
-    if (backend == CPU())
+    #=if (backend == CPU())
         build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
         if (params.laguerre) 
@@ -105,38 +105,74 @@ function rhs!(du, u, params, time)
             params.RHS .= @views(params.RHS .+ params.RHS_lag)
         end
         
-        RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)
-    else
+        RHStoDU!(du, @view(params.RHS[:,:]), params.neqs, params.mesh.npoin)=#
+  #  else # build RHS on GPU
+        # Kernels are in rhs_gpu file
         if (params.SOL_VARS_TYPE == PERT())
             lpert = true
         else
             lpert = false
         end
 
-        if (params.SD == NSD_1D())
+        if (params.SD == NSD_1D()) # Start here
+
+            # Remember to make functions in rhs.jl jacc functions and then run 
+            # with parallel for
+
             params.RHS .= TFloat(0.0)
             PhysConst = PhysicalConst{TFloat}()
 
-            k1 = utouaux_gpu!(backend)
-            k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.neqs))
+            npoin = params.mesh.npoin
+            neqs = TInt(params.neqs)
 
-            k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngl)))
+            # 2. Define the total iteration dimensions (this is the key step)
+            total_iterations = (npoin, neqs)
+
+            #utouaux_jacc!(u,uaux,npoin,neq)
+            JACC.parallel_for(total_iterations, utouaux_jacc!, u,params.uaux,params.mesh.npoin,TInt(params.neqs))
+
+            #k1 = utouaux_gpu!(backend) # This function
+            #k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.neqs))
+
+            n_x = size(params.basis.dψ, 1)
+              nelem = size(params.mesh.connijk, 1)
+
+              # --- FIX ---
+              # Calculate the total number of iterations for the 1D loop.
+              # This MUST be a single integer (Int) for your 1D kernel.
+              total_iterations = nelem * n_x
+              # --- END FIX ---
+
+              # Initialize RHS to zero before the kernel launch
+              params.RHS .= 0.0
+             @info("Launching JACC RHS kernel for 1D case..." , params.neqs)
+             @info("DEBUG: Size of flux_gpu is: ", size(params.flux_gpu))
+              @info("DEBUG: Size of source_gpu is: ", size(params.source_gpu)) 
+             # Launch the parallel_for kernel
+             #= JACC.parallel_for(total_iterations, build_rhs_jacc!,
+                                params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time),
+                                params.mesh.connijk, params.basis.dψ, params.ω, params.Minv,
+                                params.flux_gpu, params.source_gpu, PhysConst, params.xmax,
+                                params.xmin, n_x, params.neqs, lpert, inputs[:lperiodic_1d],
+                                params.mesh.npoin_linear, params.mesh.npoin)=#
+            k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngl))) # This function
             k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time), params.mesh.connijk , params.basis.dψ, params.ω, params.Minv, 
               params.flux_gpu, params.source_gpu, 
               PhysConst, params.xmax, params.xmin, params.mesh.ngl, params.neqs, lpert, inputs[:lperiodic_1d], params.mesh.npoin_linear, params.mesh.npoin; 
               ndrange = params.mesh.nelem*params.mesh.ngl,workgroupsize = params.mesh.ngl)
-
+        
             if (params.laguerre)
                 params.RHS_lag .= TFloat(0.0)
-                k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngr)))
+                k = _build_rhs_gpu_v0!(backend,(Int64(params.mesh.ngr))) # This function
                 k(params.RHS, u, params.uaux, params.qp.qe, params.mesh.x, TFloat(time), params.mesh.connijk_lag , params.basis_lag.dψ, params.ω_lag, params.Minv, 
                   params.flux_lag_gpu, params.source_lag_gpu,
                   PhysConst, params.xmax, params.xmin, params.mesh.ngr, params.neqs, lpert, inputs[:lperiodic_1d], params.mesh.npoin_linear, params.mesh.npoin;
                   ndrange = params.mesh.nelem_semi_inf*params.mesh.ngr,workgroupsize = params.mesh.ngr)
                 @inbounds  params.RHS .+= params.RHS_lag
             end
-            k1 = RHStodu_gpu!(backend)
-            k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
+            #k1 = RHStodu_gpu!(backend) # This function
+            RHStodu_gpu!(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
+        # 1D ends here
         elseif (params.SD == NSD_3D())
             
             params.RHS .= TFloat(0.0)
@@ -253,10 +289,10 @@ KernelAbstractions.synchronize(backend)
 k1 = RHStodu_gpu!(backend)
 k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
 
-elseif (params.SD == NSD_2D())
+elseif (params.SD == NSD_2D()) # --------------------------2D Case is here --------------------------
 params.RHS .= TFloat(0.0)
 PhysConst = PhysicalConst{TFloat}()
-k1 = utouaux_gpu!(backend)
+k1 = utouaux_gpu!(backend) # Replace this
 k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl, params.neqs))
 
 if (params.inputs[:lfilter])
@@ -286,12 +322,12 @@ if (params.inputs[:lfilter])
     kf(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
     KernelAbstractions.synchronize(backend)
 end
-k = apply_boundary_conditions_gpu!(backend)
+k = apply_boundary_conditions_gpu!(backend) # Replace this
 k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x,params.mesh.y,TFloat(time),params.metrics.nx,params.metrics.ny,
   params.mesh.poin_in_bdy_edge,params.qbdy_gpu,params.mesh.ngl,TInt(params.neqs), params.mesh.npoin,lpert;
   ndrange = (params.mesh.nedges_bdy*params.mesh.ngl), workgroupsize = (params.mesh.ngl))
 KernelAbstractions.synchronize(backend)
-if (params.laguerre)
+if (params.laguerre) # Ignotre this part for now
 
     k = apply_boundary_conditions_lag_gpu!(backend)
     k(@view(params.uaux[:,:]), @view(u[:]), params.qp.qe, params.mesh.x,params.mesh.y,TFloat(time), params.mesh.connijk_lag,
@@ -301,15 +337,15 @@ if (params.laguerre)
     KernelAbstractions.synchronize(backend)
 end
 
-k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
-k = _build_rhs_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
+k1(u,params.uaux,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs)) # Utouaux call
+k = _build_rhs_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl))) # This function
 k(params.RHS, params.uaux, params.qp.qe, params.mesh.x, params.mesh.y, params.mesh.connijk, 
   params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je,
   params.basis.dψ, params.ω, params.Minv, params.flux_gpu, params.source_gpu, params.mesh.ngl, TInt(params.neqs), PhysConst,
   params.mesh.xmax, params.mesh.xmin, params.mesh.ymax, params.mesh.ymin, lpert;
   ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
 KernelAbstractions.synchronize(backend)
-if (params.laguerre)
+if (params.laguerre) # Ignore this part for now
     params.RHS_lag .= TFloat(0.0)
 
     
@@ -346,7 +382,7 @@ if (params.inputs[:lvisc])
     params.rhs_diffη_el .= TFloat(0.0)
     params.source_gpu .= TFloat(0.0)
     
-    k = _build_rhs_diff_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
+    k = _build_rhs_diff_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl))) # This function
     k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.uaux, params.qp.qe, params.source_gpu, params.mesh.x, params.mesh.y, params.mesh.connijk, 
       params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, 
       params.visc_coeff, params.mesh.ngl, TInt(params.neqs), PhysConst, lpert; ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
@@ -357,11 +393,11 @@ end
 #@info maximum(params.RHS), maximum(params.RHS_lag), maximum(params.RHS_visc_lag)
 DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
 
-k1 = RHStodu_gpu!(backend)
+k1 = RHStodu_gpu!(backend) # This function
 k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
 
 end
-end
+#end
 end
 
 function _build_rhs!(RHS, u, params, time)
