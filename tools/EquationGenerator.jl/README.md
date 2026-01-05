@@ -67,17 +67,17 @@ This automatically:
 
 ```julia
 # Now you can use the package
-julia> generate_problem("equations.pdf", category="CompEuler")
+julia> generate_problem("./examples/euler3d.pdf", category="CompEuler")
 
 # Dry run to preview
-julia> generate_problem("equations.pdf", dry_run=true)
+julia> generate_problem("./examples/euler3d.pdf", dry_run=true)
 
 # Save equation analysis to JSON
-julia> generate_problem("equations.pdf", save_json=true)
+julia> generate_problem("./examples/euler3d.pdf", save_json=true)
 
 # Generate with all options
 julia> problem_dir = generate_problem(
-           "path/to/equations.pdf",
+           "path/to/./examples/euler3d.pdf",
            output_dir = "../../problems",
            category = "CompEuler",
            save_json = true
@@ -88,16 +88,16 @@ julia> problem_dir = generate_problem(
 
 ```bash
 # Basic usage
-julia --project=. src/cli.jl equations.pdf
+julia --project=. src/cli.jl ./examples/euler3d.pdf
 
 # With options
-julia --project=. src/cli.jl equations.pdf \
+julia --project=. src/cli.jl ./examples/euler3d.pdf \
     --output-dir ../../problems \
     --category CompEuler \
     --save-json
 
 # Dry run
-julia --project=. src/cli.jl equations.pdf --dry-run
+julia --project=. src/cli.jl ./examples/euler3d.pdf --dry-run
 ```
 
 ### Command-Line Options
@@ -225,7 +225,7 @@ dir = generate_problem("advection.pdf", category="AdvDiff")
 
 ```julia
 # Extract and analyze separately
-pdf_text = parse_pdf("equations.pdf")
+pdf_text = parse_pdf("./examples/euler3d.pdf")
 eq_info = analyze_equations(pdf_text)
 
 # Inspect
