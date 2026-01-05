@@ -1,0 +1,34 @@
+# Julia
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+Manifest.toml
+
+# Build artifacts
+/deps/deps.jl
+/deps/build.log
+/deps/downloads/
+
+# Generated files
+*.json
+*.pdf
+
+# Output directories
+output/
+test_output/
+problems/
+
+# OS
+.DS_Store
+Thumbs.db
+*~
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.bak

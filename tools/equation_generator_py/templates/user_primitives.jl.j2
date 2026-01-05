@@ -1,0 +1,42 @@
+function user_primitives!(u, qe, uprimitive, ::TOTAL)
+    # TODO: Convert conservative to primitive variables
+    # Example for Euler equations:
+    # uprimitive[1] = u[1]        # ρ
+    # uprimitive[2] = u[2]/u[1]   # u = ρu/ρ
+    # uprimitive[3] = u[3]/u[1]   # v = ρv/ρ
+
+    {%- for i, var in enumerate(variables) %}
+    uprimitive[{{ i+1 }}] = u[{{ i+1 }}]  # TODO: {{ var }}
+    {%- endfor %}
+end
+
+function user_primitives!(u, qe, uprimitive, ::PERT)
+    # TODO: Convert conservative to primitive variables (perturbation form)
+    # Example:
+    # uprimitive[1] = u[1] + qe[1]                          # ρ
+    # uprimitive[2] = u[2]/(u[1]+qe[1])                     # u
+    # uprimitive[3] = u[3]/(u[1]+qe[1])                     # v
+
+    {%- for i, var in enumerate(variables) %}
+    uprimitive[{{ i+1 }}] = u[{{ i+1 }}]  # TODO: {{ var }}
+    {%- endfor %}
+end
+
+function user_primitives_gpu(u, qe, lpert)
+    T = eltype(u)
+    if (lpert)
+        # Perturbation form
+        return {%- for i, var in enumerate(variables) %}T(u[{{ i+1 }}]){%- if not loop.last %}, {% endif %}{%- endfor %}
+    else
+        # Total form
+        return {%- for i, var in enumerate(variables) %}T(u[{{ i+1 }}]){%- if not loop.last %}, {% endif %}{%- endfor %}
+    end
+end
+
+function user_uout!(ip, ET, uout, u, qe; kwargs...)
+    # TODO: Define output variables
+    {%- for i, var in enumerate(variables) %}
+    uout[{{ i+1 }}] = u[{{ i+1 }}]  # {{ var }}
+    {%- endfor %}
+    uout[end] = u[end]
+end

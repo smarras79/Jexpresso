@@ -1,0 +1,49 @@
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx, ny, qe, ::TOTAL)
+    # TODO: Define Dirichlet boundary conditions for TOTAL form
+    # Example: slip boundary condition for momentum
+    # qnl = nx*q[2] + ny*q[3]
+    # qbdy[2] = q[2] - qnl*nx
+    # qbdy[3] = q[3] - qnl*ny
+
+    {%- for i, var in enumerate(variables) %}
+    # qbdy[{{ i+1 }}] = ...  # {{ var }}
+    {%- endfor %}
+
+end
+
+function user_bc_dirichlet!(q, coords, t::AbstractFloat, tag::String, qbdy::AbstractArray, nx::AbstractFloat, ny::AbstractFloat, qe, ::PERT)
+    # TODO: Define Dirichlet boundary conditions for PERT form
+    # Example: slip boundary condition for momentum (perturbation form)
+    # qnl = nx*(q[2]+qe[2]) + ny*(q[3]+qe[3])
+    # qbdy[2] = (q[2]+qe[2] - qnl*nx) - qe[2]
+    # qbdy[3] = (q[3]+qe[3] - qnl*ny) - qe[3]
+
+    {%- for i, var in enumerate(variables) %}
+    # qbdy[{{ i+1 }}] = ...  # {{ var }}
+    {%- endfor %}
+
+end
+
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, coords, t::AbstractFloat, tag::String, inputs::Dict)
+    flux = zeros(size(q,2),1)
+    # TODO: Define Neumann boundary conditions
+    return flux
+end
+
+function user_bc_neumann(q::AbstractArray, gradq::AbstractArray, x::AbstractFloat, t::AbstractFloat, inputs::Dict)
+    flux = zeros(size(q,2),1)
+    # TODO: Define Neumann boundary conditions
+    return flux
+end
+
+function user_bc_dirichlet_gpu(q, qe, coords, t, nx, ny, qbdy, lpert)
+    T = eltype(q)
+    # TODO: Define GPU boundary conditions
+    if (lpert)
+        # Perturbation form
+        return {%- for i in range(num_equations) %}T(qbdy[{{ i+1 }}]){%- if not loop.last %}, {% endif %}{%- endfor %}
+    else
+        # Total form
+        return {%- for i in range(num_equations) %}T(qbdy[{{ i+1 }}]){%- if not loop.last %}, {% endif %}{%- endfor %}
+    end
+end

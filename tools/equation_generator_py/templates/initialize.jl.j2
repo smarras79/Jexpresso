@@ -1,0 +1,102 @@
+function initialize(SD::NSD_{{ spatial_dim }}D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
+    """
+    Initialize fields for {{ spatial_dim }}D {{ problem_name }}
+    {{ description }}
+    """
+    @info " Initialize fields for {{ spatial_dim }}D {{ problem_name }} ........................ "
+
+    #---------------------------------------------------------------------------------
+    # Solution variables:
+    #
+    # NOTICE: while these names can be arbitrary, the length of this tuple
+    # defines neqs, which is the second dimension of q = define_q()
+    #
+    #---------------------------------------------------------------------------------
+    qvars    = [{{ qvars_list }}]
+    qoutvars = [{{ qoutvars_list }}]
+    q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
+    #---------------------------------------------------------------------------------
+    if (inputs[:backend] == CPU())
+        PhysConst = PhysicalConst{Float64}()
+        if (inputs[:case] === "default")
+            # TODO: Define initial conditions here
+            # This is a placeholder - modify according to your specific problem
+            for iel_g = 1:mesh.nelem
+                for j=1:mesh.ngl, i=1:mesh.ngl
+
+                    ip = mesh.connijk[iel_g,i,j]
+                    x, y = mesh.x[ip], mesh.y[ip]
+
+                    # Initialize variables
+                    {%- for i, var in enumerate(variables) %}
+                    {{ var }}_val = 0.0  # TODO: Set initial value for {{ var }}
+                    {%- endfor %}
+
+                    if inputs[:SOL_VARS_TYPE] == PERT()
+                        {%- for i, var in enumerate(variables) %}
+                        q.qn[ip,{{ i+1 }}] = {{ var }}_val  # {{ var }}
+                        {%- endfor %}
+                        q.qn[ip,end] = 0.0  # pressure or additional variable
+                    else
+                        {%- for i, var in enumerate(variables) %}
+                        q.qn[ip,{{ i+1 }}] = {{ var }}_val  # {{ var }}
+                        {%- endfor %}
+                        q.qn[ip,end] = 0.0  # pressure or additional variable
+                    end
+                end
+            end
+
+        else
+            error(" ERROR: {{ problem_name }}: initialize.jl:\n assign value to inputs[:case]")
+        end
+
+        if inputs[:CL] == NCL()
+            if inputs[:SOL_VARS_TYPE] == PERT()
+                # Non-conservative form adjustments
+                # TODO: Add specific non-conservative transformations if needed
+            else
+                # TODO: Add specific non-conservative transformations if needed
+            end
+        end
+
+    else
+        # GPU initialization
+        if (inputs[:SOL_VARS_TYPE] == PERT())
+            lpert = true
+        else
+            lpert = false
+        end
+        PhysConst = PhysicalConst{TFloat}()
+
+        k = initialize_gpu!(inputs[:backend])
+        k(q.qn, q.qe, mesh.x, mesh.y, PhysConst, lpert; ndrange = (mesh.npoin))
+    end
+    @info " Initialize fields for {{ spatial_dim }}D {{ problem_name }} ........................ DONE "
+
+    return q
+end
+
+@kernel function initialize_gpu!(qn, qe, x, y, PhysConst, lpert)
+    ip = @index(Global, Linear)
+
+    T = eltype(x)
+    x_val = x[ip]
+    y_val = y[ip]
+
+    # TODO: Define initial conditions for GPU
+    {%- for i, var in enumerate(variables) %}
+    {{ var }}_val = T(0.0)  # TODO: Set initial value for {{ var }}
+    {%- endfor %}
+
+    if (lpert)
+        {%- for i, var in enumerate(variables) %}
+        qn[ip,{{ i+1 }}] = {{ var }}_val
+        {%- endfor %}
+        qn[ip,end] = T(0.0)
+    else
+        {%- for i, var in enumerate(variables) %}
+        qn[ip,{{ i+1 }}] = {{ var }}_val
+        {%- endfor %}
+        qn[ip,end] = T(0.0)
+    end
+end
