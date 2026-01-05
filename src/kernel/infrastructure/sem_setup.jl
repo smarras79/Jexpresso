@@ -40,20 +40,20 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
         mesh, partitioned_model, uaux_new = mod_mesh_mesh_driver(inputs, nparts, distribute, args...)
     end
     if (inputs[:xscale] != 1.0 && inputs[:xdisp] != 0.0)
-        mesh.coords[:,1] .= (@view(mesh.coords[:,1]) .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
+        mesh.x .= (@view(mesh.x[:]) .+ TFloat(inputs[:xdisp])) .*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xscale] != 1.0)
-        mesh.coords[:,1] = @view(mesh.coords[:,1])*TFloat(inputs[:xscale]*0.5)
+        mesh.x[:] = @view(mesh.x[:])*TFloat(inputs[:xscale]*0.5)
     elseif (inputs[:xdisp] != 0.0)
-        mesh.coords[:,1] .= (@view(mesh.coords[:,1]) .+ TFloat(inputs[:xdisp]))
+        mesh.x[:] .= (@view(mesh.x[:]) .+ TFloat(inputs[:xdisp]))
     end
     mesh.xmin = minimum(mesh.coords[:,1])
     mesh.xmax = maximum(mesh.coords[:,1])
     if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
-        mesh.coords[:,2] .= (mesh.coords[:,2] .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
+        mesh.y[:] .= (mesh.y[:] .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
     elseif(inputs[:yscale] != 1.0)
-        mesh.coords[:,2] .= (mesh.coords[:,2]) .*inputs[:yscale]*0.5
+        mesh.y[:] .= (mesh.y[:]) .*inputs[:yscale]*0.5
     elseif(inputs[:ydisp] != 0.0)
-        mesh.coords[:,2] .= (mesh.coords[:,2] .+ inputs[:ydisp])
+        mesh.y[:] .= (mesh.y[:] .+ inputs[:ydisp])
     end
     if mesh.nsd == 2
         mesh.ymin = minimum(mesh.coords[:,2])
