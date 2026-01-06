@@ -569,19 +569,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, 
     nelem = params.mesh.nelem
     neqs  = params.neqs
     
-    D     = zeros(Float64, ngl, ngl)
-    uilgl = zeros(Float64, neqs, ngl, nelem)
-
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
-
-    for iel=1:nelem   
-        for i=1:ngl
-            ip = connijk[iel,i,1]
-            
-            uilgl[1:neqs,i,iel] .= params.uaux[ip,1:neqs]
-        end
-    end
-    
     
     for iel=1:nelem   
         for i=1:ngl
@@ -609,30 +597,12 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, 
             end
         end
 
-        lkep = false
-        if !lkep
-            _expansion_inviscid!(u, params.neqs, ngl,
-                                 params.basis.dψ, params.ω,
-                                 params.F, params.S,
-                                 params.rhs_el,
-                                 iel, params.CL, params.QT, SD, params.AD)
-        else
-
-            
-            D = build_differentiation_matrix(SD,
-                                             params.basis.ψ, params.basis.dψ, params.ω,
-                                             params.mesh,
-                                             ngl-1,
-                                             ngl-1,
-                                             Float64)
-            #print_matrix(D) #seems ok
-            _expansion_inviscid_KEP!(u, params.neqs, ngl,
-                                     params.basis.dψ, params.ω,
-                                     params.F, params.S, D,
-                                     params.rhs_el, uilgl,
-                                     iel, params.CL, params.QT, SD, params.AD)
-            
-        end
+        _expansion_inviscid!(u, params.neqs, ngl,
+                             params.basis.dψ, params.ω,
+                             params.F, params.S,
+                             params.rhs_el,
+                             iel, params.CL, params.QT, SD, params.AD)
+        
     end
 end
 
