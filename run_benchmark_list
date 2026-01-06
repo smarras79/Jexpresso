@@ -1,23 +1,13 @@
 rm -rf output
 
 ./runjexpresso 1 CompEuler wave1d
-
 ./runjexpresso 1 CompEuler wave1d_lag
-
 ./runjexpresso 1 AdvDiff Wave_Train
-
-./runjexpresso 1 AdvDiff 2D_laguerre
-
+./runjexpresso 1 AdvDiff 2d_Laguerre
 ./runjexpresso 2 CompEuler thetaTracers
-
 ./runjexpresso 2 CompEuler theta_laguerre
-
 ./runjexpresso 3 CompEuler 3d
-
-./runjexpresso 8 CompEuler HSmount_Lag
-
+./runjexpresso 1 Elliptic case1
 ./runjexpresso 1 Helmholtz case1
-
 ./runjexpresso 1 Helmholtz case1_laguerre
-
-./runjexpresso 4 compeuler Rayleigh_Benard
+./runjexpresso 4 CompEuler LESICP2-coarse

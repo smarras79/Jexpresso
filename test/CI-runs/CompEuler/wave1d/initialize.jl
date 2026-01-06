@@ -34,7 +34,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
         end
     end
 
-    if (inputs[:lwrite_initial] == true)
+    if (inputs[:lwrite_initial] == true))
         for ivar=1:length(qvars)
             plot_initial(SD, mesh.x, q.qn[:,ivar], ivar, OUTPUT_DIR)
         end

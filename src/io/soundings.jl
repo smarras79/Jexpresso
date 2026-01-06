@@ -1,12 +1,15 @@
 function read_sounding(fname)
-    data = readdlm(fname,TFloat)
+    
+    #data = readdlm(fname,TFloat)
+    data = CSV.read(fname, Tables.matrix)
+    
     return data
 end
 
-function interpolate_sounding(backend,npoin,z,data)
+function interpolate_sounding(backend, npoin, z, data)
 
     n_rows = TInt(size(data,1))
-    n_var = TInt(size(data,2))
+    n_var  = TInt(size(data,2))
     data_out = KernelAbstractions.zeros(backend, TFloat, Int64(npoin),n_var-1)
     if (backend == CPU())
         for ip=1:npoin
