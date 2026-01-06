@@ -10,19 +10,20 @@ function compute_surface_integral!(S_face, F_surf, ω, Jac_face, iface, ngl)
 
 end
 
-function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin, connijk, poin_in_bdy_face, bdy_face_in_elem)
+function DSS_surface_integral!(S_flux, S_face, M_surf_inv, nfaces, ngl, z, zmin, connijk, poin_in_bdy_face, bdy_face_in_elem, neqs)
 
     for iface = 1:nfaces
-        if (z[poin_in_bdy_face[iface,3,3]] == zmin)
+        #if (z[poin_in_bdy_face[iface,3,3]] == zmin)
             for i = 1:ngl
                 for j = 1:ngl
                     e = bdy_face_in_elem[iface]
                     ip = poin_in_bdy_face[iface,i,j]
-                    ip1 = connijk[e,i,j,2]
-                    S_flux[ip1,:] .+= S_face[iface,i,j,:]*M_surf_inv[ip]
+                    for ieq = 1:neqs
+                        S_flux[ip,ieq] += S_face[iface,i,j,ieq]*M_surf_inv[ip]
+                    end
                 end
             end
-        end
+        #end
     end
 
 end
@@ -50,18 +51,25 @@ function compute_segment_integral!(S_edge, F_edge, ω, Jac_edge, iedge, ngl)
 
 end
 
-function DSS_segment_integral!(S_flux, S_edge, M_seg_inv, nedges, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem)
+function DSS_segment_integral!(S_flux, S_edge, M_seg_inv, nedges, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem, neqs)
 
     for iedge = 1:nedges
         for i = 1:ngl
             e = bdy_edge_in_elem[iedge]
             ip = poin_in_bdy_edge[iedge,i]
             ip1 = connijk[e,i,2]
-            S_flux[ip1,:] .+= S_edge[iedge,i,:]*M_seg_inv[ip]
+            for ieq = 1:neqs
+                if (ieq == 2)
+                    S_flux[ip,ieq] .+= S_edge[iedge,i,ieq]*M_seg_inv[ip]
+                else
+                    S_flux[ip1,ieq] .+= S_edge[iedge,i,ieq]*M_seg_inv[ip]
+                end
+            end
         end
     end
 
 end
+
 
 function build_segment_mass_matrix(nedges, npoin, ω, ψ, ngl, Jac_edge, poin_in_bdy_edge, T, Δx, inputs)
 
@@ -79,7 +87,7 @@ end
 
 
 function bulk_surface_flux!(F_surf,q,q1,qe,qe1,θ,θ1,qn,qn1)
-
+    
     PhysConst = PhysicalConst{Float64}()    
     ρ    = q[1]  + qe[1]
     ρ1   = q1[1] + qe1[1]
@@ -87,9 +95,13 @@ function bulk_surface_flux!(F_surf,q,q1,qe,qe1,θ,θ1,qn,qn1)
     ρu1  = q1[2] + qe1[2]
     ρv   = q[3]  + qe[3]
     ρv1  = q1[3] + qe1[3]
-    ρqt  = q[6]  + qe[6]
-    ρqt1 = q1[6] + qe1[6]
-
+    if size(q)[1] > 5
+        ρqt  = q[6]  + qe[6]
+        ρqt1 = q1[6] + qe1[6]
+    else
+        ρqt  = 0.0
+        ρqt1 = 0.0
+    end
 
     u   = ρu/ρ
     v   = ρv/ρ
@@ -104,16 +116,17 @@ function bulk_surface_flux!(F_surf,q,q1,qe,qe1,θ,θ1,qn,qn1)
     u_12  = (u + u1)/2
     v_12  = (v + v1)/2
     θ_12  = (θ + θ1)/2
-    qv
+    
     qv_12 = (qv + qv1)/2
 
     cd = 1.1e-3 + 4e-5*sqrt(u_12^2+v_12^2)
     ce = cd
     
-    
-    F_surf[2] = ρ*cd*u_12*sqrt(u_12^2+v_12^2)
-    F_surf[3] = ρ*cd*v_12*sqrt(u_12^2+v_12^2)
+    F_surf[2] = -ρ*cd*u_12*sqrt(u_12^2+v_12^2)
+    F_surf[3] = -ρ*cd*v_12*sqrt(u_12^2+v_12^2)
     F_surf[5] = PhysConst.cp*ρ*ce*sqrt(u_12^2+v_12^2)*(θ-θ_12)
-    F_surf[6] = ρ*ce*sqrt(u_12^2+v_12^2)*(qv-qv_12)
+    if size(F_surf)[1] > 5
+        F_surf[6] = ρ*ce*sqrt(u_12^2+v_12^2)*(qv-qv_12)
+    end
 end
 

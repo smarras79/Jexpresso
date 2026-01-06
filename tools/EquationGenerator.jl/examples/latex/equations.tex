@@ -1,0 +1,58 @@
+\documentclass[11pt,a4paper]{article}
+%\include{../header}
+\usepackage{amsmath,amssymb,amsfonts}
+% Title informationgt
+\title{\textbf{Code generator for Jexpresso}}
+
+\begin{document}
+
+
+\begin{equation}
+    \partial_t\mathbf{q} 
+    + \partial_x\mathbf{F}_1(\mathbf{q}) + 
+    \partial_y\mathbf{F}_2(\mathbf{q}) + 
+    \partial_z\mathbf{F}_3(\mathbf{q})= \mathbf{S}
+    \label{eq:conservation}
+\end{equation}
+where:
+
+\begin{equation}
+\mathbf{q} = \begin{bmatrix}
+\rho \\
+\rho u \\
+\rho h^2 \\
+\rho w \\
+\rho \theta
+\end{bmatrix}, \quad
+\mathbf{F}_1 = \begin{bmatrix}
+\rho u \\
+\rho u^2 + p + \cos{h}\\
+\rho u v \\
+\rho u w \\
+\rho u \theta
+\end{bmatrix}, \quad
+\mathbf{F}_2 = \begin{bmatrix}
+\rho v \\
+\rho v u \\
+\rho v^2 + p \\
+\rho v w \\
+\rho v \theta
+\end{bmatrix}, \quad
+\mathbf{F}_3 = \begin{bmatrix}
+\rho w \\
+\rho w u \\
+\rho w v \\
+\rho w^2 + p \\
+\rho w \theta
+\end{bmatrix}, \quad
+\mathbf{S} = \begin{bmatrix}
+0 \\
+0 \\
+0 \\
+-\rho g \\
+0
+\end{bmatrix}
+\end{equation}
+
+
+\end{document}

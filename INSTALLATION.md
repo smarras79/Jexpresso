@@ -17,12 +17,12 @@ git clone https://github.com/smarras79/Jexpresso.git
 cd Jexpresso
 ```
 
-### 2. Checkout the master Branch if you are not already there
+### 2. Checkout the yt/wallmodel branch if you are not already there
 
-The `master` branch is the most developed and will soon replace master:
+The `yt/wallmodel` branch is the most developed and will soon replace current master:
 
 ```bash
-git checkout master
+git checkout yt/wallmodel
 ```
 
 ### 3. Run the Installation Script
