@@ -1305,7 +1305,6 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             if (inputs[:lsparse])
                 @info " DSS sparse"
                 L = DSS_laplace_sparse(mesh, Le)
-                #assemble_diffusion_matrix_threaded!(mesh, Le)
                 @info " DSS sparse .................... DONE"
             else
                 L = KernelAbstractions.zeros(backend,

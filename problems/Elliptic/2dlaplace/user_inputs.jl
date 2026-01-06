@@ -9,6 +9,8 @@ function user_inputs()
         :lsource              => true, 
         :llinsolve            => true,
         :lsparse              => true,
+        :ldss_laplace         => true,
+        :ldss_differentiation => false,
         :rconst               => [0.0],
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

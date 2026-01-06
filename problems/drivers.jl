@@ -102,6 +102,9 @@ function driver(nparts,
             total_cols_writtenout = 0  # Track how many columns we've written
 
             # Clear/initialize file at start
+            if isfile("input_tensor.csv")
+                rm("input_tensor.csv")
+            end
             if isfile("output_tensor.csv")
                 rm("output_tensor.csv")
             end
@@ -117,7 +120,7 @@ function driver(nparts,
                 avisc         = zeros(TFloat, sem.mesh.ngl^2)
                 ranvisc       = isamp*μ #+ 10*rand()
                 avisc[:]     .= ranvisc
-                sem.matrix.L .= ranvisc*sem.matrix.L
+                #sem.matrix.L .= ranvisc*sem.matrix.L
                 
                 for ip =1:sem.mesh.npoin
                     RHS[ip] = user_source!(RHS[ip],

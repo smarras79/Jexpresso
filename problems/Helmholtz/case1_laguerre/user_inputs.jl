@@ -8,7 +8,9 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
+        :ldss_laplace         => true,       
         :lsparese             => false, # NOTICE, LAguerre not modified yet for sparse storage
+        :ldss_differentiation => false,
         :rconst               => (10.0),
         #:lelementLearning     => true,
         #---------------------------------------------------------------------------

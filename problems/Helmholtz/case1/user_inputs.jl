@@ -8,6 +8,8 @@ function user_inputs()
         :ndiagnostics_outputs => 1,
         :lsource              => true, 
         :llinsolve            => true,
+        :ldss_laplace         => true,
+        :ldss_differentiation => false,
         :rconst               => (10.0),
         #:lelementLearning     => true,
         #---------------------------------------------------------------------------
