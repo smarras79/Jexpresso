@@ -58,8 +58,8 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/2x2x2.msh",
         # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10x10.msh",
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        # :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB_periodic3D.msh",
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/unstructured_xz_20x2x20.msh",
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------

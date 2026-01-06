@@ -43,7 +43,8 @@ function user_inputs()
         :c_moint => 5000.0,
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/test_mesh_10x10.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
