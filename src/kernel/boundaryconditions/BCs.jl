@@ -2,7 +2,6 @@ include("custom_bcs.jl")
 
 function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                                               coords, 
-                                              #x, y, z,
                                               nx, ny, nz,
                                               npoin, npoin_linear,
                                               poin_in_bdy_edge, poin_in_bdy_face,
@@ -22,8 +21,7 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                            ω, neqs, inputs, AD, SD)
     else
         build_custom_bcs_dirichlet!(SD, t,
-                                    coords, 
-                                    #x, y, z,
+                                    coords,
                                     nx, ny, nz, npoin, npoin_linear,
                                     poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                                     xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
@@ -53,7 +51,6 @@ function apply_boundary_conditions_neumann!(u, uaux, t,qe,
 
     build_custom_bcs_neumann!(SD, t,
                               @view(coords[:,:]),
-                              #x, y, z,
                               nx, ny, nz, npoin, npoin_linear, 
                               poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                               xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
@@ -170,7 +167,6 @@ end
 
 function build_custom_bcs_neumann!(::NSD_1D, t,
                                    coords,
-                                   #x, y, z,
                                    nx, ny, nz, npoin, 
                                    npoin_linear, poin_in_bdy_edge, poin_in_bdy_face,
                                    nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
