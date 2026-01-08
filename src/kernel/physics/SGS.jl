@@ -42,7 +42,7 @@
     if is_u_momentum || is_v_momentum
         
         return (μ_mol + μ_turb) * visc_coeffieq[ieq] # effective viscosity
-
+        
     elseif is_temperature
         κ_turb = μ_turb / (ρ * Pr_t)
         

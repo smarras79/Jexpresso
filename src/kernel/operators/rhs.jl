@@ -1,4 +1,5 @@
 using Distributions
+using StaticArrays
 
 const PHYS_CONST = PhysicalConst{Float64}()
 
@@ -500,10 +501,6 @@ function _build_rhs!(RHS, u, params, time)
     if (params.inputs[:lvisc] == true)
         
         resetRHSToZero_viscous!(params, SD)
-            
-        #compute_viscosity!(params.μsgs, SD,
-        #                   params.uaux, params.qp.qnm1, params.qp.qnm2, @view(params.RHS[:,:]),
-        #                   Δt, params.mesh, params.metrics, VT)
         
         viscous_rhs_el!(u, params, params.mesh.connijk, params.qp.qe, SD)
         
@@ -604,37 +601,17 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, 
 end
 
 function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64},
-                            coords, 
-                            lsource, S_micro_vec, qn_vec, flux_lw_vec,
-                            flux_sw_vec, SD::NSD_2D)
+                          coords, 
+                          lsource, S_micro_vec, qn_vec, flux_lw_vec,
+                          flux_sw_vec, SD::NSD_2D)
     
     PhysConst = PhysicalConst{Float64}()
 
     u_element_wise = zeros(params.mesh.ngl, params.mesh.ngl, params.neqs)
-
-    lkep = false
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
     for iel = 1:params.mesh.nelem
-
-       
-        if lkep
-            for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
-                ip = connijk[iel,i,j]
-                
-                user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
-                
-                
-                # b. Use the map to find the global point index
-                global_point_idx = connijk[iel, i, j]
-                
-                # c. Find the starting index for this point's data in the flat vector `u`
-                start_idx = (global_point_idx - 1) * params.neqs + 1
-                
-                # d. Copy the 'neqs' variables (ρ, ρu, ρv, E) from u to your 4D array
-                u_element_wise[i, j, :] = u[start_idx : start_idx + params.neqs - 1]
-            end
-        end
+        
         
         for j = 1:params.mesh.ngl, i=1:params.mesh.ngl
             ip = connijk[iel,i,j]
@@ -668,54 +645,20 @@ function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64
                                                 SD, params.SOL_VARS_TYPE)
                 end
             end
-
-            #=  SM  if luser_function
-            user_function!(@view(params.fijk[i,j,:]), SD,
-            @view(params.uaux[ip,:]),
-            @view(qe[ip,:]),
-            params.mesh,
-            params.CL, params.SOL_VARS_TYPE;
-            neqs=params.neqs, iel=iel, ip=ip)
-            end
-            =#
         end
-        #= SM
-        _∇f!(params.∇f_el, params.fijk,
-        params.mesh.ngl,
-        params.basis.dψ, params.ω,
-        params.metrics.Je,
-        params.metrics.dξdx, params.metrics.dξdy,
-        params.metrics.dηdx, params.metrics.dηdy,
-        iel, params.CL, params.QT, SD, params.AD)       
-        =#
         
-        if lkep
-            
-            _expansion_inviscid_KEP_twopoint!(u_element_wise,
-                                              params.uprimitive,
-                                              params.neqs, params.mesh.ngl,
-                                              params.basis.dψ, params.ω,
-                                              params.F, params.G, params.S,
-                                              params.metrics.Je,
-                                              params.metrics.dξdx, params.metrics.dξdy,
-                                              params.metrics.dηdx, params.metrics.dηdy,
-                                              params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
-            
-        else
-            _expansion_inviscid!(u,
-                                 params.neqs, params.mesh.ngl,
-                                 params.basis.dψ, params.ω,
-                                 params.F, params.G, params.S,
-                                 params.metrics.Je,
-                                 params.metrics.dξdx, params.metrics.dξdy,
-                                 params.metrics.dηdx, params.metrics.dηdy,
-                                 params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
-        end
+        _expansion_inviscid!(u,
+                             params.neqs, params.mesh.ngl,
+                             params.basis.dψ, params.ω,
+                             params.F, params.G, params.S,
+                             params.metrics.Je,
+                             params.metrics.dξdx, params.metrics.dξdy,
+                             params.metrics.dηdx, params.metrics.dηdy,
+                             params.rhs_el, iel, params.CL, params.QT, SD, params.AD)
+        
 
     end
-
-    #= SM params.rhs_el[:,:,:,2] .-= params.∇f_el[:,:,:,1]
-    params.rhs_el[:,:,:,3] .-= params.∇f_el[:,:,:,2]=#
+    
 end
 
 function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, qn_vec, flux_lw_vec, flux_sw_vec, SD::NSD_3D)
@@ -942,160 +885,7 @@ function _expansion_inviscid!(u, neqs, ngl,
 end
 
 
-
-function _expansion_inviscid_KEP!(u, neqs, ngl,
-                                  dψ, ω,
-                                  F, S, D,
-                                  rhs_el, uilgl,
-                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
-    
-    for i = 1:ngl
-        
-        du_i = zeros(neqs)
-        
-        for j = 1:ngl
-            
-            for ieq = 1:neqs
-                # Average flux between points i and j
-                f_ij = 0.5 * (F[i, ieq] + F[j, ieq]) #Average point test towards two-point solition
-                #f_ij = F[i, ieq] #identical as usual  _expansion_inviscid!()
-                du_i[ieq] += 2.0 * dψ[j, i] * f_ij
-            end
-        end
-        
-        for ieq = 1:neqs
-            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
-        end
-    end
-end
-
-
-function _expansion_inviscid_KEP_v0!(u, neqs, ngl,
-                                     dψ, ω,
-                                     F, S,
-                                     rhs_el, uilgl,
-                                  iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
-    
-    # Loop over grid points i in the element
-    for i = 1:ngl
-        
-        # Get the conservative variables at grid point i
-        u_i = @view uilgl[:, i, iel]  # neqs-dimensional vector
-        
-        # Initialize accumulator for the split form
-        du_i = zeros(neqs)
-        
-        # Loop over grid points j for the two-point flux split form
-        for j = 1:ngl
-            # Get the conservative variables at grid point j
-            u_j = @view uilgl[:, j, iel]  # neqs-dimensional vector
-            
-            # Compute two-point volume flux between states i and j
-            # You need to implement this function based on your flux type
-            f_ij = compute_two_point_flux(u_i, u_j)
-            
-            # Accumulate: 2 * D[i,j] * f_ij
-            # Using dψ as the derivative matrix
-            for ieq = 1:neqs
-                du_i[ieq] += 2.0 * dψ[j, i] * f_ij[ieq]
-            end
-        end
-        
-        # Update RHS with the split form contribution
-        for ieq = 1:neqs
-            rhs_el[iel, i, ieq] -= ω[i] * du_i[ieq] - ω[i] * S[i, ieq]
-        end
-    end
-end
-
-
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
-
-using StaticArrays
-
-function _expansion_inviscid_KEP!(u, uprimitive,
-                                  neqs, ngl, dψ, ω,
-                                  F, G, S,
-                                  Je,
-                                  dξdx, dξdy,
-                                  dηdx, dηdy,
-                                  rhs_el, iel,
-                                  ::CL, QT::Inexact, SD::NSD_2D, AD::ContGal)
-
-    # Temporary array to store the divergence at each quadrature point
-    # Using StaticArrays for performance (avoids heap allocation in the loop)
-    Div = MVector{4, Float64}(0.0, 0.0, 0.0, 0.0)
-    
-    # Loop over quadrature points in the element
-    for j = 1:ngl
-        for i = 1:ngl
-            ωJac = ω[i] * ω[j] * Je[iel, i, j]
-            
-            # --- 1. Compute standard divergence for all equations at point (i,j) ---
-            # This is necessary because the KEP form for momentum/energy
-            # depends on the divergence of the continuity equation.
-            for ieq = 1:neqs
-                dFdξ = 0.0
-                dFdη = 0.0
-                dGdξ = 0.0
-                dGdη = 0.0
-                @turbo for k = 1:ngl
-                    dFdξ += dψ[k, i] * F[k, j, ieq]
-                    dFdη += dψ[k, j] * F[i, k, ieq]
-                    
-                    dGdξ += dψ[k, i] * G[k, j, ieq]
-                    dGdη += dψ[k, j] * G[i, k, ieq]
-                end
-                
-                dξdx_ij = dξdx[iel, i, j]
-                dξdy_ij = dξdy[iel, i, j]
-                dηdx_ij = dηdx[iel, i, j]
-                dηdy_ij = dηdy[iel, i, j]
-
-                dFdx = dFdξ * dξdx_ij + dFdη * dηdx_ij
-                dGdy = dGdξ * dξdy_ij + dGdη * dηdy_ij
-                
-                #dFdy = dFdξ * dξdy_ij + dFdη * dηdy_ij                
-                #dGdx = dGdξ * dξdx_ij + dGdη * dηdx_ij
-                
-                Div[ieq] = dFdx + dGdy
-            end
-
-            # --- 2. Get primitive variables at the quadrature point (i,j) ---
-            # This assumes that the solution points and quadrature points are the same
-            # (i.e., a collocation-based method on Gauss-Lobatto nodes).
-            ρ  = uprimitive[i, j, 1]
-            ρu = uprimitive[i, j, 2]
-            ρv = uprimitive[i, j, 3]
-            
-            inv_ρ = 1.0 / ρ
-            u_vel = ρu * inv_ρ
-            v_vel = ρv * inv_ρ
-            
-            # --- 3. Apply the KEP split-form correction ---
-            # The split form is: 0.5 * [ (Standard Divergence) + (Mass Flux Divergence) * (Velocity) ]
-            div_mass_flux = Div[1]
-            
-            # x-momentum (ieq=2)
-            div_mom_x = 0.5 * (Div[2] + div_mass_flux * u_vel)
-            
-            # y-momentum (ieq=3)
-            div_mom_y = 0.5 * (Div[3] + div_mass_flux * v_vel)
-            
-            # Energy (ieq=4)
-            # This is one possible KEP extension to the energy equation.
-            # Other, more complex forms exist, often coupled with entropy stability.
-            KE = 0.5 * (u_vel^2 + v_vel^2)
-            div_energy = 0.5 * (Div[4] + div_mass_flux * KE)
-            
-            # --- 4. Update the element-local RHS with the KEP-corrected values ---
-            rhs_el[iel, i, j, 1] -= ωJac * (div_mass_flux - S[i, j, 1])
-            rhs_el[iel, i, j, 2] -= ωJac * (div_mom_x     - S[i, j, 2])
-            rhs_el[iel, i, j, 3] -= ωJac * (div_mom_y     - S[i, j, 3])
-            rhs_el[iel, i, j, 4] -= ωJac * (div_energy    - S[i, j, 4])
-        end
-    end
-end
 
 function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                               F, G, S,
@@ -1448,7 +1238,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           inputs, rhs_el,
                           iel, ieq,
                           QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0)
-    @mystop("AV")
+    
     for l = 1:ngl
         for k = 1:ngl
             ωJac = ω[k]*ω[l]*Je[iel,k,l]
