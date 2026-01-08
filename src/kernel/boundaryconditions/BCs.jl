@@ -526,7 +526,7 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
     #for ip = 1:npoin
     PhysConst = PhysicalConst{Float64}()
     for iface = 1:nfaces_bdy
-        if !startswith(bdy_edge_type[iedge], "periodic")
+        if !startswith(bdy_edge_type[iface], "periodic")
             
             for i=1:ngl
                 for j=1:ngl

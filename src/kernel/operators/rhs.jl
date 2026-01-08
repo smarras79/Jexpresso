@@ -600,7 +600,9 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, 
     end
 end
 
-function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64},
+function inviscid_rhs_el!(u, params,
+                          connijk::Array{Int64,4},
+                          qe::Matrix{Float64},
                           coords, 
                           lsource, S_micro_vec, qn_vec, flux_lw_vec,
                           flux_sw_vec, SD::NSD_2D)
@@ -639,10 +641,10 @@ function inviscid_rhs_el!(u, params, connijk::Array{Int64,4}, qe::Matrix{Float64
                     flux_sw::Float64 = @inbounds flux_sw_vec[ip]
                     qn::Float64 = @inbounds qn_vec[ip]
                     add_micro_precip_sources!(@view(params.S[i,j,:]),
-                                                @view(params.uaux[ip,:]),
-                                                @view(qe[ip,:]),
-                                                S_micro, qn, flux_lw, flux_sw, PHYS_CONST,
-                                                SD, params.SOL_VARS_TYPE)
+                                              @view(params.uaux[ip,:]),
+                                              @view(qe[ip,:]),
+                                              S_micro, qn, flux_lw, flux_sw, PHYS_CONST,
+                                              SD, params.SOL_VARS_TYPE)
                 end
             end
         end
@@ -735,10 +737,11 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, 
                              params.metrics.dηdx, params.metrics.dηdy, params.metrics.dηdz,
                              params.metrics.dζdx, params.metrics.dζdy, params.metrics.dζdz,
                              params.rhs_el, iel, 
-                             params.WM.wθ, params.inputs[:lwall_model],
                              params.mesh.connijk,
                              params.mesh.coords,
-                             params.mesh.poin_in_bdy_face, params.mesh.elem_to_face, params.mesh.bdy_face_type,
+                             params.mesh.poin_in_bdy_face,
+                             params.mesh.elem_to_face,
+                             params.mesh.bdy_face_type,
                              params.CL, params.QT, SD, params.AD) 
     end
 end
@@ -917,9 +920,6 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                 dηdy_ij = dηdy[iel,i,j]
                 
                 dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij
-                #dGdx = dGdξ*dξdx_ij + dGdη*dηdx_ij
-
-                #dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
                 dGdy = dGdξ*dξdy_ij + dGdη*dηdy_ij
                 
                 rhs_el[iel,i,j,ieq] -=  ωJac*((dFdx + dGdy) - S[i,j,ieq])
@@ -935,10 +935,11 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
                               dηdx, dηdy, dηdz,
                               dζdx, dζdy, dζdz,
                               rhs_el, iel,
-                              wθ, lwall_model,
                               connijk,
                               coords,
-                              poin_in_bdy_face, elem_to_face, bdy_face_type,
+                              poin_in_bdy_face,
+                              elem_to_face,
+                              bdy_face_type,
                               ::CL, QT::Inexact, SD::NSD_3D, AD::ContGal)
     for ieq=1:neqs
         for k=1:ngl

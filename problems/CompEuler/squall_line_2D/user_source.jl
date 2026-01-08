@@ -11,7 +11,6 @@ function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, ymin=0
     S[1] = 0.0
     S[2] = 0.0
     S[3] = -ρ*PhysConst.g
-    #S[3] = -PhysConst.g
     S[4] = 0.0
 
     #### SPONGE

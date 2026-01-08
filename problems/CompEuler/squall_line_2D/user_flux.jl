@@ -43,16 +43,16 @@ function user_flux!(F, G, SD::NSD_2D,
 
     PhysConst = PhysicalConst{Float64}()
 
-    ρ  = q[1] + qe[1]
-    ρu = q[2] + qe[2]
-    ρv = q[3] + qe[3]
+    ρ   = q[1] + qe[1]
+    ρu  = q[2] + qe[2]
+    ρv  = q[3] + qe[3]
     ρhl = q[4] + qe[4]
     ρqt = q[5] + qe[5]
     ρqp = q[6] + qe[6]
 
     hl  = ρhl/ρ
-    u  = ρu/ρ
-    v  = ρv/ρ
+    u   = ρu/ρ
+    v   = ρv/ρ
     ρqt = ρqt/ρ
     ρqp = ρqp/ρ
 
@@ -78,15 +78,15 @@ end
 function user_flux_gpu(q,qe,PhysConst,lpert)
     T = eltype(q)
     if (lpert)
-        ρ  = q[1]+qe[1]
-        ρu = q[2]+qe[2]
-        ρv = q[3]+qe[3]
-        ρw = q[4]+qe[4]
+        ρ   = q[1]+qe[1]
+        ρu  = q[2]+qe[2]
+        ρv  = q[3]+qe[3]
+        ρw  = q[4]+qe[4]
         ρhl = q[5]+qe[5]
         ρqt = q[6]+qe[6]
         ρqp = q[7]+qe[7]
         
-        hl  = ρhl/ρ
+        hl = ρhl/ρ
         u  = ρu/ρ
         v  = ρv/ρ
         w  = ρw/ρ
@@ -96,15 +96,15 @@ function user_flux_gpu(q,qe,PhysConst,lpert)
         Pressure = q[end]-qe[end]#perfectGasLaw_ρhltoP(PhysConst, ρ=ρ, hl=hl, qt=qt, qp=qp) - qe[6]
         return T(ρu), T(ρu*u + Pressure), T(ρv*u), T(ρw*u), T(ρhl*u), T(ρqt*u), T(ρqp*u), T(ρv), T(ρu*v), T(ρv*v + Pressure), T(ρw*v), T(ρhl*v), T(ρqt*v), T(ρqp*v), T(ρw), T(ρu*w), T(ρv*w), T(ρw*w + Pressure), T(ρhl*w), T(ρqt*w), T(ρqp*w)
     else
-        ρ  = q[1]
-        ρu = q[2]
-        ρv = q[3]
-        ρw = q[4]
+        ρ   = q[1]
+        ρu  = q[2]
+        ρv  = q[3]
+        ρw  = q[4]
         ρhl = q[5]
         ρqt = q[6]
         ρqp = q[7]
   
-        hl  = ρhl/ρ
+        hl = ρhl/ρ
         u  = ρu/ρ
         v  = ρv/ρ
         w  = ρw/ρ
