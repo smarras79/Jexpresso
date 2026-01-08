@@ -23,26 +23,17 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact       
-        :visc_model           => AV(),
-        :μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
-        #:visc_model           => WALE(),
-        #:visc_model           => VREM(),
-        #:visc_model           => SMAG(),
-        #:μ                   => [0.0, 1.0, 1.0, 1.0], #horizontal viscosity constant for momentum
+        :lvisc          => true, #false by default NOTICE: works only for Inexact       
+        #:visc_model     => AV(),
+        :visc_model     => VREM(),
+        #:visc_model     => SMAG(),
+        :energy_equation => "theta",
+        :μ              => [0.0, 1.0, 1.0, 2.0], #horizontal viscosity constant for momentum
+        #:μ              => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:lwarp => true,
-        #:lstretch => true,
-        :stretch_factor => 1.25,
-        :mount_type => "agnesi",        
-        :h_mount => 1000.0,
-        :a_mount => 2000.0,
-        :c_moint => 5000.0,
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh", #for nop=4
         :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
