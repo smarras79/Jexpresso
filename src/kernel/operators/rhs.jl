@@ -516,7 +516,7 @@ function _build_rhs!(RHS, u, params, time)
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
-    #=apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
+    apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
                                        params.mesh.coords,
                                        params.metrics.nx, params.metrics.ny, params.metrics.nz,
                                        params.mesh.npoin, params.mesh.npoin_linear,
@@ -530,7 +530,7 @@ function _build_rhs!(RHS, u, params, time)
                                        params.WM.τ_f, params.WM.wθ,
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
-    =#
+    
     DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
     
     #if (rem(time, Δt) == 0 && time > 0.0)

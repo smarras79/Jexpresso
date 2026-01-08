@@ -571,7 +571,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                    τ_f, wθ, 
                                    Tabs, qn,
                                    neqs, dirichlet!, neumann, inputs)
-    
+
     PhysConst = PhysicalConst{Float64}() 
     micro = size(Tabs,1)
     for iface = 1:nfaces_bdy
