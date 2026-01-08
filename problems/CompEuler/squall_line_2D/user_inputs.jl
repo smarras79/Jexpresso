@@ -3,21 +3,20 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.05,
+        :ode_solver           => CarpenterKennedy2N54(),
+        :Δt                   => 1.25,
         :tinit                => 0.0,
-        :tend                 => 3000.0,
+        :tend                 => 10000.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
         #:restart_input_file_path => "./output/CompEuler/theta/output-19Nov2023-115126",
-        :diagnostics_at_times => (0.2, 100.0, 200.0, 400.0, 500.0, 600.0, 900.0, 1000.0, 1200.0, 1300, 1400, 1500, 1800, 2000, 2500, 3000, 3500, 4000, 4250, 4500, 4750, 5000, 7000),
+        :diagnostics_at_times => (0:10:10000),
         :case                 => "rtb",
         :lsource              => true, 
         :lmoist               => true,
         :lprecip              => true,
         :SOL_VARS_TYPE        => PERT(),
-        #:backend              => MetalBackend(),
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -26,8 +25,10 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 200.0, 200.0, 300.0, 300.0, 300.0], #horizontal viscosity constant for momentum
+        :lvisc       => true, #false by default NOTICE: works only for Inexact
+        #:visc_model  => SMAG()
+        #:μ           => [0.0, 20.0, 20.0, 30.0, 30.0, 30.0], #horizontal viscosity constant for momentum
+        :μ           => [0.0, 200.0, 200.0, 300.0, 300.0, 300.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -44,6 +45,8 @@ function user_inputs()
         :a_mount             => 10000.0,
         :h_mount             => 100.0,
         :c_mount             => 0.0,
+        :lsponge             => true,
+        :zsponge             => 15000.0,
         #---------------------------------------------------------------------------
         # Soundings and data files
         #---------------------------------------------------------------------------
@@ -60,7 +63,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk", #"hdf5",
-        :output_dir          => "./output_filter_test/",
+        :output_dir          => "./output",
         :loverwrite_output   => true,
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------

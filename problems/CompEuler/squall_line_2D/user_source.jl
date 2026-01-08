@@ -15,50 +15,33 @@ function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, ymin=0
     S[4] = 0.0
 
     #### SPONGE
+     #--------------
+    # SPONGE
+    #--------------
+    if inputs[:lsponge] == true
+        zs = inputs[:zsponge]
+    	xr = 0.0
+    	xl = 0.0
+    	α  = 0.5
+	if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
+            betay_coe = α*sinpi(0.5*(z - zs)/(zmax - zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+	else
+		betay_coe = 0.0
+	end
+    	ctop= 1.0*betay_coe
 
-    #
-    # clateral
-    nsponge_points = 8
-
-    # distance from the boundary. xs in Restelli's thesis
-    dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
-    dbl = ymax - y
-    zs = 14500.0#ymax - 16000.0
-    dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
-    dbx = min(xmax - x,x-xmin) 
-    xr = 120000.0
-    xl = -120000.0
-    if (y > zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betay_coe =  sinpi(0.5*(y-zs)/(ymax-zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-    else
-        betay_coe = 0.0
-    end
-    ctop= 0.1*betay_coe
-   
-    if (x > xr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-    else
-        betaxr_coe = 0.0
-    end
-   
-    if (x < xl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-    else
+    	betaxr_coe = 0.0
         betaxl_coe = 0.0
-    end
-   
-    cxr = 0.0*betaxr_coe
-    cxl = 0.0*betaxl_coe
-    #@info x,y,cxr,cxl,ctop
-    cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
+        
+        cxr = 0.0*betaxr_coe
+        cxl = 0.0*betaxl_coe
+        cs  = 1.0 - (1.0 - ctop)*(1.0 - cxr)*(1.0 - cxl)
 
-    if (x >= xmin && x <= xmax)     
-    #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
-      S[1] -= (cs)*(q[1]-qe[1])
-      S[2] -= (cs)*(q[2]-qe[1]*20.0)
-      S[3] -= (cs)*q[3]
-      S[4] -= (cs)*(q[4]-qe[4])
-    end
+        #S[1] -= (cs)*(q[1]-qe[1])
+        S[2] -= cs*(q[2]-qe[2])
+    	S[3] -= cs*(q[3]-qe[3])
+        S[4] -= cs*(q[4]-qe[4])
+    end	 #sponge
     
     return  S
 end 
