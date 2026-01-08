@@ -2,7 +2,6 @@ include("custom_bcs.jl")
 
 function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                                               coords, 
-                                              #x, y, z,
                                               nx, ny, nz,
                                               npoin, npoin_linear,
                                               poin_in_bdy_edge, poin_in_bdy_face,
@@ -22,8 +21,7 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
                            ω, neqs, inputs, AD, SD)
     else
         build_custom_bcs_dirichlet!(SD, t,
-                                    coords, 
-                                    #x, y, z,
+                                    coords,
                                     nx, ny, nz, npoin, npoin_linear,
                                     poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                                     xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
@@ -35,7 +33,7 @@ function apply_boundary_conditions_dirichlet!(u, uaux, t,qe,
 end
 
 function apply_boundary_conditions_neumann!(u, uaux, t,qe,
-                                            coords, #x, y, z,
+                                            coords,
                                             nx, ny, nz,
                                             npoin, npoin_linear,
                                             poin_in_bdy_edge, poin_in_bdy_face,
@@ -53,7 +51,6 @@ function apply_boundary_conditions_neumann!(u, uaux, t,qe,
 
     build_custom_bcs_neumann!(SD, t,
                               @view(coords[:,:]),
-                              #x, y, z,
                               nx, ny, nz, npoin, npoin_linear, 
                               poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                               xmax, ymax, zmax, xmin, ymin, zmin, ubdy, uaux, u, qe,
@@ -170,7 +167,6 @@ end
 
 function build_custom_bcs_neumann!(::NSD_1D, t,
                                    coords,
-                                   #x, y, z,
                                    nx, ny, nz, npoin, 
                                    npoin_linear, poin_in_bdy_edge, poin_in_bdy_face,
                                    nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
@@ -186,7 +182,6 @@ end
 
 function build_custom_bcs_dirichlet!(::NSD_2D, t,
                                      coords,
-                                     #x, y, z,
                                      nx, ny, nz, npoin, 
                                      npoin_linear, poin_in_bdy_edge, poin_in_bdy_face,
                                      nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
@@ -205,6 +200,7 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
         if  bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodicz" &&
             bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" &&
             bdy_edge_type[iedge] != "Laguerre"
+            
             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
                 nx_l = nx[iedge,k]
@@ -283,8 +279,7 @@ function build_custom_bcs_dirichlet!(::NSD_2D, t,
     uaux2u!(u, uaux, neqs, npoin)
 end
 function build_custom_bcs_neumann!(::NSD_2D, t,
-                                   coords, 
-                                   #x, y, z,
+                                   coords,
                                    nx, ny, nz, npoin,
                                    npoin_linear, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, ngl, ngr, nelem_semi_inf, ω,
                                    xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
@@ -335,8 +330,7 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
     end
     if (inputs[:bdy_fluxes])
         DSS_segment_integral!(S_flux, S_face, M_edge_inv, nedges_bdy, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem)
-        #@info maximum(S_flux[:,2]), maximum(S_flux[:,5]), maximum(S_flux[:,6])
-        #@info minimum(S_flux[:,2]), minimum(S_flux[:,5]), minimum(S_flux[:,6])
+        
         for ieq = 1:neqs
             RHS[:, ieq] .+= S_flux[:,ieq] ./ M_inv[:]
         end
@@ -357,7 +351,8 @@ function build_custom_bcs_lin_solve_sparse!(::NSD_2D, t, coords, nx, ny, nz,
         if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
             bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "periodic3" &&
             bdy_edge_type[iedge] != "Laguerre")
-            for k=1:ngl
+            
+             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
                 nx_l = nx[iedge,k]
                 ny_l = ny[iedge,k]
@@ -467,6 +462,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
         if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
             bdy_edge_type[iedge] != "periodicz" && bdy_edge_type[iedge] != "periodic3" &&
             bdy_edge_type[iedge] != "Laguerre")
+            
             for k=1:ngl
                 ip = poin_in_bdy_edge[iedge,k]
                 nx_l = nx[iedge,k]
@@ -534,9 +530,11 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
     #for ip = 1:npoin
     PhysConst = PhysicalConst{Float64}()
     for iface = 1:nfaces_bdy
+
         if (bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodic1" &&
             bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodic2" &&
             bdy_face_type[iface] != "periodicy" && bdy_face_type[iface] != "periodic3" )
+            
             for i=1:ngl
                 for j=1:ngl
                     fill!(qbdy, 4325789.0)
@@ -573,7 +571,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                    τ_f, wθ, 
                                    Tabs, qn,
                                    neqs, dirichlet!, neumann, inputs)
-    
+
     PhysConst = PhysicalConst{Float64}() 
     micro = size(Tabs,1)
     for iface = 1:nfaces_bdy

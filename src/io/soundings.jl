@@ -1,6 +1,5 @@
 function read_sounding(fname)
     
-    #data = readdlm(fname,TFloat)
     data = CSV.read(fname, Tables.matrix)
     
     return data

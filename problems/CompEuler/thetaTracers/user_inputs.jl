@@ -18,7 +18,12 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 40.0, 40.0, 60.0, 60.0, 60.0], #horizontal viscosity constant for momentum
+        #:visc_model     => AV(),
+        #:visc_model     => VREM(),
+        :visc_model     => SMAG(),
+        :energy_equation => "theta",
+        :μ                   => [0.0, 1.0, 1.0, 2.0, 3.0, 1.0], #horizontal viscosity constant for momentum
+        #:μ                   => [0.0, 40.0, 40.0, 60.0, 60.0, 60.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
