@@ -46,8 +46,10 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
     elseif (inputs[:xdisp] != 0.0)
         mesh.x[:] .= (@view(mesh.x[:]) .+ TFloat(inputs[:xdisp]))
     end
-    mesh.xmin = minimum(mesh.coords[:,1])
-    mesh.xmax = maximum(mesh.coords[:,1])
+    # mesh.xmin = minimum(mesh.coords[:,1])
+    # mesh.xmax = maximum(mesh.coords[:,1])
+    mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
+    mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
     if (inputs[:yscale] != 1.0 && inputs[:ydisp] != 0.0)
         mesh.y[:] .= (mesh.y[:] .+ inputs[:ydisp]) .*inputs[:yscale] * 0.5
     elseif(inputs[:yscale] != 1.0)
@@ -56,8 +58,8 @@ function sem_setup(inputs::Dict, nparts, distribute, args...)
         mesh.y[:] .= (mesh.y[:] .+ inputs[:ydisp])
     end
     if mesh.nsd == 2
-        mesh.ymin = minimum(mesh.coords[:,2])
-        mesh.ymax = maximum(mesh.coords[:,2])
+        mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
+        mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
     end
     
     #--------------------------------------------------------

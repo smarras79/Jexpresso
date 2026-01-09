@@ -82,6 +82,7 @@ end
     κ_mol = PhysConst.κ_mol     # Molecular thermal diffusivity [m²/s]
     Ri_crit = PhysConst.Ri_crit # Critical Richardson number (typically 0.25)
     g     = PhysConst.g
+    cp    = PhysConst.cp
     C_s2  = C_s*C_s
     
     # Equation type identification
