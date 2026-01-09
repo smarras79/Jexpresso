@@ -1,12 +1,11 @@
-
 function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
-   
+    
     PhysConst = PhysicalConst{Float64}()
     
     #
     # S(q(x)) = -ρg
     #
-    ρ  = q[1] -qe[1]
+    ρ  = q[1] - qe[1]
     
     S[1] = 0.0
     S[2] = 0.0
@@ -17,7 +16,10 @@ function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, ymin=0
      #--------------
     # SPONGE
     #--------------
-    if inputs[:lsponge] == true
+    zmax = 24000.0
+    if inputs[:lsponge]
+        z = y
+        @info z
         zs = inputs[:zsponge]
     	xr = 0.0
     	xl = 0.0
@@ -45,7 +47,15 @@ function user_source!(S, q, qe, npoin, ::CL,::TOTAL; neqs=1,x=0.0, y=0.0, ymin=0
     return  S
 end 
 
-function user_source!(S, q, qe, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, ymin=0.0, ymax=30000.0, ngl=5, nely=10,xmin = -120000, xmax =120000)
+
+function user_source!(S,
+                      q,
+                      qe, npoin, ::CL,::PERT;
+                      neqs=1,
+                      x=0.0, y=0.0,
+                      xmin=0.0, xmax=1.0,
+                      ymin=0.0, ymax=1.0,
+                      ngl=5, nely=10)
 
     PhysConst = PhysicalConst{Float64}()
 
@@ -60,58 +70,39 @@ function user_source!(S, q, qe, npoin, ::CL,::PERT; neqs=1,x=0.0, y=0.0, ymin=0.
     S[4] = 0.0
     S[5] = 0.0
     S[6] = 0.0
-    #### SPONGE
+   
+    #--------------
+    # SPONGE
+    #--------------
+    zmax = ymax
+    if inputs[:lsponge]
+        z = y
+        zs = inputs[:zsponge]
+    	xr = 0.0
+    	xl = 0.0
+    	α  = 0.5
+	if (z >= zs)
+            betay_coe = α*sinpi(0.5*(z - zs)/(zmax - zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+	else
+		betay_coe = 0.0
+	end
+    	ctop= 1.0*betay_coe
 
-    #
-    # clateral
-    nsponge_points = 8
-
-    # distance from the boundary. xs in Restelli's thesis
-    dsy = (ymax - ymin)/(nely*(ngl - 1))# equivalent grid spacing
-    dbl = ymax - y
-    zs = 16000.0#ymax - 20000.0
-    dsx = (xmax - xmin)/(nely*(ngl - 1))# equivalent grid spacing
-    dbx = min(xmax - x,x-xmin)
-    xr = 40000.0
-    xl = -40000.0
-    
-    if (y >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betay_coe =  sinpi(0.5*(y-zs)/(24000.0-zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-    else
-        betay_coe = 0.0
-    end
-    #if (abs(x) <=xmin)
-      ctop= betay_coe#0.5*betay_coe
-    #else
-     # ctop = 0.0
-    #end 
-
-    if (x > xr)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxr_coe =  sinpi(0.5*(x-xr)/(xmax-xr))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-    else
-        betaxr_coe = 0.0
-    end
-
-    if (x < xl)#nsponge_points * dsy) #&& dbl >= 0.0)
-        betaxl_coe =  sinpi(0.5*(xl-x)/(xl-xmin))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
-    else
+    	betaxr_coe = 0.0
         betaxl_coe = 0.0
-    end
-    
-    cxr = 0.0*betaxr_coe#0.25*betaxr_coe
-    cxl = 0.0*betaxl_coe#0.25*betaxl_coe
-    ctop = 0.25*min(ctop,1)
-    cxr  = min(cxr,1)
-    cxl  = min(cxl,1)
-    cs = 1.0 - (1.0 -ctop)*(1.0-cxr)*(1.0 - cxl)
-    
-    #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
-    S[1] -= (cs)*(q[1])
-    S[2] -= (cs)*(q[2])
-    S[3] -= (cs)*(q[3])
-    S[4] -= (cs)*(q[4])
-    S[5] -= (cs)*(q[5])
-    S[6] -= (cs)*(q[6])
+        
+        cxr = 0.0*betaxr_coe
+        cxl = 0.0*betaxl_coe
+        cs  = 1.0 - (1.0 - ctop)*(1.0 - cxr)*(1.0 - cxl)
+        
+        S[1] -= (cs)*(q[1])
+        S[2] -= (cs)*(q[2])
+        S[3] -= (cs)*(q[3])
+        S[4] -= (cs)*(q[4])
+        S[5] -= (cs)*(q[5])
+        S[6] -= (cs)*(q[6])
+    end	 #sponge
+   
     return  S
 end
 

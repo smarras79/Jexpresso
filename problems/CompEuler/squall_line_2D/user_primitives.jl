@@ -29,17 +29,20 @@ end
 function user_uout!(ip, ET, uout, u, ue; mp=mp)
 
     uout[1] = u[1]
-    uout[2] = ue[2]
-    uout[3] = ue[3]
-    uout[4] = ue[4]
-    uout[5] = ue[5]
-    uout[6] = ue[6]
-    
-    uout[7]  = mp.Tabs[ip]
-    uout[8]  = mp.qn[ip]
-    uout[9]  = mp.qc[ip]
-    uout[10] = mp.qi[ip]
-    uout[11] = mp.qr[ip]
-    uout[12] = mp.qs[ip]
-    uout[13] = mp.qg[ip]
+    ρ = uout[1] + ue[1]
+    uout[2] = u[2]/ρ
+    uout[3] = u[3]/ρ
+    uout[4] = u[4]/ρ
+    uout[5] = u[5]/ρ
+    uout[6] = u[6]/ρ
+
+    if length(uout[:]) > 6
+        uout[7]  = mp.Tabs[ip]
+        uout[8]  = mp.qn[ip]
+        uout[9]  = mp.qc[ip]
+        uout[10] = mp.qi[ip]
+        uout[11] = mp.qr[ip]
+        uout[12] = mp.qs[ip]
+        uout[13] = mp.qg[ip]
+    end
 end
