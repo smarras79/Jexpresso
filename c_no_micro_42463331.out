@@ -1,0 +1,275 @@
+ERROR: Unable to locate a modulefile for 'lua/5.3.5'
+   Resolving package versions...
+      Compat entries added for 
+  No Changes to `/bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/Project.toml`
+  No Changes to `/bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/Manifest.toml`
+Precompiling project...
+  12618.9 ms  ? Jexpresso
+┌ Info: MPI implementation identified
+│   libmpi = "libmpi"
+│   version_string = "Open MPI v4.1.2, package: Open MPI root@borah-hn001 Distribution, ident: 4.1.2, repo rev: v4.1.2, Nov 24, 2021\0"
+│   impl = "OpenMPI"
+│   version = v"4.1.2"
+└   abi = "OpenMPI"
+┌ Info: MPIPreferences unchanged
+│   binary = "system"
+│   libmpi = "libmpi"
+│   abi = "OpenMPI"
+│   mpiexec = "mpiexec"
+│   preloads = Any[]
+└   preloads_env_switch = nothing
+Precompiling project...
+  12482.3 ms  ? Jexpresso
+[34m #--------------------------------------------------------------------------------
+[39m[34m # Welcome to [31mjexpresso
+[34m[39m[34m # A Julia code to solve conservation laws with continuous spectral elements
+[39m[34m #--------------------------------------------------------------------------------
+[39m[32m # Read inputs dict from /bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/problems/equations/CompEuler/c_no_micro/user_inputs.jl ... 
+[39m[33m┌[0m[33m────────────────────────────[0m[33m┬[0m[33m──────────────────────────────────────────────────[0m
+[33m│[0m[1m                       Keys [0m[33m│[0m[1m                                                [0m ⋯
+[33m│[0m[90m                     Symbol [0m[33m│[0m[90m                                                [0m ⋯
+[33m├[0m[33m────────────────────────────[0m[33m┼[0m[33m──────────────────────────────────────────────────[0m
+[33m│[0m                       case [33m│[0m                                                 ⋯
+[33m│[0m       diagnostics_at_times [33m│[0m                                                 ⋯
+[33m│[0m                filter_type [33m│[0m                                                 ⋯
+[33m│[0m              gmsh_filename [33m│[0m                                                 ⋯
+[33m│[0m        interpolation_nodes [33m│[0m                                                 ⋯
+[33m│[0m            ivisc_equations [33m│[0m                                                 ⋯
+[33m│[0m                    lfilter [33m│[0m                                                 ⋯
+[33m│[0m                     lmoist [33m│[0m                                                 ⋯
+[33m│[0m               loutput_pert [33m│[0m                                                 ⋯
+[33m│[0m          loverwrite_output [33m│[0m                                                 ⋯
+[33m│[0m                    lprecip [33m│[0m                                                 ⋯
+[33m│[0m                 lread_gmsh [33m│[0m                                                 ⋯
+[33m│[0m                    lsource [33m│[0m                                                 ⋯
+[33m│[0m                      lvisc [33m│[0m                                                 ⋯
+[33m│[0m                       mu_x [33m│[0m                                                 ⋯
+[33m│[0m             ⋮              [33m│[0m                                                 ⋱
+[33m└[0m[33m────────────────────────────[0m[33m┴[0m[33m──────────────────────────────────────────────────[0m
+[36m                                                    1 column and 11 rows omitted[0m
+[32m # Read inputs dict from /bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/problems/equations/CompEuler/c_no_micro/user_inputs.jl ... DONE
+[39m # Read gmsh grid and populate with high-order points 
+Info    : Reading './meshes/gmsh_grids/c_4.msh'...
+Info    : 9 entities
+Info    : 98 nodes
+Info    : 120 elements
+Info    : Done reading './meshes/gmsh_grids/c_4.msh'
+Info    : Reading './meshes/gmsh_grids/c_4.msh'...
+Info    : Reading './meshes/gmsh_grids/c_4.msh'...
+Info    : 9 entities
+Info    : 98 nodes
+Info    : 120 elements
+Info    : Done reading './meshes/gmsh_grids/c_4.msh'
+Info    : 9 entities
+Info    : 98 nodes
+Info    : 120 elements
+Info    : Done reading './meshes/gmsh_grids/c_4.msh'
+Info    : Reading './meshes/gmsh_grids/c_4.msh'...
+Info    : Reading './meshes/gmsh_grids/c_4.msh'...
+Info    : 9 entities
+Info    : 98 nodes
+Info    : 120 elements
+Info    : Done reading './meshes/gmsh_grids/c_4.msh'
+Info    : 9 entities
+Info    : 98 nodes
+Info    : 120 elements
+Info    : Done reading './meshes/gmsh_grids/c_4.msh'
+Info    : Reading './meshes/gmsh_grids/c_4.msh'...
+Info    : Reading './meshes/gmsh_grids/c_4.msh'...
+Info    : 9 entities
+Info    : 98 nodes
+Info    : 120 elements
+Info    : Done reading './meshes/gmsh_grids/c_4.msh'
+Info    : 9 entities
+Info    : 98 nodes
+Info    : 120 elements
+Info    : Done reading './meshes/gmsh_grids/c_4.msh'
+Info    : Reading './meshes/gmsh_grids/c_4.msh'...
+Info    : 9 entities
+Info    : 98 nodes
+Info    : 120 elements
+Info    : Done reading './meshes/gmsh_grids/c_4.msh'
+ # GMSH LINEAR GRID PROPERTIES
+ # N. Global points         : 142
+ # N. Global elements       : 78
+ # N. Global edges          : 212
+ # N. Global faces          : 78
+ # GMSH LINEAR GRID PROPERTIES ...................... END
+ # GMSH HIGH-ORDER GRID PROPERTIES
+ # N. edges internal points         : 636
+ # N. faces internal points         : 702
+ # N. volumes internal points       : 702
+ # N. total high order points       : 1480
+ # N. max high order points         : 197, 7
+ # GMSH HIGH-ORDER GRID PROPERTIES ...................... END
+ # Compute LGL nodes ........................
+ # ξ, ω =:  -1.0 0.1
+ # ξ, ω =:  -0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  0.0 0.7111111111111111
+ # ξ, ω =:  0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  1.0 0.1
+ # Compute LGL nodes ........................ DONE
+ # POPULATE GRID with SPECTRAL NODES ............................ 
+ # POPULATE GRID with SPECTRAL NODES ............................ EDGES
+ # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE
+ # POPULATE GRID with SPECTRAL NODES ............................ FACES
+ # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE
+ # Load balance (min/avg/max ratio)   : 0.8426395939086294 / 0.8955016721026092 / 0.9470899470899471
+ # Read gmsh grid and populate with high-order points ........................ DONE
+ # 
+ # ELEMENT SIZES:
+ #   The smallest element has size: 4000.00000000389 and effective resolution 1000.0000000009725
+ #   The biggest  element has size: 4000.000000028434 and effective resolution 1000.0000000071085
+ # 
+ # Compute LGL nodes ........................
+ # ξ, ω =:  -1.0 0.1
+ # ξ, ω =:  -0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  0.0 0.7111111111111111
+ # ξ, ω =:  0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  1.0 0.1
+ # Compute LGL nodes ........................ DONE
+ # Compute LG nodes ........................
+ # ξ, ω =:  -0.906179845938664 0.2369268850561891
+ # ξ, ω =:  -0.5384693101056831 0.4786286704993664
+ # ξ, ω =:  0.0 0.5688888888888889
+ # ξ, ω =:  0.5384693101056831 0.4786286704993664
+ # ξ, ω =:  0.906179845938664 0.2369268850561891
+ # Compute LG nodes ........................ DONE
+[ Info:  Build interpolation bases ......
+[ Info:  Build interpolation bases ...... END
+[ Info: Legendre filter
+[ Info: erf filtering on
+[ Info: Legendre filter
+[ Info: erf filtering on
+[ Info:  Build metrics ......
+  3.334554 seconds (4.23 M allocations: 206.843 MiB, 99.88% compilation time)
+  3.357588 seconds (4.23 M allocations: 206.779 MiB, 99.89% compilation time)
+  3.329139 seconds (4.23 M allocations: 206.846 MiB, 99.88% compilation time)
+  3.359671 seconds (4.23 M allocations: 206.841 MiB, 99.89% compilation time)
+  3.412893 seconds (4.23 M allocations: 206.849 MiB, 99.88% compilation time)
+  3.466192 seconds (4.23 M allocations: 206.852 MiB, 99.88% compilation time)
+  3.485766 seconds (4.23 M allocations: 206.789 MiB, 99.88% compilation time)
+  3.504925 seconds (4.23 M allocations: 206.762 MiB, 99.88% compilation time)
+[ Info:  Build metrics ...... END
+[ Info:  Build periodicity infrastructure ......
+[ Info:  Matrix wrapper ......
+  0.052904 seconds (59.05 k allocations: 3.037 MiB, 99.41% compilation time)
+  0.052089 seconds (59.05 k allocations: 3.037 MiB, 99.44% compilation time)
+  0.052740 seconds (59.05 k allocations: 3.037 MiB, 99.44% compilation time)
+  0.052093 seconds (59.05 k allocations: 3.037 MiB, 99.48% compilation time)
+  0.053042 seconds (59.05 k allocations: 3.037 MiB, 99.42% compilation time)
+  0.054283 seconds (59.05 k allocations: 3.037 MiB, 99.43% compilation time)
+  0.054219 seconds (59.05 k allocations: 3.037 MiB, 99.46% compilation time)
+  0.052679 seconds (59.05 k allocations: 3.037 MiB, 99.42% compilation time)
+[ Info:  Matrix wrapper ...... END
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: Reading sounding from: ./data_files/no_micro.data
+[ Info: Starting iterative hydrostatic balance correction...
+[ Info: Hydrostatic balance converged after 2 iterations (max correction: 0.0 Pa)
+[ Info: Pressure range: 3086.9228794053056 to 100000.0 Pa
+[ Info: Interpolated sounding to 189 grid points
+[ Info: Bubble parameters:
+[ Info:   Center: (x,y) = (0.0, 2500.0) m
+[ Info:   Radius: 2000.0 m
+[ Info:   θ perturbation: 3.0 K
+[ Info: Initialization complete!
+[ Info:   ρ range: 0.32333051216071346 to 1.1498456065054898
+[ Info:   θ range: 303.025079 to 343.71200800074945
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: === BUBBLE DIAGNOSTIC ===
+[ Info: GLOBAL Domain X range: -50000.0 to 50000.0
+[ Info: GLOBAL Domain Y range: 0.0 to 24000.0
+[ Info: Bubble center: x=0, y=2500
+[ Info: ✅ Bubble region EXISTS in the mesh
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  # COMPUTE conformity4ncf_q!
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  # COMPUTE conformity4ncf_q! .... END
+ # Build arrays and params ................................ 
+┌ Info:  
+│   inputs[:ode_solver] = CarpenterKennedy2N54(; stage_limiter! = trivial_limiter!, step_limiter! = trivial_limiter!, thread = static(false), williamson_condition = true,)
+│   inputs[:tinit] = 0.0
+│   inputs[:tend] = 43200.0
+└   inputs[:Δt] = 0.01
+ # Build arrays and params ................................ DONE
+ # Solving ODE  ................................ 
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+ # Write initial condition to Main.Jexpresso.VTK .........
+ # writing ./c/CompEuler/c_no_micro/output/iter0.vtu at t=0.0 s... DONE
+ # Write initial condition to Main.Jexpresso.VTK ......... END
+slurmstepd: error: *** JOB 2463331 ON cpu107 CANCELLED AT 2026-01-07T19:23:10 ***

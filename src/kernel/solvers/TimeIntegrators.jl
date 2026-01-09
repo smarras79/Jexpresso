@@ -50,7 +50,7 @@ function time_loop!(inputs, params, u)
             end
         end
         MPI.Barrier(comm)
-        write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
+        write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx-1,
                         integrator.p.mesh, integrator.p.mp,
                         integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
                         integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
@@ -98,7 +98,7 @@ function time_loop!(inputs, params, u)
                        integrator,
                        params.SD; visc=inputs[:μ])
             
-            write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
+            write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx-1,
                          integrator.p.mesh, integrator.p.mp,
                          integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
                          integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
@@ -121,7 +121,7 @@ function time_loop!(inputs, params, u)
     #
     # Write initial conditions:
     #
-    idx  = (inputs[:tinit] == 0.0) ? 0 : findfirst(x -> x == inputs[:tinit], dosetimes)
+   #= idx  = (inputs[:tinit] == 0.0) ? 0 : findfirst(x -> x == inputs[:tinit], dosetimes)
     if idx ≠ nothing
         if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
         write_output(params.SD, u, params.uaux, inputs[:tinit], idx,
@@ -133,8 +133,23 @@ function time_loop!(inputs, params, u)
                     inputs[:outformat];
                     nvar=params.qp.neqs, qexact=params.qp.qe)
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
+    end=#
+    # Find the index of tinit in dosetimes
+    idx = findfirst(x -> x == inputs[:tinit], dosetimes)
+
+    if idx !== nothing
+        if rank == 0 println(" # Write initial condition to ",  typeof(inputs[:outformat]), " .........") end
+        write_output(params.SD, u, params.uaux, inputs[:tinit], idx-1,
+                    params.mesh, params.mp,
+                    params.connijk_original, params.poin_in_bdy_face_original,
+                    params.x_original, params.y_original, params.z_original,
+                    inputs[:output_dir], inputs,
+                    params.qp.qvars, params.qp.qoutvars,
+                    inputs[:outformat];
+                    nvar=params.qp.neqs, qexact=params.qp.qe)
+        if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     end
-    
+        
     #
     # Simulation
     #

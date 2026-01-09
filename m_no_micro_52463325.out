@@ -1,0 +1,955 @@
+ERROR: Unable to locate a modulefile for 'lua/5.3.5'
+   Resolving package versions...
+      Compat entries added for 
+  No Changes to `/bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/Project.toml`
+  No Changes to `/bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/Manifest.toml`
+Precompiling project...
+  12830.8 ms  ? Jexpresso
+┌ Info: MPI implementation identified
+│   libmpi = "libmpi"
+│   version_string = "Open MPI v4.1.2, package: Open MPI root@borah-hn001 Distribution, ident: 4.1.2, repo rev: v4.1.2, Nov 24, 2021\0"
+│   impl = "OpenMPI"
+│   version = v"4.1.2"
+└   abi = "OpenMPI"
+┌ Info: MPIPreferences unchanged
+│   binary = "system"
+│   libmpi = "libmpi"
+│   abi = "OpenMPI"
+│   mpiexec = "mpiexec"
+│   preloads = Any[]
+└   preloads_env_switch = nothing
+Precompiling project...
+  12633.4 ms  ? Jexpresso
+[34m #--------------------------------------------------------------------------------
+[39m[34m # Welcome to [31mjexpresso
+[34m[39m[34m # A Julia code to solve conservation laws with continuous spectral elements
+[39m[34m #--------------------------------------------------------------------------------
+[39m[32m # Read inputs dict from /bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/problems/equations/CompEuler/m_no_micro/user_inputs.jl ... 
+[39m[33m┌[0m[33m────────────────────────────[0m[33m┬[0m[33m──────────────────────────────────────────────────[0m
+[33m│[0m[1m                       Keys [0m[33m│[0m[1m                                                [0m ⋯
+[33m│[0m[90m                     Symbol [0m[33m│[0m[90m                                                [0m ⋯
+[33m├[0m[33m────────────────────────────[0m[33m┼[0m[33m──────────────────────────────────────────────────[0m
+[33m│[0m                       case [33m│[0m                                                 ⋯
+[33m│[0m       diagnostics_at_times [33m│[0m                                                 ⋯
+[33m│[0m                filter_type [33m│[0m                                                 ⋯
+[33m│[0m              gmsh_filename [33m│[0m                                                 ⋯
+[33m│[0m        interpolation_nodes [33m│[0m                                                 ⋯
+[33m│[0m            ivisc_equations [33m│[0m                                                 ⋯
+[33m│[0m                    lfilter [33m│[0m                                                 ⋯
+[33m│[0m               loutput_pert [33m│[0m                                                 ⋯
+[33m│[0m          loverwrite_output [33m│[0m                                                 ⋯
+[33m│[0m                 lread_gmsh [33m│[0m                                                 ⋯
+[33m│[0m                    lsource [33m│[0m                                                 ⋯
+[33m│[0m                      lvisc [33m│[0m                                                 ⋯
+[33m│[0m                       mu_x [33m│[0m                                                 ⋯
+[33m│[0m                       mu_y [33m│[0m                                                 ⋯
+[33m│[0m                        nop [33m│[0m                                                 ⋯
+[33m│[0m             ⋮              [33m│[0m                                                 ⋱
+[33m└[0m[33m────────────────────────────[0m[33m┴[0m[33m──────────────────────────────────────────────────[0m
+[36m                                                     1 column and 9 rows omitted[0m
+[32m # Read inputs dict from /bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/problems/equations/CompEuler/m_no_micro/user_inputs.jl ... DONE
+[39m # Read gmsh grid and populate with high-order points 
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+ # GMSH LINEAR GRID PROPERTIES
+ # N. Global points         : 837
+ # N. Global elements       : 300
+ # N. Global edges          : 1040
+ # N. Global faces          : 300
+ # GMSH LINEAR GRID PROPERTIES ...................... END
+ # GMSH HIGH-ORDER GRID PROPERTIES
+ # N. edges internal points         : 3120
+ # N. faces internal points         : 2700
+ # N. volumes internal points       : 2700
+ # N. total high order points       : 6657
+ # N. max high order points         : 170, 42
+ # GMSH HIGH-ORDER GRID PROPERTIES ...................... END
+ # Compute LGL nodes ........................
+ # ξ, ω =:  -1.0 0.1
+ # ξ, ω =:  -0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  0.0 0.7111111111111111
+ # ξ, ω =:  0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  1.0 0.1
+ # Compute LGL nodes ........................ DONE
+ # POPULATE GRID with SPECTRAL NODES ............................ 
+ # POPULATE GRID with SPECTRAL NODES ............................ EDGES
+ # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE
+ # POPULATE GRID with SPECTRAL NODES ............................ FACES
+ # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE
+ # Load balance (min/avg/max ratio)   : 0.5609756097560976 / 0.7482816791571025 / 0.9316239316239316
+ # Read gmsh grid and populate with high-order points ........................ DONE
+ # 
+ # ELEMENT SIZES:
+ #   The smallest element has size: 1999.9999999924403 and effective resolution 499.99999999811007
+ #   The biggest  element has size: 2000.0000000044893 and effective resolution 500.0000000011223
+ # 
+ # Compute LGL nodes ........................
+ # ξ, ω =:  -1.0 0.1
+ # ξ, ω =:  -0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  0.0 0.7111111111111111
+ # ξ, ω =:  0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  1.0 0.1
+ # Compute LGL nodes ........................ DONE
+ # Compute LG nodes ........................
+ # ξ, ω =:  -0.906179845938664 0.2369268850561891
+ # ξ, ω =:  -0.5384693101056831 0.4786286704993664
+ # ξ, ω =:  0.0 0.5688888888888889
+ # ξ, ω =:  0.5384693101056831 0.4786286704993664
+ # ξ, ω =:  0.906179845938664 0.2369268850561891
+ # Compute LG nodes ........................ DONE
+[ Info:  Build interpolation bases ......
+[ Info:  Build interpolation bases ...... END
+[ Info: Legendre filter
+[ Info: erf filtering on
+[ Info: Legendre filter
+[ Info: erf filtering on
+[ Info:  Build metrics ......
+  4.336226 seconds (4.21 M allocations: 206.010 MiB, 99.91% compilation time)
+  4.356768 seconds (4.21 M allocations: 206.010 MiB, 99.90% compilation time)
+  4.378893 seconds (4.21 M allocations: 206.010 MiB, 99.91% compilation time)
+  4.353875 seconds (4.21 M allocations: 206.075 MiB, 99.90% compilation time)
+  4.373290 seconds (4.21 M allocations: 206.010 MiB, 99.91% compilation time)
+  4.399717 seconds (4.22 M allocations: 206.582 MiB, 99.90% compilation time)
+  4.401401 seconds (4.22 M allocations: 206.588 MiB, 99.90% compilation time)
+  4.410596 seconds (4.22 M allocations: 206.582 MiB, 99.90% compilation time)
+  4.332965 seconds (4.21 M allocations: 206.010 MiB, 99.91% compilation time)
+  4.261296 seconds (4.21 M allocations: 206.011 MiB, 99.91% compilation time)
+  4.291627 seconds (4.21 M allocations: 206.010 MiB, 99.90% compilation time)
+  4.302388 seconds (4.21 M allocations: 206.011 MiB, 99.90% compilation time)
+  4.329954 seconds (4.22 M allocations: 206.586 MiB, 99.90% compilation time)
+  4.308531 seconds (4.22 M allocations: 206.583 MiB, 99.90% compilation time)
+  4.294502 seconds (4.21 M allocations: 206.076 MiB, 99.90% compilation time)
+  4.250934 seconds (4.21 M allocations: 206.010 MiB, 99.90% compilation time)
+  4.336315 seconds (4.22 M allocations: 206.645 MiB, 99.89% compilation time)
+  4.286235 seconds (4.22 M allocations: 206.644 MiB, 99.89% compilation time)
+  4.266898 seconds (4.21 M allocations: 206.010 MiB, 99.91% compilation time)
+  4.306537 seconds (4.21 M allocations: 206.010 MiB, 99.91% compilation time)
+  4.320625 seconds (4.21 M allocations: 206.010 MiB, 99.91% compilation time)
+  4.333651 seconds (4.22 M allocations: 206.649 MiB, 99.89% compilation time)
+  4.354626 seconds (4.22 M allocations: 206.648 MiB, 99.89% compilation time)
+  4.308123 seconds (4.22 M allocations: 206.582 MiB, 99.90% compilation time)
+  4.333960 seconds (4.22 M allocations: 206.588 MiB, 99.90% compilation time)
+  4.316616 seconds (4.22 M allocations: 206.646 MiB, 99.89% compilation time)
+  4.299115 seconds (4.22 M allocations: 206.589 MiB, 99.90% compilation time)
+  4.340765 seconds (4.22 M allocations: 206.587 MiB, 99.90% compilation time)
+  4.315744 seconds (4.22 M allocations: 206.584 MiB, 99.90% compilation time)
+  4.319639 seconds (4.22 M allocations: 206.649 MiB, 99.89% compilation time)
+  4.321273 seconds (4.22 M allocations: 206.580 MiB, 99.90% compilation time)
+  4.300935 seconds (4.22 M allocations: 206.582 MiB, 99.90% compilation time)
+  4.275796 seconds (4.22 M allocations: 206.579 MiB, 99.90% compilation time)
+  4.339098 seconds (4.22 M allocations: 206.582 MiB, 99.90% compilation time)
+  4.289468 seconds (4.22 M allocations: 206.579 MiB, 99.90% compilation time)
+  4.329474 seconds (4.22 M allocations: 206.590 MiB, 99.90% compilation time)
+  4.327497 seconds (4.21 M allocations: 206.014 MiB, 99.91% compilation time)
+  4.352115 seconds (4.22 M allocations: 206.584 MiB, 99.90% compilation time)
+  4.342677 seconds (4.22 M allocations: 206.579 MiB, 99.90% compilation time)
+  4.352765 seconds (4.22 M allocations: 206.589 MiB, 99.90% compilation time)
+  4.344913 seconds (4.22 M allocations: 206.654 MiB, 99.89% compilation time)
+  4.352549 seconds (4.22 M allocations: 206.586 MiB, 99.90% compilation time)
+  4.539145 seconds (4.22 M allocations: 206.645 MiB, 99.90% compilation time)
+  4.398171 seconds (4.21 M allocations: 206.079 MiB, 99.90% compilation time)
+  4.527074 seconds (4.21 M allocations: 206.010 MiB, 99.91% compilation time)
+  4.576664 seconds (4.22 M allocations: 206.588 MiB, 99.90% compilation time)
+  4.546928 seconds (4.22 M allocations: 206.646 MiB, 99.90% compilation time)
+  4.493350 seconds (4.22 M allocations: 206.493 MiB, 99.90% compilation time)
+[ Info:  Build metrics ...... END
+[ Info:  Build periodicity infrastructure ......
+[ Info:  Matrix wrapper ......
+  0.068984 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.069055 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.069310 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.069644 seconds (59.05 k allocations: 3.037 MiB, 99.62% compilation time)
+  0.068891 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.069330 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.067715 seconds (59.05 k allocations: 3.037 MiB, 99.64% compilation time)
+  0.070497 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.069600 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.069898 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.069216 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.067417 seconds (59.05 k allocations: 3.037 MiB, 99.62% compilation time)
+  0.068269 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.068550 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068766 seconds (59.05 k allocations: 3.037 MiB, 99.67% compilation time)
+  0.068319 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068584 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068407 seconds (59.05 k allocations: 3.037 MiB, 99.58% compilation time)
+  0.067905 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.068715 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068490 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.067970 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068048 seconds (59.05 k allocations: 3.037 MiB, 99.58% compilation time)
+  0.067433 seconds (59.05 k allocations: 3.037 MiB, 99.59% compilation time)
+  0.068010 seconds (59.05 k allocations: 3.037 MiB, 99.63% compilation time)
+  0.067162 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.067640 seconds (59.05 k allocations: 3.037 MiB, 99.59% compilation time)
+  0.067331 seconds (59.05 k allocations: 3.037 MiB, 99.64% compilation time)
+  0.067309 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.067624 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.067457 seconds (59.05 k allocations: 3.037 MiB, 99.63% compilation time)
+  0.067908 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.067651 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.067763 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.067442 seconds (59.05 k allocations: 3.037 MiB, 99.64% compilation time)
+  0.068811 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068102 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.067909 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068072 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068002 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.067815 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.067738 seconds (59.05 k allocations: 3.037 MiB, 99.64% compilation time)
+  0.073684 seconds (59.05 k allocations: 3.037 MiB, 99.59% compilation time)
+  0.068760 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.068882 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068150 seconds (59.05 k allocations: 3.037 MiB, 99.59% compilation time)
+  0.069221 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.063599 seconds (59.05 k allocations: 3.037 MiB, 99.64% compilation time)
+[ Info:  Matrix wrapper ...... END
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: Reading sounding from: ./data_files/no_micro.data
+[ Info: Starting iterative hydrostatic balance correction...
+[ Info: Hydrostatic balance converged after 2 iterations (max correction: 0.0 Pa)
+[ Info: Pressure range: 3086.9228794053056 to 100000.0 Pa
+[ Info: Interpolated sounding to 133 grid points
+[ Info: Bubble parameters:
+[ Info:   Center: (x,y) = (0.0, 2500.0) m
+[ Info:   Radius: 2000.0 m
+[ Info:   θ perturbation: 3.0 K
+[ Info: Initialization complete!
+[ Info:   ρ range: 0.0495679256372618 to 0.125671819449472
+[ Info:   θ range: 451.728902000279 to 585.949386
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: === BUBBLE DIAGNOSTIC ===
+[ Info: GLOBAL Domain X range: -50000.0 to 50000.0
+[ Info: GLOBAL Domain Y range: 0.0 to 24000.0
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info: Bubble center: x=0, y=2500
+[ Info: ✅ Bubble region EXISTS in the mesh
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  # COMPUTE conformity4ncf_q!
+[ Info:  # COMPUTE conformity4ncf_q! .... END
+ # Build arrays and params ................................ 
+┌ Info:  
+│   inputs[:ode_solver] = CarpenterKennedy2N54(; stage_limiter! = trivial_limiter!, step_limiter! = trivial_limiter!, thread = static(false), williamson_condition = true,)
+│   inputs[:tinit] = 0.0
+│   inputs[:tend] = 43200.0
+└   inputs[:Δt] = 0.01
+ # Build arrays and params ................................ DONE
+ # Solving ODE  ................................ 
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+ # Write initial condition to Main.Jexpresso.VTK .........
+ # writing ./m_4_no_4/CompEuler/m_no_micro/output/iter0.vtu at t=0.0 s... DONE
+ # Write initial condition to Main.Jexpresso.VTK ......... END
+slurmstepd: error: *** JOB 2463325 ON cpu107 CANCELLED AT 2026-01-07T19:04:13 ***

@@ -1,94 +1,72 @@
-# Import necessary packages
-using Roots
+using Roots  # (Assuming needed elsewhere; not used here)
 
-function warp_mesh!(mesh,inputs)
+function warp_mesh!(mesh, inputs)
+    """
+    Warp a 2D mesh to follow terrain
+    GMSH 2D mesh has: x (horizontal), y (vertical)
+    """
+    
     am = inputs[:a_mount]
     hm = inputs[:h_mount]
     xc = inputs[:c_mount]
-    ztop = maximum(mesh.y)
-    zsurf = zeros(Float64,mesh.npoin)
-    sigma = zeros(Float64,mesh.npoin)
-    for i=1:mesh.npoin
-        sigma[i] = mesh.z[i]
-        
-        z = (ztop - zsurf[i])/ztop * sigma[i] + zsurf[i]
-        
-        mesh.z[i] = z
-    end
-    if (inputs[:mount_type] == "agnesi")
-        am = inputs[:a_mount]
-        hm = inputs[:h_mount]
-        xc = inputs[:c_mount]
-        for ip = 1:mesh.npoin
-            x = mesh.x[ip]
-            zsurf[ip] = hm*am*am/((x-xc)*(x-xc) + am*am)
-            #zsurf[ip] = hm/(1+ ((x-xc)/am)^2)
-        end
-    elseif (inputs[:mount_type] == "schar")
-        ac = inputs[:a_mount]
-        hc = inputs[:h_mount]
-        lambdac = inputs[:lambda_mount]
-        for ip = 1:mesh.npoin
-            x = mesh.x[ip]
-            zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2 
-        end
-    end
     
-    if inputs[:lstretch]
+    # Get GLOBAL domain top (critical for parallel runs!)
+    ytop_local = maximum(mesh.y)
+    ytop = MPI.Allreduce(ytop_local, MPI.MAX, MPI.COMM_WORLD)  # Global max
+    
+    # Compute surface elevation
+    ysurf = zeros(Float64, mesh.npoin)
+    
+    if inputs[:mount_type] == "gauss"
         for ip = 1:mesh.npoin
-            stretching_factor = inputs[:stretch_factor]
-            sigma = mesh.y[ip]
-
-            # Normalize the sigma coordinate to the range [0, 1]
-            sigma_normalized = sigma / ztop
-
-            # Apply the non-linear power-law stretching function.
-            # This maps the uniform [0, 1] grid to a stretched [0, 1] grid where points
-            # are concentrated towards 0.
-            z_normalized = sigma_normalized ^ stretching_factor
-
-            # Map the stretched, normalized coordinate back to the physical z-domain,
-            # which spans from the bottom surface zsurf[ip] to the domain top ztop.
-            z = zsurf[ip] + z_normalized * (ztop - zsurf[ip])
-
-            # Update the grid point's vertical position with the new stretched value.
-            mesh.y[ip] = z
+            x = mesh.x[ip]
+            ysurf[ip] = hm * exp(-((x - xc)^2 / (am^2)))
+        end
+    elseif inputs[:mount_type] == "agnesi"
+        for ip = 1:mesh.npoin
+            x = mesh.x[ip]
+            ysurf[ip] = hm * am * am / ((x - xc) * (x - xc) + am * am)
         end
     else
-        for ip = 1:mesh.npoin
-            sigma[ip] = mesh.y[ip]
-            #if (mesh.y[ip] < 10000.0)  
-            z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-            mesh.y[ip] = z
-            #=elseif (mesh.y[ip] < 15000.0)
-            factor = (15000-mesh.y[ip])/5000.0
-            z = (ztop - factor*zsurf[ip])/ztop * sigma[ip] + factor*zsurf[ip]
-            mesh.y[ip] = z 
-            end=#
-        end
+        ysurf .= 0.0
     end
     
+    # Apply terrain-following transformation
+    for ip = 1:mesh.npoin
+        sigma = mesh.y[ip]
+        y_new = ysurf[ip] + (sigma / ytop) * (ytop - ysurf[ip])
+        mesh.y[ip] = y_new
+    end
     
-    #=for iedge = 1:size(mesh.bdy_edge_in_elem,1)
-    iel = mesh.bdy_edge_in_elem[iedge]
-    comp = mesh.bdy_edge_comp[iedge]
-    for k=1:mesh.ngl
-    #if (mesh.bdy_edge_type[iedge] == "free_slip")
-    tag = mesh.bdy_edge_type[iedge]
-    ip = mesh.poin_in_bdy_edge[iedge,k]
-    @info "prewarp", mesh.y[ip]
-    if (mesh.y[ip] < 10.0)
-    mesh.y[ip] = (hm*(am^2))/((mesh.x[ip]-xc)^2 + am^2)
-    end
-    @info "postwarp", mesh.y[ip]
-    #end
-    end
-    end=#
+    # Report statistics (each processor reports its local max)
+    max_surf_local = maximum(ysurf)
+    @info "Mesh warping complete:"
+    @info "  Mountain type: $(inputs[:mount_type])"
+    @info "  Mountain height: $(hm) m"
+    @info "  Mountain width: $(2*am) m"
+    @info "  Max surface elevation (local): $(max_surf_local) m"
+    @info "  Domain top (global): $(ytop) m"
+    
+    return nothing
 end
 
-function warp_mesh_3D!(mesh,inputs)
-    if (inputs[:mount_type] == "real topography")
-        # find surface heights by reading and interpolating real data onto grid
+
+
+
+
+
+
+function warp_mesh_3D!(mesh, inputs)
+    # Hoist common params (with defaults if missing)
+    am = get(inputs, :a_mount, mesh.xmax - mesh.xmin)
+    hm = get(inputs, :h_mount, 0.0)
+    xc = get(inputs, :c_mount, 0.0)
+    ztop = mesh.zmax
+    zsurf = zeros(Float64, mesh.npoin)
+    sigma = zeros(Float64, mesh.npoin)  # Always init
+    
+    if inputs[:mount_type] == "real topography"
+        # Find surface heights by reading and interpolating real data onto grid
         fname = inputs[:topo_database]
         fname2 = inputs[:topo_geoid]
         lat_min = inputs[:read_topo_latmin]
@@ -96,63 +74,48 @@ function warp_mesh_3D!(mesh,inputs)
         lon_min = inputs[:read_topo_lonmin]
         lon_max = inputs[:read_topo_lonmax]
         zone = inputs[:read_topo_zone]
-        xmin = mesh.xmax
+        xmin = mesh.xmin  # Fixed typo
         xmax = mesh.xmax
-        ymin = mesh.ymax
+        ymin = mesh.ymin  # Fixed typo
         ymax = mesh.ymax
         lat, lon, z_topo = extract_region_topography_from_global_data(fname, fname2, lat_max, lon_max, lat_min, lon_min)
         
-        x_topo, y_topo = Map_lat_lon_onto_simulation_domain(lat,lon,xmin,xmax,ymin,ymax,zone)
-        zsurf = zeros(mesh.npoin)
+        x_topo, y_topo = Map_lat_lon_onto_simulation_domain(lat, lon, xmin, xmax, ymin, ymax, zone)
         
         interpolate_topography_onto_grid!(mesh.x, mesh.y, zsurf, x_topo, y_topo, z_topo)
         ### sigma coordinate topography
-        ztop = mesh.zmax
-        sigma = zeros(mesh.npoin)
         for ip = 1:mesh.npoin
             sigma[ip] = mesh.z[ip]
-            z_new = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
+            z_new = zsurf[ip] + (ztop - zsurf[ip]) / ztop * sigma[ip]  # Fixed order for consistency
             mesh.z[ip] = z_new
         end
+        return nothing  # Skip damping for real topo
 
-    elseif (inputs[:mount_type] == "agnesi")
-        zsurf = zeros(mesh.npoin)
-        sigma = zeros(mesh.npoin)
-        ztop = mesh.zmax
-        am = inputs[:a_mount]
-        hm = inputs[:h_mount]
-        xc = inputs[:c_mount]
+    elseif inputs[:mount_type] == "agnesi"
         for ip = 1:mesh.npoin
             x = mesh.x[ip]
-            zsurf[ip] = hm*am*am/((x-xc)*(x-xc) + am*am)
+            zsurf[ip] = hm * am * am / ((x - xc) * (x - xc) + am * am)
         end
         
-    elseif (inputs[:mount_type] == "sauer")
-        zsurf = zeros(mesh.npoin)
-        sigma = zeros(mesh.npoin)
-        ztop = mesh.zmax
-        #am = mesh.xmax - mesh.xmin
-	am = inputs[:a_mount]
-      	hm = inputs[:h_mount]
-        xc = inputs[:c_mount]
+    elseif inputs[:mount_type] == "gauss"
         for ip = 1:mesh.npoin
             x = mesh.x[ip]
-            ####zsurf[ip] = hm*(sech(x - xc)/am)^2 #not working
-            zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*(x)/am))
+            zsurf[ip] = hm * exp( -((x - xc)^2 / (am^2)) )  # Pure Gaussian
         end
         
-    elseif (inputs[:mount_type] == "LESICP")
-        zsurf = zeros(mesh.npoin)
-        sigma = zeros(mesh.npoin)
-        ztop = mesh.zmax
-        am = mesh.xmax - mesh.xmin
-      	hm = inputs[:h_mount]
+    elseif inputs[:mount_type] == "sauer"
         for ip = 1:mesh.npoin
             x = mesh.x[ip]
-            zsurf[ip] = 0.5*hm*(1.0 - cospi(2.0*x/am))
+            zsurf[ip] = 0.5 * hm * (1.0 - cospi(2.0 * (x - xc) / am))  # Added xc shift for centering
+        end
+        
+    elseif inputs[:mount_type] == "LESICP"
+        for ip = 1:mesh.npoin
+            x = mesh.x[ip]
+            zsurf[ip] = 0.5 * hm * (1.0 - cospi(2.0 * (x - xc) / am))  # Added xc shift
         end
                 
-    elseif (inputs[:mount_type] == "schar")
+    elseif inputs[:mount_type] == "schar"
         ac = inputs[:a_mount]
         hc = inputs[:h_mount]
         lambdac = inputs[:lambda_mount]
@@ -160,36 +123,16 @@ function warp_mesh_3D!(mesh,inputs)
             x = mesh.x[ip]
             zsurf[ip] = hc * exp(-(x/ac)^2) * cospi(x/lambdac)^2
         end
-
-    #=elseif (inputs[:mount_type] == "stretching" || inputs[:mount_type] == "bl")
-
-         Yuo need to do detect the vertically aligned nodes to move. 
-        zsurf = zeros(mesh.npoin)
-        sigma = zeros(mesh.npoin)
-        ztop = mesh.zmax
         
-	dz1 = inputs[:a_mount]
-
-        stretching!(zsurf, ztop, dz1, mesh.npoin)
-       =#
+    else
+        zsurf .= 0.0  # Flat
     end
-
-    #=for ip = 1:mesh.npoin
-        sigma[ip] = mesh.z[ip]
-
-        factor = (ztop - mesh.z[ip])/ztop
-        
-        #z = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-        z = (ztop - factor*zsurf[ip])/ztop * sigma[ip] + factor*zsurf[ip]
-        
-        mesh.z[ip] = z
-    end=#
-
 
     # Parameters for damping control
     z_transition_start = inputs[:z_transition_start]  # Height where damping starts (30% of domain)
     z_transition_end = inputs[:z_transition_end]    # Height where grid becomes fully flat (60% of domain)
     
+    # Apply terrain-following warp with damping
     for ip = 1:mesh.npoin
         sigma[ip] = mesh.z[ip]
         
@@ -203,64 +146,17 @@ function warp_mesh_3D!(mesh,inputs)
             progress = (sigma[ip] - z_transition_start) / (z_transition_end - z_transition_start)
             
             # Cosine (or 'Raised Cosine') Damping Function
-            # This function smoothly transitions from 1.0 (at progress=0) to 0.0 (at progress=1)
             damping_factor = 0.5 * (1.0 + cospi(progress))
-
-            # Exponential damping (faster transition)
-            #damping_factor = exp(-0.25 * progress)
-
-            # Cubic damping (smoother)
-            #damping_factor = (1.0 - progress)^3
-
-            # Hyperbolic tangent (very smooth)
-            #damping_factor = 0.5 * (1.0 - tanh(5.0 * (progress - 0.5)))
-            
             
         elseif sigma[ip] > z_transition_end
             # No warping above transition end (fully flat)
             damping_factor = 0.0
-            # else: damping_factor remains 1.0 for sigma[ip] < z_transition_start
-        end
+        end  # Below start: full damping (1.0)
 
         mesh.z[ip] = sigma[ip] + damping_factor * (z_warped - sigma[ip])
-       
     end
     
-    #= Parameters for damping control (in normalized vertical coordinates) 
-    sigma_transition_start = 0  # Start damping at 30% of vertical domain
-    sigma_transition_end = 0.7    # Fully flat at 60% of vertical domain
-
-    for ip = 1:mesh.npoin
-        sigma[ip] = mesh.z[ip]
-        zbottom = zsurf[ip]
-        ztop    = mesh.zmax
-        
-        # Normalize sigma to [0,1] range
-        sigma_normalized = (sigma[ip] - zbottom) / (ztop - zbottom)
-        
-        # Calculate damping factor based on normalized vertical position
-        if sigma_normalized <= sigma_transition_start
-            # Full warping below transition start
-            damping_factor = 1.0
-        elseif sigma_normalized >= sigma_transition_end
-            # No warping (fully flat) above transition end
-            damping_factor = 0.0
-        else
-            # Smooth transition using cosine function
-            progress = (sigma_normalized - sigma_transition_start) / (sigma_transition_end - sigma_transition_start)
-            damping_factor = 0.5 * (1.0 + cospi(progress))
-        end
-        
-        # Original warped coordinate (follows topography)
-        z_warped = (ztop - zsurf[ip])/ztop * sigma[ip] + zsurf[ip]
-        
-        # Flat coordinate (horizontal levels, no topography influence)
-        z_flat = sigma[ip]
-        
-        # Blend warped and flat coordinates using damping factor
-        mesh.z[ip] = damping_factor * z_warped + (1.0 - damping_factor) * z_flat
-    end=#
-    
+    return nothing
 end
 
 function warp_phys_grid!(x,y,z,ncol,nlay)

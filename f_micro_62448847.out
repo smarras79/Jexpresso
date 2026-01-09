@@ -1,0 +1,345 @@
+ERROR: Unable to locate a modulefile for 'lua/5.3.5'
+   Resolving package versions...
+      Compat entries added for 
+  No Changes to `/bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/Project.toml`
+  No Changes to `/bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/Manifest.toml`
+Precompiling project...
+  12898.6 ms  ? Jexpresso
+┌ Info: MPI implementation identified
+│   libmpi = "libmpi"
+│   version_string = "Open MPI v4.1.2, package: Open MPI root@borah-hn001 Distribution, ident: 4.1.2, repo rev: v4.1.2, Nov 24, 2021\0"
+│   impl = "OpenMPI"
+│   version = v"4.1.2"
+└   abi = "OpenMPI"
+┌ Info: MPIPreferences unchanged
+│   binary = "system"
+│   libmpi = "libmpi"
+│   abi = "OpenMPI"
+│   mpiexec = "mpiexec"
+│   preloads = Any[]
+└   preloads_env_switch = nothing
+Precompiling project...
+    Jexpresso Being precompiled by another machine (hostname: cpu105, pid: 25763, pidfile: /bsuhome/olayemiadeyemi/.julia/compiled/v1.11/Jexpresso/0w0vX_KOAMo.ji.pidfile)
+  22947.8 ms  ✓ Jexpresso
+  1 dependency successfully precompiled in 30 seconds. 834 already precompiled.
+[34m #--------------------------------------------------------------------------------
+[39m[34m # Welcome to [31mjexpresso
+[34m[39m[34m # A Julia code to solve conservation laws with continuous spectral elements
+[39m[34m #--------------------------------------------------------------------------------
+[39m[32m # Read inputs dict from /bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/problems/equations/CompEuler/f_micro/user_inputs.jl ... 
+[39m[33m┌[0m[33m──────────────────────[0m[33m┬[0m[33m─────────────────────────────[0m[33m┐[0m
+[33m│[0m[1m                 Keys [0m[33m│[0m[1m                      Values [0m[33m│[0m
+[33m│[0m[90m               Symbol [0m[33m│[0m[90m                         Any [0m[33m│[0m
+[33m├[0m[33m──────────────────────[0m[33m┼[0m[33m─────────────────────────────[0m[33m┤[0m
+[33m│[0m        SOL_VARS_TYPE [33m│[0m                     TOTAL() [33m│[0m
+[33m│[0m              a_mount [33m│[0m                     10000.0 [33m│[0m
+[33m│[0m              c_mount [33m│[0m                         0.0 [33m│[0m
+[33m│[0m                 case [33m│[0m                         rtb [33m│[0m
+[33m│[0m diagnostics_at_times [33m│[0m           0.0:600.0:43200.0 [33m│[0m
+[33m│[0m          filter_type [33m│[0m                         erf [33m│[0m
+[33m│[0m        gmsh_filename [33m│[0m ./meshes/gmsh_grids/f_4.msh [33m│[0m
+[33m│[0m              h_mount [33m│[0m                       100.0 [33m│[0m
+[33m│[0m  interpolation_nodes [33m│[0m                         lgl [33m│[0m
+[33m│[0m              lfilter [33m│[0m                        true [33m│[0m
+[33m│[0m               lmoist [33m│[0m                        true [33m│[0m
+[33m│[0m         loutput_pert [33m│[0m                        true [33m│[0m
+[33m│[0m    loverwrite_output [33m│[0m                        true [33m│[0m
+[33m│[0m              lprecip [33m│[0m                        true [33m│[0m
+[33m│[0m           lread_gmsh [33m│[0m                        true [33m│[0m
+[33m│[0m          ⋮           [33m│[0m              ⋮              [33m│[0m
+[33m└[0m[33m──────────────────────[0m[33m┴[0m[33m─────────────────────────────[0m[33m┘[0m
+[36m                                       17 rows omitted[0m
+[32m # Read inputs dict from /bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/problems/equations/CompEuler/f_micro/user_inputs.jl ... DONE
+[39m # Read gmsh grid and populate with high-order points 
+Info    : Reading './meshes/gmsh_grids/f_4.msh'...
+Info    : Reading './meshes/gmsh_grids/f_4.msh'...
+Info    : Reading './meshes/gmsh_grids/f_4.msh'...
+Info    : 9 entities
+Info    : 1275 nodes
+Info    : 9 entities
+Info    : 1275 nodes
+Info    : 9 entities
+Info    : 1275 nodes
+Info    : Reading './meshes/gmsh_grids/f_4.msh'...
+Info    : 9 entities
+Info    : 1275 nodes
+Info    : 1352 elements
+Info    : 1352 elements
+Info    : Done reading './meshes/gmsh_grids/f_4.msh'
+Info    : 1352 elements
+Info    : Done reading './meshes/gmsh_grids/f_4.msh'
+Info    : 1352 elements
+Info    : Done reading './meshes/gmsh_grids/f_4.msh'
+Info    : Done reading './meshes/gmsh_grids/f_4.msh'
+Info    : Reading './meshes/gmsh_grids/f_4.msh'...
+Info    : Reading './meshes/gmsh_grids/f_4.msh'...
+Info    : 9 entities
+Info    : 1275 nodes
+Info    : 1352 elements
+Info    : Done reading './meshes/gmsh_grids/f_4.msh'
+Info    : 9 entities
+Info    : 1275 nodes
+Info    : 1352 elements
+Info    : Done reading './meshes/gmsh_grids/f_4.msh'
+Info    : Reading './meshes/gmsh_grids/f_4.msh'...
+Info    : 9 entities
+Info    : 1275 nodes
+Info    : 1352 elements
+Info    : Done reading './meshes/gmsh_grids/f_4.msh'
+Info    : Reading './meshes/gmsh_grids/f_4.msh'...
+Info    : 9 entities
+Info    : 1275 nodes
+Info    : 1352 elements
+Info    : Done reading './meshes/gmsh_grids/f_4.msh'
+ # GMSH LINEAR GRID PROPERTIES
+ # N. Global points         : 1429
+ # N. Global elements       : 1200
+ # N. Global edges          : 2621
+ # N. Global faces          : 1200
+ # GMSH LINEAR GRID PROPERTIES ...................... END
+ # GMSH HIGH-ORDER GRID PROPERTIES
+ # N. edges internal points         : 7863
+ # N. faces internal points         : 10800
+ # N. volumes internal points       : 10800
+ # N. total high order points       : 20092
+ # N. max high order points         : 2589, 0
+ # GMSH HIGH-ORDER GRID PROPERTIES ...................... END
+ # Compute LGL nodes ........................
+ # ξ, ω =:  -1.0 0.1
+ # ξ, ω =:  -0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  0.0 0.7111111111111111
+ # ξ, ω =:  0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  1.0 0.1
+ # Compute LGL nodes ........................ DONE
+ # POPULATE GRID with SPECTRAL NODES ............................ 
+ # POPULATE GRID with SPECTRAL NODES ............................ EDGES
+ # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE
+ # POPULATE GRID with SPECTRAL NODES ............................ FACES
+ # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE
+ # Load balance (min/avg/max ratio)   : 0.943993820007725 / 0.9704629991667777 / 0.9876444798724592
+ # Read gmsh grid and populate with high-order points ........................ DONE
+ # 
+ # ELEMENT SIZES:
+ #   The smallest element has size: 999.9999999967295 and effective resolution 249.99999999918236
+ #   The biggest  element has size: 1000.000000006512 and effective resolution 250.000000001628
+ # 
+ # Compute LGL nodes ........................
+ # ξ, ω =:  -1.0 0.1
+ # ξ, ω =:  -0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  0.0 0.7111111111111111
+ # ξ, ω =:  0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  1.0 0.1
+ # Compute LGL nodes ........................ DONE
+ # Compute LG nodes ........................
+ # ξ, ω =:  -0.906179845938664 0.2369268850561891
+ # ξ, ω =:  -0.5384693101056831 0.4786286704993664
+ # ξ, ω =:  0.0 0.5688888888888889
+ # ξ, ω =:  0.5384693101056831 0.4786286704993664
+ # ξ, ω =:  0.906179845938664 0.2369268850561891
+ # Compute LG nodes ........................ DONE
+[ Info:  Build interpolation bases ......
+[ Info:  Build interpolation bases ...... END
+[ Info: Legendre filter
+[ Info: erf filtering on
+[ Info: Legendre filter
+[ Info: erf filtering on
+[ Info:  Build metrics ......
+  3.476294 seconds (4.46 M allocations: 216.558 MiB, 99.09% compilation time)
+  3.480622 seconds (4.45 M allocations: 216.016 MiB, 99.13% compilation time)
+  3.491598 seconds (4.45 M allocations: 216.050 MiB, 99.15% compilation time)
+  3.510873 seconds (4.45 M allocations: 216.349 MiB, 99.10% compilation time)
+  3.511001 seconds (4.46 M allocations: 216.625 MiB, 99.14% compilation time)
+  3.512221 seconds (4.45 M allocations: 216.259 MiB, 99.16% compilation time)
+  3.506528 seconds (4.45 M allocations: 216.257 MiB, 99.16% compilation time)
+  3.578447 seconds (4.46 M allocations: 216.579 MiB, 99.09% compilation time)
+[ Info:  Build metrics ...... END
+[ Info:  Build periodicity infrastructure ......
+[ Info:  Matrix wrapper ......
+  0.056443 seconds (59.05 k allocations: 3.037 MiB, 92.83% compilation time)
+  0.055832 seconds (59.05 k allocations: 3.037 MiB, 93.18% compilation time)
+  0.056230 seconds (59.05 k allocations: 3.037 MiB, 93.15% compilation time)
+  0.056331 seconds (59.05 k allocations: 3.037 MiB, 92.99% compilation time)
+  0.058180 seconds (59.05 k allocations: 3.037 MiB, 92.83% compilation time)
+  0.058037 seconds (59.05 k allocations: 3.037 MiB, 93.04% compilation time)
+  0.057563 seconds (59.05 k allocations: 3.037 MiB, 92.99% compilation time)
+  0.056380 seconds (59.05 k allocations: 3.037 MiB, 92.67% compilation time)
+[ Info:  Matrix wrapper ...... END
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ 
+[ Info: (48014.95844941477, 3098.298673)
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ DONE 
+[ Info:  # COMPUTE conformity4ncf_q!
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ 
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ 
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ 
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ 
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ 
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ 
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ 
+[ Info: (100000.00000000001, 17295.89651620966)
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ DONE 
+[ Info: (100000.00000000001, 14786.40064077685)
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ DONE 
+[ Info: (23620.198191886335, 3098.298673)
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ DONE 
+[ Info: (20232.15020290217, 3098.298673)
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ DONE 
+[ Info: (100000.00000000001, 10811.00844125184)
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ DONE 
+[ Info: (23620.198191794134, 3098.298673)
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ DONE 
+[ Info: (100000.00000000001, 20232.15020299624)
+[ Info:  Initialize fields for 3D CompEuler with θ equation ........................ DONE 
+[ Info:  # COMPUTE conformity4ncf_q! .... END
+ # Build arrays and params ................................ 
+┌ Info:  
+│   inputs[:ode_solver] = CarpenterKennedy2N54(; stage_limiter! = trivial_limiter!, step_limiter! = trivial_limiter!, thread = static(false), williamson_condition = true,)
+│   inputs[:tinit] = 0.0
+│   inputs[:tend] = 43200.0
+└   inputs[:Δt] = 0.05
+ # Build arrays and params ................................ DONE
+ # Solving ODE  ................................ 
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+ # Write initial condition to Main.Jexpresso.VTK .........
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter0.vtu at t=0.0 s... DONE
+ # Write initial condition to Main.Jexpresso.VTK ......... END
+ #  t=600.0
+ #  Advective CFL: 0.0033370859800029946
+ #  Acoustic  CFL: 0.06440408574486385
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter1.vtu at t=600.0 s... DONE
+ #  t=1200.0
+ #  Advective CFL: 0.004591935334948876
+ #  Acoustic  CFL: 0.06454376093952267
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter2.vtu at t=1200.0 s... DONE
+ #  t=1800.0
+ #  Advective CFL: 0.0046858666354024974
+ #  Acoustic  CFL: 0.06449541818617627
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter3.vtu at t=1800.0 s... DONE
+ #  t=2400.0
+ #  Advective CFL: 0.004525885112029691
+ #  Acoustic  CFL: 0.06430726268653997
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter4.vtu at t=2400.0 s... DONE
+ #  t=3000.0
+ #  Advective CFL: 0.004405783918207578
+ #  Acoustic  CFL: 0.06455818265843004
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter5.vtu at t=3000.0 s... DONE
+ #  t=3600.0
+ #  Advective CFL: 0.004941195809970516
+ #  Acoustic  CFL: 0.06513259864373443
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter6.vtu at t=3600.0 s... DONE
+ #  t=4200.0
+ #  Advective CFL: 0.0047511001414496865
+ #  Acoustic  CFL: 0.06494188274167943
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter7.vtu at t=4200.0 s... DONE
+ #  t=4800.0
+ #  Advective CFL: 0.004370968747961675
+ #  Acoustic  CFL: 0.06478515368759902
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter8.vtu at t=4800.0 s... DONE
+ #  t=5400.0
+ #  Advective CFL: 0.004322208048517907
+ #  Acoustic  CFL: 0.0646824649305295
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter9.vtu at t=5400.0 s... DONE
+ #  t=6000.0
+ #  Advective CFL: 0.004437749759740572
+ #  Acoustic  CFL: 0.06464304412640384
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter10.vtu at t=6000.0 s... DONE
+ #  t=6600.0
+ #  Advective CFL: 0.004061479908906616
+ #  Acoustic  CFL: 0.06461272241214706
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter11.vtu at t=6600.0 s... DONE
+ #  t=7200.0
+ #  Advective CFL: 0.003984074582958183
+ #  Acoustic  CFL: 0.06460756484959458
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter12.vtu at t=7200.0 s... DONE
+ #  t=7800.0
+ #  Advective CFL: 0.003958904297176036
+ #  Acoustic  CFL: 0.06472065367613124
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter13.vtu at t=7800.0 s... DONE
+ #  t=8400.0
+ #  Advective CFL: 0.004264758079536337
+ #  Acoustic  CFL: 0.06482586916848711
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter14.vtu at t=8400.0 s... DONE
+ #  t=9000.0
+ #  Advective CFL: 0.0043401429633928125
+ #  Acoustic  CFL: 0.06508707957299953
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter15.vtu at t=9000.0 s... DONE
+ #  t=9600.0
+ #  Advective CFL: 0.004845942582511508
+ #  Acoustic  CFL: 0.06493075330878133
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter16.vtu at t=9600.0 s... DONE
+ #  t=10200.0
+ #  Advective CFL: 0.005315458121630786
+ #  Acoustic  CFL: 0.06484753586352854
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter17.vtu at t=10200.0 s... DONE
+ #  t=10800.0
+ #  Advective CFL: 0.0049639941479153035
+ #  Acoustic  CFL: 0.06484013681558506
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter18.vtu at t=10800.0 s... DONE
+ #  t=11400.0
+ #  Advective CFL: 0.004489396104218391
+ #  Acoustic  CFL: 0.06488236133259832
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter19.vtu at t=11400.0 s... DONE
+ #  t=12000.0
+ #  Advective CFL: 0.004366702326305301
+ #  Acoustic  CFL: 0.0648404485118861
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter20.vtu at t=12000.0 s... DONE
+ #  t=12600.0
+ #  Advective CFL: 0.0051134337468787
+ #  Acoustic  CFL: 0.06479721181557463
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter21.vtu at t=12600.0 s... DONE
+ #  t=13200.0
+ #  Advective CFL: 0.011673556336411517
+ #  Acoustic  CFL: 0.06624601314572715
+ #  Viscous   CFL: 0.00024000000000156985
+ # writing ./5_f_micro_4/CompEuler/f_micro/output/iter22.vtu at t=13200.0 s... DONE
+┌ Warning: Instability detected. Aborting
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/integrator_interface.jl:631
+┌ Warning: Instability detected. Aborting
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/integrator_interface.jl:631
+14682.176059 seconds (76.97 G allocations: 2.436 TiB, 2.65% gc time, 0.14% compilation time: <1% of which was recompilation)
+ # Solving ODE  ................................ DONE
+14682.176080 seconds (79.75 G allocations: 2.521 TiB, 2.54% gc time, 0.15% compilation time: <1% of which was recompilation)
+slurmstepd: error: *** JOB 2448847 ON cpu126 CANCELLED AT 2026-01-04T16:23:08 DUE TO TIME LIMIT ***

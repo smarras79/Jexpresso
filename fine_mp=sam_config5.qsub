@@ -1,0 +1,31 @@
+#!/bin/bash
+#SBATCH --time=100:00:00
+#SBATCH --ntasks=48
+#SBATCH --partition=bsudfq
+#SBATCH --job-name=f_sam_6
+#SBATCH --output=f_sam_6%j.out
+#SBATCH --exclusive  
+
+source /etc/profile
+source ~/.bashrc
+
+# Jexpresso root directory
+export JEXPRESSO_HOME=/bsuhome/olayemiadeyemi/scratch/Jex_SAM/Jexpresso
+
+# Load necessary modules
+module load julia/1.11.2
+module load cuda11.8
+module load openmpi/gcc8/4.1.2
+
+# Navigate to Jexpresso home directory
+cd $JEXPRESSO_HOME
+
+julia --project -e 'using Pkg; Pkg.add("MPIPreferences")'
+julia --project -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
+
+julia --project -e 'using Pkg; Pkg.instantiate();'
+
+
+
+mpirun -np 48 julia --project=$JEXPRESSO_HOME -e 'push!(empty!(ARGS), "CompEuler", "fine_mp=sam_config5"); 
+include("./src/Jexpresso.jl")'

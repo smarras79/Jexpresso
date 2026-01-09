@@ -4,7 +4,9 @@ using Parameters
 
     #Thermodynamic constants at T=300 K
     Rair::T     =  287.0 #J/kg.K
+    Rd::T       =  Rair  #J/kg.K  <-- 🎯 ADD THIS LINE
     cp::T       = 1004.0 #J/kg.K
+    cpd::T      = cp      # J/kg.K  <-- 🎯 ADD THIS LINE (Specific heat of dry air)
     cv::T       =  718.0 #J/kg.K
     Lc::T       = 2.5104e6 #J/kg Latent heat of vaporization
     Ls::T       = 2.8440e6 #J/kg Latent heat of sublimation

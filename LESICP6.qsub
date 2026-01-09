@@ -1,0 +1,31 @@
+#!/bin/bash
+#SBATCH --time=100:00:00
+#SBATCH --ntasks=48
+#SBATCH --partition=bsudfq
+#SBATCH --job-name=LESICP6
+#SBATCH --output=LESICP6%j.out
+#SBATCH --exclusive  
+# Set core count here (512 for starter; 1000 for full test)
+NCORES=8
+
+source /etc/profile
+source ~/.bashrc
+
+# Jexpresso root
+export JEXPRESSO_HOME=/bsuhome/olayemiadeyemi/scratch/Jex_SAM/Jexpresso
+
+# Modules (CUDA optional but harmless)
+module load julia/1.11.2
+module load cuda11.8
+module load openmpi/gcc8/4.1.2
+
+cd $JEXPRESSO_HOME
+
+
+# Julia/MPI setup (idempotent)
+julia --project -e 'using Pkg; Pkg.add("MPIPreferences")'
+julia --project -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
+julia --project -e 'using Pkg; Pkg.instantiate();'
+
+# Parallel run: Matches SLURM allocation
+mpirun -np $SLURM_NTASKS julia --project=$JEXPRESSO_HOME -e 'push!(empty!(ARGS), "CompEuler", "LESICP6"); include("./src/Jexpresso.jl")'

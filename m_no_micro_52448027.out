@@ -1,0 +1,1363 @@
+ERROR: Unable to locate a modulefile for 'lua/5.3.5'
+   Resolving package versions...
+      Compat entries added for 
+  No Changes to `/bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/Project.toml`
+  No Changes to `/bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/Manifest.toml`
+Precompiling project...
+  12507.3 ms  ? Jexpresso
+┌ Info: MPI implementation identified
+│   libmpi = "libmpi"
+│   version_string = "Open MPI v4.1.2, package: Open MPI root@borah-hn001 Distribution, ident: 4.1.2, repo rev: v4.1.2, Nov 24, 2021\0"
+│   impl = "OpenMPI"
+│   version = v"4.1.2"
+└   abi = "OpenMPI"
+┌ Info: MPIPreferences unchanged
+│   binary = "system"
+│   libmpi = "libmpi"
+│   abi = "OpenMPI"
+│   mpiexec = "mpiexec"
+│   preloads = Any[]
+└   preloads_env_switch = nothing
+Precompiling project...
+  12920.7 ms  ? Jexpresso
+[34m #--------------------------------------------------------------------------------
+[39m[34m # Welcome to [31mjexpresso
+[34m[39m[34m # A Julia code to solve conservation laws with continuous spectral elements
+[39m[34m #--------------------------------------------------------------------------------
+[39m[32m # Read inputs dict from /bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/problems/equations/CompEuler/m_no_micro/user_inputs.jl ... 
+[39m[33m┌[0m[33m────────────────────────────[0m[33m┬[0m[33m──────────────────────────────────────────────────[0m
+[33m│[0m[1m                       Keys [0m[33m│[0m[1m                                                [0m ⋯
+[33m│[0m[90m                     Symbol [0m[33m│[0m[90m                                                [0m ⋯
+[33m├[0m[33m────────────────────────────[0m[33m┼[0m[33m──────────────────────────────────────────────────[0m
+[33m│[0m                       case [33m│[0m                                                 ⋯
+[33m│[0m       diagnostics_at_times [33m│[0m                                                 ⋯
+[33m│[0m                filter_type [33m│[0m                                                 ⋯
+[33m│[0m              gmsh_filename [33m│[0m                                                 ⋯
+[33m│[0m        interpolation_nodes [33m│[0m                                                 ⋯
+[33m│[0m            ivisc_equations [33m│[0m                                                 ⋯
+[33m│[0m                    lfilter [33m│[0m                                                 ⋯
+[33m│[0m               loutput_pert [33m│[0m                                                 ⋯
+[33m│[0m          loverwrite_output [33m│[0m                                                 ⋯
+[33m│[0m                 lread_gmsh [33m│[0m                                                 ⋯
+[33m│[0m                    lsource [33m│[0m                                                 ⋯
+[33m│[0m                      lvisc [33m│[0m                                                 ⋯
+[33m│[0m                       mu_x [33m│[0m                                                 ⋯
+[33m│[0m                       mu_y [33m│[0m                                                 ⋯
+[33m│[0m                        nop [33m│[0m                                                 ⋯
+[33m│[0m             ⋮              [33m│[0m                                                 ⋱
+[33m└[0m[33m────────────────────────────[0m[33m┴[0m[33m──────────────────────────────────────────────────[0m
+[36m                                                     1 column and 9 rows omitted[0m
+[32m # Read inputs dict from /bsuscratch/olayemiadeyemi/Jex_SAM/Jexpresso/problems/equations/CompEuler/m_no_micro/user_inputs.jl ... DONE
+[39m # Read gmsh grid and populate with high-order points 
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+Info    : Reading './meshes/gmsh_grids/m_4.msh'...
+Info    : 9 entities
+Info    : 338 nodes
+Info    : 378 elements
+Info    : Done reading './meshes/gmsh_grids/m_4.msh'
+ # GMSH LINEAR GRID PROPERTIES
+ # N. Global points         : 837
+ # N. Global elements       : 300
+ # N. Global edges          : 1040
+ # N. Global faces          : 300
+ # GMSH LINEAR GRID PROPERTIES ...................... END
+ # GMSH HIGH-ORDER GRID PROPERTIES
+ # N. edges internal points         : 3120
+ # N. faces internal points         : 2700
+ # N. volumes internal points       : 2700
+ # N. total high order points       : 6657
+ # N. max high order points         : 170, 42
+ # GMSH HIGH-ORDER GRID PROPERTIES ...................... END
+ # Compute LGL nodes ........................
+ # ξ, ω =:  -1.0 0.1
+ # ξ, ω =:  -0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  0.0 0.7111111111111111
+ # ξ, ω =:  0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  1.0 0.1
+ # Compute LGL nodes ........................ DONE
+ # POPULATE GRID with SPECTRAL NODES ............................ 
+ # POPULATE GRID with SPECTRAL NODES ............................ EDGES
+ # POPULATE GRID with SPECTRAL NODES ............................ EDGES DONE
+ # POPULATE GRID with SPECTRAL NODES ............................ FACES
+ # POPULATE GRID with SPECTRAL NODES ............................ FACES DONE
+ # Load balance (min/avg/max ratio)   : 0.5609756097560976 / 0.7482816791571025 / 0.9316239316239316
+ # Read gmsh grid and populate with high-order points ........................ DONE
+ # 
+ # ELEMENT SIZES:
+ #   The smallest element has size: 1999.9999999924403 and effective resolution 499.99999999811007
+ #   The biggest  element has size: 2000.0000000044893 and effective resolution 500.0000000011223
+ # 
+ # Compute LGL nodes ........................
+ # ξ, ω =:  -1.0 0.1
+ # ξ, ω =:  -0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  0.0 0.7111111111111111
+ # ξ, ω =:  0.6546536707079771 0.5444444444444444
+ # ξ, ω =:  1.0 0.1
+ # Compute LGL nodes ........................ DONE
+ # Compute LG nodes ........................
+ # ξ, ω =:  -0.906179845938664 0.2369268850561891
+ # ξ, ω =:  -0.5384693101056831 0.4786286704993664
+ # ξ, ω =:  0.0 0.5688888888888889
+ # ξ, ω =:  0.5384693101056831 0.4786286704993664
+ # ξ, ω =:  0.906179845938664 0.2369268850561891
+ # Compute LG nodes ........................ DONE
+[ Info:  Build interpolation bases ......
+[ Info:  Build interpolation bases ...... END
+[ Info: Legendre filter
+[ Info: erf filtering on
+[ Info: Legendre filter
+[ Info: erf filtering on
+[ Info:  Build metrics ......
+  4.337213 seconds (4.21 M allocations: 206.010 MiB, 99.90% compilation time)
+  4.368766 seconds (4.21 M allocations: 206.011 MiB, 99.90% compilation time)
+  4.370620 seconds (4.21 M allocations: 206.014 MiB, 99.91% compilation time)
+  4.400184 seconds (4.21 M allocations: 206.014 MiB, 99.91% compilation time)
+  4.365927 seconds (4.21 M allocations: 206.010 MiB, 99.90% compilation time)
+  4.381589 seconds (4.22 M allocations: 206.583 MiB, 99.90% compilation time)
+  4.383339 seconds (4.22 M allocations: 206.588 MiB, 99.89% compilation time)
+  4.404623 seconds (4.22 M allocations: 206.582 MiB, 99.86% compilation time)
+  4.410397 seconds (4.22 M allocations: 206.587 MiB, 99.90% compilation time)
+  4.419228 seconds (4.22 M allocations: 206.584 MiB, 99.90% compilation time)
+  4.427480 seconds (4.22 M allocations: 206.644 MiB, 99.90% compilation time)
+  4.364017 seconds (4.21 M allocations: 206.077 MiB, 99.90% compilation time)
+  4.381818 seconds (4.22 M allocations: 206.583 MiB, 99.90% compilation time)
+  4.393223 seconds (4.22 M allocations: 206.590 MiB, 99.90% compilation time)
+  4.304924 seconds (4.21 M allocations: 206.079 MiB, 99.90% compilation time)
+  4.343536 seconds (4.21 M allocations: 206.075 MiB, 99.90% compilation time)
+  4.386142 seconds (4.21 M allocations: 206.010 MiB, 99.90% compilation time)
+  4.331602 seconds (4.21 M allocations: 206.010 MiB, 99.90% compilation time)
+  4.347589 seconds (4.21 M allocations: 206.011 MiB, 99.91% compilation time)
+  4.413109 seconds (4.21 M allocations: 206.010 MiB, 99.89% compilation time)
+  4.365688 seconds (4.22 M allocations: 206.649 MiB, 99.90% compilation time)
+  4.349700 seconds (4.21 M allocations: 206.014 MiB, 99.91% compilation time)
+  4.338485 seconds (4.22 M allocations: 206.583 MiB, 99.90% compilation time)
+  4.362277 seconds (4.22 M allocations: 206.583 MiB, 99.90% compilation time)
+  4.387291 seconds (4.22 M allocations: 206.584 MiB, 99.90% compilation time)
+  4.377603 seconds (4.22 M allocations: 206.654 MiB, 99.89% compilation time)
+  4.364563 seconds (4.21 M allocations: 206.010 MiB, 99.90% compilation time)
+  4.438454 seconds (4.22 M allocations: 206.644 MiB, 99.90% compilation time)
+  4.433288 seconds (4.22 M allocations: 206.644 MiB, 99.90% compilation time)
+  4.433524 seconds (4.22 M allocations: 206.583 MiB, 99.90% compilation time)
+  4.396540 seconds (4.22 M allocations: 206.589 MiB, 99.90% compilation time)
+  4.409531 seconds (4.22 M allocations: 206.650 MiB, 99.90% compilation time)
+  4.397221 seconds (4.22 M allocations: 206.586 MiB, 99.90% compilation time)
+  4.384694 seconds (4.22 M allocations: 206.584 MiB, 99.90% compilation time)
+  4.411107 seconds (4.22 M allocations: 206.646 MiB, 99.89% compilation time)
+  4.382010 seconds (4.22 M allocations: 206.586 MiB, 99.90% compilation time)
+  4.362328 seconds (4.22 M allocations: 206.579 MiB, 99.90% compilation time)
+  4.389037 seconds (4.22 M allocations: 206.580 MiB, 99.90% compilation time)
+  4.372076 seconds (4.22 M allocations: 206.582 MiB, 99.90% compilation time)
+  4.576247 seconds (4.21 M allocations: 206.010 MiB, 99.91% compilation time)
+  4.347720 seconds (4.21 M allocations: 206.011 MiB, 99.90% compilation time)
+  4.345014 seconds (4.21 M allocations: 206.010 MiB, 99.90% compilation time)
+  4.371319 seconds (4.22 M allocations: 206.645 MiB, 99.89% compilation time)
+  4.373777 seconds (4.22 M allocations: 206.582 MiB, 99.90% compilation time)
+  4.400393 seconds (4.22 M allocations: 206.654 MiB, 99.89% compilation time)
+  4.398026 seconds (4.22 M allocations: 206.580 MiB, 99.90% compilation time)
+  4.408615 seconds (4.22 M allocations: 206.580 MiB, 99.90% compilation time)
+  4.550477 seconds (4.22 M allocations: 206.493 MiB, 99.90% compilation time)
+[ Info:  Build metrics ...... END
+[ Info:  Build periodicity infrastructure ......
+[ Info:  Matrix wrapper ......
+  0.068159 seconds (59.05 k allocations: 3.037 MiB, 99.64% compilation time)
+  0.068253 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.069232 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.067543 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068304 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068657 seconds (59.05 k allocations: 3.037 MiB, 99.64% compilation time)
+  0.068754 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068769 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068696 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068894 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068671 seconds (59.05 k allocations: 3.037 MiB, 99.61% compilation time)
+  0.068205 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.068570 seconds (59.05 k allocations: 3.037 MiB, 99.64% compilation time)
+  0.068257 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.067905 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068411 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068260 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068261 seconds (59.05 k allocations: 3.037 MiB, 99.61% compilation time)
+  0.068051 seconds (59.05 k allocations: 3.037 MiB, 99.62% compilation time)
+  0.067856 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.068527 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068012 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068815 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068229 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068332 seconds (59.05 k allocations: 3.037 MiB, 99.61% compilation time)
+  0.068178 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068798 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.067831 seconds (59.05 k allocations: 3.037 MiB, 99.63% compilation time)
+  0.069137 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068252 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.067854 seconds (59.05 k allocations: 3.037 MiB, 99.57% compilation time)
+  0.068648 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.068018 seconds (59.05 k allocations: 3.037 MiB, 99.61% compilation time)
+  0.069220 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068865 seconds (59.05 k allocations: 3.037 MiB, 99.63% compilation time)
+  0.068451 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068443 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.068736 seconds (59.05 k allocations: 3.037 MiB, 99.63% compilation time)
+  0.068768 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.071851 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068806 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068774 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068269 seconds (59.05 k allocations: 3.037 MiB, 99.60% compilation time)
+  0.068133 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.068538 seconds (59.05 k allocations: 3.037 MiB, 99.66% compilation time)
+  0.068228 seconds (59.05 k allocations: 3.037 MiB, 99.59% compilation time)
+  0.068930 seconds (59.05 k allocations: 3.037 MiB, 99.65% compilation time)
+  0.062786 seconds (59.05 k allocations: 3.037 MiB, 99.64% compilation time)
+[ Info:  Matrix wrapper ...... END
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: Reading sounding from: ./data_files/no_micro.data
+[ Info: Starting iterative hydrostatic balance correction...
+[ Info: Hydrostatic balance converged after 2 iterations (max correction: 0.0 Pa)
+[ Info: Pressure range: 3086.9228794053056 to 100000.0 Pa
+[ Info: Interpolated sounding to 133 grid points
+[ Info: Bubble parameters:
+[ Info:   Center: (x,y) = (0.0, 2500.0) m
+[ Info:   Radius: 2000.0 m
+[ Info:   θ perturbation: 3.0 K
+[ Info: Initialization complete!
+[ Info:   ρ range: 0.0495679256372618 to 0.125671819449472
+[ Info:   θ range: 451.728902000279 to 585.949386
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ 
+[ Info: === CHECKING SOL_VARS_TYPE ===
+[ Info: SOL_VARS_TYPE = Main.Jexpresso.TOTAL()
+[ Info: Is PERT? false
+[ Info: Is TOTAL? true
+[ Info: ==============================
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info: === BUBBLE DIAGNOSTIC ===
+[ Info: GLOBAL Domain X range: -50000.0 to 50000.0
+[ Info: GLOBAL Domain Y range: 0.0 to 24000.0
+[ Info: Bubble center: x=0, y=2500
+[ Info: ✅ Bubble region EXISTS in the mesh
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  # COMPUTE conformity4ncf_q!
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  Initialize 2D thermal bubble with sounding ........................ DONE 
+[ Info:  # COMPUTE conformity4ncf_q! .... END
+ # Build arrays and params ................................ 
+┌ Info:  
+│   inputs[:ode_solver] = CarpenterKennedy2N54(; stage_limiter! = trivial_limiter!, step_limiter! = trivial_limiter!, thread = static(false), williamson_condition = true,)
+│   inputs[:tinit] = 0.0
+│   inputs[:tend] = 43200.0
+└   inputs[:Δt] = 0.01
+ # Build arrays and params ................................ DONE
+ # Solving ODE  ................................ 
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+┌ Warning: Using arrays or dicts to store parameters of different types can hurt performance.
+│ Consider using tuples instead.
+└ @ SciMLBase ~/.julia/packages/SciMLBase/wfZCo/src/performance_warnings.jl:33
+ # Write initial condition to Main.Jexpresso.VTK .........
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter0.vtu at t=0.0 s... DONE
+ # Write initial condition to Main.Jexpresso.VTK ......... END
+ #  t=600.0
+ #  Advective CFL: 0.00027477648742554894
+ #  Acoustic  CFL: 0.0013936036290433068
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter1.vtu at t=600.0 s... DONE
+ #  t=1200.0
+ #  Advective CFL: 0.0002442962491774284
+ #  Acoustic  CFL: 0.001396739763954799
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter2.vtu at t=1200.0 s... DONE
+ #  t=1800.0
+ #  Advective CFL: 0.00021867212930135534
+ #  Acoustic  CFL: 0.0013961759063671325
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter3.vtu at t=1800.0 s... DONE
+ #  t=2400.0
+ #  Advective CFL: 0.00019982561660874967
+ #  Acoustic  CFL: 0.0013972977587011143
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter4.vtu at t=2400.0 s... DONE
+ #  t=3000.0
+ #  Advective CFL: 0.00018847561192312742
+ #  Acoustic  CFL: 0.0014008520369842537
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter5.vtu at t=3000.0 s... DONE
+ #  t=3600.0
+ #  Advective CFL: 0.00017884434712469013
+ #  Acoustic  CFL: 0.00140315990486875
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter6.vtu at t=3600.0 s... DONE
+ #  t=4200.0
+ #  Advective CFL: 0.0001732789627584422
+ #  Acoustic  CFL: 0.001402944889133044
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter7.vtu at t=4200.0 s... DONE
+ #  t=4800.0
+ #  Advective CFL: 0.00016877569052294787
+ #  Acoustic  CFL: 0.0014044101735327483
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter8.vtu at t=4800.0 s... DONE
+ #  t=5400.0
+ #  Advective CFL: 0.00016268953098362275
+ #  Acoustic  CFL: 0.001408027875121872
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter9.vtu at t=5400.0 s... DONE
+ #  t=6000.0
+ #  Advective CFL: 0.00015644992235602884
+ #  Acoustic  CFL: 0.0014094719267446513
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter10.vtu at t=6000.0 s... DONE
+ #  t=6600.0
+ #  Advective CFL: 0.00015093581720174905
+ #  Acoustic  CFL: 0.001409541882994992
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter11.vtu at t=6600.0 s... DONE
+ #  t=7200.0
+ #  Advective CFL: 0.00014495033933199588
+ #  Acoustic  CFL: 0.0014107646919893542
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter12.vtu at t=7200.0 s... DONE
+ #  t=7800.0
+ #  Advective CFL: 0.00013962055427347263
+ #  Acoustic  CFL: 0.0014138552491883177
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter13.vtu at t=7800.0 s... DONE
+ #  t=8400.0
+ #  Advective CFL: 0.00013553544077003483
+ #  Acoustic  CFL: 0.0014152487318472647
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter14.vtu at t=8400.0 s... DONE
+ #  t=9000.0
+ #  Advective CFL: 0.0001324325569994015
+ #  Acoustic  CFL: 0.0014150975964560147
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter15.vtu at t=9000.0 s... DONE
+ #  t=9600.0
+ #  Advective CFL: 0.00012876339239405068
+ #  Acoustic  CFL: 0.0014156784603994957
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter16.vtu at t=9600.0 s... DONE
+ #  t=10200.0
+ #  Advective CFL: 0.0001248843686008321
+ #  Acoustic  CFL: 0.0014184582428471092
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter17.vtu at t=10200.0 s... DONE
+ #  t=10800.0
+ #  Advective CFL: 0.00012231918509589943
+ #  Acoustic  CFL: 0.0014200195304136553
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter18.vtu at t=10800.0 s... DONE
+ #  t=11400.0
+ #  Advective CFL: 0.00011920830395692552
+ #  Acoustic  CFL: 0.0014197069285037977
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter19.vtu at t=11400.0 s... DONE
+ #  t=12000.0
+ #  Advective CFL: 0.00011593779688499634
+ #  Acoustic  CFL: 0.0014199459439111866
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter20.vtu at t=12000.0 s... DONE
+ #  t=12600.0
+ #  Advective CFL: 0.0001136872434222596
+ #  Acoustic  CFL: 0.0014220607558145897
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter21.vtu at t=12600.0 s... DONE
+ #  t=13200.0
+ #  Advective CFL: 0.00011097048641714291
+ #  Acoustic  CFL: 0.0014239300326018623
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter22.vtu at t=13200.0 s... DONE
+ #  t=13800.0
+ #  Advective CFL: 0.00010876839873533247
+ #  Acoustic  CFL: 0.0014237880883210935
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter23.vtu at t=13800.0 s... DONE
+ #  t=14400.0
+ #  Advective CFL: 0.0001063632081643419
+ #  Acoustic  CFL: 0.0014233949330738275
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter24.vtu at t=14400.0 s... DONE
+ #  t=15000.0
+ #  Advective CFL: 0.00010422959012991406
+ #  Acoustic  CFL: 0.001424567249924446
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter25.vtu at t=15000.0 s... DONE
+ #  t=15600.0
+ #  Advective CFL: 0.00010200889921433432
+ #  Acoustic  CFL: 0.001426681476549526
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter26.vtu at t=15600.0 s... DONE
+ #  t=16200.0
+ #  Advective CFL: 9.985209230108278e-5
+ #  Acoustic  CFL: 0.0014273415430628741
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter27.vtu at t=16200.0 s... DONE
+ #  t=16800.0
+ #  Advective CFL: 9.781001851509881e-5
+ #  Acoustic  CFL: 0.0014266991999926915
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter28.vtu at t=16800.0 s... DONE
+ #  t=17400.0
+ #  Advective CFL: 9.603592747564881e-5
+ #  Acoustic  CFL: 0.0014266640226677644
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter29.vtu at t=17400.0 s... DONE
+ #  t=18000.0
+ #  Advective CFL: 9.459455166622003e-5
+ #  Acoustic  CFL: 0.001428170508010308
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter30.vtu at t=18000.0 s... DONE
+ #  t=18600.0
+ #  Advective CFL: 9.243519086693661e-5
+ #  Acoustic  CFL: 0.001429790451371616
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter31.vtu at t=18600.0 s... DONE
+ #  t=19200.0
+ #  Advective CFL: 9.100396263764722e-5
+ #  Acoustic  CFL: 0.0014298669059718255
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter32.vtu at t=19200.0 s... DONE
+ #  t=19800.0
+ #  Advective CFL: 8.927979313240219e-5
+ #  Acoustic  CFL: 0.0014290917423112578
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter33.vtu at t=19800.0 s... DONE
+ #  t=20400.0
+ #  Advective CFL: 8.758360062892751e-5
+ #  Acoustic  CFL: 0.0014291653577362005
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter34.vtu at t=20400.0 s... DONE
+ #  t=21000.0
+ #  Advective CFL: 8.6114123942589e-5
+ #  Acoustic  CFL: 0.0014307762736368848
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter35.vtu at t=21000.0 s... DONE
+ #  t=21600.0
+ #  Advective CFL: 8.476514222071445e-5
+ #  Acoustic  CFL: 0.0014320347621397031
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter36.vtu at t=21600.0 s... DONE
+ #  t=22200.0
+ #  Advective CFL: 8.337374000829453e-5
+ #  Acoustic  CFL: 0.001432087006353646
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter37.vtu at t=22200.0 s... DONE
+ #  t=22800.0
+ #  Advective CFL: 8.19091533606836e-5
+ #  Acoustic  CFL: 0.0014311416223003956
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter38.vtu at t=22800.0 s... DONE
+ #  t=23400.0
+ #  Advective CFL: 8.046622156230127e-5
+ #  Acoustic  CFL: 0.0014311652009010786
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter39.vtu at t=23400.0 s... DONE
+ #  t=24000.0
+ #  Advective CFL: 7.94120268839823e-5
+ #  Acoustic  CFL: 0.0014322680605285956
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter40.vtu at t=24000.0 s... DONE
+ #  t=24600.0
+ #  Advective CFL: 7.819520730314493e-5
+ #  Acoustic  CFL: 0.001433587371816703
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter41.vtu at t=24600.0 s... DONE
+ #  t=25200.0
+ #  Advective CFL: 7.66138212906599e-5
+ #  Acoustic  CFL: 0.0014337770286974622
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter42.vtu at t=25200.0 s... DONE
+ #  t=25800.0
+ #  Advective CFL: 7.545017918918205e-5
+ #  Acoustic  CFL: 0.0014329740947538838
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter43.vtu at t=25800.0 s... DONE
+ #  t=26400.0
+ #  Advective CFL: 7.438906234172484e-5
+ #  Acoustic  CFL: 0.0014325289919931241
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter44.vtu at t=26400.0 s... DONE
+ #  t=27000.0
+ #  Advective CFL: 7.329644600522999e-5
+ #  Acoustic  CFL: 0.001433172149059571
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter45.vtu at t=27000.0 s... DONE
+ #  t=27600.0
+ #  Advective CFL: 7.206615312153388e-5
+ #  Acoustic  CFL: 0.001434487889173859
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter46.vtu at t=27600.0 s... DONE
+ #  t=28200.0
+ #  Advective CFL: 7.097568283228588e-5
+ #  Acoustic  CFL: 0.0014351407000731346
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter47.vtu at t=28200.0 s... DONE
+ #  t=28800.0
+ #  Advective CFL: 6.990979694993948e-5
+ #  Acoustic  CFL: 0.0014346650886227859
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter48.vtu at t=28800.0 s... DONE
+ #  t=29400.0
+ #  Advective CFL: 6.903956961264712e-5
+ #  Acoustic  CFL: 0.00143385977756369
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter49.vtu at t=29400.0 s... DONE
+ #  t=30000.0
+ #  Advective CFL: 6.792019209377496e-5
+ #  Acoustic  CFL: 0.0014336781669408531
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter50.vtu at t=30000.0 s... DONE
+ #  t=30600.0
+ #  Advective CFL: 6.689655144177006e-5
+ #  Acoustic  CFL: 0.0014345182505963667
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter51.vtu at t=30600.0 s... DONE
+ #  t=31200.0
+ #  Advective CFL: 6.607954845705451e-5
+ #  Acoustic  CFL: 0.0014356295376101843
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter52.vtu at t=31200.0 s... DONE
+ #  t=31800.0
+ #  Advective CFL: 6.521224123058765e-5
+ #  Acoustic  CFL: 0.0014359578264784964
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter53.vtu at t=31800.0 s... DONE
+ #  t=32400.0
+ #  Advective CFL: 6.4141336421491e-5
+ #  Acoustic  CFL: 0.0014354328453067646
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter54.vtu at t=32400.0 s... DONE
+ #  t=33000.0
+ #  Advective CFL: 6.312774197271804e-5
+ #  Acoustic  CFL: 0.0014345923974025758
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter55.vtu at t=33000.0 s... DONE
+ #  t=33600.0
+ #  Advective CFL: 6.24939631351997e-5
+ #  Acoustic  CFL: 0.0014344194523833163
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter56.vtu at t=33600.0 s... DONE
+ #  t=34200.0
+ #  Advective CFL: 6.164921657733546e-5
+ #  Acoustic  CFL: 0.0014350796203297922
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter57.vtu at t=34200.0 s... DONE
+ #  t=34800.0
+ #  Advective CFL: 6.071233841769601e-5
+ #  Acoustic  CFL: 0.0014360209818516172
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter58.vtu at t=34800.0 s... DONE
+ #  t=35400.0
+ #  Advective CFL: 5.9846185207411e-5
+ #  Acoustic  CFL: 0.001436574145105214
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter59.vtu at t=35400.0 s... DONE
+ #  t=36000.0
+ #  Advective CFL: 5.990610914624168e-5
+ #  Acoustic  CFL: 0.0014360068804689433
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter60.vtu at t=36000.0 s... DONE
+ #  t=36600.0
+ #  Advective CFL: 5.99650102623287e-5
+ #  Acoustic  CFL: 0.0014353390336459882
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter61.vtu at t=36600.0 s... DONE
+ #  t=37200.0
+ #  Advective CFL: 5.9850088218520506e-5
+ #  Acoustic  CFL: 0.0014347134801020861
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter62.vtu at t=37200.0 s... DONE
+ #  t=37800.0
+ #  Advective CFL: 5.9887999538035806e-5
+ #  Acoustic  CFL: 0.0014350728017441076
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter63.vtu at t=37800.0 s... DONE
+ #  t=38400.0
+ #  Advective CFL: 5.98719168269295e-5
+ #  Acoustic  CFL: 0.0014357904048027748
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter64.vtu at t=38400.0 s... DONE
+ #  t=39000.0
+ #  Advective CFL: 5.9770630356616086e-5
+ #  Acoustic  CFL: 0.001436604262927883
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter65.vtu at t=39000.0 s... DONE
+ #  t=39600.0
+ #  Advective CFL: 5.9772625449965544e-5
+ #  Acoustic  CFL: 0.0014365024941874653
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter66.vtu at t=39600.0 s... DONE
+ #  t=40200.0
+ #  Advective CFL: 5.964965333496498e-5
+ #  Acoustic  CFL: 0.0014361248446791762
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter67.vtu at t=40200.0 s... DONE
+ #  t=40800.0
+ #  Advective CFL: 5.973993451124224e-5
+ #  Acoustic  CFL: 0.0014351088457172155
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter68.vtu at t=40800.0 s... DONE
+ #  t=41400.0
+ #  Advective CFL: 5.967972272646753e-5
+ #  Acoustic  CFL: 0.0014349249633779342
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter69.vtu at t=41400.0 s... DONE
+ #  t=42000.0
+ #  Advective CFL: 5.969029369711716e-5
+ #  Acoustic  CFL: 0.0014349842794359148
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter70.vtu at t=42000.0 s... DONE
+ #  t=42600.0
+ #  Advective CFL: 5.966520339433436e-5
+ #  Acoustic  CFL: 0.0014357906843403517
+ #  Viscous   CFL: 1.2000000000090716e-5
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter71.vtu at t=42600.0 s... DONE
+ #  t=43200.0
+ #  Advective CFL: 5.964739856278892e-5
+ #  Acoustic  CFL: 0.0014363615440552697
+ #  Viscous   CFL: 1.2000000000090716e-5
+14882.183820 seconds (9.88 G allocations: 810.079 GiB, 0.89% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.184317 seconds (10.31 G allocations: 840.979 GiB, 0.89% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.185499 seconds (11.48 G allocations: 923.056 GiB, 0.94% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.186266 seconds (10.14 G allocations: 801.066 GiB, 0.85% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.188070 seconds (10.92 G allocations: 843.553 GiB, 0.91% gc time, 0.16% compilation time: <1% of which was recompilation)
+14882.189956 seconds (10.23 G allocations: 811.366 GiB, 0.85% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.191268 seconds (11.65 G allocations: 930.782 GiB, 0.98% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.191476 seconds (10.14 G allocations: 819.091 GiB, 0.88% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.192821 seconds (11.65 G allocations: 965.544 GiB, 0.99% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.194150 seconds (11.39 G allocations: 941.082 GiB, 0.98% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.195167 seconds (10.40 G allocations: 837.116 GiB, 0.90% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.196157 seconds (11.48 G allocations: 924.344 GiB, 0.94% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.197500 seconds (10.23 G allocations: 812.653 GiB, 0.87% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.197413 seconds (10.49 G allocations: 837.116 GiB, 0.86% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.198129 seconds (9.79 G allocations: 807.504 GiB, 0.87% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.199743 seconds (10.14 G allocations: 808.791 GiB, 0.89% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.201171 seconds (10.31 G allocations: 831.966 GiB, 0.90% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.201714 seconds (10.05 G allocations: 806.216 GiB, 0.87% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.203872 seconds (10.49 G allocations: 838.403 GiB, 0.90% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.205005 seconds (9.97 G allocations: 795.916 GiB, 0.85% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.206343 seconds (10.40 G allocations: 828.104 GiB, 0.89% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.208172 seconds (10.05 G allocations: 817.804 GiB, 0.87% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.211479 seconds (10.92 G allocations: 861.578 GiB, 1.44% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.210987 seconds (9.97 G allocations: 785.616 GiB, 1.00% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.211765 seconds (10.14 G allocations: 828.103 GiB, 0.89% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.214053 seconds (10.14 G allocations: 828.103 GiB, 0.86% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.214445 seconds (9.88 G allocations: 786.904 GiB, 0.98% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.215124 seconds (10.14 G allocations: 808.791 GiB, 0.87% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.216754 seconds (12.00 G allocations: 948.807 GiB, 0.95% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.217668 seconds (11.57 G allocations: 928.207 GiB, 0.97% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.218361 seconds (10.14 G allocations: 817.803 GiB, 0.91% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.259996 seconds (10.40 G allocations: 846.128 GiB, 0.91% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.262416 seconds (12.08 G allocations: 961.681 GiB, 1.53% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.263955 seconds (10.74 G allocations: 838.404 GiB, 0.89% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.264614 seconds (10.40 G allocations: 817.804 GiB, 0.87% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.264976 seconds (10.14 G allocations: 794.629 GiB, 1.01% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.266270 seconds (12.00 G allocations: 941.082 GiB, 0.98% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.268987 seconds (10.23 G allocations: 797.204 GiB, 0.99% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.270530 seconds (9.62 G allocations: 775.316 GiB, 0.98% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.271323 seconds (10.49 G allocations: 820.379 GiB, 0.88% gc time, 0.15% compilation time: <1% of which was recompilation)
+ # writing ./m_4_no_3/CompEuler/m_no_micro/output/iter72.vtu at t=43200.0 s... DONE
+14882.271872 seconds (12.17 G allocations: 964.257 GiB, 1.59% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.272821 seconds (10.23 G allocations: 812.654 GiB, 0.90% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.275734 seconds (11.91 G allocations: 964.257 GiB, 0.94% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.276046 seconds (9.71 G allocations: 777.891 GiB, 0.97% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.276744 seconds (10.40 G allocations: 826.816 GiB, 0.88% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.280102 seconds (11.74 G allocations: 951.382 GiB, 0.98% gc time, 0.15% compilation time: <1% of which was recompilation)
+14882.279940 seconds (10.40 G allocations: 837.116 GiB, 1.41% gc time, 0.15% compilation time: <1% of which was recompilation)
+ # Solving ODE  ................................ DONE
+14882.280618 seconds (10.23 G allocations: 820.388 GiB, 0.88% gc time, 0.16% compilation time: <1% of which was recompilation)

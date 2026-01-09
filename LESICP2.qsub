@@ -1,0 +1,40 @@
+#!/bin/bash
+#SBATCH --time=03:00:00
+#SBATCH --ntasks=8              # ← Will be overridden by sbatch --ntasks=XXX
+#SBATCH --cpus-per-task=1
+#SBATCH --partition=bsudfq
+#SBATCH --job-name=LESICP2
+#SBATCH --output=LESICP2_%j.out
+#SBATCH --error=LESICP2_%j.err
+#SBATCH --exclusive               # Gives you full nodes (48 cores/node on Borah)
+
+# ------------------------------------------------------------------
+# You can still see how many cores you actually requested:
+echo "Job started on $(date)"
+echo "Running on $SLURM_NTASKS MPI ranks (cores)"
+echo "Nodes allocated: $SLURM_JOB_NODELIST"
+# ------------------------------------------------------------------
+
+source /etc/profile
+source ~/.bashrc
+
+# Jexpresso root
+export JEXPRESSO_HOME=/bsuhome/olayemiadeyemi/scratch/Jex_SAM/Jexpresso
+
+# Modules
+module load julia/1.11.2
+module load cuda11.8
+module load openmpi/gcc8/4.1.2
+
+cd $JEXPRESSO_HOME
+
+# Julia/MPI setup (run only the first time or when dependencies change)
+julia --project -e 'using Pkg; Pkg.add("MPIPreferences")' 2>/dev/null || true
+julia --project -e 'using MPIPreferences; MPIPreferences.use_system_binary()' 2>/dev/null || true
+julia --project -e 'using Pkg; Pkg.instantiate()' 2>/dev/null || true
+
+# THE ACTUAL RUN
+echo "Launching Julia with $SLURM_NTASKS ranks ..."
+mpirun -np 8 julia --project=$JEXPRESSO_HOME -e 'push!(empty!(ARGS), "CompEuler", "t"); include("./src/Jexpresso.jl")'
+
+echo "Job finished on $(date)"

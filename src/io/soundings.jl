@@ -1,7 +1,6 @@
 function read_sounding(fname)
     
-    #data = readdlm(fname,TFloat)
-    data = CSV.read(fname, Tables.matrix)
+    data = readdlm(fname, Float64)
     
     return data
 end
@@ -10,7 +9,8 @@ function interpolate_sounding(backend, npoin, z, data)
 
     n_rows = TInt(size(data,1))
     n_var  = TInt(size(data,2))
-    data_out = KernelAbstractions.zeros(backend, TFloat, Int64(npoin),n_var-1)
+    #data_out = KernelAbstractions.zeros(backend, TFloat, Int64(npoin),n_var-1)
+    data_out = KernelAbstractions.zeros(backend, TFloat, Int64(npoin),n_var)
     if (backend == CPU())
         for ip=1:npoin
             zz = z[ip]

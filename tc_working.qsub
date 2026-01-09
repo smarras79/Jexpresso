@@ -1,0 +1,33 @@
+#!/bin/bash
+#SBATCH --time=200:00:00
+#SBATCH --ntasks=32
+#SBATCH --partition=bsudfq
+#SBATCH --job-name=tc_working
+#SBATCH --output=tc_working%j.txt
+#SBATCH --exclusive
+
+
+source /etc/profile
+source ~/.bashrc
+
+# Jexpresso root directory
+export JEXPRESSO_HOME=/bsuhome/olayemiadeyemi/scratch/Jex_SAM/Jexpresso
+
+# Load necessary modules
+module load julia/1.11.2
+module load cuda11.8
+module load openmpi/gcc8/4.1.2
+
+# Navigate to Jexpresso home directory
+cd $JEXPRESSO_HOME
+
+julia --project -e 'using Pkg; Pkg.add("MPIPreferences")'
+julia --project -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
+
+julia --project -e 'using Pkg; Pkg.instantiate();'
+
+
+#mpirun -np 32 julia --project=$JEXPRESSO_HOME -e 'push!(empty!(ARGS), "CompEuler", "coarse_no_micro"); include("./src/Jexpresso.jl")'
+
+mpirun -np 8 julia --project=$JEXPRESSO_HOME -e 'push!(empty!(ARGS), "CompEuler", "tc_working"); include("./src/Jexpresso.jl")'
+

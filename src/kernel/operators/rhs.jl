@@ -404,9 +404,10 @@ function _build_rhs!(RHS, u, params, time)
     end
     
     resetbdyfluxToZero!(params)
+# AFTER (FIXED):
+if (params.inputs[:lmoist])
     apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
                                          params.mesh.coords,
-                                         #params.mesh.x, params.mesh.y, params.mesh.z, 
                                          params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
                                          params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
                                          params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
@@ -417,6 +418,20 @@ function _build_rhs!(RHS, u, params, time)
                                          params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
                                          params.mp.Tabs, params.mp.qn,
                                          params.ω, neqs, params.inputs, AD, SD)
+else
+    apply_boundary_conditions_dirichlet!(u, params.uaux, time, params.qp.qe,
+                                         params.mesh.coords,
+                                         params.metrics.nx, params.metrics.ny, params.metrics.nz, params.mesh.npoin, params.mesh.npoin_linear, 
+                                         params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl, 
+                                         params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
+                                         xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
+                                         params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
+                                         params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                                         params.mesh.connijk, params.metrics.Jef, params.S_face, 
+                                         params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
+                                         nothing, nothing,
+                                         params.ω, neqs, params.inputs, AD, SD)
+end
     
     if (params.inputs[:lmoist])
         if (SD == NSD_3D())
@@ -482,6 +497,8 @@ function _build_rhs!(RHS, u, params, time)
         DSS_rhs!(params.RHS_visc, params.rhs_diff_el, params.mesh.connijk, nelem, ngl, neqs, SD, AD)
         params.RHS[:,:] .= @view(params.RHS[:,:]) .+ @view(params.RHS_visc[:,:])
     end
+    # AFTER (FIXED):
+if (params.inputs[:lmoist])
     apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
                                        params.mesh.coords,
                                        params.metrics.nx, params.metrics.ny, params.metrics.nz,
@@ -495,8 +512,23 @@ function _build_rhs!(RHS, u, params, time)
                                        params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
                                        params.WM.τ_f, params.WM.wθ,
                                        params.mp.Tabs, params.mp.qn,
-                                       params.ω, neqs, params.inputs, AD, SD) 
-    
+                                       params.ω, neqs, params.inputs, AD, SD)
+else
+    apply_boundary_conditions_neumann!(u, params.uaux, time, params.qp.qe,
+                                       params.mesh.coords,
+                                       params.metrics.nx, params.metrics.ny, params.metrics.nz,
+                                       params.mesh.npoin, params.mesh.npoin_linear,
+                                       params.mesh.poin_in_bdy_edge, params.mesh.poin_in_bdy_face, params.mesh.nedges_bdy, params.mesh.nfaces_bdy, params.mesh.ngl,
+                                       params.mesh.ngr, params.mesh.nelem_semi_inf, params.basis.ψ, params.basis.dψ,
+                                       xmax, ymax, zmax, xmin, ymin, zmin, params.RHS, params.rhs_el, params.ubdy,
+                                       params.mesh.connijk_lag, params.mesh.bdy_edge_in_elem, 
+                                       params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
+                                       params.mesh.connijk, params.metrics.Jef, params.S_face, 
+                                       params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
+                                       params.WM.τ_f, params.WM.wθ,
+                                       nothing, nothing,
+                                       params.ω, neqs, params.inputs, AD, SD)
+end
     DSS_global_RHS!(@view(params.RHS[:,:]), params.pM, params.neqs)
     # time_function!(params.timers["DSS_global_RHS!"], DSS_global_RHS!, @view(params.RHS[:,:]), params.pM, params.neqs)
 
