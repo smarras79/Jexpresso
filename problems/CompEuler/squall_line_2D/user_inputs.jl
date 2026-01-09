@@ -6,7 +6,7 @@ function user_inputs()
         :ode_solver           => CarpenterKennedy2N54(),
         :Δt                   => 1.25,
         :tinit                => 0.0,
-        :tend                 => 10000.0,
+        :tend                 => 3500.0,
         #:tinit                => 100.0,
         #:tend                 => 1000.0,
         #:lrestart             => true,
