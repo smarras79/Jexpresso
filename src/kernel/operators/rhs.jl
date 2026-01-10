@@ -437,9 +437,11 @@ function rhs!(du, u, params, time)
                                params.mesh.connijk_lag,
                                params.metrics_lag.dξdx, params.metrics_lag.dξdy,
                                params.metrics_lag.dηdx, params.metrics_lag.dηdy,
-                               params.metrics_lag.Je, params.basis.dψ, params.basis_lag.dψ, params.ω, params.ω_lag, params.Minv, params.visc_coeff,
+                               params.metrics_lag.Je, params.basis.dψ, params.basis_lag.dψ,
+                               params.ω, params.ω_lag, params.Minv, params.visc_coeff,
                                params.mesh.ngl, params.mesh.ngr, TInt(params.neqs), PHYS_CONST, lpert;
-                               ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr), workgroupsize = (params.mesh.ngl,params.mesh.ngr))
+                               ndrange = (params.mesh.nelem_semi_inf*params.mesh.ngl,params.mesh.ngr),
+                               workgroupsize = (params.mesh.ngl,params.mesh.ngr))
                     
                     @inbounds params.RHS .+= params.RHS_visc_lag
                     
@@ -454,9 +456,14 @@ function rhs!(du, u, params, time)
                 params.source_gpu   .= TFloat(0.0)
                 
                 k = _build_rhs_diff_gpu_2D_v0!(backend, (Int64(params.mesh.ngl),Int64(params.mesh.ngl)))
-                k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el, params.uaux, params.qp.qe, params.source_gpu, params.mesh.x, params.mesh.y, params.mesh.connijk, 
-                  params.metrics.dξdx, params.metrics.dξdy, params.metrics.dηdx, params.metrics.dηdy, params.metrics.Je, params.basis.dψ, params.ω, params.Minv, 
-                  params.visc_coeff, params.mesh.ngl, TInt(params.neqs), PHYS_CONST, lpert; ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
+                k(params.RHS_visc, params.rhs_diffξ_el, params.rhs_diffη_el,
+                  params.uaux, params.qp.qe, params.source_gpu,
+                  params.mesh.x, params.mesh.y, params.mesh.connijk, 
+                  params.metrics.dξdx, params.metrics.dξdy,
+                  params.metrics.dηdx, params.metrics.dηdy,
+                  params.metrics.Je, params.basis.dψ, params.ω, params.Minv, 
+                  params.visc_coeff, params.mesh.ngl, TInt(params.neqs), PHYS_CONST, lpert;
+                  ndrange = (params.mesh.nelem*params.mesh.ngl,params.mesh.ngl), workgroupsize = (params.mesh.ngl,params.mesh.ngl))
                 KernelAbstractions.synchronize(backend)
 
                 @inbounds params.RHS .+= params.RHS_visc
@@ -465,7 +472,8 @@ function rhs!(du, u, params, time)
             DSS_global_RHS!(@view(params.RHS[:,:]), params.g_dss_cache, params.neqs)
 
             k1 = RHStodu_gpu!(backend)
-            k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs), workgroupsize = (params.mesh.ngl,params.neqs))
+k1(params.RHS,du,params.mesh.npoin,TInt(params.neqs);ndrange = (params.mesh.npoin,params.neqs),
+   workgroupsize = (params.mesh.ngl,params.neqs))
 
         end
 end
@@ -684,7 +692,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, 
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=coords[ip,1], y=coords[ip,2], xmax=xmax,xmin=xmin)
+                             neqs=params.neqs, x=coords[ip,1], y=0.0, xmax=xmax,xmin=xmin)
             end
         end
 
