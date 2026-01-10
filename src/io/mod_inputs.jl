@@ -727,15 +727,6 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :ldss_laplace))
         inputs[:ldss_laplace] = false
     end
-    #------------------------------------------------------------------------
-    # The following quantities stored in the inputs[] dictionary are only
-    # auxiliary and are NEVER to be defined by the user
-    #------------------------------------------------------------------------
-    if inputs[:μ] != (0.0)
-        inputs[:δvisc] = 1.0
-    else
-        inputs[:δvisc] = 0.0
-    end
 
     # AMR
     
@@ -743,9 +734,12 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lamr] = false
     end
 
-
     if(!haskey(inputs, :ladapt))
         inputs[:ladapt] = false
+    end
+
+    if inputs[:lamr] == true
+        inputs[:ladapt] = true
     end
 
     if(!haskey(inputs, :linitial_refine))
@@ -759,6 +753,16 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     if(!haskey(inputs, :amr_max_level))
         inputs[:amr_max_level] = 0
     end
+    #------------------------------------------------------------------------
+    # The following quantities stored in the inputs[] dictionary are only
+    # auxiliary and are NEVER to be defined by the user
+    #------------------------------------------------------------------------
+    if inputs[:μ] != (0.0)
+        inputs[:δvisc] = 1.0
+    else
+        inputs[:δvisc] = 0.0
+    end
+
 
     return inputs
 end

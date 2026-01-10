@@ -10,11 +10,11 @@ function user_inputs()
 	:lrestart             => false,
 	#:restart_output_file_path => "",
 	:restart_time         => 500,
-	:diagnostics_at_times => (0:1:50..., 100:500:5000..., 5000:250:8500...,  9000:10:10800.0...),
+	:diagnostics_at_times => (0:4:40..., 100:500:5000..., 5000:250:8500...,  9000:10:10800.0...),
         :lsource              => true,
         :lmoist               => true,
         :lprecip              => true,
-        :SOL_VARS_TYPE        => PERT(),
+        :SOL_VARS_TYPE        => TOTAL(),
         :LST                  => true,
         # :LST                  => false,
 	:lsponge              => true,
@@ -28,12 +28,11 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
-        :lwall_model          => false,
+        :lwall_model          => true,
         :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
-        :bdy_fluxes           => false,
+        :bdy_fluxes           => true,
         :lvisc                => true, #false by default
         # :visc_model           => SMAG(),
-        :ivisc_equations      => [1, 2, 3, 4, 5, 6, 7],
         :visc_model           => AV(),
         :μ           => [0.0, 200.0, 200.0, 200.0, 300.0, 300.0, 300.0], #horizontal viscosity constant for momentum
         # :μ                    => [0.0, 1, 1, 1, 2, 2, 2], #horizontal viscosity constant for momentum
@@ -83,8 +82,8 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # init_refinement
         #---------------------------------------------------------------------------
-        :linitial_refine     => false,
-        :init_refine_lvl     => 1,
+        :linitial_refine     => true,
+        :init_refine_lvl     => 2,
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------
