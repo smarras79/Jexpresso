@@ -1131,13 +1131,13 @@ function kessler(mp::St_Microphysics, params, q, qref, mesh)
     kessler_nocolumn!(mp,
                       params,
                       mesh.npoin,
-                      @view(q[:,1]),     #ρ
+                      @view(q[:,1]),          #ρ
                       @view(q[:,mesh.nsd+2]), #θ
                       @view(q[:,mesh.nsd+2]), #qv
                       @view(q[:,mesh.nsd+3]), #qc
                       @view(q[:,mesh.nsd+4]), #qr
                       qref,
-                      mesh.z,
+                      @view(mesh.coords[:,end]),
                       params.Δt)
 
     #for ip in 1:npoin
@@ -1199,13 +1199,14 @@ function kessler_nocolumn!(mp::St_Microphysics,
     rdzw   = mp.rdzw
     
     nfall, n, nfall_new, icol                    = 0, 0, 0, 0
-    qrr, pressure, temp, es, qvs, dz, pii        = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    qrr, pressure, temp,                         = 0.0, 0.0, 0.0
+    es, qvs, dz, pii                             = 0.0, 0.0, 0.0, 0.0
     f5, dtfall, rdz, product                     = 0.0, 0.0, 0.0, 0.0
     max_heating, max_condense, max_rain, maxqrp  = 0.0, 0.0, 0.0, -100.0
     vtmax, ernmax, crmax, factorn                = 0.0, 0.0, 0.0, 0.0
-    time_sediment = dt
-    qcr, factorr, ppt = 0.0, 0.0, 0.0
-    max_cr_sedimentation = 0.75
+    time_sediment                                = dt
+    qcr, factorr, ppt                            = 0.0, 0.0, 0.0
+    max_cr_sedimentation                         = 0.75
     
     # Terminal velocity calculation and advection
     f5           = svp2 * (svpt0 - svp3) * xlv / cp
