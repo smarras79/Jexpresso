@@ -36,9 +36,9 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/michal.msh",
+       # :gmsh_filename       => "./meshes/gmsh_grids/michal.msh",
       #  :gmsh_filename       => "./meshes/gmsh_grids/squall2d.msh",
-       #:gmsh_filename       => "./meshes/gmsh_grids/m_4.msh",
+       :gmsh_filename       => "./meshes/gmsh_grids/f_4.msh",
        # :gmsh_filename       => "./meshes/gmsh_grids/square_UNSTR_20el.msh",
         #---------------------------------------------------------------------------
         # Plotting parameters
