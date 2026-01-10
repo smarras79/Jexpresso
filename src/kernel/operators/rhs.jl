@@ -682,7 +682,7 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, 
                              @view(params.uaux[ip,:]),
                              @view(qe[ip,:]),
                              params.mesh.npoin, params.CL, params.SOL_VARS_TYPE;
-                             neqs=params.neqs, x=coords[ip,1], y=coords[ip,2], xmax=xmax,xmin=xmin)
+                             neqs=params.neqs, x=coords[ip,1], y=0.0, xmax=xmax,xmin=xmin)
             end
         end
 
