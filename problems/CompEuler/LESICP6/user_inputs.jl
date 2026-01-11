@@ -5,12 +5,13 @@ function user_inputs()
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         :Δt                   => 0.04,
-        :tinit                => 1750,
+        :tinit                => 0.0,
         :tend                 => 10800.0,
-	:lrestart             => true,
+	:lrestart             => false,
 	#:restart_output_file_path => "",
-	:restart_time         => 1750,
-	:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
+	:restart_time         => 500,
+	#:diagnostics_at_times => (0:10:100..., 1250:250:5000..., 5000:100:8500...,  9000:5:10800.0...),
+	:diagnostics_at_times => (0:20:10800),
         :lsource              => true,
 	:lsponge              => true,
 	:zsponge              => 2500.0,
@@ -68,7 +69,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "/scratch/smarras/smarras/output/LESICP6_64x64x36_10kmX10kmX3dot5km-filtered-smag1-warmstart/",
+        :output_dir          => "/scratch/smarras/smarras/output/LESICP6_64x64x36_10kmX10kmX3dot5km-filtered-smag1-newmaster/",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
