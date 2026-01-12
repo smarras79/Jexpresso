@@ -15,7 +15,7 @@ function user_inputs()
         :lmoist               => true,
         :lprecip              => true,
         :SOL_VARS_TYPE        => TOTAL(),
-        :LST                  => true,
+        :LST                  => false,
         # :LST                  => false,
 	:lsponge              => true,
 	:zsponge              => 19000.0,
@@ -83,7 +83,7 @@ function user_inputs()
         # init_refinement
         #---------------------------------------------------------------------------
         :linitial_refine     => true,
-        :init_refine_lvl     => 2,
+        :init_refine_lvl     => 1,
         #---------------------------------------------------------------------------
         # AMR
         #---------------------------------------------------------------------------

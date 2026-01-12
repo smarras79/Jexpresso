@@ -42,6 +42,7 @@ function user_uout!(ip, ET, uout, u, qe; mp = mp)
         uout[16] = u[2]/u[1]-qe[2]/qe[1]
         uout[17] = u[3]/u[1]-qe[3]/qe[1]
         uout[18] = u[4]/u[1]-qe[4]/qe[1]
+        uout[19] = u[5]/u[1]-qe[5]/qe[1]
     elseif ET == PERT()
         uout[1] = u[1]+qe[1]
         uout[2] = u[2]/(u[1]+qe[1])

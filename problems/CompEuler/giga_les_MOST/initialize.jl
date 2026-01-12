@@ -12,7 +12,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # 
     #---------------------------------------------------------------------------------
     qvars = ("ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp")
-    qoutvars = ["ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp", "T", "qn", "qc", "qi", "qr", "qs", "qg", "qsatt","u_prime", "v_prime", "w_prime"]
+    qoutvars = ["ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp", "T", "qn", "qc", "qi", "qr", "qs", "qg", "qsatt","u_prime", "v_prime", "w_prime", "hl_prime"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
@@ -65,11 +65,11 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
 
                 rand_noise = 0.0 #K
-                if z < 800.0
+                T_ref  = background[ip,2] + 273.15
+                if z < 2000.0 # change to 300m later to be consistent to the ref paper
                     rand_noise = 2*amp*(rand() - 1.0)
                 end
 
-                T_ref  = background[ip,2] + 273.15
                 #else
                 qv_ref = background_qv[ip,1]/1000
                 #end
@@ -117,7 +117,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qn[ip,3] = ρ*v
                     q.qn[ip,4] = ρ*w
                     q.qn[ip,5] = ρ*hl
-                    q.qn[ip,6] = ρ*qv_ref#0.0
+                    q.qn[ip,6] = 0.0
+                    # q.qn[ip,6] = ρ*qv_ref#0.0
                     q.qn[ip,7] = 0.0
                     q.qn[ip,end] = pref_m #+ ρ*qv*PhysConst.Rvap*T
 
@@ -127,7 +128,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qe[ip,3] = ρref*v_ref
                     q.qe[ip,4] = ρref*w
                     q.qe[ip,5] = ρref*hl_ref
-                    q.qe[ip,6] = ρref*qv_ref
+                    q.qe[ip,6] = 0.0
+                    # q.qe[ip,6] = ρref*qv_ref
                     q.qe[ip,7] = 0.0
                     q.qe[ip,end] = pref_m #+ ρref*qv*PhysConst.Rvap*Tref
                 end
