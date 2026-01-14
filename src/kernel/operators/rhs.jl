@@ -1,8 +1,8 @@
 using Distributions
 using StaticArrays
 
-const PHYS_CONST = PhysicalConst{Float32}()
-const MicroConst = MicrophysicalConst{Float32}()
+const PHYS_CONST = PhysicalConst{Float64}()
+const MicroConst = MicrophysicalConst{Float64}()
 
 function RHStoDU!(du, RHS, neqs, npoin)
     for i=1:neqs
