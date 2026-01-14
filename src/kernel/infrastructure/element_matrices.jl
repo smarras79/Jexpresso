@@ -82,6 +82,84 @@ function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
     
 end
 
+function build_differentiation_matrix_without_quadrature!(SD::NSD_2D, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
+
+    # Compute differentiation matrices Dx and Dy
+    # Such that: (∂u/∂x)|_I = Dx[I,J,iel] * u[J]
+    #            (∂u/∂y)|_I = Dy[I,J,iel] * u[J]
+
+    ngl   = mesh.ngl
+    nelem = mesh.nelem
+    
+    for iel=1:nelem
+        for n = 1:ngl
+            for m = 1:ngl
+                I = m + (n - 1)*ngl
+                
+                for j = 1:ngl
+                    for i = 1:ngl
+                        J = i + (j - 1)*ngl
+                        
+                        # Apply chain rule at node (m,n):
+                        # ∂/∂x = ∂ξ/∂x * ∂/∂ξ + ∂η/∂x * ∂/∂η
+                        
+                        # Contribution from ξ-derivative (varies in i, fixed in j=n)
+                        if j == n
+                            Dx[I,J,iel] += dψ[i,m] * metrics.dξdx[iel,m,n]
+                            Dy[I,J,iel] += dψ[i,m] * metrics.dξdy[iel,m,n]
+                        end
+                        
+                        # Contribution from η-derivative (fixed in i=m, varies in j)
+                        if i == m
+                            Dx[I,J,iel] += dψ[j,n] * metrics.dηdx[iel,m,n]
+                            Dy[I,J,iel] += dψ[j,n] * metrics.dηdy[iel,m,n]
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+end
+
+
+function build_differentiation_matrix!(De, SD::NSD_2D, QT, ψ, dψ, ω, ω1, mesh, metrics, N, Q, T)
+
+    ngl   = mesh.ngl
+    nelem = mesh.nelem
+    
+    for iel=1:nelem
+
+        for l = 1:ngl
+            ωl = ω[l]
+            for k = 1:ngl
+
+                ωkl  = ω[k]*ωl
+                Jkle = metrics.Je[iel, k, l]
+
+                for j = 1:ngl
+                    for i = 1:ngl
+                        J = i + (j - 1)*ngl
+                        ψJK = ψ[i,k]*ψ[j,l]
+                        
+                        for n = 1:ngl
+                            for m = 1:ngl
+                                I = m + (n - 1)*ngl
+                                
+                                dψIK_dx = dψ[i,k]*ψ[j,l]*metrics.dξdx[iel,k,l] + ψ[i,k]*dψ[j,l]*metrics.dηdx[iel,k,l]
+                                dψIK_dy = dψ[i,k]*ψ[j,l]*metrics.dξdy[iel,k,l] + ψ[i,k]*dψ[j,l]*metrics.dηdy[iel,k,l]
+				De[I,J,iel] += ωkl*Jkle*ψJK*(dψIK_dx+dψIK_dy)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", Me)
+
+end
+
 function build_differentiation_matrix_Laguerre!(De, SD::NSD_2D, QT, ψ, ψ1, dψ, dψ1, ω, ω1, mesh, metrics, N, Q, T)
 
 
@@ -113,6 +191,7 @@ function build_differentiation_matrix_Laguerre!(De, SD::NSD_2D, QT, ψ, ψ1, dψ
     #show(stdout, "text/plain", Me)
 
 end
+
 
 
 function build_differentiation_matrix(SD::NSD_2D, ψ, dψdξ, ω, mesh, N, Q, T)
@@ -159,7 +238,7 @@ function build_mass_matrix!(Me, SD::NSD_2D, QT::Inexact, ψ, ω, nelem, Je, Δx,
                                 J = m + (n - 1)*(N + 1)
                                 ψmknl = ψ[m,k]*ψ[n,l]
                                 
-                                Me[I,J,iel] += ωJ * ψikjl * ψmknl #Sparse
+                                Me[I,J,iel] += ωJ * ψikjl * ψmknl
                             end
                         end
                     end
