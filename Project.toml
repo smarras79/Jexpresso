@@ -2,6 +2,8 @@ name = "Jexpresso"
 uuid = "b6c1962e-2b89-11f0-398d-4f31b209be71"
 version = "0.1.0"
 
+[compat]
+UnicodePlots = "3.7.2"
 
 [deps]
 AMRVW = "233ec0c9-6b8d-4766-b9a2-a16e389fc38a"
@@ -571,18 +573,3 @@ xkbcommon_jll = "d8fb68d0-12a3-5cfd-a85a-d49703b185fd"
 
 [extras]
 JACC = "0979c8fe-16a4-4796-9b82-89a9f10403ea"
-
-[compat]
-UnicodePlots = "3.7.2"
-CSV = "0.10.15"
-Crayons = "=4.1.1"
-Gridap = "=0.18.12"
-GridapDistributed = "=0.4.7"
-GridapGmsh = "=0.7.2"
-GridapP4est = "=0.3.11"
-MPI = "=0.20.22"
-MPIPreferences = "=0.1.11"
-PackageCompiler = "=2.2.1"
-PrettyTables = "=2.4.0"
-Roots = "2.2.10"
-Thermodynamics = "=0.12.7"
