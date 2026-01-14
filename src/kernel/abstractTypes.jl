@@ -64,10 +64,12 @@ struct TOTAL <: AbstractPert end
 # viscosity type
 #
 abstract type AbstractVT end
-struct AV   <: AbstractVT end
-struct SMAG <: AbstractVT end
-struct VREM <: AbstractVT end
-struct DSGS <: AbstractVT end
+struct AV    <: AbstractVT end
+struct SMAG  <: AbstractVT end
+struct DSMAG <: AbstractVT end
+struct VREM  <: AbstractVT end
+struct WALE  <: AbstractVT end
+struct DSGS  <: AbstractVT end
 
 
 #
@@ -86,3 +88,4 @@ struct PNG <: AbstractOutFormat end
 struct ASCII <: AbstractOutFormat end
 struct VTK <: AbstractOutFormat end
 struct HDF5 <: AbstractOutFormat end
+struct NETCDF <: AbstractOutFormat end

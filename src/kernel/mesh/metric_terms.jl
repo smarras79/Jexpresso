@@ -121,18 +121,18 @@ function build_metric_terms_1D_Laguerre!(metrics, mesh::St_mesh, basis::St_Lagra
     
     if (backend == CPU())
         dψ = basis.dψ
-        for iel = 1:mesh.nelem_semi_inf
+        @inbounds for iel = 1:mesh.nelem_semi_inf  # PERF: Added @inbounds
             for i = 1:mesh.ngr
                 ip = mesh.connijk_lag[iel,i,1]
                 xij = mesh.x[ip]
-                
+
                 for k = 1:mesh.ngr
                     metrics.dxdξ[iel, k,1]  += dψ[i,k] * (xij) * inputs[:yfac_laguerre]
                     metrics.Je[iel, k, 1]   = inputs[:yfac_laguerre]#abs(metrics.dxdξ[iel, k, 1])
                     if (xij > 0.1)
-                        metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+                        metrics.dξdx[iel, k, 1] = T(1.0)/metrics.Je[iel, k, 1]  # FIXED: use type parameter T
                     else
-                        metrics.dξdx[iel, k, 1] = -1.0/metrics.Je[iel, k, 1]
+                        metrics.dξdx[iel, k, 1] = -T(1.0)/metrics.Je[iel, k, 1]  # FIXED: use type parameter T
                     end
                 end
             end
@@ -171,14 +171,14 @@ end
 function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, ξ, ω, T, MT::COVAR, SD::NSD_1D; backend = CPU())
     
     if (backend == CPU())
-        for iel = 1:mesh.nelem
+        @inbounds for iel = 1:mesh.nelem  # PERF: Added @inbounds
             for i = 1:N+1
                 for k = 1:Q+1
                     metrics.dxdξ[iel, k, 1]  = mesh.Δx[iel]/2
                     metrics.Je[iel, k, 1]   = metrics.dxdξ[iel, k, 1]
-                    metrics.dξdx[iel, k, 1] = 1.0/metrics.Je[iel, k, 1]
+                    metrics.dξdx[iel, k, 1] = T(1.0)/metrics.Je[iel, k, 1]  # FIXED: use type parameter T
                 end
-            end        
+            end
         end
     else
         x = KernelAbstractions.allocate(backend, TFloat, Int64(mesh.npoin))
@@ -246,9 +246,9 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                     # Compute Jacobian determinant
                     Je_val = dxdξ_iel[k, l] * dydη_iel[k, l] - dydξ_iel[k, l] * dxdη_iel[k, l]
                     Je_iel[k, l] = Je_val
-                    
+
                     # Compute inverse Jacobian components using single division
-                    Jinv = 1.0 / Je_val
+                    Jinv = T(1.0) / Je_val  # FIXED: use type parameter T
                     dξdx_iel[k, l] =  dydη_iel[k, l] * Jinv
                     dξdy_iel[k, l] = -dxdη_iel[k, l] * Jinv
                     dηdx_iel[k, l] = -dydξ_iel[k, l] * Jinv
@@ -287,6 +287,24 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 metrics.Jef[iedge, k] = Jef_val
                 metrics.nx[iedge, k] = dy * mag_inv
                 metrics.ny[iedge, k] = -dx * mag_inv
+                e = mesh.bdy_edge_in_elem[iedge]
+                ip2 = mesh.connijk[e,2,2]
+                idx1 = 0
+                idx2 = 0
+                #=for j=1:N+1
+                    for i=1:N+1
+                        if (mesh.connijk[e,i,j] == ip)
+                            idx1 = i
+                            idx2 = j
+                        end
+                    end
+                end=#
+                #if (idx1 + metrics.nx[iedge, k] < 1 || idx1 + metrics.nx[iedge, k] > N+1 || idx2 + metrics.ny[iedge, k] < 1 || idx2 + metrics.ny[iedge, k] > N+1)
+                if (metrics.nx[iedge, k]*(mesh.x[ip2]-mesh.x[ip]) + metrics.ny[iedge, k]*(mesh.y[ip2] -mesh.y[ip]) > 0)
+                    metrics.nx[iedge, k] = - metrics.nx[iedge, k]
+                    metrics.ny[iedge, k] = - metrics.ny[iedge, k]
+                end
+
             end
         end
     else
@@ -364,7 +382,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 # Precompute basis function values for current (i,j,k)
                 @simd for idx = 1:Q1
                     temp_basis[idx, 1] = dψ[i, idx]  # dψ_i
-                    temp_basis[idx, 2] = ψ[j, idx]   # ψ_j  
+                    temp_basis[idx, 2] =  ψ[j, idx]  # ψ_j  
                     temp_basis[idx, 3] = dψ[j, idx]  # dψ_j
                 end
                 
@@ -402,7 +420,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
             end
             
             # Optimized Jacobian calculations with better memory access
-            Je_iel = @view metrics.Je[iel, :, :, :]
+            Je_iel   = @view metrics.Je[iel, :, :, :]
             dξdx_iel = @view metrics.dξdx[iel, :, :, :]
             dξdy_iel = @view metrics.dξdy[iel, :, :, :]
             dξdz_iel = @view metrics.dξdz[iel, :, :, :]
@@ -483,8 +501,8 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 
                 @turbo for l = 1:ngl, k = 1:ngl
                     dψ_i_k = dψ[i, k]
-                    ψ_i_k = ψ[i, k]
-                    ψ_j_l = ψ[j, l]
+                    ψ_i_k  = ψ[i, k]
+                    ψ_j_l  = ψ[j, l]
                     dψ_j_l = dψ[j, l]
                     
                     a = dψ_i_k * ψ_j_l
@@ -519,7 +537,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 # More efficient neighbor point determination
                 i_neighbor = (i < N1) ? i + 1 : i - 1
                 j_neighbor = (j < N1) ? j + 1 : j - 1
-                
+                ip = poin_face[i,j]
                 ip1 = poin_face[i_neighbor, j]
                 ip2 = poin_face[i, j_neighbor]
                 
@@ -563,6 +581,29 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
                 nx_face[i, j] = nx_comp * norm_inv
                 ny_face[i, j] = ny_comp * norm_inv
                 nz_face[i, j] = nz_comp * norm_inv
+                e = mesh.bdy_face_in_elem[iface]
+                idx1 = 0
+                idx2 = 0
+                idx3 = 0
+                #find arbitrary interior point
+                ip3 = mesh.connijk[e,2,2,2]
+                #=for o=1:mesh.ngl
+                    for n=1:mesh.ngl
+                        for m=1:mesh.ngl
+                            if (mesh.connijk[e,m,n,o] == ip)
+                                    idx1 = m
+                                    idx2 = n
+                                    idx3 = o
+                            end
+                        end
+                    end
+                end=#
+                #if (idx1 + metrics.nx[iface, i, j] < 1 || idx1 + metrics.nx[iface, i, j] > N+1 || idx2 + metrics.ny[iface, i, j] < 1 || idx2 + metrics.ny[iface, i, j] > N+1 || idx3 + metrics.nz[iface, i, j] < 1 || idx3 + metrics.nz[iface, i, j] > N+1)
+                if (metrics.nx[iface, i, j]*(mesh.x[ip3]-mesh.x[ip])+ metrics.ny[iface, i, j]*(mesh.y[ip3]-mesh.y[ip]) + metrics.nz[iface, i, j]*(mesh.z[ip3]-mesh.z[ip]) > 0)
+                    metrics.nx[iface, i, j] = - metrics.nx[iface, i, j]
+                    metrics.ny[iface, i, j] = - metrics.ny[iface, i, j]
+                    metrics.nz[iface, i, j] = - metrics.nz[iface, i, j] 
+                end
             end
         end
     else
@@ -582,7 +623,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, N, Q, �
         metrics.Je .+= metrics.dydξ.*(metrics.dxdζ.*metrics.dzdη .- metrics.dxdη.*metrics.dzdζ)
         metrics.Je .+= metrics.dzdξ.*(metrics.dxdη.*metrics.dydζ .- metrics.dxdζ.*metrics.dydη)
         metrics.dξdx .= (metrics.dydη.*metrics.dzdζ .- metrics.dydξ.*metrics.dzdη) ./ metrics.Je
-        metrics.dξdy .= (metrics.dxdζ.*metrics.dzdη .- metrics.dxdη.*metrics.dzdη) ./ metrics.Je
+        metrics.dξdy .= (metrics.dxdζ.*metrics.dzdη .- metrics.dxdη.*metrics.dzdζ) ./ metrics.Je  # FIXED: was dzdη (typo)
         metrics.dξdz .= (metrics.dxdη.*metrics.dydζ .- metrics.dxdζ.*metrics.dydη) ./ metrics.Je
         metrics.dηdx .= (metrics.dydζ.*metrics.dzdξ .- metrics.dydξ.*metrics.dzdζ) ./ metrics.Je
         metrics.dηdy .= (metrics.dxdξ.*metrics.dzdζ .- metrics.dxdζ.*metrics.dzdξ) ./ metrics.Je
@@ -676,6 +717,9 @@ end
 end
 
 @kernel function build_3D_gpu_bdy_metrics!(Jef, nx, ny, nz, x, y, z, poin_in_bdy_face,N)
+    # FIXED: Infer type from arrays instead of hardcoding Float32
+    T = eltype(x)
+
     s = Int32(@groupsize()[1])
     #n = div(@ndrange()[1],s)#div(length(A),s)
     ie = @index(Group, Linear)
@@ -709,25 +753,25 @@ end
     b1 = x1 - x3
     b2 = y1 - y3
     b3 = z1 - z3
-    comp1 = a2*b3 - a3*b2 
+    comp1 = a2*b3 - a3*b2
     comp2 = a3*b1 - a1*b3
     comp3 = a1*b2 - a2*b1
     mag = sqrt(comp1^2 + comp2^2 + comp3^2)
-    if (mag < Float32(1e-6))
-        mag = max(mag,abs(comp1),abs(comp2),abs(comp3),Float32(1e-7))
+    if (mag < T(1e-6))  # FIXED: use type parameter T
+        mag = max(mag,abs(comp1),abs(comp2),abs(comp3),T(1e-7))  # FIXED: use type parameter T
     end
     Jef[iface, i, j] = mag/2
     nx[iface, i, j] = comp1/mag
     ny[iface, i, j] = comp2/mag
     nz[iface, i, j] = comp3/mag
-    if (abs(nx[iface,i,j]) < Float32(1e-2))
-        nx[iface, i,j] = zero(Float32)
+    if (abs(nx[iface,i,j]) < T(1e-2))  # FIXED: use type parameter T
+        nx[iface, i,j] = zero(T)  # FIXED: use type parameter T
     end
-    if (abs(ny[iface,i,j]) < Float32(1e-2))
-        ny[iface, i,j] = zero(Float32)
+    if (abs(ny[iface,i,j]) < T(1e-2))  # FIXED: use type parameter T
+        ny[iface, i,j] = zero(T)  # FIXED: use type parameter T
     end
-    if (abs(nz[iface,i,j]) < Float32(1e-2))
-        nz[iface, i,j] = zero(Float32)
+    if (abs(nz[iface,i,j]) < T(1e-2))  # FIXED: use type parameter T
+        nz[iface, i,j] = zero(T)  # FIXED: use type parameter T
     end
 end
 
@@ -739,7 +783,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR
     dψ1 = basisGR.dψ
     if ("Laguerre" in mesh.bdy_edge_type)
         if (backend == CPU())
-            for iel=1:mesh.nelem_semi_inf
+            @inbounds for iel=1:mesh.nelem_semi_inf  # PERF: Added @inbounds for 4 nested loops
                 for j=1:mesh.ngr
                     for i =1:mesh.ngl
                         ip = mesh.connijk_lag[iel,i,j]
@@ -854,8 +898,9 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR
             z = mesh.zmax_xtra
         end
     elseif (dir == "y")
-        ψ  = basis.ψ
-        dψ = basis.dψ
+        # FIXED: Removed duplicate assignments (dead code)
+        ψ1  = basis.ψ
+        dψ1 = basis.dψ
         ψ  = basisGR.ψ
         dψ = basisGR.dψ
         ψ2  = basis.ψ
@@ -880,8 +925,9 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR
             z = mesh.zmax_ytra
         end
     else
-        ψ  = basis.ψ
-        dψ = basis.dψ
+        # FIXED: Removed duplicate assignments (dead code)
+        ψ1  = basis.ψ
+        dψ1 = basis.dψ
         ψ  = basis.ψ
         dψ = basis.dψ
         ψ2  = basisGR.ψ
@@ -908,7 +954,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR
     end
 
     #@info " COVARIANT metric terms WIP"
-    for iel = 1:nelem
+    @inbounds for iel = 1:nelem  # PERF: Added @inbounds for 6 nested loops
         for n = 1:Q3+1
             for m = 1:Q2+1
                 for l = 1:Q1+1
@@ -949,7 +995,7 @@ function build_metric_terms!(metrics, mesh::St_mesh, basis::St_Lagrange, basisGR
                     metrics.Je[l, m, n, iel] += metrics.dzdξ[l, m, n, iel]*(metrics.dxdη[l, m, n, iel]*metrics.dydζ[l, m, n, iel] - metrics.dxdζ[l, m, n, iel]*metrics.dydη[l, m, n, iel])
 
                     metrics.dξdx[l, m, n, iel] =  (metrics.dydη[l, m, n, iel]*metrics.dzdζ[l, m, n, iel] - metrics.dydξ[l, m, n, iel]*metrics.dzdη[l, m, n, iel])/metrics.Je[l, m, n, iel]
-                    metrics.dξdy[l, m, n, iel] =  (metrics.dxdζ[l, m, n, iel]*metrics.dzdη[l, m, n, iel] - metrics.dxdη[l, m, n, iel]*metrics.dzdη[l, m, n, iel])/metrics.Je[l, m, n, iel]
+                    metrics.dξdy[l, m, n, iel] =  (metrics.dxdζ[l, m, n, iel]*metrics.dzdη[l, m, n, iel] - metrics.dxdη[l, m, n, iel]*metrics.dzdζ[l, m, n, iel])/metrics.Je[l, m, n, iel]  # FIXED: was dzdη (typo)
                     metrics.dξdz[l, m, n, iel] =  (metrics.dxdη[l, m, n, iel]*metrics.dydζ[l, m, n, iel] - metrics.dxdζ[l, m, n, iel]*metrics.dydη[l, m, n, iel])/metrics.Je[l, m, n, iel]
                     metrics.dηdx[l, m, n, iel] =  (metrics.dydζ[l, m, n, iel]*metrics.dzdξ[l, m, n, iel] - metrics.dydξ[l, m, n, iel]*metrics.dzdζ[l, m, n, iel])/metrics.Je[l, m, n, iel]
                     metrics.dηdy[l, m, n, iel] =  (metrics.dxdξ[l, m, n, iel]*metrics.dzdζ[l, m, n, iel] - metrics.dxdζ[l, m, n, iel]*metrics.dzdξ[l, m, n, iel])/metrics.Je[l, m, n, iel]

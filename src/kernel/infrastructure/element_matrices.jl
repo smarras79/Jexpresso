@@ -304,23 +304,134 @@ function DSS_Mass_jacc_1D!(M, SD, QT, Me, conn, nelem, npoin, N, TFloat; llump=f
     end
 end
 
-#JACCIFY
-#=function DSS_Mass_gpu_2D_kernel!(ie, M, Mel, conn, N)
-    for i_y = 1:N+1
-        for i_x = 1:N+1
-            J = i_x + (i_y - 1)*(N+1)
-            JP = conn[ie, i_x, i_y]
+function DSS_mass!(M, SD::NSD_3D, QT::Inexact, Mel::AbstractArray, conn::AbstractArray, nelem, npoin, N, T; llump=false)
+    
+    for iel=1:nelem
+        
+        for k = 1:N+1
+            for j = 1:N+1
+                for i = 1:N+1
+                    J = i + (j - 1)*(N + 1) + (k - 1)*(N + 1)*(N + 1)
+                    JP = conn[iel,i,j,k]
+
+                    for o = 1:N+1
+                        for n = 1:N+1
+                            for m = 1:N+1
+                                I = m + (n - 1)*(N + 1) + (o - 1)*(N + 1)*(N + 1)
+                                IP = conn[iel,m,n,o]
+                                
+                                M[IP] += Mel[I,J,iel] #if inexact
+                            end
+                        end
+                    end
+                end    
+            end
+        end     
+    end    
+end
+
+@kernel function DSS_Mass_gpu_1D!(M, Mel, conn)
+    ie = @index(Group, Linear)
+    i = @index(Local, Linear)
+
+    IP = conn[ie, i, 1]
+    M[IP] = M[IP] + Mel[i,ie]
+end
+
+@kernel function DSS_Mass_gpu_2D!(M, Mel, conn, nelem, npoin, N)
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    i_x = il[1]
+    i_y = il[2]
+    J = i_x + (i_y - 1)*(N+1)
+    JP = conn[ie,i_x,i_y]
+
+    for n = 1:N+1
+        for m = 1:N+1
+            I = m + (n-1)*(N+1)
+            IP = conn[ie,m,n]
+            KernelAbstractions.@atomic M[IP] += Mel[I,J,ie]
+        end
+    end
+end
+
+@kernel function DSS_Mass_gpu_3D!(M, Mel, conn, nelem, npoin, N)
+    ie = @index(Group, Linear)
+    il = @index(Local, NTuple)
+    i_x = il[1]
+    i_y = il[2]
+    i_z = il[3]
+    J = i_x + (i_y - 1)*(N+1) + (i_z - 1)*(N+1)*(N+1)
+    JP = conn[ie,i_x,i_y,i_z]
+
+    for n = 1:N+1
+        for m = 1:N+1
+            for k = 1:N+1
+                I = k + (m-1)*(N+1) + (n-1)*(N+1)*(N+1)
+                IP = conn[ie,k,m,n]
+                KernelAbstractions.@atomic M[IP] += Mel[I,J,ie]
+            end
+        end
+    end
+end
+
+function DSS_laplace!(L, SD::NSD_2D, Lel::AbstractArray, ω, mesh, metrics, N, T; llump=false)
+    
+    for iel=1:mesh.nelem
+        for j = 1:mesh.ngl, i = 1:mesh.ngl
+            #J = i + (j - 1)*mesh.ngl
+            JP = mesh.connijk[iel,i,j]
+
+            for n = 1:mesh.ngl, m = 1:mesh.ngl
+                #I = m + (n - 1)*mesh.ngl
+                IP = mesh.connijk[iel,m,n]
+                
+                L[IP,JP] += Lel[iel,m,n,i,j]
+            end
+        end
+    end
+    
+    #show(stdout, "text/plain", L)
+end
+
+
+# Alternative version with pre-computed element matrices for better performance
+function DSS_laplace_sparse(mesh, Lel)
+
+    # Pre-allocate arrays for triplet format
+    # Estimate size: ngl^2 entries per element * number of elements
+    max_entries = mesh.ngl^2 * mesh.ngl^2 * mesh.nelem
+    
+    I_vec = Vector{Int}()
+    J_vec = Vector{Int}()
+    V_vec = Vector{Float64}()
+    
+    # Reserve space to avoid frequent reallocations
+    sizehint!(I_vec, max_entries)
+    sizehint!(J_vec, max_entries)
+    sizehint!(V_vec, max_entries)
+    
+    # Assembly loop
+    for iel = 1:mesh.nelem
+        for j = 1:mesh.ngl, i = 1:mesh.ngl
+            JP = mesh.connijk[iel, i, j]
             
-            for n = 1:N+1
-                for m = 1:N+1
-                    I = m + (n-1)*(N+1)
-                    IP = conn[ie, m, n]
-                    Atomix.@atomic M[IP] += Mel[I, J, ie]
+            for n = 1:mesh.ngl, m = 1:mesh.ngl
+                IP = mesh.connijk[iel, m, n]
+                
+                val = Lel[iel, m, n, i, j]
+                if abs(val) > eps(Float64)  # Skip near-zero entries
+                    push!(I_vec, IP)
+                    push!(J_vec, JP)
+                    push!(V_vec, val)
                 end
             end
         end
     end
-end=#
+    
+    # Create sparse matrix and sum duplicate entries automatically
+    return sparse(I_vec, J_vec, V_vec)
+end
 
 #=
 function DSS_Mass_jacc_2D!(M, Mel, conn, nelem, npoin, N)
@@ -501,12 +612,313 @@ function DSS_laplace_jacc_lag!(L, Lel, connijk, ωx, ωy, nx, ny, dηdx_lag, dyd
     end
 end
 
-function DSS_global_RHS!(RHS, pM, neqs)
 
-    if pM == nothing return end
+function DSS_laplace_Laguerre!(L, SD::NSD_2D, Lel::AbstractArray, Lel_lag::AbstractArray, ω, ω_lag, mesh, metrics, metrics_lag, N, T; llump=false)
+
+    for iel=1:mesh.nelem
+
+        for i=1:mesh.ngl
+            for j=1:mesh.ngl
+                ip = mesh.connijk[iel,i,j]
+                for k =1:mesh.ngl
+                    jp = mesh.connijk[iel,k,j]
+                    L[ip,jp] += metrics.dξdx[iel,i,k]*Lel[i,k]*ω[j]*metrics.dydη[iel,i,k]
+                end
+                
+                for l = 1:mesh.ngl
+                    jp = mesh.connijk[iel,i,l]
+                    L[ip,jp] += metrics.dηdy[iel,i,l]*Lel[j,l]*ω[i]*metrics.dxdξ[iel,i,l]
+                end
+            end
+        end 
+    end
+
+    for iel=1:mesh.nelem_semi_inf
+
+        for i=1:mesh.ngr
+            for j=1:mesh.ngl
+                ip = mesh.connijk_lag[iel,j,i]
+                for k =1:mesh.ngr
+                    jp = mesh.connijk_lag[iel,j,k]
+                    L[ip,jp] += metrics_lag.dηdx[iel,j,k]*Lel_lag[i,k]*ω[j]*metrics.dydη[iel,j,j]
+                end
+                ### this only works for a standard grid fix this in the future 
+                for l = 1:mesh.ngl
+                    jp = mesh.connijk_lag[iel,l,i]
+                    L[ip,jp] += metrics.dηdy[iel,j,l]*Lel[j,l]*ω_lag[i]*metrics_lag.dxdη[iel,l,i]
+                end
+            end
+        end
+    end
+
+end
+
+
+
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::FD)
+    nothing
+end
+function DSS_rhs!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_2D, ::FD)
+    nothing
+end
+
+function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::ContGal)
+
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for i = 1:ngl
+                I = connijk[iel,i,1]
+                RHS[I,ieq] += rhs_el[iel,i,ieq]
+            end
+        end
+    end
     
-    assemble_mpi!(@view(RHS[:,:]),pM)
+end
+
+function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
+
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for j = 1:ngl
+                for i = 1:ngl
+                    I = connijk[iel,i,j]
+                    RHS[I,ieq] += rhs_el[iel,i,j,ieq]
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", V)
+end
+
+
+function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_3D, ::ContGal)
+
+    for ieq = 1:neqs
+        for iel = 1:nelem
+            for k = 1:ngl
+                for j = 1:ngl
+                    for i = 1:ngl
+                        I = connijk[iel,i,j,k]
+                        RHS[I,ieq] += rhs_el[iel,i,j,k,ieq]
+                    end
+                end
+            end
+        end
+    end
+    #show(stdout, "text/plain", V)
+end
+
+function DSS_rhs_laguerre!(RHS, rhs_el, connijk_lag, nelem_semi_inf, ngl, ngr, neqs, ::NSD_1D, ::ContGal)
+
+    for ieq = 1:neqs
+        for iel = 1:nelem_semi_inf
+            for i = 1:ngr
+                I = connijk_lag[iel,i,1]
+
+                RHS[I,ieq] += rhs_el[iel,i,ieq]
+            end
+        end
+    end
+end
+
+function DSS_rhs_laguerre!(RHS, rhs_el, connijk_lag, nelem_semi_inf, ngl, ngr, neqs, ::NSD_2D, ::ContGal)
+
+    for ieq = 1:neqs
+        for iel = 1:nelem_semi_inf
+            for j = 1:ngr
+                for i = 1:ngl
+                    I = connijk_lag[iel,i,j]
+                    
+                    RHS[I,ieq] += rhs_el[iel,i,j,ieq]
+                end
+            end
+        end
+    end
+end
+
+
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, ::FD)
+    nothing
+end
+
+
+
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::FD)
+    nothing
+end
+
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, ::ContGal)
     
+    RHSaux .= RHS
+    for ip=1:npoin
+        a = zero(eltype(RHS))
+        for jp = 1:npoin
+            a += Minv[ip,jp]*RHSaux[jp]
+        end
+        RHS[ip] = a
+    end
+    
+end
+
+function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, ::ContGal)
+    
+    for ip=1:npoin
+        RHS[ip] = Minv[ip]*RHS[ip]
+    end
+    
+end
+
+function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
+                        ldss_laplace=false, ldss_differentiation=false)
+
+    if typeof(SD) == NSD_1D
+        Me = zeros(TFloat, 1, 1)
+    elseif typeof(SD) == NSD_2D
+        Me = zeros(TFloat, 1, 1, 1)
+    elseif typeof(SD) == NSD_3D
+        Me = zeros(TFloat, 1, 1, 1, 1)
+    end
+    
+    if (QT == Exact() && inputs[:llump] == false)
+        M    = zeros(TFloat, 1, 1)
+        Minv = zeros(TFloat, 1, 1)
+    else
+        M    = zeros(TFloat, 1)
+        Minv = zeros(TFloat, 1)
+    end
+    
+    Le = zeros(TFloat, 1, 1)
+    L  = zeros(TFloat, 1,1)
+    
+    De = zeros(TFloat, 1, 1)
+    D  = zeros(TFloat, 1,1)
+    
+    return (; Me, De, Le, M, Minv, D, L)
+    
+end
+
+function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_1D) nothing end
+
+function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D)
+   normals = zeros(Float64, mesh.npoin, 2)
+
+    @inbounds for iedge = 1:mesh.nedges_bdy
+
+        poin_edge = @view mesh.poin_in_bdy_edge[iedge, :]
+        for i = 1:mesh.ngl
+            ip = poin_edge[i]
+            normals[ip, 1] += nx[iedge, i]
+            normals[ip, 2] += ny[iedge, i]
+            #end
+        end
+    end
+
+    pM = setup_assembler(mesh.SD, normals, mesh.ip2gip, mesh.gip2owner)
+    if pM != nothing
+        assemble_mpi!(@view(normals[:,:]),pM)
+    end
+    @inbounds for iedge = 1:mesh.nedges_bdy
+
+        poin_edge = @view mesh.poin_in_bdy_edge[iedge, :]
+        for i = 1:mesh.ngl
+            ip = poin_edge[i]
+            mag = sqrt(normals[ip, 1]^2+ normals[ip, 2]^2)
+            normx=0
+            normy=0
+            if (mag > 0)
+                normx = normals[ip, 1]/mag
+                normy = normals[ip, 2]/mag
+            end
+            if mesh.bdy_edge_type[iedge] != "periodicx" && (abs(nx[iedge, i] - normx) < 0.25)
+                nx[iedge, i] = normx
+            end
+            if mesh.bdy_edge_type[iedge] != "periodicy" && (abs(ny[iedge, i] - normy) < 0.25)
+                ny[iedge, i] = normy
+            end
+
+            #makesure vectors are unit vectors 
+            mag = sqrt(nx[iedge, i]^2 + ny[iedge, i]^2)
+            if (mag > 0)
+                nx[iedge, i] = nx[iedge, i]/mag
+                ny[iedge, i] = ny[iedge, i]/mag
+            end
+        end
+    end
+
+end
+ 
+function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
+
+    normals = zeros(Float64, mesh.npoin, 3)
+
+    @inbounds for iface = 1:mesh.nfaces_bdy
+
+        poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
+        for j = 1:mesh.ngl, i = 1:mesh.ngl
+            ip              = poin_face[i, j]
+            normals[ip, 1] += nx[iface, i, j]
+            normals[ip, 2] += ny[iface, i, j]
+            normals[ip, 3] += nz[iface, i, j]
+        end
+    end
+
+    pM = setup_assembler(mesh.SD, normals, mesh.ip2gip, mesh.gip2owner)
+    if pM != nothing
+        assemble_mpi!(@view(normals[:,:]),pM)
+    end
+    @inbounds for iface = 1:mesh.nfaces_bdy
+
+        poin_face = @view mesh.poin_in_bdy_face[iface, :, :]
+        for j = 1:mesh.ngl, i = 1:mesh.ngl
+            ip = poin_face[i, j]
+            
+            mag = sqrt(normals[ip, 1]^2+ normals[ip, 2]^2 + normals[ip, 3]^2)
+            normx=0
+            normy=0
+            normz=0
+            if (mag > 0)
+            
+                normx = normals[ip, 1]/mag
+                normy = normals[ip, 2]/mag
+                normz = normals[ip, 3]/mag
+                
+            end
+            if mesh.bdy_face_type[iface] != "periodicx" && (abs(nx[iface, i, j] - normx) < 0.25)
+                nx[iface, i, j] = normx
+            end
+            if mesh.bdy_face_type[iface] != "periodicy" && (abs(ny[iface, i, j] - normy) < 0.25)
+                ny[iface, i, j] = normy
+            end
+            if mesh.bdy_face_type[iface] != "periodicz" && (abs(nz[iface, i, j] - normz) < 0.25)
+                nz[iface, i, j] = normz
+            end
+
+            #makesure vectors are unit vectors 
+            mag = sqrt(nx[iface, i, j]^2 + ny[iface, i, j]^2 + nz[iface, i, j]^2)
+            if (mag > 0) 
+                nx[iface, i, j] = nx[iface, i, j]/mag
+                ny[iface, i, j] = ny[iface, i, j]/mag
+                nz[iface, i, j] = nz[iface, i, j]/mag
+            end
+        end
+    end
+    
+end
+
+
+
+function DSS_global_RHS!(RHS, g_dss_cache, neqs)
+
+    if g_dss_cache === nothing return end
+    
+    assemble_mpi!(@view(RHS[:,:]),g_dss_cache)
+    
+end
+
+function DSS_global_RHS_pvector!(RHS, g_dss_cache, neqs)
+    for i = 1:neqs
+       DSS_global_RHS_v0!(@view(RHS[:,i]), g_dss_cache)
+    end
 end
 
 function DSS_global_RHS_v0!(M, pM)
@@ -541,11 +953,13 @@ function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
         return nothing
     end
     
-    pM = setup_assembler(SD, M, ip2gip, gip2owner)
+    #check_memory(" in sem_setup before setup_assembler.")
+    g_dss_cache = setup_assembler(SD, M, ip2gip, gip2owner)
+    #check_memory(" in sem_setup after setup_assembler.")
     
-    @time assemble_mpi!(M,pM)
+    assemble_mpi!(M,g_dss_cache)
 
-    return pM
+    return g_dss_cache
     
 end
 
@@ -708,6 +1122,25 @@ function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, 
     
 end
 
+function DSS_global_mass_pvector!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+    # @info ip2gip
+    row_partition = map(parts) do part
+        row_partition = LocalIndices(gnpoin,part,ip2gip,gip2owner)
+        # gM = M
+        row_partition
+    end
+    g_dss_cache = pvector(values->@view(M[:]), row_partition)
+
+    assemble!(g_dss_cache) |> wait
+    consistent!(g_dss_cache) |> wait
+    M = map(local_values(g_dss_cache)) do values
+        M = values
+        M
+    end
+    return g_dss_cache
+end
+
+
 
 function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
     ldss_laplace=false, ldss_differentiation=false, backend = CPU(), interp=nothing)
@@ -806,6 +1239,75 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     if lbuild_differentiation_matrix # this true needs to be changed to lbuild_laplace_matrix
         Le_base = zeros(TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
         Le = JACC.array(Le_base)
+    
+    g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+
+    DSS_global_normals!(metrics.nx, metrics.ny, metrics.nz, mesh, SD)
+    
+    if (inputs[:ladapt] == true)
+        DSS_nc_scatter_mass!(M, SD, QT, Me, mesh.connijk, mesh.poin_in_edge, mesh.non_conforming_facets,
+                                   mesh.non_conforming_facets_children_ghost, mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, N, interp)
+    end
+    if (inputs[:bdy_fluxes])
+        if SD == NSD_3D()
+            M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_surf,g_dss_cache)
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_surf_inv, M_surf, QT)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            
+        else
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_edge,g_dss_cache)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_edge_inv, M_edge, QT)
+        end
+    else
+        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+        M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+    end
+    
+    mass_inverse!(Minv, M, QT)
+    Le = KernelAbstractions.zeros(backend,TFloat, 1, 1)
+    L  = KernelAbstractions.zeros(backend, TFloat, 1,1)
+    if lbuild_laplace_matrix
+        if (backend == CPU())
+            #
+            # CPU
+            #
+            Le = build_laplace_matrix(SD,
+                                      basis.ψ, basis.dψ,
+                                      ω, mesh.nelem,
+                                      mesh,
+                                      metrics,
+                                      N, Q, TFloat)
+            
+            if (inputs[:lsparse])
+                @info " DSS sparse"
+                L = DSS_laplace_sparse(mesh, Le)
+                @info " DSS sparse .................... DONE"
+            else
+                L = KernelAbstractions.zeros(backend,
+                                             TFloat,
+                                             Int64(mesh.npoin),
+                                             Int64(mesh.npoin))
+
+                DSS_laplace!(L, SD,
+                             Le, ω,
+                             mesh, metrics,
+                             N, TFloat;
+                             llump=inputs[:llump])
+            end
+            
+        else
+            #
+            # GPU
+            #
+            Le = KernelAbstractions.zeros(backend,
+                                          TFloat,
+                                          Int64(mesh.ngl),
+                                          Int64(mesh.ngl))
 
         n_nodes = size(basis.dψ, 1)
         total_iterations= (n_nodes * n_nodes * (Q + 1))
@@ -877,7 +1379,26 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
     else
         nothing
     end
-
+    
+    if (inputs[:bdy_fluxes])
+        if SD == NSD_3D()
+            M_surf = build_surface_mass_matrix(mesh.nfaces_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_face, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_surf,g_dss_cache)
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_surf_inv, M_surf, QT)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            
+        else
+            M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+            M_edge = build_segment_mass_matrix(mesh.nedges_bdy, mesh.npoin, ω, basis.ψ, mesh.ngl, metrics.Jef, mesh.poin_in_bdy_edge, TFloat, mesh.Δx, inputs)
+            assemble_mpi!(M_edge,g_dss_cache)
+            M_edge_inv = KernelAbstractions.zeros(backend, TFloat, Int64(mesh.npoin))
+            mass_inverse!(M_edge_inv, M_edge, QT)
+        end
+    else
+        M_surf_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+        M_edge_inv = KernelAbstractions.zeros(backend, TFloat, 1)
+    end
 
     if typeof(SD) == NSD_1D
         M_lag_base = zeros(TFloat, Int64(mesh.ngr*mesh.ngr), Int64(mesh.nelem_semi_inf))
@@ -897,6 +1418,16 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         Minv_base = zeros(TFloat, Int64(mesh.npoin))
         Minv = JACC.array(Minv_base)
     end
+    if (backend == CPU())
+        if typeof(SD) == NSD_1D
+            build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[2].ψ, ω[2], mesh, metrics[2], mesh.Δx, N, Q, TFloat)
+        elseif typeof(SD) == NSD_2D
+            build_mass_matrix_Laguerre!(M_lag, SD, QT, basis[1].ψ, basis[2].ψ, ω[1], ω[2], mesh, metrics[2], N, Q, TFloat)
+        end
+        
+        @time DSS_mass_Laguerre!(M, SD, Me, M_lag, mesh, N, TFloat; llump=inputs[:llump])
+        g_dss_cache = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    else
         if (typeof(SD) == NSD_1D)
             k = build_mass_matrix_1d_gpu!(backend)
             k(M_lag, basis[2].ψ, ω[2], metrics[2].Je, mesh.ngr;ndrange = (mesh.nelem_semi_inf*mesh.ngr), workgroupsize = (mesh.ngr))
@@ -1014,9 +1545,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         end
     end
 
-    @info "We are here 3", maximum(M), maximum(Minv), maximum(Me), maximum(De), maximum(D), maximum(Le), maximum(L)
-
-    return (; Me, De, Le, M, Minv, D, L, M_surf_inv=Minv, M_edge_inv=Minv)
+    return (; Me, De, Le, M, Minv, M_edge_inv, M_surf_inv, g_dss_cache, D, L)
 end
 
 

@@ -3,7 +3,7 @@ function read_large_scale!(backend, flist, LST, mesh)
     data_out = KernelAbstractions.zeros(backend,TFloat,size(flist,1), Int64(mesh.npoin))
     
     for i=1:size(flist,1)
-        data          = read_sounding(flist[1])
+        data          = read_sounding(flist[i])
         data_reordered = zeros(TFloat, size(data))
         data_reordered[:,1] .= data[:,2]*1000
         data_reordered[:,2] .= data[:,1]
