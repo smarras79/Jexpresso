@@ -12,12 +12,36 @@ mutable struct St_ElMat{TFloat} <: AbstractMassType
 end
 
 function DSS_rhs!(RHS, rhs_el, connijk, nelem, ngl, neqs, SD, method)
-    total_iterations = neqs * nelem * ngl
     if(SD == NSD_1D())
-        @info "Were here"
+        total_iterations = neqs * nelem * ngl
+       # @info "Were here"
         JACC.parallel_for(total_iterations, DSS_rhs_jacc!, RHS, rhs_el, connijk, nelem, ngl, neqs, SD, method)
-        @info "And here"
+       # @info "And here
+    elseif(SD == NSD_2D())
+        total_iterations = neqs * nelem * ngl * ngl
+        #@info "Were here 2"
+        JACC.parallel_for(total_iterations, DSS_rhs_jacc!, RHS, rhs_el, connijk, nelem, ngl, neqs, SD, method)
+       # @info "And here 2"
+    else
+        total_iterations = ngl * ngl * ngl * nelem * neqs
+        JACC.parallel_for(total_iterations, DSS_rhs_jacc!, RHS, rhs_el, connijk, nelem, ngl, neqs, SD, method)
+
+        #error("DSS_rhs! not implemented for 3D")
     end
+end
+
+function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+
+    if SD == NSD_1D()
+        return nothing
+    end
+    
+    pM = setup_assembler(SD, M, ip2gip, gip2owner)
+    
+    @time assemble_mpi!(M,pM)
+
+    return pM
+    
 end
 
 function DSS_rhs_laguerre!(RHS, rhs_el, connijk_lag, nelem_semi_inf, ngl, ngr, neqs, SD, method)
@@ -122,6 +146,62 @@ function build_mass_matrix_2d_jacc!(idx_linear, Me, ψ, ω, Je, N, Q)
 
 end
 
+function build_mass_matrix_3d_jacc!(idx, Me, ψ, ω, Je, N, Q, nelem)
+    # --- 1. Define Dimensionality Constants ---
+    n_basis_1d = N + 1
+    n_quad_1d = Q + 1
+    n_basis_3d = n_basis_1d^3
+    n_quad_3d = n_quad_1d^3
+
+    # --- 2. Decompose the Global Linear Index 'idx' ---
+    idx0 = idx - 1
+
+    # Extract the flat indices for the quadrature point, column (J), row (I), and element (ie)
+    quad_idx_flat = idx0 % n_quad_3d
+    remainder = idx0 ÷ n_quad_3d
+
+    J_flat = remainder % n_basis_3d
+    remainder = remainder ÷ n_basis_3d
+
+    I_flat = remainder % n_basis_3d
+    ie = (remainder ÷ n_basis_3d) + 1
+
+    # --- 3. Decompose Flat Indices into 3D Coordinates ---
+    # Decompose quadrature index into (m, n, o)
+    o_idx = quad_idx_flat % n_quad_1d; temp_quad = quad_idx_flat ÷ n_quad_1d
+    n_idx = temp_quad % n_quad_1d; m_idx = temp_quad ÷ n_quad_1d
+    m = m_idx + 1; n = n_idx + 1; o = o_idx + 1
+
+    # Decompose column index J into (p, q, r)
+    p_idx = J_flat % n_basis_1d; temp_J = J_flat ÷ n_basis_1d
+    q_idx = temp_J % n_basis_1d; r_idx = temp_J ÷ n_basis_1d
+    p = p_idx + 1; q = q_idx + 1; r = r_idx + 1
+
+    # Decompose row index I into (i_x, i_y, i_z)
+    i_x_idx = I_flat % n_basis_1d; temp_I = I_flat ÷ n_basis_1d
+    i_y_idx = temp_I % n_basis_1d; i_z_idx = temp_I ÷ n_basis_1d
+    i_x = i_x_idx + 1; i_y = i_y_idx + 1; i_z = i_z_idx + 1
+
+    # --- 4. Calculate Contribution and Atomically Add ---
+    ωmno = ω[m] * ω[n] * ω[o]
+    Jmnoe = Je[ie, m, n, o]
+    
+    # Basis function for column J at point (m,n,o)
+    ψIK = ψ[p, m] * ψ[q, n] * ψ[r, o]
+    # Basis function for row I at point (m,n,o)
+    ψJK = ψ[i_x, m] * ψ[i_y, n] * ψ[i_z, o]
+    
+    term = ωmno * Jmnoe * ψIK * ψJK
+
+    # Get the final 1-based flat indices for writing to Me
+    I = I_flat + 1
+    J = J_flat + 1
+    
+    # Atomically add the result. This is crucial because many threads
+    # (for different quadrature points) will be writing to the same Me[I, J, ie].
+    @Atomix.atomic Me[I, J, ie] += term
+end
+
 
 
 
@@ -149,7 +229,7 @@ end=#
 #JACCIFY
 function build_mass_matrix_Laguerre_2d_gpu!(Me, ψ, ψ1, ω, ω1, Je, ngl, ngr)
 
-
+    @info "Inside Laguerre Mass Matrix Build"
     iel = @index(Group, Linear)
     il = @index(Local, NTuple)
     i_x = il[1]
@@ -188,14 +268,14 @@ function build_laplace_matrix_jacc_parallel_all!(idx_linear, Le, dψ, ω, Q)
 
         term = ω[k] * dψ[i, k] * dψ[j, k]
 
-        Le[i,j] = Le[i,j] + term
+        Atomix.@atomic Le[i,j] = Le[i,j] + term
         @info "Le[i,j]", i, j, term, Le[i,j]
     #end
 end
 
 #JACCIFY
 function DSS_mass_Laguerre_gpu_2D!(M, Mel_lag, connijk_lag, ngl, ngr)
-
+    @info "Inside Laguerre Mass Matrix Assembly"
     iel = @index(Group, Linear)
     il = @index(Local, NTuple)
     i_x = il[1]
@@ -242,7 +322,7 @@ end
     end
 end=#
 
-
+#=
 function DSS_Mass_jacc_2D!(M, Mel, conn, nelem, npoin, N)
     n_elements = size(conn, 1)
     n_local_nodes_per_dim = N + 1
@@ -269,7 +349,75 @@ function DSS_Mass_jacc_2D!(M, Mel, conn, nelem, npoin, N)
         end
     end
 end
+=#
 
+function DSS_Mass_jacc_2D!(idx, M, Mel, conn, nelem, npoin, N)
+    # --- 1. Calculate Constants ---
+    n_local_nodes_per_dim = N + 1
+    total_local_nodes = n_local_nodes_per_dim^2
+
+    # --- 2. Decompose Global Linear Index ---
+    # The single 'idx' now represents a unique (element, local_row, local_col) tuple.
+    
+    # Get the element index 'ie'.
+    ie = (idx - 1) ÷ (total_local_nodes^2) + 1
+
+    # Get the flattened local row 'I' and column 'J' indices.
+    local_flat_index = (idx - 1) % (total_local_nodes^2)
+    J = local_flat_index ÷ total_local_nodes + 1
+    I = local_flat_index % total_local_nodes + 1
+
+    # --- 3. Get Global Index and Perform Update ---
+    
+    # We need the 2D local coordinates (m, n) of the 'row' index 'I'
+    # to find its corresponding global index in the connectivity array.
+    m = (I - 1) % n_local_nodes_per_dim + 1
+    n = (I - 1) ÷ n_local_nodes_per_dim + 1
+
+    # Get the global index 'IP' for the destination vector M.
+    IP = conn[ie, m, n]
+
+    # Atomically add the single contribution Mel[I, J, ie].
+    @Atomix.atomic M[IP] += Mel[I, J, ie]
+end
+
+
+function DSS_Mass_jacc_3D!(idx, M, Mel, conn, nelem, N)
+    # --- 1. Define Dimensionality Constants ---
+    n_basis_1d = N + 1
+    n_basis_3d = n_basis_1d^3
+
+    # --- 2. Decompose the Global Linear Index 'idx' ---
+    # The single index now represents a unique (element, row, column) tuple.
+    idx0 = idx - 1
+
+    # Extract the flat column index (J), row index (I), and element index (ie)
+    J_flat = idx0 % n_basis_3d
+    remainder = idx0 ÷ n_basis_3d
+
+    I_flat = remainder % n_basis_3d
+    ie = (remainder ÷ n_basis_3d) + 1
+
+    # --- 3. Decompose Flat Row Index to Get Global Index ---
+    # Get the 3D local coordinates (k, m, n) of the 'row' index 'I'
+    # to find its corresponding global index in the connectivity array.
+    k_idx = I_flat % n_basis_1d
+    temp = I_flat ÷ n_basis_1d
+    m_idx = temp % n_basis_1d
+    n_idx = temp ÷ n_basis_1d
+    k = k_idx + 1; m = m_idx + 1; n = n_idx + 1
+
+    # Get the global 'row' index 'IP' from the connectivity map.
+    IP = conn[ie, k, m, n]
+
+    # --- 4. Perform the Atomic Update ---
+    # Get the final 1-based flat indices for accessing the element matrix.
+    I = I_flat + 1
+    J = J_flat + 1
+    
+    # Atomically add the contribution.
+    @Atomix.atomic M[IP] += Mel[I, J, ie]
+end
 
 
 
@@ -311,12 +459,13 @@ function DSS_laplace_jacc!(idx_linear, L, Lel, connijk, ωx, ωy, nx, ny, dξdx,
         jp = connijk[ie,i,l]
         term = dηdy[ie, i, l] * Lel[j, l] * dxdξ[ie, i, l] * ωy[i]
 
-        L[ip, jp] += term
+        Atomix.@atomic L[ip, jp] += term
       # JACC.atomic_add!(L, ip, jp, term) MADE THIS NOT ATOMIC
    # end
 end
 
 function DSS_laplace_jacc_lag!(L, Lel, connijk, ωx, ωy, nx, ny, dηdx_lag, dydη, dηdy, dxdη_lag)
+    @info "Inside Laguerre Laplace Assembly"
     n_elements = size(connijk, 1)
     n_local_i = size(connijk, 2)
     n_local_j = size(connijk, 3)
@@ -360,6 +509,46 @@ function DSS_global_RHS!(RHS, pM, neqs)
     
 end
 
+function DSS_global_RHS_v0!(M, pM)
+    # # @info ip2gip
+
+    # pM = pvector(values->@view(M[:]), row_partition)
+    sizeM = length(M)
+    # pM = map(parts, local_values(pM)) do part, localpM
+    #     @info part, length(localpM), sizeM
+    #     localpM = copy(M)
+    # end
+
+    map( partition(pM)) do values
+        for i = 1:sizeM
+            values[i] = M[i]
+        end
+    end
+
+
+    assemble!(pM) |> wait
+    consistent!(pM) |> wait
+    map(local_values(pM)) do values
+        for i = 1:sizeM
+            M[i] = values[i]
+        end
+    end
+end
+
+function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
+
+    if SD == NSD_1D()
+        return nothing
+    end
+    
+    pM = setup_assembler(SD, M, ip2gip, gip2owner)
+    
+    @time assemble_mpi!(M,pM)
+
+    return pM
+    
+end
+
 
 function DSS_rhs_jacc!(RHS, rhs_el, mesh, nelem, ngl, neqs, ::NSD_1D, ::FD)
     nothing
@@ -377,9 +566,58 @@ function DSS_rhs_jacc!(N, RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_1D, ::Co
 
     I = connijk[iel, i, 1]
 
-    RHS[I, ieq] += rhs_el[iel, i, ieq]
+    Atomix.@atomic RHS[I, ieq] += rhs_el[iel, i, ieq]
 end
 
+#N = total_iterations = neqs * nelem * ngl * ngl
+ 
+function DSS_rhs_jacc!(N, RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_2D, ::ContGal)
+    #@info "Inside 2D RHS JACC"
+    ieq = (N - 1) ÷ (nelem * ngl*ngl) + 1
+    rem1 = (N - 1) % (nelem * ngl*ngl)
+    iel = rem1 ÷ (ngl*ngl) + 1
+    rem2 = rem1 % (ngl*ngl)
+    i = rem2 ÷ ngl + 1
+    j = rem2 % ngl + 1
+
+    I = connijk[iel, i, j]
+
+    Atomix.@atomic RHS[I, ieq] += rhs_el[iel, i, j, ieq]
+end
+
+
+function DSS_rhs_jacc!(N, RHS, rhs_el, connijk, nelem, ngl, neqs, ::NSD_3D, ::ContGal)
+    idx0 = N - 1
+
+    # Total number of nodes per element
+    ngl3 = ngl * ngl * ngl
+    
+    # Get equation index
+    ieq = (idx0 ÷ (nelem * ngl3)) + 1
+    rem1 = idx0 % (nelem * ngl3)
+    
+    # Get element index
+    iel = (rem1 ÷ ngl3) + 1
+    rem2 = rem1 % ngl3
+    
+    # Decompose the local 3D node index into i, j, k
+    i_idx = rem2 % ngl
+    rem3 = rem2 ÷ ngl
+    j_idx = rem3 % ngl
+    k_idx = rem3 ÷ ngl
+    
+    # Convert from 0-based to 1-based indices
+    i = i_idx + 1
+    j = j_idx + 1
+    k = k_idx + 1
+
+    # --- Perform the DSS Operation ---
+    # 1. Find the global node index
+    I = connijk[iel, i, j, k]
+
+    # 2. Atomically add the local contribution to the global RHS
+    @Atomix.atomic RHS[I, ieq] += rhs_el[iel, i, j, k, ieq]
+end
 
 
 function DSS_rhs_laguerre_jacc!(RHS, rhs_el, connijk_lag, nelem_semi_inf, ngl, ngr, neqs, ::NSD_1D, ::ContGal)
@@ -393,13 +631,13 @@ function DSS_rhs_laguerre_jacc!(RHS, rhs_el, connijk_lag, nelem_semi_inf, ngl, n
 
         I = connijk_lag[iel, i, 1]
 
-        RHS[I,ieq] += rhs_el[iel,i,ieq]
+        Atomix.@atomic RHS[I,ieq] += rhs_el[iel,i,ieq]
     end
 end
 
 
 function divide_by_mass_matrix_jacc_all_parallel!(RHS, RHSaux, Minv::AbstractMatrix, neqs, npoin, ::ContGal)
-
+    @info "Inside divide by mass matrix all parallel"
     total_elements = npoin * npoin
     JACC.parallel_for(1:total_elements) do idx_linear
         ip = (idx_linear - 1) % npoin + 1
@@ -491,19 +729,36 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
         Me_base = zeros(TFloat, (N+1)^2, (N+1)^2, Int64(mesh.nelem))
         Me = JACC.array(Me_base)
 
-        #Make this a parallel for call
         num_elements = size(Me, 3)
         total_iterations = num_elements * (N + 1)^4 * (Q + 1)^2
 
-        #JACC.parallel_for(N, build_mass_matrix_2d_jacc,Me, basis.ψ, ω, metrics.Je, N, Q)
         JACC.parallel_for(total_iterations, build_mass_matrix_2d_jacc!, Me, basis.ψ, ω, metrics.Je, N, Q)
+    elseif typeof(SD) == NSD_3D
+        #Me = JACC.zeros(Float64, n_basis_3d, n_basis_3d, nelem)
+        Me_base = zeros(Float64, (N + 1)^3, (N + 1)^3, mesh.nelem)
+        Me = JACC.array(Me_base)
+        
+        # 1. Calculate the total number of iterations
+        n_basis_1d = N + 1
+        n_quad_1d = Q + 1
 
-        #=else
-        if (SD == NSD_1D())
-            k = build_mass_matrix_1d_gpu!((N+1))
-            k(Me, basis.ψ, ω, metrics.Je, Q; ndrange = (mesh.nelem*mesh.ngl), workgroupsize = (mesh.ngl))
-        end=#
+        n_basis_3d = n_basis_1d^3
+        n_quad_3d = n_quad_1d^3
+
+        # The total number of threads is the product of all loop dimensions
+        total_iterations = mesh.nelem * n_basis_3d * n_basis_3d * n_quad_3d
+
+        # 2. Launch the single, fully flattened parallel kernel
+        JACC.parallel_for(
+            total_iterations,
+            build_mass_matrix_3d_jacc!,
+            Me, basis.ψ, ω, metrics.Je, N, Q, mesh.nelem
+        )
+        #JACC parallel for for build mass matrix 3D
+    
     end
+
+
     if (QT == Exact() && inputs[:llump] == false)
         M_base = zeros(TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
         M = JACC.array(M_base)
@@ -517,28 +772,30 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     end
    
     if SD == NSD_1D()
-        @info "Building 1D Mass Matrix!!!!!!!!!!"
         DSS_Mass_jacc_1D!(M, SD, QT, Me, mesh.connijk, mesh.nelem, mesh.npoin, N, TFloat; llump=inputs[:llump])
     elseif SD == NSD_2D()
-        @info "Building 2D Mass Matrix!!!!!!!!!!"
-        #total_iterations = mesh.nelem * (N + 1)^4
-        # N is the polynomial order, nelem is the number of elements
-        # Use the actual connectivity array dimensions
-        @info N
-     #   JACC.parallel_for(mesh.nelem, DSS_Mass_gpu_2D_kernel!, M, Me, mesh.connijk, N)
+        n_local_nodes_per_dim = N + 1
+        total_local_nodes = n_local_nodes_per_dim^2
+        total_iterations = mesh.nelem * total_local_nodes * total_local_nodes
+        JACC.parallel_for(total_iterations, DSS_Mass_jacc_2D!, M, Me, mesh.connijk, mesh.nelem, mesh.npoin, N)
+        
 
-        # Launch the JACC kernel - you can still pass N but the function will use actual dimensions
-    #    JACC.parallel_for(total_iterations, DSS_Mass_jacc_2D!, M, Me, mesh.connijk, mesh.nelem, N)
-      #  JACC.parallel_for(total_iterations, DSS_Mass_jacc_2D!, M, Me, mesh.connijk, mesh.nelem, mesh.npoin, N)
-    
-        DSS_Mass_jacc_2D!(M, Me, mesh.connijk, mesh.nelem, mesh.npoin, N)
+    elseif SD == NSD_3D()
+        n_basis_1d = N + 1
+        n_basis_3d = n_basis_1d^3
 
+        # Total iterations = (num_elements) * (nodes_per_element) * (nodes_per_element)
+        total_iterations = mesh.nelem * n_basis_3d * n_basis_3d
 
+        JACC.parallel_for(
+            total_iterations,
+            DSS_Mass_jacc_3D!,
+            M, Me, mesh.connijk, mesh.nelem, N
+        )
 
-        #DSS_Mass_gpu_2D!(M, Me, mesh.connijk, mesh.nelem, mesh.npoin, N)
-        #synchronize()
     end
-    @info "Done Building 2D Mass Matrix!!!!!!!!!!"
+
+    pM = DSS_global_mass!(SD, M, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
 
     mass_inverse!(Minv, M, QT)
 
@@ -546,42 +803,27 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     Le = JACC.array(Le_base)
     L_base  = zeros(TFloat, 1,1)
     L = JACC.array(L_base)
-    @info "BEFORE"
-    if true # this true needs to be changed to lbuild_laplace_matrix
-        @info "AFTER"
+    if lbuild_differentiation_matrix # this true needs to be changed to lbuild_laplace_matrix
         Le_base = zeros(TFloat, Int64(mesh.ngl), Int64(mesh.ngl))
         Le = JACC.array(Le_base)
-        # I think the issue is here
-
 
         n_nodes = size(basis.dψ, 1)
         total_iterations= (n_nodes * n_nodes * (Q + 1))
 
         @info N
         JACC.parallel_for(total_iterations, build_laplace_matrix_jacc_parallel_all!, Le, basis.dψ, ω, Q)
-        #k = build_laplace_matrix_jacc_parallel_all!(backend)
-        #k(Le, basis.dψ, ω, TInt(mesh.ngl-1); ndrange=(mesh.ngl,mesh.ngl))
-        #synchronize()
+        
         L_base = zeros(TFloat, Int64(mesh.npoin), Int64(mesh.npoin))
         L = JACC.array(L_base)
-        #synchronize()
         
         n_elements = size(mesh.connijk, 1)
         n_local_i = size(mesh.connijk, 2)
         n_local_j = size(mesh.connijk, 3)
 
         total_iterations = (n_elements * n_local_i * n_local_j * mesh.ngl)
-        JACC.parallel_for(total_iterations, DSS_laplace_jacc!, L, Le, mesh.connijk, ω, ω, mesh.ngl, mesh.ngl, metrics.dξdx, metrics.dydη, metrics.dηdy, metrics.dxdξ;
-        #=ndrange = (mesh.nelem*mesh.ngl,
-        mesh.ngl), workgroupsize = (mesh.ngl, mesh.ngl)=#)
+        JACC.parallel_for(total_iterations, DSS_laplace_jacc!, L, Le, mesh.connijk, ω, ω, mesh.ngl, mesh.ngl, metrics.dξdx, metrics.dydη, metrics.dηdy, metrics.dxdξ;)
        
         
-        #k = DSS_laplace_gpu!(backend)
-        #k(L, Le, connijk, ω, ω, mesh.ngl, mesh.ngl, metrics.dξdx, metrics.dydη, metrics.dηdy, metrics.dxdξ;
-        #ndrange = (mesh.nelem*mesh.ngl,
-        #mesh.ngl), workgroupsize = (mesh.ngl, mesh.ngl))
-        
-       # synchronize()
     end
     
     De_base = zeros(TFloat, 1, 1)
@@ -594,11 +836,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
             D  = DSS_generic_matrix(SD, De, mesh, TFloat)
         end
     end
-    # Should be this
-    # ("We are here 2", 126419.75308725929, 0.00040000000000316936, 126419.75308725929, 0.0, 0.0, 0.0, 0.0)
-
-    @info "We are here 2", maximum(M), maximum(Minv), maximum(Me), maximum(De), maximum(D), maximum(Le), maximum(L)
-    return (; Me, De, Le, M, Minv, D, L, M_surf_inv=Minv, M_edge_inv=Minv)
+    return (; Me, De, Le, M, Minv,pM, D, L, M_surf_inv=Minv, M_edge_inv=Minv)
 end
 
 
@@ -629,9 +867,7 @@ function matrix_wrapper_laguerre(::ContGal, SD, QT, basis, ω, mesh, metrics, N,
         Me_base = zeros(TFloat, (N+1)^2, (N+1)^2, Int64(mesh.nelem))
         Me = JACC.array(Me_base)
     end
-    #=if (backend == CPU())
-        build_mass_matrix!(Me, SD, QT, basis[1].ψ, ω[1], mesh.nelem, metrics[1].Je, mesh.Δx, N, Q, TFloat)
-    =#
+  
     if (SD == NSD_1D())
         k = build_mass_matrix_1d_gpu!(backend, (N+1))
         k(Me, basis[1].ψ, ω[1], metrics[1].Je, Q; ndrange = (mesh.nelem*mesh.ngl), workgroupsize = (mesh.ngl))
