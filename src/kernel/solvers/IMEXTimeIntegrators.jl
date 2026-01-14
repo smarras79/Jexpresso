@@ -93,7 +93,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
                 rhs += u_prev[1]
 
                 s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
-                S_fun!(s_j, u_prev[1], t_n, params)
+                S_fun!(s_j, u_prev[1], t_n, params, sem)
 
                 # explicit Euler
                 rhs += Δt_expl * s_j
@@ -139,7 +139,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
             # s_j and l_j should already be scaled by M_inv
             s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
             time = t_n - (n_step - 1) * Δt
-            S_fun!(s_j, u_prev[n_step], time, params)
+            S_fun!(s_j, u_prev[n_step], time, params, sem)
 
             if delta == 1
                 l_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
@@ -168,7 +168,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
             # s_j and l_j should already be scaled by M_inv
             s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
             time = t_n + c_RK[j_stages] * Δt
-            S_fun!(s_j, U_stages[j_stages], time, params)
+            S_fun!(s_j, U_stages[j_stages], time, params, sem)
 
             if delta == 1
                 time_tilde = t_n + c_RK_tilde[j_stages] * Δt
@@ -418,7 +418,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
             for i_stages = 1 : k
                 s_j = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
                 time = t_n + c_RK[i_stages] * Δt
-                S_fun!(s_j, U_stages[i_stages], time, params)
+                S_fun!(s_j, U_stages[i_stages], time, params, sem)
                 u += Δt * b_RK[i_stages] * s_j
             end
 

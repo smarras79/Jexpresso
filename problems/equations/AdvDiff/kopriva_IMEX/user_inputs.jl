@@ -73,7 +73,7 @@ function user_inputs()
         )
 
     # Source function
-    function S_fun!(s_j, u, time, params)
+    function S_fun!(s_j, u, time, params, sem)
         rhs!(s_j, u, params, time)
 
         s_j .= params.RHS
