@@ -148,7 +148,16 @@ function user_inputs()
         assemble_diffusion_matrix_threaded!(mesh, Le)
         L = - visc_coeff[1] * L
 
-        return L
+        #
+        # DIFFERENTIATION (TO BE TESTED!!!!)
+        #
+        Dex = build_diff_matrix_x(SD, basis.ψ, basis.dψ, ω, mesh.nelem, mesh, metrics, N, Q, TFloat)
+        Dey = build_diff_matrix_x(SD, basis.ψ, basis.dψ, ω, mesh.nelem, mesh, metrics, N, Q, TFloat)
+
+        Dx = DSS_differentiation_sparse(mesh, Dex)
+        Dy = DSS_differentiation_sparse(mesh, Dey)
+        
+        return L, Dx, Dy
     end
 
     inputs = Dict(

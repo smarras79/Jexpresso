@@ -82,6 +82,100 @@ function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
     
 end
 
+
+function build_differentiation_matrix!(De, SD::NSD_2D, QT, ψ, dψ, ω, mesh, metrics, N, Q, T)
+
+    # Compute differentiation matrices Dx and Dy
+    # Such that: (∂u/∂x)|_I = Dx[I,J,iel] * u[J]
+    #            (∂u/∂y)|_I = Dy[I,J,iel] * u[J]
+
+    nelem = mesh.nelem
+    ngl   = mesh.ngl
+    
+    for iel=1:nelem
+        for n = 1:ngl
+            for m = 1:ngl
+                I = m + (n - 1)*ngl
+                
+                for j = 1:ngl
+                    for i = 1:ngl
+                        J = i + (j - 1)*ngl
+                        
+                        # Apply chain rule at node (m,n):
+                        # ∂/∂x = ∂ξ/∂x * ∂/∂ξ + ∂η/∂x * ∂/∂η
+                        
+                        # Contribution from ξ-derivative (varies in i, fixed in j=n)
+                        if j == n
+                            Dx[I,J,iel] += dψ[i,m] * metrics.dξdx[iel,m,n]
+                            Dy[I,J,iel] += dψ[i,m] * metrics.dξdy[iel,m,n]
+                        end
+                        
+                        # Contribution from η-derivative (fixed in i=m, varies in j)
+                        if i == m
+                            Dx[I,J,iel] += dψ[j,n] * metrics.dηdx[iel,m,n]
+                            Dy[I,J,iel] += dψ[j,n] * metrics.dηdy[iel,m,n]
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function build_diff_matrix_x(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T)
+    
+    Dx = zeros(nelem, Q+1, Q+1, N+1, N+1)
+    
+    for iel = 1:nelem
+        for l = 1:Q+1, k = 1:Q+1
+            
+            dξdx_kl = metrics.dξdx[iel,k,l]
+            dηdx_kl = metrics.dηdx[iel,k,l]
+            
+            for j = 1:N+1, i = 1:N+1
+                # Physical derivative of trial function in x-direction
+                dΨJdx = dψ[i,k]*ψ[j,l]*dξdx_kl + ψ[i,k]*dψ[j,l]*dηdx_kl
+                
+                for n = 1:N+1, m = 1:N+1
+                    # Test function (no derivative)
+                    ΨI = ψ[m,k]*ψ[n,l]
+                    
+                    Dx[iel,m,n,i,j] += ω[k]*ω[l]*metrics.Je[iel,k,l]*ΨI*dΨJdx
+                end
+            end
+        end
+    end
+    
+    return Dx
+end
+
+function build_diff_matrix_y(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T)
+    
+    Dy = zeros(nelem, Q+1, Q+1, N+1, N+1)
+    
+    for iel = 1:nelem
+        for l = 1:Q+1, k = 1:Q+1
+            
+            dξdy_kl = metrics.dξdy[iel,k,l]
+            dηdy_kl = metrics.dηdy[iel,k,l]
+            
+            for j = 1:N+1, i = 1:N+1
+                # Physical derivative of trial function in y-direction
+                dΨJdy = dψ[i,k]*ψ[j,l]*dξdy_kl + ψ[i,k]*dψ[j,l]*dηdy_kl
+                
+                for n = 1:N+1, m = 1:N+1
+                    # Test function (no derivative)
+                    ΨI = ψ[m,k]*ψ[n,l]
+                    
+                    Dy[iel,m,n,i,j] += ω[k]*ω[l]*metrics.Je[iel,k,l]*ΨI*dΨJdy
+                end
+            end
+        end
+    end
+    
+    return Dy
+end
+
 function build_differentiation_matrix_Laguerre!(De, SD::NSD_2D, QT, ψ, ψ1, dψ, dψ1, ω, ω1, mesh, metrics, N, Q, T)
 
 
