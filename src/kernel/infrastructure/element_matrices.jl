@@ -82,14 +82,13 @@ function build_differentiation_matrix(SD::NSD_1D, ψ, dψdξ, ω, mesh, N, Q, T)
     
 end
 
-function build_differentiation_matrix_without_quadrature!(SD::NSD_2D, ψ, dψdξ, ω, mesh, metrics, N, Q, T)
+function build_differentiation_matrix!(De, SD::NSD_2D, QT, ψ, dψ, ω, mesh, metrics, N, Q, T)
 
     # Compute differentiation matrices Dx and Dy
     # Such that: (∂u/∂x)|_I = Dx[I,J,iel] * u[J]
     #            (∂u/∂y)|_I = Dy[I,J,iel] * u[J]
-
-    ngl   = mesh.ngl
     nelem = mesh.nelem
+    ngl   = mesh.ngl
     
     for iel=1:nelem
         for n = 1:ngl
@@ -119,44 +118,60 @@ function build_differentiation_matrix_without_quadrature!(SD::NSD_2D, ψ, dψdξ
             end
         end
     end
-
 end
 
-
-function build_differentiation_matrix!(De, SD::NSD_2D, QT, ψ, dψ, ω, ω1, mesh, metrics, N, Q, T)
-
-    ngl   = mesh.ngl
-    nelem = mesh.nelem
+function build_diff_matrix_x(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T)
     
-    for iel=1:nelem
-
-        for l = 1:ngl
-            ωl = ω[l]
-            for k = 1:ngl
-
-                ωkl  = ω[k]*ωl
-                Jkle = metrics.Je[iel, k, l]
-
-                for j = 1:ngl
-                    for i = 1:ngl
-                        J = i + (j - 1)*ngl
-                        ψJK = ψ[i,k]*ψ[j,l]
-                        
-                        for n = 1:ngl
-                            for m = 1:ngl
-                                I = m + (n - 1)*ngl
-                                
-                                dψIK_dx = dψ[i,k]*ψ[j,l]*metrics.dξdx[iel,k,l] + ψ[i,k]*dψ[j,l]*metrics.dηdx[iel,k,l]
-                                dψIK_dy = dψ[i,k]*ψ[j,l]*metrics.dξdy[iel,k,l] + ψ[i,k]*dψ[j,l]*metrics.dηdy[iel,k,l]
-				De[I,J,iel] += ωkl*Jkle*ψJK*(dψIK_dx+dψIK_dy)
-                            end
-                        end
-                    end
+    Dx = zeros(nelem, Q+1, Q+1, N+1, N+1)
+    
+    for iel = 1:nelem
+        for l = 1:Q+1, k = 1:Q+1
+            
+            dξdx_kl = metrics.dξdx[iel,k,l]
+            dηdx_kl = metrics.dηdx[iel,k,l]
+            
+            for j = 1:N+1, i = 1:N+1
+                # Physical derivative of trial function in x-direction
+                dΨJdx = dψ[i,k]*ψ[j,l]*dξdx_kl + ψ[i,k]*dψ[j,l]*dηdx_kl
+                
+                for n = 1:N+1, m = 1:N+1
+                    # Test function (no derivative)
+                    ΨI = ψ[m,k]*ψ[n,l]
+                    
+                    Dx[iel,m,n,i,j] += ω[k]*ω[l]*metrics.Je[iel,k,l]*ΨI*dΨJdx
                 end
             end
         end
     end
-    #show(stdout, "text/plain", Me)
+    
+    return Dx
+end
+
+function build_diff_matrix_y(SD::NSD_2D, ψ, dψ, ω, nelem, mesh, metrics, N, Q, T)
+    
+    Dy = zeros(nelem, Q+1, Q+1, N+1, N+1)
+    
+    for iel = 1:nelem
+        for l = 1:Q+1, k = 1:Q+1
+            
+            dξdy_kl = metrics.dξdy[iel,k,l]
+            dηdy_kl = metrics.dηdy[iel,k,l]
+            
+            for j = 1:N+1, i = 1:N+1
+                # Physical derivative of trial function in y-direction
+                dΨJdy = dψ[i,k]*ψ[j,l]*dξdy_kl + ψ[i,k]*dψ[j,l]*dηdy_kl
+                
+                for n = 1:N+1, m = 1:N+1
+                    # Test function (no derivative)
+                    ΨI = ψ[m,k]*ψ[n,l]
+                    
+                    Dy[iel,m,n,i,j] += ω[k]*ω[l]*metrics.Je[iel,k,l]*ΨI*dΨJdy
+                end
+            end
+        end
+    end
+    
+    return Dy
 
 end
 
@@ -1087,7 +1102,7 @@ end
 function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_1D) nothing end
 
 function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D)
-   normals = zeros(Float64, mesh.npoin, 2)
+    normals = zeros(Float64, mesh.npoin, 2)
 
     @inbounds for iedge = 1:mesh.nedges_bdy
 
@@ -1119,8 +1134,8 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D)
                 normx = normals[ip, 1]/mag
                 normy = normals[ip, 2]/mag
                 #=if (abs(mesh.x[ip] - 1000) < 1)
-                    @info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], normx, normy, normz, normals[ip, 1], normals[ip, 2], normals[ip, 3], mesh.bdy_face_type[iface], mesh.z[ip], mesh.y[ip]
-                    @info mag
+                @info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], normx, normy, normz, normals[ip, 1], normals[ip, 2], normals[ip, 3], mesh.bdy_face_type[iface], mesh.z[ip], mesh.y[ip]
+                @info mag
                 end=#
             end
             if mesh.bdy_edge_type[iedge] != "periodicx" && (abs(nx[iedge, i] - normx) < 0.25)
@@ -1143,7 +1158,7 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_2D)
     end
 
 end
- 
+
 function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
 
     normals = zeros(Float64, mesh.npoin, 3)
@@ -1154,9 +1169,9 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
         for j = 1:mesh.ngl, i = 1:mesh.ngl
             ip = poin_face[i, j]
             #if (mesh.bdy_face_type[iface] != "periodicx" && mesh.bdy_face_type[iface] != "periodicy" && mesh.bdy_face_type[iface] != "periodicz")
-                normals[ip, 1] += nx[iface, i, j]
-                normals[ip, 2] += ny[iface, i, j]
-                normals[ip, 3] += nz[iface, i, j]
+            normals[ip, 1] += nx[iface, i, j]
+            normals[ip, 2] += ny[iface, i, j]
+            normals[ip, 3] += nz[iface, i, j]
             #end
 	end
     end
@@ -1176,13 +1191,13 @@ function DSS_global_normals!(nx, ny, nz, mesh, SD::NSD_3D)
             normy=0
             normz=0
             if (mag > 0)
-            
+                
                 normx = normals[ip, 1]/mag
                 normy = normals[ip, 2]/mag
                 normz = normals[ip, 3]/mag
                 #=if (abs(mesh.x[ip] - 1000) < 1)
-                    @info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], normx, normy, normz, normals[ip, 1], normals[ip, 2], normals[ip, 3], mesh.bdy_face_type[iface], mesh.z[ip], mesh.y[ip]
-                    @info mag
+                @info nx[iface, i, j], ny[iface, i, j], nz[iface, i, j], normx, normy, normz, normals[ip, 1], normals[ip, 2], normals[ip, 3], mesh.bdy_face_type[iface], mesh.z[ip], mesh.y[ip]
+                @info mag
                 end=#
             end
             if mesh.bdy_face_type[iface] != "periodicx" && (abs(nx[iface, i, j] - normx) < 0.25)
@@ -1222,7 +1237,7 @@ end
 
 function DSS_global_RHS_pvector!(RHS, pM, neqs)
     for i = 1:neqs
-       DSS_global_RHS_v0!(@view(RHS[:,i]), pM)
+        DSS_global_RHS_v0!(@view(RHS[:,i]), pM)
     end
 end
 
