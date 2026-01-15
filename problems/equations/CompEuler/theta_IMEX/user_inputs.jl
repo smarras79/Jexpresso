@@ -1,6 +1,12 @@
 function user_inputs()
     # Coefficients of the method
-    # multistep
+    # explicit Euler
+    alpha_Euler = Array{Float64, 1}(undef, 1)
+    alpha_Euler[1] = 1.
+    beta_Euler = Array{Float64, 1}(undef, 1)
+    beta_Euler[1] = 1.
+
+    # IMEX multistep
     alpha = Array{Float64, 1}(undef, 2)
     alpha[1] = 4. / 3.
     alpha[2] = - 1. / 3.
@@ -74,9 +80,18 @@ function user_inputs()
 
     # Source function
     function S_fun!(s_j, u, time, params, sem)
+        # number of discretization points
+        npoint = sem.mesh.npoin
+        # number of equations
+        neqs = params.neqs
+
         rhs!(s_j, u, params, time)
 
-        s_j .= params.RHS
+        n_start = 1
+        for n = 1 : neqs
+            s_j[n_start : n_start + npoint - 1] .= params.RHS[:, n]
+            n_start += npoint
+        end
     end
 
     # Fast waves operator
@@ -145,102 +160,90 @@ function user_inputs()
                                   N, Q, TFloat)
 
         L = DSS_laplace_sparse(mesh, Le)
+        assemble_diffusion_matrix_threaded!(mesh, Le)
         L = - visc_coeff[1] * L
 
-        #
-        # DIFFERENTIATION (TO BE TESTED!!!!)
-        #
-#        Dex = build_diff_matrix_x(SD, basis.ψ, basis.dψ, ω, mesh.nelem, mesh, metrics, N, Q, TFloat)
-#        Dey = build_diff_matrix_x(SD, basis.ψ, basis.dψ, ω, mesh.nelem, mesh, metrics, N, Q, TFloat)
-
-#        Dx = DSS_differentiation_sparse(mesh, Dex)
-#        Dy = DSS_differentiation_sparse(mesh, Dey)
-        
-        return L#, Dx, Dy
+        return L
     end
-
+    
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
-        :tend                 => 1.0, #2π,
-        :Δt                   => 0.01,#8.75e-4,
-        :Δt_expl              => 0.0001,#8.75e-4,
-        :ode_solver           => SSPRK54(),
-        :diagnostics_at_times => (4.0),
-        :output_dir          => "./output/",
-#        :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+        :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
+        #:Δt                   => 0.02,
+        :Δt                   => 0.4,
+        :tinit                => 0.0,
+        :tend                 => 1000.0,
+        :diagnostics_at_times => (0:100:1000),
+        :case                 => "rtb",
+        :lsource              => true, 
+        #:SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
-        :interpolation_nodes =>"lgl",   # Choice: lgl, cgl 
-        :nop                 => nop,    # Polynomial order
-        :lsource             => true,
-        #---------------------------------------------------------------------------
-        #Building matrices
-        #---------------------------------------------------------------------------
-        :ldss_laplace        => true,
-        :lsparse             => true,
-        :ldss_differentiation => false,#true, # with true I get error (DSS_generic_matrix not defined)
+        :interpolation_nodes =>"lgl",
+        :nop                 => 4,      # Polynomial order
         #---------------------------------------------------------------------------
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                    => [0.1, 0.1],
+        :μ                   => [0.0, 125.0, 125.0, 125.0], #horizontal viscosity constant for momentum
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename         => "./meshes/gmsh_grids/kopriva.msh",
-        :gmsh_filename         => "./meshes/gmsh_grids/kopriva_periodic.msh",
-        #---------------------------------------------------------------------------
-        # grid modification parameters
-        #--------------------------------------------------------------------------- 
-        :xscale              => 1.0,
-        :yscale              => 1.0,
-        :xdisp               => 0.0,
-        :ydisp               => 0.0,
-        #---------------------------------------------------------------------------
-        # Refinement
-        #---------------------------------------------------------------------------
-#        :linitial_refine     => true,
-#        :init_refine_lvl     => 1,
-        #---------------------------------------------------------------------------
-        # Mountain parameters
-        #---------------------------------------------------------------------------
-        #:lwarp               => true,
-        #:mount_type          => "agnesi",
-        #:a_mount             => 1000.0,
-        #:h_mount             => 1.0,
-        #:c_mount             => 0.0,
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_RTB20x20.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_periodic.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
         #:lfilter             => true,
-        #:mu_x                => 0.15,
-        #:mu_y                => 0.15,
-        #:filter_type         => "erf",  ##default is erf, use either "erf" for Boyd-Vandeven,"exp" for Warburton Exponential filter, or "quad" for Fischer quadratic filter
+        #:mu_x                => 0.01,
+        #:mu_y                => 0.01,
+        #:filter_type         => "erf",
         #---------------------------------------------------------------------------
         # Plotting parameters
         #---------------------------------------------------------------------------
-        :outformat         => "vtk",
-        :loverwrite_output => true,
-        :loutput_pert      => true,  #this is only implemented for VTK for now
-        :output_dir        => "./output/",
-        #:plot_hlines      => [10.0],
-        :loutput_pert      => true,
+        :outformat           => "vtk",
+        :loverwrite_output   => true,
+        :lwrite_initial      => true,
+        :output_dir          => "./output",
+        #:output_dir          => "./test/CI-run",
+        :loutput_pert        => true,  #this is only implemented for VTK for now
+        #---------------------------------------------------------------------------
+        # init_refinement
+        #---------------------------------------------------------------------------
+        :linitial_refine     => false,
+        :init_refine_lvl     => 1,
+        #---------------------------------------------------------------------------
+        # AMR
+        #---------------------------------------------------------------------------
+        :ladapt              => false,
+        #---------------------------------------------------------------------------
+        # AMR parameters
+        #---------------------------------------------------------------------------
+        :amr_freq            => 200,
+        :amr_max_level       => 2,
         #---------------------------------------------------------------------------
         # IMEX method
         #---------------------------------------------------------------------------
         :method             => "multistep",
-        :delta              => 1,
-        :k                  => 2,
+        :delta              => 0,
+        :k                  => 1,
         :coeff              => Dict(
-                                   # IMEX Multistep
-                                   :xi       => 2. / 3.,
-                                   :alpha    => alpha,
-                                   :beta     => beta,
+                                   # forward Euler
+                                   :xi       => 1.,
+                                   :alpha    => alpha_Euler,
+                                   :beta     => beta_Euler,
                                ),
+#        :coeff              => Dict(
+#                                   # IMEX Multistep
+#                                   :xi       => 2. / 3.,
+#                                   :alpha    => alpha,
+#                                   :beta     => beta,
+#                               ),
 #        :coeff              => Dict(
 #                                   # IMEX RK
 #                                   :A_RK        => A_RK,
