@@ -315,28 +315,28 @@ function imex_time_loop!(inputs, sem, qp, params, u)
 
             # Update solution
             update_u!(u, u_prev, u_next)
-        end
 
-        t_n += Δt
-        n_step += 1
+            t_n += Δt
+            n_step += 1
 
-        write_output(params.SD, u, params.uaux, t_n, n_step,
-                     params.mesh, params.mp,
-                     params.connijk_original, params.poin_in_bdy_face_original,
-                     params.x_original, params.y_original, params.z_original,
-                     inputs[:output_dir], inputs,
-                     params.qp.qvars, params.qp.qoutvars,
-                     inputs[:outformat];
-                     nvar=params.qp.neqs, qexact=params.qp.qe)
+            write_output(params.SD, u, params.uaux, t_n, n_step,
+                         params.mesh, params.mp,
+                         params.connijk_original, params.poin_in_bdy_face_original,
+                         params.x_original, params.y_original, params.z_original,
+                         inputs[:output_dir], inputs,
+                         params.qp.qvars, params.qp.qoutvars,
+                         inputs[:outformat];
+                         nvar=params.qp.neqs, qexact=params.qp.qe)
 
-        # Initialize solution vector
-        u_next = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
+            # Initialize solution vector
+            u_next = KernelAbstractions.zeros(inputs[:backend], nl_precision, Int64(unkwn))
 
-        #------------------------------------------------------------------------
-        # Updating L_curr
-        #------------------------------------------------------------------------
-        if delta == 1 && upd_L && abs(t_n - inputs[:tend]) > 1.e-14 && t_n < inputs[:tend]
-            L_curr = L_update(u_next, t_n + Δt)
+            #------------------------------------------------------------------------
+            # Updating L_curr
+            #------------------------------------------------------------------------
+            if delta == 1 && upd_L && abs(t_n - inputs[:tend]) > 1.e-14 && t_n < inputs[:tend]
+                L_curr = L_update(u_next, t_n + Δt)
+            end
         end
     elseif method == "RK"
         #------------------------------------------------------------------------
