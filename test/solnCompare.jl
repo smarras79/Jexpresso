@@ -20,7 +20,7 @@ function compare_results(generated_data, expected_data)
     is_equal = true
     for key in keys(generated_data)
         # Compare floating-point numbers up to 8 significant digits
-        if typeof(generated_data[key]) == Array{Float64,1}
+        if typeof(generated_data[key]) <: Array{<:AbstractFloat,1}
             is_equal = isapprox(generated_data[key], expected_data[key], atol=1e-5)
         else
             is_equal = generated_data[key] == expected_data[key]

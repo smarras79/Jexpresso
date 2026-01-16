@@ -23,7 +23,7 @@ end
 
 function _build_rhs_laguerre!(RHS, u, params, time)
 
-    T       = Float64
+    T       = params.T
     SD      = params.SD
     QT      = params.QT
     CL      = params.CL

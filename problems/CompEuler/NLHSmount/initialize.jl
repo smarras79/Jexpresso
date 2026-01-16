@@ -7,7 +7,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
     @info " Initialize fields for 2D CompEuler with θ equation ........................ "
     
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
     
     qvars = ("dρ", "dρu", "dρv", "dρθ")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))

@@ -5,7 +5,7 @@ function user_source!(S,
                       ::CL, ::TOTAL;
                       neqs=1)
     
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
         
     #
     # S(q(x)) = -ρg
@@ -22,7 +22,7 @@ function user_source!(S,
                       ::CL, ::PERT;
                       neqs=1)
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
 
     #
     # S(q(x)) = -ρg

@@ -11,7 +11,7 @@ function user_source!(S,
                     ymin=0.0,ymax=0.0,
                     zmin=0.0,zmax=0.0)
     
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
     # T = eltype(q)
     #
     # S(q(x)) = -ρg
@@ -60,7 +60,7 @@ function user_source!(S,
                       ::CL, ::PERT;
                       neqs=1)
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
 
     #
     # S(q(x)) = -ρg

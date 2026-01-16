@@ -5,7 +5,7 @@ function user_flux!(F, G, H,
                     ::CL, ::TOTAL; neqs=4, ip=1,
                     x=0.0, y=0.0, z=0.0)
 
-    # PhysConst = PhysicalConst{Float64}()
+    # PhysConst = PhysicalConst{TFloat}()
     T  = eltype(q)
     ρ  = q[1]
     ρu = q[2]

@@ -491,11 +491,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         mod_inputs_check(inputs, :xmin, "e")
         mod_inputs_check(inputs, :xmax, "e")
         mod_inputs_check(inputs, :nely,  Int8(2), "-")
-        mod_inputs_check(inputs, :ymin, Float64(-1.0), "-")
-        mod_inputs_check(inputs, :ymax, Float64(+1.0), "-")
+        mod_inputs_check(inputs, :ymin, TFloat(-1.0), "-")
+        mod_inputs_check(inputs, :ymax, TFloat(+1.0), "-")
         mod_inputs_check(inputs, :nelz,  Int8(2), "-")
-        mod_inputs_check(inputs, :zmin, Float64(-1.0), "-")
-        mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
+        mod_inputs_check(inputs, :zmin, TFloat(-1.0), "-")
+        mod_inputs_check(inputs, :zmax, TFloat(+1.0), "-")
         
     else
         mod_inputs_check(inputs, :gmsh_filename, "e")
@@ -503,14 +503,14 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
         mod_inputs_check(inputs, :nsd,  Int8(3), "-")
         mod_inputs_check(inputs, :nelx,  Int8(2), "-")
-        mod_inputs_check(inputs, :xmin, Float64(-1.0), "-")
-        mod_inputs_check(inputs, :xmax, Float64(+1.0), "-")
+        mod_inputs_check(inputs, :xmin, TFloat(-1.0), "-")
+        mod_inputs_check(inputs, :xmax, TFloat(+1.0), "-")
         mod_inputs_check(inputs, :nely,  Int8(2), "-")
-        mod_inputs_check(inputs, :ymin, Float64(-1.0), "-")
-        mod_inputs_check(inputs, :ymax, Float64(+1.0), "-")
+        mod_inputs_check(inputs, :ymin, TFloat(-1.0), "-")
+        mod_inputs_check(inputs, :ymax, TFloat(+1.0), "-")
         mod_inputs_check(inputs, :nelz,  Int8(2), "-")
-        mod_inputs_check(inputs, :zmin, Float64(-1.0), "-")
-        mod_inputs_check(inputs, :zmax, Float64(+1.0), "-")
+        mod_inputs_check(inputs, :zmin, TFloat(-1.0), "-")
+        mod_inputs_check(inputs, :zmax, TFloat(+1.0), "-")
 
         s= string("jexpresso: Some undefined (but unnecessary) user inputs 
                                   MAY have been given some default values.
@@ -537,7 +537,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # Some physical constants and parameters:
     #
     if(!haskey(inputs, :μ))
-        inputs[:μ] = (Float64(0.0)) #default kinematic viscosity
+        inputs[:μ] = (TFloat(0.0)) #default kinematic viscosity
     end
 
 #if(!haskey(inputs, :ivisc_equations))
@@ -586,7 +586,7 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # Array of user-defined constant with a user-given meaning. For example, this is used in drivers for the elliptic problems
     #
     if(!haskey(inputs, :rconst))
-        inputs[:rconst] = Float64(0.0)
+        inputs[:rconst] = TFloat(0.0)
     end
     if(!haskey(inputs, :iconst))
         inputs[:iconst] = Int32(1)

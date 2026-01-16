@@ -591,7 +591,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
     end
     
     f = zeros(TFloat,nop+1,nop+1)
-    weight = ones(Float64,nop+1)
+    weight = ones(TFloat,nop+1)
     exp_alpha = 36
     exp_order = 64
     quad_alpha = 1.0
@@ -690,7 +690,7 @@ function init_filter(nop,xgl,mu_x,mesh,inputs, rank)
             @info "exponential filtering on"
         end
         for k=1:nop+1
-            weight[k] = exp(-exp_alpha*(Float64(k-1)/nop)^exp_order)
+            weight[k] = exp(-exp_alpha*(TFloat(k-1)/nop)^exp_order)
         end
     end
 
@@ -820,7 +820,7 @@ function vandeven_modal(kk,ngl,p)
         x = 0
         return 1
     elseif (k > i && k < n)
-        x = Float64(k-i)/Float64(n - i)
+        x = TFloat(k-i)/TFloat(n - i)
         omega = abs(x) - 0.5
         xlog = log(1.0-4.0*omega^2)
         c = 4.0 * omega^2

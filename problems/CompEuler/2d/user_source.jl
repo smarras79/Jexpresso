@@ -1,6 +1,6 @@
 function user_source!(S, q, npoin::Int64; neqs=1)
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
         
     #
     # S(q(x)) = -ρg
@@ -16,8 +16,8 @@ end
 
 function user_source(q::Array, npoin::Int64; neqs=1)
 
-    PhysConst = PhysicalConst{Float64}()
-    S = zeros(Float64, neqs)
+    PhysConst = PhysicalConst{TFloat}()
+    S = zeros(TFloat, neqs)
     
     #
     # S(q(x)) = -ρg

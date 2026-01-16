@@ -17,7 +17,7 @@ function read_large_scale!(backend, flist, LST, mesh)
 end
 
 function large_scale_source!(q, qe, S, Rad_cool, T_adv, q_adv,::PERT)
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
     ρ = q[1] + qe[1]
     S[5] += ρ * (T_adv + Rad_cool) * PhysConst.cp/86400.0
     S[6] += ρ * (q_adv/86400.0)/1000

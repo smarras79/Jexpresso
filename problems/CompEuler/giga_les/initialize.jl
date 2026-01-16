@@ -17,13 +17,13 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     #---------------------------------------------------------------------------------
     
     if (inputs[:backend] == CPU())
-        PhysConst = PhysicalConst{Float64}()
+        PhysConst = PhysicalConst{TFloat}()
         if inputs[:lrestart] == true
             #
             # READ RESTART HDF5:
             #
             q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
-            PhysConst = PhysicalConst{Float64}()
+            PhysConst = PhysicalConst{TFloat}()
         
             for ip=1:mesh.npoin
                 ρ  = q.qn[ip,1]

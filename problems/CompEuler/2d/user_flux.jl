@@ -1,6 +1,6 @@
 AAfunction user_flux!(F, G, SD::NSD_2D, q, mesh::St_mesh; neqs=4, ip=1)
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
                 
     ρ  = q[1]
     ρu = q[2]

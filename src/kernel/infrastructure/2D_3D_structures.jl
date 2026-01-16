@@ -7,8 +7,8 @@ abstract type Nodal_Solver end
 mutable struct Nodal1DStorage <:NodalStorage
     N::Int64
     ξ::AbstractIntegrationPointAndWeights
-    Dξ::Array{Float64}
-    D2ξ::Array{Float64}
+    Dξ::Array{TFloat}
+    D2ξ::Array{TFloat}
 end
 
 mutable struct Nodal2DStorage <:NodalStorage
@@ -16,10 +16,10 @@ mutable struct Nodal2DStorage <:NodalStorage
     M::Int64
     ξ::AbstractIntegrationPointAndWeights
     η::AbstractIntegrationPointAndWeights
-    Dξ::Array{Float64}
-    Dη::Array{Float64}
-    D2ξ::Array{Float64}
-    D2η::Array{Float64}
+    Dξ::Array{TFloat}
+    Dη::Array{TFloat}
+    D2ξ::Array{TFloat}
+    D2η::Array{TFloat}
 end
 
 
@@ -30,12 +30,12 @@ mutable struct Nodal3DStorage <: NodalStorage
     ξ::AbstractIntegrationPointAndWeights
     η::AbstractIntegrationPointAndWeights
     ζ::AbstractIntegrationPointAndWeights
-    Dξ::Array{Float64}
-    Dη::Array{Float64}
-    Dζ::Array{Float64}
-    D2ξ::Array{Float64}
-    D2η::Array{Float64}
-    D2ζ::Array{Float64}
+    Dξ::Array{TFloat}
+    Dη::Array{TFloat}
+    Dζ::Array{TFloat}
+    D2ξ::Array{TFloat}
+    D2η::Array{TFloat}
+    D2ζ::Array{TFloat}
 end
 
 
@@ -56,24 +56,24 @@ mutable struct NodalPotential <: Nodal_Solver
     dim::Int64
     dims::Array{Int64}
     ND::NodalStorage
-    Φ::Array{Float64}
-    s::Array{Float64}
+    Φ::Array{TFloat}
+    s::Array{TFloat}
     mask::Array{Int64}
     T::Abstract_Method_Type
 end
 
 mutable struct NodalAdvDiff <: Nodal_Solver
-    u::Float64
-    v::Float64
-    ν::Float64
+    u::TFloat
+    v::TFloat
+    ν::TFloat
     PT::Abstract_Integration_Points
     dim::Int64
     dims::Array{Int64}
     ND::NodalStorage
-    Φ::Array{Float64}
-    transport::Array{Float64}
-    RHS::Array{Float64}
-    mask::Array{Float64}
+    Φ::Array{TFloat}
+    transport::Array{TFloat}
+    RHS::Array{TFloat}
+    mask::Array{TFloat}
     p::Array{Int64}
     T::Abstract_Method_Type
 end
@@ -332,13 +332,13 @@ end
 
 function build_Nodal_Potential(dim,dims,PT::Abstract_Integration_Points,T::Abstract_Method_Type)
     if (dim == 2)
-        Φ=zeros(Float64,dims[1]+1,dims[2]+1)
-        s=zeros(Float64,dims[1]+1,dims[2]+1)
-        mask=zeros(Float64,4)
+        Φ=zeros(TFloat,dims[1]+1,dims[2]+1)
+        s=zeros(TFloat,dims[1]+1,dims[2]+1)
+        mask=zeros(TFloat,4)
     else
-        Φ=zeros(Float64,dims[1]+1,dims[2]+1,dims[3]+1)
-        mask =zeros(Float64,8)
-        s=zeros(Float64,dims[1]+1,dims[2]+1,dims[3]+1)
+        Φ=zeros(TFloat,dims[1]+1,dims[2]+1,dims[3]+1)
+        mask =zeros(TFloat,8)
+        s=zeros(TFloat,dims[1]+1,dims[2]+1,dims[3]+1)
     end
     ND = build_nodal_Storage(dims,PT,T)
     NP = NodalPotential(PT,dim,dims,ND,Φ,s,mask,T)
@@ -347,16 +347,16 @@ end
 
 function build_Nodal_AdvDiff(u,v,ν,dim,dims,PT::Abstract_Integration_Points,T::Abstract_Method_Type)
     if (dim == 2)
-        Φ=zeros(Float64,dims[1]+1,dims[2]+1,3)
-        transport=zeros(Float64,dims[1]+1,dims[2]+1,3)
-        RHS = zeros(Float64,dims[1]+1,dims[2]+1)
-        mask = zeros(Float64,4)
+        Φ=zeros(TFloat,dims[1]+1,dims[2]+1,3)
+        transport=zeros(TFloat,dims[1]+1,dims[2]+1,3)
+        RHS = zeros(TFloat,dims[1]+1,dims[2]+1)
+        mask = zeros(TFloat,4)
         p = [1 2 3]
     else
-        Φ = zeros(Float64, dims[1]+1, dims[2]+1, dims[3]+1,3)
-        transport = zeros(Float64, dims[1]+1, dims[2]+1, dims[3]+1,3)
-        RHS = zeros(Float64, dims[1]+1, dims[2]+1, dims[3]+1)
-        mask = zeros(Float64,8)
+        Φ = zeros(TFloat, dims[1]+1, dims[2]+1, dims[3]+1,3)
+        transport = zeros(TFloat, dims[1]+1, dims[2]+1, dims[3]+1,3)
+        RHS = zeros(TFloat, dims[1]+1, dims[2]+1, dims[3]+1)
+        mask = zeros(TFloat,8)
         p = [1 2 3]
     end
     ND = build_nodal_Storage(dims,PT,T)
@@ -367,8 +367,8 @@ end
 function transport!(NAD::NodalAdvDiff,T::Collocation,k)
     N=NAD.ND.N
     M=NAD.ND.M
-    Φx = zeros(Float64,N+1,N+1)
-    Φy = zeros(Float64,M+1,M+1)
+    Φx = zeros(TFloat,N+1,N+1)
+    Φy = zeros(TFloat,M+1,M+1)
     for j=1:M+1
         Φx[:,j] = MxVDerivative(NAD.ND.Dξ,NAD.Φ[:,j])
     end
@@ -386,8 +386,8 @@ end
 function transport!(NAD::NodalAdvDiff,T::NodalGalerkin,k)
     N=NAD.ND.N
     M=NAD.ND.M
-    Φx = zeros(Float64,N+1,N+1)
-    Φy = zeros(Float64,M+1,M+1)
+    Φx = zeros(TFloat,N+1,N+1)
+    Φy = zeros(TFloat,M+1,M+1)
     for j=1:M+1
         Φx[:,j] = MxVDerivative(NAD.ND.Dξ,NAD.Φ[:,j])
     end
@@ -440,15 +440,15 @@ function  ComputeLaplacian(U,NP::Nodal_Solver,::Collocation)
     N=NP.ND.N
     M=NP.ND.M
     if (dim ==2)
-        Uxx=zeros(Float64,N+1,M+1)
+        Uxx=zeros(TFloat,N+1,M+1)
         for j=1:M+1
             Uxx[:,j] = MxVDerivative(NP.ND.D2ξ,U[:,j])
         end
-        Uyy = zeros(Float64,N+1,M+1)
+        Uyy = zeros(TFloat,N+1,M+1)
         for i=1:N+1
             Uyy[i,:] = MxVDerivative(NP.ND.D2η,U[i,:])
         end
-        LapU = zeros(Float64,N+1,M+1)
+        LapU = zeros(TFloat,N+1,M+1)
         for j=1:M+1
             for i=1:N+1
                 LapU[i,j]=Uxx[i,j]+Uyy[i,j]
@@ -457,9 +457,9 @@ function  ComputeLaplacian(U,NP::Nodal_Solver,::Collocation)
 
     else
         L=NP.ND.L
-        Uxx=zeros(Float64,N+1,M+1,L+1)
-        Uyy=zeros(Float64,N+1,M+1,L+1)
-        Uzz=zeros(Float64,N+1,M+1,L+1)
+        Uxx=zeros(TFloat,N+1,M+1,L+1)
+        Uyy=zeros(TFloat,N+1,M+1,L+1)
+        Uzz=zeros(TFloat,N+1,M+1,L+1)
         for j=1:M+1
             for l=1:L+1
                 Uxx[:,j,l] = MxVDerivative(NP.ND.D2ξ,U[:,j,l])
@@ -475,7 +475,7 @@ function  ComputeLaplacian(U,NP::Nodal_Solver,::Collocation)
                 Uzz[i,j,:] = MxVDerivative(NP.ND.D2ζ,U[i,j,:])
             end
         end
-        LapU=zeros(Float64,N+1,M+1,L+1)
+        LapU=zeros(TFloat,N+1,M+1,L+1)
         LapU .= Uxx .+ Uyy .+ Uzz
     end
     return LapU
@@ -535,7 +535,7 @@ function CollocationRHSComputation(NP::NodalPotential)
     dim=NP.dim
     if (dim==2)
         L=(N-1)*(M-1)
-        rhs=zeros(Float64,L)
+        rhs=zeros(TFloat,L)
         for j=1:M-1
             for i=1:N-1
                 n=j+(i-1)*(N-1)
@@ -546,7 +546,7 @@ function CollocationRHSComputation(NP::NodalPotential)
     else
         Ll=NP.ND.L
         L = N*M*Ll
-        rhs=zeros(Float64,L)
+        rhs=zeros(TFloat,L)
         for l=1:Ll
             for j=1:M
                 for i=1:N
@@ -570,7 +570,7 @@ function NodalGalerkinRHS(NP::NodalPotential)
     Gx=NP.ND.D2ξ
     Gy=NP.ND.D2η
     Φ=NP.Φ
-    rhs=zeros(Float64,L)
+    rhs=zeros(TFloat,L)
     for j=1:M-1
         for i=1:N-1
             n=j+(i-1)*(N-1)
@@ -586,7 +586,7 @@ function LaplaceCollocationMatrix(NP::NodalPotential)
     dim=NP.dim
     if (dim==2)
         L=(N-1)*(M-1)
-        A=zeros(Float64,L,L)
+        A=zeros(TFloat,L,L)
         for j=1:M-1
             for i=1:N-1
                 n=j+(i-1)*(M-1)
@@ -608,7 +608,7 @@ function LaplaceCollocationMatrix(NP::NodalPotential)
     else
         Ll=NP.ND.L
         L=N*M*Ll
-        A=zeros(Float64,L+1,L+1)
+        A=zeros(TFloat,L+1,L+1)
         for l=1:Ll
             for j=1:M
                 for i=1:N
@@ -640,7 +640,7 @@ function NodalGalerkinMatrix(NP::NodalPotential)
     wx=NP.ND.ξ.ω
     wy=NP.ND.η.ω
     L=(N-1)*(M-1)
-    A=zeros(Float64,L,L)
+    A=zeros(TFloat,L,L)
     for j=1:M-1
         for i=1:N-1
             n=j+(i-1)*(M-1)
@@ -686,37 +686,37 @@ end
 mutable struct FDPreconditioner2D <:FDPreconditioner
     N::Int64
     M::Int64
-    a::Array{Float64}
-    Δx::Array{Float64}
-    Δy::Array{Float64}
-    A::Array{Float64}
-    B::Array{Float64}
-    C::Array{Float64}
-    E::Array{Float64}
-    F::Array{Float64}
+    a::Array{TFloat}
+    Δx::Array{TFloat}
+    Δy::Array{TFloat}
+    A::Array{TFloat}
+    B::Array{TFloat}
+    C::Array{TFloat}
+    E::Array{TFloat}
+    F::Array{TFloat}
 end
 
 mutable struct FDPreconditioner3D <:FDPreconditioner
     N::Int64
     M::Int64
     L::Int64
-    a::Array{Float64}
-    Δx::Array{Float64}
-    Δy::Array{Float64}
-    Δz::Array{Float64}
+    a::Array{TFloat}
+    Δx::Array{TFloat}
+    Δy::Array{TFloat}
+    Δz::Array{TFloat}
 end
 
 function buildPreconditioner!(FDP::FDPreconditioner) end
 
 function initializeFDPrecondtioner2D(N,M)
-    a=zeros(Float64,N-1,M-1)
-    Δx=zeros(Float64,N)
-    Δy=zeros(Float64,M)
-    A=zeros(Float64,N-1,M-1)
-    B=zeros(Float64,N-1,M-1)
-    C=zeros(Float64,N-1,M-1)
-    E=zeros(Float64,N-1,M-1)
-    F=zeros(Float64,N-1,M-1)
+    a=zeros(TFloat,N-1,M-1)
+    Δx=zeros(TFloat,N)
+    Δy=zeros(TFloat,M)
+    A=zeros(TFloat,N-1,M-1)
+    B=zeros(TFloat,N-1,M-1)
+    C=zeros(TFloat,N-1,M-1)
+    E=zeros(TFloat,N-1,M-1)
+    F=zeros(TFloat,N-1,M-1)
     FDP = FDPreconditioner2D(N,M,a,Δx,Δy,A,B,C,E,F)
     return FDP
 end
@@ -756,9 +756,9 @@ end
 function Solve(FDP::FDPreconditioner2D,R)
     N=FDP.N
     M=FDP.M
-    w=zeros(Float64,N-1,M-1)
+    w=zeros(TFloat,N-1,M-1)
     w[1,1] = R[2,2]/FDP.a[1,1]
-    u=zeros(Float64,N+1,M+1)
+    u=zeros(TFloat,N+1,M+1)
     for i=2:N-1
         w[i,1] = (R[i+1,1] -FDP.B[i,1]*w[i-1,1])/FDP.a[i,1]
     end
@@ -791,11 +791,11 @@ function BiCGStabSolve(Nit::Int64,Tol,NP::NodalPotential,FDP::FDPreconditioner2D
     α=1.0
     ω=1.0
     r= Residual(NP)
-    r̄=zeros(Float64,N+1,M+1)
+    r̄=zeros(TFloat,N+1,M+1)
     r̄=LinearAlgebra.BLAS.blascopy!(L,r,1,r̄,1)
-    v=zeros(Float64,N+1,M+1)
-    s=zeros(Float64,N+1,M+1)
-    p=zeros(Float64,N+1,M+1)
+    v=zeros(TFloat,N+1,M+1)
+    s=zeros(TFloat,N+1,M+1)
+    p=zeros(TFloat,N+1,M+1)
     for k=1:Nit
         @info "norm",BLAS.nrm2(L,r,1)
         ρ̂=ρ
@@ -851,7 +851,7 @@ function CGSolve(Nit,Tol,NP,FDP)
     α=1.0
     ω=1.0
     r= Residual(NP)
-    p=zeros(Float64,N+1,M+1)
+    p=zeros(TFloat,N+1,M+1)
     p=LinearAlgebra.BLAS.blascopy!(L,r,1,p,1)
     for j=1:Nit
         α=BLAS.dot(L,r,1,r,1)/BLAS.dot(L,MatrixAction(Solve(FDP,p),NP),1,p,1)
@@ -913,8 +913,8 @@ end
 
 function LUSolve(A,p,rhs)
     N=size(p,1)
-    w=zeros(Float64,N)
-    y=zeros(Float64,N)
+    w=zeros(TFloat,N)
+    y=zeros(TFloat,N)
     y[:].=rhs[:]
     for i=1:N
         if (p[i] != i)
@@ -947,9 +947,9 @@ end
 function ComputeLaplacian(U,NP::Nodal_Solver,T::NodalGalerkin)
     N=NP.ND.N
     M=NP.ND.M
-    Uxx = zeros(Float64,N+1,M+1)
-    Uyy = zeros(Float64,N+1,M+1)
-    Lap = zeros(Float64,N+1,M+1)
+    Uxx = zeros(TFloat,N+1,M+1)
+    Uyy = zeros(TFloat,N+1,M+1)
+    Lap = zeros(TFloat,N+1,M+1)
     for j=1:M+1
         Uxx[:,j] = MxVDerivative(NP.ND.D2ξ,U[:,j])
         for i =1:N+1
@@ -988,7 +988,7 @@ function Ψ_Η(k,l,ξ)
 end
 
 function LocalStiffnessMatrix(Δx,Δy)
-    Ŝ=zeros(Float64,4,4)
+    Ŝ=zeros(TFloat,4,4)
     for m=0:1
         for n=0:1
             q=n+2*m+1
@@ -1010,8 +1010,8 @@ function LocalStiffnessMatrix(Δx,Δy)
 end
 
 function ApproximateFEMStencil(i,j,x,y)
-    pŜ=zeros(Float64,4,4,4)
-    C=zeros(Float64,3,3)
+    pŜ=zeros(TFloat,4,4,4)
+    C=zeros(TFloat,3,3)
     for m=0:1
         for n=0:1
             p=n+m*2+1 
@@ -1036,7 +1036,7 @@ end
 function SSORSweep(r,ω,NP::NodalPotential)
     N=NP.ND.N
     M=NP.ND.M
-    z=zeros(Float64,N+1,M+1)
+    z=zeros(TFloat,N+1,M+1)
     for j=1:M-1
         for i=1:N-1
             s=0.0
@@ -1069,7 +1069,7 @@ function PreconditionedConjugateGradientSolve(Nit,Tol,NP::NodalPotential)
     N=NP.ND.N
     M=NP.ND.M
     L=(N+1)*(M+1)
-    v=zeros(Float64,N+1,M+1)
+    v=zeros(TFloat,N+1,M+1)
     r = Residual(NP,NP.T)
     z=SSORSweep(r,1.43,NP)
     LinearAlgebra.BLAS.blascopy!(L,z,1,v,1)
@@ -1098,7 +1098,7 @@ function MatrixAction(NAD::NodalAdvDiff,Δt,U,T::Collocation)
     Lap = ComputeLaplacian(U,NAD,T)
     M=NAD.ND.M
     N=NAD.ND.N
-    action = zeros(Float64,N+1,M+1)
+    action = zeros(TFloat,N+1,M+1)
     for j=1:M+1
         for i=1:N+1
             action[i,j] = U[i,j] - (6*Δt/11) * Lap[i,j]
@@ -1112,7 +1112,7 @@ function MatrixAction(NAD::NodalAdvDiff,Δt,U,T::NodalGalerkin)
     Lap = ComputeLaplacian(U,NAD,T)
     M=NAD.ND.M
     N=NAD.ND.N
-    action = zeros(Float64,N+1,M+1)
+    action = zeros(TFloat,N+1,M+1)
     for j=1:M+1
         for i=1:N+1
             action[i,j] = NAD.ND.ξ.ω[i] * NAD.ND.η.ω[j] * U[i,j] - (6*Δt/11) * Lap[i,j]
@@ -1126,7 +1126,7 @@ function Residual(NAD::NodalAdvDiff,Δt,U)
     action = MatrixAction(NAD,Δt,U,NAD.T)
     M=NAD.ND.M
     N=NAD.ND.N
-    r = zeros(Float64,N+1,M+1)
+    r = zeros(TFloat,N+1,M+1)
     for j=1:M+1
         for i=1:N+1
             r[i,j] = NAD.RHS[i,j] - action[i,j]

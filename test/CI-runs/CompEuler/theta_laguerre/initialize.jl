@@ -16,7 +16,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     #---------------------------------------------------------------------------------
 
     if (inputs[:backend] == CPU())
-        PhysConst = PhysicalConst{Float64}()
+        PhysConst = PhysicalConst{TFloat}()
     
         if (inputs[:case] === "rtb")
         

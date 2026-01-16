@@ -4,7 +4,7 @@ function user_flux!(F, G, H,
                     mesh::St_mesh, 
                     ::CL, ::TOTAL; neqs=4, ip=1)
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
     T      = eltype(q)
     
     ρ      = q[1]

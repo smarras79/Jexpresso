@@ -15,7 +15,7 @@ function initialize(SD, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFl
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat; neqs=length(qvars))
     #---------------------------------------------------------------------------------
     
-    σ = Float64(0.15)
+    σ = TFloat(0.15)
     σ2= σ*σ
     for iel_g = 1:mesh.nelem
         for i=1:mesh.ngl

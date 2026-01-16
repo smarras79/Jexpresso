@@ -8,7 +8,7 @@ function user_source!(S,
                       ymin=0.0, ymax=0.0,
                       xmin=0.0, xmax=0.0)
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
         
     #
     # S(q(x)) = -ρg

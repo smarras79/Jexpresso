@@ -1,5 +1,5 @@
 function user_primitives!(u, qe, uprimitive, ::TOTAL)
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
     uprimitive[1] = u[1]
     uprimitive[2] = u[2]/u[1]
     uprimitive[3] = u[3]/u[1]

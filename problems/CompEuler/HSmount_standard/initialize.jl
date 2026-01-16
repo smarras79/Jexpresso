@@ -13,7 +13,7 @@ function initialize(SD::NSD_2D, PT::CompEuler, mesh::St_mesh, inputs::Dict, OUTP
   
     if (inputs[:backend] == CPU())
    
-        PhysConst = PhysicalConst{Float64}()
+        PhysConst = PhysicalConst{TFloat}()
         θref = 250.0 #K
         θ0 = 250.0
         T0   = θ0

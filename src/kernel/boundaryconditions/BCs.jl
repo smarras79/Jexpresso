@@ -528,7 +528,7 @@ function build_custom_bcs_dirichlet!(::NSD_3D, t, coords, nx, ny, nz, npoin, npo
     # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
     #          That
     #for ip = 1:npoin
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
     for iface = 1:nfaces_bdy
 
         if (bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodic1" &&
