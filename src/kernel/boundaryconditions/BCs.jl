@@ -443,3 +443,304 @@ function build_custom_bcs!(::NSD_3D, t, x, y, z, nx, ny, nz, npoin, npoin_linear
     uaux2u!(u, uaux, neqs, npoin)
     
 end
+
+
+#  Vlasov-Poisson B.C. (no laguerre yet)
+
+# 1D:
+# spatial
+function build_custom_bcs_VP!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, npoin_extra, npoin_linear, npoin_linear_extra, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, nelem, nelem_extra, ngl, ngl_extra, ngr, nelem_semi_inf, ω,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                           connijk, connijk_extra, connijk_lag, 
+                           bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
+                           neqs, dirichlet!, neumann, inputs)
+    ip = 1
+    fill!(qbdy, 4325789.0)
+    for iel_extra = 1:nelem_extra
+        for iextra = 1:npoin_extra
+            ip_extra = connijk_extra[iel_extra, iextra, 1]
+            ind1 = (ip-1)*npoin_extra + ip_extra
+            user_bc_dirichlet!(@view(uaux[ind1,:]), t, "left", qbdy, @view(qe[ind1,:]),inputs)
+            for ieq =1:neqs
+                if !AlmostEqual(qbdy[ieq],uaux[ind1,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                    uaux[ind1,ieq] = qbdy[ieq]
+                    RHS[ind1, ieq] = 0.0
+                end
+            end
+        end
+    end
+    
+    ip = npoin_linear
+    fill!(qbdy, 4325789.0)
+    for iel_extra = 1:nelem_extra
+        for iextra = 1:npoin_extra
+            ip_extra = connijk_extra[iel_extra, iextra, 1]
+            ind2 = (ip-1)*npoin_extra + ip_extra
+            user_bc_dirichlet!(@view(uaux[ind2,:]), t, "right", qbdy, @view(qe[ind2,:]),inputs)
+            for ieq =1:neqs
+                if !AlmostEqual(qbdy[ieq],uaux[ind2,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                    uaux[ind2,ieq] = qbdy[ieq]
+                    RHS[ind2, ieq] = 0.0
+                end
+            end
+        end
+    end
+
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, npoin, npoin_extra)
+
+end
+# velocity
+function build_custom_bcs_VP_extra!(::NSD_1D, t, x, y, z, nx, ny, nz, npoin, npoin_extra, npoin_linear, npoin_linear_extra, poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, nelem, nelem_extra, ngl, ngl_extra, ngr, nelem_semi_inf, ω,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                           connijk, connijk_extra, connijk_lag, 
+                           bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
+                           neqs, dirichlet!, neumann, inputs)
+    ip_extra = 1
+    fill!(qbdy, 4325789.0)
+    for iel = 1:nelem
+        for i = 1:ngl
+            ip = connijk[iel,i,1]
+            ind1 = (ip-1)*npoin_extra + ip_extra
+            user_bc_dirichlet_extra!(@view(uaux[ind1,:]), t, "left", qbdy, @view(qe[ind1,:]),inputs)
+            for ieq =1:neqs
+                if !AlmostEqual(qbdy[ieq],uaux[ind1,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                    uaux[ind1,ieq] = qbdy[ieq]
+                    RHS[ind1, ieq] = 0.0
+                end
+            end
+        end
+    end
+    
+    ip_extra = npoin_linear_extra
+    fill!(qbdy, 4325789.0)
+    for iel = 1:nelem
+        for i = 1:ngl
+            ip = connijk[iel,i,1]
+            ind2 = (ip-1)*npoin_extra + ip_extra
+            user_bc_dirichlet_extra!(@view(uaux[ind2,:]), t, "right", qbdy, @view(qe[ind2,:]),inputs)
+            for ieq =1:neqs
+                if !AlmostEqual(qbdy[ieq],uaux[ind2,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                    uaux[ind2,ieq] = qbdy[ieq]
+                    RHS[ind2, ieq] = 0.0
+                end
+            end
+        end
+    end
+
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, npoin, npoin_extra)
+
+end
+
+# 2D:
+# spatial
+function build_custom_bcs_VP!(::NSD_2D, t, x, y, z, nx, ny, nz,
+                           vx, vy, vz, vnx, vny, vnz, 
+                           npoin, npoin_extra, npoin_linear, npoin_linear_extra, 
+                           poin_in_bdy_edge, poin_in_bdy_edge_extra, poin_in_bdy_face, poin_in_bdy_face_extra, 
+                           nedges_bdy, nedges_bdy_extra, nfaces_bdy, ngl, ngl_extra, ngr, ngr_extra, nelem_extra, nelem_semi_inf, ω, ω_extra,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                           connijk, connijk_extra, connijk_lag, 
+                           bdy_edge_in_elem, bdy_edge_type, bdy_face_type,
+                           bdy_edge_in_elem_extra, bdy_edge_type_extra, bdy_face_type_extra, 
+                           RHS, rhs_el,
+                           neqs, dirichlet!, neumann, inputs)
+    #
+    # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
+    #          That
+    for iedge = 1:nedges_bdy 
+        iel  = bdy_edge_in_elem[iedge]
+        
+        if bdy_edge_type[iedge] != "periodic1" && bdy_edge_type[iedge] != "periodic2" && bdy_edge_type[iedge] != "Laguerre"
+            #if mesh.bdy_edge_type[iedge] == "free_slip"
+            
+            #tag = mesh.bdy_edge_type[iedge]
+            for k=1:ngl
+                ip = poin_in_bdy_edge[iedge,k]
+                nx_l = nx[iedge,k]
+                ny_l = ny[iedge,k]
+
+                for iel_extra = 1:nelem_extra
+                    for i = 1:ngl_extra
+                        for j = 1:ngl_extra
+                            ip_extra = connijk_extra[iel_extra,i,j]
+
+                            ind = (ip-1)*npoin_extra + ip_extra
+                            fill!(qbdy, 4325789.0)
+                            
+                            user_bc_dirichlet!(@view(uaux[ind,:]), x[ip], y[ip], t, bdy_edge_type[iedge], qbdy, nx_l, ny_l, @view(qe[ind,:]),inputs[:SOL_VARS_TYPE])
+                            
+                            for ieq =1:neqs
+                                if !AlmostEqual(qbdy[ieq],uaux[ind,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                                    #@info mesh.x[ip],mesh.y[ip],ieq,qbdy[ieq] 
+                                    uaux[ind,ieq] = qbdy[ieq]
+                                    RHS[ind, ieq] = 0.0
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, npoin, npoin_extra)
+    
+end
+# velocity
+function build_custom_bcs_VP_extra!(::NSD_2D, t, x, y, z, nx, ny, nz,
+                           vx, vy, vz, vnx, vny, vnz, 
+                           npoin, npoin_extra, npoin_linear, npoin_linear_extra, 
+                           poin_in_bdy_edge, poin_in_bdy_edge_extra, poin_in_bdy_face, poin_in_bdy_face_extra, 
+                           nedges_bdy, nedges_bdy_extra, nfaces_bdy, ngl, ngl_extra, ngr, ngr_extra, nelem, nelem_semi_inf, ω, ω_extra,
+                           xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                           connijk, connijk_extra, connijk_lag, 
+                           bdy_edge_in_elem, bdy_edge_type, bdy_face_type,
+                           bdy_edge_in_elem_extra, bdy_edge_type_extra, bdy_face_type_extra, 
+                           RHS, rhs_el,
+                           neqs, dirichlet!, neumann, inputs)
+
+    for iedge_extra = 1:nedges_bdy_extra 
+        iel_extra  = bdy_edge_in_elem_extra[iedge]
+        
+        if bdy_edge_type_extra[iedge_extra] != "periodic1" && bdy_edge_type_extra[iedge_extra] != "periodic2" && bdy_edge_type_extra[iedge_extra] != "Laguerre"
+            
+            for k=1:ngl_extra
+                ip_extra = poin_in_bdy_edge_extra[iedge_extra,k]
+                nx_l_extra = nx_extra[iedge_extra,k]
+                ny_l_extra = ny_extra[iedge_extra,k]
+
+                for iel = 1:nelem
+                    for i = 1:ngl
+                        for j = 1:ngl
+                            ip = connijk[iel,i,j]
+
+                            ind = (ip-1)*npoin_extra + ip_extra
+                            fill!(qbdy, 4325789.0)
+                            
+                            user_bc_dirichlet_extra!(@view(uaux[ind,:]), vx[ip], vy[ip], t, bdy_edge_type_extra[iedge_extra], qbdy, nx_l_extra, ny_l_extra, @view(qe[ind,:]),inputs[:SOL_VARS_TYPE])
+                            
+                            for ieq =1:neqs
+                                if !AlmostEqual(qbdy[ieq],uaux[ind,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0)
+                                    uaux[ind,ieq] = qbdy[ieq]
+                                    RHS[ind, ieq] = 0.0
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, npoin, npoin_extra)
+    
+end
+
+# 3D:
+# spatial
+function build_custom_bcs_VP!(::NSD_3D, t, x, y, z, nx, ny, nz, 
+                             npoin, npoin_extra, npoin_linear, npoin_linear_extra,
+                             poin_in_bdy_edge, poin_in_bdy_face, nedges_bdy, nfaces_bdy, 
+                             ngl, ngl_extra, ngr, ngr_extra, nelem_extra, nelem_semi_inf, ω,
+                             xmax, ymax, zmax, xmin, ymin, zmin, qbdy, uaux, u, qe,
+                             connijk, connijk_extra, connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type, RHS, rhs_el,
+                             neqs, dirichlet!, neumann, inputs)
+    #
+    # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
+    for iface = 1:nfaces_bdy
+        if (bdy_face_type[iface] != "periodicx" && bdy_face_type[iface] != "periodic1" &&
+            bdy_face_type[iface] != "periodicz" && bdy_face_type[iface] != "periodic2" &&
+            bdy_face_type[iface] != "periodicy" && bdy_face_type[iface] != "periodic3" )
+            for i=1:ngl
+                for j=1:ngl
+                    fill!(qbdy, 4325789.0)
+                    ip = poin_in_bdy_face[iface,i,j]
+
+                    for iel_extra = 1:nelem_extra
+                        for n = 1:ngl_extra,m = 1:ngl_extra,l = 1:ngl_extra
+                            ip_extra = connijk_extra[iel_extra,l,m,n]
+
+                            ind = (ip-1)*npoin_extra + ip_extra
+
+                            user_bc_dirichlet!(@view(uaux[ind,:]),
+                                            x[ip], y[ip], z[ip],
+                                            t, bdy_face_type[iface],  qbdy,
+                                            nx[iface,i,j], ny[iface,i,j], nz[iface,i,j],
+                                            xmin, xmax,
+                                            ymin, ymax,
+                                            zmin, zmax,
+                                            @view(qe[ind,:]), inputs[:SOL_VARS_TYPE])
+                        
+                            for ieq =1:neqs
+                                if !AlmostEqual(qbdy[ieq],uaux[ind,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                                    uaux[ind,ieq] = qbdy[ieq]
+                                    RHS[ind, ieq] = 0.0
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, npoin, npoin_extra)
+    
+end
+# velocity
+function build_custom_bcs_VP_extra!(::NSD_3D, t, x, y, z, nx, ny, nz, 
+                             vx, vy, vz, vnx, vny, vnz, 
+                             npoin, npoin_extra, npoin_linear, npoin_linear_extra,
+                             poin_in_bdy_edge, poin_in_bdy_face_extra, nedges_bdy, nfaces_bdy_extra, 
+                             ngl, ngl_extra, ngr, ngr_extra, nelem, nelem_semi_inf, ω_extra,
+                             vxmax, vymax, vzmax, vxmin, vymin, vzmin, qbdy, uaux, u, qe,
+                             connijk, connijk_extra, connijk_lag, bdy_edge_in_elem, bdy_edge_type, bdy_face_type_extra, RHS, rhs_el,
+                             neqs, dirichlet!, neumann, inputs)
+    #
+    # WARNING: Notice that the b.c. are applied to uaux[:,:] and NOT u[:]!
+    for iface = 1:nfaces_bdy_extra
+        if (bdy_face_type_extra[iface] != "periodicx" && bdy_face_type_extra[iface] != "periodic1" &&
+            bdy_face_type_extra[iface] != "periodicz" && bdy_face_type_extra[iface] != "periodic2" &&
+            bdy_face_type_extra[iface] != "periodicy" && bdy_face_type_extra[iface] != "periodic3" )
+            for i=1:ngl_extra
+                for j=1:ngl_extra
+                    fill!(qbdy, 4325789.0)
+                    ip_extra = poin_in_bdy_face_extra[iface,i,j]
+
+                    for iel = 1:nelem
+                        for n = 1:ngl,m = 1:ngl,l = 1:ngl
+                            ip = connijk[iel,l,m,n]
+
+                            ind = (ip-1)*npoin_extra + ip_extra
+
+                            user_bc_dirichlet_extra!(@view(uaux[ind,:]),
+                                            vx[ip_extra], vy[ip_extra], vz[ip_extra],
+                                            t, bdy_face_type_extra[iface],  qbdy,
+                                            vnx[iface,i,j], vny[iface,i,j], vnz[iface,i,j],
+                                            vxmin, vxmax,
+                                            vymin, vymax,
+                                            vzmin, vzmax,
+                                            @view(qe[ind,:]), inputs[:SOL_VARS_TYPE])
+                        
+                            for ieq =1:neqs
+                                if !AlmostEqual(qbdy[ieq],uaux[ind,ieq]) && !AlmostEqual(qbdy[ieq],4325789.0) # WHAT's this for?
+                                    uaux[ind,ieq] = qbdy[ieq]
+                                    RHS[ind, ieq] = 0.0
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    #Map back to u after applying b.c.
+    uaux2u!(u, uaux, neqs, npoin, npoin_extra)
+    
+end

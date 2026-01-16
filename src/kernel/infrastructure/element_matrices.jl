@@ -865,6 +865,14 @@ function divide_by_mass_matrix!(RHS, RHSaux, Minv::AbstractVector, neqs, npoin, 
     
 end
 
+function divide_by_mass_matrix!(RHS, RHSaux, Minv, neqs, npoin, npoin_extra, ::ContGal)
+    
+    for ip=1:npoin*npoin_extra
+        RHS[ip] = Minv[ip]*RHS[ip]
+    end
+    
+end
+
 function matrix_wrapper(::FD, SD, QT, basis::St_Lagrange, ω, mesh, metrics, N, Q, TFloat;
                         ldss_laplace=false, ldss_differentiation=false)
 

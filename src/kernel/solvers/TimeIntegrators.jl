@@ -37,41 +37,64 @@ function time_loop!(inputs, params, u)
     # # AMR config
     # #------------------------------------------------------------------------
     function condition(u, t, integrator)
-        idx  = findfirst(x -> x == t, dosetimes)
-        if idx !== nothing
-            idx_ref[] = idx
-            ret_dosetime_ref[] = true
-        else
-            ret_dosetime_ref[] = false
-        end
 
-        tol             = 1e-6
-        # ret_amrtime_ref = abs(mod(t, Δt_amr)) < tol
-        # return (ret_dosetime_ref[] || ret_amrtime_ref[])
-        return ret_dosetime_ref[]
+        if inputs[:l_extra_coord]
+            return true
+
+        else
+            idx  = findfirst(x -> x == t, dosetimes)
+            if idx !== nothing
+                idx_ref[] = idx
+                ret_dosetime_ref[] = true
+            else
+                ret_dosetime_ref[] = false
+            end
+
+            tol             = 1e-6
+            # ret_amrtime_ref = abs(mod(t, Δt_amr)) < tol
+            # return (ret_dosetime_ref[] || ret_amrtime_ref[])
+            return ret_dosetime_ref[]
+        end
     end
     function affect!(integrator)
-        idx          = idx_ref[]
-        ret_dosetime = ret_dosetime_ref[]
-        if ret_dosetime == true
-            println_rank(" #  t=", integrator.t; msg_rank = rank)
 
-            #CFL
-            computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
-                       inputs[:Δt],
-                       params.mesh.Δeffective_s,
-                       integrator,
-                       params.SD; visc=inputs[:μ])
+        params.number[1] = params.number[1] + 1
+        print(maximum(integrator.u))
+        print("  |  ")
+        println(integrator.t)
+
+        if inputs[:l_extra_coord]
             
-            write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
-                         integrator.p.mesh, integrator.p.mp, integrator.p.F_data,
-                         integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
-                         integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
-                         inputs[:output_dir], inputs,
-                         integrator.p.qp.qvars,
-                         integrator.p.qp.qoutvars,
-                         inputs[:outformat];
-                         nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
+            if (mod(params.number[1],3) == 0)
+                set_proposed_dt!(integrator, Float64(inputs[:Δt]/2))
+            elseif (mod(params.number[1],3) == 1)
+                set_proposed_dt!(integrator, Float64(inputs[:Δt]))
+            else
+                set_proposed_dt!(integrator, Float64(inputs[:Δt]/2))
+            end
+        else
+            idx          = idx_ref[]
+            ret_dosetime = ret_dosetime_ref[]
+            if ret_dosetime == true
+                println_rank(" #  t=", integrator.t; msg_rank = rank)
+
+                #CFL
+                computeCFL(params.mesh.npoin, integrator.p.qp.neqs,
+                        inputs[:Δt],
+                        params.mesh.Δeffective_s,
+                        integrator,
+                        params.SD; visc=inputs[:μ])
+                
+                write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
+                            integrator.p.mesh, integrator.p.mp, integrator.p.F_data,
+                            integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
+                            integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
+                            inputs[:output_dir], inputs,
+                            integrator.p.qp.qvars,
+                            integrator.p.qp.qoutvars,
+                            inputs[:outformat];
+                            nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
+            end
         end
     end
     cb_rad = DiscreteCallback(two_stream_condition, do_radiation!)
@@ -95,12 +118,18 @@ function time_loop!(inputs, params, u)
                  inputs[:outformat];
                  nvar=params.qp.neqs, qexact=params.qp.qe)
     if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
+
+     if inputs[:l_extra_coord]
+        dt_ini = Float64(inputs[:Δt]/2)
+    else
+        dt_ini = Float64(inputs[:Δt])
+    end
     
     #
     # Simulation
     #
     solution = solve(prob,
-                     inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                     inputs[:ode_solver], dt=dt_ini,
                      #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
                      callback = CallbackSet(cb), tstops = dosetimes,
                      save_everystep = false,

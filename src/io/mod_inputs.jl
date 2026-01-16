@@ -18,6 +18,167 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     # Check that necessary inputs exist in the Dict inside .../IO/user_inputs.jl
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
+
+
+
+
+
+    if inputs[:l_extra_coord]
+        mod_inputs_check(inputs, :nop_extra, Int8(4), "w")  #Polynomial order
+    end
+
+    if(!haskey(inputs, :lexact_integration_extra))
+        inputs[:lexact_integration_extra] = false #Default integration rule is INEXACT
+    end
+
+    if (!haskey(inputs,:l_extra_coord))
+        inputs[:l_extra_coord] = false
+    end
+
+    if(!haskey(inputs, :lperiodic_1d_extra))
+      inputs[:lperiodic_1d_extra] = false
+    end
+
+    if(!haskey(inputs,:nop_laguerre_extra))
+        inputs[:nop_laguerre_extra] = 18
+    end
+
+    # extra
+    if(haskey(inputs, :interpolation_nodes_extra))
+        
+        if(lowercase(inputs[:interpolation_nodes_extra]) == "llg"  ||
+            lowercase(inputs[:interpolation_nodes_extra]) == "gll" ||
+            lowercase(inputs[:interpolation_nodes_extra]) == "lgl")
+            inputs[:interpolation_nodes_extra] = LGL()
+
+        elseif(lowercase(inputs[:interpolation_nodes_extra]) == "lg" ||
+            lowercase(inputs[:interpolation_nodes_extra]) == "gl")
+            inputs[:interpolation_nodes_extra] = LG()
+            
+        elseif(lowercase(inputs[:interpolation_nodes_extra]) == "cg" ||
+            lowercase(inputs[:interpolation_nodes_extra]) == "gc")
+            inputs[:interpolation_nodes_extra] = CG()
+            
+        elseif(lowercase(inputs[:interpolation_nodes_extra]) == "cgl" ||
+            lowercase(inputs[:interpolation_nodes_extra]) == "gcl")
+            inputs[:interpolation_nodes_extra] = CGL()
+        else
+            s = """
+                    ERROR in user_inputs.jl --> :interpolation_nodes
+                    
+                        Chose among:
+                         - "lgl"
+                         - "lg"
+                         - "cg"
+                         - "cgl"
+                  """
+            
+            error(s)
+        end
+    else
+        #default are LGL
+        inputs[:interpolation_nodes_extra] = LGL()
+    end
+
+        # extra
+    if(haskey(inputs, :quadrature_nodes_extra))
+        
+        if(lowercase(inputs[:quadrature_nodes_extra]) == "llg" ||
+            lowercase(inputs[:quadrature_nodes_extra]) == "gll" ||
+            lowercase(inputs[:quadrature_nodes_extra]) == "lgl")
+            inputs[:quadrature_nodes_extra] = LGL()
+
+        elseif(lowercase(inputs[:quadrature_nodes_extra]) == "lg" ||
+            lowercase(inputs[:quadrature_nodes_extra]) == "gl")
+            inputs[:quadrature_nodes_extra] = LG()
+            
+        elseif(lowercase(inputs[:quadrature_nodes_extra]) == "cg" ||
+            lowercase(inputs[:quadrature_nodes_extra]) == "gc")
+            inputs[:quadrature_nodes_extra] = CG()
+            
+        elseif(lowercase(inputs[:quadrature_nodes_extra]) == "cgl" ||
+            lowercase(inputs[:quadrature_nodes_extra]) == "gcl")
+            inputs[:quadrature_nodes_extra] = CGL()
+        else
+            s = """
+                    ERROR in user_inputs.jl --> :quadrature_nodes
+                    
+                        Chose among:
+                         - "lgl"
+                         - "lg"
+                         - "cg"
+                         - "cgl"
+                  """
+            
+            error(s)            
+        end
+    else
+        #default are LGL
+        inputs[:quadrature_nodes_extra] = LGL()
+    end
+
+        #Grid entries extra:
+    if(!haskey(inputs, :lread_gmsh_extra) || inputs[:lread_gmsh_extra] == false)
+        
+        mod_inputs_check(inputs, :nsd_extra,  Int8(1), "-")
+        mod_inputs_check(inputs, :nelx_extra, "e")
+        mod_inputs_check(inputs, :xmin_extra, "e")
+        mod_inputs_check(inputs, :xmax_extra, "e")
+        mod_inputs_check(inputs, :nely_extra,  Int8(2), "-")
+        mod_inputs_check(inputs, :ymin_extra, Float64(-1.0), "-")
+        mod_inputs_check(inputs, :ymax_extra, Float64(+1.0), "-")
+        mod_inputs_check(inputs, :nelz_extra,  Int8(2), "-")
+        mod_inputs_check(inputs, :zmin_extra, Float64(-1.0), "-")
+        mod_inputs_check(inputs, :zmax_extra, Float64(+1.0), "-")
+        
+    else
+        mod_inputs_check(inputs, :gmsh_filename_extra, "e")
+        
+        mod_inputs_check(inputs, :nsd_extra,  Int8(3), "-")
+        mod_inputs_check(inputs, :nelx_extra,  Int8(2), "-")
+        mod_inputs_check(inputs, :xmin_extra, Float64(-1.0), "-")
+        mod_inputs_check(inputs, :xmax_extra, Float64(+1.0), "-")
+        mod_inputs_check(inputs, :nely_extra,  Int8(2), "-")
+        mod_inputs_check(inputs, :ymin_extra, Float64(-1.0), "-")
+        mod_inputs_check(inputs, :ymax_extra, Float64(+1.0), "-")
+        mod_inputs_check(inputs, :nelz_extra,  Int8(2), "-")
+        mod_inputs_check(inputs, :zmin_extra, Float64(-1.0), "-")
+        mod_inputs_check(inputs, :zmax_extra, Float64(+1.0), "-")
+
+        s= string("jexpresso: Some undefined (but unnecessary) user inputs 
+                                  MAY have been given some default values.
+                                  User needs not to worry about them.")
+        
+        #@warn s
+        
+    end #lread_gmsh
+
+     # extra grid
+    if(haskey(inputs, :nelx_extra))
+        inputs[:npx_extra] = inputs[:nelx_extra] + 1
+    else
+        inputs[:npx_extra] = UInt8(2)
+    end
+    if(haskey(inputs, :nely_extra))
+        inputs[:npy_extra] = inputs[:nely_extra] + 1
+    else
+        inputs[:npy_extra] = UInt8(2)
+    end
+    if(haskey(inputs, :nelz_extra))
+        inputs[:npz_extra] = inputs[:nelz_extra] + 1
+    else
+        inputs[:npz_extra] = UInt8(2)
+    end
+    
+    if (inputs[:nsd_extra] == 1)
+        inputs[:npy_extra] = UInt8(1)
+        inputs[:npz_extra] = UInt8(1)
+    elseif(inputs[:nsd_extra] == 2)
+        inputs[:npz_extra] = UInt8(1)
+    end
+
+
+
     
     if(!haskey(inputs, :backend))
         inputs[:backend] = CPU()
@@ -276,6 +437,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     if(!haskey(inputs, :ndiagnostics_outputs))
         inputs[:ndiagnostics_outputs] = 0
+    else
+        if inputs[:l_extra_coord]
+            inputs[:tend] = inputs[:tend]*2 
+        end
     end
     if(!haskey(inputs, :Δt))
         inputs[:Δt] = 0.1  #Initial time is 0.0 by default

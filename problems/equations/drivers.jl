@@ -7,12 +7,17 @@ function driver(nparts,
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
     sem = sem_setup(inputs, nparts, distribute)
+    sem_extra = sem_setup_extra(inputs)
     
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
     
-    qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+    if inputs[:l_extra_coord]
+        qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, sem_extra.mesh, inputs, OUTPUT_DIR, TFloat)
+    else
+        qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+    end
 
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
@@ -36,7 +41,7 @@ function driver(nparts,
     else
         tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
     end
-    params, u =  params_setup(sem,
+    params, u =  params_setup(sem,sem_extra,
                               qp,
                               inputs,
                               OUTPUT_DIR,
@@ -48,6 +53,31 @@ function driver(nparts,
         # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
         #
         @time solution = time_loop!(inputs, params, u)
+
+        f = zeros(TFloat, sem.mesh.npoin, sem_extra.mesh.npoin)
+        u_end = solution.u[end]
+
+        for iel = 1:sem.mesh.nelem
+            for i = 1:sem.mesh.ngl
+                ip = sem.mesh.connijk[iel,i,1]
+
+                for iel_extra = 1:sem_extra.mesh.nelem
+                    for j = 1:sem_extra.mesh.ngl
+                        ip_extra = sem_extra.mesh.connijk[iel_extra,j,1]
+
+                        ind = (ip-1)*sem_extra.mesh.npoin + ip_extra
+
+                        f[ip,ip_extra] = u_end[ind]
+                    end
+                end
+            end
+        end
+
+        println(params.mesh.x)
+        println(params.mesh_extra.x)
+        println(f)
+        pause()
+        
         # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
         
     else

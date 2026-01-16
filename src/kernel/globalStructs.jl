@@ -8,11 +8,17 @@ Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, back
     vaux = KernelAbstractions.zeros(backend, T, dims3) #generic auxiliary array for general use
     
 end
-function allocate_uODE(SD, npoin, T, backend; neqs=1)
+function allocate_uODE(SD, npoin, npoin_extra, T, backend, l_extra_coord; neqs=1)
 
-    dims1 = (Int64(npoin)*Int64(neqs))
-    dims2 = (Int64(npoin), Int64(neqs+1))
-    dims3 = (Int64(npoin))
+    if l_extra_coord
+        dims1 = (Int64(npoin)*Int64(npoin_extra)*Int64(neqs))
+        dims2 = (Int64(npoin)*Int64(npoin_extra), Int64(neqs))
+        dims3 = (Int64(npoin)*Int64(npoin_extra))
+    else
+        dims1 = (Int64(npoin)*Int64(neqs))
+        dims2 = (Int64(npoin), Int64(neqs))
+        dims3 = (Int64(npoin))
+    end
 
     uODE = St_uODE{T, dims1, dims2, dims3, backend}()
     
@@ -36,9 +42,13 @@ Base.@kwdef mutable struct St_SolutionVars{T <: AbstractFloat, dims1, nvars, bac
     neqs  = nvars
     
 end
-function define_q(SD, nelem, npoin, ngl, qvars, T, backend; neqs=1, qoutvars=qvars)
+function define_q(SD, nelem, npoin, npoin_extra, ngl, qvars, T, backend, l_extra_coord; neqs=1)
     
-    dims1 = (Int64(npoin), Int64(neqs+1))
+     if  l_extra_coord
+        dims1 = (Int64(npoin)*Int64(npoin_extra), Int64(neqs+1))
+    else
+        dims1 = (Int64(npoin), Int64(neqs+1))
+    end
     
     q          = St_SolutionVars{T, dims1, neqs, backend}()
     q.qvars    = qvars
@@ -47,7 +57,7 @@ function define_q(SD, nelem, npoin, ngl, qvars, T, backend; neqs=1, qoutvars=qva
     return q
 end
 
-# Poisson equation variables
+# Poisson equation variables (V)
 Base.@kwdef mutable struct St_poisson{T <: AbstractFloat, dims1, backend}
 
     poisson    = KernelAbstractions.zeros(backend, T, dims1)
@@ -61,39 +71,62 @@ function allocate_poisson(SD, npoin, T, backend; l_incompressible=false)
     return poisson
 end
 
-
+# (∇V)
 #-------------------------------------------------------------------------------------------------------------------------------
 # Flux data: this is to store quantities to be used in user flux that can't be directly optained from the prognostic variables.
 #-------------------------------------------------------------------------------------------------------------------------------
 Base.@kwdef mutable struct St_F_data{T <: AbstractFloat, dims1, backend}
-
     F_data    = KernelAbstractions.zeros(backend, T, dims1)
-    
 end
-function allocate_F_data(SD, npoin, T, backend; l_incompressible=false)
+function allocate_F_data(SD, npoin, T, backend; l_incompressible=false, l_extra_coord=false)
    
     if l_incompressible
         dims1 = (Int64(npoin),2)
+    elseif l_extra_coord
+        if SD == NSD_1D()
+            dims1 = (Int64(npoin),1)
+        elseif SD == NSD_2D()
+            dims1 = (Int64(npoin),2)
+        elseif SD == NSD_3D()
+            dim1 = (Int64(npoin),3)
+        end
     else
         dims1 = 1
     end
-    uODE = St_F_data{T, dims1, backend}()
+    F_data = St_F_data{T, dims1, backend}()
 
-    return uODE
+    return F_data
+end
+
+Base.@kwdef mutable struct St_G_data{T <: AbstractFloat, dims1, backend}
+    G_data    = KernelAbstractions.zeros(backend, T, dims1)
+end
+function allocate_G_data(SD, npoin, T, backend; l_incompressible=false, l_extra_coord=false)
+   
+    if l_incompressible
+        dims1 = (Int64(npoin),2)
+    elseif l_extra_coord
+        if SD == NSD_1D()
+            dims1 = (Int64(npoin),1)
+        elseif SD == NSD_2D()
+            dims1 = (Int64(npoin),2)
+        elseif SD == NSD_3D()
+            dim1 = (Int64(npoin),3)
+        end
+    else
+        dims1 = 1
+    end
+    G_data = St_G_data{T, dims1, backend}()
+
+    return G_data
 end
 
 Base.@kwdef mutable struct St_number{T <: AbstractFloat, dims1, backend}
-
     number    = KernelAbstractions.zeros(backend, T, dims1)
-    
 end
-function allocate_number(SD, npoin, T, backend; l_incompressible=false)
-   
-    
-    dims1 = (Int64(npoin),2)
-
+function allocate_number(SD, npoin, T, backend)
+    dims1 = Int64(npoin)
     number = St_number{T, dims1, backend}()
-
     return number
 end
 
@@ -109,7 +142,7 @@ Base.@kwdef mutable struct St_rhs_p{T <: AbstractFloat, dims1, dims2, dims3, dim
     RHS_laplacian_p = KernelAbstractions.zeros(backend,  T, dims4)      #D_global
     
 end
-function allocate_rhs_p(SD, nelem, npoin, ngl, T, backend, l_incompressible; neqs=1)
+function allocate_rhs_p(SD, nelem, npoin, ngl, T, backend, l_incompressible, l_extra_coord; neqs=1)
     if (l_incompressible)
         
         if SD == NSD_1D()
@@ -117,7 +150,7 @@ function allocate_rhs_p(SD, nelem, npoin, ngl, T, backend, l_incompressible; neq
             dims1 = (Int64(npoin), Int64(neqs))
             dims2 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
             dims3 = (Int64(nelem), Int64(ngl), Int64(neqs))
-            dims4 = (Int64(npoin), Int64(neqs)) 
+            dims4 = (Int64(npoin), Int64(npoin), Int64(neqs)) 
 
         elseif SD == NSD_2D()
 
@@ -132,6 +165,35 @@ function allocate_rhs_p(SD, nelem, npoin, ngl, T, backend, l_incompressible; neq
             dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) 
             dims3 = (Int64(nelem), Int64(ngl), Int64(ngl) , Int64(ngl), Int64(neqs)) 
             dims4 = (Int64(npoin), Int64(npoin), Int64(npoin), Int64(neqs)) 
+
+        end
+
+    elseif (l_extra_coord)
+
+        if SD == NSD_1D()
+
+            # dims1 = (Int64(npoin), Int64(neqs))
+            # dims2 = (Int64(nelem), Int64(ngl)*Int64(ngl), Int64(neqs)) 
+            # dims3 = (Int64(nelem), Int64(ngl)*Int64(ngl), Int64(ngl)*Int64(ngl), Int64(neqs)) 
+            # dims4 = (Int64(npoin), Int64(npoin), Int64(neqs)) 
+            dims1 = (Int64(npoin), Int64(neqs))
+            dims2 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
+            dims3 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) 
+            dims4 = (Int64(npoin), Int64(npoin), Int64(neqs)) 
+
+        elseif SD == NSD_2D()
+
+            dims1 = (Int64(npoin), Int64(neqs))
+            dims2 = (Int64(nelem), Int64(ngl)*Int64(ngl), Int64(neqs)) 
+            dims3 = (Int64(nelem), Int64(ngl)*Int64(ngl), Int64(ngl)*Int64(ngl), Int64(neqs)) 
+            dims4 = (Int64(npoin), Int64(npoin), Int64(neqs)) 
+
+        elseif SD == NSD_3D()
+
+            dims1 = (Int64(npoin), Int64(neqs))
+            dims2 = (Int64(nelem), Int64(ngl)*Int64(ngl)*Int64(ngl), Int64(neqs)) 
+            dims3 = (Int64(nelem), Int64(ngl)*Int64(ngl)*Int64(ngl), Int64(ngl)*Int64(ngl)*Int64(ngl), Int64(neqs)) 
+            dims4 = (Int64(npoin), Int64(npoin), Int64(neqs)) 
 
         end
 
@@ -175,24 +237,42 @@ Base.@kwdef mutable struct St_rhs{T <: AbstractFloat, dims1, dims2, backend}
     rhs_diffζ_el = KernelAbstractions.zeros(backend,  T, dims2)
     
 end
-function allocate_rhs(SD, nelem, npoin, ngl, T, backend; neqs=1)
+function allocate_rhs(SD, nelem, nelem_extra, npoin, npoin_extra, ngl, ngl_extra, T, backend, l_extra_coord; neqs=1)
 
-    if SD == NSD_1D()
-        dims1 = (Int64(npoin), Int64(neqs))
-        dims2 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
-    elseif SD == NSD_2D()
-        dims1 = (Int64(npoin), Int64(neqs))
-        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) 
-    elseif SD == NSD_3D()
-        dims1 = (Int64(npoin), Int64(neqs))
-        dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) 
+    if l_extra_coord
+
+        if SD == NSD_1D()
+            dims1 = (Int64(npoin)*Int64(npoin_extra), Int64(neqs))
+            dims2 = (Int64(nelem), Int64(nelem_extra), Int64(ngl), Int64(ngl_extra), Int64(neqs)) 
+
+        elseif SD == NSD_2D()
+            dims1 = (Int64(npoin)*Int64(npoin_extra), Int64(neqs))
+            dims2 = (Int64(nelem), Int64(nelem_extra), Int64(ngl), Int64(ngl), Int64(ngl_extra), Int64(ngl_extra), Int64(neqs))
+
+        elseif SD == NSD_3D()
+            dims1 = (Int64(npoin)*Int64(npoin_extra), Int64(neqs))
+            dims2 = (Int64(nelem), Int64(nelem_extra), Int64(ngl), Int64(ngl), Int64(ngl), Int64(ngl_extra), Int64(ngl_extra), Int64(ngl_extra), Int64(neqs))
+
+        end
+
+    else
+
+        if SD == NSD_1D()
+            dims1 = (Int64(npoin), Int64(neqs))
+            dims2 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
+        elseif SD == NSD_2D()
+            dims1 = (Int64(npoin), Int64(neqs))
+            dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(neqs)) 
+        elseif SD == NSD_3D()
+            dims1 = (Int64(npoin), Int64(neqs))
+            dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) 
+        end
     end
     
     rhs = St_rhs{T, dims1, dims2, backend}()
     
     return rhs
 end
-
 
 #-------------------------------------------------------------------------------------------
 # Fluxes
@@ -204,23 +284,111 @@ Base.@kwdef mutable struct St_fluxes{T <: AbstractFloat, dims1, dims2, backend}
     S = KernelAbstractions.zeros(backend,  T, dims1)
     uprimitive = KernelAbstractions.zeros(backend,  T, dims2)
 end
-function allocate_fluxes(SD, npoin, ngl, T, backend; neqs=1)
+function allocate_fluxes(SD, npoin, ngl, ngl_extra, T, backend, l_extra_coord; neqs=1)
 
-    if SD == NSD_1D()
-        dims1 = (Int64(ngl), Int64(neqs))
-        dims2 = (Int64(ngl), Int64(neqs+1)) 
-    elseif SD == NSD_2D()
-        dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
-        dims2 = (Int64(ngl), Int64(ngl), Int64(neqs+1)) 
-    elseif SD == NSD_3D()
-        dims1 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
-        dims2 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs+1)) 
+    if l_extra_coord
+        if SD == NSD_1D()
+            dims1 = (Int64(ngl), Int64(ngl_extra), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(ngl_extra), Int64(neqs+1)) 
+
+        elseif SD == NSD_2D()
+            dims1 = (Int64(ngl), Int64(ngl), Int64(ngl_extra), Int64(ngl_extra), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(ngl), Int64(ngl_extra), Int64(ngl_extra), Int64(neqs+1)) 
+
+        elseif SD == NSD_3D()
+            dims1 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(ngl_extra), Int64(ngl_extra), Int64(ngl_extra), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(ngl_extra), Int64(ngl_extra), Int64(ngl_extra), Int64(neqs+1))
+
+        end
+
+    else
+        if SD == NSD_1D()
+            dims1 = (Int64(ngl), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(neqs+1)) 
+        elseif SD == NSD_2D()
+            dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(ngl), Int64(neqs+1)) 
+        elseif SD == NSD_3D()
+            dims1 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs+1)) 
+        end
     end
     
     fluxes = St_fluxes{T, dims1, dims2, backend}()
     
     return fluxes
 end
+
+
+
+#-------------------------------------------------------------------------------------------
+# Fluxes Extra
+#-------------------------------------------------------------------------------------------
+Base.@kwdef mutable struct St_fluxes_extra{T <: AbstractFloat, dims1, dims2, backend}    
+    F_extra = KernelAbstractions.zeros(backend,  T, dims1)
+    G_extra = KernelAbstractions.zeros(backend,  T, dims1)
+    H_extra = KernelAbstractions.zeros(backend,  T, dims1)
+    S_extra = KernelAbstractions.zeros(backend,  T, dims1)
+    uprimitive = KernelAbstractions.zeros(backend,  T, dims2)
+end
+function allocate_fluxes_extra(SD, ngl, ngl_extra, T, backend, l_extra_coord; neqs=1)
+
+    if l_extra_coord
+        if SD == NSD_1D()
+            dims1 = (Int64(ngl), Int64(ngl_extra), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(ngl_extra), Int64(neqs+1)) 
+
+        elseif SD == NSD_2D()
+            dims1 = (Int64(ngl), Int64(ngl), Int64(ngl_extra), Int64(ngl_extra), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(ngl), Int64(ngl_extra), Int64(ngl_extra), Int64(neqs+1)) 
+
+        elseif SD == NSD_3D()
+            dims1 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(ngl_extra), Int64(ngl_extra), Int64(ngl_extra), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(ngl_extra), Int64(ngl_extra), Int64(ngl_extra), Int64(neqs+1)) 
+
+        end
+
+    else
+        if SD == NSD_1D()
+            dims1 = (Int64(ngl), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(neqs+1)) 
+        elseif SD == NSD_2D()
+            dims1 = (Int64(ngl), Int64(ngl), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(ngl), Int64(neqs+1)) 
+        elseif SD == NSD_3D()
+            dims1 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs))
+            dims2 = (Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs+1)) 
+        end
+    end
+    
+    fluxes = St_fluxes_extra{T, dims1, dims2, backend}()
+    
+    return fluxes
+end
+
+# Vlasov-Poisson mass matrix and its inverse
+Base.@kwdef mutable struct St_Mass{T <: AbstractFloat, dims1, backend}
+
+    Mass          = KernelAbstractions.zeros(backend,  T, dims1)
+    Mass_inv       = KernelAbstractions.zeros(backend,  T, dims1) 
+
+end
+function allocate_Mass_VP(SD, npoin, npoin_extra, T, backend, l_extra_coord; neqs=1)
+
+    if (l_extra_coord)
+        dims1 = (Int64(npoin)*Int64(npoin_extra), 1, Int64(neqs))
+    else
+        dims1 = 1
+    end
+
+    Mass_VP = St_Mass{T, dims1, backend}()
+    
+    return Mass_VP
+end
+
+
+
+
 #-------------------------------------------------------------------------------------------
 # Boundary Fluxes
 #-------------------------------------------------------------------------------------------

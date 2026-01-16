@@ -79,6 +79,8 @@ include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "physics", "incompressible.jl"))
 
+include(joinpath( "kernel", "physics", "VlasovPoisson.jl"))
+
 include(joinpath( "kernel", "physics", "microphysicsStructs.jl"))
 
 include(joinpath( "kernel", "physics", "microphysics.jl"))
@@ -99,6 +101,8 @@ include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
 
+include(joinpath( "kernel", "mesh", "mesh_extra.jl"))
+
 include(joinpath( "kernel", "bases", "basis_structs.jl"))
 
 include(joinpath( "kernel", "mesh", "metric_terms.jl"))
@@ -110,6 +114,8 @@ include(joinpath( "kernel", "mesh", "phys_grid.jl"))
 include(joinpath( "kernel", "infrastructure", "params_setup.jl"))
 
 include(joinpath( "kernel", "infrastructure", "sem_setup.jl"))
+
+include(joinpath( "kernel", "infrastructure", "sem_setup_extra.jl"))
 
 include(joinpath( "kernel", "infrastructure", "Kopriva_functions.jl"))
 

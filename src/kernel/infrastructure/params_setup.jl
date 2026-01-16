@@ -1,4 +1,4 @@
-function params_setup(sem,
+function params_setup(sem,sem_extra,
                       qp::St_SolutionVars,
                       inputs::Dict,
                       OUTPUT_DIR::String,
@@ -16,20 +16,35 @@ function params_setup(sem,
     
     uODE = allocate_uODE(sem.mesh.SD,
                          sem.mesh.npoin,
-                         T, backend;
+                         sem_extra.mesh.npoin,
+                         T, backend,
+                         inputs[:l_extra_coord];
                          neqs=qp.neqs)
     
     rhs    = allocate_rhs(sem.mesh.SD,
                           sem.mesh.nelem,
+                          sem_extra.mesh.nelem,
                           sem.mesh.npoin,
+                          sem_extra.mesh.npoin,
                           sem.mesh.ngl,
-                          T, backend;
+                          sem_extra.mesh.ngl,
+                          T, backend,
+                          inputs[:l_extra_coord];
                           neqs=qp.neqs)
     
     fluxes = allocate_fluxes(sem.mesh.SD,
                              sem.mesh.npoin,
                              sem.mesh.ngl,
-                             T, backend;
+                             sem_extra.mesh.ngl,
+                             T, backend,
+                             inputs[:l_extra_coord];
+                             neqs=qp.neqs)
+
+    fluxes_extra = allocate_fluxes_extra(sem.mesh.SD,
+                             sem.mesh.ngl,
+                             sem_extra.mesh.ngl,
+                             T, backend,
+                             inputs[:l_extra_coord];
                              neqs=qp.neqs)
 
     fijk   = allocate_fijk(sem.mesh.SD,
@@ -65,6 +80,10 @@ function params_setup(sem,
     G            = fluxes.G
     H            = fluxes.H
     S            = fluxes.S
+    F_extra            = fluxes_extra.F_extra
+    G_extra            = fluxes_extra.G_extra
+    H_extra            = fluxes_extra.H_extra
+    S_extra            = fluxes_extra.S_extra
     fijk         = fijk.fijk
     ∇f_el        = ∇f.∇f_el
     RHS          = rhs.RHS
@@ -81,24 +100,32 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Additional data storage for user_flux, currently only useful for incompressible 2D
     #------------------------------------------------------------------------------------
-    F_data_struct = allocate_F_data(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible])
+    F_data_struct = allocate_F_data(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible], l_extra_coord=inputs[:l_extra_coord])
     F_data = F_data_struct.F_data
 
-    number_st = allocate_number(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible])
+    G_data_struct = allocate_G_data(sem.mesh.SD, sem.mesh.npoin, T, backend; l_incompressible=inputs[:l_incompressible], l_extra_coord=inputs[:l_extra_coord])
+    G_data = G_data_struct.G_data
+
+   number_st = allocate_number(sem.mesh.SD, sem.mesh.npoin, T, backend)
     number = number_st.number
 
     # --------------------------------------------------------
     # JBZ: poisson equation's rhs allocation
-    rhs_p    = allocate_rhs_p(sem.mesh.SD,
+     rhs_p    = allocate_rhs_p(sem.mesh.SD,
                           sem.mesh.nelem,
                           sem.mesh.npoin,
                           sem.mesh.ngl,
-                          T, backend, inputs[:l_incompressible] ;
+                          T, backend, inputs[:l_incompressible], inputs[:l_extra_coord];
                           neqs=qp.neqs)
     RHS_p = rhs_p.RHS_p
     rhs_el_p = rhs_p.rhs_el_p
     rhs_laplacian_el_p = rhs_p.rhs_laplacian_el_p
     RHS_laplacian_p = rhs_p.RHS_laplacian_p
+
+     # Vlasove-Poisson equations' mass matrix
+    M_VP = allocate_Mass_VP(sem.mesh.SD, sem.mesh.npoin, sem_extra.mesh.npoin, T, backend, inputs[:l_extra_coord]; neqs=1)
+    Mass_VP = M_VP.Mass
+    Mass_inv_VP = M_VP.Mass_inv
 
 
     # JBZ: poisson equation's boundary integral (segment) allocation
@@ -157,6 +184,10 @@ function params_setup(sem,
     xmax = maximum(sem.mesh.x); xmin = minimum(sem.mesh.x)
     ymax = maximum(sem.mesh.y); ymin = minimum(sem.mesh.y)
     zmax = maximum(sem.mesh.z); zmin = minimum(sem.mesh.z)
+
+     vxmax = maximum(sem_extra.mesh.x); vxmin = minimum(sem_extra.mesh.x)
+    vymax = maximum(sem_extra.mesh.y); vymin = minimum(sem_extra.mesh.y)
+    vzmax = maximum(sem_extra.mesh.z); vzmin = minimum(sem_extra.mesh.z)
 
     #------------------------------------------------------------------------------------
     # Laguerre arrays
@@ -246,12 +277,22 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Populate solution arrays
     #------------------------------------------------------------------------------------
-    for i=1:qp.neqs
-        idx = (i-1)*sem.mesh.npoin
-        u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
-        qp.qnm1[:,i] = @view(qp.qn[:,i])
-        qp.qnm2[:,i] = @view(qp.qn[:,i])
-        
+    if (inputs[:l_extra_coord])
+        for i=1:qp.neqs
+            idx = (i-1)*sem.mesh.npoin*sem_extra.mesh.npoin
+            u[idx+1:i*sem.mesh.npoin*sem_extra.mesh.npoin] = @view qp.qn[:,i]
+            qp.qnm1[:,i] = @view(qp.qn[:,i])
+            qp.qnm2[:,i] = @view(qp.qn[:,i])
+            
+        end
+    else
+        for i=1:qp.neqs
+            idx = (i-1)*sem.mesh.npoin
+            u[idx+1:i*sem.mesh.npoin] = @view qp.qn[:,i]
+            qp.qnm1[:,i] = @view(qp.qn[:,i])
+            qp.qnm2[:,i] = @view(qp.qn[:,i])
+            
+        end
     end
     
     deps  = KernelAbstractions.zeros(backend, T, 1,1)
@@ -317,12 +358,17 @@ function params_setup(sem,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true)
         
     else
+         basis_extra = sem_extra.basis
+        ω_extra = sem_extra.ω
+        mesh_extra = sem_extra.mesh
+        metrics_extra = sem_extra.metrics
+
         pM = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend,
                   T, inputs,
                   uaux, vaux,
                   poisson, # for main variable in poission equation
-                  F_data, #for additional user_flux data (incompressible)
+                  F_data,G_data, #for additional user_flux data (incompressible)
                   number, # count which time step
                   ubdy, gradu, bdy_flux,                   
                   RHS, RHS_visc,
@@ -333,6 +379,7 @@ function params_setup(sem,
                   RHS_p, rhs_el_p, rhs_laplacian_el_p, RHS_laplacian_p, #for poission equation in NS equation
                   seg_p, #for boundary integral in NS equation
                   F, G, H, S,
+                  F_extra, G_extra, H_extra, S_extra,
                   F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv, M_edge_inv = sem.matrix.M_edge_inv,
                   flux_gpu, source_gpu, qbdy_gpu,
                   flux_micro, source_micro, adjusted, Pm,
@@ -342,9 +389,12 @@ function params_setup(sem,
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
+                  basis_extra, ω_extra, mesh_extra, metrics_extra,
                   thermo_params, VT = inputs[:visc_model], visc_coeff,
                   sem.matrix.M, sem.matrix.Minv, pM=pM,
+                  Mass_VP, Mass_inv_VP,
                   tspan, Δt, xmax, xmin, ymax, ymin, zmin, zmax,
+                  vxmax, vxmin, vymax, vymin, vzmin, vzmax,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
                   OUTPUT_DIR,
