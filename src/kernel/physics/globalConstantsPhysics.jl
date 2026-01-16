@@ -3,9 +3,9 @@ using Parameters
 @with_kw struct PhysicalConst{T}
 
     #Thermodynamic constants at T=300 K
-    Rair::T     =  287.0 #J/kg.K
-    cp::T       = 1004.0 #J/kg.K
-    cv::T       =  718.0 #J/kg.K
+    Rair::T     =  287.0   #J/kg.K
+    cp::T       = 1004.0   #J/kg.K
+    cv::T       =  717.0   #J/kg.K
     Lc::T       = 2.5104e6 #J/kg Latent heat of vaporization
     Ls::T       = 2.8440e6 #J/kg Latent heat of sublimation
     Lf::T       = 0.3336e6 #J/kg Latent heat of fusion
@@ -13,15 +13,15 @@ using Parameters
     γ::T        = T(cp/cv)
     γm1::T      = γ - 1.0
     ν::T        = 1.0e-5
-    μ_mol::T    = 1.8e-5 # Molecular viscosity [Pa·s]
-    κ_mol::T    = 2.4e-5 # Molecular thermal DIFFUSIVITY  [m²/s]
-    κ::T        = 2.6e-2 # Molecular thermal CONDUCTIVITY [W/(m·K)] of air at 293 K
-    Sc_t::T     = 0.7    # Turbulent Schmidt number
+    μ_mol::T    = 1.8e-5   # Molecular viscosity [Pa·s]
+    κ_mol::T    = 2.4e-5   # Molecular thermal DIFFUSIVITY  [m²/s]
+    κ::T        = 2.6e-2   # Molecular thermal CONDUCTIVITY [W/(m·K)] of air at 293 K
+    Sc_t::T     = 0.7      # Turbulent Schmidt number
     Pr::T       = 0.7
-    Pr_t::T     = 0.7    # Turbulent Pr number
+    Pr_t::T     = 0.7      # Turbulent Pr number
     Prnum::T    = 0.1
     pref::T     = 100000.0 #Pa
-    Rvap::T     = 461.0 #J/kg.K
+    Rvap::T     = 461.0    #J/kg.K
     Rovercv::T  = T(Rair/cv)
     cpoverR::T  = T(cp/Rair)
     cpovercv::T = T(cp/cv)

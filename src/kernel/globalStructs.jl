@@ -1,7 +1,7 @@
 #-------------------------------------------------------------------------------------------
 # Solution variables
 #-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, backend}
+Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend}
 
     u       = KernelAbstractions.zeros(backend, T, dims1)
     uaux    = KernelAbstractions.zeros(backend, T, dims2)

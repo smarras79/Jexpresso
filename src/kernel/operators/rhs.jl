@@ -802,6 +802,7 @@ function inviscid_rhs_el!(u, params,
     
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
 
+    lkep = inputs[:lkep]
     for iel = 1:nelem
         for j = 1:ngl, i=1:ngl
             
@@ -1679,7 +1680,6 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                     τ_yy = 2.0 * effective_viscosity * dvdy - (2.0/3.0) * effective_viscosity * div_u
                     flux_x = τ_xy
                     flux_y = τ_yy
-
                     
                 elseif is_temperature
                     # USE EFFECTIVE DIFFUSIVITY
