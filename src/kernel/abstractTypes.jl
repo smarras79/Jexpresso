@@ -59,6 +59,7 @@ struct NCL <: AbstractLaw end
 abstract type AbstractPert end
 struct PERT  <: AbstractPert end
 struct TOTAL <: AbstractPert end
+struct THETA <: AbstractPert end
 
 #
 # viscosity type

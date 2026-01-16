@@ -43,6 +43,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
          inputs[:ifirst_wall_node_index] = 2 #default is the first LGL point above the surface node along the vertical direction of the surface element
     end
     
+    if(!haskey(inputs, :lkep))
+       inputs[:lkep] = false
+    end
     
     if(!haskey(inputs, :bdy_fluxes))
        inputs[:bdy_fluxes] = false
@@ -573,6 +576,23 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:lrichardson] = false #Default is artificial viscosity with constant coefficient
     end
 
+    #
+    # Kinetic Energy or Entropy Preserving
+    #
+    if(!haskey(inputs, :lkep))
+        inputs[:lkep] = false
+    end
+        
+    if inputs[:lkep] == true
+        if(!haskey(inputs, :volume_flux))
+            inputs[:volume_flux] = "ranocha"
+        end
+    else
+        if(!haskey(inputs, :volume_flux))
+            inputs[:volume_flux] = nothing
+        end
+    end
+    
     #
     # saturation adjustment:
     #

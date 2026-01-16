@@ -7,6 +7,7 @@ function params_setup(sem,
 
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
+
     println_rank(" # Build arrays and params ................................ "; msg_rank = rank, suppress = sem.mesh.msg_suppress)
     if rank == 0 && tspan[1] == T(inputs[:tinit])
         @info " " inputs[:ode_solver] inputs[:tinit] inputs[:tend] inputs[:Δt]
@@ -75,6 +76,7 @@ function params_setup(sem,
     u            = uODE.u
     uaux         = uODE.uaux
     vaux         = uODE.vaux
+    fluxaux      = uODE.fluxaux
     utmp         = uODE.utmp
     F            = fluxes.F
     G            = fluxes.G
@@ -319,7 +321,7 @@ function params_setup(sem,
         inputs[:llaguerre_1d_right] || inputs[:llaguerre_1d_left])
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend, T, F, G, H, S,
-                  uaux, vaux, utmp,
+                  uaux, vaux, utmp, fluxaux,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el, rhs_el_tmp,
                   rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
@@ -337,7 +339,7 @@ function params_setup(sem,
                   rhs_diffξ_el_lag, rhs_diffη_el_lag,
                   RHS_lag, RHS_visc_lag, uprimitive_lag, 
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD,
-                  sem.SOL_VARS_TYPE,
+                  sem.SOL_VARS_TYPE, sem.volume_flux,
                   neqs=qp.neqs,
                   sem.mesh,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
@@ -355,7 +357,7 @@ function params_setup(sem,
         g_dss_cache = setup_assembler(sem.mesh.SD, RHS, sem.mesh.ip2gip, sem.mesh.gip2owner)
         params = (backend,
                   T, inputs,
-                  uaux, vaux, utmp,
+                  uaux, vaux, utmp, fluxaux,
                   ubdy, gradu, bdy_flux,                   
                   RHS, RHS_visc,
                   fijk, ∇f_el,
@@ -370,7 +372,7 @@ function params_setup(sem,
                   cache_ghost_p, cache_ghost_c,
                   q_t, q_ti, q_tij, fqf, b, B,
                   SD=sem.mesh.SD, sem.QT, sem.CL, sem.AD, 
-                  sem.SOL_VARS_TYPE, 
+                  sem.SOL_VARS_TYPE, sem.volume_flux,
                   neqs=qp.neqs,
                   sem.connijk_original, sem.poin_in_bdy_face_original, sem.x_original, sem.y_original, sem.z_original,
                   sem.basis, sem.ω, sem.mesh, sem.metrics,
