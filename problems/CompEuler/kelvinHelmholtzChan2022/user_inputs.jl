@@ -32,14 +32,15 @@ function user_inputs()
         # LKEP:
         #---------------------------------------------------------------------------
         :lkep        => true,
-        :volume_flux => "ec",
+        #:volume_flux => artiano_etec(),
+        :volume_flux => central_theta(),
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
 	#:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_40x40_unitsquare.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
