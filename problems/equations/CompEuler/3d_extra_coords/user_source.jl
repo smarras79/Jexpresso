@@ -101,25 +101,25 @@ end
 
 function user_scattering_functions(θ,θ1,ϕ,ϕ1,HG)
 
-    return 1.0#(1/(3*π))*(1 + (cos(θ - θ1))^2)*sin(ϕ-ϕ1)^2
+    return (1/(3*π))*(1 + (cos(θ - θ1))^2)*(1+(cos(ϕ-ϕ1))^2)
 
 end
 
 function user_rhs(x,y,z,θ,ϕ)
     κip = 10*exp(-((x-3/2)/3)^2)*exp(-y/2)
     σip = 0.1*κip
-    gip = x^2#exp(-((1. / 3) * (x - (3 / 3.)))^2)#exp(-((x-3/3)/3)^2)
-    dgip = 2*x#-(2. / 3^2) * (x - (3 / 3.)) * gip
-    hip = y^3#exp(-4. * (2 - y) / 2)#exp(-4*(2-y)/2)
-    dhip = 3*y^2#(4. / 2) * hip
-    fip = z^4
-    dfip = 4*z^3
-    sip = cos(θ)#exp(-((96 / (2. * π)) * (θ - (7. * π / 5.)))^2)#exp(-((96/(2*π))*(θ-7*π/5))^2)
-    bip = sin(ϕ)
+    gip = exp(-((1. / 3) * (x - (3 / 3.)))^2)#exp(-((x-3/3)/3)^2)
+    dgip = -(2. / 3^2) * (x - (3 / 3.)) * gip
+    hip = exp(-4. * (2 - y) / 2)#exp(-4*(2-y)/2)
+    dhip = (4. / 2) * hip
+    fip = 1.0
+    dfip = 0.0
+    sip = exp(-((6 / (2. * π)) * (θ - (3. * π / 5.)))^2)#exp(-((96/(2*π))*(θ-7*π/5))^2)
+    bip = exp(-((6 / (2. * π)) * (ϕ - (2. * π / 3.)))^2)
     uip = gip*hip*fip*sip*bip
     propip = (sin(θ)*cos(ϕ)*dgip*hip*fip+sin(θ)*sin(ϕ)*gip*dhip*fip+cos(θ)*gip*hip*dfip)*sip*bip
-    scatterθ, error = quadgk(θ1 -> 1.0*sip, 0, π, rtol=1e-13, atol = 1e-13) 
-    scatter, error = quadgk(ϕ1 -> scatterθ*bip, 0, 2*π, rtol=1e-13, atol = 1e-13)  
+    scatterθ, error = quadgk(θ1 -> (1/(3*π))*(1 + (cos(θ - θ1))^2)*sip, 0, π, rtol=1e-13, atol = 1e-13) 
+    scatter, error = quadgk(ϕ1 -> scatterθ*(1 + (cos(ϕ - ϕ1))^2)*bip, 0, 2*π, rtol=1e-13, atol = 1e-13)  
     #@info scatter
     return (-fip*gip*hip*scatter*σip + κip*uip +  propip)
 end
@@ -147,10 +147,10 @@ function user_rhs_sphere(x,y,z,θ,ϕ)
 end
 
 function user_rad_bc(x,y,z,θ,ϕ)
-    gip = x^2#exp(-((1. / 3) * (x - (3 / 3.)))^2)#exp(-((x-3/3)/3)^2)
-    hip = y^3#exp(-4. * (2 - y) / 2)#exp(-4*(2-y)/2)
-    fip = z^4
-    sip = cos(θ)#exp(-((96 / (2. * π)) * (θ - (7. * π / 5.)))^2)
-    bip = sin(ϕ)
+    gip = exp(-((1. / 3) * (x - (3 / 3.)))^2)#exp(-((x-3/3)/3)^2)
+    hip = exp(-4. * (2 - y) / 2)#exp(-4*(2-y)/2)
+    fip = 1.0
+    sip = exp(-((6 / (2. * π)) * (θ - (3. * π / 5.)))^2)
+    bip = exp(-((6 / (2. * π)) * (ϕ - (2. * π / 3.)))^2)
     return gip*hip*fip*sip*bip
 end

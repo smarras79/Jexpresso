@@ -196,7 +196,7 @@ end
 
 function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     npoin = nelem*nop+1
-    dims1 = (1,npoin)
+    dims1 = (npoin)
     dims2 = (nelem,nop+1)
     dims3 = (nelem)
     dims4 = (nelem, 0, nop+1)
@@ -207,19 +207,19 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
     extra_mesh.extra_coords[1,1]      = θmin
     extra_mesh.extra_connijk[1,1]     = 1
     extra_mesh.extra_connijk[1,nop+1] = 2
-    extra_mesh.extra_coords[1,2]      = Δθe[1]
+    extra_mesh.extra_coords[2]      = Δθe[1]
     extra_mesh.extra_nop             .= nop
     ip = 2
     for e=2:nelem-1
         extra_mesh.extra_connijk[e,1] = ip
         extra_mesh.extra_connijk[e,nop+1] = ip+1
-        extra_mesh.extra_coords[1,ip+1] = θmin + Δθe[e]*e
+        extra_mesh.extra_coords[ip+1] = θmin + Δθe[e]*e
         ip +=1
     end
     
     extra_mesh.extra_connijk[nelem,1] = ip
     extra_mesh.extra_connijk[nelem,nop+1] = ip+1
-    extra_mesh.extra_coords[1,ip+1] = θmax
+    extra_mesh.extra_coords[ip+1] = θmax
     ip += 1
     ip_end = ip
     ## construct high order nodes
@@ -232,7 +232,7 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
         ip2 = extra_mesh.extra_connijk[e,nop+1]
         for i=2:nop
             ξ = lgl.ξ[i]
-            extra_mesh.extra_coords[1,ip] = extra_mesh.extra_coords[1,ip1]*(1.0-ξ)*0.5+extra_mesh.extra_coords[1,ip2]*(1.0 + ξ)*0.5
+            extra_mesh.extra_coords[ip] = extra_mesh.extra_coords[ip1]*(1.0-ξ)*0.5+extra_mesh.extra_coords[ip2]*(1.0 + ξ)*0.5
             extra_mesh.extra_connijk[e,i] = ip
             ip += 1
         end
@@ -264,7 +264,7 @@ function make_extra_mesh_1D(nelem, nop, θmin, θmax, backend, inputs, lper)
             end
         end
         for i = ip_old+1: extra_mesh.extra_npoin
-            extra_mesh.extra_coords[1,i-1] = extra_mesh.extra_coords[1,i] 
+            extra_mesh.extra_coords[i-1] = extra_mesh.extra_coords[i] 
         end
         extra_mesh.extra_npoin -= 1
     end
@@ -1355,73 +1355,61 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
 
    extra_mesh.extra_metrics = metrics
     
-   #=if (lper)
-        for eθ = 1:nelemθ
-            e1 = 1 + (eθ - 1) * nelemϕ
-            e2 = nelemϕ + (eθ - 1) * nelemϕ
-            extra_mesh.extra_connijk[e2,:,nop+1] .= extra_mesh.extra_connijk[e1,:,1]
-        end
-        for eϕ = 1:nelemϕ
-            e1 = eϕ + (1 - 1) * nelemϕ
-            e2 = nelemϕ + (nelemθ - 1) * nelemϕ
-            extra_mesh.extra_connijk[e2,nop+1,:] .= extra_mesh.extra_connijk[e1,1,:]
-        end
-   end=#
-   if !(inputs[:lcubed_sphere_angular_mesh])
-   for rep = 1:2
-    for iper=1:extra_mesh.extra_npoin
-        θ = extra_mesh.extra_coords[1,iper]
-        ϕ = extra_mesh.extra_coords[2,iper]
-        @info ϕ/π, iper
-        if (abs(ϕ/π - 2.0) <= eps(Float64))
-            #found a periodic point
-            iper1 = 1
-            found = false
-            @info ϕ/π  , θ/π
-            while (iper1 <= extra_mesh.extra_npoin && found == false)
-                θ1 = extra_mesh.extra_coords[1,iper1]
-                ϕ1 = extra_mesh.extra_coords[2,iper1]
-                if (ϕ1 <= eps(Float64) && abs(θ-θ1) <= eps(Float64))
-                    found = true
-                end
-                iper1 += 1
-            end
-            if (found)
-                ip_old = iper
-                ip_new = iper1-1
-                @info found, extra_mesh.extra_coords[1,iper1-1]/π, ip_old, ip_new
-                for e=1:extra_mesh.extra_nelem
-                    for i=1:extra_mesh.extra_nop[e]+1
-                        for j=1:extra_mesh.extra_nop[e]+1
-                            ip = extra_mesh.extra_connijk[e,i,j]
-                            if (ip == ip_old)
-                                extra_mesh.extra_connijk[e,i,j] = ip_new
-                                extra_mesh.extra_coords[1,ip] = extra_mesh.extra_coords[1,ip_new]
-                                extra_mesh.extra_coords[2,ip] = extra_mesh.extra_coords[2,ip_new]
+    if !(inputs[:lcubed_sphere_angular_mesh])
+        for rep = 1:2
+            for iper=1:extra_mesh.extra_npoin
+                θ = extra_mesh.extra_coords[1,iper]
+                ϕ = extra_mesh.extra_coords[2,iper]
+                @info ϕ/π, iper
+                if (abs(ϕ/π - 2.0) <= eps(Float64))
+                    #found a periodic point
+                    iper1 = 1
+                    found = false
+                    @info ϕ/π  , θ/π
+                    while (iper1 <= extra_mesh.extra_npoin && found == false)
+                        θ1 = extra_mesh.extra_coords[1,iper1]
+                        ϕ1 = extra_mesh.extra_coords[2,iper1]
+                        if (ϕ1 <= eps(Float64) && abs(θ-θ1) <= eps(Float64))
+                            found = true
+                        end
+                        iper1 += 1
+                    end
+                    if (found)
+                        ip_old = iper
+                        ip_new = iper1-1
+                        @info found, extra_mesh.extra_coords[1,iper1-1]/π, ip_old, ip_new
+                        for e=1:extra_mesh.extra_nelem
+                            for i=1:extra_mesh.extra_nop[e]+1
+                                for j=1:extra_mesh.extra_nop[e]+1
+                                    ip = extra_mesh.extra_connijk[e,i,j]
+                                    if (ip == ip_old)
+                                        extra_mesh.extra_connijk[e,i,j] = ip_new
+                                        extra_mesh.extra_coords[1,ip] = extra_mesh.extra_coords[1,ip_new]
+                                        extra_mesh.extra_coords[2,ip] = extra_mesh.extra_coords[2,ip_new]
+                                    end
+                                end
                             end
                         end
-                    end
-                end
-                for e=1:extra_mesh.extra_nelem
-                    for i=1:extra_mesh.extra_nop[e]+1
-                        for j=1:extra_mesh.extra_nop[e]+1
-                            ip = extra_mesh.extra_connijk[e,i,j]
-                            if (ip >= ip_old)
-                                extra_mesh.extra_connijk[e,i,j] -= 1
+                        for e=1:extra_mesh.extra_nelem
+                            for i=1:extra_mesh.extra_nop[e]+1
+                                for j=1:extra_mesh.extra_nop[e]+1
+                                    ip = extra_mesh.extra_connijk[e,i,j]
+                                    if (ip >= ip_old)
+                                        extra_mesh.extra_connijk[e,i,j] -= 1
+                                    end
+                                end
                             end
                         end
+                        for i = ip_old+1: extra_mesh.extra_npoin
+                            extra_mesh.extra_coords[1,i-1] = extra_mesh.extra_coords[1,i]
+                            extra_mesh.extra_coords[2,i-1] = extra_mesh.extra_coords[2,i]
+                        end
+                        extra_mesh.extra_npoin -= 1
                     end
                 end
-                for i = ip_old+1: extra_mesh.extra_npoin
-                    extra_mesh.extra_coords[1,i-1] = extra_mesh.extra_coords[1,i]
-                    extra_mesh.extra_coords[2,i-1] = extra_mesh.extra_coords[2,i]
-                end
-                extra_mesh.extra_npoin -= 1
             end
         end
     end
-  end
-  end
    
    basis = build_Interpolation_basis!(LagrangeBasis(), lgl.ξ, lgl.ξ, TFloat, inputs[:backend])
    extra_mesh.ψ = basis.ψ
@@ -2620,12 +2608,12 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict, nparts, distribute, ad
         
             for iel = 1:mesh.nelem
                 if (inputs[:extra_dimensions] == 1)
-                    mesh.extra_mesh[iel,i,j,k] = make_extra_mesh_1D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_order], inputs[:extra_dimensions_xmin],
+                    mesh.extra_mesh[iel] = make_extra_mesh_1D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_order], inputs[:extra_dimensions_xmin],
                                                                            inputs[:extra_dimensions_xmax], backend, inputs, true)
                 elseif (inputs[:extra_dimensions] == 2)
                     ξω  = basis_structs_ξ_ω!(inputs[:interpolation_nodes], inputs[:extra_dimensions_order], inputs[:backend])
                     basis = build_Interpolation_basis!(LagrangeBasis(), ξω.ξ, ξω.ξ, TFloat, inputs[:backend]) 
-                    mesh.extra_mesh[iel,i,j,k] = make_extra_mesh_2D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_nelemy], inputs[:extra_dimensions_order],
+                    mesh.extra_mesh[iel] = make_extra_mesh_2D(inputs[:extra_dimensions_nelemx], inputs[:extra_dimensions_nelemy], inputs[:extra_dimensions_order],
                                                                           inputs[:extra_dimensions_xmin], inputs[:extra_dimensions_xmax], inputs[:extra_dimensions_ymin], 
                                                                           inputs[:extra_dimensions_ymax], basis, backend, inputs, true)
                 else

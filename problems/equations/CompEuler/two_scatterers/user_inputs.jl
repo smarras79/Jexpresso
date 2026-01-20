@@ -35,9 +35,9 @@ function user_inputs()
         :gmsh_filename       => "./JexpressoMeshes/meshes/gmsh_grids/hexa_TFI_2x2.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         :extra_dimensions    => 1,
-        :adaptive_extra_meshes => false,
+        :adaptive_extra_meshes => true,
         :extra_dimensions_order => 4,
-        :extra_dimensions_nelemx => 4,
+        :extra_dimensions_nelemx => 16,
         :rad_HG_g                => 0.8,
         #:extra_dimensions_nelemy => 4,
         #---------------------------------------------------------------------------

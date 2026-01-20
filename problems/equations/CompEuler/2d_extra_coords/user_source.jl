@@ -115,7 +115,7 @@ function user_rhs(x,y,θ)
     sip = exp(-((96 / (2. * π)) * (θ - (7. * π / 5.)))^2)#exp(-((96/(2*π))*(θ-7*π/5))^2)
     uip = gip*hip*sip
     propip = (cos(θ)*dgip*hip+sin(θ)*gip*dhip)*sip
-    scatter, error = quadgk(θ1 -> sip*(1/(3*π))*(1 + (cos(θ - θ1))^2), 0, 2*π, rtol=1e-13, atol = 1e-13) 
+    scatter, error = quadgk(θ1 -> sip*(1/(3*π))*(1 + (cos(θ - θ1))^2), 0, 2*π, rtol=1e-16, atol = 1e-16) 
     return (-gip*hip*scatter*σip + κip*uip +  propip)
 end
 

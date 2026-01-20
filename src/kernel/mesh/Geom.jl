@@ -223,6 +223,350 @@ function setup_global_numbering_extra_dim(ip2gip, gip2owner, npoin, npoin_ang, n
     return ip2gip_extra, gip2owner_extra, gnpoin
 end
 
+function setup_global_numbering_adaptive_angular_scalable(
+    ip2gip, gip2owner, mesh, connijk_spa,
+    extra_meshes_coords, extra_meshes_connijk,
+    extra_meshes_extra_nops, extra_meshes_extra_nelems,
+    n_spa, n_non_global_nodes
+)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    nproc = MPI.Comm_size(comm)
+    
+    nelem = mesh.nelem
+    ngl = mesh.ngl
+
+    # =========================================================================
+    # PHASE 1: Build local unique signatures
+    # =========================================================================
+    
+    local_points = Dict{NTuple{3,Float64}, Int}()
+    signature_list = NTuple{3,Float64}[]
+    
+    for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel, i, j, k]
+            gip = ip2gip[ip]
+            
+            for e_ext = 1:extra_meshes_extra_nelems[iel]
+                for jθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
+                    for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
+                        ip_ext = extra_meshes_connijk[iel][e_ext, iθ, jθ]
+                        θ = extra_meshes_coords[iel][1, ip_ext]
+                        ϕ = extra_meshes_coords[iel][2, ip_ext]
+                        ip_spa = connijk_spa[iel][i, j, k, e_ext, iθ, jθ]
+                        
+                        sig = (Float64(gip), round(θ, digits=12), round(ϕ, digits=12))
+                        
+                        if !haskey(local_points, sig)
+                            local_points[sig] = ip_spa
+                            push!(signature_list, sig)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    sort!(signature_list)
+    n_local = length(signature_list)
+    
+    @info "[Rank $rank] Local unique points: $n_local"
+
+    # =========================================================================
+    # PHASE 2: Identify processor boundary spatial-angular points
+    # =========================================================================
+    
+    # A spatial-angular point is on a processor boundary if:
+    # 1. Its spatial node (gip) is NOT owned by this processor, OR
+    # 2. Its spatial node (gip) IS owned but exists on other processors too
+    
+    # Find spatial nodes on processor boundaries
+    processor_boundary_spatial = Set{Int}()
+    
+    for ip = 1:mesh.npoin
+        gip = ip2gip[ip]
+        owner = gip2owner[gip]
+        
+        # If this processor doesn't own this spatial node, it's on a boundary
+        if owner != rank
+            push!(processor_boundary_spatial, gip)
+        end
+    end
+
+    # Additionally, find spatial nodes this processor owns but are shared
+    # (These are nodes owned by this rank but present on other ranks too)
+    owned_spatial = Set{Int}()
+    for ip = 1:mesh.npoin
+        gip = ip2gip[ip]
+        if gip2owner[gip] == rank
+            push!(owned_spatial, gip)
+        end
+    end
+
+    # Check if owned nodes appear on other processors
+    all_owned_spatial = MPI.Allgather(collect(owned_spatial), comm)
+    
+    for other_rank = 0:(nproc-1)
+        if other_rank == rank
+            continue
+        end
+        
+        other_owned = Set(all_owned_spatial[other_rank+1])
+        
+        # Find intersection: spatial nodes owned by us but also present on other rank
+        shared = intersect(owned_spatial, other_owned)
+        union!(processor_boundary_spatial, shared)
+    end
+
+    @info "[Rank $rank] Found $(length(processor_boundary_spatial)) spatial nodes on processor boundaries"
+    
+    # =========================================================================
+    # PHASE 3: Extract processor boundary spatial-angular signatures
+    # =========================================================================
+    
+    processor_boundary_sigs = Dict{NTuple{3,Float64}, Int}()
+    
+    for sig in signature_list
+        gip_spatial = Int(sig[1])  # First element is the global spatial ID
+        
+        if gip_spatial in processor_boundary_spatial
+            idx = findfirst(x -> x == sig, signature_list)
+            processor_boundary_sigs[sig] = idx  # Store local index for now
+        end
+    end
+    
+    @info "[Rank $rank] Found $(length(processor_boundary_sigs)) spatial-angular points on processor boundaries"
+    
+    # =========================================================================
+    # PHASE 4: Exchange boundary signatures and resolve duplicates
+    # =========================================================================
+    
+    # Gather all processor boundary signatures from all ranks
+    all_boundary_sigs = MPI.Allgather(collect(keys(processor_boundary_sigs)), comm)
+    
+    # Find globally shared signatures
+    global_boundary_sigs = Set{NTuple{3,Float64}}()
+    sig_counts = Dict{NTuple{3,Float64}, Int}()
+    
+    for proc_sigs in all_boundary_sigs
+        for sig in proc_sigs
+            sig_counts[sig] = get(sig_counts, sig, 0) + 1
+        end
+    end
+    
+    # A signature is shared if it appears on multiple processors
+    for (sig, count) in sig_counts
+        if count > 1
+            push!(global_boundary_sigs, sig)
+        end
+    end
+    
+    @info "[Rank $rank] Found $(length(global_boundary_sigs)) globally shared spatial-angular points"
+    
+    # =========================================================================
+    # PHASE 5: Assign tentative global IDs using parallel prefix sum
+    # =========================================================================
+    
+    # Each processor gets a contiguous range of global IDs
+    local_count = n_local
+    offset = MPI.Exscan(local_count, MPI.SUM, comm)
+    
+    if rank == 0
+        offset = 0
+    end
+    
+    # Build tentative mapping
+    sig_to_tentative_gid = Dict{NTuple{3,Float64}, Int}()
+    for (idx, sig) in enumerate(signature_list)
+        sig_to_tentative_gid[sig] = offset + idx
+    end
+    
+    @info "[Rank $rank] Tentative global ID range: [$(offset+1), $(offset+n_local)]"
+
+    # =========================================================================
+    # PHASE 6: Resolve shared signatures (take minimum GID)
+    # =========================================================================
+    
+    # For shared signatures, gather all tentative GIDs and take minimum
+    shared_sig_resolution = Dict{NTuple{3,Float64}, Int}()
+    
+    # Each processor broadcasts its tentative GIDs for shared signatures
+    local_shared_tentative = Dict{NTuple{3,Float64}, Int}()
+    for sig in global_boundary_sigs
+        if haskey(sig_to_tentative_gid, sig)
+            local_shared_tentative[sig] = sig_to_tentative_gid[sig]
+        end
+    end
+    
+    all_shared_tentative = MPI.Allgather(local_shared_tentative, comm)
+    
+    # Resolve: take minimum tentative GID for each shared signature
+    for proc_shared in all_shared_tentative
+        for (sig, tentative_gid) in proc_shared
+            if haskey(shared_sig_resolution, sig)
+                shared_sig_resolution[sig] = min(shared_sig_resolution[sig], tentative_gid)
+            else
+                shared_sig_resolution[sig] = tentative_gid
+            end
+        end
+    end
+    
+    @info "[Rank $rank] Resolved $(length(shared_sig_resolution)) shared signatures"
+
+    # =========================================================================
+    # PHASE 7: Build final global IDs (with duplicates for shared points)
+    # =========================================================================
+    
+    # For shared points, use resolved GID; for interior points, use tentative GID
+    sig_to_final_gid = Dict{NTuple{3,Float64}, Int}()
+    
+    for sig in signature_list
+        if haskey(shared_sig_resolution, sig)
+            sig_to_final_gid[sig] = shared_sig_resolution[sig]
+        else
+            sig_to_final_gid[sig] = sig_to_tentative_gid[sig]
+        end
+    end
+
+    # =========================================================================
+    # PHASE 8: Compact numbering to remove gaps
+    # =========================================================================
+    
+    # Collect all used global IDs across all processors
+    local_used_gids = Set(values(sig_to_final_gid))
+    all_used_gids_list = MPI.Allgather(collect(local_used_gids), comm)
+    
+    global_used_gids = Set{Int}()
+    for proc_gids in all_used_gids_list
+        union!(global_used_gids, proc_gids)
+    end
+    
+    # Create compaction map: old_gid -> new_gid (1:gnpoin with no gaps)
+    sorted_gids = sort(collect(global_used_gids))
+    old_to_new = Dict{Int, Int}()
+    for (new_id, old_id) in enumerate(sorted_gids)
+        old_to_new[old_id] = new_id
+    end
+    
+    gnpoin = length(sorted_gids)
+    
+    @info "[Rank $rank] Compacted to $gnpoin global spatial-angular points (no gaps)"
+
+    # =========================================================================
+    # PHASE 9: Apply global numbering to local spatial-angular points
+    # =========================================================================
+    
+    ip2gip_spa = zeros(Int64, n_spa)
+    
+    for iel = 1:nelem
+        for k = 1:ngl, j = 1:ngl, i = 1:ngl
+            ip = mesh.connijk[iel, i, j, k]
+            gip = ip2gip[ip]
+            
+            for e_ext = 1:extra_meshes_extra_nelems[iel]
+                for jθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
+                    for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
+                        ip_ext = extra_meshes_connijk[iel][e_ext, iθ, jθ]
+                        θ = extra_meshes_coords[iel][1, ip_ext]
+                        ϕ = extra_meshes_coords[iel][2, ip_ext]
+                        ip_spa = connijk_spa[iel][i, j, k, e_ext, iθ, jθ]
+                        
+                        sig = (Float64(gip), round(θ, digits=12), round(ϕ, digits=12))
+                        
+                        # Get final compacted global ID
+                        old_gid = sig_to_final_gid[sig]
+                        new_gid = old_to_new[old_gid]
+                        
+                        ip2gip_spa[ip_spa] = new_gid
+                    end
+                end
+            end
+        end
+    end
+    
+    # Verify compactness
+    verify_compact_numbering(ip2gip_spa, gnpoin, rank, comm)
+    
+    gip2owner_spa = find_gip_owner_spa(ip2gip_spa, n_spa, gnpoin, comm)
+    
+    gip2ip = zeros(Int, gnpoin_compact)
+    for (ip, gid) in enumerate(ip2gip_spa)
+        if gid > 0 && gip2owner_spa[gid] == rank
+            gip2ip[gid] = ip
+        end
+    end
+
+    return ip2gip_spa, gip2ip, gip2owner_spa, gnpoin
+end
+
+function find_gip_owner_spa(ip2gip_spa, n_spa, gnpoin, comm)
+    """
+    Determine which processor owns each global spatial-angular point
+    
+    Ownership rule: The processor with the minimum rank that has this point owns it
+    This ensures deterministic, consistent ownership across all processors
+    """
+    rank = MPI.Comm_rank(comm)
+    
+    # Each processor claims ownership of its points
+    local_ownership = fill(typemax(Int), gnpoin)
+    
+    for ip = 1:n_spa
+        gid = ip2gip_spa[ip]
+        if gid > 0 && gid <= gnpoin
+            local_ownership[gid] = rank
+        end
+    end
+    
+    # Global reduction: take minimum rank (lowest rank wins)
+    gip2owner_spa = similar(local_ownership)
+    MPI.Allreduce!(local_ownership, gip2owner_spa, MPI.MIN, comm)
+    
+    # Verify: all points should have an owner
+    unowned = findall(x -> x == typemax(Int), gip2owner_spa)
+    if !isempty(unowned) && rank == 0
+        @warn "Found $(length(unowned)) unowned spatial-angular points!"
+    end
+    
+    return gip2owner_spa
+end
+
+function verify_compact_numbering(ip2gip_spa, gnpoin, rank, comm)
+    """
+    Verify that numbering is compact (1:gnpoin with no gaps)
+    """
+    local_present = falses(gnpoin)
+    for gid in ip2gip_spa
+        if gid > 0 && gid <= gnpoin
+            local_present[gid] = true
+        end
+    end
+    
+    global_present = similar(local_present)
+    MPI.Allreduce!(local_present, global_present, MPI.LOR, comm)
+    
+    has_gaps = false
+    missing_ids = Int[]
+    for i = 1:gnpoin
+        if !global_present[i]
+            push!(missing_ids, i)
+            has_gaps = true
+        end
+    end
+    
+    if has_gaps
+        if rank == 0
+            @warn "Gaps found in global numbering at IDs: $(missing_ids[1:min(10, length(missing_ids))])..."
+        end
+    else
+        if rank == 0
+            @info "✓ Global numbering is compact: 1:$gnpoin with no gaps"
+        end
+    end
+    
+    return !has_gaps
+end
+
 function setup_assembler(SD, a, index_a, owner_a)
 
     if SD == NSD_1D() return nothing end

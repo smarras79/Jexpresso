@@ -11,19 +11,22 @@ end
 
 mutable struct MatvecCacheSparse
     # number of points on each process
-    proc_npoin  :: Vector{Int}
+    proc_npoin      :: Vector{Int}
     # Local 2 global indices for each process
-    proc_ip2gip :: Vector{Vector{Int}}
+    proc_ip2gip     :: Vector{Vector{Int}}
     # Matvec sparse contributions
-    proc_vec    :: Vector{Vector{Float64}}
+    proc_vec        :: Vector{Vector{Float64}}
     # Indices of non-zero contributions by process
-    proc_sp_ip  :: Vector{Vector{Int}}
+    proc_sp_ip      :: Vector{Vector{Int}}
     # Indices of non-zero contribution of local process
-    sp_ip       :: Vector{Int}
+    sp_ip           :: Vector{Int}
     # Values of non-zero contributions of local process
-    sp_val      :: Vector{Float64}
+    sp_val          :: Vector{Float64}
     # Number of non-zero contributions from each process
-    nnzeros     :: Vector{Int}
+    nnzeros         :: Vector{Int}
+    #Preallocated request arrays
+    request         :: MPI.MultiRequest
+    request_indices :: MPI.MultiRequest
 end
 
 function setup_Matvec_assembler(index_a,gip2owner)
@@ -75,15 +78,16 @@ function setup_MatvecSparse_assembler(index_a,gip2owner)
 
     proc_ip2gip = [Vector{Int}(undef, proc_npoin[i+1]) for i in 0:rank_sz-1]
 
-    @info "sizes for proc_ip2gip", size(proc_ip2gip[1]), size(proc_ip2gip[2]), rank
-
+    nreq = 0
     requests = MPI.Request[]
     for i in 0:rank_sz-1
         if i != rank
             push!(requests, MPI.Isend(index_a, i, 1, comm))
+            nreq += 1
         end
         if i != rank
             push!(requests, MPI.Irecv!(proc_ip2gip[i+1], i, 1, comm))
+            nreq += 1
         end
     end
 
@@ -101,7 +105,7 @@ function setup_MatvecSparse_assembler(index_a,gip2owner)
 
     nnzeros = zeros(Int, rank_sz)
 
-    cache = MatvecCacheSparse(proc_npoin, proc_ip2gip, proc_vec, proc_sp_ip, sp_ip, sp_val, nnzeros)
+    cache = MatvecCacheSparse(proc_npoin, proc_ip2gip, proc_vec, proc_sp_ip, sp_ip, sp_val, nnzeros, MPI.MultiRequest(nreq), MPI.MultiRequest(nreq))
 
     return cache
 end
@@ -149,14 +153,13 @@ function assemble_mpi_matvec!(y_local, y, cache::MatvecCache)
 end
 
 function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse, nnzeros)
-
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
-
     npoin = size(y_local,1)
     ## Find sparse indices and corresponding values
     iter = 1
+     
     @inbounds for ip=1:npoin
         val = y_local[ip]
         
@@ -167,37 +170,41 @@ function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse, nnzer
         end
     end
     nnzero = iter - 1
-    #=requests_nzeros = MPI.Request[]
-    
+    req_idx = 1
     @inbounds for i in 0:rank_sz-1
         if i != rank
-            push!(requests_nzeros, MPI.Isend(nnzero, i, 1, comm))
+            #push!(requests_nzeros, MPI.Isend(nnzero, i, 1, comm))
+            @time MPI.Isend(nnzero, comm, cache.request[req_idx]; dest = i, tag = 0)
+            req_idx += 1
         end
         if i != rank
-            push!(requests_nzeros, MPI.Irecv!(@view(cache.nnzeros[i+1]), i, 1, comm))
+            #push!(requests_nzeros, MPI.Irecv!(@view(cache.nnzeros[i+1]), i, 1, comm))
+            @time MPI.Irecv!(@view(cache.nnzeros[i+1]), comm, cache.request[req_idx]; source = i, tag =0)
+            req_idx += 1
         end
     end
+    @time cache.nnzeros[rank+1] = nnzero
+    MPI.Waitall(cache.request)
     
-    MPI.Waitall!(requests_nzeros)
-
-    cache.nnzeros[rank+1] = nnzero
-    =#
-    #GC.gc()
     MPI.Barrier(comm)
-    MPI.Allgather!(nnzero, nnzeros, 1, comm)
-    requests_indices = MPI.Request[]
-
+    #MPI.Allgather!(nnzero, nnzeros, 1, comm)
+    #requests_indices = MPI.Request[]
+    req_idx = 1 
     @inbounds for i in 0:rank_sz-1
         fill!(cache.proc_sp_ip[i+1],zero(Int))
-        idx_end = nnzeros[i+1]
-        #send_buffer = @view(cache.sp_ip[1:nnzero])
+        idx_end = cache.nnzeros[i+1]
+        send_buffer = @view(cache.sp_ip[1:nnzero])
         #recv_buffer = @view(cache.proc_sp_ip[i+1][1:idx_end])
         resize!(cache.proc_sp_ip[i+1],idx_end)
-        if i != rank
-            push!(requests_indices, MPI.Isend(cache.sp_ip[1:nnzero], i, 1, comm))
+        if i != rank && nnzero > 0
+            #push!(requests_indices, MPI.Isend(cache.sp_ip[1:nnzero], i, 1, comm))
+            MPI.Isend(send_buffer, comm, cache.request_indices[req_idx]; dest = i, tag = 0)
+            req_idx += 1
         end
-        if i != rank
-            push!(requests_indices, MPI.Irecv!(cache.proc_sp_ip[i+1], i, 1, comm))
+        if i != rank && cache.nnzeros[i+1] > 0
+            #push!(requests_indices, MPI.Irecv!(cache.proc_sp_ip[i+1], i, 1, comm))
+            MPI.Irecv!(cache.proc_sp_ip[i+1], comm,cache.request_indices[req_idx]; source = i, tag = 0)
+            req_idx += 1
         end
     end
 
@@ -206,29 +213,33 @@ function assemble_mpi_matvec_sparse!(y_local, y, cache::MatvecCacheSparse, nnzer
     #end
     
 
-    @inbounds cache.proc_sp_ip[rank+1][1:nnzero] .= cache.sp_ip[1:nnzero]
+    @inbounds cache.proc_sp_ip[rank+1][1:nnzero] = @view(cache.sp_ip[1:nnzero])
 
-    requests = MPI.Request[]
+    #requests = MPI.Request[]
+    req_idx = 1
     @inbounds for i in 0:rank_sz-1
         fill!(cache.proc_vec[i+1],zero(Float64))
-        idx_end = nnzeros[i+1]
-        #send_buffer = @view(cache.sp_val[1:nnzero])
+        idx_end = cache.nnzeros[i+1]
+        send_buffer = @view(cache.sp_val[1:nnzero])
         #recv_buffer = @view(cache.proc_vec[i+1][1:idx_end])
         resize!(cache.proc_vec[i+1],idx_end)
         if i != rank
-            push!(requests, MPI.Isend(cache.sp_val[1:nnzero], i, 1, comm))
+            #push!(requests, MPI.Isend(cache.sp_val[1:nnzero], i, 1, comm))
+            MPI.Isend(send_buffer, comm, cache.request[req_idx]; dest = i, tag = 0)
+            req_idx += 1
         end
         if i != rank
-            push!(requests, MPI.Irecv!(cache.proc_vec[i+1], i, 1, comm))
+            #push!(requests, MPI.Irecv!(cache.proc_vec[i+1], i, 1, comm))
+            MPI.Irecv!(cache.proc_vec[i+1], comm, cache.request[req_idx]; source = i, tag = 0)
+            req_idx += 1
         end
     end
-
-    MPI.Waitall!(requests)
-    MPI.Waitall!(requests_indices)
+    @inbounds cache.proc_vec[rank+1][1:nnzero] = @view(cache.sp_val[1:nnzero])
+    MPI.Waitall(cache.request)
+    MPI.Waitall(cache.request_indices)
     #if (rank == 0)
     #    @info cache.proc_proc_vec[2]
     #end
-    @inbounds cache.proc_vec[rank+1][1:nnzero] .= cache.sp_val[1:nnzero]
     
     @inbounds for i in 0:rank_sz-1
         idx_end = nnzeros[i+1]

@@ -298,6 +298,7 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                 e = mesh.bdy_edge_in_elem[iedge]
                 idx1 = 0
                 idx2 = 0
+                ip2 = mesh.connijk[e,2,2]
                 for j=1:N+1
                     for i=1:N+1
                         if (mesh.connijk[e,i,j] == ip)
@@ -306,7 +307,8 @@ function build_metric_terms(SD::NSD_2D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                         end
                     end
                 end
-                if (idx1 + metrics.nx[iedge, k] < 1 || idx1 + metrics.nx[iedge, k] > N+1 || idx2 + metrics.ny[iedge, k] < 1 || idx2 + metrics.ny[iedge, k] > N+1)
+                #if (idx1 + metrics.nx[iedge, k] < 1 || idx1 + metrics.nx[iedge, k] > N+1 || idx2 + metrics.ny[iedge, k] < 1 || idx2 + metrics.ny[iedge, k] > N+1)
+                if (metrics.nx[iedge, k]*(mesh.x[ip2]-mesh.x[ip]) + metrics.ny[iedge, k]*(mesh.y[ip2]-mesh.y[ip]) > 0)
                     metrics.nx[iedge, k] = - metrics.nx[iedge, k]
                     metrics.ny[iedge, k] = - metrics.ny[iedge, k]
                 end
@@ -746,6 +748,7 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                     metrics.nz[iface, i, j] = comp3*maginv
                    
                     e = mesh.bdy_face_in_elem[iface]
+                    ip3 = mesh.connijk[e,2,2,2]
                     idx1 = 0
                     idx2 = 0
                     idx3 = 0
@@ -760,7 +763,8 @@ function build_metric_terms(SD::NSD_3D, MT::COVAR, mesh::St_mesh, basis::St_Lagr
                             end
                         end
                     end
-                    if (idx1 + metrics.nx[iface, i, j] < 1 || idx1 + metrics.nx[iface, i, j] > N+1 || idx2 + metrics.ny[iface, i, j] < 1 || idx2 + metrics.ny[iface, i, j] > N+1 || idx3 + metrics.nz[iface, i, j] < 1 || idx3 + metrics.nz[iface, i, j] > N+1)
+                    #if (idx1 + metrics.nx[iface, i, j] < 1 || idx1 + metrics.nx[iface, i, j] > N+1 || idx2 + metrics.ny[iface, i, j] < 1 || idx2 + metrics.ny[iface, i, j] > N+1 || idx3 + metrics.nz[iface, i, j] < 1 || idx3 + metrics.nz[iface, i, j] > N+1)
+                if (metrics.nx[iface, i, j]*(mesh.x[ip3] - mesh.x[ip]) + metrics.ny[iface, i, j]*(mesh.y[ip3]-mesh.y[ip]) + metrics.nz[iface, i, j]*(mesh.z[ip3]-mesh.z[ip]) > 0)
                     metrics.nx[iface, i, j] = - metrics.nx[iface, i, j]
                     metrics.ny[iface, i, j] = - metrics.ny[iface, i, j]
                     metrics.nz[iface, i, j] = - metrics.nz[iface, i, j]

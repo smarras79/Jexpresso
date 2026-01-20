@@ -9,9 +9,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     _parsedToInputs(inputs, parsed_equations, parsed_equations_case_name)
     
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... \n")); msg_rank = rank)
-    if rank == 0
+    #=if rank == 0
         pretty_table(inputs; sortkeys=true, border_crayon = crayon"yellow")
-    end
+    end=#
     print_rank(GREEN_FG(string(" # Read inputs dict from ", user_input_file, " ... DONE\n")); msg_rank = rank)
     
     #

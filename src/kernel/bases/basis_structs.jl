@@ -376,11 +376,11 @@ function LegendreGaussNodesAndWeights!(Legendre::St_Legendre, lg::St_lg, nop, ba
     end
 
     
-    for j=1:nop+1       
-        println_rank( " # ξ, ω =: ", " ", lg.ξ[j], " " , lg.ω[j]; msg_rank = rank)
-    end
+    #for j=1:nop+1       
+    #    println_rank( " # ξ, ω =: ", " ", lg.ξ[j], " " , lg.ω[j]; msg_rank = rank)
+    #end
     
-    println_rank(" # Compute LG nodes ........................ DONE"; msg_rank = rank)
+    #println_rank(" # Compute LG nodes ........................ DONE"; msg_rank = rank)
     
 end
 
@@ -408,7 +408,7 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
     Δ  ::TFloat=0.0
     ξ = zeros(TFloat,nop+1)
     ω = zeros(TFloat,nop+1)
-    println_rank( " # Compute LGL nodes ........................"; msg_rank = rank)
+    #println_rank( " # Compute LGL nodes ........................"; msg_rank = rank)
     
     for j=1:nop+1
 	ξ[j] = 0.0;
@@ -476,11 +476,11 @@ function LegendreGaussLobattoNodesAndWeights!(Legendre::St_Legendre, lgl::St_lgl
         KernelAbstractions.copyto!(backend,lgl.ξ,ξ)
         KernelAbstractions.copyto!(backend,lgl.ω,ω)
     end
-    for j=1:nop+1       
-        println_rank( " # ξ, ω =: ", " ", ξ[j], " " , ω[j]; msg_rank = rank)
-    end
+    #for j=1:nop+1       
+    #    println_rank( " # ξ, ω =: ", " ", ξ[j], " " , ω[j]; msg_rank = rank)
+    #end
     
-    println_rank(" # Compute LGL nodes ........................ DONE"; msg_rank = rank)
+    #println_rank(" # Compute LGL nodes ........................ DONE"; msg_rank = rank)
     
 end
 
