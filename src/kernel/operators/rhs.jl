@@ -701,7 +701,7 @@ function inviscid_rhs_el!(u, params,
 
         _expansion_inviscid!(u, params.neqs, ngl,
                              params.basis.dψ, params.ω,
-                             params.uprimitive
+                             params.uprimitive,
                              params.F, params.S,
                              params.rhs_el,
                              iel, params.CL, params.QT, SD, params.AD)
@@ -811,14 +811,22 @@ function inviscid_rhs_el!(u, params,
             
             ip = connijk[iel,i,j]
 
-            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
             
-            user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
-                       @view(params.uaux[ip,:]),
-                       @view(qe[ip,:]),
-                       params.mesh,
-                       params.CL, params.SOL_VARS_TYPE;
-                       neqs=params.neqs, ip=ip)
+            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
+            if lkep
+                user_fluxaux!(@view(params.fluxaux[ip,:]),
+                              SD,
+                              @view(params.uaux[ip,:]),
+                              params.SOL_VARS_TYPE,
+                              params.volume_flux)
+            else
+                user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
+                           @view(params.uaux[ip,:]),
+                           @view(qe[ip,:]),
+                           params.mesh,
+                           params.CL, params.SOL_VARS_TYPE;
+                           neqs=params.neqs, ip=ip)
+            end
             
             if lsource
                 user_source!(@view(params.S[i,j,:]),
@@ -935,7 +943,7 @@ function inviscid_rhs_el!(u, params,
         _expansion_inviscid!(u,
                              params.neqs, params.mesh.ngl,
                              params.basis.dψ, params.ω,
-                             params.uprimitive
+                             params.uprimitive,
                              params.F, params.G, params.H, params.S,
                              params.metrics.Je,
                              params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
