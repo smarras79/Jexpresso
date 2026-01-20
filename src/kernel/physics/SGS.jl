@@ -74,7 +74,7 @@ end
                                inputs, 
                                ::SMAG, ::NSD_3D)
     
-    PhysConst = PhysicalConst{Float32}()
+    PhysConst = PhysicalConst{Float64}()
     C_s   = PhysConst.C_s       # Smagorinsky constant
     Pr_t  = PhysConst.Pr_t      # Turbulent Prandtl number
     Sc_t  = PhysConst.Sc_t      # Turbulent Schmidt number
@@ -147,6 +147,41 @@ end
             # Cap at maximum enhancement factor (e.g., 3x)
             min(sqrt(1.0 - 16.0*Ri), 3.0)
         end
+    elseif inputs[:energy_equation] == "energy" && inputs[:lrichardson]
+        # ===== Moist Richardson Number Logic =====
+        # Note: In this mode, the caller has pre-calculated:
+        # θ_ref  => T_abs (Absolute Temperature in Kelvin)
+        # dθdz   => dhl_eff_dz = [1/(cp*(1+γ)) * dhl/dz] - [T_abs * dqn/dz]
+        # 
+        # This effective gradient accounts for:
+        # 1. Latent heat release via the (1+γ) moist adjustment factor.
+        # 2. Hydrometeor loading (weight of liquid/ice) via the dqndz term.
+
+        # Buoyancy frequency squared using the moist-effective gradient: 
+        # N²m = (g / T_abs) * dhl_eff_dz
+        # Units: [m/s²] / [K] * [K/m] = [s⁻²]
+        N2 = abs(θ_ref) > 1.0f-12 ? (g / θ_ref) * dθdz : 0.0
+        
+        # Richardson number: Ratio of buoyancy resistance to shear production
+        # Ri = N²m / S²
+        Ri = (Sij2 > 1.0f-12) ? N2 / Sij2 : 0.0
+        
+        # Stability function for Richardson correction (Smagorinsky scaling)
+        f_Ri = if Ri >= Ri_crit
+            # Laminar regime: Stratification is strong enough to kill turbulence
+            0.0
+            
+        elseif Ri >= 0.0
+            # Stable regime: Turbulence is present but suppressed by buoyancy
+            # Using the quadratic suppression: (1 - Ri/Ri_crit)²
+            ratio = Ri / Ri_crit
+            (1.0 - ratio) * (1.0 - ratio)
+            
+        else
+            # Unstable regime (Ri < 0): Buoyancy enhances turbulent mixing
+            # Enhancement factor capped at 3.0 to maintain numerical stability
+            min(sqrt(1.0 - 16.0*Ri), 3.0)
+        end
     end
     
     # Turbulent viscosity with Richardson correction
@@ -167,7 +202,7 @@ end
             return κ_turb * visc_coeffieq[ieq]
         else
             # Internal energy or enthalpy equation
-            return cp * (κ_mol + κ_turb) * visc_coeffieq[ieq]
+            return (κ_mol + κ_turb) * visc_coeffieq[ieq]
         end
         
     else

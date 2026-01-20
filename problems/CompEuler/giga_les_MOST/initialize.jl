@@ -26,17 +26,20 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             PhysConst = PhysicalConst{Float64}()
         
             for ip=1:mesh.npoin
+                z = mesh.z[ip]
                 ρ  = q.qn[ip,1]
-                ρθ = q.qn[ip,5]
-                θ  = ρθ/ρ
-                P = perfectGasLaw_ρθtoP(PhysConst, ρ=ρ, θ=θ)
-                q.qn[ip,end] = P
+                hl = q.qn[ip,5] / ρ
+                qv = q.qn[ip,6] / ρ
+                T  = (hl - PhysConst.g*z) / PhysConst.cp
+                Tv = T*(1+0.61*qv)
+                q.qn[ip,end] = ρ*Tv*PhysConst.Rair
             
                 ρe  = q.qe[ip,1]
-                ρθe = q.qe[ip,5]
-                θe  = ρθe/ρ
-                Pe = perfectGasLaw_ρθtoP(PhysConst, ρ=ρe, θ=θe)
-                q.qe[ip,end] = Pe
+                hle = q.qe[ip,5] / ρe
+                qve = q.qe[ip,6] / ρe
+                Te  = (hle - PhysConst.g*z) / PhysConst.cp
+                Tve = Te*(1+0.61*qve)
+                q.qe[ip,end] = ρe*Tve*PhysConst.Rair
             end
         
         else
@@ -66,7 +69,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
 
                 rand_noise = 0.0 #K
                 T_ref  = background[ip,2] + 273.15
-                if z < 2000.0 # change to 300m later to be consistent to the ref paper
+                if z < 1000.0 # change to 300m later to be consistent to the ref paper
                     rand_noise = 2*amp*(rand() - 1.0)
                 end
 
@@ -80,15 +83,17 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 Tv_ref = T_ref*(1+0.61*qv_ref) 
                 ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
                 ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
+                # hl is the liqui/ice static energy used in SAM
+                # use potential is less conservative
                 hl     = PhysConst.cp*T + PhysConst.g*z
                 hl_ref = PhysConst.cp*T_ref + PhysConst.g*z
                 u      = u_ref
                 v_ref  = 0.0
                 v      = v_ref
                 w      = 0.0
-                pref_m = ρref*Tv_ref*PhysConst.Rair
+                # pref_m = ρref*Tv_ref*PhysConst.Rair
                 # dry pressure
-                # pref_m = ρref*T_ref*PhysConst.Rair#ρref*PhysConst.Rair*Tref + ρref*qv_ref*PhysConst.Rvap*Tref
+                pref_m = ρref*T_ref*PhysConst.Rair#ρref*PhysConst.Rair*Tref + ρref*qv_ref*PhysConst.Rvap*Tref
                 if inputs[:SOL_VARS_TYPE] == PERT()
                     q.qn[ip,1] = ρ - ρref
                     q.qn[ip,2] = ρ*u - ρref*u

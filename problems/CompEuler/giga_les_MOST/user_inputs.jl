@@ -4,13 +4,16 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
-        :Δt                   => 0.4,
+        :Δt                   => 0.8,
         :tinit                => 0,
+        # :tend                 => 100.0,
         :tend                 => 10800.0,
 	:lrestart             => false,
 	#:restart_output_file_path => "",
 	:restart_time         => 500,
+	# :diagnostics_at_times => (0:4:100),
 	:diagnostics_at_times => (0:4:40..., 100:500:5000..., 5000:250:8500...,  9000:10:10800.0...),
+	# :diagnostics_at_times => (0:4:40..., 100:500:600..., 610:10:700...,  800:100:1000.0...),
         :lsource              => true,
         :lmoist               => true,
         :lprecip              => true,
@@ -34,9 +37,9 @@ function user_inputs()
         :lvisc                => true, #false by default
         # :visc_model           => SMAG(),
         :visc_model           => AV(),
-        :μ           => [0.0, 200.0, 200.0, 200.0, 300.0, 300.0, 300.0], #horizontal viscosity constant for momentum
-        # :μ                    => [0.0, 1, 1, 1, 2, 2, 2], #horizontal viscosity constant for momentum
-        :energy_equation      => "total_energy",
+        :μ           => [0.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0], #horizontal viscosity constant for momentum
+        # :μ                    => [0.0, 1, 1, 1, 1, 1, 1], #horizontal viscosity constant for momentum
+        :energy_equation      => "energy",
         :lrichardson          => true,
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
@@ -75,7 +78,7 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output_gigales_test/",
+        :output_dir          => "./output_gigales_energy_dry/",
         #:output_dir          => "./output",
         :loverwrite_output   => true,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
