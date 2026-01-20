@@ -701,6 +701,7 @@ function inviscid_rhs_el!(u, params,
 
         _expansion_inviscid!(u, params.neqs, ngl,
                              params.basis.dψ, params.ω,
+                             params.uprimitive
                              params.F, params.S,
                              params.rhs_el,
                              iel, params.CL, params.QT, SD, params.AD)
@@ -803,10 +804,14 @@ function inviscid_rhs_el!(u, params,
     xmin = params.xmin; xmax = params.xmax; ymax = params.ymax
 
     lkep = inputs[:lkep]
+    
     for iel = 1:nelem
+        
         for j = 1:ngl, i=1:ngl
             
             ip = connijk[iel,i,j]
+
+            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,:]), params.SOL_VARS_TYPE)
             
             user_flux!(@view(params.F[i,j,:]), @view(params.G[i,j,:]), SD,
                        @view(params.uaux[ip,:]),
@@ -852,6 +857,7 @@ function inviscid_rhs_el!(u, params,
             _expansion_inviscid!(u,
                                  params.neqs, params.mesh.ngl,
                                  params.basis.dψ, params.ω,
+                                 params.uprimitive,
                                  params.F, params.G, params.S,
                                  params.metrics.Je,
                                  params.metrics.dξdx, params.metrics.dξdy,
@@ -880,6 +886,9 @@ function inviscid_rhs_el!(u, params,
         for k = 1:ngl, j = 1:ngl, i=1:ngl
             
             ip = connijk[iel,i,j,k]
+            
+            user_primitives!(@view(params.uaux[ip,:]),@view(qe[ip,:]),@view(params.uprimitive[i,j,k,:]), params.SOL_VARS_TYPE)
+            
             
             user_flux!(@view(params.F[i,j,k,:]),
                        @view(params.G[i,j,k,:]),
@@ -926,6 +935,7 @@ function inviscid_rhs_el!(u, params,
         _expansion_inviscid!(u,
                              params.neqs, params.mesh.ngl,
                              params.basis.dψ, params.ω,
+                             params.uprimitive
                              params.F, params.G, params.H, params.S,
                              params.metrics.Je,
                              params.metrics.dξdx, params.metrics.dξdy, params.metrics.dξdz,
@@ -951,7 +961,8 @@ function inviscid_rhs_el!(u, params, connijk, qe, coords, lsource, S_micro_vec, 
     ngl   = params.mesh.ngl
     
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
-    xmin = params.xmin; xmax = params.xmax; zmax = params.zmax 
+    xmin = params.xmin; xmax = params.xmax; zmax = params.zmax
+    
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i=1:ngl
             
@@ -1159,6 +1170,7 @@ end
 
 function _expansion_inviscid!(u, neqs, ngl,
                               dψ, ω,
+                              uprimitive,
                               F, S,
                               rhs_el,
                               iel, ::CL, QT::Inexact, SD::NSD_1D, AD::ContGal)
@@ -1177,7 +1189,9 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
+function _expansion_inviscid!(u, neqs, ngl,
+                              dψ, ω,
+                              uprimitive,
                               F, G, S,
                               Je,
                               dξdx, dξdy,
@@ -1220,7 +1234,9 @@ function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
     end
 end
 
-function _expansion_inviscid!(u, neqs, ngl, dψ, ω,
+function _expansion_inviscid!(u, neqs, ngl,
+                              dψ, ω,
+                              uprimitive,
                               F, G, H, S,
                               Je,
                               dξdx, dξdy, dξdz,
@@ -1307,11 +1323,18 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(u, params, iel, ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
+function _expansion_inviscid!(u, neqs, ngl,
+                              dψ, ω,
+                              uprimitive,
+                              F, G, S,
+                              Je,
+                              dξdx, dξdy,
+                              dηdx, dηdy,
+                              rhs_el, iel,
+                              ::CL, QT::Exact, SD::NSD_2D, AD::ContGal)
     
-    N    = params.mesh.ngl
+    N    = ngl
     Q    = N + 1
-    neqs = params.neqs
     
     for ieq=1:neqs
         for l=1:Q
@@ -1359,10 +1382,15 @@ end
 
 function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::FD) nothing end
 
-function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD::ContGal)
-
-    neqs = params.neqs
-    ngl  = params.mesh.ngl
+function _expansion_inviscid!(u, neqs, ngl,
+                              dψ, ω,
+                              uprimitive,
+                              F, G, S,
+                              Je,
+                              dξdx, dξdy,
+                              dηdx, dηdy,
+                              rhs_el, iel,
+                              ::NCL, QT::Inexact, SD::NSD_2D, AD::ContGal)
     
     for ieq=1:neqs
         for j=1:ngl
@@ -1377,19 +1405,19 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD
                     dGdξ = 0.0; dGdη = 0.0
                     dpdξ = 0.0; dpdη = 0.0               
                     for k = 1:ngl
-                        dFdξ += params.basis.dψ[k,i]*params.F[k,j,ieq]
-                        dFdη += params.basis.dψ[k,j]*params.F[i,k,ieq]
+                        dFdξ += dψ[k,i]*F[k,j,ieq]
+                        dFdη += dψ[k,j]*F[i,k,ieq]
                         
-                        dGdξ += params.basis.dψ[k,i]*params.G[k,j,ieq]
-                        dGdη += params.basis.dψ[k,j]*params.G[i,k,ieq]
+                        dGdξ += dψ[k,i]*G[k,j,ieq]
+                        dGdη += dψ[k,j]*G[i,k,ieq]
                         
-                        dpdξ += params.basis.dψ[k,i]*params.uprimitive[k,j,params.neqs+1]
-                        dpdη += params.basis.dψ[k,j]*params.uprimitive[i,k,params.neqs+1]
+                        dpdξ += dψ[k,i]*uprimitive[k,j,neqs+1]
+                        dpdη += dψ[k,j]*uprimitive[i,k,neqs+1]
                     end
-                    dξdx_ij = params.metrics.dξdx[iel,i,j]
-                    dξdy_ij = params.metrics.dξdy[iel,i,j]
-                    dηdx_ij = params.metrics.dηdx[iel,i,j]
-                    dηdy_ij = params.metrics.dηdy[iel,i,j]
+                    dξdx_ij = dξdx[iel,i,j]
+                    dξdy_ij = dξdy[iel,i,j]
+                    dηdx_ij = dηdx[iel,i,j]
+                    dηdy_ij = dηdy[iel,i,j]
                     
                     dFdx = dFdξ*dξdx_ij + dFdη*dηdx_ij            
                     dFdy = dFdξ*dξdy_ij + dFdη*dηdy_ij
@@ -1400,21 +1428,21 @@ function _expansion_inviscid!(u, params, iel, ::NCL, QT::Inexact, SD::NSD_2D, AD
                     dpdx = dpdξ*dξdx_ij + dpdη*dηdx_ij            
                     dpdy = dpdξ*dξdy_ij + dpdη*dηdy_ij
 
-                    ρij = params.uprimitive[i,j,1]
-                    uij = params.uprimitive[i,j,2]
-                    vij = params.uprimitive[i,j,3]
+                    ρij = uprimitive[i,j,1]
+                    uij = uprimitive[i,j,2]
+                    vij = uprimitive[i,j,3]
                     
                     if (ieq == 1)
                         auxi = ωJac*(dFdx + dGdy)
                     elseif(ieq == 2)
                         auxi = ωJac*(uij*dFdx + vij*dGdy + dpdx/ρij)
                     elseif(ieq == 3)
-                        auxi = ωJac*(uij*dFdx + vij*dGdy + dpdy/ρij - params.S[i,j,ieq])
+                        auxi = ωJac*(uij*dFdx + vij*dGdy + dpdy/ρij - S[i,j,ieq])
                     elseif(ieq == 4)
                         auxi = ωJac*(uij*dFdx + vij*dGdy)
                     end
                     
-                    params.rhs_el[iel,i,j,ieq] -= auxi
+                    rhs_el[iel,i,j,ieq] -= auxi
                 end
             end
         end

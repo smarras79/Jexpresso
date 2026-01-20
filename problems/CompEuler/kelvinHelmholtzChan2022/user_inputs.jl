@@ -24,9 +24,10 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 1.0, 1.0, 10.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 1.0, 1.0, 5.0], #horizontal viscosity constant for momentum
         #:μ                   => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
-        :visc_model           => SMAG(),
+        #:visc_model           => SMAG(),
+        :visc_model           => VREM(),
         #---------------------------------------------------------------------------
         # LKEP:
         #---------------------------------------------------------------------------
