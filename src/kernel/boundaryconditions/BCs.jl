@@ -660,9 +660,13 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 F_surf[i,j,2] = τ_f[iface,i,j,1]
                                 F_surf[i,j,3] = τ_f[iface,i,j,2]
                                 F_surf[i,j,4] = τ_f[iface,i,j,3]
-                                
-                                F_surf[i,j,5] = 0.12
-                                # if (inputs[:lmoist] == true)
+
+                                if inputs[:energy_equation] == "theta" 
+                                    F_surf[i,j,5] = 0.12
+                                elseif inputs[:energy_equation] == "energy" 
+                                    F_surf[i,j,5] = PhysConst.cp * 0.12
+                                end
+                                    # if (inputs[:lmoist] == true)
                                 #     F_surf[i,j,6] = 0.12e-5
                                 # end
                                 
