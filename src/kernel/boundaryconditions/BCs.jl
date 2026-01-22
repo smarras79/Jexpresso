@@ -695,7 +695,8 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
         #@info maximum(S_flux[:,2]), maximum(S_flux[:,5])
         #@info minimum(S_flux[:,2]), minimum(S_flux[:,5])
         for ieq = 1:neqs
-            RHS[:, ieq] .+= S_flux[:,ieq] ./ M_inv[:]
+            # RHS[:, ieq] .+= S_flux[:,ieq] ./ M_inv[:]
+            RHS[:, ieq] .+= S_flux[:,ieq]
         end
     end
 end
