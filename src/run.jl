@@ -77,9 +77,9 @@ end
 
 
 MPI.Init()
-comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
-nparts = MPI.Comm_size(comm)
+comm::MPI.Comm = MPI.COMM_WORLD
+rank::Int = MPI.Comm_rank(comm)
+nparts::Int = MPI.Comm_size(comm)
 
 #--------------------------------------------------------
 # Parse command line args:
@@ -97,13 +97,13 @@ driver_file                = string(dirname(@__DIR__()), "/problems/drivers.jl")
 #--------------------------------------------------------
 # Initialize coupling if enabled:
 #--------------------------------------------------------
-global coupling_ctx = nothing
+coupling_ctx::Union{JexpressoCoupling.CouplingContext, Nothing} = nothing
 if parsed_coupling
     if rank == 0
         @info "Initializing MPI coupling mode: code_id=$parsed_code_id, n_codes=$parsed_n_codes, name=$parsed_code_name"
     end
 
-    global coupling_ctx = JexpressoCoupling.initialize_coupling(
+    coupling_ctx = JexpressoCoupling.initialize_coupling(
         comm,
         parsed_code_id,
         parsed_n_codes;
@@ -111,9 +111,9 @@ if parsed_coupling
     )
 
     # Use local communicator for Jexpresso's internal operations
-    global comm = coupling_ctx.comm_local
-    global rank = coupling_ctx.local_rank
-    global nparts = coupling_ctx.local_size
+    comm = coupling_ctx.comm_local
+    rank = coupling_ctx.local_rank
+    nparts = coupling_ctx.local_size
 
     if rank == 0
         @info "Jexpresso running with $(nparts) local ranks (world_rank=$(coupling_ctx.world_rank))"
