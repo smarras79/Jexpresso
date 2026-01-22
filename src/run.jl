@@ -199,7 +199,7 @@ end
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------
 # Pass the correct communicator (comm_local when coupling, COMM_WORLD otherwise)
-with_mpi(comm) do distribute
+with_mpi(comm=comm) do distribute
 
     driver(nparts,
            distribute,
