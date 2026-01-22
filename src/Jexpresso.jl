@@ -57,6 +57,7 @@ using RRTMGP.RTE
 using RRTMGP.RTESolver
 import RRTMGP.Parameters.RRTMGPParameters
 using RRTMGP.ArtifactPaths
+using Serialization
 
 using UnicodePlots
 using Printf

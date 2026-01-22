@@ -9,6 +9,10 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     n_non_global_nodes = 0 
     n_spa = 0
     begin_time = time()
+    mesh.xmax = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
+    mesh.xmin = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
+    mesh.ymax = MPI.Allreduce(maximum(mesh.y), MPI.MAX, comm)
+    mesh.ymin = MPI.Allreduce(minimum(mesh.y), MPI.MIN, comm)
     if (inputs[:adaptive_extra_meshes])
         extra_meshes_coords = [Vector{Float64}(undef, size(extra_mesh[e].extra_coords,1)) for e in 1:nelem]
         extra_meshes_connijk = [Array{Int}(undef, extra_mesh[e].extra_nelem, extra_mesh[e].extra_nop[1]+1) for e in 1:nelem]
@@ -159,13 +163,13 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         ip2gip_extra, gip2owner_extra, gnpoin = setup_global_numbering_extra_dim(mesh.ip2gip, mesh.gip2owner, npoin, extra_mesh.extra_npoin, npoin_ang_total)
         Md = diag(M)
         pM = setup_assembler(SD, Md, ip2gip_extra, gip2owner_extra)
-        #=if  pM != nothing 
+        if  pM != nothing 
             assemble_mpi!(Md,pM)
             M = Diagonal(Md)
             M = sparse(M)
         
-        #    assemble_mpi!(LHS,pM)
-        end=#
+            #assemble_mpi!(LHS,pM)
+        end
 
         I_vec = Vector{Int}()
         J_vec = Vector{Int}()
@@ -292,6 +296,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             ip_ext = extra_mesh.extra_connijk[e_ext,iθ]
                             θ = extra_mesh.extra_coords[ip_ext]
                             ip_g = (ip-1) * extra_mesh.extra_npoin + ip_ext
+                            gip_g = ip2gip_extra[ip_g]
                             κip = 10*exp(-((x-3/2)/3)^2)*exp(-y/2)
                             σip = 0.1*κip
                             gip = exp(-((1. / 3) * (x - (3 / 3.)))^2)#exp(-((x-3/3)/3)^2)
@@ -325,24 +330,41 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                         iedge1 +=1
                                     end
                                     if (cos(θ) * (nx[iedge,edge_i]+nx[iedge_found,edge_found_i]) + sin(θ)*(ny[iedge,edge_i]+ny[iedge_found,edge_found_i]) < 0.0) 
+                                        if (gip2owner_extra[ip_g] == rank)
+                                            RHS[ip_g] = user_rad_bc(x,y,θ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
+                                            A[ip_g,:] .= 0.0
+                                            A[ip_g,ip_g] = 1.0
+                                            dropzeros!(A)
+                                            applied = true
+                                        else
+                                            A[ip_g,:] .= 0.0
+                                            dropzeros!(A)
+                                            applied = true
+                                        end
+                                        
+                                    end
+                                elseif (cos(θ) * nx[iedge,edge_i] + sin(θ)*ny[iedge,edge_i] < 0.0)
+                                    if (gip2owner_extra[ip_g] == rank)
                                         RHS[ip_g] = user_rad_bc(x,y,θ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
                                         A[ip_g,:] .= 0.0
                                         A[ip_g,ip_g] = 1.0
-                                         dropzeros!(A)
+                                        dropzeros!(A)
+                                        applied = true
+                                    else
+                                        A[ip_g,:] .= 0.0
+                                        dropzeros!(A)
                                         applied = true
                                     end
-                                elseif (cos(θ) * nx[iedge,edge_i] + sin(θ)*ny[iedge,edge_i] < 0.0)
-                                    RHS[ip_g] = user_rad_bc(x,y,θ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
-                                    A[ip_g,:] .= 0.0
-                                    A[ip_g,ip_g] = 1.0
-                                    dropzeros!(A)
-                                    applied = true
                                 end
                                 if (applied == false)
-                                    RHS[ip_g] = user_rhs(x,y,θ)#(-gip*hip*(user_f!(x,y,θ))*σip + κip*uip +  propip)
+                                    if (gip2owner_extra[ip_g] == rank)
+                                        RHS[ip_g] = user_rhs(x,y,θ)
+                                    end
                                 end
                             else
-                                RHS[ip_g] = user_rhs(x,y,θ)#(-gip*hip*(user_f!(x,y,θ))*σip + κip*uip +  propip) 
+                                if (gip2owner_extra[ip_g] == rank)
+                                    RHS[ip_g] = user_rhs(x,y,θ)
+                                end
                             end
                         end
                     end
@@ -428,7 +450,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     GC.gc()
     @info typeof(As)
     @info size(As), size(B)
-    @time solution = As \ B#RHS
+    #@time solution = As \ B#RHS
     #=@time solution, stats = Krylov.lsqr(As, B;
                    atol = 1e-13,
                    rtol = 1e-13,
@@ -437,13 +459,13 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                    axtol = 1e-13,
                    itmax = n_spa,
                    verbose = 0)=#
-    @info "time to finish", time()-begin_time
+    #@info "time to finish", time()-begin_time
     #=PETSc.initialize()
     A_petsc = PETSc.MatSeqAIJ(As)#PETSc.MatSeqAIJ(comm, ones(Float64, gnpoin, gnpoin))  
     b = PETSc.VecSeq(comm, zeros(Float64, gnpoin))
     x = PETSc.VecSeq(comm, zeros(Float64, gnpoin))
 =#
-    #@time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, RHS, gnpoin, npoin_ang_total, pM)
+    @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM)
     #=for ip = 1:npoin_ang_total
         gip = ip2gip_extra[ip]
         for jp in nzrange(As,ip)

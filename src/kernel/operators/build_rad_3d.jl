@@ -10,6 +10,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     n_spa = 0
     npoin = mesh.npoin
     nelem = mesh.nelem
+    npoin_ang_total = 0
 
     if (inputs[:adaptive_extra_meshes])
         extra_meshes_coords = [Array{Float64}(undef, size(extra_mesh[e].extra_coords,1), size(extra_mesh[e].extra_coords,2)) for e in 1:nelem]
@@ -56,7 +57,20 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                                                                 extra_meshes_coords, mesh.x, mesh.y, mesh.z, extra_meshes_ref_level, neighbors, adapted, extra_meshes_extra_Je)
         
         @info "built initial adaptive spatial angular connectivity"
-        # Get Je_ang for refined element 1
+        
+        @info "construct global numbering"
+        #=ip2gip_spa, gip2ip, gip2owner_spa, gnpoin = setup_global_numbering_adaptive_angular_scalable(
+            mesh.ip2gip, mesh.gip2owner, mesh, connijk_spa,
+            extra_meshes_coords, extra_meshes_connijk,
+            extra_meshes_extra_nops, extra_meshes_extra_nelems,
+            n_spa, n_non_global_nodes
+            )
+        @info maximum(ip2gip_spa), rank
+        if rank == 0
+            @info "Global spatial-angular numbering complete:"
+            @info "  Total DOF: $gnpoin"
+            @info "  Range: 1:$gnpoin (compact)"
+        end=#
         
         
         @time LHS = sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
@@ -101,6 +115,21 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             @info "adapted connectivity"
             adapted = true
             @info "number of hanging nodes", n_non_global_nodes
+            
+            @info "construct global numbering post adapted mesh"
+            #=ip2gip_spa, gip2ip, gip2owner_spa, gnpoin = setup_global_numbering_adaptive_angular_scalable(
+                mesh.ip2gip, mesh.gip2owner, mesh, connijk_spa,
+                extra_meshes_coords, extra_meshes_connijk,
+                extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                n_spa, n_non_global_nodes
+                )
+            @info maximum(ip2gip_spa), rank
+            if rank == 0
+                @info "Global spatial-angular numbering complete:"
+                @info "  Total DOF: $gnpoin"
+                @info "  Range: 1:$gnpoin (compact)"
+            end=#
+            
             @time LHS = sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
                                                         mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                         extra_meshes_extra_Je,
@@ -150,7 +179,21 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                    extra_mesh.extra_npoin)
         @info "assembled Mass matrix"
         @info nnz(M), nnz(LHS), npoin_ang_total^2, nnz(M)/npoin_ang_total^2, nnz(LHS)/npoin_ang_total^2
+        @info maximum(LHS), minimum(LHS)
+        @info maximum(M), minimum(M)
         # inexact integration makes M diagonal, build the sparse inverse to save space
+        # inexact integration makes M diagonal, build the sparse inverse to save space
+        ip2gip_extra, gip2owner_extra, gnpoin = setup_global_numbering_extra_dim(mesh.ip2gip, mesh.gip2owner, npoin, extra_mesh.extra_npoin, npoin_ang_total)
+        Md = diag(M)
+        pM = setup_assembler(SD, Md, ip2gip_extra, gip2owner_extra)
+        if  pM != nothing 
+            assemble_mpi!(Md,pM)
+            M = Diagonal(Md)
+            M = sparse(M)
+        
+            #assemble_mpi!(LHS,pM)
+        end
+        
         I_vec = Vector{Int}()
         J_vec = Vector{Int}()
         V_vec = Vector{Float64}()
@@ -194,7 +237,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     if (size(nc_mat,1) > 2)
         nc_rows = rowvals(nc_mat)
     end
-    n_free = n_spa-n_non_global_nodes
+    n_free = 0
+    if (inputs[:adaptive_extra_meshes])
+        n_free = n_spa-n_non_global_nodes
+    else
+        n_free = npoin_ang_total
+    end
     bdy_nodes = []
     bdy_values = []
     @time for iel=1:nelem
@@ -325,8 +373,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                                 BDY[ip_g] = user_rad_bc(x,y,z,θ,ϕ)
                                                 #A[ip_g,:] .= 0.0
                                                 #A[ip_g,ip_g] = 1.0
-                                                push!(bdy_nodes,ip_g)
-                                                push!(bdy_values,BDY[ip_g])
+                                                push!(bdy_nodes, ip_g)
+                                                push!(bdy_values, BDY[ip_g])
                                                 applied = true
                                             end
                                            
@@ -363,18 +411,22 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                         prodz = nz_new*cos(θ)
                                         #@info nx[iface,face_i,face_j], ny[iface,face_i,face_j], nz[iface,face_i,face_j], x, y, z
                                         if (prodx + prody + prodz < 0)
-                                            RHS[ip_g] = user_rad_bc(x,y,z,θ,ϕ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
-                                            #A[ip_g,:] .= 0.0
-                                            #A[ip_g,ip_g] = 1.0
+                                            if (gip2owner_extra[ip_g] == rank)
+                                                RHS[ip_g] = user_rad_bc(x,y,z,θ,ϕ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
+                                            end
                                             applied = true
-                                            push!(bdy_nodes,ip_g)
+                                            push!(bdy_nodes, ip_g)
                                             push!(bdy_values, RHS[ip_g])
                                         end
                                         if (applied == false)
-                                            RHS[ip_g] = user_rhs(x,y,z,θ,ϕ)#(-gip*hip*(user_f!(x,y,θ))*σip + κip*uip +  propip)
+                                            if (gip2owner_extra[ip_g] == rank)
+                                                RHS[ip_g] = user_rhs(x,y,z,θ,ϕ)#(-gip*hip*(user_f!(x,y,θ))*σip + κip*uip +  propip)
+                                            end
                                         end
                                     else
-                                        RHS[ip_g] = user_rhs(x,y,z,θ,ϕ)#(-gip*hip*(user_f!(x,y,θ))*σip + κip*uip +  propip) 
+                                        if (gip2owner_extra[ip_g] == rank)
+                                            RHS[ip_g] = user_rhs(x,y,z,θ,ϕ)#(-gip*hip*(user_f!(x,y,θ))*σip + κip*uip +  propip) 
+                                        end
                                     end
                                 end
                             end
@@ -385,14 +437,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
     B = RHS
-    @time begin
     I_orig, J_orig, V_orig = findnz(A)
     
     # Build modifications in COO format
     I_mod = Int[]
     J_mod = Int[]
     V_mod = Float64[]
-    
     boundary_set = Set(bdy_nodes)
     boundary_dict = Dict(zip(bdy_nodes, bdy_values))
     for (i, j, v) in zip(I_orig, J_orig, V_orig)
@@ -400,18 +450,26 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             # This row should become identity
             if i == j
                 # Keep diagonal, but set to 1
-                push!(I_mod, i)
-                push!(J_mod, j)
-                push!(V_mod, 1.0 - v)  # Correction to make it 1
+                if (gip2owner_extra[i] == rank)
+                    push!(I_mod, i)
+                    push!(J_mod, j)
+                    push!(V_mod, 1.0 - v)# Correction to make it 1
+                else
+                    push!(I_mod, i)
+                    push!(J_mod, j)
+                    push!(V_mod, -v)  
+                end
             else
                 # Zero out off-diagonal
+                
                 push!(I_mod, i)
                 push!(J_mod, j)
                 push!(V_mod, -v)  # Correction to make it 0
             end
         end
     end
-
+    @info size(I_mod), size(J_mod), size(V_mod)
+    @info maximum(J_mod), minimum(J_mod)
     existing_diag = Set{Int}()
     for (i, j) in zip(I_orig, J_orig)
         if i == j && i in boundary_set
@@ -427,144 +485,19 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             push!(V_mod, 1.0)
         end
     end
+    @info size(I_mod), size(J_mod), size(V_mod)
+    @info maximum(J_mod), minimum(J_mod)
     
     # Build correction matrix and add
     C = sparse(I_mod, J_mod, V_mod, n_free, n_free)
     A = sparse(A + C)
-    end
+    
     if (inputs[:adaptive_extra_meshes])
         
         
         
         RHS_red = rest * RHS
-        #=@info "RHS info", maximum(BDY), minimum(BDY), maximum(U_red_proj), minimum(U_red_proj), maximum(RHS), minimum(RHS), maximum(RHS_red), minimum(RHS_red)
-        @time for iel=1:nelem
-            for i = 1:ngl
-                for j = 1:ngl
-                    for k = 1:ngl
-                        ip = mesh.connijk[iel,i,j,k]
-                        x = mesh.x[ip]
-                        y = mesh.y[ip]
-                        z = mesh.z[ip]
-                        is_boundary = ip in mesh.poin_in_bdy_face
-                        if (is_boundary)
-                            iface = elem_to_face[iel,i,j,k,1]
-                            face_i = elem_to_face[iel,i,j,k,2]
-                            face_j = elem_to_face[iel,i,j,k,3]
-                            nx_new = nx[iface,face_i,face_j]
-                            ny_new = ny[iface,face_i,face_j] 
-                            nz_new = nz[iface,face_i,face_j]
-                            matchx = (x == mesh.xmax || x == mesh.xmin)
-                            matchy = (y == mesh.ymax || y == mesh.ymin)
-                            matchz = (z == mesh.zmax || z == mesh.zmin)
-                            nmatches = 0
-                            if (matchx) nmatches +=1 end
-                            if (matchy) nmatches +=1 end
-                            if (matchz) nmatches +=1 end
-                            if (nmatches == 2) ##Do 2 boundary corner case
-                                iface1 = 1
-                                found = false
-                                iface_found = 0
-                                face_found_j = 0
-                                face_found_i = 0
-                                while (iface1 <= mesh.nfaces_bdy && found == false)
-                                    if (mesh.bdy_face_in_elem[iface1] == iel)
-                                        for iter_i = 1:ngl
-                                            for iter_j = 1:ngl
-                                                ip1 = mesh.poin_in_bdy_face[iface1,iter_i, iter_j]
-                                                if (ip1 == ip && iface != iface1)
-                                                    if (abs(nx[iface,face_i,face_j]-nx[iface1,iter_i,iter_j]) > 1e-12)|| (abs(ny[iface,face_i,face_j]-ny[iface1,iter_i,iter_j]) > 1e-12) || (abs(nz[iface,face_i,face_j]-nz[iface1,iter_i,iter_j]) > 1e-12)
-                                                        found = true
-                                                        iface_found = iface1
-                                                        face_found_i = iter_i
-                                                        face_found_j = iter_j
-                                                    end
-                                                end
-                                            end
-                                        end
-                                    end
-                                    iface1 +=1
-                                end
-                                nx_new = nx[iface,face_i,face_j] + nx[iface_found,face_found_i,face_found_j]
-                                ny_new = ny[iface,face_i,face_j] + ny[iface_found,face_found_i,face_found_j]
-                                nz_new = nz[iface,face_i,face_j] + nz[iface_found,face_found_i,face_found_j]
-                                            
-                            elseif (nmatches == 3)
-                                iface1 = 1
-                                found = false
-                                iface_found = 0
-                                face_found_j = 0
-                                face_found_i = 0
-                                while (iface1 <= mesh.nfaces_bdy && found == false)
-                                    if (mesh.bdy_face_in_elem[iface1] == iel)
-                                        for iter_i = 1:ngl
-                                            for iter_j = 1:ngl
-                                                ip1 = mesh.poin_in_bdy_face[iface1,iter_i, iter_j]
-                                                if (ip1 == ip && iface != iface1)
-                                                    found = true
-                                                    iface_found = iface1
-                                                    face_found_i = iter_i
-                                                    face_found_j = iter_j
-                                                end
-                                            end
-                                        end
-                                    end
-                                    iface1 +=1
-                                end
-                                iface1 = 1
-                                found = false
-                                iface_found_2 = 0
-                                face_found_j_2 = 0
-                                face_found_i_2 = 0
-                                while (iface1 <= mesh.nfaces_bdy && found == false)
-                                    if (mesh.bdy_face_in_elem[iface1] == iel)
-                                        for iter_i = 1:ngl
-                                            for iter_j = 1:ngl
-                                                ip1 = mesh.poin_in_bdy_face[iface1,iter_i, iter_j]
-                                                if (ip1 == ip && iface != iface1 && iface_found != iface1)
-                                                    found = true
-                                                    iface_found_2 = iface1
-                                                    face_found_i_2 = iter_i
-                                                    face_found_j_2 = iter_j
-                                                end
-                                            end
-                                        end
-                                    end
-                                    iface1 +=1
-                                end
-                                nx_new = nx[iface,face_i,face_j] + nx[iface_found,face_found_i,face_found_j] + nx[iface_found_2,face_found_i_2,face_found_j_2]
-                                ny_new = ny[iface,face_i,face_j] + ny[iface_found,face_found_i,face_found_j] + ny[iface_found_2,face_found_i_2,face_found_j_2]
-                                nz_new = nz[iface,face_i,face_j] + nz[iface_found,face_found_i,face_found_j] + nz[iface_found_2,face_found_i_2,face_found_j_2]
-                            end
-                        end
-                        for e_ext = 1:extra_meshes_extra_nelems[iel]
-                            for jθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
-                                for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
-                                    ip_ext = extra_meshes_connijk[iel][e_ext,iθ,jθ]
-                                    θ = extra_meshes_coords[iel][1,ip_ext]
-                                    ϕ = extra_meshes_coords[iel][2,ip_ext]
-                                    ip_g = connijk_spa[iel][i,j,k,e_ext,iθ,jθ]
-                                    if (ip_g <= n_free)
-                                        if (is_boundary)
-                                            prodx = nx_new*sin(θ)*cos(ϕ)
-                                            prody = ny_new*sin(θ)*sin(ϕ)
-                                            prodz = nz_new*cos(θ)
-                                            #@info nx[iface,face_i,face_j], ny[iface,face_i,face_j], nz[iface,face_i,face_j], x, y, z
-                                            if !(prodx + prody + prodz < 0)
-                                                U_red_proj[ip_g] = RHS_red[ip_g]
-                                            end
-                                        else
-                                            U_red_proj[ip_g] = RHS_red[ip_g] 
-                                        end
-                                    end
-            
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end=#
+        
         @time for boundary_node in bdy_nodes
             RHS_red[boundary_node] = boundary_dict[boundary_node]
         end
@@ -580,11 +513,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     As = sparse(A)
     #A = nothing
     GC.gc()
-    @time solution = As \ B
+    #@time solution = As \ B
+    
+    @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM)
     @info "done radiation solved"
     @info maximum(solution), minimum(solution)
     @info "dof", npoin_ang_total
-    
     A = nothing
     RHS = nothing
     GC.gc()
@@ -790,11 +724,11 @@ function sparse_lhs_assembly_3Dby2D(ω, Je, connijk, ωθ, ωϕ, x, y, z,
                         for jθ = 1:nop_ang[e_ext]+1
                             for iθ = 1:nop_ang[e_ext]+1
                                 ip_ext = connijk_ang[e_ext,iθ,jθ]
-                                sum = 0.0
+                                
                                 ωJac_rad = ωθ[iθ]*ωϕ[jθ]*Je_ang[e_ext,iθ,jθ]
                                 ωJac_full = ωJac * ωJac_rad
                                 #@info coords_ang[1,ip_ext], coords_ang[2,ip_ext], e_ext, iθ, jθ
-                                extinction = κ*ωJac*ωJac_rad
+                                
                                 θ = coords_ang[1,ip_ext]
                                 ϕ = coords_ang[2,ip_ext]
                                 Ωx = sin(θ) * cos(ϕ)
@@ -815,7 +749,7 @@ function sparse_lhs_assembly_3Dby2D(ω, Je, connijk, ωθ, ωϕ, x, y, z,
                                         end
                                     end
                                 end
-                                scattering = intΦ *ωJac*ωJac_rad*σ
+                                
                                 idx_ip = (ip-1)*(npoin_ang) + ip_ext
                                 val_diagonal = κ * ωJac_full - σ * intΦ * ωJac_full
                                 push!(I_vec, idx_ip)
@@ -871,55 +805,7 @@ function sparse_lhs_assembly_3Dby2D(ω, Je, connijk, ωθ, ωϕ, x, y, z,
                                     push!(J_vec, idx_o)
                                     push!(V_vec, val)
                                 end
-                                #@info coords_ang[1,ip_ext], coords_ang[2,ip_ext], e_ext, iθ, jθ
-                                #=for o=1:ngl
-                                    for n=1:ngl
-                                        for m=1:ngl
-
-                                            jp = connijk[iel,m,n,o]
-                                            extinction = κ*ωJac*ωJac_rad*ψ[j,n]*ψ[i,m]*ψ[k,o]#*ψ_ang[iθ,kθ]*ψ_ang[jθ,lθ]
-                                            θ = coords_ang[1,ip_ext]
-                                            ϕ = coords_ang[2,ip_ext]
-                                                     
-                                            propx = ψ[o,k]*ψ[n,j]*dψ[m,i]*dξdx_ij*sin(θ)*cos(ϕ)
-                                            propx += ψ[o,k]*ψ[m,i]*dψ[n,j]*dηdx_ij*sin(θ)*cos(ϕ)
-                                            propx += ψ[n,j]*ψ[m,i]*dψ[o,k]*dζdx_ij*sin(θ)*cos(ϕ) 
-                                            propy = ψ[o,k]*ψ[n,j]*dψ[m,i]*dξdy_ij*sin(θ)*sin(ϕ)
-                                            propy += ψ[o,k]*ψ[m,i]*dψ[n,j]*dηdy_ij*sin(θ)*sin(ϕ)
-                                            propy += ψ[n,j]*ψ[m,i]*dψ[o,k]*dζdy_ij*sin(θ)*sin(ϕ)
-                                            propz = ψ[o,k]*ψ[n,j]*dψ[m,i]*dξdz_ij*cos(θ)
-                                            propz += ψ[o,k]*ψ[m,i]*dψ[n,j]*dηdz_ij*cos(θ)
-                                            propz += ψ[n,j]*ψ[m,i]*dψ[o,k]*dζdz_ij*cos(θ)
-                                            propagation = (ωJac*ωJac_rad)*(propx+propy+propz)
-                                            intΦ = 0.0 
-                                            sum += propagation#propy*(ωJac*ωJac_rad)*ψ_ang[iθ,kθ]*ψ_ang[jθ,lθ]
-                                            for e_ext_scatter = 1:nelem_ang
-                                                for nθ = 1:nop_ang[e_ext]+1
-                                                    for mθ = 1:nop_ang[e_ext]+1
-                                                        div = 1
-                                                        ipθ = connijk_ang[e_ext_scatter,mθ,nθ]
-                                                        θ1 = coords_ang[1,ipθ]
-                                                        ϕ1 = coords_ang[2,ipθ]
-
-                                                        Φ = user_scattering_functions(θ,θ1,ϕ,ϕ1,HG)
-                                                        ωJac_rad_scatter = ωθ[mθ]*ωϕ[nθ]*Je_ang[e_ext_scatter,mθ,nθ]
-                                                        intΦ +=   ωJac_rad_scatter*Φ/div
-                                                    end
-                                                end
-                                            end
-                                                    #@info intΦ
-                                            scattering = intΦ * ψ[k,o] * ψ[i,m] * ψ[j,n] * ωJac*ωJac_rad*σ
-                                            val = extinction + propagation - scattering
-                                            idx_ip = (ip-1)*(npoin_ang) + ip_ext
-                                            idx_jp = (jp-1)*(npoin_ang) + ip_ext
-                                            if abs(val) > eps(Float64)  # Skip near-zero entries
-                                                push!(I_vec, idx_ip)
-                                                push!(J_vec, idx_jp)
-                                                push!(V_vec, val)
-                                            end
-                                        end
-                                    end
-                                end=#
+                                
                             end
                         end
                     end
@@ -1053,52 +939,6 @@ function sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, connijk, ωθ, ωϕ, x, y, 
                                     push!(V_vec, val)
                                 end
                                 
-                                #=for o=1:ngl
-                                    for n=1:ngl
-                                        for m=1:ngl
-                                            jp = connijk[iel,m,n,o]
-                                            extinction = κ*ωJac*ωJac_rad*ψ[j,n]*ψ[i,m]*ψ[k,o]#*ψ_ang[iθ,kθ]*ψ_ang[jθ,lθ]
-                                            θ = coords_ang[iel][1,ip_ext]
-                                            ϕ = coords_ang[iel][2,ip_ext]
-
-                                            propx = ψ[o,k]*ψ[n,j]*dψ[m,i]*dξdx_ij*sin(θ)*cos(ϕ)
-                                            propx += ψ[o,k]*ψ[m,i]*dψ[n,j]*dηdx_ij*sin(θ)*cos(ϕ)
-                                            propx += ψ[n,j]*ψ[m,i]*dψ[o,k]*dζdx_ij*sin(θ)*cos(ϕ)
-                                            propy = ψ[o,k]*ψ[n,j]*dψ[m,i]*dξdy_ij*sin(θ)*sin(ϕ)
-                                            propy += ψ[o,k]*ψ[m,i]*dψ[n,j]*dηdy_ij*sin(θ)*sin(ϕ)
-                                            propy += ψ[n,j]*ψ[m,i]*dψ[o,k]*dζdy_ij*sin(θ)*sin(ϕ)
-                                            propz = ψ[o,k]*ψ[n,j]*dψ[m,i]*dξdz_ij*cos(θ)
-                                            propz += ψ[o,k]*ψ[m,i]*dψ[n,j]*dηdz_ij*cos(θ)
-                                            propz += ψ[n,j]*ψ[m,i]*dψ[o,k]*dζdz_ij*cos(θ)
-                                            propagation = (ωJac*ωJac_rad)*(propx+propy+propz)
-                                            intΦ = 0.0
-                                            sum += propagation#propy*(ωJac*ωJac_rad)*ψ_ang[iθ,kθ]*ψ_ang[jθ,lθ]
-                                            for e_ext_scatter = 1:nelem_ang[iel]
-                                                for nθ = 1:nop_ang[iel][e_ext]+1
-                                                    for mθ = 1:nop_ang[iel][e_ext]+1
-                                                        div = 1
-                                                        ipθ = connijk_ang[iel][e_ext_scatter,mθ,nθ]
-                                                        θ1 = coords_ang[iel][1,ipθ]
-                                                        ϕ1 = coords_ang[iel][2,ipθ]
-
-                                                        Φ = user_scattering_functions(θ,θ1,ϕ,ϕ1,HG)
-                                                        ωJac_rad_scatter = ωθ[mθ]*ωϕ[nθ]*Je_ang[iel][e_ext_scatter,mθ,nθ]
-                                                        intΦ +=   ωJac_rad_scatter*Φ/div
-                                                    end
-                                                end
-                                            end
-                                            scattering = intΦ * ψ[k,o] * ψ[i,m] * ψ[j,n] * ωJac*ωJac_rad*σ
-                                            val = extinction + propagation - scattering
-                                            idx_ip = connijk_spa[iel][i,j,k,e_ext,iθ,jθ]#(ip-1)*(npoin_ang) + ip_ext
-                                            idx_jp = connijk_spa[iel][m,n,o,e_ext,iθ,jθ]#(jp-1)*(npoin_ang) + ip_ext
-                                            if abs(val) > eps(Float64)  # Skip near-zero entries
-                                                push!(I_vec, idx_ip)
-                                                push!(J_vec, idx_jp)
-                                                push!(V_vec, val)
-                                            end
-                                        end
-                                    end
-                                end=#
                             end
                         end
                     end

@@ -395,9 +395,8 @@ function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; t
 
     #return to local indexing
     x_local = zeros(Float64,npoin)
-    for ip=1:npoin
-        gip = ip2gip[ip]
-        x_local[ip] = x[gip]
+    for (i, idx) in enumerate(ip2gip)
+        x_local[i] = x[idx]
     end
 
     @info stats

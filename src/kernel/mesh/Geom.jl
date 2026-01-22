@@ -17,6 +17,7 @@ using GridapP4est
 using P4est_wrapper
 using SparseArrays
 
+
 # Define your custom version of DiscreteModel function
 function Gridap.Geometry.DiscreteModel(
     parts::AbstractArray,
@@ -285,7 +286,7 @@ function setup_global_numbering_adaptive_angular_scalable(
     
     for ip = 1:mesh.npoin
         gip = ip2gip[ip]
-        owner = gip2owner[gip]
+        owner = gip2owner[ip]
         
         # If this processor doesn't own this spatial node, it's on a boundary
         if owner != rank
@@ -298,24 +299,51 @@ function setup_global_numbering_adaptive_angular_scalable(
     owned_spatial = Set{Int}()
     for ip = 1:mesh.npoin
         gip = ip2gip[ip]
-        if gip2owner[gip] == rank
+        if gip2owner[ip] == rank
             push!(owned_spatial, gip)
         end
     end
 
-    # Check if owned nodes appear on other processors
-    all_owned_spatial = MPI.Allgather(collect(owned_spatial), comm)
+    local_spatial = collect(processor_boundary_spatial)
+    n_local = Int32(length(local_spatial))
+
+    # Gather the counts from all processors
+    counts = MPI.Allgather([n_local], comm)
+
+    # Prepare the receive buffer
+    total_count = sum(counts)
+
+    # Handle empty case - need a typed array even if empty
+    if isempty(local_spatial)
+        local_spatial = Int[]  # Empty array with correct type
+    end
+
+    # Use Allgatherv to gather variable-length data
+    if total_count > 0
+        all_owned_spatial = MPI.Allgatherv(local_spatial, counts, comm)
+    else
+        # All ranks are empty
+        all_owned_spatial = Int[]
+    end
     
     for other_rank = 0:(nproc-1)
+        if other_rank == 0
+            offset = 0
+        else
+            offset = sum(counts[1:other_rank])
+        end
+
         if other_rank == rank
             continue
         end
         
-        other_owned = Set(all_owned_spatial[other_rank+1])
+        other_not_owned = Set(all_owned_spatial[offset+1:counts[other_rank+1]])
         
         # Find intersection: spatial nodes owned by us but also present on other rank
-        shared = intersect(owned_spatial, other_owned)
+        shared = intersect(owned_spatial, other_not_owned)
+        
         union!(processor_boundary_spatial, shared)
+        
     end
 
     @info "[Rank $rank] Found $(length(processor_boundary_spatial)) spatial nodes on processor boundaries"
@@ -342,16 +370,30 @@ function setup_global_numbering_adaptive_angular_scalable(
     # =========================================================================
     
     # Gather all processor boundary signatures from all ranks
-    all_boundary_sigs = MPI.Allgather(collect(keys(processor_boundary_sigs)), comm)
+    local_keys = collect(keys(processor_boundary_sigs))
+    n_local = length(local_keys)
+
+    # Flatten tuples to a matrix (3 x n_local)
+    local_data = hcat([collect(k) for k in local_keys]...)  # or stack them appropriately
+   
+    # Gather counts from all processors
+    counts = MPI.Allgather([n_local], comm)
+
+    # Prepare receive buffer
+    total_count = sum(counts)
+    
+    all_data = MPI.Allgatherv(local_data[:], Int32.(counts .* 3), comm)
+
+    # Reshape back to tuples
+    all_boundary_sigs = [Tuple(all_data[i:i+2]) for i in 1:3:length(all_data)]
+    #all_boundary_sigs = MPI.Allgather(collect(keys(processor_boundary_sigs)), comm)
     
     # Find globally shared signatures
     global_boundary_sigs = Set{NTuple{3,Float64}}()
     sig_counts = Dict{NTuple{3,Float64}, Int}()
-    
-    for proc_sigs in all_boundary_sigs
-        for sig in proc_sigs
-            sig_counts[sig] = get(sig_counts, sig, 0) + 1
-        end
+
+    for sig in all_boundary_sigs
+        sig_counts[sig] = get(sig_counts, sig, 0) + 1
     end
     
     # A signature is shared if it appears on multiple processors
@@ -368,6 +410,7 @@ function setup_global_numbering_adaptive_angular_scalable(
     # =========================================================================
     
     # Each processor gets a contiguous range of global IDs
+    n_local = length(signature_list)
     local_count = n_local
     offset = MPI.Exscan(local_count, MPI.SUM, comm)
     
@@ -398,7 +441,38 @@ function setup_global_numbering_adaptive_angular_scalable(
         end
     end
     
-    all_shared_tentative = MPI.Allgather(local_shared_tentative, comm)
+    # Serialize the dictionary
+    local_buffer = IOBuffer()
+    serialize(local_buffer, local_shared_tentative)
+    local_data = take!(local_buffer)
+
+    # Gather the sizes
+    n_local = Int32(length(local_data))
+    counts = MPI.Allgather([n_local], comm)
+
+    # Gather the serialized data
+    total_count = sum(counts)
+    if total_count > 0
+        all_data = MPI.Allgatherv(local_data, counts, comm)
+    
+        # Deserialize on each rank to get all dictionaries
+        all_shared_tentative = Dict{NTuple{3,Float64}, Int}[]
+        offset = 1
+        for count in counts
+            if count > 0
+                chunk = all_data[offset:offset+count-1]
+                push!(all_shared_tentative, deserialize(IOBuffer(chunk)))
+            else
+                push!(all_shared_tentative, Dict{NTuple{3,Float64}, Int}())
+            end
+            offset += count
+        end
+    else
+        all_shared_tentative = [Dict{NTuple{3,Float64}, Int}() for _ in 1:length(counts)]
+    end
+
+    
+    #all_shared_tentative = MPI.Allgather(local_shared_tentative, comm)
     
     # Resolve: take minimum tentative GID for each shared signature
     for proc_shared in all_shared_tentative
@@ -433,13 +507,32 @@ function setup_global_numbering_adaptive_angular_scalable(
     # =========================================================================
     
     # Collect all used global IDs across all processors
-    local_used_gids = Set(values(sig_to_final_gid))
-    all_used_gids_list = MPI.Allgather(collect(local_used_gids), comm)
-    
-    global_used_gids = Set{Int}()
-    for proc_gids in all_used_gids_list
-        union!(global_used_gids, proc_gids)
+    #local_used_gids = Set(values(sig_to_final_gid))
+    local_used_gids = collect(values(sig_to_final_gid))
+    n_local = Int32(length(local_used_gids))
+
+    # Gather the counts from all processors
+    counts = MPI.Allgather([n_local], comm)
+
+    # Prepare the receive buffer
+    total_count = sum(counts)
+
+    # Handle empty case - need a typed array even if empty
+    if isempty(local_used_gids)
+        local_used_gids = Int[]  # Empty array with correct type
     end
+
+    # Use Allgatherv to gather variable-length data
+    if total_count > 0
+        all_used_gids_list = MPI.Allgatherv(local_used_gids, counts, comm)
+    else
+        # All ranks are empty
+        all_used_gids_list = Int[]
+    end
+    
+    #all_used_gids_list = MPI.Allgather(collect(local_used_gids), comm)
+    
+    global_used_gids = Set{Int}(all_used_gids_list)
     
     # Create compaction map: old_gid -> new_gid (1:gnpoin with no gaps)
     sorted_gids = sort(collect(global_used_gids))
@@ -489,7 +582,7 @@ function setup_global_numbering_adaptive_angular_scalable(
     
     gip2owner_spa = find_gip_owner_spa(ip2gip_spa, n_spa, gnpoin, comm)
     
-    gip2ip = zeros(Int, gnpoin_compact)
+    gip2ip = zeros(Int, gnpoin)
     for (ip, gid) in enumerate(ip2gip_spa)
         if gid > 0 && gip2owner_spa[gid] == rank
             gip2ip[gid] = ip
@@ -542,8 +635,10 @@ function verify_compact_numbering(ip2gip_spa, gnpoin, rank, comm)
         end
     end
     
-    global_present = similar(local_present)
-    MPI.Allreduce!(local_present, global_present, MPI.LOR, comm)
+    
+    local_present_bool = convert(Vector{Bool}, local_present)
+    global_present_bool = MPI.Allreduce(local_present_bool, MPI.LOR, comm)
+    global_present = BitVector(global_present_bool)
     
     has_gaps = false
     missing_ids = Int[]
