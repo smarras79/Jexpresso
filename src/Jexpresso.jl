@@ -171,6 +171,8 @@ include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 
 include(joinpath( "kernel", "mpi", "mpi_communications.jl"))
 
+include(joinpath( "mpi", "JexpressoCoupling.jl"))
+
 include(joinpath( "io", "mod_inputs.jl"))
 
 include(joinpath( "io", "mod_print_io.jl"))
