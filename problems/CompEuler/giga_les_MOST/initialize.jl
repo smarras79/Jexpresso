@@ -81,8 +81,10 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 T      = T_ref + rand_noise
                 Tv     = T*(1+0.61*qv_ref) 
                 Tv_ref = T_ref*(1+0.61*qv_ref) 
-                ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
-                ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
+                ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=T,    Press=pref)    #kg/m³
+                # ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
+                # ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
+                ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=T_ref, Press=pref) #kg/m³
                 # hl is the liqui/ice static energy used in SAM
                 # use potential is less conservative
                 hl     = PhysConst.cp*T + PhysConst.g*z
@@ -100,8 +102,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qn[ip,3] = ρ*v - ρref*v
                     q.qn[ip,4] = ρ*w - ρref*w
                     q.qn[ip,5] = ρ*hl - ρref*hl_ref#ρ*θ - ρref*θref
-                    q.qn[ip,6] = ρ*qv_ref-ρref*qv_ref
-                    # q.qn[ip,6] = 0.0
+                    # q.qn[ip,6] = ρ*qv_ref-ρref*qv_ref
+                    q.qn[ip,6] = 0.0
                     q.qn[ip,7] = 0.0
                     q.qn[ip,end] = pref_m #+ ρ*qv_ref*PhysConst.Rvap*T
 
@@ -112,8 +114,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qe[ip,3] = ρref*v_ref
                     q.qe[ip,4] = ρref*w
                     q.qe[ip,5] = ρref*hl_ref
-                    q.qe[ip,6] = ρref*qv_ref
-                    # q.qe[ip,6] = 0.0
+                    # q.qe[ip,6] = ρref*qv_ref
+                    q.qe[ip,6] = 0.0
                     q.qe[ip,7] = 0.0
                     q.qe[ip,end] = pref_m #+ ρref*qv*PhysConst.Rvap*Tref
                 else

@@ -16,7 +16,7 @@ function user_source!(S,
     #--------------
     # S(q(x)) = -ρg
     #--------------
-    ρ  = q[1]
+    ρ  = q[1]-qe[1]
     
     S[1] = 0.0
     S[2] = 0.0
@@ -163,6 +163,7 @@ function user_source!(S,
 
         #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
         #S[1] -= (cs)*(q[1]-qe[1])
+        S[1] -= cs*(q[1])
         S[2] -= cs*(q[2])
     	S[3] -= cs*(q[3])
         S[4] -= cs*(q[4])
