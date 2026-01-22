@@ -640,13 +640,11 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 v_inside = v_inside - vprojectedaux*ny[iface,i,j]
                                 w_inside = w_inside - vprojectedaux*nz[iface,i,j]
                                 
-                                if (Tabs[ip] < 1)
-                                    θ_inside = uaux[ip1,   5]/ρ
-                                    θ_sfc    = uaux[ipsfc, 5]/ρ
-                                else
+                                θ_inside = uaux[ip1,   5]/ρ
+                                θ_sfc    = uaux[ipsfc, 5]/ρ
+                                if (micro > 1)
                                     θ_inside = Tabs[ip1]*(PhysConst.pref/uaux[ip1,end])^(1/PhysConst.cpoverR)
                                     θ_sfc    = Tabs[ipsfc]*(PhysConst.pref/uaux[ipsfc,end])^(1/PhysConst.cpoverR)
-                                    # @info "gets to MOST", Tabs[ip1], uaux[ip1,end], coords[ip1,:]
                                 end
                                 z_sfc    = coords[ipsfc, 3]
                                                                 
@@ -664,9 +662,9 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 if inputs[:energy_equation] == "theta" 
                                     F_surf[i,j,5] = 0.12
                                 elseif inputs[:energy_equation] == "energy" 
-                                    F_surf[i,j,5] = PhysConst.cp * 0.12
+                                    F_surf[i,j,5] = 10.0
                                 end
-                                    # if (inputs[:lmoist] == true)
+                                # if (inputs[:lmoist] == true)
                                 #     F_surf[i,j,6] = 0.12e-5
                                 # end
                                 
@@ -685,9 +683,9 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                     end
                  #end
             end
-            compute_surface_integral!(S_face, F_surf, ω, Jef, iface, ngl)            
+            compute_surface_integral!(S_face, F_surf, ω, Jef, iface, ngl)
         end
-
+        
     end
     #@info maximum(S_face[:,:,:,2]), maximum(S_face[:,:,:,5]), maximum(S_face[:,:,:,6])
     #@info minimum(S_face[:,:,:,2]), minimum(S_face[:,:,:,5]), minimum(S_face[:,:,:,6])
