@@ -21,16 +21,16 @@ MPI.Init()
 world_rank = MPI.Comm_rank(MPI.COMM_WORLD)
 world_size = MPI.Comm_size(MPI.COMM_WORLD)
 
-#============================================================================
+#-----------------------------------
 # CONFIGURATION - EDIT THESE VALUES
-#============================================================================
+#-----------------------------------
 
 # Choose second code: :Jexpresso (for testing) or :Alya (for production)
 SECOND_CODE = :Jexpresso  # Options: :Jexpresso or :Alya
 
 # How many ranks for each code
-JEXPRESSO_RANKS = 4
-SECOND_CODE_RANKS = 4
+JEXPRESSO_RANKS = 2
+SECOND_CODE_RANKS = 2
 
 # Jexpresso problem configuration
 JEXPRESSO_EQS = "CompEuler"      # Equation type
@@ -44,9 +44,9 @@ JEXPRESSO2_CASE = "theta"        # Can be same or different
 ALYA_INPUT_FILE = "alya.dat"     # Alya input file
 ALYA_EXECUTABLE = "/path/to/alya/bin/alya.x"  # Path to Alya executable
 
-#============================================================================
+#-----------------------------------
 # VALIDATION
-#============================================================================
+#-----------------------------------
 
 if world_size != JEXPRESSO_RANKS + SECOND_CODE_RANKS
     if world_rank == 0
@@ -71,17 +71,17 @@ if SECOND_CODE != :Jexpresso && SECOND_CODE != :Alya
     exit(1)
 end
 
-#============================================================================
+#-----------------------------------
 # RANK ASSIGNMENT
-#============================================================================
+#-----------------------------------
 
 # Ranks 0 to (JEXPRESSO_RANKS-1): Jexpresso (code 1)
 # Ranks JEXPRESSO_RANKS to (world_size-1): Second code (code 2)
 
 if world_rank < JEXPRESSO_RANKS
-    #========================================================================
+    #-----------------------------------
     # JEXPRESSO CODE (CODE 1)
-    #========================================================================
+    #-----------------------------------
 
     if world_rank == 0
         println("="^70)
@@ -118,14 +118,14 @@ if world_rank < JEXPRESSO_RANKS
     # Jexpresso handles MPI.Finalize() internally
 
 else
-    #========================================================================
+    #-----------------------------------
     # SECOND CODE (CODE 2)
-    #========================================================================
+    #-----------------------------------
 
     if SECOND_CODE == :Jexpresso
-        #====================================================================
+        #-----------------------------------
         # SECOND JEXPRESSO INSTANCE
-        #====================================================================
+        #-----------------------------------
 
         if world_rank == JEXPRESSO_RANKS
             println("\n[Jexpresso-2] Starting second Jexpresso instance on ranks $JEXPRESSO_RANKS-$(world_size-1)")
@@ -152,9 +152,9 @@ else
         # Jexpresso handles MPI.Finalize() internally
 
     elseif SECOND_CODE == :Alya
-        #====================================================================
+        #-----------------------------------
         # ALYA CODE
-        #====================================================================
+        #-----------------------------------
 
         if world_rank == JEXPRESSO_RANKS
             println("\n[Alya] Starting Alya on ranks $JEXPRESSO_RANKS-$(world_size-1)")
