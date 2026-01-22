@@ -53,6 +53,7 @@ end
 
 step = 0
 while time() - start_time < max_duration
+    global step
     step += 1
 
     if ctx.is_root && (step % 500 == 0)
