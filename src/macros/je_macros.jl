@@ -38,10 +38,11 @@ macro timers(expr)
     return quote
         local timers = $(esc(:timers))
         local func_name = $func_name
-        
+
         # Create timer if it doesn't exist
+        # Use Jexpresso.comm which is coupling-aware (comm_local when coupling, COMM_WORLD otherwise)
         if !haskey(timers, func_name)
-            timers[func_name] = MPIFunctionTimer(MPI.COMM_WORLD; skip_first_n=10)
+            timers[func_name] = MPIFunctionTimer(Jexpresso.comm; skip_first_n=10)
         end
         
         local timer_obj = timers[func_name]
