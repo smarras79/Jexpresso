@@ -40,40 +40,50 @@ println("  World rank: $(ctx.world_rank)")
 println("  Is root: $(ctx.is_root)")
 
 # Simulate Alya running
-for step in 1:5
-    if ctx.is_root
-        println("\n[Alya mimic] Simulation step $step/5")
+# Run long enough to cover Jexpresso's simulation
+# Jexpresso: tinit=0.0, tend=3.0, dt=0.001 means ~3000-6000 steps depending on solver
+# We'll run for a generous duration with frequent synchronization
+
+max_duration = 300.0  # seconds - generous time for Jexpresso to complete
+start_time = time()
+
+if ctx.is_root
+    println("[Alya mimic] Starting simulation loop for up to $(max_duration)s")
+end
+
+step = 0
+while time() - start_time < max_duration
+    step += 1
+
+    if ctx.is_root && (step % 500 == 0)
+        elapsed = time() - start_time
+        println("[Alya mimic] Step $step (elapsed: $(round(elapsed, digits=1))s)")
     end
 
-    # Synchronize with Jexpresso
+    # Synchronize with Jexpresso on coupling communicator
     synchronize_coupling(ctx)
 
-    # Simulate work
-    sleep(0.5)
+    # Also sync on COMM_WORLD to catch any stray collective operations
+    MPI.Barrier(MPI.COMM_WORLD)
 
-    # Optional: Test data exchange
-    if ctx.is_root && step == 3
-        println("[Alya mimic] Testing data exchange...")
-
-        # Send dummy pressure to Jexpresso
-        pressure_data = rand(10) .* 1000.0
-        send_field_array!(ctx, pressure_data, 1; tag=201)
-        println("[Alya mimic] Sent pressure data to Jexpresso")
-
-        # Receive dummy velocity from Jexpresso
-        velocity_data = zeros(10)
-        recv_field_array!(ctx, velocity_data, 1; tag=200)
-        println("[Alya mimic] Received velocity data from Jexpresso")
-        println("  Velocity range: $(minimum(velocity_data)) to $(maximum(velocity_data))")
-    end
+    # Small sleep to avoid busy-waiting
+    sleep(0.01)
 end
 
 if ctx.is_root
-    println("\n[Alya mimic] Simulation finished successfully")
+    println("\n[Alya mimic] Simulation loop ended")
 end
 
 # Cleanup
 finalize_coupling(ctx)
+
+# Don't call MPI.Finalize() - let Jexpresso finish first
+# In real coupling, both codes would coordinate their finalization
+if ctx.is_root
+    println("[Alya mimic] Waiting for final synchronization...")
+end
+MPI.Barrier(MPI.COMM_WORLD)
+
 MPI.Finalize()
 
 println("[Alya mimic, rank $world_rank] Done")
