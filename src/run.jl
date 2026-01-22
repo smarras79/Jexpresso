@@ -41,16 +41,35 @@ function parse_commandline()
         help = "Directoy that contains some user-defined cases"
         default = "CompEuler"
         required = false
-        
+
         "eqs_case"
         help = "case name in equations directory"
         default = "wave1d"
         required = false
-        
+
         "CI_MODE"
         help = "CI_MODE: true or false"
         default = "false"
         required = false
+
+        "--coupling"
+        help = "Enable MPI coupling mode"
+        action = :store_true
+
+        "--code-id"
+        help = "Code ID for coupling (1-indexed integer)"
+        arg_type = Int
+        default = 1
+
+        "--n-codes"
+        help = "Total number of coupled codes"
+        arg_type = Int
+        default = 1
+
+        "--code-name"
+        help = "Descriptive name for this code"
+        arg_type = String
+        default = "Jexpresso"
     end
 
     return parse_args(s)
@@ -69,7 +88,37 @@ parsed_args                = parse_commandline()
 parsed_equations           = string(parsed_args["eqs"])
 parsed_equations_case_name = string(parsed_args["eqs_case"])
 parsed_CI_mode             = string(parsed_args["CI_MODE"])
+parsed_coupling            = parsed_args["coupling"]
+parsed_code_id             = parsed_args["code-id"]
+parsed_n_codes             = parsed_args["n-codes"]
+parsed_code_name           = parsed_args["code-name"]
 driver_file                = string(dirname(@__DIR__()), "/problems/drivers.jl")
+
+#--------------------------------------------------------
+# Initialize coupling if enabled:
+#--------------------------------------------------------
+coupling_ctx = nothing
+if parsed_coupling
+    if rank == 0
+        @info "Initializing MPI coupling mode: code_id=$parsed_code_id, n_codes=$parsed_n_codes, name=$parsed_code_name"
+    end
+
+    coupling_ctx = JexpressoCoupling.initialize_coupling(
+        comm,
+        parsed_code_id,
+        parsed_n_codes;
+        code_name=parsed_code_name
+    )
+
+    # Use local communicator for Jexpresso's internal operations
+    comm = coupling_ctx.comm_local
+    rank = coupling_ctx.local_rank
+    nparts = coupling_ctx.local_size
+
+    if rank == 0
+        @info "Jexpresso running with $(nparts) local ranks (world_rank=$(coupling_ctx.world_rank))"
+    end
+end
 
 # Check if running under CI environment and set directory accordingly
 if parsed_CI_mode == "true"
@@ -150,11 +199,18 @@ end
 # use Metal (for apple) or CUDA (non apple) if we are on GPU
 #--------------------------------------------------------
 with_mpi() do distribute
-    
+
     driver(nparts,
-           distribute, 
+           distribute,
            inputs, # input parameters from src/user_input.jl
            OUTPUT_DIR,
            TFloat)
-    
+
+end
+
+#--------------------------------------------------------
+# Cleanup coupling if it was initialized:
+#--------------------------------------------------------
+if !isnothing(coupling_ctx)
+    JexpressoCoupling.finalize_coupling(coupling_ctx)
 end
