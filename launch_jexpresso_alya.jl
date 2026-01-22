@@ -106,6 +106,37 @@ else
     end
 
     # -----------------------------------------------------------------------
+    # CRITICAL: Initialize coupling on Alya side too!
+    # -----------------------------------------------------------------------
+    # Even if Alya isn't fully implemented yet, we need to initialize
+    # coupling so Alya ranks participate in MPI collective operations
+
+    # Load JexpressoCoupling module
+    include("src/mpi/JexpressoCoupling.jl")
+    using .JexpressoCoupling
+
+    # Initialize coupling for Alya
+    if world_rank == JEXPRESSO_RANKS
+        println("[Alya] Initializing coupling...")
+        flush(stdout)
+    end
+
+    alya_ctx = initialize_coupling(
+        MPI.COMM_WORLD,
+        2,  # code_id for Alya
+        2;  # n_codes
+        code_name="Alya"
+    )
+
+    if world_rank == JEXPRESSO_RANKS
+        println("[Alya] Coupling initialized successfully")
+        println("  Local size: $(alya_ctx.local_size)")
+        println("  World rank: $(alya_ctx.world_rank)")
+        println("  Is root: $(alya_ctx.is_root)")
+        flush(stdout)
+    end
+
+    # -----------------------------------------------------------------------
     # IMPLEMENT ALYA LAUNCH HERE
     # -----------------------------------------------------------------------
 
@@ -113,10 +144,8 @@ else
     # -----------------------------------------------------------------------
     # include("/path/to/alya/julia_wrapper.jl")
     # run_alya_coupled(
-    #     input_file = ALYA_INPUT_FILE,
-    #     code_id = 2,
-    #     n_codes = 2,
-    #     comm = MPI.COMM_WORLD
+    #     ctx = alya_ctx,  # Pass coupling context
+    #     input_file = ALYA_INPUT_FILE
     # )
 
     # Option 2: If you need to call Alya's Fortran/C functions via ccall
@@ -129,34 +158,36 @@ else
     # This allows testing Jexpresso side without Alya running
     if world_rank == JEXPRESSO_RANKS
         @warn """
-        Alya launch not implemented yet!
+        Alya solver not implemented yet!
 
-        To complete this launcher:
-        1. If Alya is a Julia package: uncomment Option 1 above
-        2. If Alya needs ccall interface: implement Option 2
-        3. If using MPMD mode: use the MPMD launch method instead
+        Coupling is initialized and working.
+        To complete this launcher, implement Alya's solver launch above.
 
-        Current behavior: Alya ranks will just wait and synchronize.
+        Current behavior: Alya ranks will synchronize and wait.
         """
     end
 
-    # Initialize Alya coupling (pseudo-code - adapt to your Alya interface)
-    # alya_coupling_init(code_id=2, n_codes=2, comm=MPI.COMM_WORLD)
-
-    # Example: Just synchronize to keep ranks alive
+    # Simulate Alya running (replace with actual Alya code)
     for i in 1:10
         if world_rank == JEXPRESSO_RANKS
-            println("[Alya] Checkpoint $i/10")
+            println("[Alya] Simulation step $i/10")
             flush(stdout)
         end
-        MPI.Barrier(MPI.COMM_WORLD)
-        sleep(1)
+
+        # Synchronize all codes
+        synchronize_coupling(alya_ctx)
+
+        # Simulate some work
+        sleep(0.5)
     end
 
     if world_rank == JEXPRESSO_RANKS
-        println("[Alya] Finished")
+        println("[Alya] Simulation finished")
         flush(stdout)
     end
+
+    # Cleanup coupling
+    finalize_coupling(alya_ctx)
 
     # Alya should handle its own MPI.Finalize()
     # Or call it here if Alya doesn't
