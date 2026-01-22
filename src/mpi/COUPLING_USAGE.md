@@ -17,8 +17,11 @@ The JexpressoCoupling module enables:
 Jexpresso now supports coupling mode via command-line flags:
 
 ```bash
+# Run Jexpresso in coupled mode (normal run)
+mpirun -np 4 julia --project=. run_jexpresso.jl CompEuler theta
+
 # Run Jexpresso in coupled mode
-mpirun -np 4 julia --project=. -L src/Jexpresso.jl -- \
+mpirun -np 4 julia --project=. run_jexpresso.jl \
     --coupling \
     --code-id 1 \
     --n-codes 2 \
@@ -34,41 +37,47 @@ mpirun -np 4 julia --project=. -L src/Jexpresso.jl -- \
 
 ### 2. Launching Multiple Coupled Codes
 
-**Option A: Separate mpirun with MPMD style**
+**Option A: MPMD style (Multiple Program Multiple Data)**
 ```bash
-# Launch Jexpresso and external code together
-mpirun -np 4 julia --project=. -L src/Jexpresso.jl -- \
+# Launch Jexpresso and external code together with MPI MPMD mode
+mpirun -np 4 julia --project=. run_jexpresso.jl \
     --coupling --code-id 1 --n-codes 2 --code-name "Jexpresso" \
     CompEuler theta : \
-    -np 4 ./external_code --coupling --code-id 2 --n-codes 2
+    -np 4 ./external_code --code-id 2 --n-codes 2
 ```
 
 **Option B: Single mpirun with rank splitting**
-```bash
-# Launch with 8 total ranks (split internally)
-# Ranks 0-3: Jexpresso
-# Ranks 4-7: External code
-mpirun -np 8 ./launch_script.sh
-```
 
-In your launch script, determine code_id based on rank:
+Create a launcher script (`launch_coupled.jl`):
 ```julia
+#!/usr/bin/env julia
 using MPI
+
 MPI.Init()
 world_rank = MPI.Comm_rank(MPI.COMM_WORLD)
+world_size = MPI.Comm_size(MPI.COMM_WORLD)
 
 # Split ranks: first half = code 1, second half = code 2
-code_id = (world_rank < 4) ? 1 : 2
+jexpresso_ranks = world_size ÷ 2
+code_id = (world_rank < jexpresso_ranks) ? 1 : 2
 
-# Then set ARGS appropriately before including Jexpresso.jl
 if code_id == 1
+    # Launch Jexpresso
     push!(empty!(ARGS), "--coupling", "--code-id", "1", "--n-codes", "2",
           "--code-name", "Jexpresso", "CompEuler", "theta")
-    include("path/to/Jexpresso.jl")
+    using Jexpresso
 else
     # Launch external code
-    run_external_code()
+    push!(empty!(ARGS), "--code-id", "2", "--n-codes", "2")
+    include("external_code_main.jl")
 end
+
+MPI.Finalize()
+```
+
+Then launch:
+```bash
+mpirun -np 8 julia --project=. launch_coupled.jl
 ```
 
 ### 3. Accessing the Coupling Context
