@@ -118,9 +118,10 @@ function jexpresso_main(comm::Union{MPI.Comm,Nothing}=nothing)
     #--------------------------------------------------------
     # Use Base.invokelatest to handle world age issue when dynamically loading functions
     Base.invokelatest(mod_inputs_print_welcome, rank)
-    inputs = Dict{}()
 
-    inputs = Base.invokelatest(user_inputs)
+    # inputs needs to be global because many functions throughout the codebase expect it
+    global inputs = Dict{}()
+    global inputs = Base.invokelatest(user_inputs)
     Base.invokelatest(mod_inputs_user_inputs!, inputs, rank)
 
     #--------------------------------------------------------
