@@ -78,7 +78,8 @@ if rank == 0
 end
 
 # ============================================================
-# SIMULATION LOOP - Runs in parallel with Fortran code
+# SIMULATION LOOP - Jexpresso runs independently from Fortran
+# NO collective operations during loop - each code runs at its own pace
 # ============================================================
 
 start_time = time()
@@ -92,16 +93,20 @@ while true
 
     time_step += 1
 
-    # Simulate work
+    # Simulate work (Jexpresso's own computation)
     sleep(1)
 
-    # Synchronize with all ranks (including Fortran ranks)
-    MPI.Barrier(world)
+    # NO MPI.Barrier here - let codes run independently
 
     if rank == 0
         println("[Jexpresso rank 0] Time step $time_step, elapsed: $(round(current_time, digits=2))s")
         flush(stdout)
     end
+
+    # Optional: Send/receive data to/from Fortran ranks using point-to-point
+    # Example: MPI.Send to rank 0 (Fortran root)
+    # Example: MPI.Recv from rank 0 (Fortran root)
+    # This allows asynchronous data exchange without blocking
 end
 
 # ============================================================

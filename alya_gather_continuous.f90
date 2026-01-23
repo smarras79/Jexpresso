@@ -73,7 +73,8 @@ program alya_gather_continuous
   end if
 
   ! ============================================================
-  ! SIMULATION LOOP - Both Alya and Jexpresso run in parallel
+  ! SIMULATION LOOP - Alya runs independently from Jexpresso
+  ! NO barriers during simulation - each code runs at its own pace
   ! ============================================================
 
   start_time = MPI_Wtime()
@@ -85,17 +86,21 @@ program alya_gather_continuous
 
     time_step = time_step + 1
 
-    ! Simulate work
+    ! Simulate work (Alya's own computation)
     call sleep(1)
 
-    ! Synchronize all ranks (including Julia ranks)
-    call MPI_Barrier(MPI_COMM_WORLD, ierr)
+    ! NO MPI_Barrier here - let Jexpresso run independently
 
     if (rank == 0) then
       print '(A,I0,A,F6.2,A)', "[Alya rank 0] Time step ", time_step, &
                                ", elapsed: ", current_time, "s"
       call flush(6)
     end if
+
+    ! Optional: Send/receive data to/from Jexpresso ranks using point-to-point
+    ! Example: MPI_Send to rank 2 (Jexpresso rank 0)
+    ! Example: MPI_Recv from rank 2 (Jexpresso rank 0)
+    ! This allows asynchronous data exchange without blocking
   end do
 
   ! ============================================================
