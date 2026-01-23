@@ -6,6 +6,7 @@ If you are interested in contributing, please get in touch.
 """
 module Jexpresso
 
+using QuadGK
 using MPI
 using KernelAbstractions
 using Revise
@@ -18,6 +19,7 @@ using ElasticArrays
 using Geodesy
 using InternedStrings
 using LinearAlgebra
+using LinearOperators
 using SpecialFunctions
 using StaticArrays
 using StaticArrays: SVector, MVector
@@ -55,6 +57,7 @@ using RRTMGP.RTE
 using RRTMGP.RTESolver
 import RRTMGP.Parameters.RRTMGPParameters
 using RRTMGP.ArtifactPaths
+using Serialization
 
 using UnicodePlots
 using Printf
@@ -131,7 +134,13 @@ include(joinpath("kernel", "operators", "rhs_laguerre.jl"))
 
 include(joinpath("kernel", "operators", "filter.jl"))
 
+include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
+
 include(joinpath( "kernel", "solvers", "Axb.jl"))
+
+include(joinpath("kernel", "operators", "build_rad_2d.jl"))
+
+include(joinpath("kernel", "operators", "build_rad_3d.jl"))
 
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 
