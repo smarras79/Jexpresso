@@ -36,12 +36,20 @@ lrank = MPI.Comm_rank(local_comm)
 lsize = MPI.Comm_size(local_comm)
 
 # --- Dynamic remote leader discovery via Allgather on WORLD ---
+#local_chars = Vector{UInt8}(lpad("JEXPRESSO", 128, ' '))
+#recv_buffer = (wrank == 0) ? Vector{UInt8}(undef, 128 * wsize) : nothing
+#MPI.Gather!(local_chars, recv_buffer, 0, world)
+#if wrank == 0
+#    # parse recv_buffer into chunks of 128 bytes per rank
+#end
 
-#local_chars = Vector{UInt8}(repeat("popo", 32))  # 128 bytes
-local_chars = Vector{UInt8}(rpad("popo", 128, ' '))
+local_chars = Vector{UInt8}(lpad("JEXPRESSO", 128, ' '))
 recv_buffer = nothing
 MPI.Gather!(local_chars, recv_buffer, 0, world)
 
+#local_chars  = Vector{UInt8}(lpad("JEXPRESSO", 128, ' '))
+#all_chars    = Vector{UInt8}(undef, 128 * wsize)
+#MPI.Allgather!(local_chars, all_chars, world)
 @info "CALL JEXPRESSO"
 
 # Set coupling mode to prevent auto-execution on module load

@@ -56,12 +56,13 @@ function driver(nparts,
         if rank == 0
             nsd[] = sem.mesh.nsd            
         end
-        
+        @info sizeof(comm)
         MPI.Bcast!(nsd, root=0, comm)
 
         println("nsd  $rank got ", nsd[])
     end
-    @mystop
+   # @mystop(" MYSTOP at drivers.jl L64")
+    
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
     #check_memory(" After initialize.")
