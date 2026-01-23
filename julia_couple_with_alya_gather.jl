@@ -33,18 +33,10 @@ flush(stdout)
 
 MPI.Gather!(send_buf, nothing, 0, world)
 
-println("[Julia rank $rank] MPI_Gather completed")
-flush(stdout)
-
-# Wait for all processes (including Fortran) before finalizing
-println("[Julia rank $rank] Waiting at barrier before finalize")
-flush(stdout)
-
-MPI.Barrier(world)
-
-println("[Julia rank $rank] Barrier completed, finalizing")
+println("[Julia rank $rank] MPI_Gather completed, finalizing")
 flush(stdout)
 
 MPI.Finalize()
+
 println("[Julia rank $rank] Done")
 flush(stdout)
