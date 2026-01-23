@@ -1276,16 +1276,10 @@ function DSS_global_mass!(SD, M, ip2gip, gip2owner, parts, npoin, gnpoin)
     
     #check_memory(" in sem_setup before setup_assembler.")
     pM = setup_assembler(SD, M, ip2gip, gip2owner)
-<<<<<<< HEAD
-    #check_memory(" in sem_setup after setup_assembler.")
-    
-    assemble_mpi!(M,pM)
-=======
    
     if pM == nothing return end
 
     @time assemble_mpi!(M,pM)
->>>>>>> 86107e1fad46d42b13f7b12e93b052748f6829ed
 
     return pM
     

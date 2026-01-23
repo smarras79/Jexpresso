@@ -238,30 +238,30 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # IMEX method
         #---------------------------------------------------------------------------
-        :method             => "multistep",
+        :method             => "RK",
         :delta              => 1,
-        :k                  => 2,
+        :k                  => 3,
 #        :coeff              => Dict(
 #                                   # fprward Euler
 #                                   :xi       => 1.,
 #                                   :alpha    => alpha_Euler,
 #                                   :beta     => beta_Euler,
 #                               ),
-        :coeff              => Dict(
-                                   # IMEX Multistep
-                                   :xi       => 2. / 3.,
-                                   :alpha    => alpha,
-                                   :beta     => beta,
-                               ),
 #        :coeff              => Dict(
- #                                  # IMEX RK
-  #                                 :A_RK        => A_RK,
-   #                                :b_RK        => b_RK,
-    #                               :c_RK        => c_RK,
-     #                              :A_RK_tilde  => A_RK_tilde,
-      #                             :b_RK_tilde  => b_RK_tilde,
-       #                            :c_RK_tilde  => c_RK_tilde,
-        #                       ),
+#                                   # IMEX Multistep
+#                                   :xi       => 2. / 3.,
+#                                   :alpha    => alpha,
+#                                   :beta     => beta,
+#                               ),
+        :coeff              => Dict(
+                                   # IMEX RK
+                                   :A_RK        => A_RK,
+                                   :b_RK        => b_RK,
+                                   :c_RK        => c_RK,
+                                   :A_RK_tilde  => A_RK_tilde,
+                                   :b_RK_tilde  => b_RK_tilde,
+                                   :c_RK_tilde  => c_RK_tilde,
+                               ),
         :lsolver            => nothing,#"GMRES",#LinearSolve.KrylovJL_GMRES(),
         :sp                 => solver_par,
         :prec_sp            => prec_sp,
