@@ -2,10 +2,17 @@ program unitt_alya_with_another_code
   ! Fortran code using MPI_Gather on MPI_COMM_WORLD
   ! Couples with Julia code in the same MPI world
 
+#ifdef USEMPIF08
+  use mpi_f08
+  implicit none
+#define MY_MPI_COMM      type(MPI_Comm)
+#else
   implicit none
   include 'mpif.h'
+#define MY_MPI_COMM      integer(4)
+#endif
 
-  integer(4)             :: PAR_COMM_FINAL
+  MY_MPI_COMM            :: PAR_COMM_FINAL
   integer(4)             :: ierr, rank, size
   character(128)         :: app_name
   character(128), allocatable :: app_dumm(:)
