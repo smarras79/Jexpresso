@@ -61,7 +61,7 @@ function driver(nparts,
 
         println("nsd  $rank got ", nsd[])
     end
-    
+    @mystop
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
     #check_memory(" After initialize.")
