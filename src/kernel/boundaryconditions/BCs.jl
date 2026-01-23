@@ -332,7 +332,7 @@ function build_custom_bcs_neumann!(::NSD_2D, t,
         DSS_segment_integral!(S_flux, S_face, M_edge_inv, nedges_bdy, ngl, connijk, poin_in_bdy_edge, bdy_edge_in_elem)
         
         for ieq = 1:neqs
-            RHS[:, ieq] .+= S_flux[:,ieq] ./ M_inv[:]
+            RHS[:, ieq] .+= S_flux[:,ieq]
         end
     
     end
