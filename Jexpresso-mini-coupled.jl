@@ -34,7 +34,7 @@ MPI.Allgather!(Ref(my), world_appids, world)   # each rank contributes 1 Int32
 remote_leader_world = -1
 for i in 1:wsize
     if world_appids[i] != my
-        remote_leader_world = i - 1  # Julia arrays 1-based, ranks 0-based
+        global remote_leader_world = i - 1  # Julia arrays 1-based, ranks 0-based
         break
     end
 end
