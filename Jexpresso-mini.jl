@@ -8,6 +8,8 @@
 
 using MPI
 
+include("./src/mpi/coupling_helpers.jl")
+
 println("Jexpresso-mini starting...")
 
 MPI.Init()
