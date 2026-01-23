@@ -39,7 +39,28 @@ julia --project=. src/Jexpresso.jl <equations> <case> <CI_mode> --gather-couplin
 
 ### Example 1: Testing Coupling Only (Alya unit test)
 
-When your external code exits immediately after the gather (e.g., unit test), use `--coupling-test-only`:
+When your external code exits immediately after the gather (e.g., unit test), use the **minimal coupling test**:
+
+```bash
+mpirun --tag-output \
+    -np 2 ./alya/Alya.x : \
+    -np 2 julia --project=. coupling_test_minimal.jl --code-name "Jexpresso"
+```
+
+This lightweight script:
+1. Participates in `MPI_Comm_split`
+2. Sends application name via `MPI_Gather`
+3. Exits cleanly without loading Jexpresso simulation code
+
+**Why use this instead of `--coupling-test-only`?**
+- Avoids loading heavy Jexpresso modules (plotting, physics solvers, etc.)
+- Prevents package loading issues in MPI environment
+- Much faster for quick coupling tests
+- Use this when testing with external code unit tests that exit quickly
+
+### Example 2: Testing with Partial Jexpresso Initialization
+
+If you need to test that coupling works after Jexpresso initializes but before running simulation:
 
 ```bash
 mpirun --tag-output \
@@ -48,16 +69,11 @@ mpirun --tag-output \
         --gather-coupling --coupling-test-only --code-name "Jexpresso"
 ```
 
-This makes Jexpresso:
-1. Participate in `MPI_Comm_split`
-2. Send its name via `MPI_Gather`
-3. Exit cleanly without running simulation
+**Note**: This loads all Jexpresso modules (slower) but exits before running simulation. Use Example 1 (minimal test) unless you specifically need to verify module loading.
 
-This prevents hanging when the external code finalizes MPI early.
+### Example 3: Full Coupled Simulation
 
-### Example 2: Full Coupled Simulation
-
-When your external code continues running (full Alya simulation), omit `--coupling-test-only`:
+When your external code continues running (full Alya simulation):
 
 ```bash
 mpirun --tag-output \
