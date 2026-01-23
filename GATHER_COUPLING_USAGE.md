@@ -35,18 +35,42 @@ julia --project=. src/Jexpresso.jl <equations> <case> <CI_mode> --gather-couplin
 
 - `--gather-coupling`: Enable gather-based coupling mode (required)
 - `--code-name NAME`: Name to send during coupling (default: "Jexpresso")
+- `--coupling-test-only`: Exit after coupling initialization without running simulation (optional, for testing)
 
-### Example with Alya
+### Example 1: Testing Coupling Only (Alya unit test)
+
+When your external code exits immediately after the gather (e.g., unit test), use `--coupling-test-only`:
 
 ```bash
 mpirun --tag-output \
     -np 2 ./alya/Alya.x : \
-    -np 2 julia --project=. src/Jexpresso.jl CompEuler wave1d false --gather-coupling --code-name "Jexpresso"
+    -np 2 julia --project=. src/Jexpresso.jl CompEuler wave1d false \
+        --gather-coupling --coupling-test-only --code-name "Jexpresso"
+```
+
+This makes Jexpresso:
+1. Participate in `MPI_Comm_split`
+2. Send its name via `MPI_Gather`
+3. Exit cleanly without running simulation
+
+This prevents hanging when the external code finalizes MPI early.
+
+### Example 2: Full Coupled Simulation
+
+When your external code continues running (full Alya simulation), omit `--coupling-test-only`:
+
+```bash
+mpirun --tag-output \
+    -np 2 ./alya/Alya.x : \
+    -np 2 julia --project=. src/Jexpresso.jl CompEuler wave1d false \
+        --gather-coupling --code-name "Jexpresso"
 ```
 
 This launches:
-- Ranks 0-1: Alya
-- Ranks 2-3: Jexpresso
+- Ranks 0-1: Alya (runs full simulation)
+- Ranks 2-3: Jexpresso (runs full simulation)
+
+**Important**: Both codes must call `MPI_Finalize` at approximately the same time to avoid hanging.
 
 ## What Happens During Initialization
 
@@ -143,6 +167,20 @@ mpirun --tag-output \
 ```
 
 ## Troubleshooting
+
+### Hang after coupling initialization
+
+**Symptom**: Jexpresso completes field initialization but then hangs
+
+**Cause**: External code called `MPI_Finalize` and exited while Jexpresso continues running
+
+**Solution**: Use `--coupling-test-only` flag:
+```bash
+mpirun -np 2 ./alya/Alya.x : \
+    -np 2 julia src/Jexpresso.jl ... --gather-coupling --coupling-test-only
+```
+
+This makes Jexpresso exit after coupling initialization, matching the external code's behavior.
 
 ### Deadlock at MPI_Comm_split
 
