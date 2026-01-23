@@ -211,6 +211,4 @@ include("./run.jl")
 
 export @timers
 
-# Run the test
-# test_create_2d_projection_matrices_numa2d()
 end

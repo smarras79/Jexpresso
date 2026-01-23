@@ -50,6 +50,16 @@ ENV["JEXPRESSO_COUPLING_MODE"] = "true"
 # Set command line arguments for Jexpresso
 push!(empty!(ARGS), "CompEuler", "wave1d")
 
+#@info " AAAA ",
+#@info " lrank: " ,  lrank , " Comm_size: ", MPI.Comm_size(local_comm)
+
+# TO DO:
+# PASS local_comm as global var to all functions that use MPI.COMM_WORLD
+#
+
+MPI.COMM_WORLD = local_comm
+@info MPI.COMM_WORLD
+
 # Load Jexpresso module (setup doesn't run yet because of JEXPRESSO_COUPLING_MODE)
 include("./src/Jexpresso.jl")
 
@@ -58,5 +68,7 @@ Jexpresso.set_mpi_comm(local_comm)
 
 # Now run Jexpresso with the configured communicator
 Jexpresso.jexpresso_main()
+
+
 
 MPI.Finalize()

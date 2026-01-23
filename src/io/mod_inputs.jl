@@ -209,6 +209,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
              inputs[:z_transition_end] = 2200.0
         end
     end
+
+    if(!haskey(inputs, :lwith_alya))
+        inputs[:lwith_alya] = false
+    end
     
     if(!haskey(inputs,:lstretch))
         inputs[:lstretch] = false

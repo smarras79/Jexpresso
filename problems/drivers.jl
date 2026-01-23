@@ -7,6 +7,11 @@ function driver(nparts,
     comm  = distribute.comm
     rank = MPI.Comm_rank(comm)
     
+   # @info MPI.COMM_WORLD
+   # @info " DRIVERS ", rank
+   # 
+   #  @info " rank: " ,  rank , " Comm_size: ", MPI.Comm_size(comm)
+    
     if inputs[:lwarmup] == true
         if rank == 0
             println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
@@ -41,13 +46,29 @@ function driver(nparts,
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
     
+    #
+    # Broadcast for coupling:
+    #
+    inputs[:lwith_alya] = true #for now hard coded
+    if inputs[:lwith_alya]
+        
+        nsd  = Ref{Int64}(0)
+        if rank == 0
+            nsd[] = sem.mesh.nsd            
+        end
+        
+        MPI.Bcast!(nsd, root=0, comm)
+
+        println("nsd  $rank got ", nsd[])
+    end
+    
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
     #check_memory(" After initialize.")
     # println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
     # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
     # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
-
+    
     if (inputs[:lamr] == true)
         amr_freq = inputs[:amr_freq]
         Δt_amr   = amr_freq * inputs[:Δt]
