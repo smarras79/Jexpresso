@@ -50,11 +50,13 @@ ENV["JEXPRESSO_COUPLING_MODE"] = "true"
 # Set command line arguments for Jexpresso
 push!(empty!(ARGS), "CompEuler", "wave1d")
 
-# Load Jexpresso module (won't auto-execute due to JEXPRESSO_COUPLING_MODE)
+# Load Jexpresso module (setup doesn't run yet because of JEXPRESSO_COUPLING_MODE)
 include("./src/Jexpresso.jl")
 
-# Call Jexpresso main with the local communicator
-# This ensures Jexpresso uses only its own ranks, not the global world
-Jexpresso.jexpresso_main(local_comm)
+# Set the custom local communicator
+Jexpresso.set_mpi_comm(local_comm)
+
+# Now run Jexpresso with the configured communicator
+Jexpresso.jexpresso_main()
 
 MPI.Finalize()

@@ -16,7 +16,7 @@ using ArgParse
 #    CASE_NAME is the name of the user's subdirectory $JEXPRESSO/problems/BENCHMARK/CASE_NAME (e.g. theta)
 #
 # Ex. To run the rising thermal bubble benchmark: $JEXPRESSO/problems/CompEuler/theta
-# 
+#
 #  julia > push!(empty!(ARGS), "CompEuler", "theta");
 #  julia > include(./src/Jexpresso.jl)
 #
@@ -41,12 +41,12 @@ function parse_commandline()
         help = "Directoy that contains some user-defined cases"
         default = "CompEuler"
         required = false
-        
+
         "eqs_case"
         help = "case name in equations directory"
         default = "wave1d"
         required = false
-        
+
         "CI_MODE"
         help = "CI_MODE: true or false"
         default = "false"
@@ -56,36 +56,37 @@ function parse_commandline()
     return parse_args(s)
 end
 
-
 #--------------------------------------------------------
-# Main execution function that can be called with custom communicator
-# For coupling mode: jexpresso_main(local_comm)
-# For standalone mode: jexpresso_main() or just include the module
+# Main execution function
+# For coupling mode: call after setting communicator with set_mpi_comm()
+# For standalone mode: called automatically at module load
+#
+# NOTE: This must be a function (not top-level code) because:
+# 1. Setup code needs to use the custom communicator (for MPI.bcast, etc)
+# 2. The communicator can only be set AFTER the module is loaded
+# 3. Therefore setup must be delayed until after module load
+# 4. This requires wrapping setup in a function
+# 5. Many functions expect certain variables as module globals (legacy design)
+# 6. Hence the 'global' declarations - these make local variables into module globals
 #--------------------------------------------------------
-function jexpresso_main(comm::Union{MPI.Comm,Nothing}=nothing)
+function jexpresso_main()
 
     # Initialize MPI if not already done
     if !MPI.Initialized()
         MPI.Init()
     end
 
-    # Use provided communicator or default to COMM_WORLD
-    if comm === nothing
-        comm = MPI.COMM_WORLD
-    else
-        # Set the global communicator for coupling mode
-        set_mpi_comm(comm)
-    end
-
+    # Get communicator - custom one if set (coupling mode), otherwise COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     nparts = MPI.Comm_size(comm)
 
     #--------------------------------------------------------
     # Parse command line args:
     #--------------------------------------------------------
-    parsed_args                = parse_commandline()
+    parsed_args = parse_commandline()
 
-    # These need to be global because mod_inputs_user_inputs! and other functions expect them
+    # These must be global because other functions access them by name (legacy design)
     global parsed_equations           = string(parsed_args["eqs"])
     global parsed_equations_case_name = string(parsed_args["eqs_case"])
     global parsed_CI_mode             = string(parsed_args["CI_MODE"])
@@ -98,6 +99,7 @@ function jexpresso_main(comm::Union{MPI.Comm,Nothing}=nothing)
         case_name_dir = string(dirname(@__DIR__()), "/problems", "/", parsed_equations, "/", parsed_equations_case_name)
     end
 
+    # These must be global because other functions access them by name (legacy design)
     global user_input_file      = string(case_name_dir, "/user_inputs.jl")
     global user_flux_file       = string(case_name_dir, "/user_flux.jl")
     global user_source_file     = string(case_name_dir, "/user_source.jl")
@@ -113,15 +115,16 @@ function jexpresso_main(comm::Union{MPI.Comm,Nothing}=nothing)
     include(user_bc_file)
     include(user_initialize_file)
     include(user_primitives_file)
+
     #--------------------------------------------------------
     # Read User Inputs:
     #--------------------------------------------------------
     # Use Base.invokelatest to handle world age issue when dynamically loading functions
     Base.invokelatest(mod_inputs_print_welcome, rank)
 
-    # inputs needs to be global because many functions throughout the codebase expect it
+    # inputs must be global because many functions access it by name (legacy design)
     global inputs = Dict{}()
-    global inputs = Base.invokelatest(user_inputs)
+    inputs = Base.invokelatest(user_inputs)
     Base.invokelatest(mod_inputs_user_inputs!, inputs, rank)
 
     #--------------------------------------------------------
@@ -171,7 +174,7 @@ function jexpresso_main(comm::Union{MPI.Comm,Nothing}=nothing)
     #--------------------------------------------------------
     # use Metal (for apple) or CUDA (non apple) if we are on GPU
     #--------------------------------------------------------
-    # Use Base.invokelatest to handle world age issue for dynamically loaded driver function
+    # Use Base.invokelatest for dynamically loaded driver function
     with_mpi() do distribute
 
         Base.invokelatest(driver,
