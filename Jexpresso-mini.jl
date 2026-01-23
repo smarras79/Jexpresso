@@ -36,17 +36,23 @@ println("  Local rank: $(ctx.local_rank) / $(ctx.local_size)")
 println("  World rank: $(ctx.world_rank)")
 println("  Is root: $(ctx.is_root)")
 
-# Test: Exchange application names
+# Test: Exchange application names (only if partner exists)
 if ctx.is_root
-    println("\n[Jexpresso-mini] Testing name exchange...")
+    if ctx.n_codes > 1 && length(ctx.root_ranks) > 1
+        println("\n[Jexpresso-mini] Testing name exchange...")
 
-    # Send "Jexpresso" to Alya
-    my_name = "Jexpresso"
-    partner_name = exchange_app_names!(ctx, my_name, 2; max_length=128)
+        # Send "Jexpresso" to Alya
+        my_name = "Jexpresso"
+        partner_name = exchange_app_names!(ctx, my_name, 2; max_length=128)
 
-    println("[Jexpresso-mini] Exchanged names successfully!")
-    println("  My name: $my_name")
-    println("  Partner name: $partner_name")
+        println("[Jexpresso-mini] Exchanged names successfully!")
+        println("  My name: $my_name")
+        println("  Partner name: $partner_name")
+    else
+        println("\n[Jexpresso-mini] Skipping name exchange (no partner code)")
+        println("  This is expected when running standalone")
+        println("  Run with MPMD to test actual coupling")
+    end
 end
 
 # Simulate some work with synchronization
