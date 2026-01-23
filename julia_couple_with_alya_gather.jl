@@ -18,6 +18,17 @@ size = MPI.Comm_size(world)
 println("[Julia rank $rank] World size: $size")
 flush(stdout)
 
+# CRITICAL: Participate in MPI_Comm_split (collective operation)
+# Fortran calls: MPI_COMM_SPLIT(MPI_COMM_WORLD, MPI_UNDEFINED, rank, PAR_COMM_FINAL, ierr)
+# We must participate with the same MPI_UNDEFINED color
+println("[Julia rank $rank] Participating in MPI_Comm_split")
+flush(stdout)
+
+par_comm_final = MPI.Comm_split(world, MPI.UNDEFINED, rank)
+
+println("[Julia rank $rank] MPI_Comm_split completed (created NULL communicator)")
+flush(stdout)
+
 # Prepare application name (128 characters, space-padded) as Int8 (MPI_CHARACTER compatible)
 app_name_str = "JEXPRESSO"
 send_buf = fill(Int8(' '), 128)
