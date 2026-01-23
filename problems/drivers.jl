@@ -51,6 +51,8 @@ function driver(nparts,
     #
     inputs[:lwith_alya] = true #for now hard coded
     if inputs[:lwith_alya]
+
+        @info "BROADCASTING  nsd to Alya: "
         
         nsd  = Ref{Int64}(0)
         if rank == 0
@@ -60,6 +62,9 @@ function driver(nparts,
         MPI.Bcast!(nsd, root=0, comm)
 
         println("nsd  $rank got ", nsd[])
+
+        @info "BROADCASTING  nsd to Alya: ... END"
+        
     end
    # @mystop(" MYSTOP at drivers.jl L64")
     
