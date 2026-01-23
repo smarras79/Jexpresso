@@ -61,12 +61,15 @@ function user_inputs()
     # Polynomial order
     nop = 4
 
+    # Time step
+    Δt = 0.02
+
     # Solver parameters
     solver_par = Dict(:restart  => true,
                       :memory   => 10,
                       :verbose  => 1,
-                      :atol     => 1.e-10,
-                      :rtol     => 1.e-10,
+                      :atol     => 1.e-06,
+                      :rtol     => 1.e-06,
                       :itmax    => 100,
                       :prec     => SmoothedAggregationPreconBuilder()
                       )
@@ -165,16 +168,16 @@ function user_inputs()
 
         return L
     end
-    
+
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(), #SSPRK54(),
         #:Δt                   => 0.02,
-        :Δt                   => 0.4,
+        :Δt                   => 0.02,
         :tinit                => 0.0,
-        :tend                 => 1000.0,
+        :tend                 => 100.0,
         :diagnostics_at_times => (0:100:1000),
         :case                 => "rtb",
         :lsource              => true, 
@@ -230,20 +233,20 @@ function user_inputs()
         # IMEX method
         #---------------------------------------------------------------------------
         :method             => "multistep",
-        :delta              => 0,
-        :k                  => 1,
-        :coeff              => Dict(
-                                   # forward Euler
-                                   :xi       => 1.,
-                                   :alpha    => alpha_Euler,
-                                   :beta     => beta_Euler,
-                               ),
+        :delta              => 1,
+        :k                  => 2,
 #        :coeff              => Dict(
-#                                   # IMEX Multistep
-#                                   :xi       => 2. / 3.,
-#                                   :alpha    => alpha,
-#                                   :beta     => beta,
+#                                   # forward Euler
+#                                   :xi       => 1.,
+#                                   :alpha    => alpha_Euler,
+#                                   :beta     => beta_Euler,
 #                               ),
+        :coeff              => Dict(
+                                   # IMEX Multistep
+                                   :xi       => 2. / 3.,
+                                   :alpha    => alpha,
+                                   :beta     => beta,
+                               ),
 #        :coeff              => Dict(
 #                                   # IMEX RK
 #                                   :A_RK        => A_RK,
