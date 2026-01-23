@@ -16,7 +16,7 @@ program unitt_alya_with_another_code
   character(128), allocatable :: app_dumm(:) 
   
   ! Initialize MPI
-  app_name = 'OTRO5'
+  app_name = 'Jexpresso'
   call MPI_Init(ierr)
   call MPI_COMM_RANK(MPI_COMM_WORLD, rank, ierr)
   call MPI_COMM_SIZE(MPI_COMM_WORLD, size, ierr) ! Get total number of procs
