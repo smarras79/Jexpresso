@@ -20,11 +20,12 @@ flush(stdout)
 
 # CRITICAL: Participate in MPI_Comm_split (collective operation)
 # Fortran calls: MPI_COMM_SPLIT(MPI_COMM_WORLD, MPI_UNDEFINED, rank, PAR_COMM_FINAL, ierr)
-# We must participate with the same MPI_UNDEFINED color
+# We must participate with the same MPI_UNDEFINED color (-32766 in MPI standard)
 println("[Julia rank $rank] Participating in MPI_Comm_split")
 flush(stdout)
 
-par_comm_final = MPI.Comm_split(world, MPI.UNDEFINED, rank)
+const MPI_UNDEFINED = Int32(-32766)
+par_comm_final = MPI.Comm_split(world, MPI_UNDEFINED, rank)
 
 println("[Julia rank $rank] MPI_Comm_split completed (created NULL communicator)")
 flush(stdout)
