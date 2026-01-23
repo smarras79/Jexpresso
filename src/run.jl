@@ -114,11 +114,12 @@ function jexpresso_main(comm::Union{MPI.Comm,Nothing}=nothing)
     #--------------------------------------------------------
     # Read User Inputs:
     #--------------------------------------------------------
-    mod_inputs_print_welcome(rank)
+    # Use Base.invokelatest to handle world age issue when dynamically loading functions
+    Base.invokelatest(mod_inputs_print_welcome, rank)
     inputs = Dict{}()
 
-    inputs = user_inputs()
-    mod_inputs_user_inputs!(inputs, rank)
+    inputs = Base.invokelatest(user_inputs)
+    Base.invokelatest(mod_inputs_user_inputs!, inputs, rank)
 
     #--------------------------------------------------------
     # Create output directory if it doesn't exist:
@@ -167,13 +168,15 @@ function jexpresso_main(comm::Union{MPI.Comm,Nothing}=nothing)
     #--------------------------------------------------------
     # use Metal (for apple) or CUDA (non apple) if we are on GPU
     #--------------------------------------------------------
+    # Use Base.invokelatest to handle world age issue for dynamically loaded driver function
     with_mpi() do distribute
 
-        driver(nparts,
-               distribute,
-               inputs, # input parameters from src/user_input.jl
-               OUTPUT_DIR,
-               TFloat)
+        Base.invokelatest(driver,
+                         nparts,
+                         distribute,
+                         inputs, # input parameters from src/user_input.jl
+                         OUTPUT_DIR,
+                         TFloat)
 
     end
 end
