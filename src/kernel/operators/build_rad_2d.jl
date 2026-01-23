@@ -178,7 +178,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         sizehint!(I_vec, Int64(round(max_entries*0.0001)))
         sizehint!(J_vec, Int64(round(max_entries*0.0001)))
         sizehint!(V_vec, Int64(round(max_entries*0.0001)))
-
+        
         for ip=1:npoin_ang_total
             val = 1/M[ip,ip]
             push!(I_vec, ip)
@@ -205,12 +205,16 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         @info maximum(LHS), minimum(LHS)
         @info maximum(M), minimum(M)
         A = sparse(M_inv*LHS)
+        #=x = real.(eigvals(Array(LHS)))
+        y = imag.(eigvals(Array(LHS)))
+        display(Makie.scatter(x, y, label="e-values"))=#
         
         #M_inv = nothing
         #LHS = nothing
         GC.gc()
         ref = zeros(TFloat, npoin_ang_total)
         RHS = zeros(TFloat, npoin_ang_total)
+        BDY = zeros(TFloat, npoin_ang_total)
     end
     nc_rows = zeros(Int,1,1)
     A_rows = rowvals(A)
@@ -331,12 +335,19 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                     end
                                     if (cos(θ) * (nx[iedge,edge_i]+nx[iedge_found,edge_found_i]) + sin(θ)*(ny[iedge,edge_i]+ny[iedge_found,edge_found_i]) < 0.0) 
                                         if (gip2owner_extra[ip_g] == rank)
-                                            RHS[ip_g] = user_rad_bc(x,y,θ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
+                                            bc_value = user_rad_bc(x,y,θ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
+                                            BDY .-= A[:, ip_g] .* bc_value
+                                            A[:, ip_g] .= 0.0
+                                            BDY[ip_g] = bc_value#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
                                             A[ip_g,:] .= 0.0
                                             A[ip_g,ip_g] = 1.0
                                             dropzeros!(A)
                                             applied = true
                                         else
+                                            bc_value = user_rad_bc(x,y,θ)
+                                            BDY .-= A[:, ip_g] .* bc_value
+                                            A[:, ip_g] .= 0.0
+                                            BDY[ip_g] = 0.0
                                             A[ip_g,:] .= 0.0
                                             dropzeros!(A)
                                             applied = true
@@ -345,12 +356,19 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                     end
                                 elseif (cos(θ) * nx[iedge,edge_i] + sin(θ)*ny[iedge,edge_i] < 0.0)
                                     if (gip2owner_extra[ip_g] == rank)
-                                        RHS[ip_g] = user_rad_bc(x,y,θ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
+                                        bc_value = user_rad_bc(x,y,θ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
+                                        BDY .-= A[:, ip_g] .* bc_value
+                                        A[:, ip_g] .= 0.0
+                                        BDY[ip_g] = bc_value
                                         A[ip_g,:] .= 0.0
                                         A[ip_g,ip_g] = 1.0
                                         dropzeros!(A)
                                         applied = true
                                     else
+                                        bc_value = user_rad_bc(x,y,θ)
+                                        BDY .-= A[:, ip_g] .* bc_value
+                                        A[:, ip_g] .= 0.0
+                                        BDY[ip_g] = 0.0
                                         A[ip_g,:] .= 0.0
                                         dropzeros!(A)
                                         applied = true
@@ -373,7 +391,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
 
-    B = RHS
+    B = RHS + BDY
     
     if (inputs[:adaptive_extra_meshes]) 
         BDY_free = BDY[1:(n_spa - n_non_global_nodes)]
@@ -436,7 +454,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     @info "RHS max/min"
     @info maximum(B), minimum(B)
     #@info maximum(U_red_proj), minimum(U_red_proj)
-    @info minimum(A[2865,:]), minimum(A[:,2865]), RHS[2865]
+
     #x = real.(eigvals(Array(A)))
     #y = imag.(eigvals(Array(A)))
     #display(Makie.scatter(x, y, label="e-values"))

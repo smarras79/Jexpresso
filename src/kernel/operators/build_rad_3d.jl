@@ -121,7 +121,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 mesh.ip2gip, mesh.gip2owner, mesh, connijk_spa,
                 extra_meshes_coords, extra_meshes_connijk,
                 extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                n_spa, n_non_global_nodes
+                n_spa, n_non_global_nodes, nc_non_global_nodes
                 )
             @info maximum(ip2gip_spa), rank
             if rank == 0
@@ -227,6 +227,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         M_inv = nothing
         LHS = nothing
         GC.gc()
+        BDY = zeros(TFloat, npoin_ang_total,1)
         RHS = zeros(TFloat, npoin_ang_total,1)
         ref = zeros(TFloat, npoin_ang_total,1)
     end
@@ -412,11 +413,16 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                         #@info nx[iface,face_i,face_j], ny[iface,face_i,face_j], nz[iface,face_i,face_j], x, y, z
                                         if (prodx + prody + prodz < 0)
                                             if (gip2owner_extra[ip_g] == rank)
-                                                RHS[ip_g] = user_rad_bc(x,y,z,θ,ϕ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
+                                                BDY[ip_g] = user_rad_bc(x,y,z,θ,ϕ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
+                                                push!(bdy_nodes, ip_g)
+                                                push!(bdy_values, BDY[ip_g])
+                                            else
+                                                BDY[ip_g] = user_rad_bc(x,y,z,θ,ϕ)
+                                                push!(bdy_nodes, ip_g)
+                                                push!(bdy_values, 0.0)
                                             end
                                             applied = true
-                                            push!(bdy_nodes, ip_g)
-                                            push!(bdy_values, RHS[ip_g])
+                                            
                                         end
                                         if (applied == false)
                                             if (gip2owner_extra[ip_g] == rank)
@@ -437,6 +443,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
     end
     B = RHS
+
     I_orig, J_orig, V_orig = findnz(A)
     
     # Build modifications in COO format
@@ -450,6 +457,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             # This row should become identity
             if i == j
                 # Keep diagonal, but set to 1
+
                 if (gip2owner_extra[i] == rank)
                     push!(I_mod, i)
                     push!(J_mod, j)
@@ -457,7 +465,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 else
                     push!(I_mod, i)
                     push!(J_mod, j)
-                    push!(V_mod, -v)  
+                    push!(V_mod, -v) 
+                    
                 end
             else
                 # Zero out off-diagonal
@@ -466,11 +475,27 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 push!(J_mod, j)
                 push!(V_mod, -v)  # Correction to make it 0
             end
+        elseif j in boundary_set
+            # For symmetric elimination: zero out column and transfer to RHS
+            # This is the key addition for symmetry
+            if i != j  # Don't touch diagonal elements of boundary nodes
+               # Modify RHS to account for known boundary value
+                
+                RHS[i] -= v * BDY[j]
+                
+                # Zero out this column entry
+                push!(I_mod, i)
+                push!(J_mod, j)
+                push!(V_mod, -v)
+            end
         end
     end
+
+    
     @info size(I_mod), size(J_mod), size(V_mod)
     @info maximum(J_mod), minimum(J_mod)
-    existing_diag = Set{Int}()
+    
+    #=existing_diag = Set{Int}()
     for (i, j) in zip(I_orig, J_orig)
         if i == j && i in boundary_set
             push!(existing_diag, i)
@@ -484,7 +509,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             push!(J_mod, boundary_node)
             push!(V_mod, 1.0)
         end
-    end
+    end=#
+
     @info size(I_mod), size(J_mod), size(V_mod)
     @info maximum(J_mod), minimum(J_mod)
     
@@ -503,6 +529,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         end
         #@info maximum(abs.(RHS_red-U_red_proj))
         B = RHS_red
+    else
+        @time for boundary_node in bdy_nodes
+            RHS[boundary_node] = boundary_dict[boundary_node]
+        end
+        B = RHS
     end
     
 
@@ -516,6 +547,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     #@time solution = As \ B
     
     @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM)
+
     @info "done radiation solved"
     @info maximum(solution), minimum(solution)
     @info "dof", npoin_ang_total

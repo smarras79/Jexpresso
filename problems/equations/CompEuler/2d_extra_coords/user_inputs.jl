@@ -37,7 +37,7 @@ function user_inputs()
         :extra_dimensions    => 1,
         :adaptive_extra_meshes => false,
         :extra_dimensions_order => 4,
-        :extra_dimensions_nelemx => 8,
+        :extra_dimensions_nelemx => 4,
         #:extra_dimensions_nelemy => 4,
         #---------------------------------------------------------------------------
         # Filter parameters

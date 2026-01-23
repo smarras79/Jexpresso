@@ -228,7 +228,7 @@ function setup_global_numbering_adaptive_angular_scalable(
     ip2gip, gip2owner, mesh, connijk_spa,
     extra_meshes_coords, extra_meshes_connijk,
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
-    n_spa, n_non_global_nodes
+    n_spa, n_non_global_nodes, nc_non_global_nodes,
 )
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
@@ -238,12 +238,24 @@ function setup_global_numbering_adaptive_angular_scalable(
     ngl = mesh.ngl
 
     # =========================================================================
-    # PHASE 1: Build local unique signatures
+    # PHASE 0: Create hanging node lookup for fast checks
     # =========================================================================
     
-    local_points = Dict{NTuple{3,Float64}, Int}()
-    signature_list = NTuple{3,Float64}[]
+    hanging_node_set = Set{Int}(nc_non_global_nodes)
+    n_free_local = n_spa - n_non_global_nodes
     
+    @info "[Rank $rank] Local DOFs: $n_spa (Free: $n_free_local, Hanging: $n_non_global_nodes)"
+    
+    # =========================================================================
+    # PHASE 1: Build local unique signatures (separated by type)
+    # =========================================================================
+    
+    local_free_points = Dict{NTuple{3,Float64}, Int}()
+    local_hanging_points = Dict{NTuple{3,Float64}, Int}()
+    
+    free_signature_list = NTuple{3,Float64}[]
+    hanging_signature_list = NTuple{3,Float64}[]
+
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
             ip = mesh.connijk[iel, i, j, k]
@@ -259,19 +271,33 @@ function setup_global_numbering_adaptive_angular_scalable(
                         
                         sig = (Float64(gip), round(θ, digits=12), round(ϕ, digits=12))
                         
-                        if !haskey(local_points, sig)
-                            local_points[sig] = ip_spa
-                            push!(signature_list, sig)
+                        # Separate free and hanging nodes
+                        is_hanging = ip_spa in hanging_node_set
+
+                        if is_hanging
+                            if !haskey(local_hanging_points, sig)
+                                local_hanging_points[sig] = ip_spa
+                                push!(hanging_signature_list, sig)
+                            end
+                        else
+                            if !haskey(local_free_points, sig)
+                                local_free_points[sig] = ip_spa
+                                push!(free_signature_list, sig)
+                            end
                         end
                     end
                 end
             end
         end
     end
-    sort!(signature_list)
-    n_local = length(signature_list)
+    sort!(free_signature_list)
+    sort!(hanging_signature_list)
     
-    @info "[Rank $rank] Local unique points: $n_local"
+    n_local_free = length(free_signature_list)
+    n_local_hanging = length(hanging_signature_list)
+    
+    @info "[Rank $rank] Local unique points - Free: $n_local_free, Hanging: $n_local_hanging"
+
 
     # =========================================================================
     # PHASE 2: Identify processor boundary spatial-angular points
@@ -349,24 +375,24 @@ function setup_global_numbering_adaptive_angular_scalable(
     @info "[Rank $rank] Found $(length(processor_boundary_spatial)) spatial nodes on processor boundaries"
     
     # =========================================================================
-    # PHASE 3: Extract processor boundary spatial-angular signatures
+    # PHASE 3: Extract processor boundary spatial-angular signatures (for free nodes only)
     # =========================================================================
     
-    processor_boundary_sigs = Dict{NTuple{3,Float64}, Int}()
+    processor_boundary_free_sigs = Dict{NTuple{3,Float64}, Int}()
     
     for sig in signature_list
         gip_spatial = Int(sig[1])  # First element is the global spatial ID
         
         if gip_spatial in processor_boundary_spatial
             idx = findfirst(x -> x == sig, signature_list)
-            processor_boundary_sigs[sig] = idx  # Store local index for now
+            processor_boundary_free_sigs[sig] = idx  # Store local index for now
         end
     end
     
-    @info "[Rank $rank] Found $(length(processor_boundary_sigs)) spatial-angular points on processor boundaries"
+    @info "[Rank $rank] Found $(length(processor_free_boundary_sigs)) FREE spatial-angular points on processor boundaries"
     
     # =========================================================================
-    # PHASE 4: Exchange boundary signatures and resolve duplicates
+    # PHASE 4: Exchange boundary signatures and resolve duplicates (free only)
     # =========================================================================
     
     # Gather all processor boundary signatures from all ranks
@@ -403,31 +429,31 @@ function setup_global_numbering_adaptive_angular_scalable(
         end
     end
     
-    @info "[Rank $rank] Found $(length(global_boundary_sigs)) globally shared spatial-angular points"
+    @info "[Rank $rank] Found $(length(global_boundary_sigs)) FREE globally shared spatial-angular points"
     
-    # =========================================================================
-    # PHASE 5: Assign tentative global IDs using parallel prefix sum
-    # =========================================================================
+    # ==================================================================================
+    # PHASE 5: Assign tentative global IDs using parallel prefix sum - Free nodes first
+    # ==================================================================================
     
     # Each processor gets a contiguous range of global IDs
-    n_local = length(signature_list)
-    local_count = n_local
-    offset = MPI.Exscan(local_count, MPI.SUM, comm)
+    n_local_free = length(free_signature_list)
+    local_count = n_local_free
+    offset = MPI.Exscan(local_count_free, MPI.SUM, comm)
     
     if rank == 0
-        offset = 0
+        offset_free = 0
     end
     
     # Build tentative mapping
     sig_to_tentative_gid = Dict{NTuple{3,Float64}, Int}()
-    for (idx, sig) in enumerate(signature_list)
-        sig_to_tentative_gid[sig] = offset + idx
+    for (idx, sig) in enumerate(free_signature_list)
+        sig_to_tentative_gid[sig] = offset_free + idx
     end
     
     @info "[Rank $rank] Tentative global ID range: [$(offset+1), $(offset+n_local)]"
 
     # =========================================================================
-    # PHASE 6: Resolve shared signatures (take minimum GID)
+    # PHASE 6: Resolve shared free signatures (take minimum GID)
     # =========================================================================
     
     # For shared signatures, gather all tentative GIDs and take minimum
@@ -487,14 +513,14 @@ function setup_global_numbering_adaptive_angular_scalable(
     
     @info "[Rank $rank] Resolved $(length(shared_sig_resolution)) shared signatures"
 
-    # =========================================================================
-    # PHASE 7: Build final global IDs (with duplicates for shared points)
-    # =========================================================================
+    # ===================================================================================
+    # PHASE 7: Build final global IDs (with duplicates for shared points) for free nodes
+    # ===================================================================================
     
     # For shared points, use resolved GID; for interior points, use tentative GID
     sig_to_final_gid = Dict{NTuple{3,Float64}, Int}()
     
-    for sig in signature_list
+    for sig in free_signature_list
         if haskey(shared_sig_resolution, sig)
             sig_to_final_gid[sig] = shared_sig_resolution[sig]
         else
@@ -503,7 +529,7 @@ function setup_global_numbering_adaptive_angular_scalable(
     end
 
     # =========================================================================
-    # PHASE 8: Compact numbering to remove gaps
+    # PHASE 8: Compact FREE numbering to remove gaps
     # =========================================================================
     
     # Collect all used global IDs across all processors
@@ -536,17 +562,41 @@ function setup_global_numbering_adaptive_angular_scalable(
     
     # Create compaction map: old_gid -> new_gid (1:gnpoin with no gaps)
     sorted_gids = sort(collect(global_used_gids))
-    old_to_new = Dict{Int, Int}()
+    old_to_new_free = Dict{Int, Int}()
     for (new_id, old_id) in enumerate(sorted_gids)
-        old_to_new[old_id] = new_id
+        old_to_new_free[old_id] = new_id
     end
     
-    gnpoin = length(sorted_gids)
+    gnpoin_free = length(sorted_gids)
     
     @info "[Rank $rank] Compacted to $gnpoin global spatial-angular points (no gaps)"
 
     # =========================================================================
-    # PHASE 9: Apply global numbering to local spatial-angular points
+    # PHASE 9: Assign global IDs to HANGING nodes (after free nodes)
+    # =========================================================================
+    
+    n_local_hanging = length(hanging_signature_list)
+    local_count_hanging = n_local_hanging
+    offset_hanging = MPI.Exscan(local_count_hanging, MPI.SUM, comm)
+    
+    if rank == 0
+        offset_hanging = 0
+    end
+    
+    # Hanging nodes get global IDs starting after all free nodes
+    for (idx, sig) in enumerate(hanging_signature_list)
+        sig_to_final_gid[sig] = gnpoin_free + offset_hanging + idx
+    end
+    
+    # Compute total hanging nodes globally
+    gnpoin_hanging = MPI.Allreduce(n_local_hanging, MPI.SUM, comm)
+    gnpoin = gnpoin_free + gnpoin_hanging
+    
+    @info "[Rank $rank] Hanging global ID range: [$(gnpoin_free+offset_hanging+1), $(gnpoin_free+offset_hanging+n_local_hanging)]"
+    @info "[Rank $rank] Total global DOFs: $gnpoin (Free: $gnpoin_free, Hanging: $gnpoin_hanging)"
+
+    # =========================================================================
+    # PHASE 10: Apply global numbering to local spatial-angular points
     # =========================================================================
     
     ip2gip_spa = zeros(Int64, n_spa)
@@ -566,19 +616,29 @@ function setup_global_numbering_adaptive_angular_scalable(
                         
                         sig = (Float64(gip), round(θ, digits=12), round(ϕ, digits=12))
                         
-                        # Get final compacted global ID
-                        old_gid = sig_to_final_gid[sig]
-                        new_gid = old_to_new[old_gid]
+                        is_hanging = ip_spa in hanging_node_set
                         
-                        ip2gip_spa[ip_spa] = new_gid
+                        if is_hanging
+                            # Direct lookup for hanging nodes (no compaction needed)
+                            ip2gip_spa[ip_spa] = sig_to_final_gid[sig]
+                        else
+                            # Apply compaction for free nodes
+                            old_gid = sig_to_final_gid[sig]
+                            new_gid = old_to_new_free[old_gid]
+                            ip2gip_spa[ip_spa] = new_gid
+                        end
                     end
                 end
             end
         end
     end
     
-    # Verify compactness
-    verify_compact_numbering(ip2gip_spa, gnpoin, rank, comm)
+    # =========================================================================
+    # PHASE 11: Verify numbering structure
+    # =========================================================================
+    
+    verify_hanging_node_numbering(ip2gip_spa, n_spa, gnpoin_free, gnpoin, 
+                                   hanging_node_set, rank, comm)
     
     gip2owner_spa = find_gip_owner_spa(ip2gip_spa, n_spa, gnpoin, comm)
     
@@ -624,42 +684,79 @@ function find_gip_owner_spa(ip2gip_spa, n_spa, gnpoin, comm)
     return gip2owner_spa
 end
 
-function verify_compact_numbering(ip2gip_spa, gnpoin, rank, comm)
+function verify_hanging_node_numbering(ip2gip_spa, n_spa, gnpoin_free, gnpoin, 
+                                       hanging_node_set, rank, comm)
     """
-    Verify that numbering is compact (1:gnpoin with no gaps)
+    Verify that:
+    1. Free nodes have global IDs in [1, gnpoin_free]
+    2. Hanging nodes have global IDs in [gnpoin_free+1, gnpoin]
+    3. No gaps in the numbering
     """
-    local_present = falses(gnpoin)
-    for gid in ip2gip_spa
-        if gid > 0 && gid <= gnpoin
-            local_present[gid] = true
+    
+    local_free_gids = Int[]
+    local_hanging_gids = Int[]
+    
+    for ip = 1:n_spa
+        gid = ip2gip_spa[ip]
+        
+        if ip in hanging_node_set
+            push!(local_hanging_gids, gid)
+            
+            # Verify hanging node is in correct range
+            if gid <= gnpoin_free || gid > gnpoin
+                @warn "[Rank $rank] Hanging node $ip has incorrect global ID $gid (should be in [$gnpoin_free+1, $gnpoin])"
+            end
+        else
+            push!(local_free_gids, gid)
+            
+            # Verify free node is in correct range
+            if gid < 1 || gid > gnpoin_free
+                @warn "[Rank $rank] Free node $ip has incorrect global ID $gid (should be in [1, $gnpoin_free])"
+            end
         end
     end
     
+    # Check for duplicates within each category
+    if length(unique(local_free_gids)) != length(local_free_gids)
+        @warn "[Rank $rank] Duplicate global IDs found in free nodes!"
+    end
     
-    local_present_bool = convert(Vector{Bool}, local_present)
-    global_present_bool = MPI.Allreduce(local_present_bool, MPI.LOR, comm)
-    global_present = BitVector(global_present_bool)
+    # Gather all used global IDs
+    all_free_gids = MPI.Gather(local_free_gids, comm)
+    all_hanging_gids = MPI.Gather(local_hanging_gids, comm)
     
-    has_gaps = false
-    missing_ids = Int[]
-    for i = 1:gnpoin
-        if !global_present[i]
-            push!(missing_ids, i)
-            has_gaps = true
+    if rank == 0
+        all_free = reduce(vcat, all_free_gids)
+        all_hanging = reduce(vcat, all_hanging_gids)
+        
+        unique_free = unique(all_free)
+        unique_hanging = unique(all_hanging)
+        
+        @info "Global verification:"
+        @info "  Free nodes: $(length(unique_free)) unique IDs, range [$(minimum(unique_free)), $(maximum(unique_free))]"
+        @info "  Hanging nodes: $(length(unique_hanging)) unique IDs, range [$(minimum(unique_hanging)), $(maximum(unique_hanging))]"
+        
+        # Check for gaps in free nodes
+        expected_free = Set(1:gnpoin_free)
+        actual_free = Set(unique_free)
+        missing_free = setdiff(expected_free, actual_free)
+        
+        if !isempty(missing_free)
+            @warn "Missing free node global IDs: $(sort(collect(missing_free)))"
+        else
+            @info "  ✓ Free node numbering is compact (no gaps)"
+        end
+        
+        # Check that free and hanging don't overlap
+        overlap = intersect(Set(unique_free), Set(unique_hanging))
+        if !isempty(overlap)
+            @warn "Global ID overlap between free and hanging nodes: $overlap"
+        else
+            @info "  ✓ No overlap between free and hanging node IDs"
         end
     end
     
-    if has_gaps
-        if rank == 0
-            @warn "Gaps found in global numbering at IDs: $(missing_ids[1:min(10, length(missing_ids))])..."
-        end
-    else
-        if rank == 0
-            @info "✓ Global numbering is compact: 1:$gnpoin with no gaps"
-        end
-    end
-    
-    return !has_gaps
+    MPI.Barrier(comm)
 end
 
 function setup_assembler(SD, a, index_a, owner_a)
