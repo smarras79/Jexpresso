@@ -992,6 +992,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
     nelem = params.mesh.nelem
     ngl   = params.mesh.ngl
     neqs  = params.neqs
+
+    fill!(params.μ_max,    zero(params.T))
     
     for iel=1:nelem        
         
@@ -1025,7 +1027,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
                              params.inputs, params.rhs_el, iel, ieq, params.mesh.connijk,
                              params.mesh.coords,                             
                              params.mesh.poin_in_bdy_face, params.mesh.elem_to_face,
-                             params.mesh.bdy_face_type,
+                             params.mesh.bdy_face_type, 
+                             params.μ_max,
                              params.QT, params.VT, SD, params.AD; Δ=Δ)
             
         end
@@ -1656,6 +1659,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           connijk,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
+                          μsgs,
                           QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0)
     
     for m = 1:ngl
@@ -1733,6 +1737,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           iel, ieq, connijk,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
+                          μ_max,
                           QT::Inexact, VT, SD::NSD_3D, ::ContGal; Δ=1.0)
 
     Δ2 = Δ^2
@@ -1743,7 +1748,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     is_w_momentum  = (ieq == 4)
     is_temperature = (ieq == 5)
     conn_el        = @view connijk[iel,:,:,:]
-
+    μ_max_ieq      = μ_max[ieq] 
     
     for m = 1:ngl
         for l = 1:ngl
@@ -1837,8 +1842,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         flux_x = τ_xx
                         flux_y = τ_xy
                         flux_z = τ_xz
+                        μ_local = effective_viscosity
 
-                        
                     elseif is_v_momentum
                         # USE EFFECTIVE VISCOSITY
                         effective_viscosity = SGS_diffusion(visc_coeffieq, ieq,
@@ -1861,8 +1866,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         flux_x = τ_xy
                         flux_y = τ_yy
                         flux_z = τ_yz
+                        μ_local = effective_viscosity
 
-                        
                     elseif is_w_momentum  # NEW BLOCK
                         # USE EFFECTIVE VISCOSITY
                         effective_viscosity = SGS_diffusion(visc_coeffieq, ieq,
@@ -1885,8 +1890,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         flux_x = τ_xz
                         flux_y = τ_yz
                         flux_z = τ_zz
+                        μ_local = effective_viscosity
 
-                        
                     elseif is_temperature
                         
                         if inputs[:energy_equation] == "theta" 
@@ -1924,6 +1929,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             flux_x = effective_diffusivity * dθdx
                             flux_y = effective_diffusivity * dθdy
                             flux_z = effective_diffusivity * dθdz
+                            μ_local = effective_diffusivity
 
                         elseif inputs[:energy_equation] == "energy" 
                             PhysConst = PhysicalConst{Float32}()
@@ -1987,6 +1993,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             flux_x = effective_diffusivity * dhldx
                             flux_y = effective_diffusivity * dhldy
                             flux_z = effective_diffusivity * dhldz
+                            μ_local = effective_diffusivity
                         end
                         
                         
@@ -2021,6 +2028,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         flux_x = effective_diffusivity * dqdx
                         flux_y = effective_diffusivity * dqdy
                         flux_z = effective_diffusivity * dqdz
+                        μ_local = effective_diffusivity
                     end
 
                     # ===== Weak form assembly (3D) =====
@@ -2037,10 +2045,12 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η_flux_klm
                         rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ_flux_klm
                     end
+                    μ_max_ieq = max(μ_local, μ_max_ieq)
                 end
             end
-        end  
+        end
     end
+    μ_max[ieq] = μ_max_ieq
 end
 
 function  _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, uprimitiveieq, visc_coeff, ω, mesh, basis, metrics, inputs, rhs_el, iel, ieq, QT::Exact, VT, SD::NSD_2D, ::FD)

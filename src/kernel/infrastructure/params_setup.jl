@@ -90,6 +90,7 @@ function params_setup(sem,
     rhs_diffη_el = rhs.rhs_diffη_el
     rhs_diffζ_el = rhs.rhs_diffζ_el
     μsgs         = viscsgs.μ
+    μ_max        = viscsgs.μ_max
     
     rhs_el_tmp   = rhs.rhs_el_tmp
     
@@ -322,7 +323,7 @@ function params_setup(sem,
                   uaux, vaux, utmp,
                   ubdy, gradu, bdy_flux, #for B.C.
                   rhs_el, rhs_diff_el, rhs_el_tmp,
-                  rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el,
+                  rhs_diffξ_el, rhs_diffη_el,rhs_diffζ_el, μ_max,
                   uprimitive,
                   flux_gpu, source_gpu, qbdy_gpu,
                   q_t, q_ti, q_tij, fqf, b, B,
@@ -360,7 +361,7 @@ function params_setup(sem,
                   RHS, RHS_visc,
                   fijk, ∇f_el,
                   rhs_el, rhs_diff_el, rhs_el_tmp,
-                  rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
+                  rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el, μ_max,
                   uprimitive,
                   F, G, H, S,
                   F_surf, S_face, S_flux, M_surf_inv = sem.matrix.M_surf_inv, M_edge_inv = sem.matrix.M_edge_inv,
