@@ -139,7 +139,7 @@ elseif parsed_gather_coupling
 
     # Participate in MPI_Comm_split with MPI_UNDEFINED
     # This creates a NULL communicator but allows participation in the collective operation
-    const MPI_UNDEFINED = Int32(-32766)
+    MPI_UNDEFINED = Int32(-32766)
     par_comm_final = MPI.Comm_split(comm, MPI_UNDEFINED, rank)
 
     if rank == 0
