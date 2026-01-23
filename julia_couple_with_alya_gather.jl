@@ -1,7 +1,8 @@
 #!/usr/bin/env julia
 # julia_couple_with_alya_gather.jl
 # Couples with Fortran code that uses MPI_Gather on MPI_COMM_WORLD
-# Both codes share the same MPI_COMM_WORLD and participate in collective operations
+# In MPMD mode: Fortran gets ranks 0-N, Julia gets ranks N+1 onwards
+# Only Fortran rank 0 receives the gathered data
 
 using MPI
 
@@ -25,29 +26,16 @@ nb = min(length(codeunits(app_name_str)), 128)
     send_buf[i] = Int8(codeunits(app_name_str)[i])
 end
 
-# Participate in MPI_Gather
-# All ranks send to rank 0 of MPI_COMM_WORLD
-# Rank 0 receives from all ranks
-if rank == 0
-    # Root process: receive from all ranks (including itself)
-    recv_buf = Matrix{Int8}(undef, 128, size)
-    MPI.Gather!(send_buf, recv_buf, 0, world)
+# Julia ranks are NEVER rank 0 in MPMD mode (Fortran gets rank 0)
+# So Julia always participates as non-root sender
+println("[Julia rank $rank] Participating in MPI_Gather to root (rank 0)")
+flush(stdout)
 
-    # Print received names
-    println("\n[Julia rank 0] Received application names from all ranks:")
-    for i in 1:size
-        name_chars = recv_buf[:, i]
-        name_str = String(collect(Char.(Int.(name_chars)))) |> x->rstrip(x)
-        println("  Rank $(i-1): $name_str")
-        flush(stdout)
-    end
-else
-    # Non-root processes: just send
-    MPI.Gather!(send_buf, nothing, 0, world)
-end
+MPI.Gather!(send_buf, nothing, 0, world)
 
-MPI.Barrier(world)
-println("[Julia rank $rank] Done")
+println("[Julia rank $rank] MPI_Gather completed")
 flush(stdout)
 
 MPI.Finalize()
+println("[Julia rank $rank] Done")
+flush(stdout)
