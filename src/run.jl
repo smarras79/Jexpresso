@@ -75,6 +75,10 @@ function parse_commandline()
         help = "Enable gather-based MPI coupling mode (shared COMM_WORLD)"
         action = :store_true
 
+        "--intercomm-coupling"
+        help = "Enable intercommunicator MPI coupling mode (true independence, requires APPID env var)"
+        action = :store_true
+
         "--coupling-test-only"
         help = "Exit after coupling initialization (for testing coupling without full simulation)"
         action = :store_true
@@ -101,6 +105,7 @@ parsed_code_id             = parsed_args["code-id"]
 parsed_n_codes             = parsed_args["n-codes"]
 parsed_code_name           = parsed_args["code-name"]
 parsed_gather_coupling     = parsed_args["gather-coupling"]
+parsed_intercomm_coupling  = parsed_args["intercomm-coupling"]
 parsed_coupling_test_only  = parsed_args["coupling-test-only"]
 driver_file                = string(dirname(@__DIR__()), "/problems/drivers.jl")
 
@@ -108,11 +113,13 @@ driver_file                = string(dirname(@__DIR__()), "/problems/drivers.jl")
 # Initialize coupling if enabled:
 #--------------------------------------------------------
 coupling_ctx::Union{JexpressoCoupling.CouplingContext, Nothing} = nothing
+intercomm_ctx::Union{IntercommCoupling.IntercommContext, Nothing} = nothing
 
 # Check for mutually exclusive coupling modes
-if parsed_coupling && parsed_gather_coupling
+num_coupling_modes = Int(parsed_coupling) + Int(parsed_gather_coupling) + Int(parsed_intercomm_coupling)
+if num_coupling_modes > 1
     if rank == 0
-        @error "Cannot enable both --coupling and --gather-coupling simultaneously"
+        @error "Cannot enable multiple coupling modes simultaneously. Choose one: --coupling, --gather-coupling, or --intercomm-coupling"
     end
     MPI.Abort(comm, 1)
 end
@@ -183,6 +190,19 @@ elseif parsed_gather_coupling
 
     # Continue with original communicator (no change to comm/rank/nparts)
     # Jexpresso operates on full MPI_COMM_WORLD
+elseif parsed_intercomm_coupling
+    # Initialize intercommunicator coupling (requires APPID environment variable)
+    intercomm_ctx = IntercommCoupling.initialize_intercomm_coupling(code_name=parsed_code_name)
+
+    # Use local communicator for Jexpresso's internal operations
+    comm = intercomm_ctx.local_comm
+    rank = intercomm_ctx.local_rank
+    nparts = intercomm_ctx.local_size
+
+    if rank == 0
+        @info "Intercommunicator coupling initialized: Jexpresso running independently with $(nparts) local ranks (world_rank=$(intercomm_ctx.world_rank))"
+        @info "Use intercomm_ctx.inter_comm for point-to-point communication with external code"
+    end
 end
 
 # Check if running under CI environment and set directory accordingly
