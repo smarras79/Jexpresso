@@ -1,6 +1,10 @@
 #!/usr/bin/env julia
 # Jexpresso-mini-coupled.jl — Julia side with dynamic remote-leader discovery.
 # FIXED: Tag mismatch corrected
+#
+#  mpirun --tag-output -np 2 -x APPID=0 ./alya/alya_mini_coupler : -np 2 -x APPID=1 julia --project=. Jexpresso-mini-coupled.jl
+#
+#
 
 using MPI
 
