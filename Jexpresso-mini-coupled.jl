@@ -86,7 +86,7 @@ for i in 1:5
     end
 end
 
-MPI.Comm_free(inter_comm)
-MPI.Comm_free(local_comm)
+MPI.free(inter_comm)
+MPI.free(local_comm)
 MPI.Finalize()
 println("[Jexpresso rank $wrank] Done"); flush(stdout)
