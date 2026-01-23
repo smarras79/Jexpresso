@@ -175,7 +175,8 @@ function jexpresso_main()
     # use Metal (for apple) or CUDA (non apple) if we are on GPU
     #--------------------------------------------------------
     # Use Base.invokelatest for dynamically loaded driver function
-    with_mpi() do distribute
+    # IMPORTANT: Pass custom communicator to with_mpi for coupling mode
+    with_mpi(; comm=comm) do distribute
 
         Base.invokelatest(driver,
                          nparts,
