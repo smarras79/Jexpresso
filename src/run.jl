@@ -84,10 +84,12 @@ function jexpresso_main(comm::Union{MPI.Comm,Nothing}=nothing)
     # Parse command line args:
     #--------------------------------------------------------
     parsed_args                = parse_commandline()
-    parsed_equations           = string(parsed_args["eqs"])
-    parsed_equations_case_name = string(parsed_args["eqs_case"])
-    parsed_CI_mode             = string(parsed_args["CI_MODE"])
-    driver_file                = string(dirname(@__DIR__()), "/problems/drivers.jl")
+
+    # These need to be global because mod_inputs_user_inputs! and other functions expect them
+    global parsed_equations           = string(parsed_args["eqs"])
+    global parsed_equations_case_name = string(parsed_args["eqs_case"])
+    global parsed_CI_mode             = string(parsed_args["CI_MODE"])
+    global driver_file                = string(dirname(@__DIR__()), "/problems/drivers.jl")
 
     # Check if running under CI environment and set directory accordingly
     if parsed_CI_mode == "true"
@@ -96,12 +98,12 @@ function jexpresso_main(comm::Union{MPI.Comm,Nothing}=nothing)
         case_name_dir = string(dirname(@__DIR__()), "/problems", "/", parsed_equations, "/", parsed_equations_case_name)
     end
 
-    user_input_file      = string(case_name_dir, "/user_inputs.jl")
-    user_flux_file       = string(case_name_dir, "/user_flux.jl")
-    user_source_file     = string(case_name_dir, "/user_source.jl")
-    user_bc_file         = string(case_name_dir, "/user_bc.jl")
-    user_initialize_file = string(case_name_dir, "/initialize.jl")
-    user_primitives_file = string(case_name_dir, "/user_primitives.jl")
+    global user_input_file      = string(case_name_dir, "/user_inputs.jl")
+    global user_flux_file       = string(case_name_dir, "/user_flux.jl")
+    global user_source_file     = string(case_name_dir, "/user_source.jl")
+    global user_bc_file         = string(case_name_dir, "/user_bc.jl")
+    global user_initialize_file = string(case_name_dir, "/initialize.jl")
+    global user_primitives_file = string(case_name_dir, "/user_primitives.jl")
 
     include(driver_file)
 
