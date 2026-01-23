@@ -81,6 +81,18 @@ TInt   = Int64
 TFloat = Float64
 cpu    = true
 
+# Global MPI communicator - can be overridden for coupling mode
+# Default is COMM_WORLD, but can be set to local communicator in coupled simulations
+const JEXPRESSO_MPI_COMM = Ref{Union{MPI.Comm,Nothing}}(nothing)
+
+function set_mpi_comm(comm::MPI.Comm)
+    JEXPRESSO_MPI_COMM[] = comm
+end
+
+function get_mpi_comm()
+    return JEXPRESSO_MPI_COMM[] === nothing ? MPI.COMM_WORLD : JEXPRESSO_MPI_COMM[]
+end
+
 using DocStringExtensions
 
 include(joinpath( "..", "problems", "AbstractEquations.jl"))

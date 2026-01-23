@@ -44,11 +44,17 @@ MPI.Gather!(local_chars, recv_buffer, 0, world)
 
 @info "CALL JEXPRESSO"
 
-#push!(empty!(ARGS), "CompEuler", "wave1d")
-#include("./src/Jexpresso.jl")
+# Set coupling mode to prevent auto-execution on module load
+ENV["JEXPRESSO_COUPLING_MODE"] = "true"
 
-for i=1:5
-    println("hola ", i)
-end
+# Set command line arguments for Jexpresso
+push!(empty!(ARGS), "CompEuler", "wave1d")
+
+# Load Jexpresso module (won't auto-execute due to JEXPRESSO_COUPLING_MODE)
+include("./src/Jexpresso.jl")
+
+# Call Jexpresso main with the local communicator
+# This ensures Jexpresso uses only its own ranks, not the global world
+Jexpresso.jexpresso_main(local_comm)
 
 MPI.Finalize()

@@ -57,104 +57,131 @@ function parse_commandline()
 end
 
 
-MPI.Init()
-comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
-nparts = MPI.Comm_size(comm)
-
 #--------------------------------------------------------
-# Parse command line args:
+# Main execution function that can be called with custom communicator
+# For coupling mode: jexpresso_main(local_comm)
+# For standalone mode: jexpresso_main() or just include the module
 #--------------------------------------------------------
-parsed_args                = parse_commandline()
-parsed_equations           = string(parsed_args["eqs"])
-parsed_equations_case_name = string(parsed_args["eqs_case"])
-parsed_CI_mode             = string(parsed_args["CI_MODE"])
-driver_file                = string(dirname(@__DIR__()), "/problems/drivers.jl")
+function jexpresso_main(comm::Union{MPI.Comm,Nothing}=nothing)
 
-# Check if running under CI environment and set directory accordingly
-if parsed_CI_mode == "true"
-    case_name_dir = string(dirname(@__DIR__()), "/test/CI-runs", "/", parsed_equations, "/", parsed_equations_case_name)
-else
-    case_name_dir = string(dirname(@__DIR__()), "/problems", "/", parsed_equations, "/", parsed_equations_case_name)
-end
-
-user_input_file      = string(case_name_dir, "/user_inputs.jl")
-user_flux_file       = string(case_name_dir, "/user_flux.jl")
-user_source_file     = string(case_name_dir, "/user_source.jl")
-user_bc_file         = string(case_name_dir, "/user_bc.jl")
-user_initialize_file = string(case_name_dir, "/initialize.jl")
-user_primitives_file = string(case_name_dir, "/user_primitives.jl")
-
-include(driver_file)
-
-include(user_input_file)
-include(user_flux_file)
-include(user_source_file)
-include(user_bc_file)
-include(user_initialize_file)
-include(user_primitives_file)
-#--------------------------------------------------------
-# Read User Inputs:
-#--------------------------------------------------------
-mod_inputs_print_welcome(rank)
-inputs = Dict{}()
-
-inputs = user_inputs()
-mod_inputs_user_inputs!(inputs, rank)
-
-#--------------------------------------------------------
-# Create output directory if it doesn't exist:
-#--------------------------------------------------------
-user_defined_output_dir = inputs[:output_dir]
-
-if inputs[:loverwrite_output]
-    outstring = string("output")
-else        
-    outstring = rank == 0 ? string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")) : ""
-    outstring = MPI.bcast(outstring, 0, comm)
-end
-if user_defined_output_dir == "none"
-    OUTPUT_DIR = joinpath(case_name_dir, outstring)
-    inputs[:output_dir] = OUTPUT_DIR
-else
-    OUTPUT_DIR = joinpath(user_defined_output_dir, parsed_equations, parsed_equations_case_name, outstring)
-    inputs[:output_dir] = OUTPUT_DIR
-end
-if !isdir(OUTPUT_DIR)
-    mkpath(OUTPUT_DIR)
-end
-
-#--------------------------------------------------------
-# Create restart output/inupt directory if it doesn't exist:
-#--------------------------------------------------------
-if (!haskey(inputs, :restart_output_file_path))
-    inputs[:restart_output_file_path] = joinpath(OUTPUT_DIR,string("restart"))
-end
-
-if (haskey(inputs, :lrestart))
-    if(inputs[:lrestart] == true && !haskey(inputs, :restart_input_file_path))
-        inputs[:restart_input_file_path] = inputs[:restart_output_file_path]
+    # Initialize MPI if not already done
+    if !MPI.Initialized()
+        MPI.Init()
     end
-else
-    inputs[:lrestart] = false
+
+    # Use provided communicator or default to COMM_WORLD
+    if comm === nothing
+        comm = MPI.COMM_WORLD
+    else
+        # Set the global communicator for coupling mode
+        set_mpi_comm(comm)
+    end
+
+    rank = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
+
+    #--------------------------------------------------------
+    # Parse command line args:
+    #--------------------------------------------------------
+    parsed_args                = parse_commandline()
+    parsed_equations           = string(parsed_args["eqs"])
+    parsed_equations_case_name = string(parsed_args["eqs_case"])
+    parsed_CI_mode             = string(parsed_args["CI_MODE"])
+    driver_file                = string(dirname(@__DIR__()), "/problems/drivers.jl")
+
+    # Check if running under CI environment and set directory accordingly
+    if parsed_CI_mode == "true"
+        case_name_dir = string(dirname(@__DIR__()), "/test/CI-runs", "/", parsed_equations, "/", parsed_equations_case_name)
+    else
+        case_name_dir = string(dirname(@__DIR__()), "/problems", "/", parsed_equations, "/", parsed_equations_case_name)
+    end
+
+    user_input_file      = string(case_name_dir, "/user_inputs.jl")
+    user_flux_file       = string(case_name_dir, "/user_flux.jl")
+    user_source_file     = string(case_name_dir, "/user_source.jl")
+    user_bc_file         = string(case_name_dir, "/user_bc.jl")
+    user_initialize_file = string(case_name_dir, "/initialize.jl")
+    user_primitives_file = string(case_name_dir, "/user_primitives.jl")
+
+    include(driver_file)
+
+    include(user_input_file)
+    include(user_flux_file)
+    include(user_source_file)
+    include(user_bc_file)
+    include(user_initialize_file)
+    include(user_primitives_file)
+    #--------------------------------------------------------
+    # Read User Inputs:
+    #--------------------------------------------------------
+    mod_inputs_print_welcome(rank)
+    inputs = Dict{}()
+
+    inputs = user_inputs()
+    mod_inputs_user_inputs!(inputs, rank)
+
+    #--------------------------------------------------------
+    # Create output directory if it doesn't exist:
+    #--------------------------------------------------------
+    user_defined_output_dir = inputs[:output_dir]
+
+    if inputs[:loverwrite_output]
+        outstring = string("output")
+    else
+        outstring = rank == 0 ? string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")) : ""
+        outstring = MPI.bcast(outstring, 0, comm)
+    end
+    if user_defined_output_dir == "none"
+        OUTPUT_DIR = joinpath(case_name_dir, outstring)
+        inputs[:output_dir] = OUTPUT_DIR
+    else
+        OUTPUT_DIR = joinpath(user_defined_output_dir, parsed_equations, parsed_equations_case_name, outstring)
+        inputs[:output_dir] = OUTPUT_DIR
+    end
+    if !isdir(OUTPUT_DIR)
+        mkpath(OUTPUT_DIR)
+    end
+
+    #--------------------------------------------------------
+    # Create restart output/inupt directory if it doesn't exist:
+    #--------------------------------------------------------
+    if (!haskey(inputs, :restart_output_file_path))
+        inputs[:restart_output_file_path] = joinpath(OUTPUT_DIR,string("restart"))
+    end
+
+    if (haskey(inputs, :lrestart))
+        if(inputs[:lrestart] == true && !haskey(inputs, :restart_input_file_path))
+            inputs[:restart_input_file_path] = inputs[:restart_output_file_path]
+        end
+    else
+        inputs[:lrestart] = false
+    end
+
+    #--------------------------------------------------------
+    # Save a copy of user_inputs.jl for the case being run
+    #--------------------------------------------------------
+    if rank == 0
+        cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
+    end
+
+    #--------------------------------------------------------
+    # use Metal (for apple) or CUDA (non apple) if we are on GPU
+    #--------------------------------------------------------
+    with_mpi() do distribute
+
+        driver(nparts,
+               distribute,
+               inputs, # input parameters from src/user_input.jl
+               OUTPUT_DIR,
+               TFloat)
+
+    end
 end
 
 #--------------------------------------------------------
-# Save a copy of user_inputs.jl for the case being run 
+# Auto-execute if this file is run directly (not in coupling mode)
+# Skip auto-execution if JEXPRESSO_COUPLING_MODE env var is set
 #--------------------------------------------------------
-if rank == 0 
-    cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
-end
-
-#--------------------------------------------------------
-# use Metal (for apple) or CUDA (non apple) if we are on GPU
-#--------------------------------------------------------
-with_mpi() do distribute
-    
-    driver(nparts,
-           distribute, 
-           inputs, # input parameters from src/user_input.jl
-           OUTPUT_DIR,
-           TFloat)
-    
+if !haskey(ENV, "JEXPRESSO_COUPLING_MODE")
+    jexpresso_main()
 end
