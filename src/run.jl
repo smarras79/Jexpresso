@@ -74,6 +74,10 @@ function parse_commandline()
         "--gather-coupling"
         help = "Enable gather-based MPI coupling mode (shared COMM_WORLD)"
         action = :store_true
+
+        "--coupling-test-only"
+        help = "Exit after coupling initialization (for testing coupling without full simulation)"
+        action = :store_true
     end
 
     return parse_args(s)
@@ -97,6 +101,7 @@ parsed_code_id             = parsed_args["code-id"]
 parsed_n_codes             = parsed_args["n-codes"]
 parsed_code_name           = parsed_args["code-name"]
 parsed_gather_coupling     = parsed_args["gather-coupling"]
+parsed_coupling_test_only  = parsed_args["coupling-test-only"]
 driver_file                = string(dirname(@__DIR__()), "/problems/drivers.jl")
 
 #--------------------------------------------------------
@@ -160,7 +165,20 @@ elseif parsed_gather_coupling
     MPI.Gather!(send_buf, nothing, 0, comm)
 
     if rank == 0
-        @info "Gather-based coupling initialization complete (sent '$app_name_str' to global root). Continuing with normal Jexpresso execution on $(nparts) ranks."
+        @info "Gather-based coupling initialization complete (sent '$app_name_str' to global root)."
+    end
+
+    # If test-only mode, exit cleanly after coupling initialization
+    if parsed_coupling_test_only
+        if rank == 0
+            @info "Coupling test-only mode: Exiting after successful coupling initialization"
+        end
+        MPI.Finalize()
+        exit(0)
+    end
+
+    if rank == 0
+        @info "Continuing with normal Jexpresso execution on $(nparts) ranks."
     end
 
     # Continue with original communicator (no change to comm/rank/nparts)

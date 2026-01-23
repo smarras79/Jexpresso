@@ -29,9 +29,10 @@ echo ""
 
 # Run the coupled simulation
 # Alya gets ranks 0-1, Jexpresso gets ranks 2-3
+# Using --coupling-test-only to exit after coupling initialization
 mpirun --tag-output \
     -np 2 ./alya/Alya.x : \
-    -np 2 julia --project=. src/Jexpresso.jl CompEuler wave1d false --gather-coupling --code-name "Jexpresso"
+    -np 2 julia --project=. src/Jexpresso.jl CompEuler wave1d false --gather-coupling --coupling-test-only --code-name "Jexpresso"
 
 echo ""
 echo "=========================================="
