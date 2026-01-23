@@ -44,7 +44,6 @@ program unitt_alya_with_another_code
      deallocate(app_dumm)
   end if
 
-  call MPI_Barrier(MPI_COMM_WORLD, ierr)
   call MPI_Finalize(ierr)
 
 end program unitt_alya_with_another_code

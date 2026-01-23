@@ -41,8 +41,13 @@ local_chars = Vector{UInt8}(rpad("popo", 128, ' '))
 recv_buffer = nothing
 MPI.Gather!(local_chars, recv_buffer, 0, world)
 
+@info "CALL JEXPRESSO"
 
-for i=1:3
-    @info "hola"
+#push!(empty!(ARGS), "CompEuler", "wave1d")
+#include("./src/Jexpresso.jl")
+
+for i=1:5
+    println("hola ", i)
 end
+
 MPI.Finalize()
