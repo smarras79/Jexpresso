@@ -83,8 +83,10 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 θ_ref  = T_ref * (PhysConst.pref/pref)^(1.0/PhysConst.cpoverR)
                 Tv     = T*(1+0.61*qv_ref) 
                 Tv_ref = T_ref*(1+0.61*qv_ref) 
-                ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
-                ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
+                ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=T,    Press=pref)    #kg/m³
+                ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=T_ref, Press=pref) #kg/m³
+                # ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
+                # ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
                 # hl is the liqui/ice static energy used in SAM
                 # use potential is less conservative
                 # hl     = PhysConst.cp*T + PhysConst.g*z
