@@ -58,17 +58,19 @@ ENV["JEXPRESSO_COUPLING_MODE"] = "true"
 # Set command line arguments for Jexpresso
 push!(empty!(ARGS), "CompEuler", "wave1d")
 
-#@info " AAAA ",
-#@info " lrank: " ,  lrank , " Comm_size: ", MPI.Comm_size(local_comm)
-
 # Load Jexpresso module (setup doesn't run yet because of JEXPRESSO_COUPLING_MODE)
+println("[Jexpresso rank $wrank] Loading Jexpresso module (JIT compilation may take minutes)..."); flush(stdout)
 include("./src/Jexpresso.jl")
+println("[Jexpresso rank $wrank] Jexpresso module loaded."); flush(stdout)
 
 # Set the custom local communicator
 Jexpresso.set_mpi_comm(local_comm)
+println("[Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize)."); flush(stdout)
 
 # Now run Jexpresso with the configured communicator
+println("[Jexpresso rank $wrank] Starting jexpresso_main()..."); flush(stdout)
 Jexpresso.jexpresso_main()
+println("[Jexpresso rank $wrank] jexpresso_main() finished."); flush(stdout)
 
 
 
