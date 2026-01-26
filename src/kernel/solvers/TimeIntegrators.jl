@@ -1,6 +1,6 @@
 function time_loop!(inputs, params, u, args...)
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     partitioned_model = args[1]
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)

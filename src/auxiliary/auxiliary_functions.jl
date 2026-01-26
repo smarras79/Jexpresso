@@ -1,5 +1,5 @@
 function check_memory(label)
-    rank = MPI.Comm_rank(MPI.COMM_WORLD)
+    rank = MPI.Comm_rank(get_mpi_comm())
     free_gb = Sys.free_memory() / 2^30
     
     # Get total system memory

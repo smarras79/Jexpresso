@@ -10,7 +10,7 @@ mutable struct MPIFunctionTimer
     skip_first_n::Int64
     skipped_count::Int64
     
-    function MPIFunctionTimer(comm::MPI.Comm=MPI.COMM_WORLD; skip_first_n::Int=1)
+    function MPIFunctionTimer(comm::MPI.Comm=get_mpi_comm(); skip_first_n::Int=1)
         new(0.0, 0, Inf, 0.0, comm, skip_first_n, 0)
     end
 end
@@ -121,11 +121,11 @@ end
 # ============================================================================
 
 """
-    create_timer_dict(function_names::Vector{String}, comm::MPI.Comm=MPI.COMM_WORLD; skip_first_n::Int=1)
+    create_timer_dict(function_names::Vector{String}, comm::MPI.Comm=get_mpi_comm(); skip_first_n::Int=1)
 
 Create a dictionary of timers for multiple functions
 """
-function create_timer_dict(function_names::Vector{String}, comm::MPI.Comm=MPI.COMM_WORLD; skip_first_n::Int=1)
+function create_timer_dict(function_names::Vector{String}, comm::MPI.Comm=get_mpi_comm(); skip_first_n::Int=1)
     return Dict(name => MPIFunctionTimer(comm, skip_first_n=skip_first_n) for name in function_names)
 end
 
@@ -150,7 +150,7 @@ Example: Lorenz system with timed form_rhs function
 function example_lorenz_with_timing()
     
     MPI.Init()
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     
     # Create timer for form_rhs
@@ -223,7 +223,7 @@ end
 """
 Example showing how to integrate with your existing code structure with multiple timed functions
 """
-function your_solver_with_timing(inputs, prob_params, comm=MPI.COMM_WORLD)
+function your_solver_with_timing(inputs, prob_params, comm=get_mpi_comm())
     # Create multiple timers - one for each function
     timers = create_timer_dict(["form_rhs_1", "form_rhs_2", "form_rhs_3"], comm)
     

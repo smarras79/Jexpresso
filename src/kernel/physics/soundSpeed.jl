@@ -101,7 +101,7 @@ end
 
 function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_2D; visc=[0.0])
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     if size(integrator.u)[1] >= 3*npoin
@@ -142,7 +142,7 @@ end
 
 function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_3D; visc=[0.0])
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     if size(integrator.u)[1] >= 4*npoin

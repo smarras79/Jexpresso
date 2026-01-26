@@ -1201,7 +1201,7 @@ function matrix_wrapper(::ContGal, SD, QT, basis::St_Lagrange, ω, mesh, metrics
     if (ldss_differentiation) lbuild_differentiation_matrix = true end
     if (ldss_laplace) lbuild_laplace_matrix = true end
 
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
 
     if typeof(SD) == NSD_1D
