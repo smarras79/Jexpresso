@@ -124,7 +124,7 @@ function jexpresso_main()
 
     # inputs must be global because many functions access it by name (legacy design)
     global inputs = Dict{}()
-    inputs = Base.invokelatest(user_inputs)
+    inputs = Base.@invokelatest user_inputs()
     Base.invokelatest(mod_inputs_user_inputs!, inputs, rank)
 
     #--------------------------------------------------------
@@ -174,16 +174,14 @@ function jexpresso_main()
     #--------------------------------------------------------
     # use Metal (for apple) or CUDA (non apple) if we are on GPU
     #--------------------------------------------------------
-    # Use Base.invokelatest for dynamically loaded driver function
     # IMPORTANT: Pass custom communicator to with_mpi for coupling mode
     with_mpi(; comm=comm) do distribute
 
-        Base.invokelatest(driver,
-                         nparts,
-                         distribute,
-                         inputs, # input parameters from src/user_input.jl
-                         OUTPUT_DIR,
-                         TFloat)
+        Base.@invokelatest driver(nparts,
+                                  distribute,
+                                  inputs, # input parameters from src/user_input.jl
+                                  OUTPUT_DIR,
+                                  TFloat)
 
     end
 end
