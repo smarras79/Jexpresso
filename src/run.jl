@@ -80,7 +80,7 @@ function jexpresso_main()
     comm   = get_mpi_comm()
     rank   = MPI.Comm_rank(comm)
     nparts = MPI.Comm_size(comm)
-    @mystop
+    
     #--------------------------------------------------------
     # Parse command line args:
     #--------------------------------------------------------

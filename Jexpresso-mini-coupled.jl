@@ -47,19 +47,6 @@ local_chars = Vector{UInt8}(lpad("JEXPRESSO", 128, ' '))
 recv_buffer = nothing
 MPI.Gather!(local_chars, recv_buffer, 0, world)
 
-#local_chars  = Vector{UInt8}(lpad("JEXPRESSO", 128, ' '))
-#all_chars    = Vector{UInt8}(undef, 128 * wsize)
-#MPI.Allgather!(local_chars, all_chars, world)
-@info "CALL JEXPRESSO"
-
-# Receive ndime from Alya via Bcast on COMM_WORLD (all ranks must participate)
-# Alya: call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
-# Use Int32 to match Fortran's MPI_INTEGER (4 bytes)
-ndime_buf = Vector{Int32}(undef, 1)
-MPI.Bcast!(ndime_buf, 0, world)
-ndime = ndime_buf[1]
-println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
-
 # Set coupling mode to prevent auto-execution on module load
 ENV["JEXPRESSO_COUPLING_MODE"] = "true"
 
@@ -71,9 +58,23 @@ println("[Jexpresso rank $wrank] Loading Jexpresso module (JIT compilation may t
 include("./src/Jexpresso.jl")
 println("[Jexpresso rank $wrank] Jexpresso module loaded."); flush(stdout)
 
+
 # Set the custom local communicator
 Jexpresso.set_mpi_comm(local_comm)
 println("[Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize)."); flush(stdout)
+
+
+#--------------------------------------------------------------------------------------------
+# Receive ndime from Alya via Bcast on COMM_WORLD (all ranks must participate)
+# Alya: call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
+# Use Int32 to match Fortran's MPI_INTEGER (4 bytes)
+#--------------------------------------------------------------------------------------------
+ndime_buf = Vector{Int32}(undef, 1)
+MPI.Bcast!(ndime_buf, 0, world)
+ndime = ndime_buf[1]
+println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
+@mystop(" STOP AT Jexpresso-mini-coupled.jl")
+#---------------------------------------------------------------------------------------------
 
 # Now run Jexpresso with the configured communicator
 println("[Jexpresso rank $wrank] Starting jexpresso_main()..."); flush(stdout)
