@@ -60,6 +60,26 @@ MPI.Bcast!(ndime_buf, 0, world)
 ndime = ndime_buf[1]
 println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
 
+# Receive per-dimension arrays: rem_min (REAL), rem_max (REAL), rem_nx (INTEGER)
+# Alya broadcasts one element at a time inside a do loop over idime=1,ndime
+# Use Float32 for Fortran MPI_REAL (4 bytes) and Int32 for MPI_INTEGER (4 bytes)
+rem_min = Vector{Float32}(undef, ndime)
+rem_max = Vector{Float32}(undef, ndime)
+rem_nx  = Vector{Int32}(undef, ndime)
+tmp_real = Vector{Float32}(undef, 1)
+tmp_int  = Vector{Int32}(undef, 1)
+for idime in 1:ndime
+    MPI.Bcast!(tmp_real, 0, world)
+    rem_min[idime] = tmp_real[1]
+
+    MPI.Bcast!(tmp_real, 0, world)
+    rem_max[idime] = tmp_real[1]
+
+    MPI.Bcast!(tmp_int, 0, world)
+    rem_nx[idime] = tmp_int[1]
+end
+println("[Jexpresso rank $wrank] Received rem_min=$rem_min, rem_max=$rem_max, rem_nx=$rem_nx"); flush(stdout)
+
 # Set coupling mode to prevent auto-execution on module load
 ENV["JEXPRESSO_COUPLING_MODE"] = "true"
 
