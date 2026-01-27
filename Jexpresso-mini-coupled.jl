@@ -71,22 +71,24 @@ MPI.Bcast!(ndime_buf, 0, world)
 ndime = ndime_buf[1]
 println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
 
-rem_min  = Vector{Float32}(undef, ndime)
-rem_max  = Vector{Float32}(undef, ndime)
-rem_nx   = Vector{Int32}(undef, ndime)
-for idime in 1:ndime
+rem_min  = Vector{Float64}(undef, 3)
+rem_max  = Vector{Float64}(undef, 3)
+rem_nx   = Vector{Int32}(undef, 3)
+for idime in 1:3
     MPI.Bcast!(@view(rem_min[idime:idime]), 0, world)
     MPI.Bcast!(@view(rem_max[idime:idime]), 0, world)
     MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
 end
 
-alya2world = zeros(Int64, nranks2)
-MPI.Allgather!(alya2world, wrank)
+alya2world_l = zeros(Int32, nranks2)
+alya2world   = MPI.Allreduce(alya2world_l,MPI.SUM,world)
 
-#println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
-#println("[Jexpresso rank $wrank] Received rem_min = $rem_min from Alya"); flush(stdout)
-#println("[Jexpresso rank $wrank] Received rem_max = $rem_max from Alya"); flush(stdout)
-#println("[Jexpresso rank $wrank] Received rem_nx  = $rem_nx  from Alya"); flush(stdout)
+println("[Jexpresso rank $wrank] Received nranks2    = $nranks2    from Alya"); flush(stdout)
+println("[Jexpresso rank $wrank] Received ndime      = $ndime      from Alya"); flush(stdout)
+println("[Jexpresso rank $wrank] Received rem_min    = $rem_min    from Alya"); flush(stdout)
+println("[Jexpresso rank $wrank] Received rem_max    = $rem_max    from Alya"); flush(stdout)
+println("[Jexpresso rank $wrank] Received rem_nx     = $rem_nx     from Alya"); flush(stdout)
+println("[Jexpresso rank $wrank] Received alya2world = $alya2world from Alya"); flush(stdout)
 #--------------------------------------------------------------------------------------------
 # END Receive ndime from Alya
 #--------------------------------------------------------------------------------------------
