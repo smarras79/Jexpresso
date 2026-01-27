@@ -35,15 +35,7 @@ println("[Split after $wrank"); flush(stdout)
 lrank = MPI.Comm_rank(local_comm)
 lsize = MPI.Comm_size(local_comm)
 
-# --- Dynamic remote leader discovery via Allgather on WORLD ---
-#local_chars = Vector{UInt8}(lpad("JEXPRESSO", 128, ' '))
-#recv_buffer = (wrank == 0) ? Vector{UInt8}(undef, 128 * wsize) : nothing
-#MPI.Gather!(local_chars, recv_buffer, 0, world)
-#if wrank == 0
-#    # parse recv_buffer into chunks of 128 bytes per rank
-#end
-
-local_chars = Vector{UInt8}(lpad("JEXPRESSO", 128, ' '))
+local_chars = Vector{UInt8}(rpad("JEXPRESSO", 128, ' '))
 recv_buffer = nothing
 MPI.Gather!(local_chars, recv_buffer, 0, world)
 
@@ -52,18 +44,17 @@ ENV["JEXPRESSO_COUPLING_MODE"] = "true"
 
 # Set command line arguments for Jexpresso
 push!(empty!(ARGS), "CompEuler", "wave1d")
-
+#=
 # Load Jexpresso module (setup doesn't run yet because of JEXPRESSO_COUPLING_MODE)
 println("[Jexpresso rank $wrank] Loading Jexpresso module (JIT compilation may take minutes)..."); flush(stdout)
 include("./src/Jexpresso.jl")
 println("[Jexpresso rank $wrank] Jexpresso module loaded."); flush(stdout)
 
-
 # Set the custom local communicator
 Jexpresso.set_mpi_comm(local_comm)
 println("[Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize)."); flush(stdout)
 
-
+=#
 #--------------------------------------------------------------------------------------------
 # Receive ndime from Alya via Bcast on COMM_WORLD (all ranks must participate)
 # Alya: call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
@@ -72,15 +63,36 @@ println("[Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize).
 ndime_buf = Vector{Int32}(undef, 1)
 MPI.Bcast!(ndime_buf, 0, world)
 ndime = ndime_buf[1]
+
+
+rem_min  = Vector{Float32}(undef, ndime)
+rem_max  = Vector{Float32}(undef, ndime)
+rem_nx   = Vector{Int32}(undef, ndime)
+tmp_real = Vector{Float32}(undef, 1)
+tmp_int  = Vector{Int32}(undef, 1)
+for idime in 1:ndime
+    MPI.Bcast!(tmp_real, 0, world)
+    rem_min[idime] = tmp_real[1]
+
+    MPI.Bcast!(tmp_real, 0, world)
+    rem_max[idime] = tmp_real[1]
+
+    MPI.Bcast!(tmp_int, 0, world)
+    rem_nx[idime] = tmp_int[1]
+end
+
 println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
-@mystop(" STOP AT Jexpresso-mini-coupled.jl")
+println("[Jexpresso rank $wrank] Received rem_min = $rem_min from Alya"); flush(stdout)
+println("[Jexpresso rank $wrank] Received rem_max = $rem_max from Alya"); flush(stdout)
+println("[Jexpresso rank $wrank] Received rem_nx  = $rem_nx  from Alya"); flush(stdout)
+
+MPI.Finalize()
+
 #---------------------------------------------------------------------------------------------
 
 # Now run Jexpresso with the configured communicator
 println("[Jexpresso rank $wrank] Starting jexpresso_main()..."); flush(stdout)
 Jexpresso.jexpresso_main()
 println("[Jexpresso rank $wrank] jexpresso_main() finished."); flush(stdout)
-
-
 
 MPI.Finalize()

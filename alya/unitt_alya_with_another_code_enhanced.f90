@@ -16,10 +16,13 @@ program unitt_alya_with_another_code
   MY_MPI_COMM                        :: PAR_COMM_FINAL
   integer(4)                         :: ierr, rank, size
   character(len=128)                 :: app_name
-  character(len=128), allocatable    :: app_dumm(:)   ! receive buffer on root only
-  integer                            :: i, ndime      ! <-- moved here
-  character(len=128)                 :: s             ! <-- moved here
+  character(len=128), allocatable    :: app_dumm(:)     ! receive buffer on root only
+  integer                            :: i, idime, ndime ! <-- moved here
+  character(len=128)                 :: s               ! <-- moved here
 
+  real,    dimension(1:3)            :: rem_min, rem_max
+  integer, dimension(1:3)            :: rem_nx
+  
   !===================== execution part =====================
 #ifdef USEMPIF08
   call MPI_Init(ierr)
@@ -69,9 +72,19 @@ program unitt_alya_with_another_code
 
   ndime = 3
   call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
+  do idime = 1,ndime
+     rem_min(idime) = cos(i*3.14)
+     rem_max(idime) = cos(i*3.14*10)
+     rem_nx(idime) = i
+
+     call MPI_Bcast(rem_min(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD)
+     call MPI_Bcast(rem_max(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD)
+     call MPI_Bcast(rem_nx(idime),  1, MPI_INTEGER, 0, MPI_COMM_WORLD)
+  end do
   
   call MPI_Finalize(ierr)
 
+  
 contains
   pure function cstr_trim(str) result(out)
     ! Trim both trailing spaces and any trailing NUL bytes (CHAR(0))
