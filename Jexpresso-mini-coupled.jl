@@ -63,29 +63,24 @@ println("[Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize).
 ndime_buf = Vector{Int32}(undef, 1)
 MPI.Bcast!(ndime_buf, 0, world)
 ndime = ndime_buf[1]
-
+println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
 
 rem_min  = Vector{Float32}(undef, ndime)
 rem_max  = Vector{Float32}(undef, ndime)
 rem_nx   = Vector{Int32}(undef, ndime)
-tmp_real = Vector{Float32}(undef, 1)
-tmp_int  = Vector{Int32}(undef, 1)
 for idime in 1:ndime
-    MPI.Bcast!(tmp_real, 0, world)
-    rem_min[idime] = tmp_real[1]
-
-    MPI.Bcast!(tmp_real, 0, world)
-    rem_max[idime] = tmp_real[1]
-
-    MPI.Bcast!(tmp_int, 0, world)
-    rem_nx[idime] = tmp_int[1]
+    MPI.Bcast!(@view(rem_min[idime:idime]), 0, world)
+    MPI.Bcast!(@view(rem_max[idime:idime]), 0, world)
+    MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
 end
 
 println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
 println("[Jexpresso rank $wrank] Received rem_min = $rem_min from Alya"); flush(stdout)
 println("[Jexpresso rank $wrank] Received rem_max = $rem_max from Alya"); flush(stdout)
 println("[Jexpresso rank $wrank] Received rem_nx  = $rem_nx  from Alya"); flush(stdout)
-
+#--------------------------------------------------------------------------------------------
+# END Receive ndime from Alya
+#--------------------------------------------------------------------------------------------
 MPI.Finalize()
 
 #---------------------------------------------------------------------------------------------

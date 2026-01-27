@@ -69,22 +69,22 @@ program unitt_alya_with_another_code
      end do
      deallocate(app_dumm)
   end if
-
+  
   ndime = 3
   call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
   do idime = 1,ndime
-     rem_min(idime) = cos(i*3.14)
-     rem_max(idime) = cos(i*3.14*10)
-     rem_nx(idime) = i
+     rem_min(idime) = 10.1 + idime
+     rem_max(idime) = 100.1 + 10.0*idime
+     rem_nx(idime)  = idime
 
-     call MPI_Bcast(rem_min(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD)
-     call MPI_Bcast(rem_max(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD)
-     call MPI_Bcast(rem_nx(idime),  1, MPI_INTEGER, 0, MPI_COMM_WORLD)
+     call MPI_Bcast(rem_min(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
+     call MPI_Bcast(rem_max(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
+     call MPI_Bcast(rem_nx(idime),  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
   end do
-  
+
   call MPI_Finalize(ierr)
 
-  
+
 contains
   pure function cstr_trim(str) result(out)
     ! Trim both trailing spaces and any trailing NUL bytes (CHAR(0))
