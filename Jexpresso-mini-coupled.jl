@@ -66,17 +66,10 @@ println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdo
 rem_min = Vector{Float32}(undef, ndime)
 rem_max = Vector{Float32}(undef, ndime)
 rem_nx  = Vector{Int32}(undef, ndime)
-tmp_real = Vector{Float32}(undef, 1)
-tmp_int  = Vector{Int32}(undef, 1)
 for idime in 1:ndime
-    MPI.Bcast!(tmp_real, 0, world)
-    rem_min[idime] = tmp_real[1]
-
-    MPI.Bcast!(tmp_real, 0, world)
-    rem_max[idime] = tmp_real[1]
-
-    MPI.Bcast!(tmp_int, 0, world)
-    rem_nx[idime] = tmp_int[1]
+    MPI.Bcast!(@view(rem_min[idime:idime]), 0, world)
+    MPI.Bcast!(@view(rem_max[idime:idime]), 0, world)
+    MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
 end
 println("[Jexpresso rank $wrank] Received rem_min=$rem_min, rem_max=$rem_max, rem_nx=$rem_nx"); flush(stdout)
 
