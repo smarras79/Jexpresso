@@ -52,6 +52,14 @@ MPI.Gather!(local_chars, recv_buffer, 0, world)
 #MPI.Allgather!(local_chars, all_chars, world)
 @info "CALL JEXPRESSO"
 
+# Receive ndime from Alya via Bcast on COMM_WORLD (all ranks must participate)
+# Alya: call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
+# Use Int32 to match Fortran's MPI_INTEGER (4 bytes)
+ndime_buf = Vector{Int32}(undef, 1)
+MPI.Bcast!(ndime_buf, 0, world)
+ndime = ndime_buf[1]
+println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
+
 # Set coupling mode to prevent auto-execution on module load
 ENV["JEXPRESSO_COUPLING_MODE"] = "true"
 
