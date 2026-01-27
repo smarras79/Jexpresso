@@ -101,11 +101,13 @@ include(joinpath( "macros", "je_macros.jl"))
 
 include(joinpath( "auxiliary", "timing.jl"))
 
+include(joinpath( "kernel", "globalStructs.jl"))
+
+include(joinpath( "kernel", "couplingStructs.jl"))
+
 include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "elementLearningStructs.jl"))
-
-include(joinpath( "kernel", "globalStructs.jl"))
 
 include(joinpath( "kernel", "ArtificialViscosity","viscousStructs.jl"))
 

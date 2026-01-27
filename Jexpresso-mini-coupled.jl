@@ -2,14 +2,12 @@
 # Jexpresso-mini-coupled.jl — Julia side with dynamic remote-leader discovery.
 # FIXED: Tag mismatch corrected
 #
-# mpirun --tag-output -np 2 ./alya/Alya.x : \
-#         -np 2 julia --project=. Jexpresso-mini-coupled.jl \
-#         false --gather-coupling --coupling-test-only --code-name "Jexpresso"
-#
+# mpirun --tag-output -np 2 ./alya/Alya_enhanced.x : -np 2 julia --project=. Jexpresso-mini-coupled.jl
 #
 using MPI
 
 println("Jexpresso-mini starting..."); flush(stdout)
+
 MPI.Init()
 println("init"); flush(stdout)
 
@@ -32,19 +30,22 @@ end
 println("[Split before $wrank"); flush(stdout)
 local_comm = MPI.Comm_split(world, appid, wrank)
 println("[Split after $wrank"); flush(stdout)
-lrank = MPI.Comm_rank(local_comm)
-lsize = MPI.Comm_size(local_comm)
 
+lrank       = MPI.Comm_rank(local_comm)
+lsize       = MPI.Comm_size(local_comm)
+nranks1     = lsize                      # Jexpresso
+nranks2     = wsize - lsize              # Other code
 local_chars = Vector{UInt8}(rpad("JEXPRESSO", 128, ' '))
 recv_buffer = nothing
+
 MPI.Gather!(local_chars, recv_buffer, 0, world)
 
 # Set coupling mode to prevent auto-execution on module load
-ENV["JEXPRESSO_COUPLING_MODE"] = "true"
+ENV["JEXPRESSO_COUPLING_MODE"] = "false"
 
 # Set command line arguments for Jexpresso
 push!(empty!(ARGS), "CompEuler", "wave1d")
-#=
+
 # Load Jexpresso module (setup doesn't run yet because of JEXPRESSO_COUPLING_MODE)
 println("[Jexpresso rank $wrank] Loading Jexpresso module (JIT compilation may take minutes)..."); flush(stdout)
 include("./src/Jexpresso.jl")
@@ -54,12 +55,17 @@ println("[Jexpresso rank $wrank] Jexpresso module loaded."); flush(stdout)
 Jexpresso.set_mpi_comm(local_comm)
 println("[Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize)."); flush(stdout)
 
-=#
 #--------------------------------------------------------------------------------------------
 # Receive ndime from Alya via Bcast on COMM_WORLD (all ranks must participate)
 # Alya: call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
 # Use Int32 to match Fortran's MPI_INTEGER (4 bytes)
 #--------------------------------------------------------------------------------------------
+include("./src/kernel/couplingStructs.jl")
+
+println("size JE ", wsize)
+println("size AL ", wsize)
+couple = couplingAlloc(wsize, wsize, Int64;)
+
 ndime_buf = Vector{Int32}(undef, 1)
 MPI.Bcast!(ndime_buf, 0, world)
 ndime = ndime_buf[1]
@@ -74,10 +80,13 @@ for idime in 1:ndime
     MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
 end
 
-println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
-println("[Jexpresso rank $wrank] Received rem_min = $rem_min from Alya"); flush(stdout)
-println("[Jexpresso rank $wrank] Received rem_max = $rem_max from Alya"); flush(stdout)
-println("[Jexpresso rank $wrank] Received rem_nx  = $rem_nx  from Alya"); flush(stdout)
+alya2world = zeros(Int64, nranks2)
+MPI.Allgather!(alya2world, wrank)
+
+#println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
+#println("[Jexpresso rank $wrank] Received rem_min = $rem_min from Alya"); flush(stdout)
+#println("[Jexpresso rank $wrank] Received rem_max = $rem_max from Alya"); flush(stdout)
+#println("[Jexpresso rank $wrank] Received rem_nx  = $rem_nx  from Alya"); flush(stdout)
 #--------------------------------------------------------------------------------------------
 # END Receive ndime from Alya
 #--------------------------------------------------------------------------------------------
