@@ -77,10 +77,10 @@ function jexpresso_main()
     end
 
     # Get communicator - custom one if set (coupling mode), otherwise COMM_WORLD
-    comm = get_mpi_comm()
-    rank = MPI.Comm_rank(comm)
+    comm   = get_mpi_comm()
+    rank   = MPI.Comm_rank(comm)
     nparts = MPI.Comm_size(comm)
-
+    @mystop
     #--------------------------------------------------------
     # Parse command line args:
     #--------------------------------------------------------
@@ -124,7 +124,7 @@ function jexpresso_main()
 
     # inputs must be global because many functions access it by name (legacy design)
     global inputs = Dict{}()
-    inputs = Base.@invokelatest user_inputs()
+    inputs        = Base.@invokelatest user_inputs()
     Base.invokelatest(mod_inputs_user_inputs!, inputs, rank)
 
     #--------------------------------------------------------

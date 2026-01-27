@@ -4,7 +4,7 @@ function driver(nparts,
                 OUTPUT_DIR::String,
                 TFloat)
     
-    comm  = distribute.comm
+    comm = distribute.comm
     rank = MPI.Comm_rank(comm)
     
    # @info MPI.COMM_WORLD
@@ -16,9 +16,9 @@ function driver(nparts,
         if rank == 0
             println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
 	end
-        input_mesh = inputs[:gmsh_filename]
+        input_mesh             = inputs[:gmsh_filename]
         inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
-        sem_dummy = sem_setup(inputs, nparts, distribute)
+        sem_dummy              = sem_setup(inputs, nparts, distribute)
         inputs[:gmsh_filename] = input_mesh
         
         #check_memory(" Right after sem_dummy setup.")
@@ -26,30 +26,22 @@ function driver(nparts,
         # --- MEMORY CLEANUP ---
         # 1. Explicitly drop the reference to the dummy object
         sem_dummy = nothing 
-
-        # 2. Force a full garbage collection run
-        #GC.gc()
-        
-        #check_memory(" At GC() after sem_dummy setup.")
         
         if rank == 0
             println(BLUE_FG(string(" # JIT pre-compilation of large problem ... END")))
         end
     end
-    #check_memory(" Before sem_setup.")
-                
+                   
     sem, partitioned_model = sem_setup(inputs, nparts, distribute)
-
-    #check_memory(" After sem_setup.")
     
     if (inputs[:backend] != CPU())
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     end
     
-    #
+    #---------------------------------------------------------
     # Broadcast for coupling:
-    #
-    inputs[:lwith_alya] = true #for now hard coded
+    #---------------------------------------------------------
+  #=  inputs[:lwith_alya] = true #for now hard coded
     if inputs[:lwith_alya]
 
         @info "BROADCASTING  nsd to Alya: "
@@ -58,22 +50,19 @@ function driver(nparts,
         if rank == 0
             nsd[] = sem.mesh.nsd            
         end
-        @info sizeof(comm)
-        MPI.Bcast!(nsd, root=0, comm)
+        local_comm = Jexpresso.get_mpi_comm()
+        @info local_comm
+
+        MPI.Bcast!(nsd, root=0, local_comm)
 
         println("nsd  $rank got ", nsd[])
 
-        @info "BROADCASTING  nsd to Alya: ... END"
+        @info "BROADCASTING  nsd from Alya: ... END"
         
     end
-   # @mystop(" MYSTOP at drivers.jl L64")
-    
+    =#
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
-    #check_memory(" After initialize.")
-    # println("Rank $rank: $(Sys.free_memory() / 2^30) GB free")
-    # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
-    # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
     
     if (inputs[:lamr] == true)
         amr_freq = inputs[:amr_freq]

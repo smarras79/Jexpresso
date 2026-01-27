@@ -17,7 +17,7 @@ program unitt_alya_with_another_code
   integer(4)                         :: ierr, rank, size
   character(len=128)                 :: app_name
   character(len=128), allocatable    :: app_dumm(:)   ! receive buffer on root only
-  integer                            :: i             ! <-- moved here
+  integer                            :: i, ndime      ! <-- moved here
   character(len=128)                 :: s             ! <-- moved here
 
   !===================== execution part =====================
@@ -67,6 +67,9 @@ program unitt_alya_with_another_code
      deallocate(app_dumm)
   end if
 
+  ndime = 3
+  call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
+  
   call MPI_Finalize(ierr)
 
 contains

@@ -40,6 +40,15 @@ program unitt_alya_with_another_code
                   app_dumm, 128, MPI_CHARACTER, &
                   0, MPI_COMM_WORLD, ierr)
 
+  ndime = 3
+  call MPI_Bcast(ndime, 1, INTEGER, 0, MPI_COMM_WORLD) 
+  !do idime = 1,3
+  !   call PAR_BROADCAST(rem_min(idime),'IN THE UNIVERSE') ! real
+  !   call PAR_BROADCAST(rem_max(idime),'IN THE UNIVERSE') ! real
+  !   call PAR_BROADCAST(rem_nx(idime) ,'IN THE UNIVERSE') ! integer
+  !end do
+
+
   ! Print result to verify
   if (rank == 0) then
      print *, ""
