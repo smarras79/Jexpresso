@@ -79,16 +79,20 @@ for idime in 1:3
     MPI.Bcast!(@view(rem_max[idime:idime]), 0, world)
     MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
 end
-
-alya2world_l = zeros(Int32, nranks2)
-alya2world   = MPI.Allreduce(alya2world_l,MPI.SUM,world)
-
 println("[Jexpresso rank $wrank] Received nranks2    = $nranks2    from Alya"); flush(stdout)
 println("[Jexpresso rank $wrank] Received ndime      = $ndime      from Alya"); flush(stdout)
 println("[Jexpresso rank $wrank] Received rem_min    = $rem_min    from Alya"); flush(stdout)
 println("[Jexpresso rank $wrank] Received rem_max    = $rem_max    from Alya"); flush(stdout)
 println("[Jexpresso rank $wrank] Received rem_nx     = $rem_nx     from Alya"); flush(stdout)
+
+alya2world_l = zeros(Int32, nranks2)
+alya2world   = MPI.Allreduce(alya2world_l,MPI.SUM,world)
+
 println("[Jexpresso rank $wrank] Received alya2world = $alya2world from Alya"); flush(stdout)
+
+a_l = zeros(Int32, wsize,wsize)
+a   = MPI.Allreduce(a_l,MPI.SUM,world)
+
 #--------------------------------------------------------------------------------------------
 # END Receive ndime from Alya
 #--------------------------------------------------------------------------------------------
