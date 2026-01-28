@@ -11,7 +11,7 @@ println("Jexpresso-mini starting..."); flush(stdout)
 MPI.Init()
 println("init"); flush(stdout)
 
-const world = MPI.COMM_WORLD
+world = MPI.COMM_WORLD
 wrank = MPI.Comm_rank(world)
 wsize = MPI.Comm_size(world)
 println("[Jexpresso rank $wrank] World size: $wsize"); flush(stdout)
@@ -79,14 +79,6 @@ for idime in 1:3
     MPI.Bcast!(@view(rem_max[idime:idime]), 0, world)
     MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
 end
-println("AAAAAAAAAAAAAAAAAAAAAA")
-# Each rank contributes its rank as a Float64
-alya2world_l = zeros(Int32, wsize)
-#alya2world_l = zeros(Int32, nranks2)
-alya2world   = MPI.Allreduce(alya2world_l, MPI.SUM, world)
-println("Rank $rank: local_vec = $(local_vec), global_vec (sum across ranks) = $(global_vec)")
-println("CCCCCCCCCCCCCCCCCCCCCC")
-
 println("[Jexpresso rank $wrank] Received nranks2    = $nranks2    from Alya"); flush(stdout)
 println("[Jexpresso rank $wrank] Received ndime      = $ndime      from Alya"); flush(stdout)
 println("[Jexpresso rank $wrank] Received rem_min    = $rem_min    from Alya"); flush(stdout)
@@ -104,17 +96,6 @@ a   = MPI.Allreduce(a_l,MPI.SUM,world)
 #--------------------------------------------------------------------------------------------
 # END Receive ndime from Alya
 #--------------------------------------------------------------------------------------------
-#=distribute_and_count!(
-    rem_nx,
-    rem_min,
-    rem_max,
-    ndime,
-    nranks2,
-    in_my_rank
-    a,
-    wrank,
-    alya2world)
--#
 MPI.Finalize()
 
 #---------------------------------------------------------------------------------------------
