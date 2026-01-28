@@ -80,8 +80,13 @@ for idime in 1:3
     MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
 end
 
-alya2world_l = zeros(Int32, nranks2)
-alya2world   = MPI.Allreduce(alya2world_l,MPI.SUM,world)
+# Build Alya-to-world rank mapping.
+# Use wsize-length buffers so every rank (both codes) has the same buffer size.
+# Jexpresso contributes zeros; Alya ranks set buf[wrank+1] = wrank+1.
+# After Allreduce(SUM) non-zero entries are the (1-based) world ranks of Alya.
+alya2world_l = zeros(Int32, wsize)
+alya2world_full = MPI.Allreduce(alya2world_l, MPI.SUM, world)
+alya2world = Int32[alya2world_full[i] - 1 for i in 1:wsize if alya2world_full[i] != 0]
 
 println("[Jexpresso rank $wrank] Received nranks2    = $nranks2    from Alya"); flush(stdout)
 println("[Jexpresso rank $wrank] Received ndime      = $ndime      from Alya"); flush(stdout)
