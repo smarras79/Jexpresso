@@ -627,8 +627,6 @@ function reduce_to_local_root!(ctx::CouplingContext, send_data::AbstractArray,
     MPI.Reduce!(send_data, recv_data, op, ctx.comm_local; root=root)
 end
 
-end # module JexpressoCoupling
-
 
 #------------------------------------------------------------------------------------
 # Receive the grid coordinate from Alya (structured and regular only)
@@ -688,3 +686,7 @@ function distribute_and_count!(
     =#
     return a
 end
+
+
+end # module JexpressoCoupling
+

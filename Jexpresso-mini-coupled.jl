@@ -61,6 +61,9 @@ println("[Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize).
 # Use Int32 to match Fortran's MPI_INTEGER (4 bytes)
 #--------------------------------------------------------------------------------------------
 include("./src/kernel/couplingStructs.jl")
+#include("./src/kernel/mpi/mpi_communications.jl")
+
+
 
 println("size JE ", wsize)
 println("size AL ", wsize)
@@ -93,16 +96,24 @@ println("[Jexpresso rank $wrank] Received alya2world = $alya2world from Alya"); 
 a_l = zeros(Int32, wsize,wsize)
 a   = MPI.Allreduce(a_l,MPI.SUM,world)
 
+distribute_and_count!(
+    rem_nx,
+    rem_min,
+    rem_max,
+    ndime,
+    nranks2,
+    lrank,
+    a,
+    wrank,
+    alya2world)
+
 #--------------------------------------------------------------------------------------------
 # END Receive ndime from Alya
 #--------------------------------------------------------------------------------------------
-MPI.Finalize()
-
-#---------------------------------------------------------------------------------------------
 
 # Now run Jexpresso with the configured communicator
-println("[Jexpresso rank $wrank] Starting jexpresso_main()..."); flush(stdout)
+#println("[Jexpresso rank $wrank] Starting jexpresso_main()..."); flush(stdout)
 Jexpresso.jexpresso_main()
-println("[Jexpresso rank $wrank] jexpresso_main() finished."); flush(stdout)
+#println("[Jexpresso rank $wrank] jexpresso_main() finished."); flush(stdout)
 
 MPI.Finalize()
