@@ -1,4 +1,19 @@
 
+function je_mpi_init()
+    
+    # Initialize MPI if not already done
+    if !MPI.Initialized()
+        MPI.Init()
+    end
+
+    # Get communicator - custom one if set (coupling mode), otherwise COMM_WORLD
+    comm   = get_mpi_comm()
+    rank   = MPI.Comm_rank(comm)
+    nparts = MPI.Comm_size(comm)
+    
+    return comm, rank, nparts
+end
+
 mutable struct CyclingReverseDict
     mapping::Dict{Int, Vector{Int}}
     counters::Dict{Int, Int}

@@ -1,6 +1,56 @@
 using Crayons.Box
 using PrettyTables
 
+using ArgParse
+function je_parse_commandline()
+    s = ArgParseSettings()
+
+    @add_arg_table s begin
+        "eqs"
+        help = "Directoy that contains some user-defined cases"
+        default = "CompEuler"
+        required = false
+
+        "eqs_case"
+        help = "case name in equations directory"
+        default = "wave1d"
+        required = false
+
+        "CI_MODE"
+        help = "CI_MODE: true or false"
+        default = "false"
+        required = false
+    end
+
+    return parse_args(s)
+end
+
+
+function je_parse_args()
+    
+    parsed_args = je_parse_commandline()
+    
+    # These must be global because other functions access them by name (legacy design)
+    global parsed_equations           = string(parsed_args["eqs"])
+    global parsed_equations_case_name = string(parsed_args["eqs_case"])
+    global parsed_CI_mode             = string(parsed_args["CI_MODE"])
+    global driver_file                = string(joinpath( "..", "problems", "drivers.jl"))
+    
+    if parsed_CI_mode == "true"
+        case_name_dir = string(joinpath("test", "CI-runs", parsed_equations, parsed_equations_case_name))
+    else
+        case_name_dir = string(joinpath("problems", parsed_equations, parsed_equations_case_name))
+    end
+    
+    global user_input_file      = string(joinpath("..", case_name_dir, "user_inputs.jl"))
+    global user_flux_file       = string(joinpath("..", case_name_dir, "user_flux.jl"))
+    global user_source_file     = string(joinpath("..", case_name_dir, "user_source.jl"))
+    global user_bc_file         = string(joinpath("..", case_name_dir, "user_bc.jl"))
+    global user_initialize_file = string(joinpath("..", case_name_dir, "initialize.jl"))
+    global user_primitives_file = string(joinpath("..", case_name_dir, "user_primitives.jl"))
+    
+end
+
 function mod_inputs_user_inputs!(inputs, rank = 0)
 
     error_flag::Int8 = 0
@@ -841,4 +891,54 @@ function mod_inputs_print_welcome(rank = 0)
         print(BLUE_FG(" #--------------------------------------------------------------------------------\n"))
     end
 
+end
+
+function mod_io_mkoutdir!(inputs)
+    
+ #--------------------------------------------------------
+    # Create output directory if it doesn't exist:
+    #--------------------------------------------------------
+    user_defined_output_dir = inputs[:output_dir]
+
+    if inputs[:loverwrite_output]
+        outstring = string("output")
+    else
+        outstring = rank == 0 ? string("output-",  Dates.format(now(), "dduyyyy-HHMMSS")) : ""
+        outstring = MPI.bcast(outstring, 0, comm)
+    end
+    if user_defined_output_dir == "none"
+        OUTPUT_DIR = joinpath(case_name_dir, outstring)
+        inputs[:output_dir] = OUTPUT_DIR
+    else
+        OUTPUT_DIR = joinpath(user_defined_output_dir, parsed_equations, parsed_equations_case_name, outstring)
+        inputs[:output_dir] = OUTPUT_DIR
+    end
+    if !isdir(OUTPUT_DIR)
+        mkpath(OUTPUT_DIR)
+    end
+
+    #--------------------------------------------------------
+    # Create restart output/inupt directory if it doesn't exist:
+    #--------------------------------------------------------
+    if (!haskey(inputs, :restart_output_file_path))
+        inputs[:restart_output_file_path] = joinpath(OUTPUT_DIR,string("restart"))
+    end
+
+    if (haskey(inputs, :lrestart))
+        if(inputs[:lrestart] == true && !haskey(inputs, :restart_input_file_path))
+            inputs[:restart_input_file_path] = inputs[:restart_output_file_path]
+        end
+    else
+        inputs[:lrestart] = false
+    end
+
+     #--------------------------------------------------------
+    # Save a copy of user_inputs.jl for the case being run
+    #--------------------------------------------------------
+    if rank == 0
+        cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
+    end
+    
+    
+    return OUTPUT_DIR 
 end
