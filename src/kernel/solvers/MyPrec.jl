@@ -1,6 +1,6 @@
 module MyPrecClass
 
-export MyPrec, updateA!, sol!
+export MyPrec, updateA!, sol!, Jacobisol!, ilusol!
 
 using AlgebraicMultigrid: solve
 using IncompleteLU
