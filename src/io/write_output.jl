@@ -3,6 +3,30 @@ using WriteVTK
 include("./plotting/jeplots.jl")
 
 #------------------------------------------------------------------
+# Write PVD file for ParaView time series
+#------------------------------------------------------------------
+function init_pvd_file(path)
+    open(path, "w") do io
+        println(io, "<?xml version=\"1.0\"?>")
+        println(io, "<VTKFile type=\"Collection\" version=\"0.1\">")
+        println(io, "  <Collection>")
+        println(io, "  </Collection>")
+        println(io, "</VTKFile>")
+    end
+end
+
+function append_pvd_entry(path, time, filename)
+    lines = readlines(path)
+    insert_pos = length(lines) - 1  # insert before last 2 lines
+    insert!(lines, insert_pos, "    <DataSet timestep=\"$time\" file=\"$filename\"/>")
+    open(path, "w") do io
+        for line in lines
+            println(io, line)
+        end
+    end
+end
+
+#------------------------------------------------------------------
 # Callback for missing user_uout!()
 #------------------------------------------------------------------
 function call_user_uout(uout, u, qe, mp, ET, npoin, nvar, noutvar)

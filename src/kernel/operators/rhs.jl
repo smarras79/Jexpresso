@@ -711,7 +711,7 @@ function inviscid_rhs_el!(u, params,
                           qe::Matrix{Float64},
                           coords, 
                           lsource, S_micro_vec, qn_vec, flux_lw_vec,
-                          flux_sw_vec, SD::NSD_2D)
+                          flux_sw_vec, SD::NSD_2D, ::Val)
     
     ngl   = params.mesh.ngl
     nelem = params.mesh.nelem

@@ -37,9 +37,10 @@ function user_source!(S,
         zs = inputs[:zsponge]
     	xr = 0.0
     	xl = 0.0
-    	α  = 0.5
+    	tau_top = 10.0          #  seconds
+        α = 1.0 / tau_top        # 
         if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-                betay_coe = α * sinpi(0.5*(z - zs)/(zmax - zs))#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+                betay_coe = α * sinpi(0.5*(z - zs)/(zmax - zs)) ^ 2.0#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
         else
             betay_coe = 0.0
         end
@@ -74,7 +75,7 @@ function user_source!(S,
     
     #Coriolis & geostrophic wind    
     if lcoriolis == true
-        f = 1.0e-4
+        f = 2.28e-5
         u_vel = q[2]
         v_vel = q[3]
         S[2] += f * v_vel
@@ -130,9 +131,9 @@ function user_source!(S,
         zs = inputs[:zsponge]
     	xr = 0.0
     	xl = 0.0
-    	α  = 0.5
+    	α  = 1.0/60.0
         if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
-                betay_coe = sinpi(0.5*(z - zs)/(zmax - zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
+                betay_coe = α * sinpi(0.5*(z - zs)/(zmax - zs))^2#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
         else
             betay_coe = 0.0
         end
@@ -157,7 +158,7 @@ function user_source!(S,
         cs  = 1.0 - (1.0 - ctop)*(1.0 - cxr)*(1.0 - cxl)*(1.0 - cyr)*(1.0 - cyl)
 
         #@info "β x: " ctop,cxr,cxl,cs, zs, y, x, ymin, ymax, dsy, dbl
-        S[1] -= (cs)*(q[1])
+        # S[1] -= (cs)*(q[1])
         S[2] -= cs*(q[2])
     	S[3] -= cs*(q[3])
         S[4] -= cs*(q[4])

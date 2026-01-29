@@ -21,8 +21,9 @@ function user_inputs()
         :LST                  => false,
         # :LST                  => false,
 	:lsponge              => true,
-	:zsponge              => 19000.0,
-        :sounding_file        =>"./data_files/Cirrus.dat",
+	:zsponge              => 17000.0,
+        # :sounding_file        =>"./data_files/Cirrus_new.dat",
+        :sounding_file        =>"./data_files/GIGALES_GATE_IDEAL_sounding.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -35,10 +36,10 @@ function user_inputs()
         :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
-        # :visc_model           => SMAG(),
-        :visc_model           => AV(),
-        :μ           => [0.0, 100.0, 100.0, 100.0, 200.0, 200.0, 200.0], #horizontal viscosity constant for momentum
-        # :μ                    => [0.0, 5, 5, 5, 5, 5, 5], #horizontal viscosity constant for momentum
+        :visc_model           => SMAG(),
+        # :visc_model           => AV(),
+        # :μ           => [0.0, 400.0, 400.0, 400.0, 800.0, 800.0, 800.0], #horizontal viscosity constant for momentum
+        :μ                    => [0.0, 4, 4, 4, 4, 4, 4], #horizontal viscosity constant for momentum
         :energy_equation      => "theta",
         # :lrichardson          => true,
         #---------------------------------------------------------------------------
@@ -53,7 +54,7 @@ function user_inputs()
 	
   
         #---------------------------------------------------------------------------
-        # Filter parameters
+        # Filter parameters -bigger weaker
         #---------------------------------------------------------------------------
         :lfilter             => false,
         :mu_x                => 0.5,
@@ -66,7 +67,7 @@ function user_inputs()
         :outformat           => "vtk",
         :output_dir          => "./output_gigales_energy_dry/",
         #:output_dir          => "./output",
-        :loverwrite_output   => true,  #this is only implemented for VTK for now
+        :loverwrite_output   => false,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement

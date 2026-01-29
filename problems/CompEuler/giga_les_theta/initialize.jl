@@ -49,17 +49,17 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             data       = read_sounding(inputs[:sounding_file])
             background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data) 
             
-            data_u                 = read_sounding("./data_files/GLES_initial_u.dat")
-            data_u_reordered       = zeros(size(data_u))
-            data_u_reordered[:,1] .= data_u[:,2]*1000
-            data_u_reordered[:,2] .= data_u[:,1]
-            background_u           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_u_reordered)
+            # data_u                 = read_sounding("./data_files/GLES_initial_u.dat")
+            # data_u_reordered       = zeros(size(data_u))
+            # data_u_reordered[:,1] .= data_u[:,2]*1000
+            # data_u_reordered[:,2] .= data_u[:,1]
+            # background_u           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_u_reordered)
 
-            data_qv                 = read_sounding("./data_files/GLES_initial_qv.dat")
-            data_qv_reordered       = zeros(size(data_qv))
-            data_qv_reordered[:,1] .= data_qv[:,2]*1000
-            data_qv_reordered[:,2] .= data_qv[:,1]
-            background_qv           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_qv_reordered)
+            # data_qv                 = read_sounding("./data_files/GLES_initial_qv.dat")
+            # data_qv_reordered       = zeros(size(data_qv))
+            # data_qv_reordered[:,1] .= data_qv[:,2]*1000
+            # data_qv_reordered[:,2] .= data_qv[:,1]
+            # background_qv           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_qv_reordered)
             
             amp = 0.1 #K
 
@@ -73,31 +73,47 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     rand_noise = 2*amp*(rand() - 1.0)
                 end
 
-                #else
-                qv_ref = background_qv[ip,1]/1000
-                #end
-                u_ref  = background_u[ip,1]
+                # qv_ref = background_qv[ip,1]/1000
+                # #end
+                # u_ref  = background_u[ip,1]
+                # pref   = background[ip,1]
+                # T      = T_ref + rand_noise
+                # Tv     = T*(1+0.61*qv_ref) 
+                # Tv_ref = T_ref*(1+0.61*qv_ref) 
+                # ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=T,    Press=pref)    #kg/m³
+                # ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=T_ref, Press=pref) #kg/m³
+                # # ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
+                # # ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
+                # # hl is the liqui/ice static energy used in SAM
+                # # use potential is less conservative
+                # # hl     = PhysConst.cp*T + PhysConst.g*z
+                # # hl_ref = PhysConst.cp*T_ref + PhysConst.g*z
+                # u      = u_ref
+                # v_ref  = 0.0
+                # v      = v_ref
+                # w      = 0.0
+                # # pref_m = ρref*Tv_ref*PhysConst.Rair
+                # # dry pressure
+                # pref_m = ρref*T_ref*PhysConst.Rair#ρref*PhysConst.Rair*Tref + ρref*qv_ref*PhysConst.Rvap*Tref
+                # θ      = T * (PhysConst.pref/pref_m)^(1.0/PhysConst.cpoverR)
+                # θ_ref  = T_ref * (PhysConst.pref/pref_m)^(1.0/PhysConst.cpoverR)
+
+                u_ref  = background[ip,4]
+                v_ref  = background[ip,5]
+                w_ref  = 0.0
                 pref   = background[ip,1]
-                T      = T_ref + rand_noise
-                θ      = T * (PhysConst.pref/pref)^(1.0/PhysConst.cpoverR)
-                θ_ref  = T_ref * (PhysConst.pref/pref)^(1.0/PhysConst.cpoverR)
-                Tv     = T*(1+0.61*qv_ref) 
-                Tv_ref = T_ref*(1+0.61*qv_ref) 
-                ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=T,    Press=pref)    #kg/m³
-                ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=T_ref, Press=pref) #kg/m³
-                # ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
-                # ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
-                # hl is the liqui/ice static energy used in SAM
-                # use potential is less conservative
-                # hl     = PhysConst.cp*T + PhysConst.g*z
-                # hl_ref = PhysConst.cp*T_ref + PhysConst.g*z
+                θ_ref  = background[ip,2]
+                qv_ref = background[ip,3]
+
+                ρref   = perfectGasLaw_θPtoρ(PhysConst; θ=θ_ref, Press=pref) #kg/m³
+                pref_m = pref
+
                 u      = u_ref
-                v_ref  = 0.0
                 v      = v_ref
-                w      = 0.0
-                # pref_m = ρref*Tv_ref*PhysConst.Rair
-                # dry pressure
-                pref_m = ρref*T_ref*PhysConst.Rair#ρref*PhysConst.Rair*Tref + ρref*qv_ref*PhysConst.Rvap*Tref
+                w      = w_ref
+                θ      = θ_ref + rand_noise
+                ρ      = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=pref) #kg/m³
+
                 if inputs[:SOL_VARS_TYPE] == PERT()
                     q.qn[ip,1] = ρ - ρref
                     q.qn[ip,2] = ρ*u - ρref*u
