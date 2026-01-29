@@ -76,6 +76,7 @@ function user_inputs()
         :maxiter      => 1,
         :abstol       => 1e-8,
         :precision    => Float32,
+        :prec_type    => "AMG",
         )
 
     # Source function

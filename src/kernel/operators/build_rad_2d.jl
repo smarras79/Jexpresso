@@ -483,7 +483,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     b = PETSc.VecSeq(comm, zeros(Float64, gnpoin))
     x = PETSc.VecSeq(comm, zeros(Float64, gnpoin))
 =#
-    @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM)
+#    @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM)
     #=for ip = 1:npoin_ang_total
         gip = ip2gip_extra[ip]
         for jp in nzrange(As,ip)
@@ -493,7 +493,33 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         b[gip] = RHS[ip]
     end=#
 
+haskey(inputs, :sp) ? solver_parameters = inputs[:sp] : solver_parameters = nothing
 
+(solver_parameters != nothing && haskey(solver_parameters, :atol)) ? atol = solver_parameters[:atol] : atol = 1.e-06
+(solver_parameters != nothing && haskey(solver_parameters, :rtol)) ? rtol = solver_parameters[:rtol] : rtol = 1.e-06
+(solver_parameters != nothing && haskey(solver_parameters, :restart)) ? restart = solver_parameters[:restart] : restart = true
+(solver_parameters != nothing && haskey(solver_parameters, :memory)) ? memory = solver_parameters[:memory] : memory = 100
+(solver_parameters != nothing && haskey(solver_parameters, :itmax)) ? itmax = solver_parameters[:itmax] : itmax = 1000
+(solver_parameters != nothing && haskey(solver_parameters, :verbose)) ? verbose = solver_parameters[:verbose] : verbose = 1
+
+haskey(inputs, :solver_precision) ? solver_precision = inputs[:solver_precision] : solver_precision = Float64
+
+haskey(inputs, :prec_sp) ? prec_sp = inputs[:prec_sp] : prec_sp = Dict(:precision => Float32,
+                                                                       :ilu_tol   => 0.01,
+                                                                       :prec_type    => "ilu",)
+haskey(prec_sp, :ilu_tol) ? ilu_tol = prec_sp[:ilu_tol] : ilu_tol = 0.01
+
+P = IncompleteLU.ilu(prec_sp[:precision].(As), τ = ilu_tol)
+prec = MyPrecClass.MyPrec(As,
+                          P,
+                          prec_sp)
+
+(solution, stats) = gmres(As, B,
+                          memory=memory, N=prec, ldiv=true,
+                          restart=restart, atol=atol, rtol=rtol,
+                          itmax=itmax, verbose = verbose)
+
+@info stats
 
   #  PETSc.assemble(A_petsc)
     #PETSc.assemble(b)

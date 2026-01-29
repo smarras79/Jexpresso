@@ -2,7 +2,8 @@ module MyPrecClass
 
 export MyPrec, updateA!, sol!
 
-using LinearSolve: solve
+using AlgebraicMultigrid: solve
+using IncompleteLU
 
 mutable struct MyPrec
     A::AbstractMatrix
@@ -24,6 +25,24 @@ function sol!(P::MyPrec, b::AbstractVector, y::AbstractVector)
     sol = solve(P.A, b_1, P.prec, maxiter=maxiter, abstol=abstol)
 
     y .= sol
+end
+
+function Jacobisol!(P::MyPrec, b::AbstractVector, y::AbstractVector)
+    precision = P.kwargs[:precision]
+
+    b_1 = precision.(b)
+
+    y .= P.prec \ b_1
+end
+
+function ilusol!(P::MyPrec, b::AbstractVector, y::AbstractVector)
+    precision = P.kwargs[:precision]
+
+    b_1 = precision.(b)
+
+    IncompleteLU.forward_substitution!(P.prec, b_1)
+    IncompleteLU.backward_substitution!(P.prec, b_1)
+    y .= b_1
 end
 
 end

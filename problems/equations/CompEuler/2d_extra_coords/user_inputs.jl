@@ -1,4 +1,20 @@
 function user_inputs()
+    # Solver parameters
+    solver_par = Dict(:restart  => true,
+                      :memory   => 100,
+                      :verbose  => 1,
+                      :atol     => 1.e-06,
+                      :rtol     => 1.e-06,
+                      :itmax    => 1000,
+                      )
+
+    # Preconditioner parameters
+    prec_sp = Dict(
+        :precision    => Float32,
+        :ilu_tol      => 0.01,
+        :prec_type    => "ilu",
+        )
+
     inputs = Dict(
         #---------------------------------------------------------------------------
         # User define your inputs below: the order doesn't matter
@@ -32,13 +48,19 @@ function user_inputs()
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x1x1.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
-        :gmsh_filename       => "./JexpressoMeshes/meshes/gmsh_grids/hexa_TFI_2x2.msh",
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_2x2.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
         :extra_dimensions    => 1,
         :adaptive_extra_meshes => false,
         :extra_dimensions_order => 4,
         :extra_dimensions_nelemx => 4,
         #:extra_dimensions_nelemy => 4,
+        #---------------------------------------------------------------------------
+        # Refinement
+        #---------------------------------------------------------------------------
+        :linitial_refine     => true,
+        :init_refine_lvl     => 1,
+        #---------------------------------------------------------------------------
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
@@ -53,6 +75,11 @@ function user_inputs()
         :output_dir          => "./output/",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
+        # Solver parameters
+        #---------------------------------------------------------------------------
+        :sp                 => solver_par,
+        :solver_precision   => Float64,
+        :prec_sp            => prec_sp,
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter

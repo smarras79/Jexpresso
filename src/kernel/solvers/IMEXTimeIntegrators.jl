@@ -30,6 +30,7 @@ function imex_time_loop!(inputs, sem, qp, params, u)
         haskey(inputs, :prec_sp) ? prec_sp = inputs[:prec_sp] : prec_sp = Dict(:maxiter      => 1,
                                                                                :abstol       => 1e-8,
                                                                                :precision    => Float64,
+                                                                               :prec_type    => "AMG",
                                                                                )
     end
 

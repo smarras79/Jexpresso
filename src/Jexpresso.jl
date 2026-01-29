@@ -30,6 +30,8 @@ using OrdinaryDiffEq: solve
 using SnoopCompile
 using LinearSolve
 using LinearSolve: solve
+using Krylov
+using IncompleteLU
 using SciMLBase: CallbackSet, DiscreteCallback,
                  ODEProblem, ODESolution, ODEFunction,
                  SplitODEProblem
@@ -66,7 +68,16 @@ using MPI
 
 TInt   = Int64
 TFloat = Float64
+SFloat = Float32
 cpu    = true
+
+function LinearAlgebra.ldiv!(y::AbstractVector{Float64}, F::Any, x::AbstractVector{Float64})
+    if F.kwargs[:prec_type] == "AMG"
+        MyPrecClass.sol!(F, x, y)
+    elseif F.kwargs[:prec_type] == "ilu"
+        MyPrecClass.ilusol!(F, x, y)
+    end
+end
 
 using DocStringExtensions
 
@@ -137,6 +148,8 @@ include(joinpath("kernel", "operators", "filter.jl"))
 include(joinpath("kernel", "operators", "Axb_rad_mpi.jl"))
 
 include(joinpath( "kernel", "solvers", "Axb.jl"))
+
+include(joinpath( "kernel", "solvers", "MyPrec.jl"))
 
 include(joinpath("kernel", "operators", "build_rad_2d.jl"))
 
