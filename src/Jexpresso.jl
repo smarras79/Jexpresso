@@ -142,6 +142,8 @@ include(joinpath("kernel", "operators", "build_rad_2d.jl"))
 
 include(joinpath("kernel", "operators", "build_rad_3d.jl"))
 
+include(joinpath( "kernel", "operators", "angular_comms.jl"))
+
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 
 include(joinpath( "io", "mod_inputs.jl"))
@@ -163,6 +165,8 @@ include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 include(joinpath( "auxiliary", "checks.jl"))
 
 include("./run.jl")
+
+
 
 # Run the test
 # test_create_2d_projection_matrices_numa2d()

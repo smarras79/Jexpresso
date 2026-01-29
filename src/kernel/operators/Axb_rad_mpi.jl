@@ -384,12 +384,9 @@ function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; t
     end
     maxiter = gnpoin
     @info tol, maxiter
-    x, stats = Krylov.lsqr(A_parallel, b_global;
+    x, stats = Krylov.lsmr(A_parallel, b_global;
                    atol = tol,
                    rtol = tol,
-                   btol = tol,
-                   etol = tol,
-                   axtol = tol,
                    itmax = maxiter,
                    verbose = (rank == 0) ? 1 : 0)  # Only print on rank 0
 

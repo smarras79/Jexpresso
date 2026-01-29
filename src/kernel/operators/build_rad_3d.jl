@@ -1,4 +1,5 @@
 using SparseArrays
+
 function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dξdz, dηdx, dηdy, dηdz, dζdx, dζdy, dζdz,
         nx, ny, nz, elem_to_face,
         extra_mesh, QT::Inexact, SD::NSD_3D, AD::ContGal)
@@ -58,19 +59,31 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         
         @info "built initial adaptive spatial angular connectivity"
         
-        @info "construct global numbering"
-        #=ip2gip_spa, gip2ip, gip2owner_spa, gnpoin = setup_global_numbering_adaptive_angular_scalable(
+        @info "construct global numbering pre adapting"
+        ip2gip_spa, gip2ip, gip2owner_spa, gnpoin = setup_global_numbering_adaptive_angular_scalable(
             mesh.ip2gip, mesh.gip2owner, mesh, connijk_spa,
             extra_meshes_coords, extra_meshes_connijk,
             extra_meshes_extra_nops, extra_meshes_extra_nelems,
-            n_spa, n_non_global_nodes
+            n_spa, n_non_global_nodes, nc_non_global_nodes
             )
         @info maximum(ip2gip_spa), rank
         if rank == 0
             @info "Global spatial-angular numbering complete:"
             @info "  Total DOF: $gnpoin"
             @info "  Range: 1:$gnpoin (compact)"
-        end=#
+            @info " next build ghost layer"
+        end
+
+        ghost_layer = build_nonconforming_ghost_layer_corrected(
+            mesh, connijk_spa, mesh.ip2gip, ip2gip_spa, gip2owner_spa,
+            extra_meshes_coords, extra_meshes_connijk,
+            extra_meshes_extra_nops, extra_meshes_extra_nelems,
+            extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dξdy,
+            extra_meshes_extra_dηdx, extra_meshes_extra_dηdy,
+            extra_meshes_ref_level,
+            n_spa, neighbors
+            )
+        
         
         
         @time LHS = sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
@@ -117,7 +130,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             @info "number of hanging nodes", n_non_global_nodes
             
             @info "construct global numbering post adapted mesh"
-            #=ip2gip_spa, gip2ip, gip2owner_spa, gnpoin = setup_global_numbering_adaptive_angular_scalable(
+            ip2gip_spa, gip2ip, gip2owner_spa, gnpoin = setup_global_numbering_adaptive_angular_scalable(
                 mesh.ip2gip, mesh.gip2owner, mesh, connijk_spa,
                 extra_meshes_coords, extra_meshes_connijk,
                 extra_meshes_extra_nops, extra_meshes_extra_nelems,
@@ -128,7 +141,18 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 @info "Global spatial-angular numbering complete:"
                 @info "  Total DOF: $gnpoin"
                 @info "  Range: 1:$gnpoin (compact)"
-            end=#
+                @info " next build ghost layer"
+            end
+
+            ghost_layer = build_nonconforming_ghost_layer_corrected(
+                mesh, connijk_spa, mesh.ip2gip, ip2gip_spa, gip2owner_spa,
+                extra_meshes_coords, extra_meshes_connijk,
+                extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dξdy,
+                extra_meshes_extra_dηdx, extra_meshes_extra_dηdy,
+                extra_meshes_ref_level,
+                n_spa, neighbors
+                )
             
             @time LHS = sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
                                                         mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
@@ -227,9 +251,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         M_inv = nothing
         LHS = nothing
         GC.gc()
-        BDY = zeros(TFloat, npoin_ang_total,1)
-        RHS = zeros(TFloat, npoin_ang_total,1)
-        ref = zeros(TFloat, npoin_ang_total,1)
+        BDY = zeros(TFloat, npoin_ang_total)
+        RHS = zeros(TFloat, npoin_ang_total)
+        ref = zeros(TFloat, npoin_ang_total)
     end
 
     nc_rows = zeros(Int,1,1)
@@ -547,7 +571,14 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     #@time solution = As \ B
     
     @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM)
-
+    #=@time solution, stats = Krylov.cgs(As, B;
+                   atol = 1e-7,
+                   rtol = 1e-7,
+                   #btol = 1e-13,
+                   #etol = 1e-13,
+                   #axtol = 1e-13,
+                   itmax = n_spa,
+                   verbose = 1)=#
     @info "done radiation solved"
     @info maximum(solution), minimum(solution)
     @info "dof", npoin_ang_total

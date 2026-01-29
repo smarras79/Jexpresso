@@ -1,4 +1,5 @@
 using SparseArrays
+using KrylovPreconditioners
 function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, Je, dξdx, dξdy, dηdx, dηdy, nx, ny, elem_to_edge, 
         extra_mesh, QT::Inexact, SD::NSD_2D, AD::ContGal)
     comm = MPI.COMM_WORLD
@@ -468,55 +469,18 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     GC.gc()
     @info typeof(As)
     @info size(As), size(B)
+
     #@time solution = As \ B#RHS
-    #=@time solution, stats = Krylov.lsqr(As, B;
+    #=@time solution, stats = Krylov.fgmres(As, B;
                    atol = 1e-13,
                    rtol = 1e-13,
-                   btol = 1e-13,
-                   etol = 1e-13,
-                   axtol = 1e-13,
+                   #btol = 1e-13,
+                   #etol = 1e-13,
+                   #axtol = 1e-13,
                    itmax = n_spa,
-                   verbose = 0)=#
-    #@info "time to finish", time()-begin_time
-    #=PETSc.initialize()
-    A_petsc = PETSc.MatSeqAIJ(As)#PETSc.MatSeqAIJ(comm, ones(Float64, gnpoin, gnpoin))  
-    b = PETSc.VecSeq(comm, zeros(Float64, gnpoin))
-    x = PETSc.VecSeq(comm, zeros(Float64, gnpoin))
-=#
+                   verbose = 1)=#
     @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM)
-    #=for ip = 1:npoin_ang_total
-        gip = ip2gip_extra[ip]
-        for jp in nzrange(As,ip)
-            gjp = ip2gip_extra[jp]
-            A_petsc[gip,gjp] = As[ip,jp]
-        end
-        b[gip] = RHS[ip]
-    end=#
-
-
-
-  #  PETSc.assemble(A_petsc)
-    #PETSc.assemble(b)
-    #=ksp = PETSc.KSP(A_petsc; 
-                    ksp_type="gmres",     # Solver type
-                    pc_type="ilu",     # Preconditioner
-                    ksp_gmres_restart= 100,
-                    pc_factor_levels = 1,
-                    pc_factor_shift_type = "nonzero",
-                    pc_factor_shift_amount = 1e-12,
-                    ksp_rtol=1e-8,        # Relative tolerance
-                    ksp_max_it=npoin_ang_total,      # Max iterations
-                    ksp_monitor=true)=#
-    #this one actually works
-   #= @time ksp = PETSc.KSP(A_petsc;
-                    ksp_type="lsqr",     # Solver type
-                    pc_type="none",     # Preconditioner
-                    ksp_rtol=1e-14,        # Relative tolerance
-                    ksp_max_it=npoin_ang_total,      # Max iterations
-                    ksp_monitor=false)
-    # Extract local solution
-    =#
-    #x = ksp\RHS#PETSc.LocalVector(x)
+   
     @info maximum(solution), minimum(solution)
     @info "done radiation solved"
     @info "dof", npoin_ang_total
