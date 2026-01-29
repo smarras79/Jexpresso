@@ -33,9 +33,13 @@ function distribute_and_count!(
 
     ri = zeros(Int32, ndime)
     x  = zeros(Float64, ndime)
-
+    
     rem_dx[1:ndime] = (rem_max[1:ndime] .- rem_min[1:ndime])./(rem_nx[1:ndime] .- 1)
-    @info rem_dx
+    @info ndime
+    @info rem_min
+    @info rem_max
+    @info rem_nx
+    error("QUI")
     #=
     @inbounds for ipoin in 1:nmax
         i0   = ipoin - 1

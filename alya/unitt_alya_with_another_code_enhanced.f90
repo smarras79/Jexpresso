@@ -80,7 +80,7 @@ program unitt_alya_with_another_code
      deallocate(app_dumm)
   end if
 
-  ndime = 3
+  ndime = 2
   call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
   do idime = 1,3
      rem_min(idime) = 10.1 + idime
@@ -90,6 +90,7 @@ program unitt_alya_with_another_code
      call MPI_Bcast(rem_min(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
      call MPI_Bcast(rem_max(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
      call MPI_Bcast(rem_nx(idime),  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+     
   end do
 
   allocate(alya_to_world_snd(0:asize-1))
