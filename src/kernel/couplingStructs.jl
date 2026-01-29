@@ -35,12 +35,7 @@ function distribute_and_count!(
     x  = zeros(Float64, ndime)
     
     rem_dx[1:ndime] = (rem_max[1:ndime] .- rem_min[1:ndime])./(rem_nx[1:ndime] .- 1)
-    @info ndime
-    @info rem_min
-    @info rem_max
-    @info rem_nx
-    error("QUI")
-    #=
+    
     @inbounds for ipoin in 1:nmax
         i0   = ipoin - 1
         iz   = i0 ÷ nxy
@@ -52,7 +47,7 @@ function distribute_and_count!(
         if ndime ≥ 2; ri[2] = iy; end
         if ndime ≥ 3; ri[3] = iz; end
 
-        x[1:ndime] = rem_min[1:ndime] .+ Float64.(ri[1:ndime]) .* rem_dx[1:ndime]
+        x[1:ndime] = rem_min[1:ndime] .+ Float32.(ri[1:ndime]) .* rem_dx[1:ndime]
 
         if in_my_rank
             alya_rank = if ipoin ≤ r * (npoin + 1)
@@ -65,6 +60,6 @@ function distribute_and_count!(
             a[wrank, world_rank] += 1
         end
     end
-    =#
+    println("$a")
     return a
 end
