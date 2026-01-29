@@ -31,12 +31,13 @@ println("[Split before $wrank"); flush(stdout)
 local_comm = MPI.Comm_split(world, appid, wrank)
 println("[Split after $wrank"); flush(stdout)
 
-lrank       = MPI.Comm_rank(local_comm)
-lsize       = MPI.Comm_size(local_comm)
-nranks1     = lsize                      # Jexpresso
-nranks2     = wsize - lsize              # Other code
-local_chars = Vector{UInt8}(rpad("JEXPRESSO", 128, ' '))
-recv_buffer = nothing
+lrank        = MPI.Comm_rank(local_comm)
+lsize        = MPI.Comm_size(local_comm)
+nranks1      = lsize                      # Jexpresso
+nranks2      = wsize - lsize              # Other code
+local_chars  = Vector{UInt8}(rpad("JEXPRESSO", 128, ' '))
+recv_buffer  = nothing
+is_jexpresso = (appid == 2)
 
 MPI.Gather!(local_chars, recv_buffer, 0, world)
 
@@ -61,12 +62,7 @@ println("[Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize).
 # Use Int32 to match Fortran's MPI_INTEGER (4 bytes)
 #--------------------------------------------------------------------------------------------
 include("./src/kernel/couplingStructs.jl")
-#include("./src/kernel/mpi/mpi_communications.jl")
 
-
-
-println("size JE ", wsize)
-println("size AL ", wsize)
 couple = couplingAlloc(wsize, wsize, Int64;)
 
 ndime_buf = Vector{Int32}(undef, 1)
@@ -101,17 +97,17 @@ distribute_and_count!(
     rem_max,
     ndime,
     nranks2,
-    lrank,
+    is_jexpresso,
     a,
     wrank,
-    alya2world)
+    alya2world,
+    mesh)
+
 #--------------------------------------------------------------------------------------------
 # END Receive ndime from Alya
 #--------------------------------------------------------------------------------------------
 
 # Now run Jexpresso with the configured communicator
-#println("[Jexpresso rank $wrank] Starting jexpresso_main()..."); flush(stdout)
 Jexpresso.jexpresso_main()
-#println("[Jexpresso rank $wrank] jexpresso_main() finished."); flush(stdout)
 
 MPI.Finalize()

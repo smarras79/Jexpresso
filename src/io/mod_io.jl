@@ -2,7 +2,7 @@ using Crayons.Box
 using PrettyTables
 
 using ArgParse
-function je_parse_commandline()
+function mod_io_parse_commandline()
     s = ArgParseSettings()
 
     @add_arg_table s begin
@@ -26,9 +26,9 @@ function je_parse_commandline()
 end
 
 
-function je_parse_args()
+function mod_io_parse_args()
     
-    parsed_args = je_parse_commandline()
+    parsed_args = mod_io_parse_commandline()
     
     # These must be global because other functions access them by name (legacy design)
     global parsed_equations           = string(parsed_args["eqs"])
@@ -832,6 +832,11 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         
     if(!haskey(inputs, :amr_max_level))
         inputs[:amr_max_level] = 0
+    end
+
+    # Coude coupling
+    if(!haskey(inputs,:lcoupling))
+        inputs[:lcoupling] = false
     end
 
     return inputs

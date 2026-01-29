@@ -1,10 +1,25 @@
 include("../mesh/restructure_for_periodicity.jl")
 
-function sem_setup(inputs::Dict, nparts, distribute, args...)
+function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
     
-    comm = distribute.comm
-    rank = MPI.Comm_rank(comm)
     adapt_flags, partitioned_model_coarse, omesh = _handle_optional_args4amr(args...)
+
+    if inputs[:lwarmup] == true && rank == 0
+        inputs[:lwarmup] = false #set it false to prevent it from entering again.
+
+        println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
+        
+        input_mesh             = inputs[:gmsh_filename]
+        inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
+        sem_dummy              = sem_setup(inputs, nparts, distribute, rank)
+        inputs[:gmsh_filename] = input_mesh
+        
+        # --- MEMORY CLEANUP ---
+        sem_dummy = nothing 
+        
+        println(BLUE_FG(string(" # JIT pre-compilation of large problem ... END")))
+               
+    end
     
     fx        = zeros(Float64,1,1)
     fy        = zeros(Float64,1,1)

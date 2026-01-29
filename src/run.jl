@@ -51,14 +51,12 @@ function jexpresso_main()
     # Initialize MPI and build communicators
     #-----------------------------------------------------------------
     comm, rank, nparts = je_mpi_init()
-
     
     #-----------------------------------------------------------------
     # Parse command line args:
     #-----------------------------------------------------------------
-    je_parse_args()
+    mod_io_parse_args()
 
-    
     #-----------------------------------------------------------------
     # Include user_*_file.jl
     #-----------------------------------------------------------------
@@ -69,7 +67,6 @@ function jexpresso_main()
     include(user_bc_file)
     include(user_initialize_file)
     include(user_primitives_file)
-
     
     #-----------------------------------------------------------------
     # Read User Inputs:
@@ -82,25 +79,18 @@ function jexpresso_main()
     inputs        = Base.@invokelatest user_inputs()
     Base.invokelatest(mod_inputs_user_inputs!, inputs, rank)
 
-    
-    #-----------------------------------------------------------------
+       #-----------------------------------------------------------------
     # Create output directory if it doesn't exist:
     #-----------------------------------------------------------------
     OUTPUT_DIR = mod_io_mkoutdir!(inputs)
-
     
     #-----------------------------------------------------------------
     # IMPORTANT: Pass custom comm to with_mpi when coupling codes
     #-----------------------------------------------------------------
     with_mpi(; comm=comm) do distribute
-
-        Base.@invokelatest driver(nparts,
-                                  distribute,
-                                  inputs,
-                                  OUTPUT_DIR,
-                                  TFloat)
-        
+        Base.@invokelatest driver(nparts, distribute, inputs, OUTPUT_DIR, TFloat)
     end
+    
 end
 
 #--------------------------------------------------------

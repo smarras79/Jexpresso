@@ -1,4 +1,4 @@
-function driver(nparts,
+function driver(nranks,
                 distribute,
                 inputs::Dict,
                 OUTPUT_DIR::String,
@@ -7,63 +7,31 @@ function driver(nparts,
     comm = distribute.comm
     rank = MPI.Comm_rank(comm)
     
-   # @info MPI.COMM_WORLD
-   # @info " DRIVERS ", rank
-   # 
-   #  @info " rank: " ,  rank , " Comm_size: ", MPI.Comm_size(comm)
-    
-    if inputs[:lwarmup] == true
-        if rank == 0
-            println(BLUE_FG(string(" # JIT pre-compilation of large problem ...")))
-	end
-        input_mesh             = inputs[:gmsh_filename]
-        inputs[:gmsh_filename] = inputs[:gmsh_filename_c]
-        sem_dummy              = sem_setup(inputs, nparts, distribute)
-        inputs[:gmsh_filename] = input_mesh
-        
-        #check_memory(" Right after sem_dummy setup.")
-        
-        # --- MEMORY CLEANUP ---
-        # 1. Explicitly drop the reference to the dummy object
-        sem_dummy = nothing 
-        
-        if rank == 0
-            println(BLUE_FG(string(" # JIT pre-compilation of large problem ... END")))
-        end
-    end
-                   
-    sem, partitioned_model = sem_setup(inputs, nparts, distribute)
-    
-    if (inputs[:backend] != CPU())
-        convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
-    end
+    #---------------------------------------------------------
+    # SEM setup
+    #---------------------------------------------------------
+    sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)   
+    if (inputs[:backend] != CPU()) convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs) end
     
     #---------------------------------------------------------
-    # Broadcast for coupling:
+    # Coupling setup
     #---------------------------------------------------------
-  #=  inputs[:lwith_alya] = true #for now hard coded
-    if inputs[:lwith_alya]
-
-        @info "BROADCASTING  nsd to Alya: "
-        
-        nsd  = Ref{Int64}(0)
-        if rank == 0
-            nsd[] = sem.mesh.nsd            
-        end
-        local_comm = Jexpresso.get_mpi_comm()
-        @info local_comm
-
-        MPI.Bcast!(nsd, root=0, local_comm)
-
-        println("nsd  $rank got ", nsd[])
-
-        @info "BROADCASTING  nsd from Alya: ... END"
-        
-    end
-    =#
+    je_couplingSetup(sem.mesh)
+    
+    @info "   "
+    @info "   "
+    @info "   "
+    #@mystop("DRIVERS STOPPPPPPPPP")
+    
+    #---------------------------------------------------------
+    # Initialize.jl is contained in the user's problem case directory
+    #---------------------------------------------------------
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
-    
+    #---------------------------------------------------------
+    # Parameters setup
+    #---------------------------------------------------------   
+    if rank == 0 @info " Params_setup .................................." end
     if (inputs[:lamr] == true)
         amr_freq = inputs[:amr_freq]
         Δt_amr   = amr_freq * inputs[:Δt]
@@ -72,34 +40,19 @@ function driver(nparts,
         tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
     end
 
-    if rank == 0
-        @info " Params_setup .................................."
-    end
-    params, u =  params_setup(sem,
-                              qp,
-                              inputs,
-                              OUTPUT_DIR,
-                              TFloat,
-                              tspan)
-    
-    if rank == 0
-        @info " Params_setup .................................. END"
-    end
-    
-    # test of projection matrix for solutions from old to new, i.e., coarse to fine, fine to coarse
-    # test_projection_solutions(sem.mesh, qp, sem.partitioned_model, inputs, nparts, sem.distribute)
+    params, u =  params_setup(sem, qp, inputs, OUTPUT_DIR, TFloat, tspan)    
+    if rank == 0 @info " Params_setup .................................. END" end
     
     if !inputs[:llinsolve]
-        #
-        # Hyperbolic/parabolic problems that lead to Mdq/dt = RHS
-        #
+        #---------------------------------------------------------
+        # Evolutionary problems that lead to Mdq/dt = RHS
+        #---------------------------------------------------------
         @time solution = time_loop!(inputs, params, u, partitioned_model)
-        # PLOT NOTICE: Plotting is called from inside time_loop using callbacks.
         
     else
-        #
+        #---------------------------------------------------------
         # Problems that lead to Lx = RHS
-        #
+        #---------------------------------------------------------
         RHS   = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
         Mdiag = KernelAbstractions.zeros(inputs[:backend], TFloat, Int64(sem.mesh.npoin))
 

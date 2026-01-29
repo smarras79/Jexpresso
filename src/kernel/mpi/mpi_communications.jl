@@ -7,11 +7,11 @@ function je_mpi_init()
     end
 
     # Get communicator - custom one if set (coupling mode), otherwise COMM_WORLD
-    comm   = get_mpi_comm()
-    rank   = MPI.Comm_rank(comm)
-    nparts = MPI.Comm_size(comm)
+    comm = get_mpi_comm()
+    rank = MPI.Comm_rank(comm)
+    size = MPI.Comm_size(comm)
     
-    return comm, rank, nparts
+    return comm, rank, size
 end
 
 mutable struct CyclingReverseDict
