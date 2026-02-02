@@ -175,7 +175,8 @@ function computeCFL(npoin, neqs, mp, p, dt, Δs, integrator, SD::NSD_3D; visc=[0
         cfl_c = c*dt/Δs       #Acoustic CFL
 
         Δs2      = Δs*Δs
-        μ        = maximum(visc)
+        μmax     = MPI.Allreduce(maximum(integrator.p.μ_max), MPI.MAX, comm)
+        μ        = max(maximum(visc), μmax)
         λ        = 2.0 #free parameter
         cfl_visc = dt*λ*μ/Δs2 #Viscous CFL
 
