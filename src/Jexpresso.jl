@@ -129,7 +129,11 @@ include(joinpath( "kernel", "bases", "basis_structs.jl"))
 
 include(joinpath( "kernel", "mesh", "metric_terms.jl"))
 
-include(joinpath( "kernel", "infrastructure", "element_matrices.jl"))
+println("ABOUT TO INCLUDE ELEMENT MATRICES")
+
+include(joinpath( "kernel", "infrastructure", "element_matrices_original.jl"))
+
+println("INCLUDED ELEMENT MATRICES")
 
 include(joinpath( "kernel", "mesh", "phys_grid.jl"))
 
@@ -147,7 +151,9 @@ include(joinpath( "kernel", "boundaryconditions", "BCs.jl"))
 
 include(joinpath( "kernel", "operators", "operators.jl"))
 
-include(joinpath( "kernel", "operators", "rhs.jl"))
+include(joinpath( "kernel", "operators", "newrhs.jl"))
+
+include(joinpath( "kernel", "operators", "rhs_jacc.jl"))
 
 include(joinpath( "kernel", "operators", "rhs_2point.jl"))
 
