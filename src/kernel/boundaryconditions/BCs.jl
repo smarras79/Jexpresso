@@ -656,7 +656,7 @@ function build_custom_bcs_neumann!(::NSD_3D, t, coords, nx, ny, nz, npoin, npoin
                                 F_surf[i,j,3] = τ_f[iface,i,j,2]
                                 F_surf[i,j,4] = τ_f[iface,i,j,3]
                                 
-                                F_surf[i,j,5] = 0.12
+                                F_surf[i,j,5] = 0.12 #K*m/s ≈ 144 W/m2
                                 
                             else
                                 user_bc_neumann!(@view(F_surf[i,j,:]), uaux[ip,:], uaux[ip1,:],

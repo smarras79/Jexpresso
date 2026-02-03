@@ -61,7 +61,6 @@ using RRTMGP.ArtifactPaths
 
 using UnicodePlots
 using Printf
-using NCDatasets
 
 using Gridap
 using Gridap.Arrays
