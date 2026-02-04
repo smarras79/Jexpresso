@@ -21,7 +21,7 @@ function user_inputs()
         :LST                  => false,
         # :LST                  => false,
 	:lsponge              => true,
-	:zsponge              => 17000.0,
+	:zsponge              => 16000.0,
         # :sounding_file        =>"./data_files/Cirrus_new.dat",
         :sounding_file        =>"./data_files/GIGALES_GATE_IDEAL_sounding.dat",
         #---------------------------------------------------------------------------
@@ -35,11 +35,11 @@ function user_inputs()
         :lwall_model          => true,
         :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
-        :lvisc                => true, #false by default
-        :visc_model           => SMAG(),
-        # :visc_model           => AV(),
-        # :μ           => [0.0, 400.0, 400.0, 400.0, 800.0, 800.0, 800.0], #horizontal viscosity constant for momentum
-        :μ                    => [0.0, 4, 4, 4, 4, 4, 4], #horizontal viscosity constant for momentum
+        :lvisc                => false, #false by default
+        # :visc_model           => SMAG(),
+        :visc_model           => AV(),
+        :μ           => [0.0, 100.0, 100.0, 100.0, 200.0], #horizontal viscosity constant for momentum
+        # :μ                    => [0.0, 4, 4, 4, 4], #horizontal viscosity constant for momentum
         :energy_equation      => "theta",
         # :lrichardson          => true,
         #---------------------------------------------------------------------------
@@ -50,13 +50,12 @@ function user_inputs()
         # :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les.msh",
-	
+	:gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_60kmx12kmx20km.msh",	
   
         #---------------------------------------------------------------------------
         # Filter parameters -bigger weaker
         #---------------------------------------------------------------------------
-        :lfilter             => false,
+        :lfilter             => true,
         :mu_x                => 0.5,
         :mu_y                => 0.5,
 	:mu_z                => 0.5,

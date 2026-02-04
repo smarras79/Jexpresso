@@ -20,8 +20,8 @@ using Parameters
     Pr::T       = 0.7
     Pr_t::T     = 0.7      # Turbulent Pr number
     Prnum::T    = 0.1
-    pref::T     = 100000.0 #Pa
-    Rvap::T     = 461.0    #J/kg.K
+    pref::T     = 101200.0 #Pa
+    Rvap::T     = 461.0 #J/kg.K
     Rovercv::T  = T(Rair/cv)
     cpoverR::T  = T(cp/Rair)
     cpovercv::T = T(cp/cv)

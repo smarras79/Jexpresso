@@ -12,7 +12,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # 
     #---------------------------------------------------------------------------------
     qvars = ("ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp")
-    qoutvars = ["ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp", "T", "qn", "qc", "qi", "qr", "qs", "qg", "qsatt","u_prime", "v_prime", "w_prime", "hl_prime"]
+    qoutvars = ["ρ", "ρu", "ρv", "ρw", "hl", "ρqt", "ρqp", "T", "qn", "qc", "qi", "qr", "qs", "qg", "qsatt","u_prime", "v_prime", "w_prime", "hl_prime", "pressure"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
@@ -49,17 +49,17 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             data       = read_sounding(inputs[:sounding_file])
             background = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data) 
             
-            data_u                 = read_sounding("./data_files/GLES_initial_u.dat")
-            data_u_reordered       = zeros(size(data_u))
-            data_u_reordered[:,1] .= data_u[:,2]*1000
-            data_u_reordered[:,2] .= data_u[:,1]
-            background_u           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_u_reordered)
+            # data_u                 = read_sounding("./data_files/GLES_initial_u.dat")
+            # data_u_reordered       = zeros(size(data_u))
+            # data_u_reordered[:,1] .= data_u[:,2]*1000
+            # data_u_reordered[:,2] .= data_u[:,1]
+            # background_u           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_u_reordered)
 
-            data_qv                 = read_sounding("./data_files/GLES_initial_qv.dat")
-            data_qv_reordered       = zeros(size(data_qv))
-            data_qv_reordered[:,1] .= data_qv[:,2]*1000
-            data_qv_reordered[:,2] .= data_qv[:,1]
-            background_qv           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_qv_reordered)
+            # data_qv                 = read_sounding("./data_files/GLES_initial_qv.dat")
+            # data_qv_reordered       = zeros(size(data_qv))
+            # data_qv_reordered[:,1] .= data_qv[:,2]*1000
+            # data_qv_reordered[:,2] .= data_qv[:,1]
+            # background_qv           = interpolate_sounding(inputs[:backend],mesh.npoin,mesh.z,data_qv_reordered)
             
             amp = 0.1 #K
 
@@ -68,42 +68,71 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 x, y, z = mesh.x[ip], mesh.y[ip], mesh.z[ip]
 
                 rand_noise = 0.0 #K
-                T_ref  = background[ip,2] + 273.15
                 if z < 1000.0 # change to 300m later to be consistent to the ref paper
                     rand_noise = 2*amp*(rand() - 1.0)
                 end
 
-                #else
-                qv_ref = background_qv[ip,1]/1000
-                #end
-                u_ref  = background_u[ip,1]
+                # #else
+                # qv_ref = background_qv[ip,1]/1000
+                # #end
+                # u_ref  = background_u[ip,1]
+                # pref   = background[ip,1]
+                # T      = T_ref + rand_noise
+                # Tv     = T*(1+0.61*qv_ref) 
+                # Tv_ref = T_ref*(1+0.61*qv_ref) 
+                # ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=T,    Press=pref)    #kg/m³
+                # # ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
+                # # ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
+                # ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=T_ref, Press=pref) #kg/m³
+                # # hl is the liqui/ice static energy used in SAM
+                # # use potential is less conservative
+                # hl     = PhysConst.cp*T + PhysConst.g*z
+                # hl_ref = PhysConst.cp*T_ref + PhysConst.g*z
+                # u      = u_ref
+                # v_ref  = 0.0
+                # v      = v_ref
+                # w      = 0.0
+                # # pref_m = ρref*Tv_ref*PhysConst.Rair
+                # # dry pressure
+                # pref_m = ρref*T_ref*PhysConst.Rair#ρref*PhysConst.Rair*Tref + ρref*qv_ref*PhysConst.Rvap*Tref
+
+                
+
+                u_ref  = background[ip,4]
+                v_ref  = background[ip,5]
+                w_ref  = 0.0
                 pref   = background[ip,1]
-                T      = T_ref + rand_noise
-                Tv     = T*(1+0.61*qv_ref) 
-                Tv_ref = T_ref*(1+0.61*qv_ref) 
-                ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=T,    Press=pref)    #kg/m³
-                # ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv,    Press=pref)    #kg/m³
-                # ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
-                ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=T_ref, Press=pref) #kg/m³
-                # hl is the liqui/ice static energy used in SAM
-                # use potential is less conservative
-                hl     = PhysConst.cp*T + PhysConst.g*z
-                hl_ref = PhysConst.cp*T_ref + PhysConst.g*z
+                θ_ref  = background[ip,2]
+                qv_ref = background[ip,3]/1000
+
+                T_ref  = θ_ref*(pref/PhysConst.pref)^(1/PhysConst.cpoverR)
+                Tv_ref = T_ref*(1+0.61*qv_ref)
+
+                
+                ρref   = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv_ref, Press=pref) #kg/m³
+                hl_ref = PhysConst.cp*Tv_ref + PhysConst.g*z
+                pref_m = ρref*Tv_ref*PhysConst.Rair
+
                 u      = u_ref
-                v_ref  = 0.0
                 v      = v_ref
-                w      = 0.0
-                # pref_m = ρref*Tv_ref*PhysConst.Rair
-                # dry pressure
-                pref_m = ρref*T_ref*PhysConst.Rair#ρref*PhysConst.Rair*Tref + ρref*qv_ref*PhysConst.Rvap*Tref
+                w      = w_ref
+                qv     = qv_ref
+
+                T      = T_ref + rand_noise
+                Tv     = T*(1+0.61*qv)
+
+                ρ      = perfectGasLaw_TPtoρ(PhysConst; Temp=Tv, Press=pref) #kg/m³
+                hl     = PhysConst.cp*Tv + PhysConst.g*z
+
+
+
                 if inputs[:SOL_VARS_TYPE] == PERT()
                     q.qn[ip,1] = ρ - ρref
                     q.qn[ip,2] = ρ*u - ρref*u
                     q.qn[ip,3] = ρ*v - ρref*v
                     q.qn[ip,4] = ρ*w - ρref*w
                     q.qn[ip,5] = ρ*hl - ρref*hl_ref#ρ*θ - ρref*θref
-                    # q.qn[ip,6] = ρ*qv_ref-ρref*qv_ref
-                    q.qn[ip,6] = 0.0
+                    q.qn[ip,6] = ρ*qv_ref-ρref*qv_ref
                     q.qn[ip,7] = 0.0
                     q.qn[ip,end] = pref_m #+ ρ*qv_ref*PhysConst.Rvap*T
 
@@ -114,8 +143,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qe[ip,3] = ρref*v_ref
                     q.qe[ip,4] = ρref*w
                     q.qe[ip,5] = ρref*hl_ref
-                    # q.qe[ip,6] = ρref*qv_ref
-                    q.qe[ip,6] = 0.0
+                    q.qe[ip,6] = ρref*qv_ref
                     q.qe[ip,7] = 0.0
                     q.qe[ip,end] = pref_m #+ ρref*qv*PhysConst.Rvap*Tref
                 else
@@ -125,7 +153,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qn[ip,4] = ρ*w
                     q.qn[ip,5] = ρ*hl
                     q.qn[ip,6] = 0.0
-                    # q.qn[ip,6] = ρ*qv_ref#0.0
+                    q.qn[ip,6] = ρ*qv#0.0
                     q.qn[ip,7] = 0.0
                     q.qn[ip,end] = pref_m #+ ρ*qv*PhysConst.Rvap*T
 
@@ -133,10 +161,9 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                     q.qe[ip,1] = ρref
                     q.qe[ip,2] = ρref*u_ref
                     q.qe[ip,3] = ρref*v_ref
-                    q.qe[ip,4] = ρref*w
+                    q.qe[ip,4] = ρref*w_ref
                     q.qe[ip,5] = ρref*hl_ref
-                    q.qe[ip,6] = 0.0
-                    # q.qe[ip,6] = ρref*qv_ref
+                    q.qe[ip,6] = ρref*qv_ref
                     q.qe[ip,7] = 0.0
                     q.qe[ip,end] = pref_m #+ ρref*qv*PhysConst.Rvap*Tref
                 end

@@ -12,17 +12,16 @@ function user_inputs()
 	#:restart_output_file_path => "",
 	:restart_time         => 500,
 	# :diagnostics_at_times => (0:4:100),
-	:diagnostics_at_times => (0:4:40..., 100:500:5000..., 5000:250:8500...,  9000:10:10800.0...),
+	:diagnostics_at_times => (0:4:40..., 100:100:5000..., 5000:250:8500...,  9000:10:10800.0...),
 	# :diagnostics_at_times => (0:4:40..., 100:500:600..., 610:10:700...,  800:100:1000.0...),
         :lsource              => true,
         :lmoist               => true,
         :lprecip              => true,
         :SOL_VARS_TYPE        => TOTAL(),
-        :LST                  => false,
-        # :LST                  => false,
+        :LST                  => true,
 	:lsponge              => true,
 	:zsponge              => 19000.0,
-        :sounding_file        =>"./data_files/Cirrus.dat",
+        :sounding_file        =>"./data_files/GIGALES_GATE_IDEAL_sounding.dat",
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------
@@ -35,12 +34,12 @@ function user_inputs()
         :ifirst_wall_node_index=> 5, # This must be between 2 <= :first_wall_node_index <= nop+1
         :bdy_fluxes           => true,
         :lvisc                => true, #false by default
-        # :visc_model           => SMAG(),
-        :visc_model           => AV(),
-        :μ           => [0.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0], #horizontal viscosity constant for momentum
-        # :μ                    => [0.0, 1, 1, 1, 1, 1, 1], #horizontal viscosity constant for momentum
+        :visc_model           => SMAG(),
+        :μ                    => [0.0, 1, 1, 1, 1, 1, 1], #horizontal viscosity constant for momentum
+        # :visc_model           => AV(),
+        # :μ           => [0.0, 100.0, 100.0, 100.0, 200.0, 200.0, 200.0], #horizontal viscosity constant for momentum
         :energy_equation      => "energy",
-        :lrichardson          => true,
+        # :lrichardson          => true,
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
@@ -49,7 +48,8 @@ function user_inputs()
         # :gmsh_filename_c    => "./meshes/gmsh_grids/LESICP_64x16x36_10kmX5kmX3dot5km.msh",
         #:gmsh_filename    => "./meshes/gmsh_grids/LESICP_32x16x18_10kmX5kmX3km.msh",
 	#:gmsh_filename    => "./meshes/gmsh_grids/LESICP_64x32x36_10kmX5kmX3km.msh",
-	:gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les.msh",
+	:gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les_60kmx12kmx25km.msh",	
+	# :gmsh_filename    => "./meshes/gmsh_grids/hexa_TFI_giga_les.msh",
 	
         # Warping:
         :lwarp => false,
@@ -69,7 +69,7 @@ function user_inputs()
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------
-        :lfilter             => false,
+        :lfilter             => true,
         :mu_x                => 0.5,
         :mu_y                => 0.5,
 	:mu_z                => 0.5,
@@ -78,9 +78,9 @@ function user_inputs()
         # Plotting parameters
         #---------------------------------------------------------------------------
         :outformat           => "vtk",
-        :output_dir          => "./output_gigales_energy_dry/",
+        :output_dir          => "./output_gigales_energy_moist/",
         #:output_dir          => "./output",
-        :loverwrite_output   => true,  #this is only implemented for VTK for now
+        :loverwrite_output   => false,  #this is only implemented for VTK for now
         :lwrite_initial      => true,
         #---------------------------------------------------------------------------
         # init_refinement

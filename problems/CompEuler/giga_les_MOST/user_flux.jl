@@ -20,7 +20,8 @@ function user_flux!(F, G, H,
     w  = ρw/ρ
     qt = ρqt/ρ
     qp = ρqp/ρ
-    Pressure = q[end] - qe[end]#perfectGasLaw_ρhltoP(PhysConst, ρ=ρ, hl=hl, qt = qt, qp = qp)
+    Pressure = q[end]
+    #  - qe[end]#perfectGasLaw_ρhltoP(PhysConst, ρ=ρ, hl=hl, qt = qt, qp = qp)
     F[1] = ρu
     F[2] = ρu*u .+ Pressure
     F[3] = ρu*v
