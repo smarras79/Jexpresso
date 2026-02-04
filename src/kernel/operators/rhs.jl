@@ -1661,7 +1661,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
                           μsgs,
                           QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0)
-    
+    conn_el = @view connijk[iel,:,:,:]
+    lsponge = inputs[:lsponge]
+    zs      = inputs[:zsponge]
     for m = 1:ngl
         for l = 1:ngl
             
@@ -1672,8 +1674,17 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
             for k = 1:ngl
 
                 @inbounds begin
+                    ip     = conn_el[k,l,m]
+                    z      = coords[ip,3]
                     Je_klm = Je[iel,k,l,m]
-                    ωJac = ω[k] * ωlm * Je_klm
+                    ωJac   = ω[k] * ωlm * Je_klm
+                    
+                    σμ     = 1.0
+                    if (z > zs) && (ieq > 4)
+                        Z = (z - zs) / (25000. - zs)
+                        # Formula: 1 - (10*X^3 - 15*X^4 + 6*X^5)
+                        σμ = 1 - (Z^3 * (10.0 + Z * (-15.0 + Z * 6.0)))
+                    end
                     
                     dqdξ = 0.0
                     dqdη = 0.0
@@ -1704,9 +1715,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     auxi = dqdξ*dξdz_klm + dqdη*dηdz_klm + dqdζ*dζdz_klm
                     dqdz = visc_coeffieq[ieq]*auxi
                     
-                    ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac
-                    ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac
-                    ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac 
+                    ∇ξ∇u_klm = (dξdx_klm*dqdx + dξdy_klm*dqdy + dξdz_klm*dqdz)*ωJac * σμ
+                    ∇η∇u_klm = (dηdx_klm*dqdx + dηdy_klm*dqdy + dηdz_klm*dqdz)*ωJac * σμ
+                    ∇ζ∇u_klm = (dζdx_klm*dqdx + dζdy_klm*dqdy + dζdz_klm*dqdz)*ωJac * σμ
                     
                     @turbo for i = 1:ngl
                         dhdξ_ik = dψ[i,k]

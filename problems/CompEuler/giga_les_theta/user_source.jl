@@ -16,7 +16,8 @@ function user_source!(S,
     #--------------
     # S(q(x)) = -ρg
     #--------------
-    ρ  = q[1] - qe[1]
+    # ρ  = q[1] - qe[1]
+    ρ  = q[1]
     
     S[1] = 0.0
     S[2] = 0.0
@@ -38,7 +39,7 @@ function user_source!(S,
     	xr = 0.0
     	xl = 0.0
     	tau_top = 10.0          #  seconds
-        α = 1.0 / tau_top        # 
+        α = 0.1        # 
         if (z >= zs)#nsponge_points * dsy) #&& dbl >= 0.0)
                 betay_coe = α * sinpi(0.5*(z - zs)/(zmax - zs)) ^ 2.0#1.0 - tanh(dbl/5000.0)#(nsponge_points * dsy))
         else
@@ -69,7 +70,7 @@ function user_source!(S,
         S[2] -= cs*(q[2]-qe[2])
     	S[3] -= cs*(q[3]-qe[3])
         S[4] -= cs*(q[4]-qe[4])
-        S[5] -= cs*(q[5]-qe[5])
+        # S[5] -= cs*(q[5]-qe[5])
     end	 #sponge
 
     

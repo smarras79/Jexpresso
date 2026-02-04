@@ -12,7 +12,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     # 
     #---------------------------------------------------------------------------------
     qvars = ("ρ", "ρu", "ρv", "ρw", "θ")
-    qoutvars = ["ρ", "ρu", "ρv", "ρw", "θ", "θ_p"]
+    qoutvars = ["ρ", "ρu", "ρv", "ρw", "θ", "θ_p", "pressure"]
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars), qoutvars=qoutvars)
     #---------------------------------------------------------------------------------
     
@@ -103,7 +103,7 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 w_ref  = 0.0
                 pref   = background[ip,1]
                 θ_ref  = background[ip,2]
-                qv_ref = background[ip,3]
+                qv_ref = background[ip,3]/1000
 
                 ρref   = perfectGasLaw_θPtoρ(PhysConst; θ=θ_ref, Press=pref) #kg/m³
                 pref_m = pref
@@ -111,7 +111,8 @@ function initialize(SD::NSD_3D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
                 u      = u_ref
                 v      = v_ref
                 w      = w_ref
-                θ      = θ_ref + rand_noise
+                θ      = θ_ref
+                # θ      = θ_ref + rand_noise
                 ρ      = perfectGasLaw_θPtoρ(PhysConst; θ=θ, Press=pref) #kg/m³
 
                 if inputs[:SOL_VARS_TYPE] == PERT()
