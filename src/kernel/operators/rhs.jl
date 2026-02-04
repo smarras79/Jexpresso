@@ -1674,10 +1674,10 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
             for k = 1:ngl
 
                 @inbounds begin
-                    ip     = conn_el[k,l,m]
-                    z      = coords[ip,3]
                     Je_klm = Je[iel,k,l,m]
                     ωJac   = ω[k] * ωlm * Je_klm
+                    ip     = conn_el[k,l,m]
+                    z      = coords[ip,3]
                     
                     σμ     = 1.0
                     if (z > zs) && (ieq > 4)
@@ -1760,6 +1760,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     is_temperature = (ieq == 5)
     conn_el        = @view connijk[iel,:,:,:]
     μ_max_ieq      = μ_max[ieq] 
+
+    lsponge = inputs[:lsponge]
+    zs      = inputs[:zsponge]
     
     for m = 1:ngl
         for l = 1:ngl
@@ -1770,6 +1773,15 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
             
             for k = 1:ngl
 
+                ip     = conn_el[k,l,m]
+                z      = coords[ip,3]
+                
+                σμ     = 1.0
+                if (z > zs) && (ieq > 4)
+                    Z = (z - zs) / (25000. - zs)
+                    # Formula: 1 - (10*X^3 - 15*X^4 + 6*X^5)
+                    σμ = 1 - (Z^3 * (10.0 + Z * (-15.0 + Z * 6.0)))
+                end
                 @inbounds begin
                     Je_klm = Je[iel,k,l,m]
                     ωJac = ω[k] * ωlm * Je_klm
@@ -2043,9 +2055,9 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                     end
 
                     # ===== Weak form assembly (3D) =====
-                    ∇ξ_flux_klm = (dξdx_klm*flux_x + dξdy_klm*flux_y + dξdz_klm*flux_z)*ωJac
-                    ∇η_flux_klm = (dηdx_klm*flux_x + dηdy_klm*flux_y + dηdz_klm*flux_z)*ωJac
-                    ∇ζ_flux_klm = (dζdx_klm*flux_x + dζdy_klm*flux_y + dζdz_klm*flux_z)*ωJac
+                    ∇ξ_flux_klm = (dξdx_klm*flux_x + dξdy_klm*flux_y + dξdz_klm*flux_z)*ωJac * σμ
+                    ∇η_flux_klm = (dηdx_klm*flux_x + dηdy_klm*flux_y + dηdz_klm*flux_z)*ωJac * σμ
+                    ∇ζ_flux_klm = (dζdx_klm*flux_x + dζdy_klm*flux_y + dζdz_klm*flux_z)*ωJac * σμ
                     
                     @turbo for i = 1:ngl
                         dhdξ_ik = dψ[i,k]
@@ -2056,7 +2068,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                         rhs_diffη_el[iel,k,i,m,ieq] -= dhdη_il * ∇η_flux_klm
                         rhs_diffζ_el[iel,k,l,i,ieq] -= dhdζ_im * ∇ζ_flux_klm
                     end
-                    μ_max_ieq = max(μ_local, μ_max_ieq)
+                    μ_max_ieq = max(μ_local * σμ, μ_max_ieq)
                 end
             end
         end
