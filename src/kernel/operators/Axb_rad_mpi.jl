@@ -358,7 +358,7 @@ function create_parallel_linear_operator(A_local::AbstractMatrix{T},
     return LinearOperator{T}(gnpoin, gnpoin, false, false, matvec!, rmatvec!, rmatvec!)
 end
 
-function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; tol::Float64 = 1e-7)
+function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; tol::Float64 = 1e-5)
    
      # Create parallel linear operator (better than AbstractMatrix)
     A_parallel = create_parallel_linear_operator(A_local, ip2gip, gip2owner, npoin, gnpoin)
@@ -392,8 +392,9 @@ function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; t
 
     #return to local indexing
     x_local = zeros(Float64,npoin)
-    for (i, idx) in enumerate(ip2gip)
-        x_local[i] = x[idx]
+    for ip =1:npoin
+        gip = ip2gip[ip]
+        x_local[ip] = x[gip]
     end
 
     @info stats

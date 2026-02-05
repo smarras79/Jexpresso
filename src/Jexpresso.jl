@@ -144,6 +144,10 @@ include(joinpath("kernel", "operators", "build_rad_3d.jl"))
 
 include(joinpath( "kernel", "operators", "angular_comms.jl"))
 
+include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
+
+include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
+
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 
 include(joinpath( "io", "mod_inputs.jl"))

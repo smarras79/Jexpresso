@@ -76,167 +76,185 @@ function build_extended_local_numbering(
 end
 
 # =========================================================================
-# Updated: Build Restriction Matrix with Extended Mapping
+# Build Restriction Matrices - CORRECTED
 # =========================================================================
 
-function build_restriction_matrix_with_interface_hanging(
-    connijk_spa, nc_non_global_nodes, n_spa, n_total,
+function build_restriction_matrices_local_and_ghost(
+    connijk_spa, nc_non_global_nodes, n_spa, 
     ghost_layer::NonConformingGhostLayer,
     extra_meshes_coords, extra_meshes_connijk,
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
     extra_meshes_extra_Je,
     mesh, ngl, nelem,
-    neighbors,  # Add neighbors
-    ip2gip_spa, gid_to_extended_local,
+    neighbors,
+    ip2gip_spa, gid_to_extended_local, extended_local_to_gid,
     rank
 )
     """
-    Build restriction matrix with neighbors infrastructure
+    Build restriction matrices with identity for ALL hanging nodes initially.
+    
+    nc_mat: (n_spa × n_spa)
+    
+    Rows:
+    1. Free nodes (1:n_free): Identity
+    2. Interior hanging nodes (n_free+1:n_spa, not interface): Constraint equation
+    3. Interface hanging nodes: Identity (will be used to send data, then removed)
+    
+    After all operations, we manually remove ALL hanging node rows/columns.
     """
     
     n_free = n_spa - length(nc_non_global_nodes)
     hanging_node_set = Set(nc_non_global_nodes)
     
-    @info "[Rank $rank] Building restriction matrix:"
+    @info "[Rank $rank] Building restriction matrices:"
     @info "  Free DOFs: $n_free"
-    @info "  Hanging DOFs: $(length(nc_non_global_nodes))"
+    @info "  Total hanging: $(length(nc_non_global_nodes))"
+    @info "  Interior hanging: $(length(setdiff(hanging_node_set, ghost_layer.interface_hanging_nodes)))"
     @info "  Interface hanging: $(length(ghost_layer.interface_hanging_nodes))"
-    @info "  Total columns (including ghosts): $n_total"
     
-    # Triplet storage
-    I_vec = Int[]
-    J_vec = Int[]
-    V_vec = Float64[]
+    # Triplet storage for nc_mat
+    I_local = Int[]
+    J_local = Int[]
+    V_local = Float64[]
     
-    estimated_entries = n_free + length(nc_non_global_nodes) * 20
-    sizehint!(I_vec, estimated_entries)
-    sizehint!(J_vec, estimated_entries)
-    sizehint!(V_vec, estimated_entries)
+    # Ghost constraint data
+    ghost_constraint_data = Dict{Int, Vector{Tuple{Int, Float64}}}()
+    
+    # Track ALL hanging nodes for final removal
+    all_hanging_nodes = Set{Int}(nc_non_global_nodes)
+    
+    estimated_entries = n_spa + length(nc_non_global_nodes) * 20
+    sizehint!(I_local, estimated_entries)
+    sizehint!(J_local, estimated_entries)
+    sizehint!(V_local, estimated_entries)
     
     # =========================================================================
-    # Phase 1: Identity for free nodes
+    # Phase 1: Free nodes - Identity
     # =========================================================================
     
-    for ip_g = 1:n_free
-        push!(I_vec, ip_g)
-        push!(J_vec, ip_g)
-        push!(V_vec, 1.0)
+    for ip_free = 1:n_free
+        push!(I_local, ip_free)
+        push!(J_local, ip_free)
+        push!(V_local, 1.0)
     end
     
     @info "[Rank $rank] Added identity for $n_free free nodes"
     
     # =========================================================================
-    # Phase 2: Constraints for hanging nodes
+    # Phase 2: Interior hanging nodes - Constraint equations
     # =========================================================================
     
-    # Build interpolation cache
     interpolation_cache = Dict{NTuple{4,Int}, Tuple{Matrix{Float64}, Matrix{Float64}}}()
-    
-    # Separate interior and interface hanging nodes
     interior_hanging = setdiff(hanging_node_set, ghost_layer.interface_hanging_nodes)
+    
+    @info "[Rank $rank] Processing interior hanging: $(length(interior_hanging))"
+    
+    for ip_hanging in interior_hanging
+        constraint_entries = build_interior_hanging_constraint(
+            ip_hanging, connijk_spa, extra_meshes_coords, extra_meshes_connijk,
+            extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_extra_Je,
+            mesh, ngl, nelem, neighbors, interpolation_cache
+        )
+        
+        # Add constraint equation to nc_mat (replaces identity)
+        for (parent_local_idx, weight) in constraint_entries
+            if parent_local_idx <= n_spa
+                push!(I_local, ip_hanging)
+                push!(J_local, parent_local_idx)
+                push!(V_local, weight)
+            end
+        end
+    end
+    
+    @info "[Rank $rank] Interior hanging constraint equations added to nc_mat"
+    
+    # =========================================================================
+    # Phase 3: Interface hanging nodes - Identity + Store constraints
+    # =========================================================================
+    
     interface_hanging = ghost_layer.interface_hanging_nodes
     
-    @info "[Rank $rank] Interior hanging: $(length(interior_hanging)), Interface hanging: $(length(interface_hanging))"
-    
-    # Process interior hanging nodes (parents are local)
-    n_interior_constraints = 0
-    for ip_hanging in interior_hanging
-        if ip_hanging > n_free
-            # Find parent element and build constraint
-            constraint_entries = build_interior_hanging_constraint(
-                ip_hanging, connijk_spa, extra_meshes_coords, extra_meshes_connijk,
-                extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_extra_Je,
-                mesh, ngl, nelem, neighbors, interpolation_cache  # Pass neighbors
-            )
-            
-            for (parent_idx, weight) in constraint_entries
-                if parent_idx <= n_free  # Parent must be a free node
-                    push!(I_vec, parent_idx)
-                    push!(J_vec, ip_hanging)
-                    push!(V_vec, weight)
-                    n_interior_constraints += 1
-                end
-            end
-        end
-    end
-    
-    @info "[Rank $rank] Added $n_interior_constraints interior hanging node constraints"
-    
-    # Process interface hanging nodes (parents may be ghost)
-    n_interface_constraints = 0
-    n_interface_to_ghost = 0
-    n_interface_to_free = 0
+    @info "[Rank $rank] Processing interface hanging: $(length(interface_hanging))"
     
     for ip_hanging in interface_hanging
-        if ip_hanging > n_free
-            # Get parent ghost element info
-            if !haskey(ghost_layer.parent_search_cache, ip_hanging)
-                @warn "[Rank $rank] Hanging node $ip_hanging has no parent cache entry"
-                continue
-            end
-            
-            ghost_info = ghost_layer.parent_search_cache[ip_hanging]
-            
-            # Build constraint using ghost element data with extended mapping
-            constraint_entries = build_interface_hanging_constraint(
-                ip_hanging, ghost_info, connijk_spa,
-                extra_meshes_coords, extra_meshes_connijk,
-                extra_meshes_extra_nops, extra_meshes_extra_nelems,
-                extra_meshes_extra_Je,
-                mesh, ngl, nelem,
-                ip2gip_spa, gid_to_extended_local,
-                ghost_offset, n_free,
-                interpolation_cache,
-                rank
-            )
-            
-            for (parent_extended_idx, weight) in constraint_entries
-                if parent_extended_idx <= n_free
-                    # Parent is a free node
-                    push!(I_vec, parent_extended_idx)
-                    push!(J_vec, ip_hanging)
-                    push!(V_vec, weight)
-                    n_interface_to_free += 1
-                elseif parent_extended_idx <= n_total
-                    # Parent is a ghost node
-                    push!(I_vec, n_free)  # Placeholder - will need special handling
-                    push!(J_vec, parent_extended_idx)
-                    push!(V_vec, weight)
-                    n_interface_to_ghost += 1
-                else
-                    @warn "[Rank $rank] Parent index $parent_extended_idx out of range [1, $n_total]"
-                end
-                
-                n_interface_constraints += 1
-            end
-        end
-    end
-    
-    @info "[Rank $rank] Added $n_interface_constraints interface hanging node constraints"
-    @info "[Rank $rank]   -> $n_interface_to_free to free nodes"
-    @info "[Rank $rank]   -> $n_interface_to_ghost to ghost nodes"
-    
-    # Build sparse matrix
-    nc_mat = sparse(I_vec, J_vec, V_vec, n_free, n_total)
-    
-    # Normalize columns
-    @info "[Rank $rank] Normalizing constraint matrix columns..."
-    for j = 1:n_total
-        col_sum = 0.0
-        for idx in nzrange(nc_mat, j)
-            col_sum += nonzeros(nc_mat)[idx]
+        # Add IDENTITY to nc_mat (will use this to extract data before removal)
+        push!(I_local, ip_hanging)
+        push!(J_local, ip_hanging)
+        push!(V_local, 1.0)
+        
+        # Get and store constraint information
+        if !haskey(ghost_layer.parent_search_cache, ip_hanging)
+            @warn "[Rank $rank] Hanging node $ip_hanging has no parent cache"
+            continue
         end
         
-        if abs(col_sum - 1.0) > 1e-13 && abs(col_sum) > 1e-14
-            for idx in nzrange(nc_mat, j)
-                nonzeros(nc_mat)[idx] /= col_sum
+        ghost_info = ghost_layer.parent_search_cache[ip_hanging]
+        
+        constraint_entries = build_interface_hanging_constraint(
+            ip_hanging, ghost_info, connijk_spa,
+            extra_meshes_coords, extra_meshes_connijk,
+            extra_meshes_extra_nops, extra_meshes_extra_nelems,
+            extra_meshes_extra_Je,
+            mesh, ngl, nelem,
+            ip2gip_spa, gid_to_extended_local,
+            n_spa, n_free,
+            interpolation_cache,
+            rank
+        )
+        
+        # Separate local and ghost parents
+        local_parents = Tuple{Int, Float64}[]
+        ghost_parents = Tuple{Int, Float64}[]
+        
+        for (parent_extended_idx, weight) in constraint_entries
+            if parent_extended_idx <= n_spa
+                push!(local_parents, (parent_extended_idx, weight))
+            else
+                ghost_gid = extended_local_to_gid[parent_extended_idx]
+                push!(ghost_parents, (ghost_gid, weight))
+            end
+        end
+        
+        # Store all constraints (convert local to global IDs)
+        all_parents = vcat(
+            [(ip2gip_spa[p[1]], p[2]) for p in local_parents],
+            ghost_parents
+        )
+        
+        if !isempty(all_parents)
+            ghost_constraint_data[ip_hanging] = all_parents
+        end
+    end
+    
+    @info "[Rank $rank] Interface hanging: $(length(ghost_constraint_data)) nodes with constraints"
+    
+    # =========================================================================
+    # Build nc_mat: (n_spa × n_spa)
+    # =========================================================================
+    
+    nc_mat = sparse(I_local, J_local, V_local, n_spa, n_spa)
+    
+    # Normalize constraint rows (skip free nodes and interface hanging identities)
+    for i = 1:n_spa
+        if i in interior_hanging
+            col_sum = 0.0
+            for idx in nzrange(nc_mat, i)
+                col_sum += nonzeros(nc_mat)[idx]
+            end
+        
+            if abs(col_sum - 1.0) > 1e-13 && abs(col_sum) > 1e-14
+                for idx in nzrange(nc_mat, i)
+                    nonzeros(nc_mat)[idx] /= col_sum
+                end
             end
         end
     end
     
-    @info "[Rank $rank] Restriction matrix complete: nnz=$(nnz(nc_mat))"
+    P = nc_mat'
     
-    return nc_mat
+    @info "[Rank $rank] nc_mat: $(size(nc_mat)), nnz=$(nnz(nc_mat))"
+    
+    return nc_mat, P, ghost_constraint_data, all_hanging_nodes
 end
 
 # =========================================================================
@@ -270,7 +288,7 @@ function build_interior_hanging_constraint(
     
     # Find parent element using neighbors infrastructure
     iel_parent, e_ext_parent = find_parent_element_local(
-        iel_child, e_ext_child,
+        iel_child, i_child, j_child, k_child, e_ext_child, mesh.connijk,
         extra_meshes_coords, extra_meshes_connijk,
         extra_meshes_extra_nops, extra_meshes_extra_nelems,
         neighbors, nelem
@@ -478,7 +496,7 @@ end
 # =========================================================================
 
 function find_parent_element_local(
-    iel_child, e_ext_child,
+    iel_child, i_child, j_child, k_child, e_ext_child, connijk,
     extra_meshes_coords, extra_meshes_connijk,
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
     neighbors, nelem
@@ -492,7 +510,7 @@ function find_parent_element_local(
     
     Returns: (iel_parent, e_ext_parent) or (nothing, nothing)
     """
-    
+    ip_child = connijk[iel_child, i_child, j_child, k_child]
     # Get child element bounds
     θmin_child, θmax_child, ϕmin_child, ϕmax_child = get_element_bounds_fast(
         iel_child, e_ext_child, extra_meshes_coords,
@@ -513,6 +531,11 @@ function find_parent_element_local(
             # Conforming neighbor - no parent here
             continue
         end
+
+        if !(ip_child in connijk[iel_neighbor, :, :, :])
+            # non-conforming neighbor but the spatial node is not on this particular neighbor
+            continue
+        end
         
         # This is a non-conforming neighbor - check its angular elements
         for e_ext_neighbor = 1:extra_meshes_extra_nelems[iel_neighbor]
@@ -523,8 +546,8 @@ function find_parent_element_local(
                 )
             
             # Check if child element is contained in neighbor element
-            if is_child_element(θmin_child, θmax_child, ϕmin_child, ϕmax_child,
-                               θmin_neighbor, θmax_neighbor, ϕmin_neighbor, ϕmax_neighbor)
+            if is_child_element(θmin_neighbor, θmax_neighbor, ϕmin_neighbor, ϕmax_neighbor,
+                               θmin_child, θmax_child, ϕmin_child, ϕmax_child)
                 # Found the parent!
                 return iel_neighbor, e_ext_neighbor
             end
@@ -559,8 +582,8 @@ function find_parent_angular_element_in_ghost(
         θmin_ghost, θmax_ghost, ϕmin_ghost, ϕmax_ghost = 
             get_ghost_element_bounds(ghost_info, e_ext_ghost)
         
-        if is_child_element(θmin_child, θmax_child, ϕmin_child, ϕmax_child,
-                           θmin_ghost, θmax_ghost, ϕmin_ghost, ϕmax_ghost)
+        if is_child_element(θmin_ghost, θmax_ghost, ϕmin_ghost, ϕmax_ghost,
+                           θmin_child, θmax_child, ϕmin_child, ϕmax_child)
             return e_ext_ghost
         end
     end
@@ -720,14 +743,11 @@ function find_corresponding_spatial_location(
     
     # Different spatial elements - find shared spatial node
     ip_child = mesh.connijk[iel_child, i_child, j_child, k_child]
-    gip_child = mesh.ip2gip[ip_child]
     
     # Find this node in parent element
     for k = 1:ngl, j = 1:ngl, i = 1:ngl
         ip_parent = mesh.connijk[iel_parent, i, j, k]
-        gip_parent = mesh.ip2gip[ip_parent]
-        
-        if gip_parent == gip_child
+        if ip_parent == ip_child
             return i, j, k
         end
     end
@@ -735,4 +755,827 @@ function find_corresponding_spatial_location(
     # Should not reach here if elements actually share this node
     @warn "Could not find corresponding spatial node in parent element"
     return i_child, j_child, k_child  # Fallback
+end
+
+# =========================================================================
+# Apply LEFT Ghost Effects
+# =========================================================================
+
+function apply_left_ghost_effects(
+    A_local, ghost_effects_left, 
+    ip2gip_spa, n_free, n_spa, rank
+)
+    """
+    Apply ghost constraint effects from LEFT multiplication (restriction).
+    
+    For each hanging node that depends on ghost parents:
+    - Add the weighted contribution from ghost parent rows
+    """
+    
+    I_vec, J_vec, V_vec = findnz(A_local)
+    I_new = copy(I_vec)
+    J_new = copy(J_vec)
+    V_new = copy(V_vec)
+    
+    # Ghost effects represent: for hanging node i, add sum(weight * row_ghost_parent)
+    for (gid_hanging, row_contributions) in ghost_effects_left
+        # Find local index of hanging node
+        ip_hanging_local = findfirst(x -> x == gid_hanging, ip2gip_spa)
+        
+        if ip_hanging_local === nothing || ip_hanging_local > n_free
+            continue  # Not owned or not a free node index
+        end
+        
+        # Add contributions to this row
+        for (gid_col, value) in row_contributions
+            ip_col_local = findfirst(x -> x == gid_col, ip2gip_spa)
+            
+            if ip_col_local !== nothing && ip_col_local <= n_spa
+                push!(I_new, ip_hanging_local)
+                push!(J_new, ip_col_local)
+                push!(V_new, value)
+            end
+        end
+    end
+    
+    # Rebuild matrix (sums duplicates)
+    A_with_ghost = sparse(I_new, J_new, V_new, n_free, n_spa)
+    
+    return A_with_ghost
+end
+
+# =========================================================================
+# Exchange Ghost Constraints for RIGHT multiplication (Transpose)
+# =========================================================================
+
+function exchange_ghost_constraints_transpose(
+    ghost_constraints, A_current,
+    ip2gip_spa, gip2owner_spa,
+    n_free, n_spa, rank, comm
+)
+    """
+    Exchange ghost constraints for RIGHT prolongation (P^T operation).
+    
+    This is the transpose operation: we need columns instead of rows.
+    For each hanging node that depends on ghost parents:
+    - Get the column of A_current for the hanging node
+    - Distribute it to ghost parents (weighted)
+    """
+    
+    # Organize what to send
+    send_to_rank = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()
+    
+    for (ip_hanging_local, ghost_parents) in ghost_constraints
+        gid_hanging = ip2gip_spa[ip_hanging_local]
+        
+        # Get column of A_current for this hanging node
+        # A_current is (n_free × n_spa), so column ip_hanging_local
+        col_entries = Tuple{Int, Float64}[]
+        
+        # Extract column from CSC matrix
+        if ip_hanging_local <= n_spa
+            for idx in nzrange(A_current, ip_hanging_local)
+                row = rowvals(A_current)[idx]
+                val = nonzeros(A_current)[idx]
+                gid_row = ip2gip_spa[row]
+                push!(col_entries, (gid_row, val))
+            end
+        end
+        
+        # For each ghost parent, send weighted column
+        for (gid_ghost_parent, weight) in ghost_parents
+            owner_ghost = gip2owner_spa[gid_ghost_parent]
+            
+            if !haskey(send_to_rank, owner_ghost)
+                send_to_rank[owner_ghost] = Tuple{Int, Int, Float64}[]
+            end
+            
+            # Send: (gid_ghost_parent_col, gid_row, weighted_value)
+            for (gid_row, value) in col_entries
+                push!(send_to_rank[owner_ghost], (gid_ghost_parent, gid_row, weight * value))
+            end
+        end
+    end
+    
+    # Exchange
+    send_buffers = Dict{Int, Vector{UInt8}}()
+    for (dest_rank, data) in send_to_rank
+        buffer = IOBuffer()
+        serialize(buffer, data)
+        send_buffers[dest_rank] = take!(buffer)
+    end
+    
+    recv_buffers = exchange_buffers(send_buffers,
+                                    Dict(k => [] for k in keys(send_to_rank)),
+                                    comm)
+    
+    # Organize received contributions
+    ghost_effects_right = Dict{Int, Vector{Tuple{Int, Float64}}}()
+    # gid_col -> [(gid_row, value)]
+    
+    for (src_rank, buffer) in recv_buffers
+        data = deserialize(IOBuffer(buffer))
+        for (gid_col, gid_row, value) in data
+            if !haskey(ghost_effects_right, gid_col)
+                ghost_effects_right[gid_col] = Tuple{Int, Float64}[]
+            end
+            push!(ghost_effects_right[gid_col], (gid_row, value))
+        end
+    end
+    
+    return ghost_effects_right
+end
+
+# =========================================================================
+# Apply RIGHT Ghost Effects
+# =========================================================================
+
+function apply_right_ghost_effects(
+    A_local, ghost_effects_right,
+    ip2gip_spa, n_free, rank
+)
+    """
+    Apply ghost constraint effects from RIGHT multiplication (prolongation).
+    
+    For each ghost parent that has hanging children:
+    - Add the weighted contributions to the corresponding column
+    """
+    
+    I_vec, J_vec, V_vec = findnz(A_local)
+    I_new = copy(I_vec)
+    J_new = copy(J_vec)
+    V_new = copy(V_vec)
+    
+    # Ghost effects represent: for ghost parent column, add contributions
+    for (gid_ghost_col, row_contributions) in ghost_effects_right
+        # Find local index of ghost parent (should be a free node here)
+        ip_col_local = findfirst(x -> x == gid_ghost_col, ip2gip_spa)
+        
+        if ip_col_local === nothing || ip_col_local > n_free
+            continue
+        end
+        
+        # Add contributions to this column
+        for (gid_row, value) in row_contributions
+            ip_row_local = findfirst(x -> x == gid_row, ip2gip_spa)
+            
+            if ip_row_local !== nothing && ip_row_local <= n_free
+                push!(I_new, ip_row_local)
+                push!(J_new, ip_col_local)
+                push!(V_new, value)
+            end
+        end
+    end
+    
+    # Rebuild matrix
+    A_final = sparse(I_new, J_new, V_new, n_free, n_free)
+    
+    return A_final
+end
+
+function exchange_ghost_constraints(
+    ghost_constraints, M_inv_LHS,
+    ip2gip_spa, gip2owner_spa,
+    n_spa, rank, comm
+)
+    """
+    Exchange ghost constraint information between processors.
+    
+    For each hanging node that depends on ghost parents:
+    1. Compute the effect: weight * (row of M_inv_LHS corresponding to ghost parent)
+    2. Send to the processor that owns the hanging node
+    
+    Returns: Dict{Int, SparseVector} - gid_hanging -> constraint_row
+    """
+    
+    nproc = MPI.Comm_size(comm)
+    
+    # Organize what to send to each processor
+    send_to_rank = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()  # rank -> [(gid_hanging, gid_col, value)]
+    
+    for (ip_hanging_local, ghost_parents) in ghost_constraints
+        # Get global ID of hanging node
+        gid_hanging = ip2gip_spa[ip_hanging_local]
+        
+        # For each ghost parent this hanging node depends on
+        for (gid_ghost_parent, weight) in ghost_parents
+            # The ghost parent is owned by some other processor
+            # We need to get the row of M_inv_LHS corresponding to this ghost
+            # But we don't have it locally!
+            
+            # Instead, we send a request to the owner of the ghost parent
+            # asking them to compute: weight * (M_inv_LHS row for ghost_parent)
+            # and send it to the owner of the hanging node
+            
+            owner_ghost = gip2owner_spa[gid_ghost_parent]
+            
+            if !haskey(send_to_rank, owner_ghost)
+                send_to_rank[owner_ghost] = Tuple{Int, Int, Float64}[]
+            end
+            
+            # Request: (hanging_gid, ghost_parent_gid, weight)
+            push!(send_to_rank[owner_ghost], (gid_hanging, gid_ghost_parent, weight))
+        end
+    end
+    
+    @info "[Rank $rank] Sending ghost constraint requests to $(length(send_to_rank)) ranks"
+    
+    # Exchange requests
+    received_requests = exchange_ghost_requests(send_to_rank, rank, comm)
+    
+    @info "[Rank $rank] Received requests from $(length(received_requests)) ranks"
+    
+    # Process requests and compute responses
+    responses = Dict{Int, Vector{Tuple{Int, Vector{Tuple{Int, Float64}}}}}()  
+    # rank -> [(gid_hanging, [(gid_col, value)])]
+    
+    for (src_rank, requests) in received_requests
+        rank_responses = Tuple{Int, Vector{Tuple{Int, Float64}}}[]
+        
+        for (gid_hanging, gid_ghost_parent, weight) in requests
+            # Find local index of ghost_parent
+            ip_ghost_local = findfirst(x -> x == gid_ghost_parent, ip2gip_spa)
+            
+            if ip_ghost_local === nothing
+                @warn "[Rank $rank] Requested ghost parent gid=$gid_ghost_parent not found locally"
+                continue
+            end
+            
+            # Get row of M_inv_LHS for this ghost parent
+            row_entries = Tuple{Int, Float64}[]
+            rows = rowvals(M_inv_LHS)
+            vals = nonzeros(M_inv_LHS)
+            
+            for idx in nzrange(M_inv_LHS, ip_ghost_local)
+                col = rows[idx]
+                val = vals[idx]
+                gid_col = ip2gip_spa[col]
+                
+                # Scale by weight
+                push!(row_entries, (gid_col, weight * val))
+            end
+            
+            push!(rank_responses, (gid_hanging, row_entries))
+        end
+        
+        if !isempty(rank_responses)
+            responses[src_rank] = rank_responses
+        end
+    end
+    
+    # Exchange responses
+    ghost_effects = exchange_ghost_responses(responses, rank, comm)
+    
+    return ghost_effects
+end
+
+# =========================================================================
+# Helper: Exchange Ghost Requests
+# =========================================================================
+
+function exchange_ghost_requests(send_to_rank, rank, comm)
+    """Exchange ghost constraint requests"""
+    
+    # Serialize and exchange
+    send_buffers = Dict{Int, Vector{UInt8}}()
+    
+    for (dest_rank, requests) in send_to_rank
+        buffer = IOBuffer()
+        serialize(buffer, requests)
+        send_buffers[dest_rank] = take!(buffer)
+    end
+    
+    # Use the exchange_buffers function we already have
+    recv_buffers = exchange_buffers(send_buffers, 
+                                    Dict(k => [] for k in keys(send_to_rank)),
+                                    comm)
+    
+    # Deserialize
+    received_requests = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()
+    for (src_rank, buffer) in recv_buffers
+        received_requests[src_rank] = deserialize(IOBuffer(buffer))
+    end
+    
+    return received_requests
+end
+
+# =========================================================================
+# Helper: Exchange Ghost Responses
+# =========================================================================
+
+function exchange_ghost_responses(responses, rank, comm)
+    """Exchange computed ghost effects back"""
+    
+    # Serialize and exchange
+    send_buffers = Dict{Int, Vector{UInt8}}()
+    
+    for (dest_rank, response_data) in responses
+        buffer = IOBuffer()
+        serialize(buffer, response_data)
+        send_buffers[dest_rank] = take!(buffer)
+    end
+    
+    recv_buffers = exchange_buffers(send_buffers,
+                                    Dict(k => [] for k in keys(send_buffers)),
+                                    comm)
+    
+    # Deserialize and organize by hanging node gid
+    ghost_effects = Dict{Int, Vector{Tuple{Int, Float64}}}()  # gid_hanging -> [(gid_col, value)]
+    
+    for (src_rank, buffer) in recv_buffers
+        response_list = deserialize(IOBuffer(buffer))
+        
+        for (gid_hanging, row_entries) in response_list
+            if !haskey(ghost_effects, gid_hanging)
+                ghost_effects[gid_hanging] = Tuple{Int, Float64}[]
+            end
+            append!(ghost_effects[gid_hanging], row_entries)
+        end
+    end
+    
+    return ghost_effects
+end
+
+# =========================================================================
+# Compute Row Effects BEFORE Restriction
+# =========================================================================
+
+function compute_hanging_row_effects_before_restriction(
+    ghost_constraint_data, M_inv_LHS, ip2gip_spa, gip2owner_spa, rank
+)
+    """
+    Compute row effects for interface hanging nodes BEFORE applying nc_mat.
+    
+    For each interface hanging node:
+    - Get its row from M_inv_LHS (identity preserved it)
+    - Apply constraint weights
+    - Send to ghost parent owners
+    """
+    
+    effects_by_owner = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()
+    
+    for (ip_hanging, parent_constraints) in ghost_constraint_data
+        gid_hanging = ip2gip_spa[ip_hanging]
+        
+        # Get row of M_inv_LHS for hanging node
+        row_vals = rowvals(M_inv_LHS)
+        nz_vals = nonzeros(M_inv_LHS)
+        
+        hanging_row = Tuple{Int, Float64}[]
+        
+        for idx in nzrange(M_inv_LHS, ip_hanging)
+            col = row_vals[idx]
+            val = nz_vals[idx]
+            gid_col = ip2gip_spa[col]
+            push!(hanging_row, (gid_col, val))
+        end
+        
+        # Apply constraint: for each parent, send weighted row
+        for (parent_gid, weight) in parent_constraints
+            owner = gip2owner_spa[parent_gid]
+            
+            if !haskey(effects_by_owner, owner)
+                effects_by_owner[owner] = Tuple{Int, Int, Float64}[]
+            end
+            
+            # Send: (parent_gid, col_gid, weight * row_value)
+            for (gid_col, value) in hanging_row
+                push!(effects_by_owner[owner], (parent_gid, gid_col, weight * value))
+            end
+        end
+    end
+    
+    return effects_by_owner
+end
+
+# =========================================================================
+# Compute Column Effects BEFORE Prolongation
+# =========================================================================
+
+function compute_hanging_col_effects_before_prolongation(
+    ghost_constraint_data, A_matrix, ip2gip_spa, gip2owner_spa, n_spa, rank
+)
+    """
+    Compute column effects for interface hanging nodes BEFORE applying P.
+    
+    For each interface hanging node:
+    - Get its column from A_matrix (identity preserved it)
+    - Apply constraint weights
+    - Send to ghost parent owners
+    """
+    
+    effects_by_owner = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()
+    
+    for (ip_hanging, parent_constraints) in ghost_constraint_data
+        gid_hanging = ip2gip_spa[ip_hanging]
+        
+        # Get column of A_matrix for hanging node
+        hanging_col = Tuple{Int, Float64}[]
+        
+        if ip_hanging <= size(A_matrix, 2)
+            for idx in nzrange(A_matrix, ip_hanging)
+                row = rowvals(A_matrix)[idx]
+                val = nonzeros(A_matrix)[idx]
+                
+                if row <= n_spa
+                    gid_row = ip2gip_spa[row]
+                    push!(hanging_col, (gid_row, val))
+                end
+            end
+        end
+        
+        # Apply constraint: for each parent, send weighted column
+        for (parent_gid, weight) in parent_constraints
+            owner = gip2owner_spa[parent_gid]
+            
+            if !haskey(effects_by_owner, owner)
+                effects_by_owner[owner] = Tuple{Int, Int, Float64}[]
+            end
+            
+            # Send: (parent_gid, row_gid, weight * col_value)
+            for (gid_row, value) in hanging_col
+                push!(effects_by_owner[owner], (parent_gid, gid_row, weight * value))
+            end
+        end
+    end
+    
+    return effects_by_owner
+end
+
+# =========================================================================
+# Exchange Hanging Effects
+# =========================================================================
+
+function exchange_hanging_effects(effects_to_send, rank, comm)
+    """
+    Exchange hanging node effects between processors (Matrix version)
+
+    For matrix operations: Tuple{Int, Int, Float64} format
+    (parent_gid, col_gid/row_gid, value)
+    """
+
+    send_buffers = Dict{Int, Vector{UInt8}}()
+
+    for (dest_rank, effects) in effects_to_send
+        buffer = IOBuffer()
+        serialize(buffer, effects)
+        send_buffers[dest_rank] = take!(buffer)
+    end
+
+    recv_buffers = exchange_buffers(send_buffers,
+                                    Dict(k => [] for k in keys(send_buffers)),
+                                    comm)
+
+    # Deserialize
+    received_effects = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()
+
+    for (src_rank, buffer) in recv_buffers
+        received_effects[src_rank] = deserialize(IOBuffer(buffer))
+    end
+
+    return received_effects
+end
+
+function exchange_hanging_effects_vector(effects_to_send, rank, comm)
+    """
+    Exchange hanging node effects between processors (Vector version)
+
+    For vector operations (RHS, solution): Tuple{Int, Float64} format
+    (parent_gid, value)
+    """
+
+    send_buffers = Dict{Int, Vector{UInt8}}()
+
+    for (dest_rank, effects) in effects_to_send
+        buffer = IOBuffer()
+        serialize(buffer, effects)
+        send_buffers[dest_rank] = take!(buffer)
+    end
+
+    recv_buffers = exchange_buffers(send_buffers,
+                                    Dict(k => [] for k in keys(send_buffers)),
+                                    comm)
+
+    # Deserialize - DIFFERENT TYPE for vectors
+    received_effects = Dict{Int, Vector{Tuple{Int, Float64}}}()
+
+    for (src_rank, buffer) in recv_buffers
+        received_effects[src_rank] = deserialize(IOBuffer(buffer))
+    end
+
+
+    return received_effects
+end
+
+## =========================================================================
+# Add Row Effects (Updated for n_spa dimension)
+# =========================================================================
+
+function add_hanging_row_effects(A_local, received_effects, ip2gip_spa, n_spa, rank)
+    """
+    Add received row effects to matrix.
+    A_local is (n_spa × n_spa) at this stage.
+    """
+    
+    I_vec, J_vec, V_vec = findnz(A_local)
+    I_new = copy(I_vec)
+    J_new = copy(J_vec)
+    V_new = copy(V_vec)
+    
+    for (src_rank, effects) in received_effects
+        for (parent_gid, gid_col, value) in effects
+            ip_parent = findfirst(x -> x == parent_gid, ip2gip_spa)
+            ip_col = findfirst(x -> x == gid_col, ip2gip_spa)
+            
+            if ip_parent !== nothing && ip_parent <= n_spa &&
+               ip_col !== nothing && ip_col <= n_spa
+                push!(I_new, ip_parent)
+                push!(J_new, ip_col)
+                push!(V_new, value)
+            end
+        end
+    end
+    
+    A_updated = sparse(I_new, J_new, V_new, n_spa, n_spa)
+    
+    return A_updated
+end
+
+# =========================================================================
+# Add Column Effects (Updated for n_spa dimension)
+# =========================================================================
+
+function add_hanging_col_effects(A_local, received_effects, ip2gip_spa, n_spa, rank)
+    """
+    Add received column effects to matrix.
+    A_local is (n_spa × n_spa) at this stage.
+    """
+    
+    I_vec, J_vec, V_vec = findnz(A_local)
+    I_new = copy(I_vec)
+    J_new = copy(J_vec)
+    V_new = copy(V_vec)
+    
+    for (src_rank, effects) in received_effects
+        for (parent_gid, gid_row, value) in effects
+            ip_parent = findfirst(x -> x == parent_gid, ip2gip_spa)
+            ip_row = findfirst(x -> x == gid_row, ip2gip_spa)
+            
+            if ip_parent !== nothing && ip_parent <= n_spa &&
+               ip_row !== nothing && ip_row <= n_spa
+                push!(I_new, ip_row)
+                push!(J_new, ip_parent)
+                push!(V_new, value)
+            end
+        end
+    end
+    
+    A_updated = sparse(I_new, J_new, V_new, n_spa, n_spa)
+    
+    return A_updated
+end
+
+function extract_free_submatrix_remove_all_hanging(
+    A_full, all_hanging_nodes, n_free, n_spa, rank
+)
+    """
+    Extract the (n_free × n_free) submatrix by removing ALL hanging node rows/columns.
+    
+    This removes both:
+    - Interior hanging nodes (which have constraint equations)
+    - Interface hanging nodes (which still have identity or partial data)
+    
+    Keep only: rows/cols 1:n_free (free nodes only)
+    """
+    
+    I_full, J_full, V_full = findnz(A_full)
+    
+    I_free = Int[]
+    J_free = Int[]
+    V_free = Float64[]
+    
+    n_removed = 0
+    
+    for idx = 1:length(I_full)
+        i = I_full[idx]
+        j = J_full[idx]
+        v = V_full[idx]
+        
+        # Keep only if BOTH row and column are free nodes
+        if i <= n_free && j <= n_free && 
+           !(i in all_hanging_nodes) && !(j in all_hanging_nodes)
+            push!(I_free, i)
+            push!(J_free, j)
+            push!(V_free, v)
+        else
+            n_removed += 1
+        end
+    end
+    
+    A_free = sparse(I_free, J_free, V_free, n_free, n_free)
+
+    @info "[Rank $rank] Removed $n_removed entries from $(length(all_hanging_nodes)) hanging node rows/cols"
+    @info "[Rank $rank] Final matrix: $(nnz(A_free)) nonzeros"
+
+    return A_free
+end
+
+# =========================================================================
+# Parallel RHS Restriction (Vector Version)
+# =========================================================================
+
+function compute_hanging_rhs_effects_before_restriction(
+    ghost_constraint_data, RHS_vector, ip2gip_spa, gip2owner_spa, rank
+)
+    """
+    Compute RHS effects for interface hanging nodes BEFORE applying nc_mat.
+
+    For each interface hanging node:
+    - Get its RHS value (identity preserved it)
+    - Apply constraint weights
+    - Send to ghost parent owners
+
+    This is the vector version of compute_hanging_row_effects_before_restriction.
+    """
+
+    effects_by_owner = Dict{Int, Vector{Tuple{Int, Float64}}}()
+
+    for (ip_hanging, parent_constraints) in ghost_constraint_data
+        gid_hanging = ip2gip_spa[ip_hanging]
+
+        # Get RHS value for hanging node
+        rhs_value = RHS_vector[ip_hanging]
+
+        # Apply constraint: for each parent, send weighted RHS value
+        for (parent_gid, weight) in parent_constraints
+            owner = gip2owner_spa[parent_gid]
+
+            if !haskey(effects_by_owner, owner)
+                effects_by_owner[owner] = Tuple{Int, Float64}[]
+            end
+
+            # Send: (parent_gid, weight * rhs_value)
+            push!(effects_by_owner[owner], (parent_gid, weight * rhs_value))
+        end
+    end
+
+    return effects_by_owner
+end
+
+function add_hanging_rhs_effects(
+    RHS_local, received_effects, ip2gip_spa, n_spa, rank
+)
+    """
+    Add received RHS effects to vector.
+
+    For each ghost parent that receives weighted contributions from hanging children
+    on other processors, add those contributions.
+    """
+
+    RHS_updated = copy(RHS_local)
+
+    for (src_rank, effects) in received_effects
+        for (parent_gid, value) in effects
+            ip_parent = findfirst(x -> x == parent_gid, ip2gip_spa)
+
+            if ip_parent !== nothing && ip_parent <= n_spa
+                RHS_updated[ip_parent] += value
+            end
+        end
+    end
+
+    return RHS_updated
+end
+
+function extract_free_rhs_subvector(
+    RHS_full, all_hanging_nodes, n_free, n_spa, rank
+)
+    """
+    Extract the (n_free) subvector by removing ALL hanging node entries.
+
+    Keep only: entries 1:n_free (free nodes only)
+    """
+
+    RHS_free = zeros(eltype(RHS_full), n_free)
+
+    free_idx = 1
+    for i = 1:n_spa
+        if !(i in all_hanging_nodes) && free_idx <= n_free
+            RHS_free[free_idx] = RHS_full[i]
+            free_idx += 1
+        end
+    end
+
+    @info "[Rank $rank] Extracted RHS free subvector: $n_free entries"
+
+    return RHS_free
+end
+
+# =========================================================================
+# Parallel Solution Prolongation (Vector Version)
+# =========================================================================
+
+function build_reverse_ghost_constraint_map(
+    ghost_constraint_data, ip2gip_spa, gip2owner_spa, rank
+)
+    """
+    Build reverse mapping: for each free node that is a ghost parent,
+    track which hanging nodes on other processors depend on it.
+
+    Returns: Dict{Int, Vector{Tuple{Int, Int, Float64}}}
+             local_free_idx -> [(hanging_gid, owner_rank, weight)]
+    """
+
+    reverse_map = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()
+
+    # ghost_constraint_data maps: ip_hanging_local -> [(parent_gid, weight)]
+    for (ip_hanging, parent_constraints) in ghost_constraint_data
+        gid_hanging = ip2gip_spa[ip_hanging]
+        owner_hanging = gip2owner_spa[gid_hanging]
+
+        for (parent_gid, weight) in parent_constraints
+            # Find if this parent_gid is owned by us
+            owner_parent = gip2owner_spa[parent_gid]
+
+            if owner_parent == rank
+                # This parent is owned by us - find its local index
+                ip_parent = findfirst(x -> x == parent_gid, ip2gip_spa)
+
+                if ip_parent !== nothing
+                    if !haskey(reverse_map, ip_parent)
+                        reverse_map[ip_parent] = Tuple{Int, Int, Float64}[]
+                    end
+
+                    # This parent contributes to hanging node on another processor
+                    push!(reverse_map[ip_parent], (gid_hanging, owner_hanging, weight))
+                end
+            end
+        end
+    end
+
+    return reverse_map
+end
+
+function compute_solution_prolongation_contributions(
+    reverse_ghost_map, solution_free, ip2gip_spa, n_free, rank
+)
+    """
+    For free nodes that are ghost parents of hanging nodes on other processors,
+    compute weighted contributions to send.
+
+    For each free parent node:
+    - solution_value = solution_free[parent]
+    - For each hanging child: send weight * solution_value to child's owner
+
+    Returns: Dict{Int, Vector{Tuple{Int, Float64}}}
+             owner_rank -> [(hanging_gid, contribution)]
+    """
+
+    contributions_by_owner = Dict{Int, Vector{Tuple{Int, Float64}}}()
+
+    for (ip_parent, hanging_children) in reverse_ghost_map
+        # Get solution value at this parent node
+        if ip_parent <= n_free
+            parent_value = solution_free[ip_parent]
+
+            # Send weighted contributions to each hanging child
+            for (gid_hanging, owner_hanging, weight) in hanging_children
+                if !haskey(contributions_by_owner, owner_hanging)
+                    contributions_by_owner[owner_hanging] = Tuple{Int, Float64}[]
+                end
+
+                contribution = weight * parent_value
+                push!(contributions_by_owner[owner_hanging], (gid_hanging, contribution))
+            end
+        end
+    end
+
+    return contributions_by_owner
+end
+
+function add_solution_prolongation_contributions(
+    solution_extended, received_contributions, ip2gip_spa, n_spa, rank
+)
+    """
+    Add received contributions from ghost parents to interface hanging nodes.
+
+    solution_extended already has values from local prolongation (nc_mat' * solution_free).
+    This adds the contributions from ghost parents on other processors.
+    """
+
+    solution_updated = copy(solution_extended)
+
+    for (src_rank, contributions) in received_contributions
+        for (gid_hanging, value) in contributions
+            ip_hanging = findfirst(x -> x == gid_hanging, ip2gip_spa)
+
+            if ip_hanging !== nothing && ip_hanging <= n_spa
+                solution_updated[ip_hanging] += value
+            end
+        end
+    end
+
+    @info "[Rank $rank] Added solution prolongation contributions from $(length(received_contributions)) ranks"
+
+    return solution_updated
 end

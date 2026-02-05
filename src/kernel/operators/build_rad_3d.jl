@@ -153,7 +153,30 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                 extra_meshes_ref_level,
                 n_spa, neighbors
                 )
-            
+            @info "building ghost layer index extension"
+            gid_to_extended_local, extended_local_to_gid, n_total = build_extended_local_numbering(
+                n_spa, ghost_layer,
+                ip2gip_spa, rank
+                )
+            # build parallel nc_mat structures:
+            nc_mat, P, ghost_constraint_data, all_hanging_nodes = build_restriction_matrices_local_and_ghost(
+                connijk_spa, nc_non_global_nodes, n_spa, 
+                ghost_layer,
+                extra_meshes_coords, extra_meshes_connijk,
+                extra_meshes_extra_nops, extra_meshes_extra_nelems,
+                extra_meshes_extra_Je,
+                mesh, ngl, nelem,
+                neighbors,
+                ip2gip_spa, gid_to_extended_local, extended_local_to_gid,
+                rank
+                )
+
+            # Build reverse ghost constraint map for solution prolongation (reuse across timesteps)
+            @info "[Rank $rank] Building reverse ghost constraint map for solution prolongation..."
+            @time reverse_ghost_map = build_reverse_ghost_constraint_map(
+                ghost_constraint_data, ip2gip_spa, gip2owner_spa, rank
+            )
+
             @time LHS = sparse_lhs_assembly_3Dby2D_adaptive(ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ,
                                                         mesh.x, mesh.y, mesh.z, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                         extra_meshes_extra_Je,
@@ -168,20 +191,84 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             @time M = sparse_mass_assembly_3Dby2D_adaptive(ω, Je, mesh.connijk, extra_mesh[1].ωθ, extra_mesh[1].ωϕ, mesh.x, mesh.y, ψ, dψ, extra_mesh[1].ψ, extra_meshes_connijk,
                                     extra_meshes_extra_Je,
                                     extra_meshes_coords, extra_meshes_extra_nops, n_spa, nelem, ngl, extra_meshes_extra_nelems,
-                                   extra_meshes_extra_npoins, connijk_spa)
-            
-            @info "built adapted matrices"
-            @info nnz(M), nnz(LHS)
-            @info maximum(nc_mat), minimum(nc_mat)
-            @info maximum(LHS), minimum(LHS)
-            @info maximum(M), minimum(M)
+                                   extra_meshes_extra_npoins, connijk_spa
+                                   )
+
+            Md = diag(M)
+            pM = setup_assembler(SD, Md, ip2gip_spa, gip2owner_spa)
+            if  pM != nothing 
+                assemble_mpi!(Md,pM)
+                M = Diagonal(Md)
+                M = sparse(M)
+        
+                #assemble_mpi!(LHS,pM)
+            end
         end
+        
+
 
         
         M_inv = spdiagm(0 => 1 ./ diag(M))
 
         MLHS = sparse(M_inv * LHS)
-        A = sparse(rest * MLHS * P)#sparse(A_test)
+        #do contruction for parallel nc_mat
+
+        # Do parallel restriction Process
+        
+        # Compute row effects BEFORE restriction
+    
+        @info "[Rank $rank] Computing interface hanging row effects (before nc_mat)..."
+        @time row_effects_to_send = compute_hanging_row_effects_before_restriction(
+            ghost_constraint_data, MLHS, ip2gip_spa, gip2owner_spa, rank
+        )
+        #Apply local Restriction
+        @info "[Rank $rank] Applying nc_mat from left..."
+        @time A_left_restricted = nc_mat * MLHS
+    
+        @info "[Rank $rank] After nc_mat: $(size(A_left_restricted)), nnz=$(nnz(A_left_restricted))"
+        #Apply restriction from processor interface
+        @info "[Rank $rank] Exchanging row effects..."
+        @time received_row_effects = exchange_hanging_effects(row_effects_to_send, rank, comm)
+    
+        @info "[Rank $rank] Adding received row effects..."
+        @time A_with_row_effects = add_hanging_row_effects(
+            A_left_restricted, received_row_effects, ip2gip_spa, n_spa, rank
+            )
+        @info "[Rank $rank] After row effects: $(size(A_with_row_effects)), nnz=$(nnz(A_with_row_effects))"
+        # Compute prolongation to send to other processors
+        @info "[Rank $rank] Computing interface hanging column effects (before P)..."
+        @time col_effects_to_send = compute_hanging_col_effects_before_prolongation(
+            ghost_constraint_data, A_with_row_effects, ip2gip_spa, gip2owner_spa, n_spa, rank
+            )
+        
+        #Apply local prolongation
+        @info "[Rank $rank] Applying P from right..."
+        @time A_both_restricted = A_with_row_effects * P
+    
+        @info "[Rank $rank] After P: $(size(A_both_restricted)), nnz=$(nnz(A_both_restricted))"
+        
+        #Apply inter-processor prolongation
+        @info "[Rank $rank] Exchanging column effects..."
+        @time received_col_effects = exchange_hanging_effects(col_effects_to_send, rank, comm)
+    
+        @info "[Rank $rank] Adding received column effects..."
+        @time A_with_col_effects = add_hanging_col_effects(
+            A_both_restricted, received_col_effects, ip2gip_spa, n_spa, rank
+        )
+    
+        @info "[Rank $rank] After column effects: $(size(A_with_col_effects)), nnz=$(nnz(A_with_col_effects))"
+    
+        n_free = n_spa - length(nc_non_global_nodes)
+        @info "[Rank $rank] Extracting free node submatrix..."
+        @time A_free = extract_free_submatrix_remove_all_hanging(
+                A_with_col_effects, all_hanging_nodes, n_free, n_spa, rank)
+    
+        @info "[Rank $rank] Free submatrix: $(size(A_free)), nnz=$(nnz(A_free))"
+        
+        
+        #A = sparse(rest * MLHS * P)#sparse(A_test)
+        A = sparse(A_free)
+        #@info "compare MLHS with A_free and A", rank, maximum(MLHS), minimum(MLHS), maximum(A_free), minimum(A_free), maximum(A), minimum(A)
         RHS = zeros(TFloat, n_spa)#npoin_ang_total)
         ref = zeros(TFloat, n_spa)
         BDY = zeros(TFloat, n_spa)
@@ -201,15 +288,21 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                     extra_mesh.extra_metrics.Je,
                                     extra_mesh.extra_coords, extra_mesh.extra_nop, npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem,
                                    extra_mesh.extra_npoin)
+        
+        M2 = sparse_mass_assembly_3Dby2D_jacc(ω, Je, mesh.connijk, extra_mesh.ωθ, extra_mesh.ωϕ, ψ,
+                                     extra_mesh.extra_connijk, extra_mesh.extra_metrics.Je, extra_mesh.extra_nop,
+                                     npoin_ang_total, nelem, ngl, extra_mesh.extra_nelem, extra_mesh.extra_npoin,
+                                     backend = :CPU)
+        @info "compare JACC vs standard" maximum(M-M2), minimum(M-M2)
         @info "assembled Mass matrix"
         @info nnz(M), nnz(LHS), npoin_ang_total^2, nnz(M)/npoin_ang_total^2, nnz(LHS)/npoin_ang_total^2
         @info maximum(LHS), minimum(LHS)
         @info maximum(M), minimum(M)
         # inexact integration makes M diagonal, build the sparse inverse to save space
         # inexact integration makes M diagonal, build the sparse inverse to save space
-        ip2gip_extra, gip2owner_extra, gnpoin = setup_global_numbering_extra_dim(mesh.ip2gip, mesh.gip2owner, npoin, extra_mesh.extra_npoin, npoin_ang_total)
+        ip2gip_spa, gip2owner_spa, gnpoin = setup_global_numbering_extra_dim(mesh.ip2gip, mesh.gip2owner, npoin, extra_mesh.extra_npoin, npoin_ang_total)
         Md = diag(M)
-        pM = setup_assembler(SD, Md, ip2gip_extra, gip2owner_extra)
+        pM = setup_assembler(SD, Md, ip2gip_spa, gip2owner_spa)
         if  pM != nothing 
             assemble_mpi!(Md,pM)
             M = Diagonal(Md)
@@ -395,21 +488,30 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                         if (prodx + prody + prodz < 0)
                                             
                                             if (ip_g <= n_free)
-                                                BDY[ip_g] = user_rad_bc(x,y,z,θ,ϕ)
-                                                #A[ip_g,:] .= 0.0
-                                                #A[ip_g,ip_g] = 1.0
-                                                push!(bdy_nodes, ip_g)
-                                                push!(bdy_values, BDY[ip_g])
+                                                if (gip2owner_spa[ip_g] == rank)
+                                                    BDY[ip_g] = user_rad_bc(x,y,z,θ,ϕ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
+                                                    push!(bdy_nodes, ip_g)
+                                                    push!(bdy_values, BDY[ip_g])
+                                                else
+                                                    BDY[ip_g] = user_rad_bc(x,y,z,θ,ϕ)
+                                                    push!(bdy_nodes, ip_g)
+                                                    push!(bdy_values, 0.0)
+                                                end
                                                 applied = true
+                                            
                                             end
                                            
 
                                         end
                                         if (applied == false)
-                                            RHS[ip_g] = user_rhs(x,y,z,θ,ϕ)
+                                            if (gip2owner_spa[ip_g] == rank)
+                                                RHS[ip_g] = user_rhs(x,y,z,θ,ϕ)
+                                            end
                                         end
                                     else
-                                        RHS[ip_g] = user_rhs(x,y,z,θ,ϕ)
+                                        if (gip2owner_spa[ip_g] == rank)
+                                            RHS[ip_g] = user_rhs(x,y,z,θ,ϕ)
+                                        end
                                     end
                                 end
                             end
@@ -436,7 +538,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                         prodz = nz_new*cos(θ)
                                         #@info nx[iface,face_i,face_j], ny[iface,face_i,face_j], nz[iface,face_i,face_j], x, y, z
                                         if (prodx + prody + prodz < 0)
-                                            if (gip2owner_extra[ip_g] == rank)
+                                            if (gip2owner_spa[ip_g] == rank)
                                                 BDY[ip_g] = user_rad_bc(x,y,z,θ,ϕ)#exp(-((48/(2*π))*(θ-7*π/4))^2)#uip
                                                 push!(bdy_nodes, ip_g)
                                                 push!(bdy_values, BDY[ip_g])
@@ -449,12 +551,12 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                                             
                                         end
                                         if (applied == false)
-                                            if (gip2owner_extra[ip_g] == rank)
+                                            if (gip2owner_spa[ip_g] == rank)
                                                 RHS[ip_g] = user_rhs(x,y,z,θ,ϕ)#(-gip*hip*(user_f!(x,y,θ))*σip + κip*uip +  propip)
                                             end
                                         end
                                     else
-                                        if (gip2owner_extra[ip_g] == rank)
+                                        if (gip2owner_spa[ip_g] == rank)
                                             RHS[ip_g] = user_rhs(x,y,z,θ,ϕ)#(-gip*hip*(user_f!(x,y,θ))*σip + κip*uip +  propip) 
                                         end
                                     end
@@ -482,7 +584,7 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
             if i == j
                 # Keep diagonal, but set to 1
 
-                if (gip2owner_extra[i] == rank)
+                if (gip2owner_spa[i] == rank)
                     push!(I_mod, i)
                     push!(J_mod, j)
                     push!(V_mod, 1.0 - v)# Correction to make it 1
@@ -543,11 +645,30 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     A = sparse(A + C)
     
     if (inputs[:adaptive_extra_meshes])
-        
-        
-        
-        RHS_red = rest * RHS
-        
+
+        #RHS_red = nc_mat * RHS
+        # Parallel RHS restriction
+        @info "[Rank $rank] Computing interface hanging RHS effects..."
+        @time rhs_effects_to_send = compute_hanging_rhs_effects_before_restriction(
+            ghost_constraint_data, RHS, ip2gip_spa, gip2owner_spa, rank
+        )
+
+        @info "[Rank $rank] Applying nc_mat to RHS..."
+        @time RHS_restricted = nc_mat * RHS
+
+        @info "[Rank $rank] Exchanging RHS effects..."
+        @time received_rhs_effects = exchange_hanging_effects_vector(rhs_effects_to_send, rank, comm)
+
+        @info "[Rank $rank] Adding received RHS effects..."
+        @time RHS_with_effects = add_hanging_rhs_effects(
+            RHS_restricted, received_rhs_effects, ip2gip_spa, n_spa, rank
+        )
+
+        @info "[Rank $rank] Extracting free RHS subvector..."
+        @time RHS_red = extract_free_rhs_subvector(
+            RHS_with_effects, all_hanging_nodes, n_free, n_spa, rank
+        )
+
         @time for boundary_node in bdy_nodes
             RHS_red[boundary_node] = boundary_dict[boundary_node]
         end
@@ -569,8 +690,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     #A = nothing
     GC.gc()
     #@time solution = As \ B
-    
-    @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM)
+    @info "sizes of A and B", size(As), size(B)
+    npoin_ang_total = size(B,1)
+    @time solution = solve_parallel_lsqr(ip2gip_spa, gip2owner_spa, As, B, gnpoin, npoin_ang_total, pM)
     #=@time solution, stats = Krylov.cgs(As, B;
                    atol = 1e-7,
                    rtol = 1e-7,
@@ -590,9 +712,37 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
     int_ref = zeros(TFloat, npoin,1)
     L2_err = 0.0
     L2_ref = 0.0
-    solution_new = zeros(Float64,n_spa) 
+    solution_new = zeros(Float64,n_spa)
     if inputs[:adaptive_extra_meshes]
-        solution_new = (nc_mat)' * solution
+        # solution_new = nc_mat' * solution
+        # Parallel solution prolongation
+
+        # Step 1: Compute contributions from free nodes that are ghost parents
+        @info "[Rank $rank] Computing solution prolongation contributions..."
+        @time solution_contributions_to_send = compute_solution_prolongation_contributions(
+            reverse_ghost_map, solution, ip2gip_spa, n_free, rank
+        )
+
+        # Step 2: Apply local prolongation
+        @info "[Rank $rank] Applying local prolongation P * solution..."
+        # Extend solution to n_spa with zeros for hanging nodes
+        solution_extended = zeros(eltype(solution), n_spa)
+        solution_extended[1:n_free] .= solution
+
+        @time solution_local = nc_mat' * solution_extended
+
+        # Step 3: Exchange and add contributions from ghost parents
+        @info "[Rank $rank] Exchanging solution prolongation contributions..."
+        @time received_solution_contributions = exchange_hanging_effects_vector(
+            solution_contributions_to_send, rank, comm
+        )
+
+        @info "[Rank $rank] Adding received solution contributions..."
+        @time solution_new = add_solution_prolongation_contributions(
+            solution_local, received_solution_contributions, ip2gip_spa, n_spa, rank
+        )
+
+        @info "[Rank $rank] Solution prolongation complete"
     end
     if inputs[:adaptive_extra_meshes]
         for iel=1:nelem

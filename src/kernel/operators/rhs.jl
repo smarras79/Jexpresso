@@ -1119,8 +1119,8 @@ function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
 
         dξdx_kl = dqdξ*dξdx[iel,k]
         dqdx = visc_coeffieq[ieq]*dξdx_kl
-        
-        ∇ξ∇u_kl = dξdx_kl*dqdx*ωJac
+
+        ∇ξ∇u_kl = dξdx[iel,k]*dqdx*ωJac  # FIX: Use metric, not physical derivative
         
         @turbo for i = 1:ngl
             dhdξ_ik = dψ[i,k]

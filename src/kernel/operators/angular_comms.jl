@@ -526,8 +526,8 @@ function identify_interface_hanging_nodes_final(
                         get_ghost_element_bounds(ghost_info, e_ext_ghost)
                     
                     # Check if owned angular element is a child of ghost angular element
-                    if is_child_element(θmin_owned, θmax_owned, ϕmin_owned, ϕmax_owned,
-                                       θmin_ghost, θmax_ghost, ϕmin_ghost, ϕmax_ghost)
+                    if is_child_element(θmin_ghost, θmax_ghost, ϕmin_ghost, ϕmax_ghost,
+                                       θmin_owned, θmax_owned, ϕmin_owned, ϕmax_owned)
                         
                         # Mark hanging nodes in owned element
                         mark_hanging_nodes_in_element_advanced!(
@@ -536,7 +536,8 @@ function identify_interface_hanging_nodes_final(
                             ghost_info, e_ext_ghost,
                             connijk_spa, mesh.connijk, ngl,
                             extra_meshes_coords, extra_meshes_connijk,
-                            extra_meshes_extra_nops
+                            extra_meshes_extra_nops,
+                            mesh.ip2gip
                         )
                     end
                 end
@@ -553,20 +554,30 @@ function mark_hanging_nodes_in_element_advanced!(
     ghost_info, e_ext_ghost,
     connijk_spa, spatial_connijk, ngl,
     extra_meshes_coords, extra_meshes_connijk,
-    extra_meshes_extra_nops
+    extra_meshes_extra_nops,
+    ip2gip
 )
     """
     Mark all non-vertex nodes in the child (owned) element as hanging
     using coordinate-based checking to determine parent vertices
     """
-    
+
     nop_owned = extra_meshes_extra_nops[iel_owned][e_ext_owned]
-    
+
     # Mark all nodes in this angular element that are not parent vertices
     for k = 1:ngl, j = 1:ngl, i = 1:ngl
+        # Get spatial node and check if it's on ghost interface
+        ip_spatial = spatial_connijk[iel_owned, i, j, k]
+        gip_spatial = ip2gip[ip_spatial]
+
+        # Only process if spatial node is on ghost interface
+        if !(gip_spatial in ghost_info.interface_spatial_global_ids)
+            continue
+        end
+
         for jθ = 1:(nop_owned+1), iθ = 1:(nop_owned+1)
             ip_spa = connijk_spa[iel_owned][i, j, k, e_ext_owned, iθ, jθ]
-            
+
             # Use advanced coordinate-based checking
             is_hanging = !is_parent_vertex_advanced(
                 iθ, jθ, nop_owned,
@@ -574,7 +585,7 @@ function mark_hanging_nodes_in_element_advanced!(
                 ghost_info, e_ext_ghost,
                 extra_meshes_coords, extra_meshes_connijk
             )
-            
+
             if is_hanging
                 push!(interface_hanging, ip_spa)
                 parent_cache[ip_spa] = ghost_info
