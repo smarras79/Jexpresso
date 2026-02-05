@@ -52,7 +52,8 @@ function user_inputs()
         :outformat           => "vtk",
         :loverwrite_output   => false,
         :lwrite_initial      => true,
-        :output_dir          => "./output-theta/",
+        #:output_dir          => "./output-theta/",
+	:output_dir          => "/scratch/smarras/smarras/output/KH32x32x7th/", 
         #:output_dir          => "./test/CI-run",
         :loutput_pert        => true,  #this is only implemented for VTK for now
         #---------------------------------------------------------------------------
