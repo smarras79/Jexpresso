@@ -995,6 +995,8 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
     ngl   = params.mesh.ngl
     neqs  = params.neqs
 
+    lrichardson = params.inputs[:lrichardson]
+
     fill!(params.μ_max,    zero(params.T))
     
     for iel=1:nelem        
@@ -1031,7 +1033,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
                              params.mesh.poin_in_bdy_face, params.mesh.elem_to_face,
                              params.mesh.bdy_face_type, 
                              params.μ_max,
-                             params.QT, params.VT, SD, params.AD; Δ=Δ)
+                             params.QT, params.VT, SD, params.AD; Δ=Δ, lrichardson=lrichardson)
             
         end
     end
@@ -1422,7 +1424,7 @@ end
 
 function _expansion_visc!(rhs_diffξ_el, uprimitiveieq, visc_coeffieq, ω,
                           ngl, dψ, Je, dξdx, inputs, rhs_el, iel, ieq,
-                          QT::Inexact, VT::AV, SD::NSD_1D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::AV, SD::NSD_1D, ::ContGal; Δ=1.0, lrichardson=false)
 
     for k = 1:ngl
         ωJac = ω[k]*Je[iel,k]
@@ -1459,7 +1461,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el,
                           dηdx, dηdy,
                           inputs, rhs_el,
                           iel, ieq,
-                          QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::AV, SD::NSD_2D, ::ContGal; Δ=1.0, lrichardson=false)
     
     for l = 1:ngl
         ωl = ω[l]
@@ -1662,7 +1664,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
                           μsgs,
-                          QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT::AV, SD::NSD_3D, ::ContGal; Δ=1.0, lrichardson=false)
     conn_el = @view connijk[iel,:,:,:]
     lsponge = inputs[:lsponge]
     zs      = inputs[:zsponge]
@@ -1751,7 +1753,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                           coords, 
                           poin_in_bdy_face, elem_to_face, bdy_face_type,
                           μ_max,
-                          QT::Inexact, VT, SD::NSD_3D, ::ContGal; Δ=1.0)
+                          QT::Inexact, VT, SD::NSD_3D, ::ContGal; Δ=1.0, lrichardson=false)
 
     Δ2 = Δ^2
 
@@ -1950,7 +1952,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                                                                 dθdz,
                                                                 PHYS_CONST, Δ2,
                                                                 inputs, 
-                                                                VT, SD)
+                                                                VT, SD,
+                                                                ltheta_eqn=(micro == 0))
                             flux_x = effective_diffusivity * dθdx
                             flux_y = effective_diffusivity * dθdy
                             flux_z = effective_diffusivity * dθdz
@@ -2014,7 +2017,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                                                                 dhl_eff_dz,
                                                                 PHYS_CONST, Δ2,
                                                                 inputs, 
-                                                                VT, SD) 
+                                                                VT, SD,
+                                                                ltheta_eqn=(micro == 0))
                             flux_x = effective_diffusivity * dhldx
                             flux_y = effective_diffusivity * dhldy
                             flux_z = effective_diffusivity * dhldz

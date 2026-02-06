@@ -72,7 +72,9 @@ end
                                dθdz,
                                PhysConst, Δ2,
                                inputs, 
-                               ::SMAG, ::NSD_3D)
+                               ::SMAG, ::NSD_3D;
+                               ltheta_eqn=true,
+                               lrichardson=false)
     
     PhysConst = PhysicalConst{Float64}()
     C_s   = PhysConst.C_s       # Smagorinsky constant
@@ -112,7 +114,7 @@ end
     # Only apply for potential temperature with Richardson correction enabled
     f_Ri = 1.0  # Default: no correction
     
-    if inputs[:energy_equation] == "theta" && inputs[:lrichardson]
+    if ltheta_eqn && lrichardson
         
         # Buoyancy frequency squared: N² = (g/θ) * dθ/dz
         # Positive N² indicates stable stratification
@@ -147,7 +149,7 @@ end
             # Cap at maximum enhancement factor (e.g., 3x)
             min(sqrt(1.0 - 16.0*Ri), 3.0)
         end
-    elseif inputs[:energy_equation] == "energy" && inputs[:lrichardson]
+    elseif (ltheta_eqn==false) && lrichardson
         # ===== Moist Richardson Number Logic =====
         # Note: In this mode, the caller has pre-calculated:
         # θ_ref  => T_abs (Absolute Temperature in Kelvin)
@@ -197,7 +199,7 @@ end
         # Temperature equation uses effective thermal diffusivity
         κ_turb = μ_turb / (ρ * Pr_t)
         
-        if inputs[:energy_equation] == "theta"
+        if ltheta_eqn
             # Potential temperature equation
             return κ_turb * visc_coeffieq[ieq]
         else
