@@ -29,10 +29,41 @@ catch
 end
 =#
 
-# Physical constants
-const κ    = 0.4              # von Kármán constant
-const g    = 9.81             # gravitational acceleration [m/s²]
-const cp_d = 1004.0           # specific heat of dry air at constant pressure [J/kg/K]
+# Physical constants from PhysicalConst (defined in globalConstantsPhysics.jl)
+
+"""
+    qsat(T, p; over_water=true)
+
+Saturation specific humidity [kg/kg] at temperature T [K] and pressure p [Pa].
+
+Uses Tetens/Bolton formula for saturation vapor pressure.
+
+# Arguments
+- `T`: Temperature [K]
+- `p`: Pressure [Pa]
+- `over_water`: If true, use formula for water; if false, use formula for ice
+
+# Example
+```julia
+T_sfc = 300.0      # Surface temperature [K]
+p_sfc = 101325.0   # Surface pressure [Pa]
+PhysConst = PhysicalConst{Float64}()
+q_s = PhysConst.salt_factor * qsat(T_sfc, p_sfc)  # Surface specific humidity over ocean
+```
+"""
+function qsat(T, p, PhysConst; over_water=true)
+    # Tetens form, ula for saturation vapor pressure [Pa]
+    if over_water
+        # Valid for T > 253 K (over liquid water)
+        e_s = 611.2 * exp(17.67 * (T - 273.15) / (T - 29.65))
+    else
+        # Over ice (for cold surfaces)
+        e_s = 611.2 * exp(21.87 * (T - 273.15) / (T - 7.66))
+    end
+    # Convert to specific humidity: q = ε * e / (p - (1-ε)*e)
+    ε = PhysConst.ε_ratio
+    return ε * e_s / (p - (1 - ε) * e_s)
+end
 
 # Universal function parameters (Businger-Dyer)
 const a_m = 16.0              # momentum stability parameter (unstable)
@@ -40,43 +71,47 @@ const a_h = 16.0              # heat stability parameter (unstable)
 const b_m = 5.0               # momentum stability parameter (stable)
 const b_h = 5.0               # heat stability parameter (stable)
 
-function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref)
-    
+function CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst;
+                  q_ref=nothing, q_s=nothing, z0_m=0.1, z0_h=0.01)
+
     #println("=== Minimal Surface Fluxes: Comprehensive Analysis ===")
-    
+
     # Example atmospheric conditions
     #u_ref = 10.0      # wind speed at 10m [m/s]
     #v_ref = 0.0
-    #theta_ref = 298.0 # 285.0  # potential temperature at 10m [K] 
+    #theta_ref = 298.0 # 285.0  # potential temperature at 10m [K]
     #theta_s = 302.0   # 288.0    # surface potential temperature [K]
     #z_ref = 10.0      # reference height [m]
 
-    z0_m = 0.1        # momentum roughness length [m]
-    z0_h = 0.01       # thermal roughness length [m]
-
     u_magnitude = sqrt(u_ref*u_ref + v_ref*v_ref + w_ref*w_ref)
-    
-    # Calculate surface conditions
-    result = surface_conditions(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h)
-    
+
+    # Calculate surface conditions (with or without humidity)
+    result = surface_conditions(u_magnitude, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst;
+                                q_ref=q_ref, q_s=q_s, rho=ρ)
+
     # Momentum flux
     τ_magnitude = momentum_flux(result.u_star, ρ)
-    
+
     τ_f[1] = -τ_magnitude * (u_ref/(u_magnitude + 2.22e-16))
     τ_f[2] = -τ_magnitude * (v_ref/(u_magnitude + 2.22e-16))
     τ_f[3] = -τ_magnitude * (w_ref/(u_magnitude + 2.22e-16))
-    
-    #sensible heat flux
-    #wθ[iface_bdy, idx1, idx2, 1]  = result_x.Q_H
-    
+
+    # Sensible heat flux (kinematic): w'θ' = -u* · θ*
+    # Q_H [W/m²] = ρ · cp · w'θ'
+    wθ[1] = -result.u_star * result.theta_star
+
+    # Latent heat flux (kinematic): w'q' = -u* · q*
+    # Q_E [W/m²] = ρ · Lv · w'q'
+    wq[1] = -result.u_star * result.q_star
+
     #println("  x-Momentum flux τx = $(round(τ_f[iface_bdy, idx1, idx2, 1], digits=4)) N/m²")
     #println("  y-Momentum flux τy = $(round(τ_f[iface_bdy, idx1, idx2, 2], digits=4)) N/m²")
-    
+
     #= Determine stability regime
     if result_x.zeta < -0.1
         stability = "Moderately Unstable (Convective)"
     elseif result_x.zeta < 0
-        stability = "Weakly Unstable" 
+        stability = "Weakly Unstable"
     elseif result_x.zeta < 0.1
         stability = "Near Neutral"
     else
@@ -84,23 +119,29 @@ function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref)
     end
     println("  Atmospheric stability: $stability")
     =#
-    #= println("\n=== GENERATING COMPREHENSIVE ANALYSIS ===")  
+    #= println("\n=== GENERATING COMPREHENSIVE ANALYSIS ===")
     # Create and save comprehensive analysis
     try
     p = save_analysis_to_pdf(result, z0_m, z0_h, theta_s, u_ref, theta_ref, z_ref,
     filename="MOST_surface_flux_analysis.pdf")
-    
+
     println("\n=== ANALYSIS COMPLETE ===")
     println("✓ Surface flux calculations completed")
     println("✓ Comprehensive 6-panel visualization created")
     println("✓ Results saved to PDF")
     println("✓ Physical consistency verified")
-    
+
     catch e
     println("Plotting failed: $e")
     println("Install Plots.jl with: using Pkg; Pkg.add(\"Plots\")")
     end=#
-    return
+    # return result
+end
+
+# Backward compatible version without humidity
+function CM_MOST!(τ_f, wθ, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst)
+    wq = [0.0]  # dummy for LHF
+    return CM_MOST!(τ_f, wθ, wq, ρ, u_ref, v_ref, w_ref, theta_ref, theta_s, z_ref, PhysConst)
 end
 
 
@@ -168,11 +209,11 @@ end
     - T_ref: reference temperature [K]  
     - Q_H: surface sensible heat flux [W/m²]
     """
-function obukhov_length(u_star, T_ref, Q_H)
+function obukhov_length(u_star, T_ref, Q_H, PhysConst)
     if abs(Q_H) < 1e-6
         return 1e6  # Near-neutral conditions (very large L)
     end
-    return -u_star^3 * T_ref * cp_d / (κ * g * Q_H)
+    return -u_star^3 * T_ref * PhysConst.cp / (PhysConst.karman * PhysConst.g * Q_H)
 end
 
 """
@@ -186,10 +227,10 @@ end
     - L: Obukhov length [m]
     - u_star: friction velocity [m/s]
     """
-function wind_profile(z, z0_m, L, u_star)
+function wind_profile(z, z0_m, L, u_star, PhysConst)
     zeta = z / L
     zeta0 = z0_m / L
-    return (u_star / κ) * (log(z / z0_m) - psi_m(zeta) + psi_m(zeta0))
+    return (u_star / PhysConst.karman) * (log(z / z0_m) - psi_m(zeta) + psi_m(zeta0))
 end
 
 """
@@ -204,10 +245,10 @@ end
     - θ_s: surface potential temperature [K]
     - θ_star: temperature scale [K]
     """
-function temperature_profile(z, z0_h, L, theta_s, theta_star)
+function temperature_profile(z, z0_h, L, theta_s, theta_star, PhysConst)
     zeta = z / L
     zeta0 = z0_h / L
-    return theta_s + (theta_star / κ) * (log(z / z0_h) - psi_h(zeta) + psi_h(zeta0))
+    return theta_s + (theta_star / PhysConst.karman) * (log(z / z0_h) - psi_h(zeta) + psi_h(zeta0))
 end
 
 """
@@ -218,13 +259,14 @@ end
 
     Given u, z, z0_m, and L, find u_star
     """
-function friction_velocity_from_wind(u, z, z0_m, L; max_iter=20, tol=1e-6)
+function friction_velocity_from_wind(u, z, z0_m, L, PhysConst; max_iter=20, tol=1e-6)
     zeta = z / L
     zeta0 = z0_m / L
-    
+    κ = PhysConst.karman
+
     # Initial guess
     u_star = κ * u / log(z / z0_m)
-    
+
     for i in 1:max_iter
         # Calculate wind from current u_star
         u_calc = (u_star / κ) * (log(z / z0_m) - psi_m(zeta) + psi_m(zeta0))
@@ -249,8 +291,8 @@ end
 
     where Q_H is the sensible heat flux [W/m²]
     """
-function temperature_scale(Q_H, rho, u_star)
-    return -Q_H / (rho * cp_d * u_star)
+function temperature_scale(Q_H, rho, u_star, PhysConst)
+    return -Q_H / (rho * PhysConst.cp * u_star)
 end
 
 """
@@ -265,81 +307,110 @@ end
     - z_ref: reference height [m]
     - theta_s: surface potential temperature [K]
     - z0_m: momentum roughness length [m]
-    - z0_h: thermal roughness length [m]  
+    - z0_h: thermal roughness length [m]
+    - q_ref: specific humidity at reference height [kg/kg] (optional, default nothing)
+    - q_s: surface specific humidity [kg/kg] (optional, default nothing)
     - rho: air density [kg/m³] (optional, default 1.225)
 
     Returns NamedTuple with:
     - u_star: friction velocity [m/s]
     - theta_star: temperature scale [K]
+    - q_star: humidity scale [kg/kg] (if humidity provided)
     - L: Obukhov length [m]
     - Q_H: sensible heat flux [W/m²]
+    - Q_E: latent heat flux [W/m²] (if humidity provided)
     - zeta: stability parameter z_ref/L
     - C_D: drag coefficient
     - C_H: heat transfer coefficient
+    - C_E: moisture transfer coefficient
     """
-function surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h; 
-                            rho=1.225, max_iter=20, tol=1e-4)
-    
+function surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst;
+                            q_ref=nothing, q_s=nothing, rho=1.225, max_iter=20, tol=1e-4)
+
+    κ  = PhysConst.karman
+    cp = PhysConst.cp
+
+    # Check if humidity is provided
+    compute_lhf = !isnothing(q_ref) && !isnothing(q_s)
+
     # Initial guess assuming neutral conditions
     u_star = κ * u_ref / log(z_ref / z0_m)
     theta_star = κ * (theta_ref - theta_s) / log(z_ref / z0_h)
-    
+    q_star = compute_lhf ? κ * (q_ref - q_s) / log(z_ref / z0_h) : 0.0
+
     # Initial heat flux guess
-    Q_H = -rho * cp_d * u_star * theta_star
-    L = obukhov_length(u_star, theta_ref, Q_H)
-    
+    Q_H = -rho * cp * u_star * theta_star
+    L = obukhov_length(u_star, theta_ref, Q_H, PhysConst)
+
     # Iterative solution
     for iter in 1:max_iter
         # Update stability parameter
         zeta    = z_ref / L
-        zeta0_m = z0_m / L  
+        zeta0_m = z0_m / L
         zeta0_h = z0_h / L
-        
+
         # Calculate new friction velocity
         u_star_new = κ * u_ref / (log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m))
-        
+
         # Calculate new temperature scale
         theta_star_new = κ * (theta_ref - theta_s) / (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h))
-        
+
+        # Calculate new humidity scale (uses same stability function as heat)
+        if compute_lhf
+            q_star_new = κ * (q_ref - q_s) / (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h))
+        else
+            q_star_new = 0.0
+        end
+
         # Update heat flux and Obukhov length
-        Q_H_new = -rho * cp_d * u_star_new * theta_star_new
-        L_new = obukhov_length(u_star_new, theta_ref, Q_H_new)
-        
+        Q_H_new = -rho * cp * u_star_new * theta_star_new
+        L_new = obukhov_length(u_star_new, theta_ref, Q_H_new, PhysConst)
+
         # Check convergence
         error = abs(L_new - L) / max(abs(L), abs(L_new))
-        
+
         if error < tol
             u_star = u_star_new
-            theta_star = theta_star_new  
+            theta_star = theta_star_new
+            q_star = q_star_new
             Q_H = Q_H_new
             L = L_new
             break
         end
-        
+
         # Update for next iteration
         u_star = u_star_new
         theta_star = theta_star_new
+        q_star = q_star_new
         Q_H = Q_H_new
         L = L_new
     end
-    
+
     # Calculate transfer coefficients
     zeta = z_ref / L
     zeta0_m = z0_m / L
     zeta0_h = z0_h / L
-    
+
     C_D = (κ / (log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m)))^2
-    C_H = κ^2 / ((log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m)) * 
+    C_H = κ^2 / ((log(z_ref / z0_m) - psi_m(zeta) + psi_m(zeta0_m)) *
         (log(z_ref / z0_h) - psi_h(zeta) + psi_h(zeta0_h)))
-    
+    C_E = C_H  # Moisture transfer coefficient (same as heat for Businger-Dyer)
+
+    # Calculate latent heat flux: Q_E = -ρ * Lv * u* * q*
+    # Positive Q_E means upward flux (evaporation)
+    Q_E = compute_lhf ? -rho * PhysConst.Lc * u_star * q_star : 0.0
+
     return (
         u_star = u_star,
         theta_star = theta_star,
+        q_star = q_star,
         L = L,
         Q_H = Q_H,
+        Q_E = Q_E,
         zeta = zeta,
         C_D = C_D,
-        C_H = C_H
+        C_H = C_H,
+        C_E = C_E
     )
 end
 
@@ -764,9 +835,10 @@ function example_usage()
     z_ref     = 10.0  # reference height [m]
     z0_m      = 0.1   # momentum roughness length [m]
     z0_h      = 0.01  # thermal roughness length [m]
-    
+    PhysConst = PhysicalConst{Float64}()
+
     # Calculate surface conditions
-    result = surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h)
+    result = surface_conditions(u_ref, theta_ref, z_ref, theta_s, z0_m, z0_h, PhysConst)
     
     println("Results:")
     println("  Friction velocity u* = $(round(result.u_star, digits=4)) m/s")
@@ -785,13 +857,13 @@ function example_usage()
     heights = [2.0, 5.0, 10.0, 20.0, 50.0]
     println("\nWind profile:")
     for z in heights
-        u = wind_profile(z, z0_m, result.L, result.u_star)
+        u = wind_profile(z, z0_m, result.L, result.u_star, PhysConst)
         println("  u($(z)m) = $(round(u, digits=2)) m/s")
     end
-    
+
     println("\nTemperature profile:")
     for z in heights
-        theta = temperature_profile(z, z0_h, result.L, theta_s, result.theta_star)
+        theta = temperature_profile(z, z0_h, result.L, theta_s, result.theta_star, PhysConst)
         println("  θ($(z)m) = $(round(theta, digits=2)) K")
     end
 end

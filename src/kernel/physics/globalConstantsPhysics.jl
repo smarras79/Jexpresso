@@ -47,6 +47,10 @@ using Parameters
     Mol_mass_water = 18.02        #g/mol
     # Reference pressure used in potential temperature definition... mainly for BMOEX case, very sensitive to pressure
     potential_temperature_reference_pressure::T = 101325.0 #Pa
+
+    # MOST (Monin-Obukhov) surface layer constants
+    ε_ratio::T     = 0.622        # Rd/Rv ratio (molecular weight ratio)
+    salt_factor::T = 0.98         # saturation reduction over seawater (1.0 for freshwater)
 end
 
 using Parameters

@@ -238,7 +238,7 @@ function params_setup(sem,
     #------------------------------------------------------------------------------------
     # Allocate wall model arrays
     #------------------------------------------------------------------------------------
-    WM = allocate_Wall_model(sem.mesh.nfaces_bdy, sem.mesh.ngl, T, backend; lwall_model=inputs[:lwall_model])
+    WM = allocate_Wall_model(sem.mesh.nfaces_bdy, sem.mesh.ngl, T, backend; lwall_model=inputs[:lwall_model], lmoist=inputs[:lmoist])
     #------------------------------------------------------------------------------------
     # Allocate Thermodynamic params for bomex case
     #------------------------------------------------------------------------------------
@@ -313,6 +313,10 @@ function params_setup(sem,
 
     # setup timer
     timers = Dict{String, MPIFunctionTimer}()
+
+    # LES statistics z-level cache (computed once, shared across timesteps)
+    les_stat_cache = build_les_stat_cache(sem.mesh)
+
     #------------------------------------------------------------------------------------
     # Populate params tuple to carry global arrays and constants around
     #------------------------------------------------------------------------------------
@@ -350,6 +354,7 @@ function params_setup(sem,
                   sem.matrix.M, sem.matrix.Minv, g_dss_cache=g_dss_cache, tspan,
                   Δt, deps, xmax, xmin, ymax, ymin, zmin, zmax,
                   qp, mp, sem.fx, sem.fy, fy_t, sem.fy_lag, fy_t_lag, sem.fz, fz_t, laguerre=true,
+                  les_stat_cache,
                   timers)
         
     else
@@ -381,6 +386,7 @@ function params_setup(sem,
                   WM,
                   phys_grid = sem.phys_grid,
                   qp, mp, LST, sem.fx, sem.fy, fy_t, sem.fz, fz_t, laguerre=false,
+                  les_stat_cache,
                   OUTPUT_DIR,
                   timers,
                   sem.interp, sem.project, sem.nparts, sem.distribute)

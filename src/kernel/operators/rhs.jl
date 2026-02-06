@@ -107,6 +107,8 @@ function rhs!(du, u, params, time)
     backend = params.inputs[:backend]
     # for @timers, do not delete
     timers = params.timers
+
+    # les_statistics(u, params, time)
     if (backend == CPU())
         _build_rhs!(@view(params.RHS[:,:]), u, params, time)
 
@@ -633,7 +635,7 @@ function _build_rhs!(RHS, u, params, time)
                                        params.mesh.bdy_edge_type, params.mesh.bdy_face_in_elem, params.mesh.bdy_face_type,
                                        params.mesh.connijk, params.metrics.Jef, params.S_face, 
                                        params.S_flux, params.F_surf, params.M_surf_inv, params.M_edge_inv, params.Minv,
-                                       params.WM.τ_f, params.WM.wθ,
+                                       params.WM.τ_f, params.WM.wθ, params.WM.wqv,
                                        params.mp.Tabs, params.mp.qn,
                                        params.ω, neqs, params.inputs, AD, SD) 
     
@@ -1761,8 +1763,8 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
     conn_el        = @view connijk[iel,:,:,:]
     μ_max_ieq      = μ_max[ieq] 
 
-    lsponge = inputs[:lsponge]
-    zs      = inputs[:zsponge]
+    micro   = size(Tabs,1)
+    zs      = 19000.0
     
     for m = 1:ngl
         for l = 1:ngl
@@ -1917,7 +1919,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
 
                     elseif is_temperature
                         
-                        if inputs[:energy_equation] == "theta" 
+                        if (micro == 0)
                             # Compute temperature gradient
                             dθdξ = 0.0; dθdη = 0.0; dθdζ = 0.0
                             @turbo for ii = 1:ngl
@@ -1954,7 +1956,7 @@ function _expansion_visc!(rhs_diffξ_el, rhs_diffη_el, rhs_diffζ_el,
                             flux_z = effective_diffusivity * dθdz
                             μ_local = effective_diffusivity
 
-                        elseif inputs[:energy_equation] == "energy" 
+                        elseif (micro > 1)
                             PhysConst = PhysicalConst{Float32}()
                             cp        = PhysConst.cp
                             Rvap      = PhysConst.Rvap

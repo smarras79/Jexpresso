@@ -17,6 +17,7 @@ function time_loop!(inputs, params, u, args...)
     idx_ref      = Ref{Int}(0)
     c            = Float64(0.0)
     restart_time = inputs[:restart_time]
+    les_stat_t   = inputs[:statistics_time]
     rad_time     = inputs[:radiation_time_step]
     lnew_mesh    = true   
     lwrite_time  = (inputs[:outformat] == VTK()) && (rank == 0)
@@ -75,6 +76,17 @@ function time_loop!(inputs, params, u, args...)
 
         println_rank(" #  writing restart ........................ DONE"; msg_rank = rank)
     end
+
+
+    # LES statistics callback: write profiles every 10 s
+    function les_stat_condition(u, t, integrator)
+        return les_stat_t ≠ 0.0 && rem(t, les_stat_t) < 1e-3
+    end
+    function do_les_statistics!(integrator)
+        les_statistics(integrator.u, integrator.p, integrator.t)
+    end
+
+    
     # #------------------------------------------------------------------------
     # #  config
     # #------------------------------------------------------------------------
@@ -121,8 +133,10 @@ function time_loop!(inputs, params, u, args...)
             end
         end
     end
+    cb_les_stat = DiscreteCallback(les_stat_condition, do_les_statistics!)
+
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
-    cb         = DiscreteCallback(condition, affect!)    
+    cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
     CallbackSet(cb)#,cb_rad)
@@ -171,7 +185,7 @@ function time_loop!(inputs, params, u, args...)
         solution = solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                          #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = CallbackSet(cb, cb_restart), tstops = dosetimes,
+                         callback = CallbackSet(cb, cb_restart, cb_les_stat), tstops = dosetimes,
                          save_everystep = false,
                          adaptive=inputs[:ode_adaptive_solver],
                          saveat = range(inputs[:tinit],

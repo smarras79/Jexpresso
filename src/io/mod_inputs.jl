@@ -339,6 +339,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         inputs[:restart_time] = 0.0
     end
 
+    if(!haskey(inputs, :statistics_time))
+        inputs[:statistics_time] = 0.0
+    end
+
     #mod_inputs_check(inputs, :Δt, Float64(0.1), "w") #Δt --> this will be computed from CFL later on
     if(!haskey(inputs, :tinit))
         inputs[:tinit] = 0.0  #Initial time is 0.0 by default
