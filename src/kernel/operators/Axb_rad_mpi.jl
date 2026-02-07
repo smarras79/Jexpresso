@@ -1,5 +1,8 @@
 using Krylov
 
+include("../solvers/je_mixprecision.jl")
+include("../solvers/je_preconditioned_gmres_gpu.jl")
+
 mutable struct MatvecCache
     # number of points on each process
     proc_npoin :: Vector{Int}
@@ -384,15 +387,97 @@ function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; t
     end
     maxiter = gnpoin
     @info tol, maxiter
-    x, stats = Krylov.lsqr(A_parallel, b_global;
-                   atol = tol,
-                   rtol = tol,
-                   btol = tol,
-                   etol = tol,
-                   axtol = tol,
-                   itmax = maxiter,
-                   verbose = (rank == 0) ? 1 : 0)  # Only print on rank 0
+    
+    lgpu = true
+    test_type = 0
+    if lgpu
 
+        # New GPU code (choose one):
+        tol     = 1.0e-6
+        atol    = Float32(tol)
+        rtol    = Float32(tol)
+        btol    = Float32(tol)
+        etol    = Float32(tol)
+        axtol   = Float32(tol)
+        
+        restart = true
+        memory  = 100
+        itmax   = 1000
+        verbose = true
+        
+        #
+        # GPU
+        #
+        # Single precision solve:
+        if test_type == 0
+            x, stats = solve_sparse_gpu(A_local, b_global;
+                                        tol = tol,
+                                        maxiter = itmax,
+                                        precision = Float32,
+                                        verbose = (rank == 0))
+
+        elseif test_type == 1
+
+            # Original CPU code from Santolo's code
+            # P = IncompleteLU.ilu(prec_sp[:precision].(As), τ = ilu_tol)
+            # prec = MyPrecClass.MyPrec(As, P, prec_sp)
+            # (solution, stats) = gmres(As, B, memory=memory, N=prec, ldiv=true,
+            #                           restart=restart, atol=atol, rtol=rtol,
+            #                           itmax=itmax, verbose=verbose)
+            
+            # Option 1: Jacobi preconditioner (fastest, simple)
+            x, stats = solve_gmres_gpu(A_local, b_global;
+                                       tol = atol,
+                                       maxiter = itmax,
+                                       restart = restart,
+                                       memory = memory,
+                                       precision = Float32,
+                                       preconditioner = :jacobi,
+                                       verbose = verbose)
+
+        elseif test_type == 2
+            
+            # Option 2: Block Jacobi (better for block-structured problems)
+            x, stats = solve_gmres_gpu(A_local, b_global;
+                                       tol = atol,
+                                       maxiter = itmax,
+                                       restart = restart,
+                                       memory = memory,
+                                       precision = Float32,
+                                       preconditioner = :block_jacobi,
+                                       block_size = 4,
+                                       verbose = verbose)
+
+        elseif test_type == 3
+            
+            # Option 3: No preconditioner (if GPU SpMV is fast enough)
+            x, stats = solve_gmres_gpu(A_local, b_global;
+                                       tol = atol,
+                                       maxiter = itmax,
+                                       restart = restart,
+                                       memory = memory,
+                                       precision = Float32,
+                                       preconditioner = :none,
+                                       verbose = verbose)
+        end
+        
+    else
+        #
+        # CPU
+        #
+        x, stats = Krylov.lsqr(A_parallel, b_global;
+                               atol = tol,
+                               rtol = tol,
+                               btol = tol,
+                               etol = tol,
+                               axtol = tol,
+                               itmax = maxiter,
+                               verbose = (rank == 0) ? 1 : 0)  # Only print on rank 0
+              
+    end
+    
+    @info size(x)
+    #@mystop
     #return to local indexing
     x_local = zeros(Float64,npoin)
     for (i, idx) in enumerate(ip2gip)

@@ -152,7 +152,7 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
 
         minq = minimum(q[idx+1:ivar*npoin])
         maxq = maximum(q[idx+1:ivar*npoin])
-
+        
         # Create triangulated contour plot using Plots
         plt = Plots.scatter(mesh.x[1:npoin], mesh.y[1:npoin];
                            zcolor = q[idx+1:ivar*npoin],
@@ -188,7 +188,6 @@ function plot_triangulation(SD::NSD_2D, mesh::St_mesh, q::Array, title::String, 
             Plots.savefig(plt, string(fout_name))
             plt
         end
-
     end
 end
 function plot_triangulation(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, inputs::Dict; nvar=1) nothing end
