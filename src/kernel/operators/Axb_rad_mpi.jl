@@ -1,4 +1,6 @@
 using Krylov
+using MatrixMarket
+using SparseArrays
 
 include("../solvers/je_mixprecision.jl")
 include("../solvers/je_preconditioned_gmres_gpu.jl")
@@ -475,6 +477,11 @@ function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; t
                                verbose = (rank == 0) ? 1 : 0)  # Only print on rank 0
               
     end
+
+    
+    # Write to file: 
+    write_sparse_to_file(A_local, b_global, x)
+
     
     @info size(x)
     #@mystop
@@ -488,3 +495,25 @@ function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; t
     return x_local
 end
 
+function write_sparse_to_file(A, b, x)
+    # Assume you have these variables in your workspace:
+    # A::SparseMatrixCSC
+    # b::Vector (or SparseVector)
+    # x::Vector (or SparseVector)
+
+    # 1. Write Matrix A (It is already a sparse matrix, so it works directly)
+    MatrixMarket.mmwrite("AAAsparse_Abx_data_A.mtx", A)
+
+    # 2. Write Vector b
+    # We must convert b to a Sparse Matrix with dimensions (N, 1)
+    # reshape(b, :, 1) -> Converts 1D vector to Nx1 Dense Matrix
+    # sparse(...)      -> Converts Nx1 Dense Matrix to SparseMatrixCSC
+    MatrixMarket.mmwrite("AAAsparse_Abx_data_b.mtx", sparse(reshape(b, :, 1)))
+
+    # 3. Write Vector x
+    # Same logic as b
+    MatrixMarket.mmwrite("AAAsparse_Abx_data_x.mtx", sparse(reshape(x, :, 1)))
+
+    println("Successfully wrote A, b, and x to .mtx files.")
+    
+end
