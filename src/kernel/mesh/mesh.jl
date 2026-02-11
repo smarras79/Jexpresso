@@ -4,6 +4,7 @@ export St_mesh
 export mod_mesh_mesh_driver
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
+export JxGridapOwner2D
 
 
 include("warping.jl")
@@ -1924,7 +1925,103 @@ function find_gip_owner(a)
     element_owners = MPI.scatter(chunked_owners, comm)
 
     return element_owners
-    
+
+end
+
+#
+# Point-in-triangle test using barycentric coordinates.
+# Returns true if (px, py) is inside or on the boundary of the
+# triangle with vertices (ax,ay), (bx,by), (cx,cy).
+#
+function _point_in_triangle_2d(px, py, ax, ay, bx, by, cx, cy)
+    v0x = cx - ax;  v0y = cy - ay
+    v1x = bx - ax;  v1y = by - ay
+    v2x = px - ax;  v2y = py - ay
+
+    dot00 = v0x * v0x + v0y * v0y
+    dot01 = v0x * v1x + v0y * v1y
+    dot02 = v0x * v2x + v0y * v2y
+    dot11 = v1x * v1x + v1y * v1y
+    dot12 = v1x * v2x + v1y * v2y
+
+    denom = dot00 * dot11 - dot01 * dot01
+    if abs(denom) < 1.0e-15
+        return false            # degenerate triangle
+    end
+    inv_denom = 1.0 / denom
+    u = (dot11 * dot02 - dot01 * dot12) * inv_denom
+    v = (dot00 * dot12 - dot01 * dot02) * inv_denom
+
+    tol = -1.0e-10             # small negative tolerance for boundary points
+    return (u >= tol) && (v >= tol) && (u + v <= 1.0 - tol)
+end
+
+#
+# JxGridapOwner2D
+#
+# Determine whether the 2D point (px, py) falls inside a cell that is
+# *owned* (not ghost) by the current MPI rank in the distributed mesh.
+#
+# The function extracts the local grid partition via GridapDistributed,
+# iterates only over the owned cells, and performs a point-in-quad test
+# by splitting each Quad4 element into two triangles.
+#
+# Arguments
+#   partitioned_model : distributed discrete model (any GridapDistributed type)
+#   comm              : MPI communicator
+#   px, py            : coordinates of the query point
+#
+# Returns
+#   Bool – true if (px,py) is inside an owned cell on this rank
+#
+function JxGridapOwner2D(partitioned_model, comm, px, py)
+
+    # Local cell-ownership information
+    cell_gids = local_views(partition(get_cell_gids(partitioned_model))).item_ref[]
+
+    # Full local model (owned + ghost cells)
+    local_model = local_views(partitioned_model).item_ref[]
+
+    # Grid geometry
+    grid          = get_grid(local_model)
+    node_coords   = get_node_coordinates(grid)
+    cell_node_ids = get_cell_node_ids(grid)
+
+    # Only iterate over cells owned by this rank
+    owned_cells = own_to_local(cell_gids)
+
+    for icell in owned_cells
+        nodes = cell_node_ids[icell]
+
+        # Quad4 corner coordinates
+        x1, y1 = node_coords[nodes[1]][1], node_coords[nodes[1]][2]
+        x2, y2 = node_coords[nodes[2]][1], node_coords[nodes[2]][2]
+        x3, y3 = node_coords[nodes[3]][1], node_coords[nodes[3]][2]
+        x4, y4 = node_coords[nodes[4]][1], node_coords[nodes[4]][2]
+
+        # Fast bounding-box rejection
+        xmin_el = min(x1, x2, x3, x4)
+        xmax_el = max(x1, x2, x3, x4)
+        ymin_el = min(y1, y2, y3, y4)
+        ymax_el = max(y1, y2, y3, y4)
+        if px < xmin_el || px > xmax_el || py < ymin_el || py > ymax_el
+            continue
+        end
+
+        # Gridap Quad4 Z-pattern node ordering:
+        #   1---3
+        #   |   |
+        #   2---4
+        # Split along diagonal 1–4 into two triangles:
+        #   Triangle 1: (1, 2, 4)
+        #   Triangle 2: (1, 4, 3)
+        if _point_in_triangle_2d(px, py, x1, y1, x2, y2, x4, y4) ||
+           _point_in_triangle_2d(px, py, x1, y1, x4, y4, x3, y3)
+            return true
+        end
+    end
+
+    return false
 end
 
 function determine_colinearity(vec1, vec2)
