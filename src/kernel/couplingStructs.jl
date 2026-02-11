@@ -223,3 +223,56 @@ end
 
     return xin & yin & zin
 end
+
+#------------------------------------------------------------------------------------
+# Extract p4est/p8est forest pointer from a partitioned mesh model
+#------------------------------------------------------------------------------------
+"""
+    extract_p4est_forest(partitioned_model)
+
+Extract the p4est/p8est forest pointer from the partitioned mesh model
+returned by `mod_mesh_mesh_driver` or `sem_setup`.
+
+The `partitioned_model` must be an `OctreeDistributedDiscreteModel` from
+GridapP4est (i.e., the mesh was created with `ladapt=true` or via
+`OctreeDistributedDiscreteModel`/AMR).
+
+# Returns
+A named tuple `(ptr_pXest, pXest_type, is_3d)` where:
+- `ptr_pXest`: The raw C pointer (`Ptr{p4est_t}` for 2D or `Ptr{p8est_t}` for 3D)
+  to the forest-of-octrees, suitable for passing to `p4est_search` / `p8est_search`
+  or to `CouplingSearch.setup_p4est_checker`.
+- `pXest_type`: The GridapP4est type indicator (`P4estType()` or `P8estType()`).
+- `is_3d`: `true` if the forest is 3D (p8est), `false` if 2D (p4est).
+
+# Throws
+- `ArgumentError` if the model does not have a p4est/p8est backend
+  (e.g., a plain `GmshDiscreteModel` from non-adaptive meshing).
+
+# Example
+```julia
+mesh, partitioned_model = mod_mesh_mesh_driver(inputs, nparts, distribute)
+forest = extract_p4est_forest(partitioned_model)
+
+# Use forest.ptr_pXest with CouplingSearch:
+checker = setup_p4est_checker(forest.ptr_pXest, rem_min, rem_max, ndime)
+is_local = checker(coords)
+```
+"""
+function extract_p4est_forest(partitioned_model)
+    if !(partitioned_model isa GridapP4est.OctreeDistributedDiscreteModel)
+        throw(ArgumentError(
+            "Cannot extract p4est forest: the partitioned model is a " *
+            "$(typeof(partitioned_model)), not an OctreeDistributedDiscreteModel.\n" *
+            "Ensure the mesh was created with adaptive refinement enabled " *
+            "(ladapt=true or via OctreeDistributedDiscreteModel)."
+        ))
+    end
+
+    pXest_type = partitioned_model.pXest_type
+    is_3d = pXest_type isa GridapP4est.P8estType
+
+    return (ptr_pXest  = partitioned_model.ptr_pXest,
+            pXest_type = pXest_type,
+            is_3d      = is_3d)
+end
