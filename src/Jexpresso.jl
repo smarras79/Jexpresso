@@ -85,12 +85,36 @@ cpu    = true
 # Default is COMM_WORLD, but can be set to local communicator in coupled simulations
 const JEXPRESSO_MPI_COMM = Ref{Union{MPI.Comm,Nothing}}(nothing)
 
+# World communicator for inter-code coupling (spans all codes)
+# In standalone mode this is the same as COMM_WORLD.
+# In coupled mode this is MPI.COMM_WORLD while JEXPRESSO_MPI_COMM is the local split.
+const JEXPRESSO_MPI_COMM_WORLD = Ref{Union{MPI.Comm,Nothing}}(nothing)
+
+# Coupling data received during initialization (populated by Jexpresso-mini-coupled.jl)
+const JEXPRESSO_COUPLING_DATA = Ref{Union{Dict{Symbol,Any},Nothing}}(nothing)
+
 function set_mpi_comm(comm::MPI.Comm)
     JEXPRESSO_MPI_COMM[] = comm
 end
 
 function get_mpi_comm()
     return JEXPRESSO_MPI_COMM[] === nothing ? MPI.COMM_WORLD : JEXPRESSO_MPI_COMM[]
+end
+
+function set_mpi_comm_world(comm::MPI.Comm)
+    JEXPRESSO_MPI_COMM_WORLD[] = comm
+end
+
+function get_mpi_comm_world()
+    return JEXPRESSO_MPI_COMM_WORLD[] === nothing ? MPI.COMM_WORLD : JEXPRESSO_MPI_COMM_WORLD[]
+end
+
+function set_coupling_data(data::Dict{Symbol,Any})
+    JEXPRESSO_COUPLING_DATA[] = data
+end
+
+function get_coupling_data()
+    return JEXPRESSO_COUPLING_DATA[]
 end
 
 using DocStringExtensions
@@ -182,6 +206,8 @@ include(joinpath( "kernel", "solvers", "Axb.jl"))
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
 
 include(joinpath( "kernel", "mpi", "mpi_communications.jl"))
+
+include(joinpath( "kernel", "coupling", "couplingStructs.jl"))
 
 include(joinpath( "io", "mod_io.jl"))
 

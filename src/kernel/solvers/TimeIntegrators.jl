@@ -3,13 +3,14 @@ function time_loop!(inputs, params, u, args...)
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
     partitioned_model = args[1]
+    coupling = length(args) >= 2 ? args[2] : nothing
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
-    
+
     prob = ODEProblem(rhs!,
                       u,
                       params.tspan,
                       params);
-    
+
     #------------------------------------------------------------------------
     # Runtime callbacks
     #------------------------------------------------------------------------
@@ -18,7 +19,7 @@ function time_loop!(inputs, params, u, args...)
     c            = Float64(0.0)
     restart_time = inputs[:restart_time]
     rad_time     = inputs[:radiation_time_step]
-    lnew_mesh    = true   
+    lnew_mesh    = true
     function two_stream_condition(u, t, integrator)
         if (rem(t,rad_time) < 1e-3)
             return true
@@ -112,9 +113,48 @@ function time_loop!(inputs, params, u, args...)
         end
     end
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
-    cb         = DiscreteCallback(condition, affect!)    
+    cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
+
+    #------------------------------------------------------------------------
+    # Coupling callback: exchange fields with Alya at every time step
+    #------------------------------------------------------------------------
+    if coupling !== nothing
+        npoin = params.mesh.npoin
+        neqs  = params.qp.neqs
+
+        # Pre-allocate send/receive buffers for the coupling exchange.
+        # Send buffer: solution at all mesh points for all equations (npoin * neqs)
+        # Recv buffer: same size to receive Alya data
+        coupling.send_buf = zeros(Float64, npoin * neqs)
+        coupling.recv_buf = zeros(Float64, npoin * neqs)
+
+        function coupling_condition(u, t, integrator)
+            return true  # fire at every accepted time step
+        end
+
+        function do_coupling_exchange!(integrator)
+            cpg = coupling
+            n   = length(cpg.send_buf)
+
+            # Pack current solution into send buffer
+            @inbounds for i in 1:min(n, length(integrator.u))
+                cpg.send_buf[i] = integrator.u[i]
+            end
+
+            # Exchange with Alya via MPI on the world communicator
+            coupling_send_recv!(cpg, cpg.send_buf, cpg.recv_buf)
+
+            if cpg.lrank == 0
+                println_rank(" #  Coupling exchange at t=", round(integrator.t, digits=4),
+                             "  sent/recv ", n, " values"; msg_rank = rank)
+            end
+        end
+
+        cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)
+    end
+
     CallbackSet(cb)#,cb_rad)
     #------------------------------------------------------------------------
     # END runtime callbacks
@@ -136,18 +176,26 @@ function time_loop!(inputs, params, u, args...)
                      nvar=params.qp.neqs, qexact=params.qp.qe)
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     end
-    
+
     #
     # Simulation
     #
+    # Build the callback set: always include cb and cb_restart,
+    # and add cb_coupling when coupling is active
+    if coupling !== nothing
+        callbacks = CallbackSet(cb, cb_restart, cb_coupling)
+    else
+        callbacks = CallbackSet(cb, cb_restart)
+    end
+
     limex = false
     if limex
         ntime_steps = floor(Int32, inputs[:tend]/inputs[:Δt])
-        
+
         # Basic usage
-        u_final = imex_integration_simple_2d!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords, 
+        u_final = imex_integration_simple_2d!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords,
                                            inputs[:Δt], ntime_steps, inputs[:lsource])
-        
+
         # Or step-by-step
         for n = 1:ntime_steps
             imex_time_step_simple_2d!(u, params, params.mesh.connijk,  params.qp.qe,  params.mesh.coords, inputs[:Δt], inputs[:lsource])
@@ -157,23 +205,22 @@ function time_loop!(inputs, params, u, args...)
     else
         solution = solve(prob,
                          inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                         #callback = CallbackSet(cb,cb_rad), tstops = dosetimes,
-                         callback = CallbackSet(cb, cb_restart), tstops = dosetimes,
+                         callback = callbacks, tstops = dosetimes,
                          save_everystep = false,
                          adaptive=inputs[:ode_adaptive_solver],
                          saveat = range(inputs[:tinit],
                                         inputs[:tend],
                                         length=inputs[:ndiagnostics_outputs]));
     end
-    
+
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)
-    
+
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
             @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
-            
+
             @time solution = solve(prob,
                                 inputs[:ode_solver], dt=Float32(inputs[:Δt]),
                                 callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
@@ -185,8 +232,8 @@ function time_loop!(inputs, params, u, args...)
             MPI.Barrier(comm)
         end
     end
-    
+
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
-    
+
     return solution
 end

@@ -1,121 +1,181 @@
-using .Jexpresso
 using Gridap
 using GridapDistributed
-using PartitionedArrays
 using PartitionedArrays
 using Base.Threads
 
 function couplingAlloc(nrank1, nrank2, T;)
-    
+
     couple = zeros(T, nrank1, nrank2)
-    
+
     return couple
 end
 
-function je_couplingSetup(je_mesh, lcouple)
+"""
+    St_coupling
 
-    if !lcoupling
+Holds all inter-code coupling state needed during the time loop:
+  - world communicator for inter-code MPI
+  - local communicator for Jexpresso-internal MPI
+  - rank/size info on both communicators
+  - pre-allocated send/receive buffers for field exchange with Alya
+  - coupling metadata received during initialization (ndime, remote grid info, etc.)
+"""
+mutable struct St_coupling
+    comm_world::MPI.Comm
+    comm_local::MPI.Comm
+    wrank::Int
+    wsize::Int
+    lrank::Int
+    lsize::Int
+    nranks_alya::Int
+
+    # Remote grid metadata from Alya
+    ndime::Int32
+    rem_min::Vector{Float32}
+    rem_max::Vector{Float32}
+    rem_nx::Vector{Int32}
+    alya2world::Vector{Int32}
+
+    # Pre-allocated exchange buffers (sized after mesh is known)
+    send_buf::Vector{Float64}
+    recv_buf::Vector{Float64}
+
+    # Coupling allocation matrix
+    couple::Matrix{Int64}
+end
+
+"""
+    je_couplingSetup(inputs) -> Union{St_coupling, Nothing}
+
+Initialize coupling data structures using the pre-stored coupling data
+from `Jexpresso-mini-coupled.jl`.
+
+Returns `St_coupling` if coupling is active, `nothing` otherwise.
+"""
+function je_couplingSetup(inputs)
+
+    if !inputs[:lcoupling]
         return nothing
     end
-    
-    println("Coupling setup..."); flush(stdout)
-    
-    world, wrank, wsize = je_mpi_init()
-    println("[Jexpresso rank $wrank] World size: $wsize"); flush(stdout)
 
-    # Read APPID (0 or 1) from environment
-    appid = try parse(Int, get(ENV, "APPID", "2")) catch; 2 end
-    println("[appid: $appid"); flush(stdout)
-    if appid < 0
-        if wrank == 0
-            println("[Jexpresso] ERROR: APPID not set. Launch with -x APPID=0 (Fortran) and -x APPID=1 (Julia).")
+    comm_local = get_mpi_comm()
+    lrank = MPI.Comm_rank(comm_local)
+    lsize = MPI.Comm_size(comm_local)
+
+    println("[Jexpresso rank $lrank] Coupling setup..."); flush(stdout)
+
+    # Retrieve coupling data stored by Jexpresso-mini-coupled.jl
+    cdata = get_coupling_data()
+    if cdata === nothing
+        if lrank == 0
+            @warn "[Jexpresso] lcoupling=true but no coupling data found. " *
+                  "Are you running via Jexpresso-mini-coupled.jl?"
         end
-        MPI.Abort(world, 1)
+        return nothing
     end
 
-    # Split WORLD into per-app local comms
-    println("[Split before $wrank"); flush(stdout)
-    local_comm = MPI.Comm_split(world, appid, wrank)
-    println("[Split after $wrank"); flush(stdout)
+    comm_world  = get_mpi_comm_world()
+    wrank       = MPI.Comm_rank(comm_world)
+    wsize       = MPI.Comm_size(comm_world)
+    nranks_alya = wsize - lsize
 
-    lrank        = MPI.Comm_rank(local_comm)
-    lsize        = MPI.Comm_size(local_comm)
-    nranks1      = lsize                      # Jexpresso
-    nranks2      = wsize - lsize              # Other code
-    local_chars  = Vector{UInt8}(rpad("JEXPRESSO", 128, ' '))
-    recv_buffer  = nothing
-    is_jexpresso = (appid == 2)
+    ndime      = cdata[:ndime]
+    rem_min    = cdata[:rem_min]
+    rem_max    = cdata[:rem_max]
+    rem_nx     = cdata[:rem_nx]
+    alya2world = cdata[:alya2world]
 
-    MPI.Gather!(local_chars, recv_buffer, 0, world)
+    couple = couplingAlloc(wsize, wsize, Int64)
 
-    # Set coupling mode to prevent auto-execution on module load
-    ENV["JEXPRESSO_COUPLING_MODE"] = "false"
+    # Initial empty exchange buffers (will be resized when mesh coupling map is built)
+    send_buf = Float64[]
+    recv_buf = Float64[]
 
-    # Set command line arguments for Jexpresso
-    #push!(empty!(ARGS), "CompEuler", "wave1d")
-    
-    # Load Jexpresso module (setup doesn't run yet because of JEXPRESSO_COUPLING_MODE)
-    #println("[Jexpresso rank $wrank] Loading Jexpresso module (JIT compilation may take minutes)..."); flush(stdout)
-    #include("./src/Jexpresso.jl")
-    #println("[Jexpresso rank $wrank] Jexpresso module loaded."); flush(stdout)
+    coupling = St_coupling(
+        comm_world, comm_local,
+        wrank, wsize,
+        lrank, lsize,
+        nranks_alya,
+        ndime, rem_min, rem_max, rem_nx, alya2world,
+        send_buf, recv_buf,
+        couple
+    )
 
-    # Set the custom local communicator
-    Jexpresso.set_mpi_comm(local_comm)
-    println("[AAAAAAA Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize)."); flush(stdout)
+    println("[Jexpresso rank $lrank] Coupling setup DONE " *
+            "(world_rank=$wrank, world_size=$wsize, nranks_alya=$nranks_alya, ndime=$ndime)"); flush(stdout)
 
-    #--------------------------------------------------------------------------------------------
-    # Receive ndime from Alya via Bcast on COMM_WORLD (all ranks must participate)
-    # Alya: call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
-    # Use Int32 to match Fortran's MPI_INTEGER (4 bytes)
-    #--------------------------------------------------------------------------------------------
-    couple = couplingAlloc(wsize, wsize, Int64;)
+    return coupling
+end
 
-    ndime_buf = Vector{Int32}(undef, 1)
-    MPI.Bcast!(ndime_buf, 0, world)
-    
-    ndime = ndime_buf[1]
-    println("[Jexpresso rank $wrank] Received ndime = $ndime from Alya"); flush(stdout)
+#------------------------------------------------------------------------------------
+# Coupling exchange: send data to Alya and receive data from Alya
+# Called within the time loop at every coupling step.
+#
+# This uses MPI_Sendrecv on COMM_WORLD between the Jexpresso local root
+# and the Alya root (world rank 0).
+# Non-root Jexpresso ranks participate via Bcast on the local communicator.
+#------------------------------------------------------------------------------------
 
-    rem_min  = Vector{Float32}(undef, 3)
-    rem_max  = Vector{Float32}(undef, 3)
-    rem_nx   = Vector{Int32}(undef, 3)
-    for idime in 1:3
-        MPI.Bcast!(@view(rem_min[idime:idime]), 0, world)
-        MPI.Bcast!(@view(rem_max[idime:idime]), 0, world)
-        MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
+"""
+    coupling_send_recv!(coupling::St_coupling, send_data::AbstractVector{Float64},
+                        recv_data::AbstractVector{Float64};
+                        alya_root::Int=0, tag::Int=100)
+
+Exchange field data with Alya:
+  1. Jexpresso local root (lrank==0) does MPI.Sendrecv! with the Alya root on comm_world
+  2. The received data is then broadcast to all Jexpresso local ranks via comm_local
+
+`send_data` and `recv_data` must be the same length on the root.
+On non-root ranks, `recv_data` is filled by the broadcast.
+"""
+function coupling_send_recv!(coupling::St_coupling,
+                             send_data::AbstractVector{Float64},
+                             recv_data::AbstractVector{Float64};
+                             alya_root::Int=0, tag::Int=100)
+
+    if coupling.lrank == 0
+        # Root exchanges with Alya root via world communicator
+        MPI.Sendrecv!(send_data, recv_data, coupling.comm_world;
+                      dest=alya_root, sendtag=tag,
+                      source=alya_root, recvtag=tag)
     end
-    println("[Jexpresso rank $wrank] Received ndime      = $ndime      from Alya"); flush(stdout)
-    println("[Jexpresso rank $wrank] Received rem_min    = $rem_min    from Alya"); flush(stdout)
-    println("[Jexpresso rank $wrank] Received rem_max    = $rem_max    from Alya"); flush(stdout)
-    println("[Jexpresso rank $wrank] Received rem_nx     = $rem_nx     from Alya"); flush(stdout)
 
-    alya2world_l = zeros(Int32, nranks2)
-    alya2world   = MPI.Allreduce(alya2world_l,MPI.SUM,world)
+    # Broadcast received data to all local Jexpresso ranks
+    MPI.Bcast!(recv_data, 0, coupling.comm_local)
+end
 
-    println("[Jexpresso rank $wrank] Received alya2world = $alya2world from Alya"); flush(stdout)
+"""
+    coupling_send!(coupling::St_coupling, send_data::AbstractVector{Float64};
+                   alya_root::Int=0, tag::Int=200)
 
-    a_l = zeros(Int32, wsize,wsize)
-    a   = MPI.Allreduce(a_l,MPI.SUM,world)
-#=
-    distribute_and_count!(
-        rem_nx,
-        rem_min,
-        rem_max,
-        ndime,
-        nranks2,
-        is_jexpresso,
-        a,
-        wrank,
-        alya2world,
-        mesh)
-=#
-    #--------------------------------------------------------------------------------------------
-    # END Receive ndime from Alya
-    #--------------------------------------------------------------------------------------------
-    
-   # MPI.Finalize()
-    
-    println("Coupling setup..."); flush(stdout)
+Send field data to Alya (non-blocking from Jexpresso root).
+Only the Jexpresso local root sends.
+"""
+function coupling_send!(coupling::St_coupling,
+                        send_data::AbstractVector{Float64};
+                        alya_root::Int=0, tag::Int=200)
+
+    if coupling.lrank == 0
+        MPI.Send(send_data, coupling.comm_world; dest=alya_root, tag=tag)
+    end
+end
+
+"""
+    coupling_recv!(coupling::St_coupling, recv_data::AbstractVector{Float64};
+                   alya_root::Int=0, tag::Int=200)
+
+Receive field data from Alya (blocking on Jexpresso root),
+then broadcast to all local ranks.
+"""
+function coupling_recv!(coupling::St_coupling,
+                        recv_data::AbstractVector{Float64};
+                        alya_root::Int=0, tag::Int=200)
+
+    if coupling.lrank == 0
+        MPI.Recv!(recv_data, coupling.comm_world; source=alya_root, tag=tag)
+    end
+
+    MPI.Bcast!(recv_data, 0, coupling.comm_local)
 end
 
 #------------------------------------------------------------------------------------
@@ -134,15 +194,15 @@ function distribute_and_count!(
     mesh)
 
     #
-    # is_in_my_rank must be 
+    # is_in_my_rank must be
     # found from Jexpresso
-    # 
-    
+    #
+
     nx, ny, nz = rem_nx
     nxy        = nx * ny
     nmax       = nxy * nz
     rem_dx     = similar(rem_max)
-    
+
     @assert ndime in (2, 3) "ndime is typically 2 or 3"
     @assert length(rem_min) ≥ ndime && length(rem_nx) ≥ ndime
 
@@ -151,7 +211,7 @@ function distribute_and_count!(
 
     ri = zeros(Int32, ndime)
     x  = zeros(Float64, ndime)
-    
+
     rem_dx[1:ndime] = (rem_max[1:ndime] .- rem_min[1:ndime])./(rem_nx[1:ndime] .- 1)
 
     #
@@ -160,21 +220,16 @@ function distribute_and_count!(
     lxmin = min(mesh.x); lxmax = max(mesh.x)
     lymin = min(mesh.y); lymax = max(mesh.y)
     lzmin = min(mesh.z); lzmax = max(mesh.z)
-    
+
     my_boundingBox = St_myBoundingBox(lxmin, lxmax, lymin, lymax, lzmin, lzmax)
 
-    @info " ASSAASSAAS"
-    @info my_boundingBox.xmin, my_boundingBox.ymin, my_boundingBox.zmin
-    @info my_boundingBox.xmax, my_boundingBox.ymax, my_boundingBox.zmax
-    @info "EWWEEWWEWEWEW"
-    
     @inbounds for ipoin in 1:nmax
         i0   = ipoin - 1
         iz   = i0 ÷ nxy
         remz = i0 - iz * nxy
         iy   = remz ÷ nx
         ix   = mod(remz - iy * nx, nx)
-        
+
         if ndime ≥ 1; ri[1] = ix; end
         if ndime ≥ 2; ri[2] = iy; end
         if ndime ≥ 3; ri[3] = iz; end
@@ -183,14 +238,14 @@ function distribute_and_count!(
 
         ###
         ### in, yin, zin = is_on_my_rank(local::St_myBoundingBox, global::St_myBoundingBox, x, y, z; atol=default_atol(local))
-        
+
         if is_in_my_rank
             alya_rank = if ipoin ≤ r * (npoin + 1)
                 (ipoin - 1) ÷ (npoin + 1) + 1
             else
                 r + (ipoin - r * (npoin + 1) - 1) ÷ npoin + 1
             end
-            
+
             world_rank = alya2world[alya_rank]
             a[wrank, world_rank] += 1
         end
@@ -288,12 +343,12 @@ OwnerLocator2D
 Per-rank spatial index to locate owners of arbitrary (x,y) points quickly.
 
 Fields:
-  • cell_coords :: Vector{Vector{Point{2,Float64}}}   # local polygons (owned+ghost)
-  • bbox_xmin, bbox_xmax, bbox_ymin, bbox_ymax       # per-cell AABBs
-  • l2owner_part :: Vector{Int32}                     # local cell -> owner (PartitionedArrays part id)
-  • bins :: Dict{Tuple{Int,Int}, Vector{Int}}         # (ix,iy) -> candidate cell indices
-  • xmin, xmax, ymin, ymax :: Float64                 # local patch AABB
-  • nx, ny :: Int                                     # number of bins in x/y
+  * cell_coords :: Vector{Vector{Point{2,Float64}}}   # local polygons (owned+ghost)
+  * bbox_xmin, bbox_xmax, bbox_ymin, bbox_ymax       # per-cell AABBs
+  * l2owner_part :: Vector{Int32}                     # local cell -> owner (PartitionedArrays part id)
+  * bins :: Dict{Tuple{Int,Int}, Vector{Int}}         # (ix,iy) -> candidate cell indices
+  * xmin, xmax, ymin, ymax :: Float64                 # local patch AABB
+  * nx, ny :: Int                                     # number of bins in x/y
 """
 struct OwnerLocator2D
     cell_coords::Vector{Vector{Point{2,Float64}}}
@@ -326,12 +381,6 @@ end
     build_owner_locator2d(partitioned_model; nbins=:auto)
 
 Build `OwnerLocator2D` on the **current rank** from a GridapDistributed model.
-
-- Uses `Triangulation(model)` → `local_views` to get the **serial, overlapped** (owned+ghost) triangulation per rank.  
-- Extracts geometry via `get_cell_coordinates(::Triangulation)` and ownership via
-  `get_cell_gids(model)` + `PartitionedArrays.local_to_owner`. [2](https://p4est.github.io/api/p4est-2.8.6/p8est__ghost_8h.html)[1](https://github.com/cburstedde/p4est/blob/master/src/p8est_search.h)
-
-If `nbins=:auto`, picks a good bin count from the number of local cells and aspect ratio.
 """
 function build_owner_locator2d(partitioned_model; nbins=:auto)
     Ωd        = Triangulation(partitioned_model)
@@ -340,11 +389,9 @@ function build_owner_locator2d(partitioned_model; nbins=:auto)
     loc_ref = Ref{OwnerLocator2D}()
 
     PartitionedArrays.map(local_views(Ωd), PartitionedArrays.partition(cell_gids)) do Ωloc, part
-        # Serial geometry on overlapped triangulation  [2](https://p4est.github.io/api/p4est-2.8.6/p8est__ghost_8h.html)
         cell_coords = get_cell_coordinates(Ωloc)
         nloc = length(cell_coords)
 
-        # Ownership maps (local idx -> owner part id)  [1](https://github.com/cburstedde/p4est/blob/master/src/p8est_search.h)
         l2owner_part = PartitionedArrays.local_to_owner(part)
 
         # Per-cell AABBs + local patch AABB
@@ -402,16 +449,9 @@ end
 
 For a batch of M points stored as a matrix `X` with size (M,2) (columns: x,y), return 3 vectors:
 
-  • found::Vector{Bool}         – whether the point lies in some local cell (owned+ghost)
-  • owner_mpi::Vector{Int32}    – MPI rank that **owns** the containing cell (0-based)
-  • is_mine::Vector{Bool}       – owner_mpi == my rank
-
-If `unique_to_owner=true`, we report `found[i]=false` for points whose owner is not my rank
-(this way **only the owner** returns true, neighbors with ghosts return false).
-
-Notes:
-  • Uses bin lookup + AABB + robust polygon test per candidate.
-  • Thread-safe; set `threaded=false` to disable threading.
+  * found::Vector{Bool}         - whether the point lies in some local cell (owned+ghost)
+  * owner_mpi::Vector{Int32}    - MPI rank that **owns** the containing cell (0-based)
+  * is_mine::Vector{Bool}       - owner_mpi == my rank
 """
 function owns_points_batch!(locator::OwnerLocator2D, comm, X::AbstractMatrix{<:Real};
                             unique_to_owner::Bool=false, threaded::Bool=true)
@@ -461,7 +501,7 @@ function owns_points_batch!(locator::OwnerLocator2D, comm, X::AbstractMatrix{<:R
                 # Exact polygon test (edge-aware)
                 if _point_in_polygon_with_edges(px, py, locator.cell_coords[iloc])
                     local_found = true
-                    owner_part = locator.l2owner_part[iloc]      # 1-based part id  [1](https://github.com/cburstedde/p4est/blob/master/src/p8est_search.h)
+                    owner_part = locator.l2owner_part[iloc]      # 1-based part id
                     local_owner_mpi = Int32(owner_part - 1)      # 0-based MPI
                     break
                 end

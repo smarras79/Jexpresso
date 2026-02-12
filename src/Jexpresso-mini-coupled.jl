@@ -1,8 +1,8 @@
 #!/usr/bin/env julia
 # Jexpresso-mini-coupled.jl — Julia side with dynamic remote-leader discovery.
-# FIXED: Tag mismatch corrected
 #
-# mpirun --tag-output -np 2 ./alya/Alya_enhanced.x : -np 2 julia --project=. Jexpresso-mini-coupled.jl
+# Launch coupled Jexpresso + Alya via:
+#   mpirun --tag-output -np 2 ./alya/Alya_enhanced.x : -np 2 julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
 #
 using MPI
 
@@ -52,18 +52,19 @@ println("[Jexpresso rank $wrank] Loading Jexpresso module (JIT compilation may t
 include("./Jexpresso.jl")
 println("[Jexpresso rank $wrank] Jexpresso module loaded."); flush(stdout)
 
-# Set the custom local communicator
+# Set the custom local communicator (for Jexpresso-internal MPI: mesh partitioning, etc.)
 Jexpresso.set_mpi_comm(local_comm)
 println("[Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize)."); flush(stdout)
+
+# Store the world communicator for inter-code coupling with Alya
+Jexpresso.set_mpi_comm_world(world)
+println("[Jexpresso rank $wrank] World communicator stored for coupling."); flush(stdout)
 
 #--------------------------------------------------------------------------------------------
 # Receive ndime from Alya via Bcast on COMM_WORLD (all ranks must participate)
 # Alya: call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
 # Use Int32 to match Fortran's MPI_INTEGER (4 bytes)
 #--------------------------------------------------------------------------------------------
-include(joinpath("kernel", "coupling", "couplingStructs.jl"))
-couple = couplingAlloc(wsize, wsize, Int64;) # kernel/coupling/couplingStructs.jl
-
 ndime_buf = Vector{Int32}(undef, 1)
 MPI.Bcast!(ndime_buf, 0, world)
 ndime = ndime_buf[1]
@@ -83,15 +84,26 @@ println("[Jexpresso rank $wrank] Received rem_max    = $rem_max    from Alya"); 
 println("[Jexpresso rank $wrank] Received rem_nx     = $rem_nx     from Alya"); flush(stdout)
 
 alya2world_l = zeros(Int32, nranks2)
-alya2world   = MPI.Allreduce(alya2world_l,MPI.SUM,world)
+alya2world   = MPI.Allreduce(alya2world_l, MPI.SUM, world)
 
-a_l = zeros(Int32, wsize,wsize)
-a   = MPI.Allreduce(a_l,MPI.SUM,world)
+a_l = zeros(Int32, wsize, wsize)
+a   = MPI.Allreduce(a_l, MPI.SUM, world)
 
 println("[Jexpresso rank $wrank] Received alya2world = $alya2world from Alya"); flush(stdout)
 #--------------------------------------------------------------------------------------------
 # END Receive ndime from Alya
 #--------------------------------------------------------------------------------------------
+
+# Store coupling data so that je_couplingSetup() inside the module can access it
+Jexpresso.set_coupling_data(Dict{Symbol,Any}(
+    :ndime      => ndime,
+    :rem_min    => rem_min,
+    :rem_max    => rem_max,
+    :rem_nx     => rem_nx,
+    :alya2world => alya2world,
+    :couple_matrix => a,
+))
+println("[Jexpresso rank $wrank] Coupling data stored."); flush(stdout)
 
 # Now run Jexpresso with the configured communicator
 Jexpresso.jexpresso_main()

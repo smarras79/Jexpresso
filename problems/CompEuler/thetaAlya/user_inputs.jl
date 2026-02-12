@@ -14,7 +14,8 @@ function user_inputs()
         #:CL                   => NCL(),
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
-        :lsource              => true, 
+        :lsource              => true,
+        :lcoupling            => true, # Enable Alya coupling
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

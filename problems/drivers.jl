@@ -16,7 +16,7 @@ function driver(nranks,
     #---------------------------------------------------------
     # Coupling setup
     #---------------------------------------------------------
-    #...
+    coupling = je_couplingSetup(inputs)
     
     #---------------------------------------------------------
     # Initialize.jl is contained in the user's problem case directory
@@ -42,7 +42,7 @@ function driver(nranks,
         #---------------------------------------------------------
         # Evolutionary problems that lead to Mdq/dt = RHS
         #---------------------------------------------------------
-        @time solution = time_loop!(inputs, params, u, partitioned_model)
+        @time solution = time_loop!(inputs, params, u, partitioned_model, coupling)
         
     else
         #---------------------------------------------------------
