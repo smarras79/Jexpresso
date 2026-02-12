@@ -5,9 +5,9 @@ export mod_mesh_mesh_driver
 export mod_mesh_build_mesh!
 export mod_mesh_read_gmsh!
 
-
 include("warping.jl")
 include("stretching.jl")
+include("../coupling/couplingStructs.jl")
 
 Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
@@ -344,6 +344,34 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     end 
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
+    
+    #--------------------------------------------------------------------------------------------
+    # Map X coordinates (from Alya) to parent rank (on Jexpresso)
+    #--------------------------------------------------------------------------------------------
+    # 1) Build the per-rank locator (after you create/partition the model)
+    loc = build_owner_locator2d(partitioned_model)  # nbins chosen automatically
+
+    # 2) Query a big batch (rows are points, columns = x y)
+    X = [
+        -5000.0   0.0;
+        0.0   0.1;
+        4500.0 9500.0;
+        0.1  0.25;
+        10000.0 10000.0
+    ]
+
+    found, owner_mpi, is_mine = owns_points_batch!(loc, MPI.COMM_WORLD, X; unique_to_owner=true)
+
+    # Example: print only points that this rank owns
+    world, wrank, wsize = je_mpi_init()
+    for i in eachindex(found)
+        if found[i] && is_mine[i]
+            @info "rank $wrank owns point" X[i,1] X[i,2]
+        end
+    end
+    #--------------------------------------------------------------------------------------------
+    # END Map X coordinates (from Alya) to parent rank (on Jexpresso)
+    #--------------------------------------------------------------------------------------------
     
     POIN_flg = 0
     EDGE_flg = 1

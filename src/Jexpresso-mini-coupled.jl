@@ -45,11 +45,11 @@ MPI.Gather!(local_chars, recv_buffer, 0, world)
 ENV["JEXPRESSO_COUPLING_MODE"] = "false"
 
 # Set command line arguments for Jexpresso
-push!(empty!(ARGS), "CompEuler", "wave1d")
+push!(empty!(ARGS), "CompEuler", "thetaAlya")
 
 # Load Jexpresso module (setup doesn't run yet because of JEXPRESSO_COUPLING_MODE)
 println("[Jexpresso rank $wrank] Loading Jexpresso module (JIT compilation may take minutes)..."); flush(stdout)
-include("./src/Jexpresso.jl")
+include("./Jexpresso.jl")
 println("[Jexpresso rank $wrank] Jexpresso module loaded."); flush(stdout)
 
 # Set the custom local communicator
@@ -61,9 +61,8 @@ println("[Jexpresso rank $wrank] MPI communicator set (local_comm, size=$lsize).
 # Alya: call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD)
 # Use Int32 to match Fortran's MPI_INTEGER (4 bytes)
 #--------------------------------------------------------------------------------------------
-include("./src/kernel/couplingStructs.jl")
-
-couple = couplingAlloc(wsize, wsize, Int64;)
+include(joinpath("kernel", "coupling", "couplingStructs.jl"))
+couple = couplingAlloc(wsize, wsize, Int64;) # kernel/coupling/couplingStructs.jl
 
 ndime_buf = Vector{Int32}(undef, 1)
 MPI.Bcast!(ndime_buf, 0, world)
@@ -86,23 +85,10 @@ println("[Jexpresso rank $wrank] Received rem_nx     = $rem_nx     from Alya"); 
 alya2world_l = zeros(Int32, nranks2)
 alya2world   = MPI.Allreduce(alya2world_l,MPI.SUM,world)
 
-println("[Jexpresso rank $wrank] Received alya2world = $alya2world from Alya"); flush(stdout)
-
 a_l = zeros(Int32, wsize,wsize)
 a   = MPI.Allreduce(a_l,MPI.SUM,world)
 
-distribute_and_count!(
-    rem_nx,
-    rem_min,
-    rem_max,
-    ndime,
-    nranks2,
-    is_jexpresso,
-    a,
-    wrank,
-    alya2world,
-    mesh)
-
+println("[Jexpresso rank $wrank] Received alya2world = $alya2world from Alya"); flush(stdout)
 #--------------------------------------------------------------------------------------------
 # END Receive ndime from Alya
 #--------------------------------------------------------------------------------------------

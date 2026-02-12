@@ -103,8 +103,6 @@ include(joinpath( "auxiliary", "timing.jl"))
 
 include(joinpath( "kernel", "globalStructs.jl"))
 
-include(joinpath( "kernel", "couplingStructs.jl"))
-
 include(joinpath( "kernel", "abstractTypes.jl"))
 
 include(joinpath( "kernel", "elementLearningStructs.jl"))

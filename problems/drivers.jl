@@ -16,12 +16,7 @@ function driver(nranks,
     #---------------------------------------------------------
     # Coupling setup
     #---------------------------------------------------------
-    je_couplingSetup(sem.mesh)
-    
-    @info "   "
-    @info "   "
-    @info "   "
-    #@mystop("DRIVERS STOPPPPPPPPP")
+    #...
     
     #---------------------------------------------------------
     # Initialize.jl is contained in the user's problem case directory
