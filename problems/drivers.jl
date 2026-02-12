@@ -10,18 +10,24 @@ function driver(nranks,
     #---------------------------------------------------------
     # SEM setup
     #---------------------------------------------------------
+    @info " Enter sem_setup()"
     sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)   
     if (inputs[:backend] != CPU()) convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs) end
+    @info " DONE sem_setup()"
     
     #---------------------------------------------------------
     # Coupling setup
     #---------------------------------------------------------
+    @info " Enter je_couplingSetup(inputs) "
     coupling = je_couplingSetup(inputs)
+    @info " DONE  je_couplingSetup(inputs) "
     
     #---------------------------------------------------------
     # Initialize.jl is contained in the user's problem case directory
     #---------------------------------------------------------
+    @info " Initialize field "
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+    @info " DONE Initialize field "
     
     #---------------------------------------------------------
     # Parameters setup
@@ -34,7 +40,7 @@ function driver(nranks,
     else
         tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
     end
-
+    
     params, u =  params_setup(sem, qp, inputs, OUTPUT_DIR, TFloat, tspan)    
     if rank == 0 @info " Params_setup .................................. END" end
     

@@ -137,8 +137,6 @@ function jexpresso_main()
                 flush(stdout)
             end
         end
-        # If lsize == wsize we are in standalone mode: nothing extra to do.
-        # je_mpi_init() will use COMM_WORLD via get_mpi_comm().
     end
 
     #-----------------------------------------------------------------

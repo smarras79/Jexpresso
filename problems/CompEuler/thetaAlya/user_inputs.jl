@@ -5,9 +5,9 @@ function user_inputs()
         # User define your inputs below: the order doesn't matter
         #---------------------------------------------------------------------------
         :ode_solver           => CarpenterKennedy2N54(), #SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(),
-        :Δt                   => 0.5,
+        :Δt                   => 0.25,
         :tinit                => 0.0,
-        :tend                 => 1.0,
+        :tend                 => 2.0,
         :diagnostics_at_times => (0:1:1),
         :restart_time         => 500,
         :lrestart             => false,
@@ -15,7 +15,13 @@ function user_inputs()
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => true,
-        :lcoupling            => true, # Enable Alya coupling
+        
+        #---------------------------------------------------------------------------
+        #Alya coupling
+        #---------------------------------------------------------------------------
+        :enable_coupling      => true,
+        :couple_time_tol      => 1e-12,
+        :Δt_couple            => :Δt,     # or larger macro step later
         :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties

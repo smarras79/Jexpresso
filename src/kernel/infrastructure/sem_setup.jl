@@ -310,5 +310,5 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
         return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model, uaux_new
     end
-    
+    @info " SEM _SETUP COMPLETE!!!"
 end

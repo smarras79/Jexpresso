@@ -3,6 +3,22 @@ using GridapDistributed
 using PartitionedArrays
 using Base.Threads
 
+"""
+    ping_ready!(comm::MPI.Comm, partner::Integer; tag::Integer=900)
+
+Symmetric nonblocking 32-bit int "ready" handshake between leaders.
+Both sides call: Irecv → Isend → Wait.
+"""
+function ping_ready!(comm::MPI.Comm, partner::Integer; tag::Integer=900)
+    send_flag = Ref{Int32}(1)
+    recv_flag = Ref{Int32}(0)
+    rreq = MPI.Irecv!(recv_flag, partner, tag, comm)
+    sreq = MPI.Isend(send_flag, partner, tag, comm)
+    MPI.Wait!(sreq)
+    MPI.Wait!(rreq)
+    return recv_flag[]
+end
+
 function couplingAlloc(nrank1, nrank2, T;)
 
     couple = zeros(T, nrank1, nrank2)
@@ -54,7 +70,7 @@ Returns `St_coupling` if coupling is active, `nothing` otherwise.
 """
 function je_couplingSetup(inputs)
 
-    if !inputs[:lcoupling]
+    if !inputs[:enable_coupling]
         return nothing
     end
 
@@ -128,20 +144,12 @@ Exchange field data with Alya:
 `send_data` and `recv_data` must be the same length on the root.
 On non-root ranks, `recv_data` is filled by the broadcast.
 """
-function coupling_send_recv!(coupling::St_coupling,
-                             send_data::AbstractVector{Float64},
-                             recv_data::AbstractVector{Float64};
-                             alya_root::Int=0, tag::Int=100)
-
-    if coupling.lrank == 0
-        # Root exchanges with Alya root via world communicator
-        MPI.Sendrecv!(send_data, recv_data, coupling.comm_world;
-                      dest=alya_root, sendtag=tag,
-                      source=alya_root, recvtag=tag)
-    end
-
-    # Broadcast received data to all local Jexpresso ranks
-    MPI.Bcast!(recv_data, 0, coupling.comm_local)
+function coupling_send_recv!(cpg, send_buf, recv_buf; alya_root=0, tag=1001)
+    # This should ONLY be called by the leader rank (cpg.lrank == 0)
+    # Use MPI.Sendrecv to match Fortran's MPI_Sendrecv
+    MPI.Sendrecv!(send_buf, recv_buf, cpg.comm_world;
+                  dest=alya_root, sendtag=tag,
+                  source=alya_root, recvtag=tag)
 end
 
 """

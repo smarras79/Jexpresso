@@ -1,14 +1,8 @@
 function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::String, TFloat)
-    """
-
-            """
     
-    comm = MPI.COMM_WORLD
+    comm = get_mpi_comm()  # This is Julia's local communicator
     rank = MPI.Comm_rank(comm)
-    if rank == 0
-        @info " Initialize fields for 2D CompEuler with θ equation ........................ "
-    end
-    
+        
     #---------------------------------------------------------------------------------
     # Solution variables:
     #
@@ -46,7 +40,6 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
             #
             # INITIAL STATE from scratch:
             #
-            comm = MPI.COMM_WORLD
             max_x = MPI.Allreduce(maximum(mesh.x), MPI.MAX, comm)
             min_x = MPI.Allreduce(minimum(mesh.x), MPI.MIN, comm)
             xc = (max_x + min_x)/2

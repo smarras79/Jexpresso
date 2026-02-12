@@ -6,10 +6,7 @@ function time_loop!(inputs, params, u, args...)
     coupling = length(args) >= 2 ? args[2] : nothing
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
 
-    prob = ODEProblem(rhs!,
-                      u,
-                      params.tspan,
-                      params);
+    prob = ODEProblem(rhs!, u, params.tspan, params)
 
     #------------------------------------------------------------------------
     # Runtime callbacks
@@ -20,6 +17,7 @@ function time_loop!(inputs, params, u, args...)
     restart_time = inputs[:restart_time]
     rad_time     = inputs[:radiation_time_step]
     lnew_mesh    = true
+
     function two_stream_condition(u, t, integrator)
         if (rem(t,rad_time) < 1e-3)
             return true
@@ -30,8 +28,8 @@ function time_loop!(inputs, params, u, args...)
 
     function do_radiation!(integrator)
         println(" doing two stream radiation heat flux calculations at t=", integrator.t)
-        #@info "doing rad test"
-        compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp, params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
+        compute_radiative_fluxes!(lnew_mesh, params.mesh, params.uaux, params.qp.qe, params.mp,
+                                  params.phys_grid, params.inputs[:backend], params.SOL_VARS_TYPE)
     end
 
     function restart_condition(u, t, integrator)
@@ -41,6 +39,7 @@ function time_loop!(inputs, params, u, args...)
             return false
         end
     end
+    
     function do_restart!(integrator)
         idx         = idx_ref[]
         res_fortmat = HDF5()
@@ -53,25 +52,25 @@ function time_loop!(inputs, params, u, args...)
         end
         MPI.Barrier(comm)
         write_output(integrator.p.SD, integrator.u, params.uaux, integrator.t, idx,
-                        integrator.p.mesh, integrator.p.mp,
-                        integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
-                        integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
-                        tmp_restart_path, inputs,
-                        integrator.p.qp.qvars,
-                        integrator.p.qp.qoutvars,
-                        res_fortmat;
-                        nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
+                     integrator.p.mesh, integrator.p.mp,
+                     integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
+                     integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
+                     tmp_restart_path, inputs,
+                     integrator.p.qp.qvars,
+                     integrator.p.qp.qoutvars,
+                     res_fortmat;
+                     nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
         MPI.Barrier(comm)
         if rank == 0
             cp(tmp_restart_path, inputs[:restart_output_file_path]; force=true)
             rm(tmp_restart_path; recursive=true, force=true)
         end
-
         println_rank(" #  writing restart ........................ DONE"; msg_rank = rank)
     end
-    # #------------------------------------------------------------------------
-    # #  config
-    # #------------------------------------------------------------------------
+
+    #------------------------------------------------------------------------
+    # Diagnostics callback
+    #------------------------------------------------------------------------
     ret_dosetime_ref  = Ref{Bool}(false)
     function condition(u, t, integrator)
         idx  = findfirst(x -> x == t, dosetimes)
@@ -81,25 +80,21 @@ function time_loop!(inputs, params, u, args...)
         else
             ret_dosetime_ref[] = false
         end
-
-        tol = 1e-6
-        # ret_amrtime_ref = abs(mod(t, Δt_amr)) < tol
-        # return (ret_dosetime_ref[] || ret_amrtime_ref[])
         return ret_dosetime_ref[]
     end
+
     function affect!(integrator)
         idx          = idx_ref[]
         ret_dosetime = ret_dosetime_ref[]
         if ret_dosetime == true
             println_rank(" #  t=", integrator.t; msg_rank = rank)
 
-            #CFL
             if inputs[:ladapt] == false
                 computeCFL(integrator.p.mesh.npoin, integrator.p.qp.neqs,
-                        integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
-                        integrator.p.mesh.Δeffective_s,
-                        integrator,
-                        integrator.p.SD; visc=inputs[:μ])
+                           integrator.p.mp, integrator.p.uaux[:,end], inputs[:Δt],
+                           integrator.p.mesh.Δeffective_s,
+                           integrator,
+                           integrator.p.SD; visc=inputs[:μ])
             end
             write_output(integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
                          integrator.p.mesh, integrator.p.mp,
@@ -112,50 +107,87 @@ function time_loop!(inputs, params, u, args...)
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
         end
     end
+
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
     cb         = DiscreteCallback(condition, affect!)
     cb_amr     = DiscreteCallback(condition, affect!)
     cb_restart = DiscreteCallback(restart_condition, do_restart!)
 
     #------------------------------------------------------------------------
-    # Coupling callback: exchange fields with Alya at every time step
+    # Coupling callback: RECEIVE METADATA + EXCHANGE SOLUTION at every step
     #------------------------------------------------------------------------
-    if coupling !== nothing
+    coupling_enabled = (coupling !== nothing)
+    @info "Coupling enabled: $coupling_enabled"
+    
+    if coupling_enabled
         npoin = params.mesh.npoin
         neqs  = params.qp.neqs
 
-        # Pre-allocate send/receive buffers for the coupling exchange.
-        # Send buffer: solution at all mesh points for all equations (npoin * neqs)
-        # Recv buffer: same size to receive Alya data
+        # Pre-allocate send/receive buffers
         coupling.send_buf = zeros(Float64, npoin * neqs)
         coupling.recv_buf = zeros(Float64, npoin * neqs)
 
+        t0    = params.tspan[1]
+        tol0  = get(inputs, :couple_time_tol, 1e-12)
+
         function coupling_condition(u, t, integrator)
-            return true  # fire at every accepted time step
+            # Couple at EVERY step after t0
+            return t > t0 + tol0
         end
 
         function do_coupling_exchange!(integrator)
             cpg = coupling
             n   = length(cpg.send_buf)
 
-            # Pack current solution into send buffer
+            #----------------------------------------------------------------
+            # STEP 1: RECEIVE METADATA from Alya (broadcast to all ranks)
+            #----------------------------------------------------------------
+            ndime_ref = Ref{Int32}(cpg.ndime)
+            MPI.Bcast!(ndime_ref, MPI.COMM_WORLD; root=0)
+            cpg.ndime = ndime_ref[]
+
+            MPI.Bcast!(cpg.rem_min, MPI.COMM_WORLD; root=0)
+            MPI.Bcast!(cpg.rem_max, MPI.COMM_WORLD; root=0)
+            MPI.Bcast!(cpg.rem_nx, MPI.COMM_WORLD; root=0)
+
+            if cpg.lrank == 0
+                println_rank(" # Julia: t=", round(integrator.t, digits=6), 
+                           " received metadata: ndime=", cpg.ndime,
+                           ", rem_min=", cpg.rem_min,
+                           ", rem_max=", cpg.rem_max,
+                           ", rem_nx=", cpg.rem_nx; msg_rank = rank)
+            end
+
+            #----------------------------------------------------------------
+            # STEP 2: PACK AND EXCHANGE SOLUTION DATA (only leader)
+            #----------------------------------------------------------------
             @inbounds for i in 1:min(n, length(integrator.u))
                 cpg.send_buf[i] = integrator.u[i]
             end
 
-            # Exchange with Alya via MPI on the world communicator
-            coupling_send_recv!(cpg, cpg.send_buf, cpg.recv_buf)
-
             if cpg.lrank == 0
-                println_rank(" #  Coupling exchange at t=", round(integrator.t, digits=4),
-                             "  sent/recv ", n, " values"; msg_rank = rank)
+                println_rank(" # Julia: t=", round(integrator.t, digits=6), 
+                           " exchanging solution data..."; msg_rank = rank)
+                
+                coupling_send_recv!(cpg, cpg.send_buf, cpg.recv_buf; alya_root=0, tag=1001)
+                
+                println_rank(" # Julia: t=", round(integrator.t, digits=6), 
+                           " coupling complete; sent/recv ", n, 
+                           " values, recv[1]=", cpg.recv_buf[1]; msg_rank = rank)
             end
+
+            MPI.Bcast!(cpg.recv_buf, cpg.comm_local; root=0)
+            
+            #----------------------------------------------------------------
+            # STEP 3: APPLY RECEIVED DATA
+            #----------------------------------------------------------------
+            # TODO: Use cpg.rem_min, cpg.rem_max, cpg.rem_nx for interpolation
+            # TODO: Apply cpg.recv_buf to integrator.u or integrator.p as needed
         end
 
         cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)
     end
 
-    CallbackSet(cb)#,cb_rad)
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------
@@ -178,41 +210,53 @@ function time_loop!(inputs, params, u, args...)
     end
 
     #
-    # Simulation
+    # Build callbacks
     #
-    # Build the callback set: always include cb and cb_restart,
-    # and add cb_coupling when coupling is active
-    if coupling !== nothing
-        callbacks = CallbackSet(cb, cb_restart, cb_coupling)
-    else
-        callbacks = CallbackSet(cb, cb_restart)
-    end
+    callbacks = coupling_enabled ? CallbackSet(cb, cb_restart, cb_coupling) : CallbackSet(cb, cb_restart)
+    tstops_all = dosetimes
 
-    limex = false
-    if limex
-        ntime_steps = floor(Int32, inputs[:tend]/inputs[:Δt])
-
-        # Basic usage
-        u_final = imex_integration_simple_2d!(u, params, params.mesh.connijk, params.qp.qe, params.mesh.coords,
-                                           inputs[:Δt], ntime_steps, inputs[:lsource])
-
-        # Or step-by-step
-        for n = 1:ntime_steps
-            imex_time_step_simple_2d!(u, params, params.mesh.connijk,  params.qp.qe,  params.mesh.coords, inputs[:Δt], inputs[:lsource])
+    #------------------------------------------------------------------------
+    # BARRIER 1: Wait for Alya to finish initialization
+    #------------------------------------------------------------------------
+    if coupling_enabled
+        if coupling.lrank == 0
+            println_rank(" # Julia: initialization complete, waiting for Alya..."; msg_rank = rank)
         end
-        println(" IMEX RAN IT SEEMS. IS IT CORRECT? WHO KNOWS?")
-        @mystop()
-    else
-        solution = solve(prob,
-                         inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                         callback = callbacks, tstops = dosetimes,
-                         save_everystep = false,
-                         adaptive=inputs[:ode_adaptive_solver],
-                         saveat = range(inputs[:tinit],
-                                        inputs[:tend],
-                                        length=inputs[:ndiagnostics_outputs]));
+        MPI.Barrier(MPI.COMM_WORLD)
+        if coupling.lrank == 0
+            println_rank(" # Julia: both codes ready for handshake"; msg_rank = rank)
+        end
+        
+        #----------------------------------------------------------------------------
+        # HANDSHAKE: Send buffer size to Alya (AFTER first barrier)
+        #----------------------------------------------------------------------------
+        if coupling.lrank == 0
+            nvals_to_send = Int32(npoin * neqs)
+            MPI.Send(Ref(nvals_to_send), 0, 999, coupling.comm_world)
+            println_rank(" # Julia: sent buffer size to Alya: ", nvals_to_send; msg_rank = rank)
+        end
+        
+        #----------------------------------------------------------------------------
+        # BARRIER 2: Ensure handshake complete before time loop
+        #----------------------------------------------------------------------------
+        MPI.Barrier(MPI.COMM_WORLD)
+        if coupling.lrank == 0
+            println_rank(" # Julia: starting time loop"; msg_rank = rank)
+        end
     end
 
+    #------------------------------------------------------------------------
+    # TIME INTEGRATION
+    #------------------------------------------------------------------------
+    solution = solve(prob,
+                     inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                     callback = callbacks, tstops = tstops_all,
+                     save_everystep = false,
+                     adaptive=false,
+                     saveat = range(inputs[:tinit],
+                                    inputs[:tend],
+                                    length=inputs[:ndiagnostics_outputs]))
+    
     MPI.Barrier(comm)
     report_all_timers(params.timers)
     MPI.Barrier(comm)
@@ -223,10 +267,12 @@ function time_loop!(inputs, params, u, args...)
 
             @time solution = solve(prob,
                                 inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                                callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
+                                callback = coupling_enabled ? CallbackSet(cb_amr, cb_restart, cb_coupling)
+                                                            : CallbackSet(cb_amr, cb_restart),
+                                tstops = dosetimes,
                                 save_everystep = false,
-                                adaptive=inputs[:ode_adaptive_solver],
-                                saveat = []);
+                                adaptive=false,
+                                saveat = [])
             MPI.Barrier(comm)
             report_all_timers(prob.p.timers)
             MPI.Barrier(comm)

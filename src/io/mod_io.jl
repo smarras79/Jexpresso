@@ -835,8 +835,20 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     # Coude coupling
-    if(!haskey(inputs,:lcoupling))
-        inputs[:lcoupling] = false
+    if(!haskey(inputs,:enable_coupling_ready))
+        inputs[:enable_coupling_ready] = false
+    end
+
+    if(!haskey(inputs,:enable_coupling))
+        inputs[:enable_coupling] = false
+    end
+
+    if(!haskey(inputs,:Δt_couple))
+        inputs[:Δt_couple] = :Δt
+    end
+
+    if(!haskey(inputs,:couple_time_tol))
+        inputs[:couple_time_tol] = 1.0e-12
     end
 
     return inputs
