@@ -345,34 +345,6 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     topology      = get_grid_topology(model)
     mesh.nsd      = num_cell_dims(model)
     
-    #--------------------------------------------------------------------------------------------
-    # Map X coordinates (from Alya) to parent rank (on Jexpresso)
-    #--------------------------------------------------------------------------------------------
-    # 1) Build the per-rank locator (after you create/partition the model)
-    loc = build_owner_locator2d(partitioned_model)  # nbins chosen automatically
-
-    # 2) Query a big batch (rows are points, columns = x y)
-    X = [
-        -5000.0   0.0;
-        0.0   0.1;
-        4500.0 9500.0;
-        0.1  0.25;
-        10000.0 10000.0
-    ]
-
-    found, owner_mpi, is_mine = owns_points_batch!(loc, MPI.COMM_WORLD, X; unique_to_owner=true)
-
-    # Example: print only points that this rank owns
-    world, wrank, wsize = je_mpi_init()
-    for i in eachindex(found)
-        if found[i] && is_mine[i]
-            @info "rank $wrank owns point" X[i,1] X[i,2]
-        end
-    end
-    #--------------------------------------------------------------------------------------------
-    # END Map X coordinates (from Alya) to parent rank (on Jexpresso)
-    #--------------------------------------------------------------------------------------------
-    
     POIN_flg = 0
     EDGE_flg = 1
     FACE_flg = 2
@@ -3838,5 +3810,179 @@ function get_bdy_poin_in_face_on_edges!(mesh::St_mesh, isboundary_face, SD::NSD_
         end
     end
 end
+#=
+
+function map_coords_to_rank(mesh)
+    comm_local = get_mpi_comm()
+    lrank = MPI.Comm_rank(comm_local)
+    lsize = MPI.Comm_size(comm_local)
+    
+    # Build the bounding box locator
+    locator = build_rank_bbox_locator(mesh, comm_local)
+    
+    # Print each rank's bounding box
+    @info "Rank $lrank bbox: x ∈ [$(locator.xmin[lrank+1]), $(locator.xmax[lrank+1])], " *
+          "y ∈ [$(locator.ymin[lrank+1]), $(locator.ymax[lrank+1])]"
+    
+    # Test coordinates
+    X = [
+        -5000.0   0.0;
+        -3300.0   0.0;
+        0.0       0.0;
+        3300.0    5000.0;
+        5000.0    10000.0;
+    ]
+    
+    # Find owners
+    found, owner_ranks, is_mine = find_point_owners_bbox(locator, comm_local, X)
+    
+    # Report results
+    for i in 1:size(X, 1)
+        if found[i]
+            if is_mine[i]
+                @info "Rank $locator.rank OWNS point ($( X[i,1]), $(X[i,2]))"
+                # Do interpolation here
+            end
+            
+            # Show all owners (useful for debugging overlaps)
+            if locator.myrank == 0
+                owners_str = join(owner_ranks[i], ", ")
+                @info "Point ($(X[i,1]), $(X[i,2])) owned by rank(s): $owners_str"
+            end
+        else
+            if locator.myrank == 0
+                @warn "Point ($(X[i,1]), $(X[i,2])) is OUTSIDE all rank domains"
+            end
+        end
+    end
+    
+    # Return locator for use in coupling
+    return locator
+end
 
 
+"""
+Build a simple bounding box locator for rank ownership.
+Each rank knows its own bounding box and can test if points are inside.
+"""
+function build_rank_bbox_locator(mesh, comm_local)
+    lrank = MPI.Comm_rank(comm_local)
+    lsize = MPI.Comm_size(comm_local)
+    
+    # Compute local bounding box on this rank
+    local_xmin = minimum(mesh.x)
+    local_xmax = maximum(mesh.x)
+    local_ymin = minimum(mesh.y)
+    local_ymax = maximum(mesh.y)
+    
+    # Gather all ranks' bounding boxes
+    all_xmin = zeros(Float64, lsize)
+    all_xmax = zeros(Float64, lsize)
+    all_ymin = zeros(Float64, lsize)
+    all_ymax = zeros(Float64, lsize)
+    
+    # Each rank puts its bounds at its rank position
+    all_xmin[lrank + 1] = local_xmin
+    all_xmax[lrank + 1] = local_xmax
+    all_ymin[lrank + 1] = local_ymin
+    all_ymax[lrank + 1] = local_ymax
+    
+    # Allreduce with SUM (since zeros elsewhere)
+    MPI.Allreduce!(all_xmin, MPI.SUM, comm_local)
+    MPI.Allreduce!(all_xmax, MPI.SUM, comm_local)
+    MPI.Allreduce!(all_ymin, MPI.SUM, comm_local)
+    MPI.Allreduce!(all_ymax, MPI.SUM, comm_local)
+    
+    return (
+        xmin = all_xmin,
+        xmax = all_xmax,
+        ymin = all_ymin,
+        ymax = all_ymax,
+        nranks = lsize,
+        myrank = lrank
+    )
+end
+
+#------------------------------------------------------------------------------------------
+# Check which rank(s) own a batch of points based on bounding boxes.
+#    Returns:
+#    - found: whether point is in ANY rank's bbox
+#    - owner_ranks: list of ranks that own each point (can be multiple if overlapping)
+#    - is_mine: whether this rank owns each point
+#
+#   find_point_owners_bbox(locator, comm_local, X; margin=1e-8)
+#
+#    Find which rank(s) own a batch of points based on rank bounding boxes.
+#
+#    # Arguments
+#    - `locator`: Output from `build_rank_bbox_locator` containing bbox info for all ranks
+#    - `comm_local`: Julia's local MPI communicator
+#    - `X::AbstractMatrix`: Nx2 matrix of coordinates [x, y] to query
+#    - `margin::Float64`: Tolerance for point-on-boundary cases (default: 1e-8)
+#
+#    # Returns
+#    - `found::Vector{Bool}`: Whether each point is in ANY rank's bbox
+#    - `owner_ranks::Vector{Vector{Int32}}`: List of owner rank(s) for each point (can be multiple)
+#    - `is_mine::Vector{Bool}`: Whether THIS rank owns each point
+#
+#    # Notes
+#    - If multiple ranks claim a point (overlapping bboxes), all are returned in owner_ranks
+#    - Points exactly on boundaries are included (with margin tolerance)
+#    - Points outside all domains have empty owner_ranks and found[i] = false
+#------------------------------------------------------------------------------------------
+
+function find_point_owners_bbox(locator, comm_local, X::AbstractMatrix{<:Real}; margin::Float64=1e-8)
+    
+    # Find which rank(s) own a batch of points based on rank bounding boxes.
+    #
+    # Arguments:
+    #   locator - Output from build_rank_bbox_locator containing bbox info for all ranks
+    #   comm_local - Julia's local MPI communicator
+    #   X - Nx2 matrix of coordinates [x, y] to query
+    #   margin - Tolerance for point-on-boundary cases (default: 1e-8)
+    #
+    # Returns:
+    #   found - Whether each point is in ANY rank's bbox
+    #   owner_ranks - List of owner rank(s) for each point (can be multiple)
+    #   is_mine - Whether THIS rank owns each point
+    
+    myrank = MPI.Comm_rank(comm_local)
+    M = size(X, 1)
+    
+    # Initialize outputs
+    found = falses(M)
+    owner_ranks = [Int32[] for _ in 1:M]  # List of owners per point
+    is_mine = falses(M)
+    
+    # Check each point against all ranks' bounding boxes
+    for i in 1:M
+        px = Float64(X[i, 1])
+        py = Float64(X[i, 2])
+        
+        # Check against all ranks' bounding boxes
+        for r in 0:(locator.nranks - 1)
+            ridx = r + 1  # Convert to 1-based indexing for Julia arrays
+            
+            # Get this rank's bounding box
+            xmin = locator.xmin[ridx] - margin
+            xmax = locator.xmax[ridx] + margin
+            ymin = locator.ymin[ridx] - margin
+            ymax = locator.ymax[ridx] + margin
+            
+            # Check if point is inside this rank's bbox
+            if (px >= xmin && px <= xmax && py >= ymin && py <= ymax)
+                # This rank owns the point
+                push!(owner_ranks[i], Int32(r))
+                found[i] = true
+                
+                # Check if it's this rank
+                if r == myrank
+                    is_mine[i] = true
+                end
+            end
+        end
+    end
+    
+    return found, owner_ranks, is_mine
+end
+=#

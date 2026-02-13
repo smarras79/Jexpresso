@@ -2,10 +2,10 @@ function time_loop!(inputs, params, u, args...)
 
     comm = get_mpi_comm()
     rank = MPI.Comm_rank(comm)
-    partitioned_model = args[1]
-    coupling = length(args) >= 2 ? args[2] : nothing
+    partitioned_model = length(args) >= 1 ? args[1] : nothing
+    is_coupled        = length(args) >= 2 ? args[2] : nothing
     println_rank(" # Solving ODE  ................................ "; msg_rank = rank)
-
+    
     prob = ODEProblem(rhs!, u, params.tspan, params)
 
     #------------------------------------------------------------------------
@@ -116,10 +116,12 @@ function time_loop!(inputs, params, u, args...)
     #------------------------------------------------------------------------
     # Coupling callback: RECEIVE METADATA + EXCHANGE SOLUTION at every step
     #------------------------------------------------------------------------
-    coupling_enabled = (coupling !== nothing)
-    @info "Coupling enabled: $coupling_enabled"
-    
+    coupling_enabled = (is_coupled !== false)
+    @info " #"
+    @info " # Coupling enabled: $coupling_enabled"
+    @info " # "
     if coupling_enabled
+        
         npoin = params.mesh.npoin
         neqs  = params.qp.neqs
 
@@ -142,49 +144,158 @@ function time_loop!(inputs, params, u, args...)
             #----------------------------------------------------------------
             # STEP 1: RECEIVE METADATA from Alya (broadcast to all ranks)
             #----------------------------------------------------------------
+            # All ranks participate in Bcast
             ndime_ref = Ref{Int32}(cpg.ndime)
             MPI.Bcast!(ndime_ref, MPI.COMM_WORLD; root=0)
             cpg.ndime = ndime_ref[]
 
+            # Receive rem_min, rem_max, rem_nx (3 values each)
             MPI.Bcast!(cpg.rem_min, MPI.COMM_WORLD; root=0)
             MPI.Bcast!(cpg.rem_max, MPI.COMM_WORLD; root=0)
             MPI.Bcast!(cpg.rem_nx, MPI.COMM_WORLD; root=0)
 
             if cpg.lrank == 0
                 println_rank(" # Julia: t=", round(integrator.t, digits=6), 
-                           " received metadata: ndime=", cpg.ndime,
-                           ", rem_min=", cpg.rem_min,
-                           ", rem_max=", cpg.rem_max,
-                           ", rem_nx=", cpg.rem_nx; msg_rank = rank)
+                             " received metadata: ndime=", cpg.ndime,
+                             ", rem_min=", cpg.rem_min,
+                             ", rem_max=", cpg.rem_max,
+                             ", rem_nx=", cpg.rem_nx; msg_rank = rank)
             end
 
             #----------------------------------------------------------------
-            # STEP 2: PACK AND EXCHANGE SOLUTION DATA (only leader)
+            # STEP 2: CONSTRUCT ALYA'S GRID POINTS from metadata
             #----------------------------------------------------------------
-            @inbounds for i in 1:min(n, length(integrator.u))
-                cpg.send_buf[i] = integrator.u[i]
+            # Build uniform grid from Alya's metadata
+            nx_alya = Int(cpg.rem_nx[1])
+            ny_alya = Int(cpg.rem_nx[2])
+            n_alya_points = nx_alya * ny_alya
+            
+            alya_coords = zeros(Float64, n_alya_points, 2)
+            idx = 1
+            for j in 0:(ny_alya-1)
+                for i in 0:(nx_alya-1)
+                    x = cpg.rem_min[1] + i * (cpg.rem_max[1] - cpg.rem_min[1]) / max(nx_alya - 1, 1)
+                    y = cpg.rem_min[2] + j * (cpg.rem_max[2] - cpg.rem_min[2]) / max(ny_alya - 1, 1)
+                    alya_coords[idx, 1] = Float64(x)
+                    alya_coords[idx, 2] = Float64(y)
+                    idx += 1
+                end
             end
 
+            #----------------------------------------------------------------
+            # STEP 3: FIND WHICH JULIA RANK OWNS EACH ALYA POINT
+            #----------------------------------------------------------------
+            found, owner_ranks, is_mine = find_point_owners_bbox(
+                cpg.bbox_locator, 
+                cpg.comm_local, 
+                alya_coords;
+                margin=1e-6  # Small margin for numerical tolerance
+            )
+
+            # Count how many points this rank owns
+            n_mine = count(is_mine)
+            if cpg.lrank == 0
+                n_total_found = count(found)
+                println_rank(" # Julia: t=", round(integrator.t, digits=6),
+                             " found $n_total_found/$n_alya_points Alya points in Julia domain, " *
+                                 "this rank owns $n_mine"; msg_rank = rank)
+            end
+
+            #----------------------------------------------------------------
+            # STEP 4: INTERPOLATE JULIA SOLUTION at owned Alya points
+            #----------------------------------------------------------------
+            # Prepare buffer for interpolated values (one value per Alya point)
+            # For now, interpolating first solution component; extend as needed
+            interp_values = zeros(Float64, n_alya_points)
+            
+            for i in 1:n_alya_points
+                if is_mine[i]
+                    # This rank owns this Alya point - interpolate Julia solution here
+                    px = alya_coords[i, 1]
+                    py = alya_coords[i, 2]
+                    
+                    # TODO: Replace with proper interpolation
+                    # For now, find nearest Julia mesh point as placeholder
+                    distances = sqrt.((integrator.p.mesh.x .- px).^2 .+ 
+                        (integrator.p.mesh.y .- py).^2)
+                    nearest_idx = argmin(distances)
+                    
+                    # Get solution value at nearest point (first equation)
+                    interp_values[i] = integrator.u[nearest_idx]
+                end
+            end
+
+            #----------------------------------------------------------------
+            # STEP 5: GATHER interpolated values from all Julia ranks
+            #----------------------------------------------------------------
+            # Use Allreduce with SUM (only owners have non-zero values)
+            all_interp_values = copy(interp_values)
+            MPI.Allreduce!(all_interp_values, MPI.SUM, cpg.comm_local)
+
+            #----------------------------------------------------------------
+            # STEP 6: PACK DATA TO SEND TO ALYA (leader only)
+            #----------------------------------------------------------------
+            if cpg.lrank == 0
+                # Pack interpolated values into send buffer
+                # Format depends on what Alya expects - adjust as needed
+                nvals_to_send = min(n, n_alya_points)
+                for i in 1:nvals_to_send
+                    cpg.send_buf[i] = all_interp_values[i]
+                end
+                
+                # Fill rest with zeros if buffer is larger
+                if n > nvals_to_send
+                    cpg.send_buf[nvals_to_send+1:end] .= 0.0
+                end
+            end
+
+            #----------------------------------------------------------------
+            # STEP 7: EXCHANGE SOLUTION DATA (only leader with Alya root)
+            #----------------------------------------------------------------
             if cpg.lrank == 0
                 println_rank(" # Julia: t=", round(integrator.t, digits=6), 
-                           " exchanging solution data..."; msg_rank = rank)
+                             " exchanging solution data..."; msg_rank = rank)
                 
+                # Symmetric exchange with Alya root (world rank 0)
                 coupling_send_recv!(cpg, cpg.send_buf, cpg.recv_buf; alya_root=0, tag=1001)
                 
                 println_rank(" # Julia: t=", round(integrator.t, digits=6), 
-                           " coupling complete; sent/recv ", n, 
-                           " values, recv[1]=", cpg.recv_buf[1]; msg_rank = rank)
+                             " coupling complete; sent/recv ", n, 
+                             " values, recv[1]=", cpg.recv_buf[1]; msg_rank = rank)
             end
 
+            #----------------------------------------------------------------
+            # STEP 8: BROADCAST received data to all Julia ranks
+            #----------------------------------------------------------------
             MPI.Bcast!(cpg.recv_buf, cpg.comm_local; root=0)
             
             #----------------------------------------------------------------
-            # STEP 3: APPLY RECEIVED DATA
+            # STEP 9: APPLY RECEIVED DATA FROM ALYA
             #----------------------------------------------------------------
-            # TODO: Use cpg.rem_min, cpg.rem_max, cpg.rem_nx for interpolation
-            # TODO: Apply cpg.recv_buf to integrator.u or integrator.p as needed
+            # Unpack Alya's data and apply to Julia's solution
+            # This depends on what Alya sends and how it should affect Julia
+            
+            # Example: Map Alya's uniform grid data back to Julia's mesh
+            for i_alya in 1:n_alya_points
+                if is_mine[i_alya] && found[i_alya]
+                    px = alya_coords[i_alya, 1]
+                    py = alya_coords[i_alya, 2]
+                    
+                    # Find corresponding Julia mesh point
+                    distances = sqrt.((integrator.p.mesh.x .- px).^2 .+ 
+                        (integrator.p.mesh.y .- py).^2)
+                    nearest_idx = argmin(distances)
+                    
+                    # Apply Alya's value (example: add as forcing term)
+                    # Adjust this based on your coupling physics
+                    alya_value = cpg.recv_buf[min(i_alya, n)]
+                    
+                    # TODO: Apply to integrator.u or integrator.p as needed
+                    # For example:
+                    # integrator.u[nearest_idx] += 0.01 * alya_value  # Weak coupling
+                end
+            end
         end
-
         cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)
     end
 
@@ -266,13 +377,13 @@ function time_loop!(inputs, params, u, args...)
             @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
 
             @time solution = solve(prob,
-                                inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                                callback = coupling_enabled ? CallbackSet(cb_amr, cb_restart, cb_coupling)
-                                                            : CallbackSet(cb_amr, cb_restart),
-                                tstops = dosetimes,
-                                save_everystep = false,
-                                adaptive=false,
-                                saveat = [])
+                                   inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                                   callback = coupling_enabled ? CallbackSet(cb_amr, cb_restart, cb_coupling)
+                                   : CallbackSet(cb_amr, cb_restart),
+                                   tstops = dosetimes,
+                                   save_everystep = false,
+                                   adaptive=false,
+                                   saveat = [])
             MPI.Barrier(comm)
             report_all_timers(prob.p.timers)
             MPI.Barrier(comm)

@@ -1,17 +1,82 @@
 
+"""
+    initialize_mpi_and_split_comm()
+
+Initialize MPI, split COMM_WORLD by APPID, and detect coupling mode.
+
+This function:
+1. Initializes MPI if not already initialized
+2. Gets COMM_WORLD and identifies global ranks
+3. Splits communicator by APPID (from environment variable)
+4. Stores communicators for internal Jexpresso use
+5. Detects if running in coupled mode with another code (e.g., Alya)
+
+# Environment Variables
+- `APPID`: Application ID for communicator splitting (default: 2)
+  - Alya typically uses APPID=1
+  - Jexpresso uses APPID=2
+
+# Returns
+- `world`: MPI.COMM_WORLD communicator
+- `local_comm`: Local communicator for Jexpresso ranks only
+- `wsize`: Size of COMM_WORLD (total ranks across all codes)
+- `wrank`: This rank's ID in COMM_WORLD
+- `lsize`: Size of local communicator (Jexpresso ranks only)
+- `lrank`: This rank's ID in local communicator
+- `is_coupled`: Boolean indicating if coupled mode is active
+
+# Example
+```julia
+world, local_comm, wsize, wrank, lsize, lrank, is_coupled = initialize_mpi_and_split_comm()
+```
+"""
+function je_init_mpi_and_split_comm()
+    # 1. Initialize MPI if needed
+    if !MPI.Initialized()
+        MPI.Init()
+    end
+    
+    # 2. Identify the Global World and Local Julia ranks
+    world = MPI.COMM_WORLD
+    wsize = MPI.Comm_size(world)
+    wrank = MPI.Comm_rank(world)
+    
+    # 3. Split the communicator by APPID
+    # This prevents Julia's internal setup from interfering with Alya
+    appid = try 
+        parse(Int, get(ENV, "APPID", "2")) 
+    catch
+        2  # Default to APPID=2 for Jexpresso
+    end
+    
+    local_comm = MPI.Comm_split(world, appid, wrank)
+    lsize = MPI.Comm_size(local_comm)
+    lrank = MPI.Comm_rank(local_comm)
+    
+    # 4. Store communicators for internal Jexpresso use
+    set_mpi_comm(local_comm)
+    set_mpi_comm_world(world)
+    
+    # 5. Detect and report coupling mode
+    is_coupled = (lsize < wsize)
+    
+    if lrank == 0 && is_coupled
+        println("[Jexpresso] Coupled mode detected:")
+        println("            World size = $wsize, Local size = $lsize, APPID = $appid")
+        println("            Handshake deferred to driver.")
+        flush(stdout)
+    end
+    
+    return world, local_comm, wsize, wrank, lsize, lrank, is_coupled
+end
+
 function je_mpi_init()
     
     # Initialize MPI if not already done
     if !MPI.Initialized()
         MPI.Init()
     end
-
-    # Get communicator - custom one if set (coupling mode), otherwise COMM_WORLD
-    comm = get_mpi_comm()
-    rank = MPI.Comm_rank(comm)
-    size = MPI.Comm_size(comm)
     
-    return comm, rank, size
 end
 
 mutable struct CyclingReverseDict

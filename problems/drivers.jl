@@ -2,32 +2,30 @@ function driver(nranks,
                 distribute,
                 inputs::Dict,
                 OUTPUT_DIR::String,
-                TFloat)
+                TFloat,
+                world)
     
-    comm = distribute.comm
-    rank = MPI.Comm_rank(comm)
+    lsize = nranks # Local n. of Jexpresso ranks
+    
+    # Perform handshake and check if coupled
+    is_coupled = je_perform_coupling_handshake(world, lsize)
+
+    # If coupled, receive data from Alya
+    if is_coupled
+        je_receive_alya_data(world, lsize)
+    end
     
     #---------------------------------------------------------
     # SEM setup
     #---------------------------------------------------------
-    @info " Enter sem_setup()"
-    sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)   
+    sem, partitioned_model = sem_setup(inputs, lsize, distribute, rank)   
     if (inputs[:backend] != CPU()) convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs) end
-    @info " DONE sem_setup()"
-    
-    #---------------------------------------------------------
-    # Coupling setup
-    #---------------------------------------------------------
-    @info " Enter je_couplingSetup(inputs) "
-    coupling = je_couplingSetup(inputs)
-    @info " DONE  je_couplingSetup(inputs) "
     
     #---------------------------------------------------------
     # Initialize.jl is contained in the user's problem case directory
     #---------------------------------------------------------
-    @info " Initialize field "
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
-    @info " DONE Initialize field "
+
     
     #---------------------------------------------------------
     # Parameters setup
@@ -48,7 +46,7 @@ function driver(nranks,
         #---------------------------------------------------------
         # Evolutionary problems that lead to Mdq/dt = RHS
         #---------------------------------------------------------
-        @time solution = time_loop!(inputs, params, u, partitioned_model, coupling)
+        @time solution = time_loop!(inputs, params, u, partitioned_model, is_coupled)
         
     else
         #---------------------------------------------------------
