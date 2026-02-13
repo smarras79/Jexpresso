@@ -116,7 +116,7 @@ function time_loop!(inputs, params, u, args...)
     #------------------------------------------------------------------------
     # Coupling callback: RECEIVE METADATA + EXCHANGE SOLUTION at every step
     #------------------------------------------------------------------------
-    coupling_enabled = (is_coupled !== false)
+   #= coupling_enabled = (is_coupled !== false)
     @info " #"
     @info " # Coupling enabled: $coupling_enabled"
     @info " # "
@@ -298,7 +298,7 @@ function time_loop!(inputs, params, u, args...)
         end
         cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)
     end
-
+    =#
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------

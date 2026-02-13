@@ -4,29 +4,179 @@ function driver(nranks,
                 OUTPUT_DIR::String,
                 TFloat,
                 world)
-    
+
     lsize = nranks # Local n. of Jexpresso ranks
     
-    # Perform handshake and check if coupled
+    # Step 1: Perform handshake
     is_coupled = je_perform_coupling_handshake(world, lsize)
-
-    # If coupled, receive data from Alya
+    
     if is_coupled
+        # Step 2: Receive Alya's domain information
         je_receive_alya_data(world, lsize)
+        
+        coupling_data = get_coupling_data()
+        local_comm = get_mpi_comm()
+        lrank = MPI.Comm_rank(local_comm)
+        
+        # Setup SEM mesh
+        sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)
+        if (inputs[:backend] != CPU()) 
+            convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs) 
+        end
+        
+        # Step 3: Build coupling communication pattern
+        npoin_recv, npoin_send, recv_from_ranks, send_to = 
+            build_coupling_communication_arrays(sem.mesh, coupling_data, 
+                                                local_comm, world)
+        
+        if lrank == 0
+            println("[Driver] Coupling arrays built, preparing for Alltoall...")
+            flush(stdout)
+        end
+        
+        # Step 4 & 5: Communicate the pattern back to Alya via Alltoall
+        send_counts_to_alya = Vector{Int32}(npoin_recv)
+        recv_counts_from_alya = zeros(Int32, MPI.Comm_size(world))
+        
+        if lrank == 0
+            println("[Driver] Julia: About to call MPI.Alltoall!")
+            println("  Sending counts: ", send_counts_to_alya)
+            flush(stdout)
+        end
+
+        if lrank == 0
+            println("[Driver] Coupling arrays built, preparing for Alltoall...")
+            println("[Driver] Julia: Before barrier before Alltoall")
+            flush(stdout)
+        end
+        
+        # Add barrier to synchronize with Alya
+        MPI.Barrier(world)
+        
+        if lrank == 0
+            println("[Driver] Julia: After barrier, about to call MPI.Alltoall!")
+            println("  Sending counts: ", send_counts_to_alya)
+            flush(stdout)
+        end
+        
+        # Alltoall: Tell Alya how many points I need from each of its ranks
+        MPI.Alltoall!(send_counts_to_alya, recv_counts_from_alya, 1, world)
+        
+        if lrank == 0
+            println("[Driver] Julia: MPI.Alltoall completed!")
+            flush(stdout)
+        end
+        
+        # Update npoin_send from received data
+        npoin_send = recv_counts_from_alya
+        
+        # Update send_to_ranks based on actual send pattern
+        send_to_ranks = Int32[]
+        for i in 1:length(npoin_send)
+            if npoin_send[i] > 0
+                push!(send_to_ranks, i - 1)  # 0-based world rank
+            end
+        end
+        
+        # VERIFICATION: Print detailed coupling pattern
+        wsize = MPI.Comm_size(world)
+        wrank = MPI.Comm_rank(world)
+        nranks_alya = length(coupling_data[:alya2world])
+        
+        println("=========================================")
+        println("Julia local rank $lrank, world rank $wrank")
+        println("=========================================")
+        println("Total points to RECV from Alya: $(sum(npoin_recv))")
+        println("Total points to SEND to Alya: $(sum(npoin_send))")
+        println("-----------------------------------------")
+        
+        # Print world rank breakdown
+        println("World rank breakdown (size=$wsize):")
+        for i in 0:nranks_alya-1
+            println("  World rank $(coupling_data[:alya2world][i+1]) = Alya rank $i (ALYA)")
+        end
+        for i in 0:(wsize - nranks_alya - 1)
+            println("  World rank $(nranks_alya + i) = Julia rank $i (JULIA)")
+        end
+        println("-----------------------------------------")
+        
+        # Print detailed receive pattern
+        if sum(npoin_recv) > 0
+            println("RECV pattern (npoin_recv array) - receive FROM these ranks:")
+            for i in 1:wsize
+                if npoin_recv[i] > 0
+                    world_rank = i - 1
+                    if world_rank < nranks_alya
+                        println("  <- World rank $world_rank (Alya rank $world_rank): $(npoin_recv[i]) points")
+                    else
+                        julia_rank = world_rank - nranks_alya
+                        println("  <- World rank $world_rank (Julia rank $julia_rank): $(npoin_recv[i]) points")
+                    end
+                end
+            end
+        else
+            println("RECV pattern: No points to receive")
+        end
+        
+        # Print detailed send pattern
+        if sum(npoin_send) > 0
+            println("SEND pattern (npoin_send array) - send TO these ranks:")
+            for i in 1:wsize
+                if npoin_send[i] > 0
+                    world_rank = i - 1
+                    if world_rank < nranks_alya
+                        println("  -> World rank $world_rank (Alya rank $world_rank): $(npoin_send[i]) points")
+                    else
+                        julia_rank = world_rank - nranks_alya
+                        println("  -> World rank $world_rank (Julia rank $julia_rank): $(npoin_send[i]) points")
+                    end
+                end
+            end
+        else
+            println("SEND pattern: No points to send")
+        end
+        
+        println("-----------------------------------------")
+        println("Active communication partners:")
+        println("  recv_from_ranks: $recv_from_ranks")
+        println("  send_to_ranks: $send_to_ranks")
+        println("=========================================")
+        flush(stdout)
+        
+
+        #---------------------------------------------------------
+        # Initialize.jl is contained in the user's problem case directory
+        #---------------------------------------------------------
+        qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+        
+        # Store coupling information
+        coupling = CouplingData(
+            npoin_recv = npoin_recv,
+            npoin_send = npoin_send,
+            recv_from_ranks = recv_from_ranks,
+            send_to_ranks = send_to_ranks,
+            comm_world = world,
+            lrank = lrank,
+            neqs = qp.neqs
+        )
+        
+        # Allocate coupling buffers
+        coupling.send_bufs, coupling.recv_bufs = 
+            allocate_coupling_buffers(npoin_recv, npoin_send, coupling.neqs)
+    else
+        #---------------------------------------------------------
+        # SEM setup
+        #---------------------------------------------------------
+        sem, partitioned_model = sem_setup(inputs, lsize, distribute, rank)   
+        
+        #---------------------------------------------------------
+        # Initialize.jl is contained in the user's problem case directory
+        #---------------------------------------------------------
+        qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     end
     
-    #---------------------------------------------------------
-    # SEM setup
-    #---------------------------------------------------------
-    sem, partitioned_model = sem_setup(inputs, lsize, distribute, rank)   
-    if (inputs[:backend] != CPU()) convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs) end
     
-    #---------------------------------------------------------
-    # Initialize.jl is contained in the user's problem case directory
-    #---------------------------------------------------------
-    qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
-
-    
+  
     #---------------------------------------------------------
     # Parameters setup
     #---------------------------------------------------------   
@@ -168,7 +318,7 @@ function driver(nranks,
                 
                 write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
                 
-@info "isamp" isamp
+                @info "isamp" isamp
                 
             end #isamp loop
             
@@ -196,10 +346,10 @@ function driver(nranks,
             k(RHS, sem.matrix.L, sem.mesh.poin_in_bdy_edge, sem.mesh.npoin; ndrange = (sem.mesh.nedges_bdy*sem.mesh.ngl), workgroupsize = (sem.mesh.ngl))
             KernelAbstractions.synchronize(inputs[:backend])
             if ("Laguerre" in sem.mesh.bdy_edge_type)
-                k = apply_boundary_conditions_lag_gpu_lin_solve!(inputs[:backend])
-                k(RHS, sem.matrix.L, sem.mesh.connijk_lag, sem.mesh.ngl, sem.mesh.ngr, sem.mesh.npoin, sem.mesh.nelem_semi_inf, inputs[:lperiodic_laguerre];
-                  ndrange = (sem.mesh.nelem_semi_inf*sem.mesh.ngl,sem.mesh.ngr), workgroupsize = (sem.mesh.ngl,sem.mesh.ngr))
-                KernelAbstractions.synchronize(inputs[:backend])
+            k = apply_boundary_conditions_lag_gpu_lin_solve!(inputs[:backend])
+            k(RHS, sem.matrix.L, sem.mesh.connijk_lag, sem.mesh.ngl, sem.mesh.ngr, sem.mesh.npoin, sem.mesh.nelem_semi_inf, inputs[:lperiodic_laguerre];
+            ndrange = (sem.mesh.nelem_semi_inf*sem.mesh.ngl,sem.mesh.ngr), workgroupsize = (sem.mesh.ngl,sem.mesh.ngr))
+            KernelAbstractions.synchronize(inputs[:backend])
             end
             k = add_to_diag!(inputs[:backend])
             k(sem.matrix.L, TFloat(10.0); ndrange = sem.mesh.npoin)
@@ -214,13 +364,13 @@ function driver(nranks,
             usol = solution.u
         end
         args = (params.SD, usol, params.uaux, 0.0, 1,
-                     sem.mesh, nothing,
-                     nothing, nothing,
-                     0.0, 0.0, 0.0,
-                     OUTPUT_DIR, inputs,
-                     params.qp.qvars,
-                     params.qp.qoutvars,
-                     inputs[:outformat])
+                sem.mesh, nothing,
+                nothing, nothing,
+                0.0, 0.0, 0.0,
+                OUTPUT_DIR, inputs,
+                params.qp.qvars,
+                params.qp.qoutvars,
+                inputs[:outformat])
 
         write_output(args...; nvar=params.qp.neqs, qexact=params.qp.qe)
         
@@ -239,11 +389,11 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     mesh.lengthO =  mesh.length∂O +  mesh.lengthIo
     
     #=EL = allocate_elemLearning(mesh.nelem, mesh.ngl,
-                               mesh.length∂O,
-                               mesh.length∂τ,
-                               mesh.lengthΓ,
-                               TFloat, inputs[:backend];
-                               Nsamp=inputs[:Nsamp])
+    mesh.length∂O,
+    mesh.length∂τ,
+    mesh.lengthΓ,
+    TFloat, inputs[:backend];
+    Nsamp=inputs[:Nsamp])
     =#
     
     nelintpoints = (mesh.ngl-2)*(mesh.ngl-2)
@@ -323,7 +473,7 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
             EL.A∂OIo[jo, io] = A[jo1, io1]
         end
     end
-     #
+    #
     # AIo∂O
     #
     for jo=1:mesh.length∂O
@@ -473,29 +623,29 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     skeletonAndbdy[mesh.length∂O+1:mesh.length∂O+mesh.lengthΓ] .= mesh.Γ[:]
 
     
-#    #for iel=1:mesh.nelem
-#        for iedge = 1:4
-#            @info iel, mesh.edge2pedge[iedge]
-#        end
-#    end
-#    @mystop
-#    bdy_edge_in_elem
-#    edge2pedge
+    #    #for iel=1:mesh.nelem
+    #        for iedge = 1:4
+    #            @info iel, mesh.edge2pedge[iedge]
+    #        end
+    #    end
+    #    @mystop
+    #    bdy_edge_in_elem
+    #    edge2pedge
 
     #
     # uvb ⊂ u∂τ  SHUKAI meeting
     #
-#=
+    #=
     @info "mesh.cell_face_ids "
     @info mesh.cell_face_ids, size(mesh.cell_face_ids)
     @info "mesh.facet_cell_ids"
     @info mesh.facet_cell_ids, size(mesh.facet_cell_ids)
 
     for iedge=1:mesh.nedges
-        @info " iedge ", iedge, "belongs to element ",  mesh.facet_cell_ids[iedge]
+    @info " iedge ", iedge, "belongs to element ",  mesh.facet_cell_ids[iedge]
     end
     for iedge=1:mesh.nedges
-        @info " edge ", iedge, " belong to elem ", mesh.edge_in_elem[iedge]
+    @info " edge ", iedge, " belong to elem ", mesh.edge_in_elem[iedge]
     end
 
     @info "-----"
@@ -504,40 +654,40 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     u∂τ = zeros(Float64, length(mesh.∂τ))
     for iskel = 1:length(mesh.∂τ)
         is = skeletonAndbdy[iskel]
-#        @info iskel, is
+        #        @info iskel, is
         u∂τ[iskel] = u[is]
-     #x   @info iskel, is, u∂τ[iskel]
+        #x   @info iskel, is, u∂τ[iskel]
     end
 
     
-     for iel=1:mesh.nelem
-         #
-         # 
-         #
-         ii = 1
-         #
-         # Aᵥₒᵥb
-         #
-         for isk = 1:length(mesh.∂τ)
-             ipsk = skeletonAndbdy[isk]
-             
-             for ibdy = 1:elnbdypoints
-                 #jpb = mesh.conn[iel, j]
-                 uvb[iel, ibdy] = u∂τ[ipsk]
+    for iel=1:mesh.nelem
+        #
+        # 
+        #
+        ii = 1
+        #
+        # Aᵥₒᵥb
+        #
+        for isk = 1:length(mesh.∂τ)
+            ipsk = skeletonAndbdy[isk]
+            
+            for ibdy = 1:elnbdypoints
+                #jpb = mesh.conn[iel, j]
+                uvb[iel, ibdy] = u∂τ[ipsk]
                 # @info iel, ibdy, uvb[iel, ibdy]
-             end
-             ii += 1
-         end
-     end
+            end
+            ii += 1
+        end
+    end
 
     
     #=for iel = 1:mesh.nelem
-        for ibdyel = 1:
-        for j1=1:length(mesh.∂τ)
-            jτ1 = skeletonAndbdy[j1]
-            
-            uvb[iel, ibdyel] = u∂τ[jτ1]
-        end
+    for ibdyel = 1:
+    for j1=1:length(mesh.∂τ)
+    jτ1 = skeletonAndbdy[j1]
+    
+    uvb[iel, ibdyel] = u∂τ[jτ1]
+    end
     end=#
 
     
