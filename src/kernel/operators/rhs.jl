@@ -995,12 +995,16 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
     ngl   = params.mesh.ngl
     neqs  = params.neqs
 
+    ad_lvl = params.mesh.ad_lvl
+
     lrichardson = params.inputs[:lrichardson]
 
     fill!(params.μ_max,    zero(params.T))
     
     for iel=1:nelem        
         
+        Δ_effective = Δ/2^(ad_lvl[iel]+1)
+
         for k = 1:ngl, j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j,k]
 
@@ -1009,7 +1013,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
                              @view(params.uprimitive[i,j,k,:]),
                              params.SOL_VARS_TYPE)
         end
-
+        
         
         for ieq = 1:neqs
             _expansion_visc!(params.rhs_diffξ_el,
@@ -1033,7 +1037,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
                              params.mesh.poin_in_bdy_face, params.mesh.elem_to_face,
                              params.mesh.bdy_face_type, 
                              params.μ_max,
-                             params.QT, params.VT, SD, params.AD; Δ=Δ, lrichardson=lrichardson)
+                             params.QT, params.VT, SD, params.AD; Δ=Δ_effective, lrichardson=lrichardson)
             
         end
     end

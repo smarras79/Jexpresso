@@ -3315,9 +3315,18 @@ function adapt4periodicity!(adapt_flags, mesh, SD::NSD_3D)
 
 end
 
-function do_adapt!(adapt_flags, inputs, mesh, uaux, qp)
+function do_adapt!(adapt_flags, inputs, mesh, uaux, qp,
+                   Tabs, qn, qc, qi, qr,
+                   qs, qg, Pr, Ps, Pg,
+                   S_micro, qsatt)
     
-    user_get_adapt_flags!(adapt_flags, inputs, mesh.ad_lvl, uaux, qp.qe, mesh.connijk, mesh.nelem, mesh.ngl)
+    user_get_adapt_flags!(adapt_flags, inputs, mesh.ad_lvl,
+                          uaux, qp.qe,
+                          Tabs, qn, qc, qi, qr,
+                          qs, qg, Pr, Ps, Pg,
+                          S_micro, qsatt,
+                          mesh.connijk, mesh.nelem, mesh.ngl,
+                          inputs[:amr_max_level] )
     adapt4periodicity!(adapt_flags, mesh, mesh.SD)
 end
 
@@ -3332,7 +3341,10 @@ function amr_strategy!(args...)
     partitioned_model = args[5]
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     ref_coarse_flags = KernelAbstractions.zeros(CPU(), TInt, Int64(params.mesh.nelem))
-    do_adapt!(ref_coarse_flags, inputs, params.mesh, params.uaux, params.qp)
+    do_adapt!(ref_coarse_flags, inputs, params.mesh, params.uaux, params.qp,
+              params.mp.Tabs, params.mp.qn, params.mp.qc, params.mp.qi, params.mp.qr,
+              params.mp.qs, params.mp.qg, params.mp.Pr, params.mp.Ps, params.mp.Pg,
+              params.mp.S_micro, params.mp.qsatt)
     # @info ref_coarse_flags
     # re - sem, init, and params_setup
     sem, partitioned_model_new, uaux_new = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, partitioned_model, params.mesh, params.interp, params.project, params.uaux)
@@ -3341,7 +3353,7 @@ function amr_strategy!(args...)
     #     convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
     # end
 
-    qp = initialize(sem.mesh.SD, sem.PT, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+    qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
 
     amr_freq = inputs[:amr_freq]
     Δt_amr   = amr_freq * inputs[:Δt]

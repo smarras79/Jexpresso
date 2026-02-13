@@ -200,9 +200,10 @@ function time_loop!(inputs, params, u, args...)
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
             @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
-            
+            ad_lvl_max = MPI.Allreduce(maximum(prob.p.mesh.ad_lvl), MPI.MAX, comm)
+            dt         = Float32(inputs[:Δt]/ad_lvl_max)
             @time solution = solve(prob,
-                                inputs[:ode_solver], dt=Float32(inputs[:Δt]),
+                                inputs[:ode_solver], dt=dt,
                                 callback = CallbackSet(cb_amr, cb_restart), tstops = dosetimes,
                                 save_everystep = false,
                                 adaptive=inputs[:ode_adaptive_solver],
