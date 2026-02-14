@@ -3,11 +3,42 @@ using GridapDistributed
 using PartitionedArrays
 using Base.Threads
 
-"""
-    CouplingData
+# Global MPI communicator - can be overridden for coupling mode
+# Default is COMM_WORLD, but can be set to local communicator in coupled simulations
+const JEXPRESSO_MPI_COMM = Ref{Union{MPI.Comm,Nothing}}(nothing)
 
-Structure to store coupling information between Alya and Jexpresso.
-"""
+# World communicator for inter-code coupling (spans all codes)
+# In standalone mode this is the same as COMM_WORLD.
+# In coupled mode this is MPI.COMM_WORLD while JEXPRESSO_MPI_COMM is the local split.
+const JEXPRESSO_MPI_COMM_WORLD = Ref{Union{MPI.Comm,Nothing}}(nothing)
+
+# Coupling data received during initialization (populated by Jexpresso-mini-coupled.jl)
+const JEXPRESSO_COUPLING_DATA = Ref{Union{Dict{Symbol,Any},Nothing}}(nothing)
+
+function set_mpi_comm(comm::MPI.Comm)
+    JEXPRESSO_MPI_COMM[] = comm
+end
+
+function get_mpi_comm()
+    return JEXPRESSO_MPI_COMM[] === nothing ? MPI.COMM_WORLD : JEXPRESSO_MPI_COMM[]
+end
+
+function set_mpi_comm_world(comm::MPI.Comm)
+    JEXPRESSO_MPI_COMM_WORLD[] = comm
+end
+
+function get_mpi_comm_world()
+    return JEXPRESSO_MPI_COMM_WORLD[] === nothing ? MPI.COMM_WORLD : JEXPRESSO_MPI_COMM_WORLD[]
+end
+
+function set_coupling_data(data::Dict{Symbol,Any})
+    JEXPRESSO_COUPLING_DATA[] = data
+end
+
+function get_coupling_data()
+    return JEXPRESSO_COUPLING_DATA[]
+end
+
 mutable struct CouplingData
     # Communication pattern
     npoin_recv::Vector{Int32}        # Points to receive from each world rank
@@ -34,34 +65,6 @@ mutable struct CouplingData
     end
 end
 
-
-"""
-    setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank, OUTPUT_DIR, TFloat)
-
-Complete coupling initialization including:
-- Receiving Alya's domain information
-- Setting up SEM mesh
-- Building coupling communication pattern
-- Exchanging pattern with Alya via MPI_Alltoall
-- Initializing solution arrays
-- Allocating coupling buffers
-
-# Arguments
-- `world`: MPI.COMM_WORLD communicator
-- `lsize`: Number of local Jexpresso ranks
-- `inputs`: Input parameters dictionary
-- `nranks`: Number of ranks for mesh setup
-- `distribute`: Distribution function for partitioning
-- `rank`: Current rank
-- `OUTPUT_DIR`: Output directory path
-- `TFloat`: Floating point type (Float32 or Float64)
-
-# Returns
-- `coupling`: CouplingData structure with communication pattern and buffers
-- `sem`: SEM mesh and solver structures
-- `partitioned_model`: Partitioned mesh model
-- `qp`: Initialized solution arrays
-"""
 function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank, OUTPUT_DIR, TFloat)
     
     # Step 2: Receive Alya's domain information
@@ -128,6 +131,23 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     print_coupling_pattern(lrank, npoin_recv, npoin_send, recv_from_ranks, 
                           send_to_ranks, coupling_data, world)
     
+    # NEW: Build and print Alya point ownership map
+    if lrank == 0
+        println("[setup_coupling] Building Alya point ownership map...")
+        flush(stdout)
+    end
+    
+    ownership = build_alya_point_ownership_map(sem.mesh, coupling_data, 
+                                               local_comm, world)
+    
+    # Print ownership map (first 20 owned points only)
+    print_alya_point_ownership(ownership, coupling_data; 
+                              max_points_to_print=20,
+                              only_owned=true)
+    
+    # Print distribution statistics
+    verify_alya_point_distribution(ownership, coupling_data)
+    
     # Initialize solution arrays
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
@@ -155,12 +175,6 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
 end
 
 
-"""
-    print_coupling_pattern(lrank, npoin_recv, npoin_send, recv_from_ranks, 
-                          send_to_ranks, coupling_data, world)
-
-Print detailed verification of the coupling communication pattern.
-"""
 function print_coupling_pattern(lrank, npoin_recv, npoin_send, recv_from_ranks, 
                                send_to_ranks, coupling_data, world)
     
@@ -230,24 +244,6 @@ function print_coupling_pattern(lrank, npoin_recv, npoin_send, recv_from_ranks,
 end
 
 
-"""
-    build_coupling_communication_arrays(mesh, coupling_data, local_comm, world_comm)
-
-Build send/receive arrays for coupling communication between Alya and Jexpresso.
-Determines which Alya grid points fall into which Jexpresso rank domains.
-
-# Arguments
-- `mesh`: Jexpresso mesh structure with local coordinates
-- `coupling_data`: Dict containing remote grid metadata from Alya
-- `local_comm`: MPI communicator for Jexpresso ranks only
-- `world_comm`: MPI.COMM_WORLD (shared with Alya)
-
-# Returns
-- `npoin_recv`: Array[wsize] - number of Alya points in my domain from each world rank
-- `npoin_send`: Array[wsize] - number of points to send to each world rank (filled by Alltoall)
-- `recv_from_ranks`: Vector of world ranks we receive from (non-zero entries)
-- `send_to_ranks`: Vector of world ranks we send to (non-zero entries)
-"""
 function build_coupling_communication_arrays(mesh, coupling_data, local_comm, world_comm)
     
     # Extract coupling metadata from Alya
@@ -397,20 +393,6 @@ function build_coupling_communication_arrays(mesh, coupling_data, local_comm, wo
     return npoin_recv, npoin_send, recv_from_ranks, send_to_ranks
 end
 
-"""
-    allocate_coupling_buffers(npoin_recv, npoin_send, neqs)
-
-Allocate send and receive buffers based on communication pattern.
-
-# Arguments
-- `npoin_recv`: Array of receive counts per rank
-- `npoin_send`: Array of send counts per rank  
-- `neqs`: Number of equations (variables per point)
-
-# Returns
-- `send_bufs`: Vector of buffers for sending to each rank
-- `recv_bufs`: Vector of buffers for receiving from each rank
-"""
 function allocate_coupling_buffers(npoin_recv, npoin_send, neqs)
     wsize = length(npoin_recv)
     
@@ -430,19 +412,6 @@ function allocate_coupling_buffers(npoin_recv, npoin_send, neqs)
     return send_bufs, recv_bufs
 end
 
-"""
-    je_perform_coupling_handshake(world, nparts)
-
-Perform the initial handshake with Alya to establish that both codes are ready.
-This is a minimal synchronization step that must complete before data exchange.
-
-# Arguments
-- `world`: MPI.COMM_WORLD communicator
-- `nparts`: Number of local Jexpresso ranks
-
-# Returns
-- `true` if coupled mode is active (wsize > nparts), `false` otherwise
-"""
 function je_perform_coupling_handshake(world, nparts)
     wsize = MPI.Comm_size(world)
     wrank = MPI.Comm_rank(world)
@@ -464,11 +433,6 @@ function je_perform_coupling_handshake(world, nparts)
     return true  # Coupled mode active
 end
 
-"""
-    je_receive_alya_data(world, nparts)
-
-Receive grid metadata from Alya via Bcast.
-"""
 function je_receive_alya_data(world, nparts)
     wsize = MPI.Comm_size(world)
     wrank = MPI.Comm_rank(world)
@@ -526,14 +490,6 @@ end
 # These will be used when implementing velocity interpolation and exchange
 #------------------------------------------------------------------------------------
 
-"""
-    interpolate_at_point(px, py, mesh, u, qp)
-
-Interpolate solution at point (px, py) using Julia's mesh and basis functions.
-Returns interpolated value for the first solution component.
-
-NOTE: This is a placeholder for Step 6 implementation.
-"""
 function interpolate_at_point(px::Float64, py::Float64, mesh, u, qp)
     # TODO: Implement proper interpolation using basis functions
     # For now, this is a placeholder
