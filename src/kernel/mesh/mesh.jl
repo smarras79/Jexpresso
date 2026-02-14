@@ -8,7 +8,9 @@ export mod_mesh_read_gmsh!
 include("warping.jl")
 include("stretching.jl")
 include("../coupling/couplingStructs.jl")
+include("./meshStructs.jl")
 
+#=
 Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     x      = KernelAbstractions.zeros(backend, TFloat, 2)
@@ -194,7 +196,7 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
 
     msg_suppress::Bool = false
 
-end
+end=#
 
 const get_d_to_face_to_parent_face = Gridap.Adaptivity.get_d_to_face_to_parent_face
 const Finalize = GridapP4est.Finalize
