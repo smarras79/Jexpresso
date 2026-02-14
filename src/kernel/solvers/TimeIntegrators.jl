@@ -116,8 +116,8 @@ function time_loop!(inputs, params, u, args...)
     #------------------------------------------------------------------------
     # Coupling callback: RECEIVE METADATA + EXCHANGE SOLUTION at every step
     #------------------------------------------------------------------------
-   #= coupling_enabled = (is_coupled !== false)
-    @info " #"
+    coupling_enabled = (is_coupled !== false)
+    #= @info " #"
     @info " # Coupling enabled: $coupling_enabled"
     @info " # "
     if coupling_enabled
@@ -323,12 +323,14 @@ function time_loop!(inputs, params, u, args...)
     #
     # Build callbacks
     #
-    callbacks = coupling_enabled ? CallbackSet(cb, cb_restart, cb_coupling) : CallbackSet(cb, cb_restart)
+    #callbacks = coupling_enabled ? CallbackSet(cb, cb_restart, cb_coupling) : CallbackSet(cb, cb_restart)
+    callbacks = coupling_enabled ? CallbackSet(cb, cb_restart) : CallbackSet(cb, cb_restart)
     tstops_all = dosetimes
 
     #------------------------------------------------------------------------
     # BARRIER 1: Wait for Alya to finish initialization
     #------------------------------------------------------------------------
+    #=
     if coupling_enabled
         if coupling.lrank == 0
             println_rank(" # Julia: initialization complete, waiting for Alya..."; msg_rank = rank)
@@ -355,7 +357,7 @@ function time_loop!(inputs, params, u, args...)
             println_rank(" # Julia: starting time loop"; msg_rank = rank)
         end
     end
-
+    =#
     #------------------------------------------------------------------------
     # TIME INTEGRATION
     #------------------------------------------------------------------------
@@ -378,7 +380,8 @@ function time_loop!(inputs, params, u, args...)
 
             @time solution = solve(prob,
                                    inputs[:ode_solver], dt=Float32(inputs[:Δt]),
-                                   callback = coupling_enabled ? CallbackSet(cb_amr, cb_restart, cb_coupling)
+                                   callback = coupling_enabled ? CallbackSet(cb_amr, cb_restart)
+                                   #callback = coupling_enabled ? CallbackSet(cb_amr, cb_restart, cb_coupling)
                                    : CallbackSet(cb_amr, cb_restart),
                                    tstops = dosetimes,
                                    save_everystep = false,
