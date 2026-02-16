@@ -1,8 +1,8 @@
-"""
-    Alya_Point_Ownership
-
-Structure to store which Jexpresso rank owns each Alya grid point.
-"""
+#------------------------------------------------------------------------------------
+#    Alya_Point_Ownership
+#
+#Structure to store which Jexpresso rank owns each Alya grid point.
+#------------------------------------------------------------------------------------
 struct Alya_Point_Ownership
     alya_coords::Matrix{Float64}       # Alya point coordinates [npoints × ndime]
     owner_jrank::Vector{Int32}         # Jexpresso local rank that owns each point (-1 if not owned)
@@ -11,22 +11,22 @@ struct Alya_Point_Ownership
     ndime::Int32                       # Spatial dimension
 end
 
-
-"""
-    build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_comm)
-
-Build a complete map of which Jexpresso ranks own which Alya grid points.
-This is useful for debugging and verification.
-
-# Arguments
-- `mesh`: Jexpresso mesh structure with local coordinates
-- `coupling_data`: Dict containing remote grid metadata from Alya
-- `local_comm`: MPI communicator for Jexpresso ranks only
-- `world_comm`: MPI.COMM_WORLD (shared with Alya)
-
-# Returns
-- `ownership`: Alya_Point_Ownership structure with complete mapping
-"""
+#------------------------------------------------------------------------------------
+#
+#    build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_comm)
+#
+#Build a complete map of which Jexpresso ranks own which Alya grid points.
+#This is useful for debugging and verification.
+#
+## Arguments
+#- `mesh`: Jexpresso mesh structure with local coordinates
+#- `coupling_data`: Dict containing remote grid metadata from Alya
+#- `local_comm`: MPI communicator for Jexpresso ranks only
+#- `world_comm`: MPI.COMM_WORLD (shared with Alya)
+#
+## Returns
+#- `ownership`: Alya_Point_Ownership structure with complete mapping
+#------------------------------------------------------------------------------------
 function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_comm)
     
     # Extract coupling metadata from Alya
@@ -138,29 +138,20 @@ function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_c
 end
 
 
-"""
-    print_alya_point_ownership(ownership, coupling_data; 
-                               max_points_to_print=20,
-                               only_owned=false)
-
-Print which Jexpresso rank owns each Alya grid point.
-
-# Arguments
-- `ownership`: Alya_Point_Ownership structure
-- `coupling_data`: Dict containing coupling metadata
-- `max_points_to_print`: Maximum number of points to print (default: 20, use -1 for all)
-- `only_owned`: If true, only print points that are owned by some Jexpresso rank
-
-# Example output:
-```
-Alya Point Ownership Map:
-========================
-Point    1: (  -5000.0,     0.0) -> Jexpresso rank 1 (world rank 3)
-Point    2: (  -3888.9,     0.0) -> Jexpresso rank 1 (world rank 3)
-Point   11: (  -5000.0,  1111.1) -> Jexpresso rank 1 (world rank 3)
-...
-```
-"""
+#------------------------------------------------------------------------------------
+#    print_alya_point_ownership(ownership, coupling_data; 
+#                               max_points_to_print=20,
+#                               only_owned=false)
+#
+#Print which Jexpresso rank owns each Alya grid point.
+#
+## Arguments
+#- `ownership`: Alya_Point_Ownership structure
+#- `coupling_data`: Dict containing coupling metadata
+#- `max_points_to_print`: Maximum number of points to print (default: 20, use -1 for all)
+#- `only_owned`: If true, only print points that are owned by some Jexpresso rank
+#
+#------------------------------------------------------------------------------------
 function print_alya_point_ownership(ownership, coupling_data; 
                                    max_points_to_print=20,
                                    only_owned=false)
@@ -263,12 +254,11 @@ function print_alya_point_ownership(ownership, coupling_data;
     flush(stdout)
 end
 
-
-"""
-    verify_alya_point_distribution(ownership, coupling_data)
-
-Print statistics about how Alya points are distributed across Jexpresso ranks.
-"""
+#------------------------------------------------------------------------------------
+#    verify_alya_point_distribution(ownership, coupling_data)
+#
+#  Print statistics about how Alya points are distributed across Jexpresso ranks.
+#------------------------------------------------------------------------------------
 function verify_alya_point_distribution(ownership, coupling_data)
     
     lcomm = get_mpi_comm()
@@ -318,4 +308,377 @@ function verify_alya_point_distribution(ownership, coupling_data)
     println("="^70)
     println()
     flush(stdout)
+end
+
+function verify_extracted_vs_counts!(alya_owner_ranks::Vector{Int32}, npoin_recv::Vector{Int32})
+    # Tally by 0-based world rank
+    by_world = Dict{Int32,Int}()
+    for r in alya_owner_ranks
+        by_world[r] = get(by_world, r, 0) + 1
+    end
+    # Compare to npoin_recv (1-based with (world_rank+1) indexing)
+    for (wr, cnt) in by_world
+        expected = npoin_recv[Int(wr) + 1]
+        @assert cnt == expected "Mismatch for world_rank=$wr: extracted=$cnt vs expected=$expected"
+    end
+    return nothing
+end
+
+
+#------------------------------------------------------------------------------------
+#=
+    coupling_exchange_data!(cpg::CouplingData)
+
+Perform MPI data exchange between Jexpresso and Alya using non-blocking communication.
+Exchanges data stored in cpg.send_bufs with partners and receives into cpg.recv_bufs.
+
+Uses the communication pattern established during setup:
+- Send to ranks in send_to_ranks with data from send_bufs
+- Receive from ranks in recv_from_ranks into recv_bufs
+=#
+#------------------------------------------------------------------------------------
+function coupling_exchange_data!(cpg::CouplingData)
+    wsize = length(cpg.npoin_send)
+    
+    # Allocate arrays for MPI requests
+    send_requests = MPI.Request[]
+    recv_requests = MPI.Request[]
+    
+    # Post all non-blocking receives first (good practice)
+    for (idx, src_rank) in enumerate(cpg.recv_from_ranks)
+        if cpg.npoin_recv[src_rank + 1] > 0
+            buf = cpg.recv_bufs[src_rank + 1]
+            tag = 2000 + src_rank  # Unique tag per sender
+            req = MPI.Irecv!(buf, src_rank, tag, cpg.comm_world)
+            push!(recv_requests, req)
+        end
+    end
+    
+    # Post all non-blocking sends
+    for (idx, dest_rank) in enumerate(cpg.send_to_ranks)
+        if cpg.npoin_send[dest_rank + 1] > 0
+            buf = cpg.send_bufs[dest_rank + 1]
+            tag = 2000 + cpg.lrank  # Unique tag per sender (use local rank converted to world rank)
+            # Need to convert local rank to world rank
+            lcomm = get_mpi_comm()
+            lrank = MPI.Comm_rank(lcomm)
+            # Find my world rank (Jexpresso ranks start after Alya ranks)
+            nranks_alya = length(cpg.npoin_send) - MPI.Comm_size(lcomm)
+            my_world_rank = nranks_alya + lrank
+            tag = 2000 + my_world_rank
+            req = MPI.Isend(buf, dest_rank, tag, cpg.comm_world)
+            push!(send_requests, req)
+        end
+    end
+    
+    # Wait for all receives to complete
+    if !isempty(recv_requests)
+        MPI.Waitall(recv_requests)
+    end
+    
+    # Wait for all sends to complete
+    if !isempty(send_requests)
+        MPI.Waitall(send_requests)
+    end
+    
+    return nothing
+end
+
+
+#------------------------------------------------------------------------------------
+#=
+
+    pack_interpolated_data!(cpg::CouplingData, interp_values::Matrix{Float64}, 
+                           alya_owner_ranks::Vector{Int32})
+
+Pack interpolated values into send buffers according to which Alya rank owns each point.
+
+# Arguments
+- `cpg`: CouplingData structure with send_bufs allocated
+- `interp_values`: [n_local_points × neqs] interpolated values at Alya coordinates
+- `alya_owner_ranks`: [n_local_points] world rank that owns each Alya point (0-based)
+=#
+#------------------------------------------------------------------------------------
+function pack_interpolated_data!(cpg::CouplingData, interp_values::Matrix{Float64}, 
+                                 alya_owner_ranks::Vector{Int32})
+    n_local = size(interp_values, 1)
+    neqs = cpg.neqs
+    wsize = length(cpg.npoin_send)
+    
+    # Zero out send buffers
+    for i in 1:wsize
+        fill!(cpg.send_bufs[i], 0.0)
+    end
+    
+    # Track how many values we've packed for each destination rank
+    send_offsets = zeros(Int, wsize)
+    
+    # Pack data for each Alya point into the appropriate send buffer
+    @inbounds for i in 1:n_local
+        owner_rank = alya_owner_ranks[i]  # 0-based world rank
+        buf_idx = owner_rank + 1  # 1-based indexing
+        
+        if cpg.npoin_send[buf_idx] > 0
+            offset = send_offsets[buf_idx]
+            buf = cpg.send_bufs[buf_idx]
+            
+            # Pack all equations for this point
+            for q in 1:neqs
+                buf[offset + q] = interp_values[i, q]
+            end
+            
+            send_offsets[buf_idx] += neqs
+        end
+    end
+    
+    return nothing
+end
+
+
+#------------------------------------------------------------------------------------
+#= 
+    unpack_received_data!(cpg::CouplingData, u::AbstractVector, mesh, 
+                         alya_local_coords::Matrix{Float64}, alya_local_ids::Vector{Int32})
+
+Unpack received data from Alya and apply to Jexpresso solution.
+This is a placeholder - implement based on your physics coupling requirements.
+
+# Arguments
+- `cpg`: CouplingData with filled recv_bufs
+- `u`: Jexpresso solution vector to modify
+- `mesh`: Jexpresso mesh
+- `alya_local_coords`: Local Alya coordinates [n_local × ndime]
+- `alya_local_ids`: Global Alya IDs for local points (1-based)
+=#
+#------------------------------------------------------------------------------------
+function unpack_received_data!(cpg::CouplingData, u::AbstractVector, mesh,
+                              alya_local_coords::Matrix{Float64}, 
+                              alya_local_ids::Vector{Int32})
+    # This function depends on your specific coupling physics
+    # Example: apply received Alya data as forcing or boundary conditions
+    
+    neqs = cpg.neqs
+    wsize = length(cpg.npoin_recv)
+    
+    # Reconstruct full received data organized by Alya point ID
+    n_local = size(alya_local_coords, 1)
+    received_values = zeros(Float64, n_local, neqs)
+    
+    # Unpack from receive buffers
+    recv_offsets = zeros(Int, wsize)
+    
+    for src_rank in cpg.recv_from_ranks
+        buf_idx = src_rank + 1
+        if cpg.npoin_recv[buf_idx] > 0
+            buf = cpg.recv_bufs[buf_idx]
+            n_from_src = cpg.npoin_recv[buf_idx]
+            
+            # Find which local points came from this rank
+            for i in 1:n_local
+                # Check if this point should come from this rank
+                # (This is simplified - you may need a more sophisticated mapping)
+                if recv_offsets[buf_idx] < length(buf)
+                    offset = recv_offsets[buf_idx]
+                    for q in 1:neqs
+                        received_values[i, q] = buf[offset + q]
+                    end
+                    recv_offsets[buf_idx] += neqs
+                end
+            end
+        end
+    end
+    
+    # TODO: Apply received data to Jexpresso solution
+    # This depends on your coupling approach (forcing, BC, etc.)
+    # Example:
+    # for i in 1:n_local
+    #     px, py = alya_local_coords[i, 1], alya_local_coords[i, 2]
+    #     # Find nearest Jexpresso mesh point
+    #     distances = sqrt.((mesh.x .- px).^2 .+ (mesh.y .- py).^2)
+    #     nearest_idx = argmin(distances)
+    #     # Apply coupling (example: weak forcing)
+    #     u[nearest_idx] += 0.01 * received_values[i, 1]
+    # end
+    
+    return nothing
+end
+
+#------------------------------------------------------------------------------------
+#=
+     view_state_matrix(u::AbstractVector, npoin::Int, neqs::Int)
+
+Reshape the flat solution vector into a matrix view [npoin × neqs].
+
+# Arguments
+- `u`: Flat solution vector of length npoin*neqs
+- `npoin`: Number of spatial points
+- `neqs`: Number of equations per point
+
+# Returns
+- Matrix view of u with shape [npoin × neqs]
+=#
+#------------------------------------------------------------------------------------
+function view_state_matrix(u::AbstractVector, npoin::Int, neqs::Int)
+    @assert length(u) == npoin * neqs "Solution vector size mismatch"
+    return reshape(view(u, :), neqs, npoin)'
+end
+
+#------------------------------------------------------------------------------------
+#    interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh, 
+#                                       u_mat::AbstractMatrix, basis, neqs;
+#                                       use_bins::Bool=true, bins_per_dim::Int=64)
+#
+#Interpolate SEM solution to Alya grid coordinates.
+#
+## Arguments
+#- `alya_coords`: [n_points × ndime] coordinates where to interpolate
+#- `mesh`: Jexpresso SEM mesh
+#- `u_mat`: [npoin × neqs] solution matrix
+#- `basis`: SEM basis functions
+#- `neqs`: Number of equations
+#- `use_bins`: Whether to use spatial binning for faster element search
+#- `bins_per_dim`: Number of bins per dimension if use_bins=true
+#
+## Returns
+#- `u_interp`: [n_points × neqs] interpolated values
+#
+#------------------------------------------------------------------------------------
+function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh, 
+                                            u_mat::AbstractMatrix, basis, neqs;
+                                            use_bins::Bool=true, bins_per_dim::Int=64)
+    n_points = size(alya_coords, 1)
+    ndime = size(alya_coords, 2)
+    u_interp = zeros(Float64, n_points, neqs)
+    
+    # Build element bounding boxes for faster searching
+    get_conn = _make_conn_accessor(mesh)
+    nelem = _num_elems(mesh)
+    
+    elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem)
+    for e in 1:nelem
+        nodes = get_conn(e)
+        xs = mesh.x[nodes]
+        ys = mesh.y[nodes]
+        elem_bboxes[e] = (minimum(xs), maximum(xs), minimum(ys), maximum(ys))
+    end
+    
+    # Optional binning
+    bins = use_bins ? _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim) : nothing
+    
+    # Get 1D basis nodes and weights
+    ξ_nodes = basis.ξ  # Assuming basis has 1D reference nodes
+    wx = barycentric_weights(ξ_nodes)
+    wy = barycentric_weights(ξ_nodes)
+    
+    # Interpolate at each Alya point
+    for i in 1:n_points
+        px, py = alya_coords[i, 1], alya_coords[i, 2]
+        
+        # Find candidate elements
+        candidates = bins !== nothing ? _bin_candidates(bins, px, py, elem_bboxes) : (1:nelem)
+        
+        # Search for containing element
+        found = false
+        for e in candidates
+            nodes = get_conn(e)
+            
+            # Try to invert to reference coordinates (simplified 2D tensor-product)
+            # This is a placeholder - use proper Newton iteration for general quads
+            xs = mesh.x[nodes]
+            ys = mesh.y[nodes]
+            
+            # Check bounding box first
+            if px < minimum(xs) - 1e-10 || px > maximum(xs) + 1e-10 ||
+               py < minimum(ys) - 1e-10 || py > maximum(ys) + 1e-10
+                continue
+            end
+            
+            # For tensor-product elements, map to reference coordinates
+            # This is simplified - implement proper inverse mapping
+            n1d = length(ξ_nodes)
+            
+            # Assume structured tensor product grid
+            # Map (px, py) to (ξ, η) ∈ [-1, 1]²
+            # Simplified: use nearest node as approximation
+            min_dist = Inf
+            best_ξ_idx = 1
+            best_η_idx = 1
+            
+            for j in 1:n1d, i in 1:n1d
+                node_idx = nodes[(j-1)*n1d + i]
+                dist = sqrt((mesh.x[node_idx] - px)^2 + (mesh.y[node_idx] - py)^2)
+                if dist < min_dist
+                    min_dist = dist
+                    best_ξ_idx = i
+                    best_η_idx = j
+                end
+            end
+            
+            # Use barycentric interpolation at the reference point
+            # (This is simplified - proper implementation needs Newton iteration)
+            ξ = ξ_nodes[best_ξ_idx]
+            η = ξ_nodes[best_η_idx]
+            
+            Lξ, _ = bary_lagrange_and_deriv(ξ, ξ_nodes, wx)
+            Lη, _ = bary_lagrange_and_deriv(η, ξ_nodes, wy)
+            
+            # Tensor product basis
+            for q in 1:neqs
+                val = 0.0
+                for j in 1:n1d, i in 1:n1d
+                    node_idx = nodes[(j-1)*n1d + i]
+                    val += Lξ[i] * Lη[j] * u_mat[node_idx, q]
+                end
+                u_interp[i, q] = val
+            end
+            
+            found = true
+            break
+        end
+        
+        if !found
+            # Point not found in mesh - use nearest neighbor or leave as zero
+            @warn "Alya point ($px, $py) not found in SEM mesh, using nearest neighbor"
+            distances = sqrt.((mesh.x .- px).^2 .+ (mesh.y .- py).^2)
+            nearest = argmin(distances)
+            for q in 1:neqs
+                u_interp[i, q] = u_mat[nearest, q]
+            end
+        end
+    end
+    
+    return u_interp
+end
+
+#------------------------------------------------------------------------------------
+#    perform_coupling_exchange!(integrator, cpg::CouplingData, basis)
+#
+#Complete coupling exchange: interpolate Jexpresso solution to Alya grid,
+#exchange with Alya, and apply received data.
+#
+#This is the main function to be called from the coupling callback.
+#------------------------------------------------------------------------------------
+function perform_coupling_exchange!(integrator, cpg::CouplingData, basis)
+    # 1. Prepare solution view
+    npoin = integrator.p.mesh.npoin
+    neqs  = integrator.p.qp.neqs
+    u_mat = view_state_matrix(integrator.u, npoin, neqs)
+    
+    # 2. Interpolate to local Alya coordinates
+    u_interp_local = interpolate_solution_to_alya_coords(
+        cpg.alya_local_coords, integrator.p.mesh, u_mat, basis, neqs;
+        use_bins=true, bins_per_dim=64
+    )
+    
+    # 3. Pack interpolated data into send buffers
+    pack_interpolated_data!(cpg, u_interp_local, cpg.alya_owner_ranks)
+    
+    # 4. Exchange data with Alya
+    coupling_exchange_data!(cpg)
+    
+    # 5. Unpack and apply received data from Alya
+    unpack_received_data!(cpg, integrator.u, integrator.p.mesh,
+                         cpg.alya_local_coords, cpg.alya_local_ids)
+    
+    return nothing
 end

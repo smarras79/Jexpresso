@@ -22,7 +22,7 @@ program unitt_alya_with_another_code
 
   real,    dimension(1:3)            :: rem_min, rem_max
   integer, dimension(1:3)            :: rem_nx
-  
+
   integer(4),    contiguous, pointer :: recv_comm(:,:)
   integer(4),    contiguous, pointer :: recv_comm_snd(:,:)
   integer(4),    contiguous, pointer :: alya_to_world(:)
@@ -67,18 +67,18 @@ program unitt_alya_with_another_code
 #else
   call MPI_COMM_SPLIT(MPI_COMM_WORLD, 1_4, rank, PAR_COMM_FINAL, ierr)
 #endif
-  
+
   call MPI_Comm_size(PAR_COMM_FINAL,asize,ierr)
   call MPI_Comm_rank(PAR_COMM_FINAL,arank,ierr)
 
 #ifdef USEMPIF08
   call MPI_Gather(app_name, 128, MPI_CHARACTER, &
-                  app_dumm,  128, MPI_CHARACTER, &
-                  0, MPI_COMM_WORLD, ierr)
+       app_dumm,  128, MPI_CHARACTER, &
+       0, MPI_COMM_WORLD, ierr)
 #else
   call MPI_GATHER(app_name, 128, MPI_CHARACTER, &
-                  app_dumm,  128, MPI_CHARACTER, &
-                  0, MPI_COMM_WORLD, ierr)
+       app_dumm,  128, MPI_CHARACTER, &
+       0, MPI_COMM_WORLD, ierr)
 #endif
 
   if (rank == 0) then
@@ -113,7 +113,7 @@ program unitt_alya_with_another_code
   rem_max = [ 5000.0, 10000.0, 0.0]
   rem_nx  = [10,      10,        1]
   ndime = 2
-  
+
 #ifdef USEMPIF08
   call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 #else
@@ -160,7 +160,7 @@ program unitt_alya_with_another_code
 
   if (rank == 0) then
      write(*,'(A,I0,A,F6.3,A,F6.3)') 'Alya: will run ', nsteps, &
-        ' timesteps (dt=', dt, ', tend=', tend, ')'
+          ' timesteps (dt=', dt, ', tend=', tend, ')'
   end if
 
   !======================================================================
@@ -188,10 +188,19 @@ program unitt_alya_with_another_code
      call MPI_RECV(nvals, 1, MPI_INTEGER4, partner, TAG_BUFSIZE, MPI_COMM_WORLD, status, ierr)
 #endif
      write(*,'(A,I0)') 'Alya: Received buffer size from Jexpresso: nvals=', nvals
-     allocate(sendbuf(nvals), recvbuf(nvals))
-     sendbuf = 0.0d0
-     recvbuf = 0.0d0
   end if
+
+  ! Broadcast nvals to all Alya ranks
+#ifdef USEMPIF08
+  call MPI_Bcast(nvals, 1, MPI_INTEGER4, 0, PAR_COMM_FINAL, ierr)
+#else
+  call MPI_BCAST(nvals, 1, MPI_INTEGER4, 0, PAR_COMM_FINAL, ierr)
+#endif
+
+  ! ALL Alya ranks allocate buffers
+  allocate(sendbuf(nvals), recvbuf(nvals))
+  sendbuf = 0.0d0
+  recvbuf = 0.0d0
 
   !======================================================================
   ! BARRIER 2: Ensure handshake complete before time loop
@@ -253,17 +262,113 @@ program unitt_alya_with_another_code
         write(*,'(A,F6.3,A)') 'Alya: t=', t, ' exchanging solution data...'
 #ifdef USEMPIF08
         call MPI_Sendrecv(sendbuf, nvals, MPI_DOUBLE_PRECISION, partner, TAG_DATA, &
-                          recvbuf, nvals, MPI_DOUBLE_PRECISION, partner, TAG_DATA, &
-                          MPI_COMM_WORLD, status, ierr)
+             recvbuf, nvals, MPI_DOUBLE_PRECISION, partner, TAG_DATA, &
+             MPI_COMM_WORLD, status, ierr)
 #else
         call MPI_SENDRECV(sendbuf, nvals, MPI_DOUBLE_PRECISION, partner, TAG_DATA, &
-                          recvbuf, nvals, MPI_DOUBLE_PRECISION, partner, TAG_DATA, &
-                          MPI_COMM_WORLD, status, ierr)
+             recvbuf, nvals, MPI_DOUBLE_PRECISION, partner, TAG_DATA, &
+             MPI_COMM_WORLD, status, ierr)
 #endif
         write(*,'(A,F6.3,A,F12.5)') 'Alya: t=', t, &
-           ' coupling complete; recv[1]=', recvbuf(1)
+             ' coupling complete; recv[1]=', recvbuf(1)
      end if
+
+     !-------------------------------------------------------------------
+     ! STEP 3: BROADCAST RECEIVED DATA TO ALL ALYA RANKS
+     !-------------------------------------------------------------------
+     ! All Alya ranks need the data to write their portion of the grid
+     if (rank /= 0) then
+        ! Non-root ranks allocate buffer if not already done
+        if (.not. allocated(recvbuf)) then
+           allocate(recvbuf(nvals))
+        end if
+     end if
+
+     ! Broadcast the received data from Julia to all Alya ranks
+#ifdef USEMPIF08
+     call MPI_Bcast(recvbuf, nvals, MPI_DOUBLE_PRECISION, 0, PAR_COMM_FINAL, ierr)
+#else
+     call MPI_BCAST(recvbuf, nvals, MPI_DOUBLE_PRECISION, 0, PAR_COMM_FINAL, ierr)
+#endif
+
+     !-------------------------------------------------------------------
+     ! STEP 4: ALL RANKS WRITE THEIR PORTION OF THE VTU FILE
+     !-------------------------------------------------------------------
+     call write_alya_grid_vtu(rank, arank, asize, ndime, rem_min, rem_max, rem_nx, &
+          recvbuf, nvals, step, t)
+
+     ! Synchronize before rank 0 writes the master file
+#ifdef USEMPIF08
+     call MPI_Barrier(PAR_COMM_FINAL, ierr)
+#else
+     call MPI_BARRIER(PAR_COMM_FINAL, ierr)
+#endif
+
+     !-------------------------------------------------------------------
+     ! STEP 5: RANK 0 WRITES THE PVTU MASTER FILE
+     !-------------------------------------------------------------------
+     if (rank == 0) then
+        call write_pvtu_master(asize, step, t)
+     end if
+
   end do
+
+!!$  do step = 1, nsteps
+!!$     t = t0 + step*dt
+!!$
+!!$     !-------------------------------------------------------------------
+!!$     ! ALYA PHYSICS: Advance solution by one timestep
+!!$     !-------------------------------------------------------------------
+!!$     if (rank == 0) then
+!!$        dummy_field = dummy_field + 0.01d0 * dble(step)
+!!$     end if
+!!$
+!!$     !-------------------------------------------------------------------
+!!$     ! STEP 1: BROADCAST METADATA (ndime, rem_min, rem_max, rem_nx)
+!!$     !-------------------------------------------------------------------
+!!$     if (rank == 0) then
+!!$        write(*,'(A,F6.3,A)') 'Alya: t=', t, ' broadcasting metadata...'
+!!$     end if
+!!$
+!!$#ifdef USEMPIF08
+!!$     call MPI_Bcast(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+!!$#else
+!!$     call MPI_BCAST(ndime, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+!!$#endif
+!!$     do idime = 1,3
+!!$#ifdef USEMPIF08
+!!$        call MPI_Bcast(rem_min(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
+!!$        call MPI_Bcast(rem_max(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
+!!$        call MPI_Bcast(rem_nx(idime),  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+!!$#else
+!!$        call MPI_BCAST(rem_min(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
+!!$        call MPI_BCAST(rem_max(idime), 1, MPI_REAL,    0, MPI_COMM_WORLD, ierr)
+!!$        call MPI_BCAST(rem_nx(idime),  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+!!$#endif
+!!$     end do
+!!$
+!!$     !-------------------------------------------------------------------
+!!$     ! STEP 2: EXCHANGE SOLUTION DATA (only Alya root with Julia leader)
+!!$     !-------------------------------------------------------------------
+!!$     if (rank == 0) then
+!!$        sendbuf(1:nvals) = dummy_field
+!!$
+!!$        write(*,'(A,F6.3,A)') 'Alya: t=', t, ' exchanging solution data...'
+!!$#ifdef USEMPIF08
+!!$        call MPI_Sendrecv(sendbuf, nvals, MPI_DOUBLE_PRECISION, partner, TAG_DATA, &
+!!$                          recvbuf, nvals, MPI_DOUBLE_PRECISION, partner, TAG_DATA, &
+!!$                          MPI_COMM_WORLD, status, ierr)
+!!$#else
+!!$        call MPI_SENDRECV(sendbuf, nvals, MPI_DOUBLE_PRECISION, partner, TAG_DATA, &
+!!$                          recvbuf, nvals, MPI_DOUBLE_PRECISION, partner, TAG_DATA, &
+!!$                          MPI_COMM_WORLD, status, ierr)
+!!$#endif
+!!$        write(*,'(A,F6.3,A,F12.5)') 'Alya: t=', t, &
+!!$           ' coupling complete; recv[1]=', recvbuf(1)
+!!$     end if
+!!$  end do
+
+
 
   if (rank == 0) then
      write(*,'(A)') 'Alya: time loop complete'
@@ -281,7 +386,7 @@ contains
     if (nulpos > 0) then
        out = str(:nulpos-1)
     else
-      out = str
+       out = str
     end if
     out = trim(adjustl(out))
   end function cstr_trim

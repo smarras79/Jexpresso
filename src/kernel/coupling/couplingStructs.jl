@@ -56,6 +56,11 @@ mutable struct CouplingData
     # Buffers (allocated later)
     send_bufs::Union{Nothing, Vector{Vector{Float64}}}
     recv_bufs::Union{Nothing, Vector{Vector{Float64}}}
+
+    # Alya coordinate information
+    alya_local_coords::Union{Nothing, Matrix{Float64}}
+    alya_local_ids::Union{Nothing, Vector{Int32}}
+    alya_owner_ranks::Union{Nothing, Vector{Int32}}
     
     # Constructor
     function CouplingData(; npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
@@ -66,20 +71,113 @@ mutable struct CouplingData
 end
 
 function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank, OUTPUT_DIR, TFloat)
+    # Step 2: Receive Alya's domain information
+    je_receive_alya_data(world, lsize)
+
+    coupling_data = get_coupling_data()
+    local_comm = get_mpi_comm()
+    lrank = MPI.Comm_rank(local_comm)
+
+    # Setup SEM mesh
+    sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)
+    if (inputs[:backend] != CPU()) 
+        convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs) 
+    end
+
+    # >>> NEW: Extract local Alya coordinates using the binned+cropped function
+    alya_local_coords, alya_local_ids, alya_owner_ranks =
+        extract_local_alya_coordinates(sem.mesh, coupling_data, local_comm, world;
+                                       block_size=(64,64,64), use_cropping=true)
+
+    # Step 3: Build coupling communication pattern (counts)
+    npoin_recv, npoin_send, recv_from_ranks, send_to =
+        build_coupling_communication_arrays(sem.mesh, coupling_data, local_comm, world)
+
+    if lrank == 0
+        println("[setup_coupling] Coupling arrays built, preparing for Alltoall...")
+        flush(stdout)
+    end
+
+    # Step 4 & 5: Alltoall and subsequent steps...
+    send_counts_to_alya = Vector{Int32}(npoin_recv)
+    recv_counts_from_alya = zeros(Int32, MPI.Comm_size(world))
+    MPI.Barrier(world)
+    MPI.Alltoall!(send_counts_to_alya, recv_counts_from_alya, 1, world)
+
+    # Update npoin_send and send_to_ranks
+    npoin_send = recv_counts_from_alya
+    send_to_ranks = Int32[]
+    for i in 1:length(npoin_send)
+        if npoin_send[i] > 0
+            push!(send_to_ranks, i - 1)
+        end
+    end
+
+    # (optional) Verify counts against extracted owner ranks
+    # verify_extracted_vs_counts!(alya_owner_ranks, npoin_recv)
+
+    # Prints, ownership map, stats...
+    print_coupling_pattern(lrank, npoin_recv, npoin_send, recv_from_ranks, send_to_ranks, coupling_data, world)
+
+    if lrank == 0
+        println("[setup_coupling] Building Alya point ownership map...")
+        flush(stdout)
+    end
+    ownership = build_alya_point_ownership_map(sem.mesh, coupling_data, local_comm, world)
+    print_alya_point_ownership(ownership, coupling_data; max_points_to_print=20, only_owned=true)
+    verify_alya_point_distribution(ownership, coupling_data)
+
+    # Initialize solution arrays
+    qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+
+    # Store coupling information
+    coupling = CouplingData(
+        npoin_recv = npoin_recv,
+        npoin_send = npoin_send,
+        recv_from_ranks = recv_from_ranks,
+        send_to_ranks = send_to_ranks,
+        comm_world = world,
+        lrank = lrank,
+        neqs = qp.neqs
+    )
+
+    # Persist Alya coordinate data in the coupling object for interpolation
+    coupling.alya_local_coords = alya_local_coords
+    coupling.alya_local_ids    = alya_local_ids
+    coupling.alya_owner_ranks  = alya_owner_ranks
+
+    # Allocate coupling buffers
+    coupling.send_bufs, coupling.recv_bufs =
+        allocate_coupling_buffers(npoin_recv, npoin_send, coupling.neqs)
+
+    if lrank == 0
+        println("[setup_coupling] Coupling setup complete!")
+        flush(stdout)
+    end
+
+    return coupling, sem, partitioned_model, qp
+end
+
+function setup_coupling_and_mesh_old(world, lsize, inputs, nranks, distribute, rank, OUTPUT_DIR, TFloat)
     
     # Step 2: Receive Alya's domain information
     je_receive_alya_data(world, lsize)
     
     coupling_data = get_coupling_data()
-    local_comm = get_mpi_comm()
-    lrank = MPI.Comm_rank(local_comm)
+    local_comm    = get_mpi_comm()
+    lrank         = MPI.Comm_rank(local_comm)
     
     # Setup SEM mesh
     sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)
     if (inputs[:backend] != CPU()) 
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs) 
     end
-    
+
+    # Extract local Alya coordinates using the binned+cropped function
+    alya_local_coords, alya_local_ids, alya_owner_ranks =
+        extract_local_alya_coordinates(sem.mesh, coupling_data, local_comm, world;
+                                       block_size=(64,64,64), use_cropping=true)
+
     # Step 3: Build coupling communication pattern
     npoin_recv, npoin_send, recv_from_ranks, send_to = 
         build_coupling_communication_arrays(sem.mesh, coupling_data, 
@@ -391,6 +489,452 @@ function build_coupling_communication_arrays(mesh, coupling_data, local_comm, wo
     send_to_ranks = Int32[]
     
     return npoin_recv, npoin_send, recv_from_ranks, send_to_ranks
+end
+
+# ---- Connectivity accessor that tolerates Matrix or Vector{Vector} --------------
+# Returns a function get_conn(e)::Vector{Int}
+function _make_conn_accessor(mesh)
+    conn = getfield(mesh, :conn)
+    if conn isa AbstractMatrix{<:Integer}
+        # columns are elements
+        return e -> vec(@view conn[:, e])
+    elseif conn isa AbstractVector{<:AbstractVector{<:Integer}}
+        return e -> conn[e]
+    else
+        error("mesh.conn must be Matrix{Int} (nperel×nelem) or Vector{Vector{Int}}")
+    end
+end
+
+# Number of elements in mesh.conn (matrix columns or vector length)
+function _num_elems(mesh)
+    conn = getfield(mesh, :conn)
+    if conn isa AbstractMatrix
+        return size(conn, 2)
+    elseif conn isa AbstractVector
+        return length(conn)
+    else
+        error("mesh.conn has unexpected type")
+    end
+end
+
+# ---- Barycentric weights for 1D Lagrange nodes ----------------------------------
+# w_j = 1 / ∏_{k≠j} (x_j - x_k)
+function barycentric_weights(nodes::AbstractVector{<:Real})
+    n = length(nodes)
+    w = ones(Float64, n)
+    for j in 1:n
+        xj = nodes[j]
+        denom = 1.0
+        @inbounds for k in 1:n
+            if k != j
+                denom *= (xj - nodes[k])
+            end
+        end
+        w[j] = 1.0 / denom
+    end
+    return w
+end
+
+# ---- 1D barycentric Lagrange basis and its derivative at x ----------------------
+# Uses the Berrut–Trefethen formulation.
+# If x matches a node (within `tol`), returns the appropriate one-hot basis and
+# analytical derivatives from barycentric formula (stable handling for our use).
+function bary_lagrange_and_deriv(x::Float64,
+                                 nodes::AbstractVector{<:Real},
+                                 w::AbstractVector{<:Real};
+                                 tol=1e-12)
+    n = length(nodes)
+    L  = zeros(Float64, n)
+    dL = zeros(Float64, n)
+
+    # Check exact node hit
+    for j in 1:n
+        dx = x - nodes[j]
+        if abs(dx) <= tol
+            L[j] = 1.0
+            # Derivative vector at node can be computed via:
+            # l'_j(x_j) = -Σ_{k≠j} (1/(x_j - x_k))   and
+            # l'_k(x_j) = w_k / (w_j * (x_j - x_k)) for k≠j
+            s = 0.0
+            @inbounds for k in 1:n
+                if k != j
+                    s += 1.0 / (nodes[j] - nodes[k])
+                end
+            end
+            dL[j] = -s
+            @inbounds for k in 1:n
+                if k != j
+                    dL[k] = w[k] / (w[j] * (nodes[j] - nodes[k]))
+                end
+            end
+            return L, dL
+        end
+    end
+
+    # General case
+    S1 = 0.0           # Σ w_k / (x - x_k)
+    S2 = 0.0           # Σ w_k / (x - x_k)^2
+    α  = zeros(Float64, n) # α_j = w_j / (x - x_j)
+    @inbounds for j in 1:n
+        dx = x - nodes[j]
+        aj = w[j] / dx
+        α[j] = aj
+        S1 += aj
+        S2 += aj / dx
+    end
+
+    invS1 = 1.0 / S1
+    @inbounds for j in 1:n
+        L[j] = α[j] * invS1
+    end
+
+    # Derivative: L'_j = (α'_j * S1 - α_j * S1') / S1^2
+    # α'_j = -w_j/(x - x_j)^2 = -(α_j)/(x - x_j)
+    # S1'  = -Σ w_k/(x - x_k)^2 = -Σ α_k/(x - x_k) = -S2
+    invS1sq = invS1 * invS1
+    @inbounds for j in 1:n
+        dx   = x - nodes[j]
+        aj   = α[j]
+        ajp  = -aj / dx
+        dL[j] = (ajp * S1 - aj * (-S2)) * invS1sq
+    end
+
+    return L, dL
+end
+
+# ---- Uniform binning (axis-aligned) over element bounding boxes -----------------
+# Returns a struct-like Dict with fields for bin search.
+function _build_elem_bins(elem_bboxes::Vector{NTuple{4,Float64}}; bins_per_dim::Int=64)
+    ne = length(elem_bboxes)
+    xmin = +Inf; xmax = -Inf; ymin = +Inf; ymax = -Inf
+    for (x0,x1,y0,y1) in elem_bboxes
+        xmin = min(xmin, x0); xmax = max(xmax, x1)
+        ymin = min(ymin, y0); ymax = max(ymax, y1)
+    end
+    nx = max(1, bins_per_dim)
+    ny = max(1, bins_per_dim)
+    dx = (xmax > xmin) ? (xmax - xmin) / nx : 1.0
+    dy = (ymax > ymin) ? (ymax - ymin) / ny : 1.0
+
+    bins = [Int[] for _ in 1:(nx*ny)]
+    # Insert each element bbox into all bins it overlaps
+    for e in 1:ne
+        (x0,x1,y0,y1) = elem_bboxes[e]
+        ix0 = clamp(Int(floor((x0 - xmin)/dx)), 0, nx-1)
+        ix1 = clamp(Int(floor((x1 - xmin)/dx)), 0, nx-1)
+        iy0 = clamp(Int(floor((y0 - ymin)/dy)), 0, ny-1)
+        iy1 = clamp(Int(floor((y1 - ymin)/dy)), 0, ny-1)
+        for iy in iy0:iy1, ix in ix0:ix1
+            push!(bins[iy*nx + ix + 1], e)
+        end
+    end
+    return Dict(
+        :xmin => xmin, :xmax => xmax, :ymin => ymin, :ymax => ymax,
+        :nx => nx, :ny => ny, :dx => dx, :dy => dy,
+        :bins => bins
+    )
+end
+
+# Collect candidate elements for a point using bins; if empty, fall back to all.
+function _bin_candidates(bins, x, y, elem_bboxes)
+    nx = bins[:nx]; ny = bins[:ny]
+    dx = bins[:dx]; dy = bins[:dy]
+    xmin = bins[:xmin]; ymin = bins[:ymin]
+    ix = clamp(Int(floor((x - xmin)/dx)), 0, nx-1)
+    iy = clamp(Int(floor((y - ymin)/dy)), 0, ny-1)
+    cand = bins[:bins][iy*nx + ix + 1]
+    if !isempty(cand)
+        return cand
+    else
+        return 1:length(elem_bboxes)
+    end
+end
+
+#------------------------------------------------------------------------------
+#=
+    extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_comm;
+                                   block_size=(64,64,64), use_cropping=true)
+
+Extract the subset of Alya grid coordinates that belong to this Jexpresso rank,
+with optional lightweight spatial binning and exact index cropping.
+
+# Arguments
+- `mesh`: Jexpresso mesh structure (exposes `x`, `y`, and `z` if `ndime == 3`)
+- `coupling_data`: Dict with Alya grid metadata:
+    - `:ndime::Int`
+    - `:rem_min::Vector{Float32}` length 3
+    - `:rem_max::Vector{Float32}` length 3
+    - `:rem_nx::Vector{Int32}`    length 3
+    - `:alya2world::Vector{Int32}` (maps Alya rank → 0-based world rank)
+- `local_comm`: Jexpresso local communicator
+- `world_comm`: MPI.COMM_WORLD
+
+# Keyword arguments
+- `block_size`: tuple of bin sizes in Alya *index* space (default `(64,64,64)`).
+  For 2D cases, the z-size is ignored.
+- `use_cropping`: if `true`, compute exact index ranges that overlap local bounds
+  and only scan those (highly recommended).
+
+# Returns
+- `alya_local_coords::Matrix{Float64}` [n_local_points × ndime]
+- `alya_local_ids::Vector{Int32}`      [n_local_points]  (1-based Alya IDs)
+- `alya_owner_ranks::Vector{Int32}`    [n_local_points]  (0-based Alya world ranks)
+=#
+#------------------------------------------------------------------------------
+function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_comm;
+                                        block_size::NTuple{3,Int}=(64,64,64),
+                                        use_cropping::Bool=true)
+
+    # --- Unpack metadata ---
+    ndime      = coupling_data[:ndime]
+    rem_min_f  = coupling_data[:rem_min]   # Float32[3]
+    rem_max_f  = coupling_data[:rem_max]   # Float32[3]
+    rem_nx_i   = coupling_data[:rem_nx]    # Int32[3]
+    alya2world = coupling_data[:alya2world]
+    @assert ndime == 2 || ndime == 3 "Only ndime==2 or ndime==3 is supported"
+    @assert length(alya2world) > 0 "alya2world must be non-empty"
+
+    # Promote to Float64 for math
+    rem_min = Float64.(rem_min_f)
+    rem_max = Float64.(rem_max_f)
+    rem_nx  = Int.(rem_nx_i)
+
+    # Spacings
+    rem_dx = zeros(Float64, 3)
+    for d in 1:ndime
+        rem_dx[d] = rem_nx[d] > 1 ? (rem_max[d] - rem_min[d]) / (rem_nx[d] - 1) : 0.0
+    end
+
+    # Total points, Alya rank distribution
+    nmax = rem_nx[1] * rem_nx[2] * rem_nx[3]
+    nranks_alya = length(alya2world)
+    r     = mod(nmax, nranks_alya)
+    npoin = div(nmax, nranks_alya)
+
+    # Local Jexpresso bounds
+    xmin_local = minimum(mesh.x); xmax_local = maximum(mesh.x)
+    ymin_local = minimum(mesh.y); ymax_local = maximum(mesh.y)
+    zmin_local = ndime == 3 ? minimum(mesh.z) : 0.0
+    zmax_local = ndime == 3 ? maximum(mesh.z) : 0.0
+    tol = 1e-10
+
+    lrank = MPI.Comm_rank(local_comm)
+    wrank = MPI.Comm_rank(world_comm)
+
+    # --- Helpers ---
+    # Map structured indices (0-based) to physical coords
+    @inline function idx_to_xyz(i1::Int, i2::Int, i3::Int)
+        x = rem_min[1] + i1 * rem_dx[1]
+        y = rem_min[2] + i2 * rem_dx[2]
+        z = rem_min[3] + i3 * rem_dx[3]
+        return x, y, z
+    end
+
+    # Map structured indices (0-based) to global 1-based Alya ID
+    @inline function idx_to_ipoin(i1::Int, i2::Int, i3::Int)
+        # i0 = i1 + nx1*(i2 + nx2*i3)
+        i0 = i1 + rem_nx[1] * (i2 + rem_nx[2] * i3)
+        return i0 + 1
+    end
+
+    # Check if a single point is inside local bounds
+    @inline function inside_local(x::Float64, y::Float64, z::Float64)
+        if ndime == 2
+            return (x >= xmin_local - tol && x <= xmax_local + tol &&
+                    y >= ymin_local - tol && y <= ymax_local + tol)
+        else
+            return (x >= xmin_local - tol && x <= xmax_local + tol &&
+                    y >= ymin_local - tol && y <= ymax_local + tol &&
+                    z >= zmin_local - tol && z <= zmax_local + tol)
+        end
+    end
+
+    # Compute Alya rank (1-based) that owns ipoin (1-based)
+    @inline function owner_alya_rank(ipoin::Int)
+        if ipoin <= r * (npoin + 1)
+            return div(ipoin - 1, npoin + 1) + 1
+        else
+            return r + div(ipoin - r * (npoin + 1) - 1, npoin) + 1
+        end
+    end
+
+    # --- Exact cropping in index space (optional but very effective) ---
+    # Find i_lo/i_hi in each dim that may intersect local bounds.
+    @inline function crop_1d(minA, maxA, dx, nx, minB, maxB)
+        if nx <= 1
+            return 0, 0
+        else
+            # Map physical → index with tolerance, clamp to [0, nx-1]
+            ilo = Int(clamp(floor((minB - minA) / dx + 1e-12), 0, nx - 1))
+            ihi = Int(clamp( ceil((maxB - minA) / dx - 1e-12), 0, nx - 1))
+            # Expand by 1 index to be safe with tolerance if needed
+            ilo = max(0, ilo - 1)
+            ihi = min(nx - 1, ihi + 1)
+            return ilo, ihi
+        end
+    end
+
+    # Default full ranges
+    i1_lo, i1_hi = 0, rem_nx[1] - 1
+    i2_lo, i2_hi = 0, rem_nx[2] - 1
+    i3_lo, i3_hi = 0, rem_nx[3] - 1
+
+    if use_cropping
+        if rem_nx[1] > 1
+            i1_lo, i1_hi = crop_1d(rem_min[1], rem_max[1], rem_dx[1], rem_nx[1], xmin_local - tol, xmax_local + tol)
+        end
+        if rem_nx[2] > 1
+            i2_lo, i2_hi = crop_1d(rem_min[2], rem_max[2], rem_dx[2], rem_nx[2], ymin_local - tol, ymax_local + tol)
+        end
+        if ndime == 3 && rem_nx[3] > 1
+            i3_lo, i3_hi = crop_1d(rem_min[3], rem_max[3], rem_dx[3], rem_nx[3], zmin_local - tol, zmax_local + tol)
+        else
+            i3_lo = 0; i3_hi = 0
+        end
+        # Early-out if no overlap
+        if i1_lo > i1_hi || i2_lo > i2_hi || i3_lo > i3_hi
+            if lrank == 0
+                println("[extract_local_alya_coordinates] (lrank=$lrank, wrank=$wrank) no Alya points overlap local domain.")
+                flush(stdout)
+            end
+            return zeros(Float64, 0, ndime), Int32[], Int32[]
+        end
+    else
+        if ndime == 2
+            i3_lo = 0; i3_hi = 0
+        end
+    end
+
+    # --- Binning setup ---
+    Bx, By, Bz = block_size
+    Bx = max(1, Bx); By = max(1, By); Bz = max(1, (ndime == 3 ? Bz : 1))
+
+    # Pre-size hints (upper bound for this rank)
+    est_count = (i1_hi - i1_lo + 1) * (i2_hi - i2_lo + 1) * (i3_hi - i3_lo + 1)
+    # For 2D, i3 range is 1, so it's fine.
+
+    X = Float64[]; sizehint!(X, est_count)
+    Y = Float64[]; sizehint!(Y, est_count)
+    Z = ndime == 3 ? (sizehint!(Float64[], est_count)) : Float64[]
+    ids    = Int32[]; sizehint!(ids, est_count)
+    owners = Int32[]; sizehint!(owners, est_count)
+
+    # --- Iterate over bins with AABB pruning ---
+    # Utility to compute bin bbox in physical space
+    @inline function bin_bbox(i1s::Int, i1e::Int, i2s::Int, i2e::Int, i3s::Int, i3e::Int)
+        # Coordinates are monotonic (dx >= 0 assumed)
+        x_min = rem_min[1] + i1s * rem_dx[1]
+        x_max = rem_min[1] + i1e * rem_dx[1]
+        y_min = rem_min[2] + i2s * rem_dx[2]
+        y_max = rem_min[2] + i2e * rem_dx[2]
+        z_min = rem_min[3] + i3s * rem_dx[3]
+        z_max = rem_min[3] + i3e * rem_dx[3]
+        return x_min, x_max, y_min, y_max, z_min, z_max
+    end
+
+    @inline function bbox_outside_local(xmin::Float64, xmax::Float64,
+                                        ymin::Float64, ymax::Float64,
+                                        zmin::Float64, zmax::Float64)
+        if ndime == 2
+            return (xmax < xmin_local - tol || xmin > xmax_local + tol ||
+                    ymax < ymin_local - tol || ymin > ymax_local + tol)
+        else
+            return (xmax < xmin_local - tol || xmin > xmax_local + tol ||
+                    ymax < ymin_local - tol || ymin > ymax_local + tol ||
+                    zmax < zmin_local - tol || zmin > zmax_local + tol)
+        end
+    end
+
+    @inline function bbox_inside_local(xmin::Float64, xmax::Float64,
+                                       ymin::Float64, ymax::Float64,
+                                       zmin::Float64, zmax::Float64)
+        if ndime == 2
+            return (xmin >= xmin_local - tol && xmax <= xmax_local + tol &&
+                    ymin >= ymin_local - tol && ymax <= ymax_local + tol)
+        else
+            return (xmin >= xmin_local - tol && xmax <= xmax_local + tol &&
+                    ymin >= ymin_local - tol && ymax <= ymax_local + tol &&
+                    zmin >= zmin_local - tol && zmax <= zmax_local + tol)
+        end
+    end
+
+    # Iterate over cropped index ranges in bins
+    for i3s in i3_lo: Bz : i3_hi
+        i3e = min(i3s + Bz - 1, i3_hi)
+        for i2s in i2_lo: By : i2_hi
+            i2e = min(i2s + By - 1, i2_hi)
+            for i1s in i1_lo: Bx : i1_hi
+                i1e = min(i1s + Bx - 1, i1_hi)
+
+                # Bin bbox in physical space
+                bxmin, bxmax, bymin, bymax, bzmin, bzmax = bin_bbox(i1s, i1e, i2s, i2e, i3s, i3e)
+
+                # Reject bin quickly if entirely outside
+                if bbox_outside_local(bxmin, bxmax, bymin, bymax, bzmin, bzmax)
+                    continue
+                end
+
+                # If bin is entirely inside local domain, add all bin points fast
+                if bbox_inside_local(bxmin, bxmax, bymin, bymax, bzmin, bzmax)
+                    @inbounds for i3 in i3s:i3e, i2 in i2s:i2e, i1 in i1s:i1e
+                        x, y, z = idx_to_xyz(i1, i2, i3)
+                        ipoin = idx_to_ipoin(i1, i2, i3)
+                        alya_rank = owner_alya_rank(ipoin)
+                        alya_world_rank = alya2world[alya_rank]  # 0-based
+
+                        push!(X, x); push!(Y, y)
+                        if ndime == 3
+                            push!(Z, z)
+                        end
+                        push!(ids,    Int32(ipoin))
+                        push!(owners, Int32(alya_world_rank))
+                    end
+                else
+                    # Partial overlap: check points individually
+                    @inbounds for i3 in i3s:i3e, i2 in i2s:i2e, i1 in i1s:i1e
+                        x, y, z = idx_to_xyz(i1, i2, i3)
+                        if inside_local(x, y, z)
+                            ipoin = idx_to_ipoin(i1, i2, i3)
+                            alya_rank = owner_alya_rank(ipoin)
+                            alya_world_rank = alya2world[alya_rank]  # 0-based
+
+                            push!(X, x); push!(Y, y)
+                            if ndime == 3
+                                push!(Z, z)
+                            end
+                            push!(ids,    Int32(ipoin))
+                            push!(owners, Int32(alya_world_rank))
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    # Assemble matrix
+    n_local = length(ids)
+    alya_local_coords = zeros(Float64, n_local, ndime)
+    if ndime == 2
+        @inbounds for i in 1:n_local
+            alya_local_coords[i,1] = X[i]
+            alya_local_coords[i,2] = Y[i]
+        end
+    else
+        @inbounds for i in 1:n_local
+            alya_local_coords[i,1] = X[i]
+            alya_local_coords[i,2] = Y[i]
+            alya_local_coords[i,3] = Z[i]
+        end
+    end
+
+    if lrank == 0 || n_local > 0
+        println("[extract_local_alya_coordinates] (lrank=$lrank, wrank=$wrank) ",
+                "collected $n_local Alya points using cropping=$(use_cropping) ",
+                "and block_size=$(block_size).")
+        flush(stdout)
+    end
+
+    return alya_local_coords, ids, owners
 end
 
 function allocate_coupling_buffers(npoin_recv, npoin_send, neqs)

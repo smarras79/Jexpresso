@@ -8,7 +8,7 @@ function user_inputs()
         :Δt                   => 0.25,
         :tinit                => 0.0,
         :tend                 => 2.0,
-        :diagnostics_at_times => (0:1:1),
+        :diagnostics_at_times => (0:0.25:2),
         :restart_time         => 500,
         :lrestart             => false,
         #:CL                   => NCL(),

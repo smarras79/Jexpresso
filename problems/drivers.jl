@@ -4,14 +4,37 @@ function driver(nranks,
                 OUTPUT_DIR::String,
                 TFloat,
                 world)
+
+    if rank == 0 @info " Params_setup .................................." end
+
+    tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
+    if (inputs[:lamr] == true)
+        amr_freq = inputs[:amr_freq]
+        Δt_amr   = amr_freq * inputs[:Δt]
+        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
+    end
     
     # Step 1: Perform handshake
+    coupling = nothing
     lsize = nranks # Local n. of Jexpresso ranks
     is_coupled = je_perform_coupling_handshake(world, lsize)
     if is_coupled
-        
+
         # 2. Complete coupling setup
-        coupling, sem, partitioned_model, qp = setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank, OUTPUT_DIR, TFloat)
+        coupling, sem, partitioned_model, qp = setup_coupling_and_mesh(
+            world, lsize, inputs, nranks, distribute, rank, OUTPUT_DIR, TFloat
+        )
+        
+        # Now call params_setup with correct order: sem first, then coupling
+        params, u = params_setup(
+            sem, 
+            coupling,  # Pass coupling as second argument
+            qp, 
+            inputs, 
+            OUTPUT_DIR, 
+            TFloat, 
+            tspan
+        )
         
     else
         #---------------------------------------------------------
@@ -23,29 +46,38 @@ function driver(nranks,
         # Initialize.jl is contained in the user's problem case directory
         #---------------------------------------------------------
         qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
+
+        params, u = params_setup(
+            sem,
+            nothing,  # No coupling in standalone mode
+            qp,
+            inputs,
+            OUTPUT_DIR,
+            TFloat,
+            tspan
+        )
+        
     end
-    
     
     #---------------------------------------------------------
     # Parameters setup
     #---------------------------------------------------------   
-    if rank == 0 @info " Params_setup .................................." end
-    if (inputs[:lamr] == true)
-        amr_freq = inputs[:amr_freq]
-        Δt_amr   = amr_freq * inputs[:Δt]
-        tspan    = [TFloat(inputs[:tinit]), TFloat(inputs[:tinit] + Δt_amr)]
-    else
-        tspan = [TFloat(inputs[:tinit]), TFloat(inputs[:tend])]
-    end
-    
-    params, u =  params_setup(sem, qp, inputs, OUTPUT_DIR, TFloat, tspan)    
+  
     if rank == 0 @info " Params_setup .................................. END" end
     
     if !inputs[:llinsolve]
         #---------------------------------------------------------
         # Evolutionary problems that lead to Mdq/dt = RHS
         #---------------------------------------------------------
-        @time solution = time_loop!(inputs, params, u, partitioned_model, is_coupled)
+        
+        @time solution = time_loop!(
+            inputs,
+            params,
+            u,
+            partitioned_model,
+            is_coupled,
+            is_coupled ? coupling : nothing  # Pass coupling object
+        )
         
     else
         #---------------------------------------------------------

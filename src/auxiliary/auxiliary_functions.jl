@@ -233,3 +233,17 @@ function norm2(X::SHermitianCompact{3, FT, 6}) where {FT}
         2 * abs2(X[3, 2]) +
         abs2(X[3, 3])
 end
+
+
+
+# Make a 2D view of integrator.u as (npoin × neqs) without copying when possible
+@inline function view_state_matrix(u_state, npoin::Int, neqs::Int)
+    if u_state isa AbstractMatrix
+        # Already [npoin × neqs]
+        @assert size(u_state,1) == npoin && size(u_state,2) == neqs
+        return u_state
+    else
+        @assert length(u_state) == npoin * neqs
+        return reshape(u_state, npoin, neqs)
+    end
+end
