@@ -112,7 +112,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
             push!(send_to_ranks, i - 1)
         end
     end
-
+    
     # Comprehensive verification (optional)
     lverify = true
     if lverify

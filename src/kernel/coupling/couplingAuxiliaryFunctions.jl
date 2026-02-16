@@ -544,8 +544,220 @@ end
 #
 #------------------------------------------------------------------------------------
 function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh, 
-                                            u_mat::AbstractMatrix, basis, neqs;
-                                            use_bins::Bool=true, bins_per_dim::Int=64)
+                                             u_mat::AbstractMatrix, basis, ξ, neqs, inputs;
+                                             use_bins::Bool=true, bins_per_dim::Int=64)
+    n_points = size(alya_coords, 1)
+    u_interp = zeros(Float64, n_points, neqs)
+    
+    # Extract mesh info
+    get_conn = _make_conn_accessor(mesh)
+    nelem = _num_elems(mesh)
+    ngl = mesh.ngl
+    
+    # Get LGL nodes from basis (where solution is defined)
+    ξ_nodes = Vector{Float64}(ξ)
+    ω = barycentric_weights(ξ_nodes)
+    
+    # Build element bounding boxes
+    elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem)
+    @inbounds for e in 1:nelem
+        nodes = get_conn(e)
+        xs = mesh.x[nodes]
+        ys = mesh.y[nodes]
+        elem_bboxes[e] = (minimum(xs), maximum(xs), minimum(ys), maximum(ys))
+    end
+    
+    bins = use_bins ? _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim) : nothing
+    
+    # Interpolate each point
+    @inbounds for ipt in 1:n_points
+        px, py = alya_coords[ipt, 1], alya_coords[ipt, 2]
+        
+        candidates = bins !== nothing ? _bin_candidates(bins, px, py, elem_bboxes) : (1:nelem)
+        
+        found = false
+        for e in candidates
+            nodes = get_conn(e)
+            x_elem = mesh.x[nodes]
+            y_elem = mesh.y[nodes]
+            
+            # Quick bbox check
+            if px < minimum(x_elem) - 1e-10 || px > maximum(x_elem) + 1e-10 ||
+               py < minimum(y_elem) - 1e-10 || py > maximum(y_elem) + 1e-10
+                continue
+            end
+            
+            # Map to reference coordinates
+            ξ_ref, η_ref, converged = physical_to_reference(
+                px, py, x_elem, y_elem, ξ_nodes, ω, ngl
+            )
+            
+            if !converged || abs(ξ_ref) > 1.0 + 1e-10 || abs(η_ref) > 1.0 + 1e-10
+                continue
+            end
+            
+            # Evaluate basis at (ξ_ref, η_ref)
+            ψξ = evaluate_lagrange_1d(ξ_ref, ξ_nodes, ω)
+            ψη = evaluate_lagrange_1d(η_ref, ξ_nodes, ω)
+            
+            # Interpolate solution
+            for q in 1:neqs
+                val = 0.0
+                idx = 1
+                for j in 1:ngl, i in 1:ngl
+                    val += ψξ[i] * ψη[j] * u_mat[nodes[idx], q]
+                    idx += 1
+                end
+                u_interp[ipt, q] = val
+            end
+            
+            found = true
+            break
+        end
+        
+        if !found
+            # Fallback: nearest neighbor
+            distances = sqrt.((mesh.x .- px).^2 .+ (mesh.y .- py).^2)
+            nearest = argmin(distances)
+            for q in 1:neqs
+                u_interp[ipt, q] = u_mat[nearest, q]
+            end
+        end
+    end
+    
+    return u_interp
+end
+
+# Evaluate 1D Lagrange basis at arbitrary point using barycentric formula
+function evaluate_lagrange_1d(ξ::Float64, ξ_nodes::Vector{Float64}, ω::Vector{Float64})
+    n = length(ξ_nodes)
+    ψ = zeros(Float64, n)
+    
+    # Check for exact node match
+    @inbounds for i in 1:n
+        if abs(ξ - ξ_nodes[i]) < 1e-14
+            ψ[i] = 1.0
+            return ψ
+        end
+    end
+    
+    # Barycentric formula
+    sum_val = 0.0
+    @inbounds for i in 1:n
+        ψ[i] = ω[i] / (ξ - ξ_nodes[i])
+        sum_val += ψ[i]
+    end
+    
+    inv_sum = 1.0 / sum_val
+    @inbounds for i in 1:n
+        ψ[i] *= inv_sum
+    end
+    
+    return ψ
+end
+
+# Map physical to reference coordinates using Newton iteration
+function physical_to_reference(px::Float64, py::Float64,
+                               x_elem::AbstractVector, y_elem::AbstractVector,
+                               ξ_nodes::Vector{Float64}, ω::Vector{Float64}, ngl::Int)
+    max_iter = 20
+    tol = 1e-12
+    ξ, η = 0.0, 0.0
+    
+    for iter in 1:max_iter
+        # Evaluate basis and derivatives
+        ψξ = evaluate_lagrange_1d(ξ, ξ_nodes, ω)
+        ψη = evaluate_lagrange_1d(η, ξ_nodes, ω)
+        dψξ = evaluate_lagrange_1d_derivative(ξ, ξ_nodes, ω)
+        dψη = evaluate_lagrange_1d_derivative(η, ξ_nodes, ω)
+        
+        # Compute current position and Jacobian
+        x_curr = y_curr = dxdξ = dxdη = dydξ = dydη = 0.0
+        
+        idx = 1
+        @inbounds for j in 1:ngl, i in 1:ngl
+            ψ_val = ψξ[i] * ψη[j]
+            dξ_val = dψξ[i] * ψη[j]
+            dη_val = ψξ[i] * dψη[j]
+            
+            x_curr += ψ_val * x_elem[idx]
+            y_curr += ψ_val * y_elem[idx]
+            dxdξ += dξ_val * x_elem[idx]
+            dxdη += dη_val * x_elem[idx]
+            dydξ += dξ_val * y_elem[idx]
+            dydη += dη_val * y_elem[idx]
+            idx += 1
+        end
+        
+        # Residual
+        rx = px - x_curr
+        ry = py - y_curr
+        
+        if sqrt(rx*rx + ry*ry) < tol
+            return ξ, η, true
+        end
+        
+        # Newton update
+        det_J = dxdξ * dydη - dxdη * dydξ
+        abs(det_J) < 1e-15 && return ξ, η, false
+        
+        inv_det = 1.0 / det_J
+        ξ += inv_det * ( dydη * rx - dxdη * ry)
+        η += inv_det * (-dydξ * rx + dxdξ * ry)
+        
+        (abs(ξ) > 10.0 || abs(η) > 10.0) && return ξ, η, false
+    end
+    
+    return ξ, η, false
+end
+
+# Evaluate 1D Lagrange derivative using barycentric formula
+function evaluate_lagrange_1d_derivative(ξ::Float64, ξ_nodes::Vector{Float64}, 
+                                        ω::Vector{Float64})
+    n = length(ξ_nodes)
+    dψ = zeros(Float64, n)
+    
+    # Check for exact node match
+    @inbounds for j in 1:n
+        if abs(ξ - ξ_nodes[j]) < 1e-14
+            # Derivative at node j
+            for k in 1:n
+                k == j && continue
+                dψ[k] = ω[k] / (ω[j] * (ξ_nodes[j] - ξ_nodes[k]))
+            end
+            for k in 1:n
+                k == j && continue
+                dψ[j] -= 1.0 / (ξ_nodes[j] - ξ_nodes[k])
+            end
+            return dψ
+        end
+    end
+    
+    # General case
+    α = zeros(Float64, n)
+    sum_α = 0.0
+    @inbounds for i in 1:n
+        α[i] = ω[i] / (ξ - ξ_nodes[i])
+        sum_α += α[i]
+    end
+    
+    sum_dα = 0.0
+    @inbounds for i in 1:n
+        sum_dα -= α[i] / (ξ - ξ_nodes[i])
+    end
+    
+    inv_sum2 = 1.0 / (sum_α * sum_α)
+    @inbounds for i in 1:n
+        dα_i = -α[i] / (ξ - ξ_nodes[i])
+        dψ[i] = (dα_i * sum_α - α[i] * sum_dα) * inv_sum2
+    end
+    
+    return dψ
+end
+
+function interpolate_solution_to_alya_coords_old(alya_coords::Matrix{Float64}, mesh, 
+                                             u_mat::AbstractMatrix, basis, neqs;
+                                             use_bins::Bool=true, bins_per_dim::Int=64)
     n_points = size(alya_coords, 1)
     ndime = size(alya_coords, 2)
     u_interp = zeros(Float64, n_points, neqs)
@@ -658,7 +870,7 @@ end
 #
 #This is the main function to be called from the coupling callback.
 #------------------------------------------------------------------------------------
-function perform_coupling_exchange!(integrator, cpg::CouplingData, basis)
+function perform_coupling_exchange!(integrator, cpg::CouplingData, basis, inputs, ξ)
     # 1. Prepare solution view
     npoin = integrator.p.mesh.npoin
     neqs  = integrator.p.qp.neqs
@@ -666,7 +878,7 @@ function perform_coupling_exchange!(integrator, cpg::CouplingData, basis)
     
     # 2. Interpolate to local Alya coordinates
     u_interp_local = interpolate_solution_to_alya_coords(
-        cpg.alya_local_coords, integrator.p.mesh, u_mat, basis, neqs;
+        cpg.alya_local_coords, integrator.p.mesh, u_mat, basis, ξ, neqs, inputs;
         use_bins=true, bins_per_dim=64
     )
     
@@ -828,7 +1040,7 @@ function verify_coupling_communication_pattern(npoin_recv, npoin_send,
     # -------------------------------------------------------------------------
     println("\n[CHECK 6] Sample Alya point ownership...")
     
-    ###n_sample = min(10, length(alya_local_ids))
+    ### n_sample = min(10, length(alya_local_ids))
     n_sample = length(alya_local_ids)
     if n_sample > 0
         println("  First $n_sample local Alya points:")

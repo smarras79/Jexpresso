@@ -203,12 +203,7 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
             end
             #--------------------------------------------------------
             # Build metric terms
-            #--------------------------------------------------------
-            #if (mesh.nsd > 2)
-            #    if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
-            #else
-            #    if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
-            #end
+            #--------------------------------------------------------          
             if (rank == 0) @info " Build metrics ......" end
             metrics = allocate_metrics(SD, mesh.nelem, mesh.nedges_bdy, Qξ, TFloat, inputs[:backend])
             @time build_metric_terms!(metrics, mesh, basis, Nξ, Qξ, ξ, ω, TFloat, COVAR(), SD; backend = inputs[:backend])
@@ -218,12 +213,6 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
                 phys_grid = init_phys_grid(mesh, inputs,inputs[:nlay_pg],inputs[:nx_pg],inputs[:ny_pg],mesh.xmin,mesh.xmax,mesh.ymin,mesh.ymax,mesh.zmin,mesh.zmax,inputs[:backend])
             end 
             if (rank == 0) @info " Build periodicity infrastructure ......" end
-            
-            #if (mesh.nsd > 2)
-            #    if (inputs[:lwarp]) warp_mesh_3D!(mesh,inputs) end
-            #else
-            #    if (inputs[:lwarp]) warp_mesh!(mesh,inputs) end
-            #end
             
             if (rank == 0) @info " Matrix wrapper ......" end
             matrix = matrix_wrapper(AD, SD, QT, basis, ω, mesh, metrics, Nξ, Qξ, TFloat; ldss_laplace=inputs[:ldss_laplace],
@@ -304,10 +293,10 @@ function sem_setup(inputs::Dict, nparts, distribute, rank, args...)
     # Build matrices
     #--------------------------------------------------------
     if isnothing(adapt_flags)
-        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
+        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ω, ξ, matrix, fx, fy, fy_lag, fz, phys_grid, 
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model
     else
-        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ω, matrix, fx, fy, fy_lag, fz, phys_grid, 
+        return (; QT, CL, AD, SOL_VARS_TYPE, volume_flux, mesh, metrics, basis, ω, ξ, matrix, fx, fy, fy_lag, fz, phys_grid, 
                 connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original, interp, project, nparts, distribute), partitioned_model, uaux_new
     end
     @info " SEM _SETUP COMPLETE!!!"
