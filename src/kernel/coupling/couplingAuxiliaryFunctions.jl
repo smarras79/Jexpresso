@@ -682,3 +682,424 @@ function perform_coupling_exchange!(integrator, cpg::CouplingData, basis)
     
     return nothing
 end
+
+#-------------------------------------------------------------------------------------
+#    verify_coupling_communication_pattern(npoin_recv, npoin_send, 
+#                                         alya_owner_ranks, alya_local_ids,
+#                                        coupling_data, local_comm, world_comm)
+#
+#Verify that the coupling communication pattern is correct by checking:
+#1. npoin_recv matches the distribution of alya_owner_ranks
+#2. Global point conservation (no duplicates/missing points)
+#3. Communication symmetry after Alltoall
+#4. Detailed breakdown of send/receive patterns
+#-------------------------------------------------------------------------------------
+function verify_coupling_communication_pattern(npoin_recv, npoin_send,
+                                               alya_owner_ranks, alya_local_ids,
+                                               coupling_data, local_comm, world_comm)
+    
+    lrank = MPI.Comm_rank(local_comm)
+    wrank = MPI.Comm_rank(world_comm)
+    wsize = MPI.Comm_size(world_comm)
+    lsize = MPI.Comm_size(local_comm)
+    
+    nranks_alya = length(coupling_data[:alya2world])
+    
+    println("="^80)
+    println("[VERIFY] Julia lrank=$lrank, wrank=$wrank")
+    println("="^80)
+    
+    # -------------------------------------------------------------------------
+    # CHECK 1: Verify npoin_recv matches alya_owner_ranks distribution
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 1] Verifying npoin_recv against alya_owner_ranks...")
+    
+    # Count how many points this rank owns for each Alya world rank
+    local_counts = zeros(Int32, wsize)
+    for owner_wrank in alya_owner_ranks
+        local_counts[owner_wrank + 1] += 1
+    end
+    
+    # Compare with npoin_recv
+    mismatch = false
+    for i in 1:wsize
+        if local_counts[i] != npoin_recv[i]
+            println("  ❌ MISMATCH at world rank $(i-1):")
+            println("     alya_owner_ranks count: $(local_counts[i])")
+            println("     npoin_recv value: $(npoin_recv[i])")
+            mismatch = true
+        end
+    end
+    
+    if !mismatch
+        println("  ✓ npoin_recv matches alya_owner_ranks distribution")
+    else
+        @warn "npoin_recv does NOT match alya_owner_ranks!"
+    end
+    
+    # -------------------------------------------------------------------------
+    # CHECK 2: Verify total points to receive
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 2] Verifying total points to receive...")
+    
+    total_local_points = length(alya_owner_ranks)
+    total_recv = sum(npoin_recv)
+    
+    println("  Local Alya points extracted: $total_local_points")
+    println("  Sum of npoin_recv: $total_recv")
+    
+    if total_local_points == total_recv
+        println("  ✓ Total counts match")
+    else
+        @warn "Total counts do NOT match!"
+    end
+    
+    # -------------------------------------------------------------------------
+    # CHECK 3: Global point conservation (USE LOCAL_COMM ONLY)
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 3] Checking global point conservation...")
+    
+    # Total Alya grid points
+    rem_nx = coupling_data[:rem_nx]
+    total_alya_points = rem_nx[1] * rem_nx[2] * rem_nx[3]
+    
+    # Sum across all Julia ranks ONLY (use local_comm, not world_comm)
+    global_owned = MPI.Allreduce(total_local_points, MPI.SUM, local_comm)
+    
+    println("  Total Alya grid points: $total_alya_points")
+    println("  Total points owned by all Julia ranks: $global_owned")
+    
+    if global_owned == total_alya_points
+        println("  ✓ All Alya points are accounted for (no duplicates/missing)")
+    else
+        @warn "Point conservation failed! Expected $total_alya_points, got $global_owned"
+    end
+    
+    # -------------------------------------------------------------------------
+    # CHECK 4: Detailed send/receive breakdown by rank
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 4] Detailed communication pattern...")
+    
+    println("  RECEIVE (npoin_recv) - I will receive FROM:")
+    total = 0
+    for i in 1:wsize
+        if npoin_recv[i] > 0
+            wrank_from = i - 1
+            if wrank_from < nranks_alya
+                println("    $(npoin_recv[i]) points FROM world rank $wrank_from (Alya rank $wrank_from)")
+            else
+                jrank = wrank_from - nranks_alya
+                println("    $(npoin_recv[i]) points FROM world rank $wrank_from (Julia rank $jrank)")
+            end
+            total += npoin_recv[i]
+        end
+    end
+    println("  Total to RECEIVE: $total")
+    
+    println("\n  SEND (npoin_send) - I will send TO:")
+    total = 0
+    for i in 1:wsize
+        if npoin_send[i] > 0
+            wrank_to = i - 1
+            if wrank_to < nranks_alya
+                println("    $(npoin_send[i]) points TO world rank $wrank_to (Alya rank $wrank_to)")
+            else
+                jrank = wrank_to - nranks_alya
+                println("    $(npoin_send[i]) points TO world rank $wrank_to (Julia rank $jrank)")
+            end
+            total += npoin_send[i]
+        end
+    end
+    println("  Total to SEND: $total")
+    
+    # -------------------------------------------------------------------------
+    # CHECK 5: Communication symmetry
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 5] Checking communication symmetry...")
+    
+    recv_partners = [i-1 for i in 1:wsize if npoin_recv[i] > 0]
+    send_partners = [i-1 for i in 1:wsize if npoin_send[i] > 0]
+    
+    println("  Ranks I receive from: $recv_partners")
+    println("  Ranks I send to: $send_partners")
+    
+    # -------------------------------------------------------------------------
+    # CHECK 6: Verify specific Alya point IDs
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 6] Sample Alya point ownership...")
+    
+    ###n_sample = min(10, length(alya_local_ids))
+    n_sample = length(alya_local_ids)
+    if n_sample > 0
+        println("  First $n_sample local Alya points:")
+        for i in 1:n_sample
+            gid = alya_local_ids[i]
+            owner_wrank = alya_owner_ranks[i]
+            if owner_wrank < nranks_alya
+                println("    Point ID $gid → owned by world rank $owner_wrank (Alya rank $owner_wrank)")
+            else
+                jrank = owner_wrank - nranks_alya
+                println("    Point ID $gid → owned by world rank $owner_wrank (Julia rank $jrank)")
+            end
+        end
+    end
+    
+    # -------------------------------------------------------------------------
+    # CHECK 7: Julia-only communication matrix (USE LOCAL_COMM ONLY)
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 7] Julia-only communication pattern check...")
+    
+    # Build communication statistics for Julia ranks only
+    julia_send_to_alya = zeros(Int32, nranks_alya)
+    julia_recv_from_alya = zeros(Int32, nranks_alya)
+    
+    for i in 1:nranks_alya
+        julia_send_to_alya[i] = npoin_send[i]
+        julia_recv_from_alya[i] = npoin_recv[i]
+    end
+    
+    # Sum across Julia ranks using local_comm
+    global_send_to_alya = MPI.Allreduce(julia_send_to_alya, MPI.SUM, local_comm)
+    global_recv_from_alya = MPI.Allreduce(julia_recv_from_alya, MPI.SUM, local_comm)
+    
+    if lrank == 0
+        println("\n  Global Julia → Alya communication:")
+        for i in 1:nranks_alya
+            if global_send_to_alya[i] > 0 || global_recv_from_alya[i] > 0
+                println("    Alya rank $(i-1): Julia sends $(global_send_to_alya[i]), receives $(global_recv_from_alya[i])")
+            end
+        end
+    end
+    
+    println("\n" * "="^80)
+    println("[VERIFY] Verification complete for Julia lrank=$lrank")
+    println("="^80)
+    flush(stdout)
+    
+    return true
+end
+function verify_coupling_communication_pattern_old(npoin_recv, npoin_send,
+                                               alya_owner_ranks, alya_local_ids,
+                                               coupling_data, local_comm, world_comm)
+    
+    lrank = MPI.Comm_rank(local_comm)
+    wrank = MPI.Comm_rank(world_comm)
+    wsize = MPI.Comm_size(world_comm)
+    lsize = MPI.Comm_size(local_comm)
+    
+    nranks_alya = length(coupling_data[:alya2world])
+    
+    println("="^80)
+    println("[VERIFY] Julia lrank=$lrank, wrank=$wrank")
+    println("="^80)
+    
+    # -------------------------------------------------------------------------
+    # CHECK 1: Verify npoin_recv matches alya_owner_ranks distribution
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 1] Verifying npoin_recv against alya_owner_ranks...")
+    
+    # Count how many points this rank owns for each Alya world rank
+    local_counts = zeros(Int32, wsize)
+    for owner_wrank in alya_owner_ranks
+        local_counts[owner_wrank + 1] += 1
+    end
+    
+    # Compare with npoin_recv
+    mismatch = false
+    for i in 1:wsize
+        if local_counts[i] != npoin_recv[i]
+            println("  ❌ MISMATCH at world rank $(i-1):")
+            println("     alya_owner_ranks count: $(local_counts[i])")
+            println("     npoin_recv value: $(npoin_recv[i])")
+            mismatch = true
+        end
+    end
+    
+    if !mismatch
+        println("  ✓ npoin_recv matches alya_owner_ranks distribution")
+    else
+        @warn "npoin_recv does NOT match alya_owner_ranks!"
+    end
+    
+    # -------------------------------------------------------------------------
+    # CHECK 2: Verify total points to receive
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 2] Verifying total points to receive...")
+    
+    total_local_points = length(alya_owner_ranks)
+    total_recv = sum(npoin_recv)
+    
+    println("  Local Alya points extracted: $total_local_points")
+    println("  Sum of npoin_recv: $total_recv")
+    
+    if total_local_points == total_recv
+        println("  ✓ Total counts match")
+    else
+        @warn "Total counts do NOT match!"
+    end
+    
+    # -------------------------------------------------------------------------
+    # CHECK 3: Global point conservation
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 3] Checking global point conservation...")
+    
+    # Total Alya grid points
+    rem_nx = coupling_data[:rem_nx]
+    total_alya_points = rem_nx[1] * rem_nx[2] * rem_nx[3]
+    
+    # Sum across all Julia ranks
+    global_owned = MPI.Allreduce(total_local_points, MPI.SUM, local_comm)
+    
+    println("  Total Alya grid points: $total_alya_points")
+    println("  Total points owned by all Julia ranks: $global_owned")
+    
+    if global_owned == total_alya_points
+        println("  ✓ All Alya points are accounted for (no duplicates/missing)")
+    else
+        @warn "Point conservation failed! Expected $total_alya_points, got $global_owned"
+    end
+    
+    # -------------------------------------------------------------------------
+    # CHECK 4: Detailed send/receive breakdown by rank
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 4] Detailed communication pattern...")
+    
+    println("  RECEIVE (npoin_recv) - I will receive FROM:")
+    total = 0
+    for i in 1:wsize
+        if npoin_recv[i] > 0
+            wrank_from = i - 1
+            if wrank_from < nranks_alya
+                println("    $(npoin_recv[i]) points FROM world rank $wrank_from (Alya rank $wrank_from)")
+            else
+                jrank = wrank_from - nranks_alya
+                println("    $(npoin_recv[i]) points FROM world rank $wrank_from (Julia rank $jrank)")
+            end
+            total += npoin_recv[i]
+        end
+    end
+    println("  Total to RECEIVE: $total")
+    
+    println("\n  SEND (npoin_send) - I will send TO:")
+    total = 0
+    for i in 1:wsize
+        if npoin_send[i] > 0
+            wrank_to = i - 1
+            if wrank_to < nranks_alya
+                println("    $(npoin_send[i]) points TO world rank $wrank_to (Alya rank $wrank_to)")
+            else
+                jrank = wrank_to - nranks_alya
+                println("    $(npoin_send[i]) points TO world rank $wrank_to (Julia rank $jrank)")
+            end
+            total += npoin_send[i]
+        end
+    end
+    println("  Total to SEND: $total")
+    
+    # -------------------------------------------------------------------------
+    # CHECK 5: Communication symmetry (after Alltoall)
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 5] Checking communication symmetry...")
+    
+    # For each rank we receive from, verify they send to us
+    recv_partners = [i-1 for i in 1:wsize if npoin_recv[i] > 0]
+    send_partners = [i-1 for i in 1:wsize if npoin_send[i] > 0]
+    
+    println("  Ranks I receive from: $recv_partners")
+    println("  Ranks I send to: $send_partners")
+    
+    # The Alltoall should ensure symmetry:
+    # If I receive N points from rank R (npoin_recv[R] = N),
+    # then R should send N points to me (R's npoin_send[my_rank] = N)
+    
+    # We can't directly verify this without gathering all data,
+    # but we can check consistency on this rank
+    
+    # -------------------------------------------------------------------------
+    # CHECK 6: Verify specific Alya point IDs
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 6] Sample Alya point ownership...")
+    
+    #n_sample = min(10, length(alya_local_ids))
+    n_sample = max(10, length(alya_local_ids))
+    if n_sample > 0
+        println("  First $n_sample local Alya points:")
+        for i in 1:n_sample
+            gid = alya_local_ids[i]
+            owner_wrank = alya_owner_ranks[i]
+            if owner_wrank < nranks_alya
+                println("    Point ID $gid → owned by world rank $owner_wrank (Alya rank $owner_wrank)")
+            else
+                jrank = owner_wrank - nranks_alya
+                println("    Point ID $gid → owned by world rank $owner_wrank (Julia rank $jrank)")
+            end
+        end
+    end
+    
+    # -------------------------------------------------------------------------
+    # CHECK 7: Cross-check with global Allreduce
+    # -------------------------------------------------------------------------
+    println("\n[CHECK 7] Global communication matrix check...")
+    
+    # Build local contribution to global send/recv matrix
+    local_send_matrix = zeros(Int32, wsize, wsize)
+    local_recv_matrix = zeros(Int32, wsize, wsize)
+    
+    # This rank's sends (row = this rank, column = destination)
+    for i in 1:wsize
+        local_send_matrix[wrank + 1, i] = npoin_send[i]
+    end
+    
+    # This rank's receives (row = source, column = this rank)
+    for i in 1:wsize
+        local_recv_matrix[i, wrank + 1] = npoin_recv[i]
+    end
+    
+    # Global reduce
+    global_send_matrix = MPI.Allreduce(local_send_matrix, MPI.SUM, world_comm)
+    global_recv_matrix = MPI.Allreduce(local_recv_matrix, MPI.SUM, world_comm)
+    
+    # Check symmetry: send[i,j] should equal recv[j,i]
+    if lrank == 0
+        println("\n  Global communication matrix symmetry check:")
+        symmetric = true
+        for i in 1:wsize
+            for j in 1:wsize
+                if global_send_matrix[i,j] != global_recv_matrix[j,i]
+                    println("    ❌ Asymmetry: rank $(i-1) sends $(global_send_matrix[i,j]) to rank $(j-1), " *
+                           "but rank $(j-1) receives $(global_recv_matrix[j,i]) from rank $(i-1)")
+                    symmetric = false
+                end
+            end
+        end
+        if symmetric
+            println("    ✓ Communication matrix is symmetric")
+        else
+            @warn "Communication matrix is NOT symmetric!"
+        end
+        
+        # Print non-zero communication pairs
+        println("\n  Non-zero communication pairs:")
+        for i in 1:wsize
+            for j in 1:wsize
+                if global_send_matrix[i,j] > 0
+                    src = i - 1
+                    dst = j - 1
+                    cnt = global_send_matrix[i,j]
+                    
+                    src_type = src < nranks_alya ? "Alya" : "Julia"
+                    dst_type = dst < nranks_alya ? "Alya" : "Julia"
+                    
+                    println("    World rank $src ($src_type) → World rank $dst ($dst_type): $cnt points")
+                end
+            end
+        end
+    end
+    
+    println("\n" * "="^80)
+    println("[VERIFY] Verification complete for Julia lrank=$lrank")
+    println("="^80)
+    flush(stdout)
+    
+    return true
+end

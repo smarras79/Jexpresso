@@ -363,38 +363,7 @@ function time_loop!(inputs, params, u, args...)
     #callbacks = coupling_enabled ? CallbackSet(cb, cb_restart, cb_coupling) : CallbackSet(cb, cb_restart)
     callbacks = coupling_enabled ? CallbackSet(cb, cb_restart) : CallbackSet(cb, cb_restart)
     tstops_all = dosetimes
-
-    #------------------------------------------------------------------------
-    # BARRIER 1: Wait for Alya to finish initialization
-    #------------------------------------------------------------------------
-    #=
-    if coupling_enabled
-    if coupling.lrank == 0
-    println_rank(" # Julia: initialization complete, waiting for Alya..."; msg_rank = rank)
-    end
-    MPI.Barrier(MPI.COMM_WORLD)
-    if coupling.lrank == 0
-    println_rank(" # Julia: both codes ready for handshake"; msg_rank = rank)
-    end
     
-    #----------------------------------------------------------------------------
-    # HANDSHAKE: Send buffer size to Alya (AFTER first barrier)
-    #----------------------------------------------------------------------------
-    if coupling.lrank == 0
-    nvals_to_send = Int32(npoin * neqs)
-    MPI.Send(Ref(nvals_to_send), 0, 999, coupling.comm_world)
-    println_rank(" # Julia: sent buffer size to Alya: ", nvals_to_send; msg_rank = rank)
-    end
-    
-    #----------------------------------------------------------------------------
-    # BARRIER 2: Ensure handshake complete before time loop
-    #----------------------------------------------------------------------------
-    MPI.Barrier(MPI.COMM_WORLD)
-    if coupling.lrank == 0
-    println_rank(" # Julia: starting time loop"; msg_rank = rank)
-    end
-    end
-    =#
     #------------------------------------------------------------------------
     # TIME INTEGRATION
     #------------------------------------------------------------------------
