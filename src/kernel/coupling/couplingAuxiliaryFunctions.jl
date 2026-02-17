@@ -74,7 +74,7 @@ function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_c
     tol = 1e-10
     
     # Arrays to store ownership information (locally)
-    local_coords = zeros(Float64, nmax, ndime)
+    local_coords      = zeros(Float64, nmax, ndime)
     local_owner_jrank = fill(Int32(-1), nmax)  # -1 means not owned by any rank
     local_owner_wrank = fill(Int32(-1), nmax)
     
@@ -126,13 +126,12 @@ function build_alya_point_ownership_map(mesh, coupling_data, local_comm, world_c
     alya_point_ids = collect(Int32(1):Int32(nmax))
     
     # Create ownership structure
-    ownership = Alya_Point_Ownership(
-        local_coords,
-        global_owner_jrank,
-        global_owner_wrank,
-        alya_point_ids,
-        Int32(ndime)
-    )
+    ownership = Alya_Point_Ownership(local_coords,
+                                     global_owner_jrank,
+                                     global_owner_wrank,
+                                     alya_point_ids,
+                                     Int32(ndime)
+                                     )
     
     return ownership
 end
@@ -337,7 +336,65 @@ Uses the communication pattern established during setup:
 - Receive from ranks in recv_from_ranks into recv_bufs
 =#
 #------------------------------------------------------------------------------------
+"""
+    coupling_exchange_data!(cpg::CouplingData)
+
+Exchange data with Alya using the same tag convention:
+- Send to rank R: tag = BASE + R (destination)
+- Receive from rank R: tag = BASE + MY_RANK (own rank)
+"""
 function coupling_exchange_data!(cpg::CouplingData)
+    wsize = length(cpg.npoin_send)
+    
+    # Get my world rank
+    lcomm = get_mpi_comm()
+    lrank = MPI.Comm_rank(lcomm)
+    lsize = MPI.Comm_size(lcomm)
+    wrank = MPI.Comm_rank(cpg.comm_world)
+    
+    # Allocate arrays for MPI requests
+    send_requests = MPI.Request[]
+    recv_requests = MPI.Request[]
+    
+    # Base tag (must match TAG_DATA in Alya code)
+    TAG_BASE = 2000
+    
+    # Post all non-blocking receives first
+    # Convention: receive with tag = BASE + MY_RANK (to match Alya's send convention)
+    for src_rank in cpg.recv_from_ranks
+        if cpg.npoin_recv[src_rank + 1] > 0
+            buf = cpg.recv_bufs[src_rank + 1]
+            tag = TAG_BASE + wrank  # Use MY world rank (Alya sends to me with this tag)
+            req = MPI.Irecv!(buf, src_rank, tag, cpg.comm_world)
+            push!(recv_requests, req)
+        end
+    end
+    
+    # Post all non-blocking sends
+    # Convention: send with tag = BASE + DEST_RANK (to match Alya's receive convention)
+    for dest_rank in cpg.send_to_ranks
+        if cpg.npoin_send[dest_rank + 1] > 0
+            buf = cpg.send_bufs[dest_rank + 1]
+            tag = TAG_BASE + dest_rank  # Use destination rank (Alya expects this tag)
+            req = MPI.Isend(buf, dest_rank, tag, cpg.comm_world)
+            push!(send_requests, req)
+        end
+    end
+    
+    # Wait for all receives to complete
+    if !isempty(recv_requests)
+        MPI.Waitall(recv_requests)
+    end
+    
+    # Wait for all sends to complete
+    if !isempty(send_requests)
+        MPI.Waitall(send_requests)
+    end
+    
+    return nothing
+end
+
+function coupling_exchange_data_old!(cpg::CouplingData)
     wsize = length(cpg.npoin_send)
     
     # Allocate arrays for MPI requests
@@ -546,6 +603,8 @@ end
 function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh, 
                                              u_mat::AbstractMatrix, basis, ξ, neqs, inputs;
                                              use_bins::Bool=true, bins_per_dim::Int=64)
+
+    
     n_points = size(alya_coords, 1)
     u_interp = zeros(Float64, n_points, neqs)
     
@@ -553,11 +612,11 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
     get_conn = _make_conn_accessor(mesh)
     nelem = _num_elems(mesh)
     ngl = mesh.ngl
-    
+
     # Get LGL nodes from basis (where solution is defined)
     ξ_nodes = Vector{Float64}(ξ)
     ω = barycentric_weights(ξ_nodes)
-    
+
     # Build element bounding boxes
     elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem)
     @inbounds for e in 1:nelem
@@ -566,7 +625,7 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
         ys = mesh.y[nodes]
         elem_bboxes[e] = (minimum(xs), maximum(xs), minimum(ys), maximum(ys))
     end
-    
+
     bins = use_bins ? _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim) : nothing
     
     # Interpolate each point
@@ -580,7 +639,7 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
             nodes = get_conn(e)
             x_elem = mesh.x[nodes]
             y_elem = mesh.y[nodes]
-            
+            @info x_elem, y_elem
             # Quick bbox check
             if px < minimum(x_elem) - 1e-10 || px > maximum(x_elem) + 1e-10 ||
                py < minimum(y_elem) - 1e-10 || py > maximum(y_elem) + 1e-10
@@ -617,14 +676,18 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
         
         if !found
             # Fallback: nearest neighbor
-            distances = sqrt.((mesh.x .- px).^2 .+ (mesh.y .- py).^2)
+            distances = sqrt.((mesh.coords[ipt,1] .- px).^2 .+ (mesh.coords[ipt,2] .- py).^2)
             nearest = argmin(distances)
             for q in 1:neqs
                 u_interp[ipt, q] = u_mat[nearest, q]
+                if u_interp[ipt, 4] > 1.0
+                    @info " uvelo: ", ipt, u_interp[ipt, 4], mesh.coords[ipt,1], mesh.coords[ipt,2]
+                end
             end
         end
     end
     
+    @mystop
     return u_interp
 end
 
@@ -755,113 +818,6 @@ function evaluate_lagrange_1d_derivative(ξ::Float64, ξ_nodes::Vector{Float64},
     return dψ
 end
 
-function interpolate_solution_to_alya_coords_old(alya_coords::Matrix{Float64}, mesh, 
-                                             u_mat::AbstractMatrix, basis, neqs;
-                                             use_bins::Bool=true, bins_per_dim::Int=64)
-    n_points = size(alya_coords, 1)
-    ndime = size(alya_coords, 2)
-    u_interp = zeros(Float64, n_points, neqs)
-    
-    # Build element bounding boxes for faster searching
-    get_conn = _make_conn_accessor(mesh)
-    nelem = _num_elems(mesh)
-    
-    elem_bboxes = Vector{NTuple{4,Float64}}(undef, nelem)
-    for e in 1:nelem
-        nodes = get_conn(e)
-        xs = mesh.x[nodes]
-        ys = mesh.y[nodes]
-        elem_bboxes[e] = (minimum(xs), maximum(xs), minimum(ys), maximum(ys))
-    end
-    
-    # Optional binning
-    bins = use_bins ? _build_elem_bins(elem_bboxes; bins_per_dim=bins_per_dim) : nothing
-    
-    # Get 1D basis nodes and weights
-    ξ_nodes = basis.ξ  # Assuming basis has 1D reference nodes
-    wx = barycentric_weights(ξ_nodes)
-    wy = barycentric_weights(ξ_nodes)
-    
-    # Interpolate at each Alya point
-    for i in 1:n_points
-        px, py = alya_coords[i, 1], alya_coords[i, 2]
-        
-        # Find candidate elements
-        candidates = bins !== nothing ? _bin_candidates(bins, px, py, elem_bboxes) : (1:nelem)
-        
-        # Search for containing element
-        found = false
-        for e in candidates
-            nodes = get_conn(e)
-            
-            # Try to invert to reference coordinates (simplified 2D tensor-product)
-            # This is a placeholder - use proper Newton iteration for general quads
-            xs = mesh.x[nodes]
-            ys = mesh.y[nodes]
-            
-            # Check bounding box first
-            if px < minimum(xs) - 1e-10 || px > maximum(xs) + 1e-10 ||
-               py < minimum(ys) - 1e-10 || py > maximum(ys) + 1e-10
-                continue
-            end
-            
-            # For tensor-product elements, map to reference coordinates
-            # This is simplified - implement proper inverse mapping
-            n1d = length(ξ_nodes)
-            
-            # Assume structured tensor product grid
-            # Map (px, py) to (ξ, η) ∈ [-1, 1]²
-            # Simplified: use nearest node as approximation
-            min_dist = Inf
-            best_ξ_idx = 1
-            best_η_idx = 1
-            
-            for j in 1:n1d, i in 1:n1d
-                node_idx = nodes[(j-1)*n1d + i]
-                dist = sqrt((mesh.x[node_idx] - px)^2 + (mesh.y[node_idx] - py)^2)
-                if dist < min_dist
-                    min_dist = dist
-                    best_ξ_idx = i
-                    best_η_idx = j
-                end
-            end
-            
-            # Use barycentric interpolation at the reference point
-            # (This is simplified - proper implementation needs Newton iteration)
-            ξ = ξ_nodes[best_ξ_idx]
-            η = ξ_nodes[best_η_idx]
-            
-            Lξ, _ = bary_lagrange_and_deriv(ξ, ξ_nodes, wx)
-            Lη, _ = bary_lagrange_and_deriv(η, ξ_nodes, wy)
-            
-            # Tensor product basis
-            for q in 1:neqs
-                val = 0.0
-                for j in 1:n1d, i in 1:n1d
-                    node_idx = nodes[(j-1)*n1d + i]
-                    val += Lξ[i] * Lη[j] * u_mat[node_idx, q]
-                end
-                u_interp[i, q] = val
-            end
-            
-            found = true
-            break
-        end
-        
-        if !found
-            # Point not found in mesh - use nearest neighbor or leave as zero
-            @warn "Alya point ($px, $py) not found in SEM mesh, using nearest neighbor"
-            distances = sqrt.((mesh.x .- px).^2 .+ (mesh.y .- py).^2)
-            nearest = argmin(distances)
-            for q in 1:neqs
-                u_interp[i, q] = u_mat[nearest, q]
-            end
-        end
-    end
-    
-    return u_interp
-end
-
 #------------------------------------------------------------------------------------
 #    perform_coupling_exchange!(integrator, cpg::CouplingData, basis)
 #
@@ -884,7 +840,7 @@ function perform_coupling_exchange!(integrator, cpg::CouplingData, basis, inputs
     
     # 3. Pack interpolated data into send buffers
     pack_interpolated_data!(cpg, u_interp_local, cpg.alya_owner_ranks)
-    
+
     # 4. Exchange data with Alya
     coupling_exchange_data!(cpg)
     
@@ -1040,8 +996,8 @@ function verify_coupling_communication_pattern(npoin_recv, npoin_send,
     # -------------------------------------------------------------------------
     println("\n[CHECK 6] Sample Alya point ownership...")
     
-    ### n_sample = min(10, length(alya_local_ids))
-    n_sample = length(alya_local_ids)
+     n_sample = min(10, length(alya_local_ids))
+    #n_sample = length(alya_local_ids)
     if n_sample > 0
         println("  First $n_sample local Alya points:")
         for i in 1:n_sample
@@ -1079,231 +1035,6 @@ function verify_coupling_communication_pattern(npoin_recv, npoin_send,
         for i in 1:nranks_alya
             if global_send_to_alya[i] > 0 || global_recv_from_alya[i] > 0
                 println("    Alya rank $(i-1): Julia sends $(global_send_to_alya[i]), receives $(global_recv_from_alya[i])")
-            end
-        end
-    end
-    
-    println("\n" * "="^80)
-    println("[VERIFY] Verification complete for Julia lrank=$lrank")
-    println("="^80)
-    flush(stdout)
-    
-    return true
-end
-function verify_coupling_communication_pattern_old(npoin_recv, npoin_send,
-                                               alya_owner_ranks, alya_local_ids,
-                                               coupling_data, local_comm, world_comm)
-    
-    lrank = MPI.Comm_rank(local_comm)
-    wrank = MPI.Comm_rank(world_comm)
-    wsize = MPI.Comm_size(world_comm)
-    lsize = MPI.Comm_size(local_comm)
-    
-    nranks_alya = length(coupling_data[:alya2world])
-    
-    println("="^80)
-    println("[VERIFY] Julia lrank=$lrank, wrank=$wrank")
-    println("="^80)
-    
-    # -------------------------------------------------------------------------
-    # CHECK 1: Verify npoin_recv matches alya_owner_ranks distribution
-    # -------------------------------------------------------------------------
-    println("\n[CHECK 1] Verifying npoin_recv against alya_owner_ranks...")
-    
-    # Count how many points this rank owns for each Alya world rank
-    local_counts = zeros(Int32, wsize)
-    for owner_wrank in alya_owner_ranks
-        local_counts[owner_wrank + 1] += 1
-    end
-    
-    # Compare with npoin_recv
-    mismatch = false
-    for i in 1:wsize
-        if local_counts[i] != npoin_recv[i]
-            println("  ❌ MISMATCH at world rank $(i-1):")
-            println("     alya_owner_ranks count: $(local_counts[i])")
-            println("     npoin_recv value: $(npoin_recv[i])")
-            mismatch = true
-        end
-    end
-    
-    if !mismatch
-        println("  ✓ npoin_recv matches alya_owner_ranks distribution")
-    else
-        @warn "npoin_recv does NOT match alya_owner_ranks!"
-    end
-    
-    # -------------------------------------------------------------------------
-    # CHECK 2: Verify total points to receive
-    # -------------------------------------------------------------------------
-    println("\n[CHECK 2] Verifying total points to receive...")
-    
-    total_local_points = length(alya_owner_ranks)
-    total_recv = sum(npoin_recv)
-    
-    println("  Local Alya points extracted: $total_local_points")
-    println("  Sum of npoin_recv: $total_recv")
-    
-    if total_local_points == total_recv
-        println("  ✓ Total counts match")
-    else
-        @warn "Total counts do NOT match!"
-    end
-    
-    # -------------------------------------------------------------------------
-    # CHECK 3: Global point conservation
-    # -------------------------------------------------------------------------
-    println("\n[CHECK 3] Checking global point conservation...")
-    
-    # Total Alya grid points
-    rem_nx = coupling_data[:rem_nx]
-    total_alya_points = rem_nx[1] * rem_nx[2] * rem_nx[3]
-    
-    # Sum across all Julia ranks
-    global_owned = MPI.Allreduce(total_local_points, MPI.SUM, local_comm)
-    
-    println("  Total Alya grid points: $total_alya_points")
-    println("  Total points owned by all Julia ranks: $global_owned")
-    
-    if global_owned == total_alya_points
-        println("  ✓ All Alya points are accounted for (no duplicates/missing)")
-    else
-        @warn "Point conservation failed! Expected $total_alya_points, got $global_owned"
-    end
-    
-    # -------------------------------------------------------------------------
-    # CHECK 4: Detailed send/receive breakdown by rank
-    # -------------------------------------------------------------------------
-    println("\n[CHECK 4] Detailed communication pattern...")
-    
-    println("  RECEIVE (npoin_recv) - I will receive FROM:")
-    total = 0
-    for i in 1:wsize
-        if npoin_recv[i] > 0
-            wrank_from = i - 1
-            if wrank_from < nranks_alya
-                println("    $(npoin_recv[i]) points FROM world rank $wrank_from (Alya rank $wrank_from)")
-            else
-                jrank = wrank_from - nranks_alya
-                println("    $(npoin_recv[i]) points FROM world rank $wrank_from (Julia rank $jrank)")
-            end
-            total += npoin_recv[i]
-        end
-    end
-    println("  Total to RECEIVE: $total")
-    
-    println("\n  SEND (npoin_send) - I will send TO:")
-    total = 0
-    for i in 1:wsize
-        if npoin_send[i] > 0
-            wrank_to = i - 1
-            if wrank_to < nranks_alya
-                println("    $(npoin_send[i]) points TO world rank $wrank_to (Alya rank $wrank_to)")
-            else
-                jrank = wrank_to - nranks_alya
-                println("    $(npoin_send[i]) points TO world rank $wrank_to (Julia rank $jrank)")
-            end
-            total += npoin_send[i]
-        end
-    end
-    println("  Total to SEND: $total")
-    
-    # -------------------------------------------------------------------------
-    # CHECK 5: Communication symmetry (after Alltoall)
-    # -------------------------------------------------------------------------
-    println("\n[CHECK 5] Checking communication symmetry...")
-    
-    # For each rank we receive from, verify they send to us
-    recv_partners = [i-1 for i in 1:wsize if npoin_recv[i] > 0]
-    send_partners = [i-1 for i in 1:wsize if npoin_send[i] > 0]
-    
-    println("  Ranks I receive from: $recv_partners")
-    println("  Ranks I send to: $send_partners")
-    
-    # The Alltoall should ensure symmetry:
-    # If I receive N points from rank R (npoin_recv[R] = N),
-    # then R should send N points to me (R's npoin_send[my_rank] = N)
-    
-    # We can't directly verify this without gathering all data,
-    # but we can check consistency on this rank
-    
-    # -------------------------------------------------------------------------
-    # CHECK 6: Verify specific Alya point IDs
-    # -------------------------------------------------------------------------
-    println("\n[CHECK 6] Sample Alya point ownership...")
-    
-    #n_sample = min(10, length(alya_local_ids))
-    n_sample = max(10, length(alya_local_ids))
-    if n_sample > 0
-        println("  First $n_sample local Alya points:")
-        for i in 1:n_sample
-            gid = alya_local_ids[i]
-            owner_wrank = alya_owner_ranks[i]
-            if owner_wrank < nranks_alya
-                println("    Point ID $gid → owned by world rank $owner_wrank (Alya rank $owner_wrank)")
-            else
-                jrank = owner_wrank - nranks_alya
-                println("    Point ID $gid → owned by world rank $owner_wrank (Julia rank $jrank)")
-            end
-        end
-    end
-    
-    # -------------------------------------------------------------------------
-    # CHECK 7: Cross-check with global Allreduce
-    # -------------------------------------------------------------------------
-    println("\n[CHECK 7] Global communication matrix check...")
-    
-    # Build local contribution to global send/recv matrix
-    local_send_matrix = zeros(Int32, wsize, wsize)
-    local_recv_matrix = zeros(Int32, wsize, wsize)
-    
-    # This rank's sends (row = this rank, column = destination)
-    for i in 1:wsize
-        local_send_matrix[wrank + 1, i] = npoin_send[i]
-    end
-    
-    # This rank's receives (row = source, column = this rank)
-    for i in 1:wsize
-        local_recv_matrix[i, wrank + 1] = npoin_recv[i]
-    end
-    
-    # Global reduce
-    global_send_matrix = MPI.Allreduce(local_send_matrix, MPI.SUM, world_comm)
-    global_recv_matrix = MPI.Allreduce(local_recv_matrix, MPI.SUM, world_comm)
-    
-    # Check symmetry: send[i,j] should equal recv[j,i]
-    if lrank == 0
-        println("\n  Global communication matrix symmetry check:")
-        symmetric = true
-        for i in 1:wsize
-            for j in 1:wsize
-                if global_send_matrix[i,j] != global_recv_matrix[j,i]
-                    println("    ❌ Asymmetry: rank $(i-1) sends $(global_send_matrix[i,j]) to rank $(j-1), " *
-                           "but rank $(j-1) receives $(global_recv_matrix[j,i]) from rank $(i-1)")
-                    symmetric = false
-                end
-            end
-        end
-        if symmetric
-            println("    ✓ Communication matrix is symmetric")
-        else
-            @warn "Communication matrix is NOT symmetric!"
-        end
-        
-        # Print non-zero communication pairs
-        println("\n  Non-zero communication pairs:")
-        for i in 1:wsize
-            for j in 1:wsize
-                if global_send_matrix[i,j] > 0
-                    src = i - 1
-                    dst = j - 1
-                    cnt = global_send_matrix[i,j]
-                    
-                    src_type = src < nranks_alya ? "Alya" : "Julia"
-                    dst_type = dst < nranks_alya ? "Alya" : "Julia"
-                    
-                    println("    World rank $src ($src_type) → World rank $dst ($dst_type): $cnt points")
-                end
             end
         end
     end

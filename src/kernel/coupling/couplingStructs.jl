@@ -71,36 +71,50 @@ mutable struct CouplingData
 end
 
 function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank, OUTPUT_DIR, TFloat)
+
     # Step 2: Receive Alya's domain information
     je_receive_alya_data(world, lsize)
-
     coupling_data = get_coupling_data()
     local_comm = get_mpi_comm()
     lrank = MPI.Comm_rank(local_comm)
-
+    
     # Setup SEM mesh
     sem, partitioned_model = sem_setup(inputs, nranks, distribute, rank)
     if (inputs[:backend] != CPU()) 
         convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs) 
     end
-
+    
     # Extract local Alya coordinates using the binned+cropped function
     alya_local_coords, alya_local_ids, alya_owner_ranks =
         extract_local_alya_coordinates(sem.mesh, coupling_data, local_comm, world;
                                        block_size=(64,64,64), use_cropping=true)
-
-    # Step 3: Build coupling communication pattern (counts)
-    npoin_recv, npoin_send, recv_from_ranks, send_to =
-        build_coupling_communication_arrays(sem.mesh, coupling_data, local_comm, world)
-
+    
+    # *** NEW: Build npoin_recv DIRECTLY from alya_owner_ranks ***
+    # This ensures consistency - we use the same points we extracted
+    wsize = MPI.Comm_size(world)
+    npoin_recv = zeros(Int32, wsize)
+    
+    # Count how many points we need from each Alya rank
+    for owner_wrank in alya_owner_ranks
+        npoin_recv[owner_wrank + 1] += 1
+    end
+    
+    # Build recv_from_ranks list
+    recv_from_ranks = Int32[]
+    for i in 1:wsize
+        if npoin_recv[i] > 0
+            push!(recv_from_ranks, i - 1)  # 0-based world rank
+        end
+    end
+    
     if lrank == 0
-        println("[setup_coupling] Coupling arrays built, preparing for Alltoall...")
+        println("[setup_coupling] npoin_recv built from alya_owner_ranks, preparing for Alltoall...")
         flush(stdout)
     end
-
-    # Step 4 & 5: Alltoall and subsequent steps...
+    
+    # Step 4 & 5: Alltoall to get npoin_send
     send_counts_to_alya = Vector{Int32}(npoin_recv)
-    recv_counts_from_alya = zeros(Int32, MPI.Comm_size(world))
+    recv_counts_from_alya = zeros(Int32, wsize)
     MPI.Barrier(world)
     MPI.Alltoall!(send_counts_to_alya, recv_counts_from_alya, 1, world)
     
@@ -113,35 +127,36 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         end
     end
     
-    # Comprehensive verification (optional)
-    lverify = true
-    if lverify
-        verify_coupling_communication_pattern(
-            npoin_recv, npoin_send,
-            alya_owner_ranks, alya_local_ids,
-            coupling_data, local_comm, world
-        )
+    # Verification (should now pass!)
+    verify_coupling_communication_pattern(
+        npoin_recv, npoin_send,
+        alya_owner_ranks, alya_local_ids,
+        coupling_data, local_comm, world
+    )
+    
+    # Print short summary
+    if lrank == 0
+        println("[setup_coupling] Communication pattern summary:")
+        println("  npoin_recv (from Alya): ", 
+                [(i-1, npoin_recv[i]) for i in 1:wsize if npoin_recv[i] > 0])
+        println("  npoin_send (to Alya):   ", 
+                [(i-1, npoin_send[i]) for i in 1:wsize if npoin_send[i] > 0])
+        println("  recv_from_ranks: ", recv_from_ranks)
+        println("  send_to_ranks:   ", send_to_ranks)
+        flush(stdout)
     end
     
-    # (optional) Verify counts against extracted owner ranks
-    # verify_extracted_vs_counts!(alya_owner_ranks, npoin_recv)
-
-    # Prints, ownership map, stats...
-    print_coupling_pattern(lrank, npoin_recv, npoin_send, recv_from_ranks, send_to_ranks, coupling_data, world)
-
     if lrank == 0
         println("[setup_coupling] Building Alya point ownership map...")
         flush(stdout)
     end
     ownership = build_alya_point_ownership_map(sem.mesh, coupling_data, local_comm, world)
-
     print_alya_point_ownership(ownership, coupling_data; max_points_to_print=20, only_owned=true)
-
     verify_alya_point_distribution(ownership, coupling_data)
-
+    
     # Initialize solution arrays
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
-
+    
     # Store coupling information
     coupling = CouplingData(
         npoin_recv = npoin_recv,
@@ -152,90 +167,23 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         lrank = lrank,
         neqs = qp.neqs
     )
-
+    
     # Persist Alya coordinate data in the coupling object for interpolation
     coupling.alya_local_coords = alya_local_coords
     coupling.alya_local_ids    = alya_local_ids
     coupling.alya_owner_ranks  = alya_owner_ranks
-
+    
     # Allocate coupling buffers
     coupling.send_bufs, coupling.recv_bufs =
         allocate_coupling_buffers(npoin_recv, npoin_send, coupling.neqs)
-
+    
     if lrank == 0
         println("[setup_coupling] Coupling setup complete!")
         flush(stdout)
     end
-
+    
     return coupling, sem, partitioned_model, qp
-end
 
-function print_coupling_pattern(lrank, npoin_recv, npoin_send, recv_from_ranks, 
-                               send_to_ranks, coupling_data, world)
-    
-    wsize = MPI.Comm_size(world)
-    wrank = MPI.Comm_rank(world)
-    nranks_alya = length(coupling_data[:alya2world])
-    
-    println("=========================================")
-    println("Julia local rank $lrank, world rank $wrank")
-    println("=========================================")
-    println("Total points to RECV from Alya: $(sum(npoin_recv))")
-    println("Total points to SEND to Alya: $(sum(npoin_send))")
-    println("-----------------------------------------")
-    
-    # Print world rank breakdown
-    println("World rank breakdown (size=$wsize):")
-    for i in 0:nranks_alya-1
-        println("  World rank $(coupling_data[:alya2world][i+1]) = Alya rank $i (ALYA)")
-    end
-    for i in 0:(wsize - nranks_alya - 1)
-        println("  World rank $(nranks_alya + i) = Julia rank $i (JULIA)")
-    end
-    println("-----------------------------------------")
-    
-    # Print detailed receive pattern
-    if sum(npoin_recv) > 0
-        println("RECV pattern (npoin_recv array) - receive FROM these ranks:")
-        for i in 1:wsize
-            if npoin_recv[i] > 0
-                world_rank = i - 1
-                if world_rank < nranks_alya
-                    println("  <- World rank $world_rank (Alya rank $world_rank): $(npoin_recv[i]) points")
-                else
-                    julia_rank = world_rank - nranks_alya
-                    println("  <- World rank $world_rank (Julia rank $julia_rank): $(npoin_recv[i]) points")
-                end
-            end
-        end
-    else
-        println("RECV pattern: No points to receive")
-    end
-    
-    # Print detailed send pattern
-    if sum(npoin_send) > 0
-        println("SEND pattern (npoin_send array) - send TO these ranks:")
-        for i in 1:wsize
-            if npoin_send[i] > 0
-                world_rank = i - 1
-                if world_rank < nranks_alya
-                    println("  -> World rank $world_rank (Alya rank $world_rank): $(npoin_send[i]) points")
-                else
-                    julia_rank = world_rank - nranks_alya
-                    println("  -> World rank $world_rank (Julia rank $julia_rank): $(npoin_send[i]) points")
-                end
-            end
-        end
-    else
-        println("SEND pattern: No points to send")
-    end
-    
-    println("-----------------------------------------")
-    println("Active communication partners:")
-    println("  recv_from_ranks: $recv_from_ranks")
-    println("  send_to_ranks: $send_to_ranks")
-    println("=========================================")
-    flush(stdout)
 end
 
 
