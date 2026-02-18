@@ -3183,7 +3183,7 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
 end
 
 
-function adapt4periodicity!(adapt_flags, mesh, SD::NSD_2D)
+function adapt4periodicity!(adapt_flags, mesh, SD::NSD_2D, max_level)
     ngl = mesh.ngl
     aux_flags   = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
     bdry_el2ips = Dict{Int64,Array{Int64, 1}}()
@@ -3248,7 +3248,7 @@ function adapt4periodicity!(adapt_flags, mesh, SD::NSD_2D)
 
 end
 
-function adapt4periodicity!(adapt_flags, mesh, SD::NSD_3D)
+function adapt4periodicity!(adapt_flags, mesh, SD::NSD_3D, max_level)
     ngl = mesh.ngl
     aux_flags   = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
     bdry_el2ips = Dict{Int64,Array{Int64, 1}}()
@@ -3327,7 +3327,7 @@ function do_adapt!(adapt_flags, inputs, mesh, uaux, qp,
                           S_micro, qsatt,
                           mesh.connijk, mesh.nelem, mesh.ngl,
                           inputs[:amr_max_level] )
-    adapt4periodicity!(adapt_flags, mesh, mesh.SD)
+    adapt4periodicity!(adapt_flags, mesh, mesh.SD, inputs[:amr_max_level])
 end
 
 
