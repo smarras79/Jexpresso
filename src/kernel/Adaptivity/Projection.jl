@@ -3189,16 +3189,16 @@ function adapt4periodicity!(adapt_flags, mesh, SD::NSD_2D)
     bdry_el2ips = Dict{Int64,Array{Int64, 1}}()
     for (iedge_bdy, type) in enumerate(mesh.bdy_edge_type)
         if (type == "periodicx") || (type == "periodicy") || (type == "periodicz")
-            iel = mesh.bdy_edge_in_elem[iface_bdy]
+            iel = mesh.bdy_edge_in_elem[iedge_bdy]
             flag = adapt_flags[iel]
             aux::TFloat = 0.0
             if flag == refine_flag
                 aux = 1.0
             elseif flag == coarsen_flag
-                aux == -1.0
+                aux = -1.0
             end
             for k=1:ngl
-                    ip = mesh.poin_in_bdy_edge[iface_bdy,k]
+                    ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
                     aux_flags[ip] = aux
                     ip_list = get!(bdry_el2ips, iel, Int64[])
                     push!(ip_list, ip)
@@ -3260,7 +3260,7 @@ function adapt4periodicity!(adapt_flags, mesh, SD::NSD_3D)
             if flag == refine_flag
                 aux = 1.0
             elseif flag == coarsen_flag
-                aux == -1.0
+                aux = -1.0
             end
             for k=1:ngl
                 for l=1:ngl
@@ -3288,7 +3288,7 @@ function adapt4periodicity!(adapt_flags, mesh, SD::NSD_3D)
         # if iel == 1 || iel == 3 || iel == 7 || iel == 9
         #     @info iel, flags, mesh.ip2gip[ips]
         # end
-        if any(flags .> 0.5)
+        if (any(flags .> 0.5)) && (mesh.ad_lvl[iel] < max_level)
             adapt_flags[iel] = refine_flag
             continue
         end
