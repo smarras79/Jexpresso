@@ -639,7 +639,7 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
             nodes = get_conn(e)
             x_elem = mesh.x[nodes]
             y_elem = mesh.y[nodes]
-            @info x_elem, y_elem
+            
             # Quick bbox check
             if px < minimum(x_elem) - 1e-10 || px > maximum(x_elem) + 1e-10 ||
                py < minimum(y_elem) - 1e-10 || py > maximum(y_elem) + 1e-10
@@ -678,16 +678,18 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
             # Fallback: nearest neighbor
             distances = sqrt.((mesh.coords[ipt,1] .- px).^2 .+ (mesh.coords[ipt,2] .- py).^2)
             nearest = argmin(distances)
-            for q in 1:neqs
-                u_interp[ipt, q] = u_mat[nearest, q]
+            for q in 2:neqs-1
+                #
+                # (u,v) only
+                #
+                u_interp[ipt, q] = u_mat[nearest, q]/u_mat[nearest, 1]
                 if u_interp[ipt, 4] > 1.0
-                    @info " uvelo: ", ipt, u_interp[ipt, 4], mesh.coords[ipt,1], mesh.coords[ipt,2]
+                    @info " uvelo: ", ipt, u_interp[ipt, 2], mesh.coords[ipt,1], mesh.coords[ipt,2]
                 end
             end
         end
     end
     
-    @mystop
     return u_interp
 end
 
@@ -826,15 +828,17 @@ end
 #
 #This is the main function to be called from the coupling callback.
 #------------------------------------------------------------------------------------
-function perform_coupling_exchange!(integrator, cpg::CouplingData, basis, inputs, ξ)
-    # 1. Prepare solution view
-    npoin = integrator.p.mesh.npoin
-    neqs  = integrator.p.qp.neqs
-    u_mat = view_state_matrix(integrator.u, npoin, neqs)
+function perform_coupling_exchange(u, u_mat, t, cpg::CouplingData, mesh, basis, inputs, ξ, neqs)
     
+    # 1. Prepare solution view
+    npoin = mesh.npoin
+    neqs  = neqs
+    u2uaux!(u_mat, u, neqs, npoin)
+   
     # 2. Interpolate to local Alya coordinates
     u_interp_local = interpolate_solution_to_alya_coords(
-        cpg.alya_local_coords, integrator.p.mesh, u_mat, basis, ξ, neqs, inputs;
+        cpg.alya_local_coords, mesh, u_mat, basis, 
+        ξ, neqs, inputs;
         use_bins=true, bins_per_dim=64
     )
     
@@ -845,8 +849,8 @@ function perform_coupling_exchange!(integrator, cpg::CouplingData, basis, inputs
     coupling_exchange_data!(cpg)
     
     # 5. Unpack and apply received data from Alya
-    unpack_received_data!(cpg, integrator.u, integrator.p.mesh,
-                         cpg.alya_local_coords, cpg.alya_local_ids)
+    unpack_received_data!(cpg, u, mesh,
+                          cpg.alya_local_coords, cpg.alya_local_ids)
     
     return nothing
 end

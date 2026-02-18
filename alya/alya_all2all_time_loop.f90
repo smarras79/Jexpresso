@@ -116,7 +116,7 @@ program unitt_alya_with_another_code
   !---------------------------------------------------------------------------
   rem_min = [-5000.0,     0.0, 0.0]
   rem_max = [ 5000.0, 10000.0, 0.0]
-  rem_nx  = [20,      20,        1]
+  rem_nx  = [4,      4,        1]
   ndime = 2
 
   if (rank == 0) then
@@ -258,7 +258,7 @@ program unitt_alya_with_another_code
   ! Time integration parameters
   t0     = 0.0d0
   dt     = 0.25d0     ! Must match Julia's dt
-  tend   = 2.0d0
+  tend   = 400.0d0
   nsteps = int((tend - t0) / dt)
 
   if (rank == 0) then
@@ -320,10 +320,10 @@ program unitt_alya_with_another_code
      !------------------------------------------------------------------------
      dummy_field = dummy_field + 0.01d0 * dble(step)
      
-     if (rank == 0) then
-        write(*,'(A,F6.3,A)') 'Alya: t=', t, ' - starting coupling exchange'
-        flush(6)
-     end if
+     !if (rank == 0) then
+     !   write(*,'(A,F6.3,A)') 'Alya: t=', t, ' - starting coupling exchange'
+     !   flush(6)
+     !end if
 
      !------------------------------------------------------------------------
      ! STEP 1: PREPARE SEND DATA
@@ -387,11 +387,11 @@ program unitt_alya_with_another_code
 #endif
      end if
 
-     if (rank == 0) then
-        write(*,'(A,F6.3,A,F12.5)') 'Alya: t=', t, &
-             ' coupling complete; recv[1]=', recvbuf_all(1)
-        flush(6)
-     end if
+     !if (rank == 0) then
+     !   write(*,'(A,F6.3,A,F12.5)') 'Alya: t=', t, &
+     !        ' coupling complete; recv[1]=', recvbuf_all(1)
+     !   flush(6)
+     !end if
 
      !------------------------------------------------------------------------
      ! STEP 3: WRITE VTU OUTPUT (all ranks participate)
@@ -403,9 +403,9 @@ program unitt_alya_with_another_code
      call MPI_Barrier(PAR_COMM_FINAL, ierr)
 
      ! Rank 0 writes PVTU master file
-     if (rank == 0) then
-        call write_pvtu_master(asize, step, t)
-     end if
+     !if (rank == 0) then
+     !   call write_pvtu_master(asize, step, t)
+     !end if
 
   end do  ! End time loop
 

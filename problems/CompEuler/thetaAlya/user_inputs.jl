@@ -7,22 +7,20 @@ function user_inputs()
         :ode_solver           => CarpenterKennedy2N54(), #SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(),
         :Δt                   => 0.25,
         :tinit                => 0.0,
-        :tend                 => 2.0,
-        :diagnostics_at_times => (0:0.25:2),
-        :restart_time         => 500,
+        :tend                 => 400,
+        :diagnostics_at_times => (0:10:400),
+        #:restart_time         => 500,
         :lrestart             => false,
-        #:CL                   => NCL(),
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
         :case                 => "rtb",
         :lsource              => true,
-        
         #---------------------------------------------------------------------------
         #Alya coupling
         #---------------------------------------------------------------------------
-        :enable_coupling      => true,
+        #:enable_coupling      => true,
         :couple_time_tol      => 1e-12,
         :Δt_couple            => :Δt,     # or larger macro step later
-        :SOL_VARS_TYPE        => PERT(), #TOTAL() is default
+        :SOL_VARS_TYPE        => TOTAL(), #TOTAL() is default
         #---------------------------------------------------------------------------
         #Integration and quadrature properties
         #---------------------------------------------------------------------------

@@ -122,7 +122,8 @@ end
 
 
 function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp, 
-                      connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                      connijk_original, poin_in_bdy_face_original,
+                      x_original, y_original, z_original,
                       OUTPUT_DIR::String, inputs::Dict,
                       varnames, outvarnames,
                       outformat::VTK;
@@ -134,7 +135,8 @@ function write_output(SD, sol, uaux, t, iout,  mesh::St_mesh, mp,
     if (inputs[:backend] == CPU())
 
         write_vtk(SD, mesh, sol, uaux, mp, 
-                  connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
+                  connijk_original, poin_in_bdy_face_original,
+                  x_original, y_original, z_original,
                   t, title, OUTPUT_DIR, inputs,
                   varnames, outvarnames;
                   iout=iout, nvar=nvar, qexact=qexact, case=case) 
@@ -193,8 +195,10 @@ end
 # VTK writer
 #------------
 function write_vtk(SD::NSD_2D, mesh::St_mesh, q::Array, qaux::Array, mp, 
-                   connijk_original, poin_in_bdy_face_original, x_original, y_original, z_original,
-                   t, title::String, OUTPUT_DIR::String, inputs::Dict, varnames, outvarnames;
+                   connijk_original, poin_in_bdy_face_original,
+                   x_original, y_original, z_original,
+                   t, title::String, OUTPUT_DIR::String, inputs::Dict,
+                   varnames, outvarnames;
                    iout=1, nvar=1, qexact=zeros(1,nvar), case="")
 
     if (isa(varnames, Tuple)    || isa(varnames, String) )   varnames    = collect(varnames) end
