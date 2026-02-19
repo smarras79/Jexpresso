@@ -188,15 +188,10 @@ function time_loop!(inputs, params, u, args...)
                                     inputs[:tend],
                                     length=inputs[:ndiagnostics_outputs]))
 
-    #if coupling_enabled
-    #    @info "Julia: ODE complete, syncing with Alya..."
-    #    MPI.Barrier(world)   # <-- add this, matches Fortran's barrier
-    #else
-        MPI.Barrier(comm)
-        report_all_timers(params.timers)
-        MPI.Barrier(comm)
-    #end
-    
+    MPI.Barrier(comm)
+    report_all_timers(params.timers)
+    MPI.Barrier(comm)
+        
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
             @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)

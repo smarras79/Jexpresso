@@ -831,58 +831,60 @@ function je_receive_alya_data(world, nparts)
     wsize = MPI.Comm_size(world)
     wrank = MPI.Comm_rank(world)
     
-    # Verify we are in coupled mode
     if wsize <= nparts
         @warn "je_receive_alya_data called but not in coupled mode"
         return
     end
     
-    # Receive grid dimensions
+    # 1. ndime  (Fortran STEP 2, first broadcast)
     ndime_buf = Vector{Int32}(undef, 1)
     MPI.Bcast!(ndime_buf, 0, world)
-    ndime = ndime_buf[1]
+    ndime = Int(ndime_buf[1])
 
-    #nsteps_buf = Int32[0]
-    #MPI.Bcast!(nsteps_buf, 0, world)
-    #nsteps = Int(nsteps_buf[1])
-    
-    # Receive grid bounds and resolution
+    # 2. rem_min, rem_max, rem_nx  (Fortran STEP 2, loop)
     rem_min = Vector{Float32}(undef, 3)
     rem_max = Vector{Float32}(undef, 3)
     rem_nx  = Vector{Int32}(undef, 3)
-    
     for idime in 1:3
         MPI.Bcast!(@view(rem_min[idime:idime]), 0, world)
         MPI.Bcast!(@view(rem_max[idime:idime]), 0, world)
         MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
     end
 
-    # Neqs
-    neqs = 4
-    neqs_buf = Int32[neqs]   # neqs known from your physics setup
-    MPI.Bcast!(neqs_buf, 0, world)   # root = Alya world rank 0
+    # 3. neqs  (Fortran: after rem_nx loop)
+    neqs_buf = Vector{Int32}(undef, 1)
+    MPI.Bcast!(neqs_buf, 0, world)
+    neqs = Int(neqs_buf[1])
+
+    # 4. nsteps  (Fortran: after neqs)
+    nsteps_buf = Vector{Int32}(undef, 1)
+    MPI.Bcast!(nsteps_buf, 0, world)
+    nsteps = Int(nsteps_buf[1])
+
+    # 5. Alya->world rank map  (Fortran: MPI_AllReduce)
+    nranks_alya  = wsize - nparts
+    alya2world_l = zeros(Int32, nranks_alya)
+
+    @info "JULIAAAAAAAAA Julia Allreduce: wsize=$wsize  nparts=$nparts  nranks_other=$nranks_alya"
+    flush(stdout)
     
-    # Build Alya to world rank mapping
-    nranks_other = wsize - nparts
-    alya2world_l = zeros(Int32, nranks_other)
     alya2world   = MPI.Allreduce(alya2world_l, MPI.SUM, world)
     
-    # Store coupling data
     set_coupling_data(Dict{Symbol,Any}(
-        :ndime         => ndime,
-        :neqs          => neqs,
-        :rem_min       => rem_min,
-        :rem_max       => rem_max,
-        :rem_nx        => rem_nx,
-        :alya2world    => alya2world,
+        :ndime   => ndime,
+        :neqs    => neqs,
+        :nsteps  => nsteps,
+        :rem_min => rem_min,
+        :rem_max => rem_max,
+        :rem_nx  => rem_nx,
+        :alya2world => alya2world,
     ))
     
     lcomm = get_mpi_comm()
     lrank = MPI.Comm_rank(lcomm)
-    
     if lrank == 0
-        println("[je_receive_alya_data] Received from Alya:")
-        println("  ndime=$ndime, min=$rem_min, max=$rem_max, nx=$rem_nx")
+        println("[je_receive_alya_data] ndime=$ndime, neqs=$neqs, nsteps=$nsteps")
+        println("  min=$rem_min, max=$rem_max, nx=$rem_nx")
         flush(stdout)
     end
     
