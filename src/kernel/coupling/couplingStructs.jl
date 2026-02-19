@@ -113,19 +113,18 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     end
     
     # Step 4 & 5: Alltoall to get npoin_send
+    # Alya sends back the same points it received
+    # so return counts = forward counts = npoin_recv
     send_counts_to_alya = Vector{Int32}(npoin_recv)
     recv_counts_from_alya = zeros(Int32, wsize)
     MPI.Barrier(world)
     MPI.Alltoall!(send_counts_to_alya, recv_counts_from_alya, 1, world)
-    
-    # Update npoin_send and send_to_ranks
-    npoin_send = recv_counts_from_alya
-    send_to_ranks = Int32[]
-    for i in 1:length(npoin_send)
-        if npoin_send[i] > 0
-            push!(send_to_ranks, i - 1)
-        end
-    end
+
+    # Ignore recv_counts_from_alya for send counts — Alya initializes its
+    # Alltoall buffer to 0 (it never initiates), so this is always zeros.
+    # The return exchange uses the same points Julia sent, so counts are identical.
+    npoin_send   = copy(npoin_recv)
+    send_to_ranks = copy(recv_from_ranks)
     
     # Verification (should now pass!)
     verify_coupling_communication_pattern(
@@ -177,6 +176,10 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     coupling.send_bufs, coupling.recv_bufs =
         allocate_coupling_buffers(npoin_recv, npoin_send, coupling.neqs)
     
+    # Assert they match
+ #   @assert sort(recv_from_ranks) == sort(send_to_ranks) "Coupling partners asymmetric — check alya_owner_ranks vs Alltoall result"
+ #   @assert all(npoin_recv .== npoin_send) "Point counts asymmetric between send and recv"
+    
     if lrank == 0
         println("[setup_coupling] Coupling setup complete!")
         flush(stdout)
@@ -195,6 +198,7 @@ function build_coupling_communication_arrays(mesh, coupling_data, local_comm, wo
     rem_max    = coupling_data[:rem_max]
     rem_nx     = coupling_data[:rem_nx]
     alya2world = coupling_data[:alya2world]
+    neqs       = coupling_data[:neqs]
     
     # MPI info
     wsize = MPI.Comm_size(world_comm)
@@ -532,6 +536,7 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
 
     # --- Unpack metadata ---
     ndime      = coupling_data[:ndime]
+    neqs       = coupling_data[:neqs]
     rem_min_f  = coupling_data[:rem_min]   # Float32[3]
     rem_max_f  = coupling_data[:rem_max]   # Float32[3]
     rem_nx_i   = coupling_data[:rem_nx]    # Int32[3]
@@ -836,6 +841,10 @@ function je_receive_alya_data(world, nparts)
     ndime_buf = Vector{Int32}(undef, 1)
     MPI.Bcast!(ndime_buf, 0, world)
     ndime = ndime_buf[1]
+
+    #nsteps_buf = Int32[0]
+    #MPI.Bcast!(nsteps_buf, 0, world)
+    #nsteps = Int(nsteps_buf[1])
     
     # Receive grid bounds and resolution
     rem_min = Vector{Float32}(undef, 3)
@@ -847,6 +856,11 @@ function je_receive_alya_data(world, nparts)
         MPI.Bcast!(@view(rem_max[idime:idime]), 0, world)
         MPI.Bcast!(@view(rem_nx[idime:idime]),  0, world)
     end
+
+    # Neqs
+    neqs = 4
+    neqs_buf = Int32[neqs]   # neqs known from your physics setup
+    MPI.Bcast!(neqs_buf, 0, world)   # root = Alya world rank 0
     
     # Build Alya to world rank mapping
     nranks_other = wsize - nparts
@@ -856,6 +870,7 @@ function je_receive_alya_data(world, nparts)
     # Store coupling data
     set_coupling_data(Dict{Symbol,Any}(
         :ndime         => ndime,
+        :neqs          => neqs,
         :rem_min       => rem_min,
         :rem_max       => rem_max,
         :rem_nx        => rem_nx,

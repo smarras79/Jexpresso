@@ -107,17 +107,6 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
-            #=
-            perform_coupling_exchange(
-            integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
-            integrator.p.mesh, integrator.p.mp,
-            integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
-            integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
-            "./TESTCOUPLING", inputs,
-            integrator.p.qp.qvars,
-            integrator.p.qp.qoutvars,
-            inputs[:outformat];
-            nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)=#
         end
     end
 
@@ -153,95 +142,12 @@ function time_loop!(inputs, params, u, args...)
         
         function do_coupling_exchange!(integrator)
             perform_coupling_exchange(integrator.u, integrator.p.uaux, integrator.t,
-                                       cpg, mesh, basis, inputs, ξ, neqs)
+                                      cpg, mesh, basis, inputs, ξ, neqs)
+            @info " YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
         end
-        
-  #=      function do_coupling_exchange!(integrator)
-
-            idx          = idx_ref[]
-            ret_dosetime = ret_dosetime_ref[]
-
-            perform_coupling_exchange(
-                integrator.p.SD, integrator.u, integrator.p.uaux, integrator.t, idx,
-                integrator.p.mesh, integrator.p.mp,
-                integrator.p.connijk_original, integrator.p.poin_in_bdy_face_original,
-                integrator.p.x_original, integrator.p.y_original, integrator.p.z_original,
-                inputs[:output_dir], inputs,
-                integrator.p.qp.qvars,
-                integrator.p.qp.qoutvars,
-                inputs[:outformat];
-                nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
-            
-            
-           # perform_coupling_exchange!(integrator.u, integrator.p.uaux, integrator.t,
-            #                            cpg::CouplingData, integrator.p.mesh, basis, inputs, ξ)
-            #= 1. Prepare solution view
-            npoin = integrator.p.mesh.npoin
-            neqs  = integrator.p.qp.neqs
-            
-            u2uaux!(integrator.p.uaux, integrator.u, neqs, npoin)
-            
-            for i=1:npoin
-                if integrator.p.uaux[i,2] > 0.2
-                    @info integrator.p.uaux[i,2], integrator.p.uaux[i,3], integrator.p.uaux[i,4]
-                end
-            end
-           #= 
-            # 2. Interpolate to local Alya coordinates
-            u_interp_local = interpolate_solution_to_alya_coords(
-                cpg.alya_local_coords, integrator.p.mesh, u_mat, basis, 
-                integrator.p.ξ, neqs, inputs;
-                use_bins=true, bins_per_dim=64
-            )
-            
-            # 3. Pack interpolated data into send buffers
-            pack_interpolated_data!(cpg, u_interp_local, cpg.alya_owner_ranks)
-
-            # 4. Exchange data with Alya
-            coupling_exchange_data!(cpg)
-            
-            # 5. Unpack and apply received data from Alya
-            unpack_received_data!(cpg, integrator.u, integrator.p.mesh,
-                                  cpg.alya_local_coords, cpg.alya_local_ids)
-            
-            =#
-            =#
-        end
-        =#
         
         cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)
     end
-    
-    #=if coupling_enabled
-        # Pull coupling object prepared in setup_coupling_and_mesh
-        cpg = params.coupling
-        @assert cpg !== nothing "params.coupling must be set during setup."
-
-        # Basis where SEM nodes live (adapt this if your basis is stored elsewhere)
-        basis = hasproperty(params, :basis) ? params.basis : params.SD.basis
-        
-        # Global Alya grid size (for assembling full-grid arrays if needed)
-        ndime = get_coupling_data()[:ndime]
-        @assert ndime == 2 "This callback assumes 2D coupling."
-        rem_nx = get_coupling_data()[:rem_nx]  # Int32[3]
-        nx_alya = Int(rem_nx[1])
-        ny_alya = Int(rem_nx[2])
-        n_alya_points = nx_alya * ny_alya
-        
-        # Condition: couple at every step after initial time (adjust as needed)
-        t0   = params.tspan[1]
-        tol0 = get(inputs, :couple_time_tol, 1e-12)
-        function coupling_condition(u_state, t, integrator)
-            return t > t0 + tol0
-        end
-        
-        function do_coupling_exchange!(u)
-            #perform_coupling_exchange!(u, params.uaux, params.coupling, basis, inputs, params.ξ)
-            
-        end
-       
-        cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)
-    end=#
     #------------------------------------------------------------------------
     # END runtime callbacks
     #------------------------------------------------------------------------
@@ -281,11 +187,16 @@ function time_loop!(inputs, params, u, args...)
                      saveat = range(inputs[:tinit],
                                     inputs[:tend],
                                     length=inputs[:ndiagnostics_outputs]))
-    
-    MPI.Barrier(comm)
-    report_all_timers(params.timers)
-    MPI.Barrier(comm)
 
+    #if coupling_enabled
+    #    @info "Julia: ODE complete, syncing with Alya..."
+    #    MPI.Barrier(world)   # <-- add this, matches Fortran's barrier
+    #else
+        MPI.Barrier(comm)
+        report_all_timers(params.timers)
+        MPI.Barrier(comm)
+    #end
+    
     if inputs[:lamr] == true
         while solution.t[end] < inputs[:tend]
             @time prob, partitioned_model = amr_strategy!(inputs, prob.p, solution.u[end][:], solution.t[end], partitioned_model)
@@ -304,8 +215,10 @@ function time_loop!(inputs, params, u, args...)
             MPI.Barrier(comm)
         end
     end
+    
+    println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
 
-println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
-
-return solution
+    MPI.Finalize
+    
+    return solution
 end

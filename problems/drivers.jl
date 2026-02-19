@@ -18,8 +18,7 @@ function driver(nranks,
     coupling = nothing
     lsize = nranks # Local n. of Jexpresso ranks
     is_coupled = je_perform_coupling_handshake(world, lsize)
-    @info is_coupled
-    
+    if rank == 0 printnl(" is_coupled: ", is_coupled) end    
     if is_coupled
 
         # 2. Complete coupling setup

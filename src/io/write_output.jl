@@ -1,4 +1,5 @@
 using WriteVTK
+using Base64
 
 include("./plotting/jeplots.jl")
 
@@ -904,4 +905,266 @@ function write_NetCDF(SD::NSD_3D, mesh::St_mesh, q::Array, qaux::Array, mp,
             
     end
 
+end
+
+#---------------------------------------------------------------------------------------------------------------------
+# Write structured VTK on Alya grid
+#---------------------------------------------------------------------------------------------------------------------
+using Base64
+
+# ═══════════════════════════════════════════════════════════════════════════ #
+#  Entry point                                                                #
+# ═══════════════════════════════════════════════════════════════════════════ #
+function write_pvtu_structured(
+    filename_base::String,
+    alya_coords::Matrix{Float64},
+    u_interp::Matrix{Float64},
+    field_names::Vector{String};
+    nparts::Int   = 1,
+    time::Float64 = 0.0,
+)
+    n_points, neqs = size(u_interp)
+    @assert size(alya_coords, 1) == n_points "coords/u_interp row mismatch: $(size(alya_coords,1)) vs $n_points"
+    @assert 1 <= length(field_names) <= neqs  "need 1..neqs field names"
+
+    nx, ny = _detect_grid_dims(alya_coords)
+    @info "Detected structured grid: nx=$nx  ny=$ny  (total=$(nx*ny), actual=$n_points)"
+    if nx * ny != n_points
+        error("Grid detection failed: nx=$nx × ny=$ny = $(nx*ny) ≠ $n_points points.\n" *
+              "x range: [$(minimum(alya_coords[:,1])), $(maximum(alya_coords[:,1]))]\n" *
+              "y range: [$(minimum(alya_coords[:,2])), $(maximum(alya_coords[:,2]))]")
+    end
+
+    perm = _structured_permutation(alya_coords, nx, ny)
+
+    dir  = dirname(filename_base)
+    isempty(dir) || mkpath(dir)
+    outdir = isempty(dir) ? "." : dir
+    base   = basename(filename_base)
+
+    # Write each VTU piece
+    vtu_names = String[]
+    for ip in 1:nparts
+        jrange   = _part_jrange(ny, nparts, ip)
+        vtu_name = "$(base)_$(lpad(ip, 4, '0')).vtu"
+        push!(vtu_names, vtu_name)
+        vtu_path = joinpath(outdir, vtu_name)
+        xml = _build_vtu_xml(alya_coords, u_interp, field_names, perm, nx, ny, jrange)
+        write(vtu_path, xml)          # atomic: write string, not stream
+        @info "Wrote VTU piece $ip/$nparts: $vtu_path"
+    end
+
+    # Write PVTU master
+    pvtu_path = filename_base * ".pvtu"
+    xml = _build_pvtu_xml(vtu_names, field_names, time)
+    write(pvtu_path, xml)             # atomic: write string, not stream
+    @info "Wrote PVTU: $pvtu_path"
+    return pvtu_path
+end
+
+
+# ═══════════════════════════════════════════════════════════════════════════ #
+#  XML builders — return complete Strings, never use incremental IO          #
+# ═══════════════════════════════════════════════════════════════════════════ #
+function _build_pvtu_xml(
+    vtu_names::Vector{String},
+    field_names::Vector{String},
+    time::Float64,
+)
+    io = IOBuffer()
+    println(io, """<?xml version="1.0"?>""")
+    println(io, """<VTKFile type="PUnstructuredGrid" version="0.1" byte_order="LittleEndian">""")
+    println(io, """  <PUnstructuredGrid GhostLevel="0">""")
+    println(io, """    <PFieldData>""")
+    println(io, """      <PDataArray type="Float64" Name="TimeValue" NumberOfTuples="1"/>""")
+    println(io, """    </PFieldData>""")
+    println(io, """    <PPointData>""")
+    for name in field_names
+        println(io, """      <PDataArray type="Float64" Name="$name"/>""")
+    end
+    println(io, """    </PPointData>""")
+    println(io, """    <PPoints>""")
+    println(io, """      <PDataArray type="Float64" NumberOfComponents="3"/>""")
+    println(io, """    </PPoints>""")
+    # ← this is the critical block that was ending up after </VTKFile>
+    for vtu in vtu_names
+        println(io, """    <Piece Source="$(basename(vtu))"/>""")
+    end
+    println(io, """  </PUnstructuredGrid>""")
+    println(io, """</VTKFile>""")
+    return String(take!(io))
+end
+
+
+function _build_vtu_xml(
+    alya_coords::Matrix{Float64},
+    u_interp::Matrix{Float64},
+    field_names::Vector{String},
+    perm::Vector{Int},
+    nx::Int, ny::Int,
+    jrange::UnitRange{Int},
+)
+    local_ny    = length(jrange)
+    n_pts       = nx * local_ny
+    n_cells     = (nx - 1) * (local_ny - 1)
+
+    # Local permutation: structured (i,j_local) → global alya_coords row
+    local_perm = Vector{Int}(undef, n_pts)
+    for (lj, j) in enumerate(jrange), i in 1:nx
+        local_perm[(lj-1)*nx + i] = perm[(j-1)*nx + i]
+    end
+
+    # 3-component coordinates
+    pts = Vector{Float64}(undef, 3 * n_pts)
+    for lk in 1:n_pts
+        gk = local_perm[lk]
+        pts[3*(lk-1)+1] = alya_coords[gk, 1]
+        pts[3*(lk-1)+2] = alya_coords[gk, 2]
+        pts[3*(lk-1)+3] = 0.0
+    end
+
+    # Quad connectivity (0-based VTK indices)
+    connectivity = Vector{Int32}(undef, 4 * n_cells)
+    offsets      = Vector{Int32}(undef, n_cells)
+    types        = fill(UInt8(9), n_cells)   # VTK_QUAD
+    for (c, (jl, i)) in enumerate(Iterators.product(1:(local_ny-1), 1:(nx-1)))
+        p00 = Int32((jl-1)*nx + (i-1))
+        p10 = Int32((jl-1)*nx +  i   )
+        p11 = Int32( jl   *nx +  i   )
+        p01 = Int32( jl   *nx + (i-1))
+        connectivity[4*(c-1)+1] = p00
+        connectivity[4*(c-1)+2] = p10
+        connectivity[4*(c-1)+3] = p11
+        connectivity[4*(c-1)+4] = p01
+        offsets[c] = Int32(4*c)
+    end
+
+    io = IOBuffer()
+    println(io, """<?xml version="1.0"?>""")
+    println(io, """<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian" header_type="UInt64">""")
+    println(io, """  <UnstructuredGrid>""")
+    println(io, """    <Piece NumberOfPoints="$n_pts" NumberOfCells="$n_cells">""")
+
+    println(io, """      <Points>""")
+    println(io, """        <DataArray type="Float64" NumberOfComponents="3" format="binary">""")
+    println(io, "          ", _b64(pts))
+    println(io, """        </DataArray>""")
+    println(io, """      </Points>""")
+
+    println(io, """      <PointData>""")
+    for (q, name) in enumerate(field_names)
+        arr = Float64[u_interp[local_perm[lk], q] for lk in 1:n_pts]
+        println(io, """        <DataArray type="Float64" Name="$name" format="binary">""")
+        println(io, "          ", _b64(arr))
+        println(io, """        </DataArray>""")
+    end
+    println(io, """      </PointData>""")
+
+    println(io, """      <Cells>""")
+    println(io, """        <DataArray type="Int32" Name="connectivity" format="binary">""")
+    println(io, "          ", _b64(connectivity))
+    println(io, """        </DataArray>""")
+    println(io, """        <DataArray type="Int32" Name="offsets" format="binary">""")
+    println(io, "          ", _b64(offsets))
+    println(io, """        </DataArray>""")
+    println(io, """        <DataArray type="UInt8" Name="types" format="binary">""")
+    println(io, "          ", _b64(types))
+    println(io, """        </DataArray>""")
+    println(io, """      </Cells>""")
+
+    println(io, """    </Piece>""")
+    println(io, """  </UnstructuredGrid>""")
+    println(io, """</VTKFile>""")
+    return String(take!(io))
+end
+
+
+# ═══════════════════════════════════════════════════════════════════════════ #
+#  Binary base64 block: UInt64 byte-count header + raw data                  #
+# ═══════════════════════════════════════════════════════════════════════════ #
+function _b64(data::AbstractVector{T}) where {T}
+    buf = IOBuffer()
+    write(buf, UInt64(length(data) * sizeof(T)))
+    for x in data
+        write(buf, x)
+    end
+    return base64encode(take!(buf))
+end
+
+
+# ═══════════════════════════════════════════════════════════════════════════ #
+#  Grid helpers                                                               #
+# ═══════════════════════════════════════════════════════════════════════════ #
+function _detect_grid_dims(coords::Matrix{Float64})
+    function find_n_unique(vals)
+        sv = sort(vals)
+        # Find the smallest nonzero gap between adjacent values
+        min_gap = Inf
+        for k in 2:length(sv)
+            d = sv[k] - sv[k-1]
+            d > 0 && (min_gap = min(min_gap, d))
+        end
+        # Tolerance = half the minimum spacing — robust regardless of domain size
+        atol = min_gap / 2
+        n = 1
+        for k in 2:length(sv)
+            sv[k] - sv[k-1] > atol && (n += 1)
+        end
+        return n, atol
+    end
+
+    nx, atol_x = find_n_unique(coords[:, 1])
+    ny, atol_y = find_n_unique(coords[:, 2])
+    @info "Grid detection: nx=$nx (atol_x=$atol_x)  ny=$ny (atol_y=$atol_y)"
+    return nx, ny
+end
+
+function _cluster_values(vals::Vector{Float64}, n::Int)
+    sv = sort(vals)
+    min_gap = Inf
+    for k in 2:length(sv)
+        d = sv[k] - sv[k-1]
+        d > 0 && (min_gap = min(min_gap, d))
+    end
+    atol = min_gap / 2
+
+    reps = Float64[sv[1]]
+    for v in sv[2:end]
+        v - reps[end] > atol ? push!(reps, v) : (reps[end] = (reps[end] + v) / 2)
+    end
+    length(reps) == n || error("clustering gave $(length(reps)) groups, expected $n")
+    return reps
+end
+
+function _nearest_grid_idx(sv::Vector{Float64}, v::Float64)
+    idx = searchsortedfirst(sv, v)
+    idx > length(sv) && (idx = length(sv))
+    idx > 1 && abs(sv[idx-1] - v) < abs(sv[idx] - v) && (idx -= 1)
+    return idx
+end
+
+function _structured_permutation(coords::Matrix{Float64}, nx::Int, ny::Int)
+    xs = coords[:, 1]
+    ys = coords[:, 2]
+    x_uniq = _cluster_values(xs, nx)
+    y_uniq = _cluster_values(ys, ny)
+
+    perm = zeros(Int, nx * ny)
+    for k in 1:size(coords, 1)
+        i   = _nearest_grid_idx(x_uniq, xs[k])
+        j   = _nearest_grid_idx(y_uniq, ys[k])
+        lin = (j-1)*nx + i
+        perm[lin] != 0 && @warn "Slot ($i,$j) already filled — duplicate coordinate at row $k"
+        perm[lin] = k
+    end
+    any(==(0), perm) && error("$(count(==(0),perm)) grid slots unfilled after permutation")
+    return perm
+end
+
+function _part_jrange(ny::Int, nparts::Int, ip::Int)
+    base  = ny ÷ nparts
+    extra = ny % nparts
+    j0 = (ip-1)*base + min(ip-1, extra) + 1
+    j1 = j0 + base - 1 + (ip <= extra ? 1 : 0)
+    return j0:j1
 end
