@@ -359,7 +359,7 @@ function coupling_exchange_data!(cpg::CouplingData)
     
     # Base tag (must match TAG_DATA in Alya code)
     TAG_BASE = 2000
-    @info " 3333333333333333333333333"
+
     # Post all non-blocking receives first
     # Convention: receive with tag = BASE + MY_RANK (to match Alya's send convention)
     for src_rank in cpg.recv_from_ranks
@@ -370,7 +370,7 @@ function coupling_exchange_data!(cpg::CouplingData)
             push!(recv_requests, req)
         end
     end
-    @info "55555555555555555555555555555555"
+
     # Post all non-blocking sends
     # Convention: send with tag = BASE + DEST_RANK (to match Alya's receive convention)
     for dest_rank in cpg.send_to_ranks
@@ -381,17 +381,17 @@ function coupling_exchange_data!(cpg::CouplingData)
             push!(send_requests, req)
         end
     end
-    @info "666666666666666666666666666"
+
     # Wait for all receives to complete
     if !isempty(recv_requests)
         MPI.Waitall(recv_requests)
     end
-    @info "77777777777777777777777777777777"
+
     # Wait for all sends to complete
     if !isempty(send_requests)
         MPI.Waitall(send_requests)
     end
-    @info "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+
     return nothing
 end
 
@@ -677,20 +677,14 @@ function interpolate_solution_to_alya_coords(alya_coords::Matrix{Float64}, mesh,
         
         if !found
             # Fallback: nearest neighbor
-            distances = sqrt.((mesh.coords[ipt,1] .- px).^2 .+ (mesh.coords[ipt,2] .- py).^2)
+            distances = (mesh.x .- px).^2 .+ (mesh.y .- py).^2
             nearest = argmin(distances)
             for q in 1:neqs
-                #
-                # (u,v) only
-                #
-                u_interp[ipt, q] = u_mat[nearest, q]/u_mat[nearest, 1]
-                #if u_interp[ipt, 4] > 1.0
-                #    @info " uvelo: ", ipt, u_interp[ipt, 2], mesh.coords[ipt,1], mesh.coords[ipt,2]
-                #end
+                u_interp[ipt, q] = u_mat[nearest, q]
             end
         end
     end
-    @info "AAAAAAAAAAAAAAAAAAAAAAAAAAA 111111111"
+
     return u_interp
 end
 
@@ -842,17 +836,17 @@ function perform_coupling_exchange(u, u_mat, t, cpg::CouplingData, mesh, basis, 
         ξ, neqs, inputs;
         use_bins=true, bins_per_dim=64
     )
-    @info " FFFFFFFFFFFFFFFFFFF"
+
     # 3. Pack interpolated data into send buffers
     pack_interpolated_data!(cpg, u_interp_local, cpg.alya_owner_ranks)
-@info "GGGGGGGGGGGGGGGGGGGGGG"
+
     # 4. Exchange data with Alya
     coupling_exchange_data!(cpg)
-    @info "HHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+
     # 5. Unpack and apply received data from Alya
     unpack_received_data!(cpg, u, mesh,
                           cpg.alya_local_coords, cpg.alya_local_ids)
-    @info " IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
+
     return nothing
 end
 

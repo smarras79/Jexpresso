@@ -143,7 +143,6 @@ function time_loop!(inputs, params, u, args...)
         function do_coupling_exchange!(integrator)
             perform_coupling_exchange(integrator.u, integrator.p.uaux, integrator.t,
                                       cpg, mesh, basis, inputs, ξ, neqs)
-            @info " YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
         end
         
         cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)

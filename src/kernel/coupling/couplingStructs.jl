@@ -340,30 +340,27 @@ function build_coupling_communication_arrays(mesh, coupling_data, local_comm, wo
     return npoin_recv, npoin_send, recv_from_ranks, send_to_ranks
 end
 
-# ---- Connectivity accessor that tolerates Matrix or Vector{Vector} --------------
-# Returns a function get_conn(e)::Vector{Int}
+# ---- Connectivity accessor using connijk (tensor-product ordered) ---------------
+# Returns a function get_conn(e)::AbstractVector{Int}
+# The returned nodes are in tensor-product order: i (ξ) varies fastest, then j (η),
+# matching the loop convention `for j in 1:ngl, i in 1:ngl`.
 function _make_conn_accessor(mesh)
-    conn = getfield(mesh, :conn)
-    if conn isa AbstractMatrix{<:Integer}
-        # columns are elements
-        return e -> vec(@view conn[:, e])
-    elseif conn isa AbstractVector{<:AbstractVector{<:Integer}}
-        return e -> conn[e]
+    connijk = getfield(mesh, :connijk)
+    nsd = mesh.nsd
+    if nsd <= 2
+        # connijk is [nelem × ngl × ngl × 1] for 2D
+        return e -> vec(@view connijk[e, :, :, 1])
+    elseif nsd == 3
+        # connijk is [nelem × ngl × ngl × ngl] for 3D
+        return e -> vec(@view connijk[e, :, :, :])
     else
-        error("mesh.conn must be Matrix{Int} (nperel×nelem) or Vector{Vector{Int}}")
+        error("mesh.nsd must be 1, 2, or 3")
     end
 end
 
-# Number of elements in mesh.conn (matrix columns or vector length)
+# Number of elements in the mesh
 function _num_elems(mesh)
-    conn = getfield(mesh, :conn)
-    if conn isa AbstractMatrix
-        return size(conn, 2)
-    elseif conn isa AbstractVector
-        return length(conn)
-    else
-        error("mesh.conn has unexpected type")
-    end
+    return mesh.nelem
 end
 
 # ---- Barycentric weights for 1D Lagrange nodes ----------------------------------
@@ -865,7 +862,6 @@ function je_receive_alya_data(world, nparts)
     nranks_alya  = wsize - nparts
     alya2world_l = zeros(Int32, nranks_alya)
 
-    @info "JULIAAAAAAAAA Julia Allreduce: wsize=$wsize  nparts=$nparts  nranks_other=$nranks_alya"
     flush(stdout)
     
     alya2world   = MPI.Allreduce(alya2world_l, MPI.SUM, world)
