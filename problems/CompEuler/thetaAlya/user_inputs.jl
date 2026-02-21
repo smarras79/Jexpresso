@@ -7,7 +7,7 @@ function user_inputs()
         :ode_solver           => CarpenterKennedy2N54(), #SSPRK54(), #ORK256(),#SSPRK33(), #SSPRK33(),
         :Δt                   => 0.25,
         :tinit                => 0.0,
-        :tend                 => 1,
+        :tend                 => 1000.0,
         :diagnostics_at_times => (0:10.0:1000),
         #:restart_time         => 500,
         :lrestart             => false,

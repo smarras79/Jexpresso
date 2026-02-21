@@ -838,16 +838,19 @@ end
 #
 #This is the main function to be called from the coupling callback.
 #------------------------------------------------------------------------------------
-function perform_coupling_exchange(u, u_mat, t, cpg::CouplingData, mesh, basis, inputs, ξ, neqs)
+function je_perform_coupling_exchange(u, u_mat, t, cpg::CouplingData, mesh, basis, inputs, ξ, neqs)
     
     # 1. Prepare solution view
     npoin = mesh.npoin
     neqs  = neqs
+    
+    qout = zeros(Float64, npoin, neqs)
     u2uaux!(u_mat, u, neqs, npoin)
-   
+    call_user_uout(qout, u_mat, u_mat, 0, inputs[:SOL_VARS_TYPE], npoin, neqs, neqs)
+    
     # 2. Interpolate to local Alya coordinates
     u_interp_local = interpolate_solution_to_alya_coords(
-        cpg.alya_local_coords, mesh, u_mat, basis, 
+        cpg.alya_local_coords, mesh, qout, basis, 
         ξ, neqs, inputs;
         use_bins=true, bins_per_dim=64
     )

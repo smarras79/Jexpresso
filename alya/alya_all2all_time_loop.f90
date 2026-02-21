@@ -34,6 +34,13 @@ program unitt_alya_with_another_code
   integer(4)                         :: nranks_julia
   integer(4)                         :: step, nsteps
   real(kind=8)                       :: t0, dt, tend, t
+  
+  ! Output scheduling
+  real(kind=8)                       :: out_dt, out_tstart, out_tend, tol
+  integer                            :: nwrite
+  logical                            :: write_now
+  integer                            :: last_bucket, bucket
+  
   real(kind=8), allocatable          :: recvbuf_all(:)
   real(kind=8), allocatable          :: recvcoord_all(:)
   real(kind=8), allocatable          :: sendbuf_all(:)
@@ -233,9 +240,33 @@ program unitt_alya_with_another_code
   !==========================================================================
   ! TIME LOOP
   !==========================================================================
+
+  ! User-defined output interval: [out_tstart : out_dt : out_tend]
+  out_tstart = t0         ! first output time (e.g., t0)
+  out_dt     = 10.0d0     ! write every 10 seconds
+  out_tend   = tend       ! last time to allow writing
+  
+  ! Tolerance and bucket tracker
+  tol         = 10.0d0 * epsilon(1.0d0) * max(1.0d0, abs(out_tstart))
+  last_bucket = -1          ! ensures first eligible time triggers a write
+  
+  ! Convert to an integer step cadence (robust to FP):
+  nwrite = max(1, nint(out_dt / dt))     ! every N steps
+  tol    = 10.0d0 * epsilon(1.0d0)       ! small guard
+  
   do step = 1, nsteps
      t = t0 + step * dt
-
+     
+     write_now = .false.
+     if (t >= out_tstart - tol .and. t <= out_tend + tol) then
+        ! Integer bucket index for current time (0,1,2,...) since out_tstart
+        bucket = int( ((t - out_tstart) + tol) / out_dt )   ! floor for t >= out_tstart
+        if (bucket > last_bucket) then
+           write_now   = .true.
+           last_bucket = bucket
+        end if
+     end if
+     
      dummy_field = dummy_field + 0.01d0 * dble(step)
      sendbuf_all(1:total_pts * neqs) = dummy_field
 
@@ -365,12 +396,13 @@ program unitt_alya_with_another_code
      !   - all Alya ranks gather to rank 0 via MPI_Gatherv (PAR_COMM_FINAL)
      !   - rank 0 writes a single .vts file per timestep
      !------------------------------------------------------------------------
-     call write_alya_grid_vts(arank, asize, PAR_COMM_FINAL, ndime, &
-          rem_min, rem_max, rem_nx, &
-          recvbuf_all, recvcoord_all, total_pts, neqs, step, t)
-
-     call MPI_Barrier(PAR_COMM_FINAL, ierr)
-
+     if (write_now) then
+        call write_alya_grid_vts(arank, asize, PAR_COMM_FINAL, ndime, &
+             rem_min, rem_max, rem_nx, &
+             recvbuf_all, recvcoord_all, total_pts, neqs, step, t)
+        call MPI_Barrier(PAR_COMM_FINAL, ierr)
+     end if
+     
   end do  ! End time loop
 
   if (rank == 0) then

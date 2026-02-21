@@ -141,8 +141,8 @@ function time_loop!(inputs, params, u, args...)
         mesh  = params.mesh
         
         function do_coupling_exchange!(integrator)
-            perform_coupling_exchange(integrator.u, integrator.p.uaux, integrator.t,
-                                      cpg, mesh, basis, inputs, ξ, neqs)
+            je_perform_coupling_exchange(integrator.u, integrator.p.uaux, integrator.t,
+                                         cpg, mesh, basis, inputs, ξ, neqs)
         end
         
         cb_coupling = DiscreteCallback(coupling_condition, do_coupling_exchange!)
