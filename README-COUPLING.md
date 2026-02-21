@@ -24,7 +24,7 @@ This document describes the MPI coupling protocol between **Jexpresso** (Julia, 
 The coupled simulation runs as a single `mpirun` job with two SPMD programs sharing `MPI_COMM_WORLD`:
 
 ```
-mpirun -np <N_alya> ./AlyaProxy/Alya_enhanced.x : -np <N_jexpresso> julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
+mpirun -np <N_alya> ./AlyaProxy/Alya.x : -np <N_jexpresso> julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
 ```
 
 Alya ranks occupy world ranks `0 .. N_alya-1`, Jexpresso ranks occupy `N_alya .. N_alya+N_jexpresso-1`. Each code splits `MPI_COMM_WORLD` into a local communicator (`PAR_COMM_FINAL` in Fortran, `local_comm` in Julia) using `MPI_Comm_split` with distinct color values.

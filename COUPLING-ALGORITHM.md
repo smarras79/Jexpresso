@@ -1,3 +1,4 @@
+
 # Coupling Algorithm: Jexpresso -- Alya
 
 This document describes the coupling algorithm between Jexpresso (Julia SEM solver) and Alya (Fortran CFD code), from the initial handshake through the time-loop exchange of interpolated fields. It focuses exclusively on the coupling logic and the data that flows between the two codes.
@@ -9,7 +10,7 @@ This document describes the coupling algorithm between Jexpresso (Julia SEM solv
 Both codes are launched as a single MPI job sharing `MPI_COMM_WORLD`:
 
 ```
-mpirun -np <N_alya> ./AlyaProxy/Alya_enhanced.x \
+mpirun -np <N_alya> ./AlyaProxy/Alya.x \
      : -np <N_jexpresso> julia --project=. ./src/Jexpresso.jl CompEuler thetaAlya
 ```
 
