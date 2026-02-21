@@ -32,14 +32,14 @@ program unitt_alya_with_another_code
   integer, parameter                 :: TAG_COORD = 3000
 
   integer(4)                         :: nranks_julia
+
   integer(4)                         :: step, nsteps
   real(kind=8)                       :: t0, dt, tend, t
   
   ! Output scheduling
-  real(kind=8)                       :: out_dt, out_tstart, out_tend, tol
-  integer                            :: nwrite
-  logical                            :: write_now
-  integer                            :: last_bucket, bucket
+  real(kind=8) :: out_dt, out_tstart, out_tend
+  real(kind=8) :: next_t, tol, dt_step, t_plus
+  logical      :: write_now
   
   real(kind=8), allocatable          :: recvbuf_all(:)
   real(kind=8), allocatable          :: recvcoord_all(:)
@@ -108,7 +108,7 @@ program unitt_alya_with_another_code
   !--------------------------------------------------------------------------
   rem_min = [-5000.0,     0.0, 0.0]
   rem_max = [ 5000.0, 10000.0, 0.0]
-  rem_nx  = [41,      41,        1]
+  rem_nx  = [100,      100,      1]
   ndime   = 2
 
   if (rank == 0) then
@@ -240,30 +240,36 @@ program unitt_alya_with_another_code
   !==========================================================================
   ! TIME LOOP
   !==========================================================================
-
-  ! User-defined output interval: [out_tstart : out_dt : out_tend]
-  out_tstart = t0         ! first output time (e.g., t0)
-  out_dt     = 10.0d0     ! write every 10 seconds
-  out_tend   = tend       ! last time to allow writing
+  ! --- VTS output schedule: write once every out_dt seconds in [out_tstart, out_tend]
+  out_tstart = t0           ! first time eligible for output (change if needed)
+  out_dt     = 10.0d0       ! <-- write every 10 seconds
+  out_tend   = tend         ! last time eligible for output
   
-  ! Tolerance and bucket tracker
-  tol         = 10.0d0 * epsilon(1.0d0) * max(1.0d0, abs(out_tstart))
-  last_bucket = -1          ! ensures first eligible time triggers a write
+  ! Time accumulators & tolerance
+  t      = t0               ! start the running time at t0
+  next_t = out_tstart       ! first target time to hit
+  tol    = 100.0d0 * epsilon(1.0d0) * max(1.0d0, abs(out_tstart))
   
-  ! Convert to an integer step cadence (robust to FP):
-  nwrite = max(1, nint(out_dt / dt))     ! every N steps
-  tol    = 10.0d0 * epsilon(1.0d0)       ! small guard
+  ! Optional: disable writes if out_dt <= 0
+  if (out_dt <= 0.0d0) next_t = huge(1.0d0)
   
   do step = 1, nsteps
-     t = t0 + step * dt
+     !t = t0 + step * dt
      
+     ! Use the dt of this step (constant or variable)
+     dt_step = dt
+     t_plus  = t + dt_step
+
+     ! Decide if we write this step:
+     !   - write when this step crosses 'next_t'
+     !   - advance 'next_t' by out_dt (possibly multiple times if we skipped over)
      write_now = .false.
-     if (t >= out_tstart - tol .and. t <= out_tend + tol) then
-        ! Integer bucket index for current time (0,1,2,...) since out_tstart
-        bucket = int( ((t - out_tstart) + tol) / out_dt )   ! floor for t >= out_tstart
-        if (bucket > last_bucket) then
-           write_now   = .true.
-           last_bucket = bucket
+     if (next_t <= out_tend + tol) then
+        if (t_plus >= next_t - tol) then
+           write_now = .true.
+           do while (next_t <= t_plus + tol)
+              next_t = next_t + out_dt
+           end do
         end if
      end if
      
@@ -371,25 +377,26 @@ program unitt_alya_with_another_code
      !------------------------------------------------------------------------
      ! PRINT: received interpolated data at coordinates
      !------------------------------------------------------------------------
-     if (total_pts > 0) then
-        write(*,'(A,I0,A,F10.4,A,I0,A,I0)') &
-             '--- Recv step=', step, '  t=', t, &
-             '  Alya_rank=', arank, '  world_rank=', rank
-        write(*,'(A8,A6,A6,A18,A18,A18)') 'GlobalID','ix','iy','x','y','rho'
-        write(*,'(A)') repeat('-', 80)
-        do ipoin = i_start, i_end
-           iz = ipoin / (rem_nx(1)*rem_nx(2))
-           iy = (ipoin - iz*rem_nx(1)*rem_nx(2)) / rem_nx(1)
-           ix = mod(ipoin, rem_nx(1))
-           xc = dble(rem_min(1)) + ix*dx
-           yc = dble(rem_min(2)) + iy*dy
-           i  = ipoin - i_start + 1
-           write(*,'(I8,I6,I6,E18.8,E18.8,E18.8)') &
-                ipoin, ix, iy, xc, yc, recvbuf_all((i-1)*neqs + 1)
-        end do
-        write(*,'(A)') repeat('=', 80)
-        flush(6)
-     end if
+!!$     
+!!$     if (total_pts > 0) then
+!!$        write(*,'(A,I0,A,F10.4,A,I0,A,I0)') &
+!!$             '--- Recv step=', step, '  t=', t, &
+!!$             '  Alya_rank=', arank, '  world_rank=', rank
+!!$        write(*,'(A8,A6,A6,A18,A18,A18)') 'GlobalID','ix','iy','x','y','rho'
+!!$        write(*,'(A)') repeat('-', 80)
+!!$        do ipoin = i_start, i_end
+!!$           iz = ipoin / (rem_nx(1)*rem_nx(2))
+!!$           iy = (ipoin - iz*rem_nx(1)*rem_nx(2)) / rem_nx(1)
+!!$           ix = mod(ipoin, rem_nx(1))
+!!$           xc = dble(rem_min(1)) + ix*dx
+!!$           yc = dble(rem_min(2)) + iy*dy
+!!$           i  = ipoin - i_start + 1
+!!$           write(*,'(I8,I6,I6,E18.8,E18.8,E18.8)') &
+!!$                ipoin, ix, iy, xc, yc, recvbuf_all((i-1)*neqs + 1)
+!!$        end do
+!!$        write(*,'(A)') repeat('=', 80)
+!!$        flush(6)
+!!$     end if
 
      !------------------------------------------------------------------------
      ! VTS OUTPUT: structured grid with filled contours
@@ -399,9 +406,11 @@ program unitt_alya_with_another_code
      if (write_now) then
         call write_alya_grid_vts(arank, asize, PAR_COMM_FINAL, ndime, &
              rem_min, rem_max, rem_nx, &
-             recvbuf_all, recvcoord_all, total_pts, neqs, step, t)
+             recvbuf_all, recvcoord_all, total_pts, neqs, step, t_plus)
         call MPI_Barrier(PAR_COMM_FINAL, ierr)
      end if
+
+     t = t_plus
      
   end do  ! End time loop
 
