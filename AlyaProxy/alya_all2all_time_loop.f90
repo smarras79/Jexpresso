@@ -20,7 +20,7 @@ program unitt_alya_with_another_code
 
   real,    dimension(1:3)            :: rem_min, rem_max
   integer, dimension(1:3)            :: rem_nx
-
+  
   integer(4),    contiguous, pointer :: alya_to_world(:)
   integer(4),    contiguous, pointer :: alya_to_world_snd(:)
 
@@ -37,9 +37,10 @@ program unitt_alya_with_another_code
   real(kind=8)                       :: t0, dt, tend, t
   
   ! Output scheduling
-  real(kind=8) :: out_dt, out_tstart, out_tend
-  real(kind=8) :: next_t, tol, dt_step, t_plus
-  logical      :: write_now
+  real(kind=8)                       :: out_dt, out_tstart, out_tend
+  real(kind=8)                       :: next_t, tol, dt_step, t_plus
+  logical                            :: write_now
+  integer                            :: bucket_start, bucket_end
   
   real(kind=8), allocatable          :: recvbuf_all(:)
   real(kind=8), allocatable          :: recvcoord_all(:)
@@ -248,7 +249,7 @@ program unitt_alya_with_another_code
   ! Time accumulators & tolerance
   t      = t0               ! start the running time at t0
   next_t = out_tstart       ! first target time to hit
-  tol    = 100.0d0 * epsilon(1.0d0) * max(1.0d0, abs(out_tstart))
+  tol = max(1.0d-12, 1000.0d0 * epsilon(1.0d0) * (abs(out_tstart) + abs(out_dt) + abs(t0)))
   
   ! Optional: disable writes if out_dt <= 0
   if (out_dt <= 0.0d0) next_t = huge(1.0d0)
@@ -260,19 +261,16 @@ program unitt_alya_with_another_code
      dt_step = dt
      t_plus  = t + dt_step
 
-     ! Decide if we write this step:
-     !   - write when this step crosses 'next_t'
-     !   - advance 'next_t' by out_dt (possibly multiple times if we skipped over)
+     ! Time-bucket gate: write exactly once when [t, t_plus] crosses a multiple of out_dt
      write_now = .false.
-     if (next_t <= out_tend + tol) then
-        if (t_plus >= next_t - tol) then
-           write_now = .true.
-           do while (next_t <= t_plus + tol)
-              next_t = next_t + out_dt
-           end do
+     if (out_dt > 0.0d0) then
+        if (t_plus >= out_tstart - tol .and. t <= out_tend + tol) then
+           bucket_start = int( floor( ((t      - out_tstart) + tol) / out_dt ) )
+           bucket_end   = int( floor( ((t_plus - out_tstart) + tol) / out_dt ) )
+           if (bucket_end > bucket_start) write_now = .true.
         end if
      end if
-     
+
      dummy_field = dummy_field + 0.01d0 * dble(step)
      sendbuf_all(1:total_pts * neqs) = dummy_field
 
