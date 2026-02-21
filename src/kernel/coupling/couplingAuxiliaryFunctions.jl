@@ -340,45 +340,50 @@ Uses the communication pattern established during setup:
 """
     coupling_exchange_data!(cpg::CouplingData)
 
-Exchange data with Alya using the same tag convention:
-- Send to rank R: tag = BASE + R (destination)
-- Receive from rank R: tag = BASE + MY_RANK (own rank)
+Exchange data AND coordinates with Alya using non-blocking communication.
+- Data   send to rank R: tag = TAG_DATA  + R
+- Coord  send to rank R: tag = TAG_COORD + R
+- Data receive from R:   tag = TAG_DATA  + MY_RANK
 """
 function coupling_exchange_data!(cpg::CouplingData)
     wsize = length(cpg.npoin_send)
-    
+
     # Get my world rank
     lcomm = get_mpi_comm()
-    lrank = MPI.Comm_rank(lcomm)
-    lsize = MPI.Comm_size(lcomm)
     wrank = MPI.Comm_rank(cpg.comm_world)
-    
+
     # Allocate arrays for MPI requests
     send_requests = MPI.Request[]
     recv_requests = MPI.Request[]
-    
-    # Base tag (must match TAG_DATA in Alya code)
-    TAG_BASE = 2000
 
-    # Post all non-blocking receives first
-    # Convention: receive with tag = BASE + MY_RANK (to match Alya's send convention)
+    # Tags (must match Alya Fortran code)
+    TAG_DATA  = 2000
+    TAG_COORD = 3000
+
+    # Post all non-blocking receives (data from Alya → Julia)
     for src_rank in cpg.recv_from_ranks
         if cpg.npoin_recv[src_rank + 1] > 0
             buf = cpg.recv_bufs[src_rank + 1]
-            tag = TAG_BASE + wrank  # Use MY world rank (Alya sends to me with this tag)
+            tag = TAG_DATA + wrank
             req = MPI.Irecv!(buf, src_rank, tag, cpg.comm_world)
             push!(recv_requests, req)
         end
     end
 
-    # Post all non-blocking sends
-    # Convention: send with tag = BASE + DEST_RANK (to match Alya's receive convention)
+    # Post all non-blocking sends (data + coordinates, Julia → Alya)
     for dest_rank in cpg.send_to_ranks
         if cpg.npoin_send[dest_rank + 1] > 0
+            # Send interpolated variable data
             buf = cpg.send_bufs[dest_rank + 1]
-            tag = TAG_BASE + dest_rank  # Use destination rank (Alya expects this tag)
+            tag = TAG_DATA + dest_rank
             req = MPI.Isend(buf, dest_rank, tag, cpg.comm_world)
             push!(send_requests, req)
+
+            # Send coordinates so Alya can map values to grid positions
+            cbuf = cpg.send_coord_bufs[dest_rank + 1]
+            ctag = TAG_COORD + dest_rank
+            creq = MPI.Isend(cbuf, dest_rank, ctag, cpg.comm_world)
+            push!(send_requests, creq)
         end
     end
 
@@ -457,38 +462,48 @@ Pack interpolated values into send buffers according to which Alya rank owns eac
 - `alya_owner_ranks`: [n_local_points] world rank that owns each Alya point (0-based)
 =#
 #------------------------------------------------------------------------------------
-function pack_interpolated_data!(cpg::CouplingData, interp_values::Matrix{Float64}, 
-                                 alya_owner_ranks::Vector{Int32})
+function pack_interpolated_data!(cpg::CouplingData, interp_values::Matrix{Float64},
+                                 alya_owner_ranks::Vector{Int32},
+                                 alya_local_coords::Matrix{Float64})
     n_local = size(interp_values, 1)
-    neqs = cpg.neqs
+    neqs  = cpg.neqs
+    ndime = cpg.ndime
     wsize = length(cpg.npoin_send)
-    
-    # Zero out send buffers
+
+    # Zero out send buffers (data + coordinates)
     for i in 1:wsize
         fill!(cpg.send_bufs[i], 0.0)
+        fill!(cpg.send_coord_bufs[i], 0.0)
     end
-    
+
     # Track how many values we've packed for each destination rank
     send_offsets = zeros(Int, wsize)
-    
-    # Pack data for each Alya point into the appropriate send buffer
+    coord_offsets = zeros(Int, wsize)
+
+    # Pack data AND coordinates for each Alya point
     @inbounds for i in 1:n_local
         owner_rank = alya_owner_ranks[i]  # 0-based world rank
         buf_idx = owner_rank + 1  # 1-based indexing
-        
+
         if cpg.npoin_send[buf_idx] > 0
+            # Pack variable values
             offset = send_offsets[buf_idx]
             buf = cpg.send_bufs[buf_idx]
-            
-            # Pack all equations for this point
             for q in 1:neqs
                 buf[offset + q] = interp_values[i, q]
             end
-            
             send_offsets[buf_idx] += neqs
+
+            # Pack coordinates so Alya can map each value to its grid position
+            coffset = coord_offsets[buf_idx]
+            cbuf = cpg.send_coord_bufs[buf_idx]
+            for d in 1:ndime
+                cbuf[coffset + d] = alya_local_coords[i, d]
+            end
+            coord_offsets[buf_idx] += ndime
         end
     end
-    
+
     return nothing
 end
 
@@ -837,8 +852,8 @@ function perform_coupling_exchange(u, u_mat, t, cpg::CouplingData, mesh, basis, 
         use_bins=true, bins_per_dim=64
     )
 
-    # 3. Pack interpolated data into send buffers
-    pack_interpolated_data!(cpg, u_interp_local, cpg.alya_owner_ranks)
+    # 3. Pack interpolated data AND coordinates into send buffers
+    pack_interpolated_data!(cpg, u_interp_local, cpg.alya_owner_ranks, cpg.alya_local_coords)
 
     # 4. Exchange data with Alya
     coupling_exchange_data!(cpg)

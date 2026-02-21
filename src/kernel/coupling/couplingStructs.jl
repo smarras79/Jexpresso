@@ -45,28 +45,30 @@ mutable struct CouplingData
     npoin_send::Vector{Int32}        # Points to send to each world rank
     recv_from_ranks::Vector{Int32}   # World ranks we receive from
     send_to_ranks::Vector{Int32}     # World ranks we send to
-    
+
     # MPI info
     comm_world::MPI.Comm             # MPI.COMM_WORLD
     lrank::Int32                     # Local rank in Jexpresso communicator
-    
+
     # Problem size
     neqs::Int                        # Number of equations per point
-    
+    ndime::Int                       # Spatial dimension (2 or 3)
+
     # Buffers (allocated later)
     send_bufs::Union{Nothing, Vector{Vector{Float64}}}
     recv_bufs::Union{Nothing, Vector{Vector{Float64}}}
+    send_coord_bufs::Union{Nothing, Vector{Vector{Float64}}}  # coordinates sent alongside data
 
     # Alya coordinate information
     alya_local_coords::Union{Nothing, Matrix{Float64}}
     alya_local_ids::Union{Nothing, Vector{Int32}}
     alya_owner_ranks::Union{Nothing, Vector{Int32}}
-    
+
     # Constructor
     function CouplingData(; npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
-                          comm_world, lrank, neqs)
+                          comm_world, lrank, neqs, ndime)
         new(npoin_recv, npoin_send, recv_from_ranks, send_to_ranks,
-            comm_world, lrank, neqs, nothing, nothing)
+            comm_world, lrank, neqs, ndime, nothing, nothing, nothing)
     end
 end
 
@@ -157,6 +159,7 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
     qp = initialize(sem.mesh.SD, 0, sem.mesh, inputs, OUTPUT_DIR, TFloat)
     
     # Store coupling information
+    ndime = coupling_data[:ndime]
     coupling = CouplingData(
         npoin_recv = npoin_recv,
         npoin_send = npoin_send,
@@ -164,17 +167,18 @@ function setup_coupling_and_mesh(world, lsize, inputs, nranks, distribute, rank,
         send_to_ranks = send_to_ranks,
         comm_world = world,
         lrank = lrank,
-        neqs = qp.neqs
+        neqs = qp.neqs,
+        ndime = ndime
     )
-    
+
     # Persist Alya coordinate data in the coupling object for interpolation
     coupling.alya_local_coords = alya_local_coords
     coupling.alya_local_ids    = alya_local_ids
     coupling.alya_owner_ranks  = alya_owner_ranks
-    
-    # Allocate coupling buffers
-    coupling.send_bufs, coupling.recv_bufs =
-        allocate_coupling_buffers(npoin_recv, npoin_send, coupling.neqs)
+
+    # Allocate coupling buffers (data + coordinates)
+    coupling.send_bufs, coupling.recv_bufs, coupling.send_coord_bufs =
+        allocate_coupling_buffers(npoin_recv, npoin_send, coupling.neqs, ndime)
     
     # Assert they match
  #   @assert sort(recv_from_ranks) == sort(send_to_ranks) "Coupling partners asymmetric — check alya_owner_ranks vs Alltoall result"
@@ -796,23 +800,27 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
     return alya_local_coords, ids, owners
 end
 
-function allocate_coupling_buffers(npoin_recv, npoin_send, neqs)
+function allocate_coupling_buffers(npoin_recv, npoin_send, neqs, ndime)
     wsize = length(npoin_recv)
-    
+
     send_bufs = Vector{Vector{Float64}}(undef, wsize)
     recv_bufs = Vector{Vector{Float64}}(undef, wsize)
-    
+    send_coord_bufs = Vector{Vector{Float64}}(undef, wsize)
+
     for i in 1:wsize
-        # Allocate send buffer
+        # Allocate send buffer (neqs values per point)
         nsend = npoin_send[i] * neqs
         send_bufs[i] = zeros(Float64, nsend)
-        
+
         # Allocate receive buffer
         nrecv = npoin_recv[i] * neqs
         recv_bufs[i] = zeros(Float64, nrecv)
+
+        # Allocate coordinate send buffer (ndime coords per point)
+        send_coord_bufs[i] = zeros(Float64, npoin_send[i] * ndime)
     end
-    
-    return send_bufs, recv_bufs
+
+    return send_bufs, recv_bufs, send_coord_bufs
 end
 
 function je_perform_coupling_handshake(world, nparts)
