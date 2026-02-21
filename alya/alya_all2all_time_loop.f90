@@ -45,6 +45,7 @@ program unitt_alya_with_another_code
   integer,           allocatable     :: recv_requests(:), send_requests(:)
 #endif
   integer                            :: nactive, ireq
+  integer                            :: recv_offset, send_offset
 
   integer                            :: nmax, r_rem, npoin_per_rank
   integer                            :: i_start, i_end, npoin_local
@@ -233,32 +234,42 @@ program unitt_alya_with_another_code
      !------------------------------------------------------------------------
 
      ! --- Post all receives (Julia -> Alya) ---
+     ! Each sender's data goes to a distinct offset in recvbuf_all so that
+     ! multiple senders do not overwrite each other.
      ireq = 0
+     recv_offset = 0
      do i = 0, size-1
         if (npoin_recv(i) > 0) then
            ireq = ireq + 1
 #ifdef USEMPIF08
-           call MPI_Irecv(recvbuf_all(1), npoin_recv(i) * neqs, MPI_DOUBLE_PRECISION, &
-                i, TAG_DATA + rank, MPI_COMM_WORLD, recv_requests(ireq), ierr)
+           call MPI_Irecv(recvbuf_all(recv_offset + 1), npoin_recv(i) * neqs, &
+                MPI_DOUBLE_PRECISION, i, TAG_DATA + rank, MPI_COMM_WORLD, &
+                recv_requests(ireq), ierr)
 #else
-           call MPI_IRECV(recvbuf_all(1), npoin_recv(i) * neqs, MPI_DOUBLE_PRECISION, &
-                i, TAG_DATA + rank, MPI_COMM_WORLD, recv_requests(ireq), ierr)
+           call MPI_IRECV(recvbuf_all(recv_offset + 1), npoin_recv(i) * neqs, &
+                MPI_DOUBLE_PRECISION, i, TAG_DATA + rank, MPI_COMM_WORLD, &
+                recv_requests(ireq), ierr)
 #endif
+           recv_offset = recv_offset + npoin_recv(i) * neqs
         end if
      end do
 
      ! --- Post all sends (Alya -> Julia) ---
      ireq = 0
+     send_offset = 0
      do i = 0, size-1
         if (npoin_recv(i) > 0) then
            ireq = ireq + 1
 #ifdef USEMPIF08
-           call MPI_Isend(sendbuf_all(1), npoin_recv(i) * neqs, MPI_DOUBLE_PRECISION, &
-                i, TAG_DATA + i, MPI_COMM_WORLD, send_requests(ireq), ierr)
+           call MPI_Isend(sendbuf_all(send_offset + 1), npoin_recv(i) * neqs, &
+                MPI_DOUBLE_PRECISION, i, TAG_DATA + i, MPI_COMM_WORLD, &
+                send_requests(ireq), ierr)
 #else
-           call MPI_ISEND(sendbuf_all(1), npoin_recv(i) * neqs, MPI_DOUBLE_PRECISION, &
-                i, TAG_DATA + i, MPI_COMM_WORLD, send_requests(ireq), ierr)
+           call MPI_ISEND(sendbuf_all(send_offset + 1), npoin_recv(i) * neqs, &
+                MPI_DOUBLE_PRECISION, i, TAG_DATA + i, MPI_COMM_WORLD, &
+                send_requests(ireq), ierr)
 #endif
+           send_offset = send_offset + npoin_recv(i) * neqs
         end if
      end do
 
@@ -359,15 +370,20 @@ contains
   !       to a MPI_Gatherv within PAR_COMM_FINAL.
   !    2. Alya rank 0 assembles the full field and writes one .vts file.
   !
-  !  The flat coupling index order (ix + iy*nx1 + iz*nx1*nx2, 0-based)
-  !  matches the VTS point order (ix fastest), so no reordering is needed.
+  !  Data ordering:
+  !    The Julia side sorts extracted coordinates by (owner_rank, global_id)
+  !    so that each Alya rank receives values in ascending flat-index order.
+  !    After MPI_Gatherv, full_field is indexed as:
+  !       full_field( ipoin_0 * neqs + ieq )
+  !    where ipoin_0 = ix + iy*nx1 + iz*nx1*nx2  (0-based flat index)
+  !    and   ieq = 1..neqs                        (1-based equation index)
+  !
+  !  The VTS writer uses the coordinate position (ix, iy, iz) to compute
+  !  the flat index for each grid point, ensuring coordinates and variable
+  !  values are written in the correct VTS order (ix fastest).
   !
   !  Each variable (rho, u, v, theta) is written as a separate DataArray
   !  so ParaView can visualise them independently.
-  !
-  !  For grids larger than ~10^6 points consider switching to proper parallel
-  !  PVTS (one .vts piece per rank with correct Extent attributes), but for
-  !  the 41x41 case this gather-to-rank-0 approach is both correct and fast.
   !===========================================================================
   subroutine write_alya_grid_vts(arank, asize, PAR_COMM, ndime, &
                                   rem_min, rem_max, rem_nx, &
@@ -387,10 +403,10 @@ contains
     integer          :: irank, iunit, ierr_loc, ierr_mpi
     integer          :: ix, iy, iz, ipoin_0, ieq
     real(8)          :: x, y, z, dx, dy, dz
-    real(8)          :: count_local_d     ! dummy
     character(len=256)          :: filename
     integer,  allocatable       :: sendcounts(:), displs(:)
     real(8),  allocatable       :: full_field(:)
+    real(8),  allocatable       :: grid_var(:,:,:)
 
     ! Variable names for the neqs fields
     character(len=16) :: varname
@@ -418,12 +434,11 @@ contains
           count_r   = np_base
        end if
        sendcounts(irank) = count_r * neqs   ! doubles this rank sends
-       displs(irank)     = i_start_r * neqs ! byte offset in full_field
+       displs(irank)     = i_start_r * neqs ! displacement in full_field
     end do
 
     !--- This rank's local send count ---
-    ! (= total_pts * neqs, computed from the same formula)
-    count_r = sendcounts(arank)  ! reuse the array we just filled
+    count_r = sendcounts(arank)
 
     !--- Allocate receive buffer only on root ---
     if (arank == 0) then
@@ -490,11 +505,10 @@ contains
          0, ' ', rem_nx(2)-1, ' ', &
          0, ' ', rem_nx(3)-1, '">'
 
-    !--- Points ---
+    !--- Points: compute coordinates from grid indices in VTS order ---
     write(iunit,'(A)') '      <Points>'
     write(iunit,'(A)') '        <DataArray type="Float64" NumberOfComponents="3" format="ascii">'
 
-    ! VTS order: ix fastest, then iy, then iz
     do iz = 0, rem_nx(3)-1
        do iy = 0, rem_nx(2)-1
           do ix = 0, rem_nx(1)-1
@@ -510,7 +524,19 @@ contains
     write(iunit,'(A)') '      </Points>'
 
     !--- Point data: one DataArray per equation variable ---
+    !
+    ! Use the coordinate position (ix, iy, iz) to compute the flat index:
+    !   ipoin_0 = ix + iy * rem_nx(1) + iz * rem_nx(1) * rem_nx(2)
+    ! Then look up the variable value from full_field at:
+    !   full_field( ipoin_0 * neqs + ieq )
+    !
+    ! This explicit coordinate -> flat-index -> value mapping ensures each
+    ! grid point's data is written at the position matching its coordinates.
     write(iunit,'(A)') '      <PointData>'
+
+    ! Allocate a 3D work array to scatter interleaved full_field values
+    ! into (ix, iy, iz) structured positions for each variable
+    allocate(grid_var(0:rem_nx(1)-1, 0:rem_nx(2)-1, 0:rem_nx(3)-1))
 
     do ieq = 1, neqs
 
@@ -527,14 +553,22 @@ contains
        write(iunit,'(A,A,A)') &
             '        <DataArray type="Float64" Name="', trim(varname), '" format="ascii">'
 
-       ! Values in VTS order (ix fastest)
+       ! Scatter: use each point's flat index to compute its grid position (ix,iy,iz)
+       ! and place the variable value at the correct structured location
+       grid_var = 0.0d0
+       do ipoin_0 = 0, nmax - 1
+          iz = ipoin_0 / (rem_nx(1) * rem_nx(2))
+          iy = (ipoin_0 - iz * rem_nx(1) * rem_nx(2)) / rem_nx(1)
+          ix = mod(ipoin_0, rem_nx(1))
+          grid_var(ix, iy, iz) = full_field(ipoin_0 * neqs + ieq)
+       end do
+
+       ! Write in VTS order (ix fastest, then iy, then iz)
+       ! using the coordinate positions stored in grid_var
        do iz = 0, rem_nx(3)-1
           do iy = 0, rem_nx(2)-1
              do ix = 0, rem_nx(1)-1
-                ! 0-based flat index: same formula as coupling distribution
-                ipoin_0 = ix + iy*rem_nx(1) + iz*rem_nx(1)*rem_nx(2)
-                ! 1-based index into full_field (interleaved: point0_eq1, point0_eq2, ...)
-                write(iunit,'(E16.8)') full_field(ipoin_0 * neqs + ieq)
+                write(iunit,'(E16.8)') grid_var(ix, iy, iz)
              end do
           end do
        end do
@@ -542,6 +576,8 @@ contains
        write(iunit,'(A)') '        </DataArray>'
 
     end do  ! ieq
+
+    deallocate(grid_var)
 
     write(iunit,'(A)') '      </PointData>'
     write(iunit,'(A)') '    </Piece>'

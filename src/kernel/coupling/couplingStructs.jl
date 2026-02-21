@@ -774,6 +774,18 @@ function extract_local_alya_coordinates(mesh, coupling_data, local_comm, world_c
         end
     end
 
+    # Sort by (owner_rank, global_id) so that data sent to each Alya rank
+    # arrives in ascending flat-index order, matching the Fortran Gatherv
+    # displacement layout.  Without this sort the bin-iteration order of
+    # extract_local_alya_coordinates may differ from flat-index order for
+    # grids spanning more than one spatial bin.
+    if n_local > 1
+        perm = sortperm(collect(zip(owners, ids)))
+        alya_local_coords = alya_local_coords[perm, :]
+        ids    = ids[perm]
+        owners = owners[perm]
+    end
+
     if lrank == 0 || n_local > 0
         println("[extract_local_alya_coordinates] (lrank=$lrank, wrank=$wrank) ",
                 "collected $n_local Alya points using cropping=$(use_cropping) ",
