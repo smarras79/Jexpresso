@@ -8,7 +8,7 @@ function user_inputs()
         :Δt                   => 0.25,
         :tinit                => 0.0,
         :tend                 => 1,
-        :diagnostics_at_times => (0:0.25:1),
+        :diagnostics_at_times => (0:10.0:1000),
         #:restart_time         => 500,
         :lrestart             => false,
         :restart_input_file_path => "/home/leon/njit/Jexpresso_gigales/Jexpresso/problems/equations/CompEuler/theta",
