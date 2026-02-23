@@ -34,8 +34,11 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
         :gmsh_filename       => "./JexpressoMeshes/meshes/gmsh_grids/hexa_TFI_3d_rad.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
+        
         :extra_dimensions    => 2,
-        :adaptive_extra_meshes => false,
+        :RT_amr_threshold   => [0.018],
+        :lRT_problem        => true,
+        :adaptive_extra_meshes => true,
         :extra_dimensions_order => 4,
         :extra_dimensions_nelemx => 3,
         :extra_dimensions_nelemy => 3,

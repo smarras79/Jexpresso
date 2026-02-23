@@ -96,6 +96,8 @@ include(joinpath( "kernel", "physics", "large_scale.jl"))
 
 include(joinpath( "kernel", "physics", "largescaleStructs.jl"))
 
+include(joinpath( "kernel", "physics", "atmos_to_rad.jl"))
+
 include(joinpath( "kernel", "mesh", "Geom.jl"))
 
 include(joinpath( "kernel", "mesh", "mesh.jl"))
@@ -146,6 +148,8 @@ include(joinpath( "kernel", "operators", "angular_comms.jl"))
 
 include(joinpath( "kernel", "operators", "extra_amr_matrices.jl"))
 
+include(joinpath( "kernel", "operators", "debug_amr_parallel.jl"))
+
 include(joinpath( "kernel", "operators", "mass_assembly_jacc.jl"))
 
 include(joinpath( "kernel", "Adaptivity", "Projection.jl"))
@@ -163,6 +167,8 @@ include(joinpath( "io", "Extract_topo.jl"))
 include(joinpath( "io", "print_matrix.jl"))
 
 include(joinpath( "io", "soundings.jl"))
+
+include(joinpath( "io", "read_dp_scream.jl"))
 
 include(joinpath( "auxiliary", "auxiliary_functions.jl"))
 

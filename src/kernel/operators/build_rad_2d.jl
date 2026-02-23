@@ -65,9 +65,9 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
         @info maximum(one_vec), minimum(one_vec), maximum(pointwise_interaction), minimum(pointwise_interaction)
         @time criterion = compute_adaptivity_criterion(pointwise_interaction, nelem, ngl, mesh.connijk, extra_meshes_connijk, extra_meshes_extra_nops, extra_meshes_extra_nelems, extra_meshes_coords,
                                                 connijk_spa)
-        thresholds = [0.1]
+        
         @info "criterion computed"
-        @time adapt_angular_grid_2Dby1D!(criterion,thresholds, extra_meshes_ref_level,nelem,ngl,extra_meshes_extra_nelems, extra_meshes_extra_nops, neighbors, extra_meshes_extra_npoins,
+        @time adapt_angular_grid_2Dby1D!(criterion,inputs[:RT_amr_threshold], extra_meshes_ref_level,nelem,ngl,extra_meshes_extra_nelems, extra_meshes_extra_nops, neighbors, extra_meshes_extra_npoins,
                                   extra_meshes_connijk, extra_meshes_coords, extra_meshes_extra_Je, extra_meshes_extra_dξdx, extra_meshes_extra_dxdξ, mesh.connijk,
                                   mesh.x, mesh.y, mesh.xmin, mesh.ymin, mesh.xmax, mesh.ymax) 
         @info "angular mesh adapted"
@@ -935,7 +935,7 @@ function adapt_angular_grid_2Dby1D!(criterion,thresholds,ref_level,nelem,ngl,nel
             level = min(ref_level[iel][e_ext]+1, size(thresholds,1))
             #if (abs(criterion[iel][e_ext]) > 0.0001)
             #if criterion[iel][e_ext] > thresholds[level] && level < size(thresholds,1)
-            if (abs(criterion[iel][e_ext]) > 0.000075)
+            if (abs(criterion[iel][e_ext]) > thresholds[1])
                 #@info e_ext, "to be adapted"
                 adapted_ang[iel] = 1
                 ref_level[iel][e_ext] += 1

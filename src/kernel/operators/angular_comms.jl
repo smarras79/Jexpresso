@@ -41,7 +41,7 @@ struct NonConformingGhostLayer
     ghost_node_offset::Int
 end
 
-function build_nonconforming_ghost_layer_corrected(
+function build_nonconforming_ghost_layer(
     mesh, connijk_spa, ip2gip, ip2gip_spa, gip2owner_spa,
     extra_meshes_coords, extra_meshes_connijk,
     extra_meshes_extra_nops, extra_meshes_extra_nelems,
@@ -122,7 +122,7 @@ function build_nonconforming_ghost_layer_corrected(
         boundary_elements, elem_boundary_nodes, ip2gip, rank, comm
     )
     
-    @info "[Rank $rank] Found $(sum(length(v) for v in values(ghost_neighbor_map))) ghost neighbor relationships"
+    #@info "[Rank $rank] Found $(sum(length(v) for v in values(ghost_neighbor_map))) ghost neighbor relationships"
     
     # =========================================================================
     # PHASE 3.5: Exchange interface node requests (NEW)
@@ -137,9 +137,11 @@ function build_nonconforming_ghost_layer_corrected(
     @info "[Rank $rank] Received interface requests from $(length(interface_to_send)) ranks"
     
     # Log interface sizes for verification
+    @info "[Rank $rank] interface_to_send has $(length(interface_to_send)) destination ranks"
     for (dest_rank, elem_dict) in interface_to_send
+        @info "[Rank $rank] Will send interface nodes to rank $dest_rank for $(length(elem_dict)) elements"
         for (elem_id, node_set) in elem_dict
-            @info "[Rank $rank] Will send $(length(node_set)) interface nodes for element $elem_id to rank $dest_rank"
+            @info "[Rank $rank]   Element $elem_id: $(length(node_set)) interface nodes"
             # Should be 1, 5, or 25 for 4th order elements
         end
     end
@@ -218,15 +220,23 @@ function build_nonconforming_ghost_layer_corrected(
     
     for (src_rank, buffer) in recv_buffers
         elem_infos = unpack_angular_element_data_optimized(buffer, src_rank)
-        
+
+        @info "[Rank $rank] Unpacked $(length(elem_infos)) element infos from rank $src_rank"
+
         for elem_info in elem_infos
             key = (elem_info.spatial_elem_id, elem_info.owner_rank)
+            n_interface_nodes = length(elem_info.interface_node_gids)
+            @info "[Rank $rank]   Element $(elem_info.spatial_elem_id) from rank $(elem_info.owner_rank): $(n_interface_nodes) interface nodes"
             ghost_elements[key] = elem_info
             ghost_node_counter += count_ghost_nodes_in_element(elem_info, ngl)
         end
     end
-    
+
     @info "[Rank $rank] Received $(length(ghost_elements)) ghost elements with ~$ghost_node_counter ghost nodes"
+    @info "[Rank $rank] Total interface node mappings across ghost elements:"
+    for ((elem_id, owner_rank), elem_info) in ghost_elements
+        @info "[Rank $rank]   Element $elem_id from rank $owner_rank: $(length(elem_info.interface_node_gids)) interface mappings"
+    end
 
     # =========================================================================
     # PHASE 9: Map owned elements to their ghost neighbors
@@ -443,6 +453,9 @@ function exchange_ghost_neighbor_info(
                 
                 if !isempty(shared)
                     # These elements are neighbors across partition boundary
+                    if (rank == 1 && iel_owned == 1)
+                         @info "checking number neighbors for the refined element on processor boundary", iel_owned, remote_iel 
+                    end
                     push!(ghost_neighbors, (remote_iel, remote_rank))
                 end
             end
@@ -589,6 +602,32 @@ function mark_hanging_nodes_in_element_advanced!(
             if is_hanging
                 push!(interface_hanging, ip_spa)
                 parent_cache[ip_spa] = ghost_info
+
+                # DEBUG: Check if parent node gids are in interface_node_gids
+                if length(interface_hanging) <= 10  # Only print first 10
+                    @info "[Rank $rank] Hanging node found: ip_spa=$ip_spa, (iθ=$iθ, jθ=$jθ, e_ext=$e_ext_owned)"
+
+                    # Get expected parent node gids from interpolation
+                    nop_parent = ghost_info.nop_ang[e_ext_ghost]
+                    interface_spatial_idx = findfirst(x -> x == gip_spatial, ghost_info.interface_spatial_global_ids)
+
+                    if interface_spatial_idx !== nothing
+                        @info "[Rank $rank]   Spatial node gip=$gip_spatial found at interface index $interface_spatial_idx"
+                        expected_parent_gids = Int[]
+                        for jθ_p = 1:(nop_parent+1)
+                            for iθ_p = 1:(nop_parent+1)
+                                if haskey(ghost_info.interface_node_gids, (interface_spatial_idx, e_ext_ghost, iθ_p, jθ_p))
+                                    gid = ghost_info.interface_node_gids[(interface_spatial_idx, e_ext_ghost, iθ_p, jθ_p)]
+                                    push!(expected_parent_gids, gid)
+                                end
+                            end
+                        end
+                        @info "[Rank $rank]   Expected parent gids in interface_node_gids: $expected_parent_gids"
+                    else
+                        @warn "[Rank $rank]   Spatial node gip=$gip_spatial NOT found in interface_spatial_global_ids"
+                        @warn "[Rank $rank]   Available spatial gids: $(ghost_info.interface_spatial_global_ids)"
+                    end
+                end
             end
         end
     end
@@ -798,21 +837,24 @@ function unpack_angular_element_data_optimized(buffer, owner_rank)
             i = read(io, Int32)
             j = read(io, Int32)
             k = read(io, Int32)
-            
+
             # Read global spatial ID
             gip_spatial = read(io, Int64)
-            
+
             push!(interface_spatial_nodes, interface_idx)  # Store sequential index
             push!(interface_spatial_global_ids, gip_spatial)
-            
+
             # Read spatial-angular global IDs
+            # CRITICAL: Use gip_spatial (global spatial ID) as key[1] for consistent lookup
+            # This allows diagnostics and constraint building to find nodes by global spatial ID
             for e_ext = 1:nelem_ang
                 nop = nop_ang[e_ext]
                 for jθ = 1:(nop+1)
                     for iθ = 1:(nop+1)
                         gid = read(io, Int64)
-                        # Key: (interface_spatial_idx, e_ext, iθ, jθ)
-                        interface_node_gids[(interface_idx, e_ext, iθ, jθ)] = gid
+                        # Key: (gip_spatial, e_ext, iθ, jθ)
+                        # Using global spatial ID instead of sequential index ensures consistent lookup
+                        interface_node_gids[(Int(gip_spatial), e_ext, iθ, jθ)] = gid
                     end
                 end
             end
@@ -951,13 +993,18 @@ function exchange_buffers(send_buffers, requests_by_rank, comm)
         push!(size_requests, req)
     end
     
-    # Post non-blocking sends for sizes
-    for (dest_rank, size) in send_sizes
-        MPI.Isend(Ref(size), comm, dest=dest_rank, tag=rank*1000)
+    # Post non-blocking sends for sizes to ALL ranks in requests_by_rank
+    # Calling functions must ensure send_buffers has entries for all ranks
+    send_size_requests = MPI.Request[]
+    for src_rank in keys(requests_by_rank)
+        size = send_sizes[src_rank]
+        req = MPI.Isend(Ref(size), comm, dest=src_rank, tag=rank*1000)
+        push!(send_size_requests, req)
     end
-    
-    # Wait for all size exchanges to complete
-    MPI.Waitall(size_requests)
+
+    # Wait for all size exchanges (both receives and sends) to complete
+    all_size_requests = vcat(size_requests, send_size_requests)
+    MPI.Waitall(all_size_requests)
     
     @debug "[Rank $rank] Phase 1 complete: exchanged sizes with $(length(recv_sizes)) ranks"
     
@@ -981,24 +1028,30 @@ function exchange_buffers(send_buffers, requests_by_rank, comm)
     # =========================================================================
     
     data_requests = MPI.Request[]
-    
-    # Post non-blocking receives for data
-    for (src_rank, buffer) in recv_buffers
+
+    # Post non-blocking receives for data from ALL ranks (matching Phase 1)
+    # Even empty buffers need receives posted to maintain proper synchronization
+    for src_rank in keys(requests_by_rank)
+        buffer = recv_buffers[src_rank]
         if !isempty(buffer)
             req = MPI.Irecv!(buffer, comm, source=src_rank, tag=src_rank*2000)
             push!(data_requests, req)
         end
     end
-    
-    # Post non-blocking sends for data
-    for (dest_rank, buffer) in send_buffers
+
+    # Post non-blocking sends for data to ALL ranks in requests_by_rank
+    send_data_requests = MPI.Request[]
+    for src_rank in keys(requests_by_rank)
+        buffer = send_buffers[src_rank]
         if !isempty(buffer)
-            MPI.Isend(buffer, comm, dest=dest_rank, tag=rank*2000)
+            req = MPI.Isend(buffer, comm, dest=src_rank, tag=rank*2000)
+            push!(send_data_requests, req)
         end
     end
-    
-    # Wait for all data exchanges to complete
-    MPI.Waitall(data_requests)
+
+    # Wait for all data exchanges (both receives and sends) to complete
+    all_data_requests = vcat(data_requests, send_data_requests)
+    MPI.Waitall(all_data_requests)
     
     @debug "[Rank $rank] Phase 3 complete: exchanged data buffers"
     
@@ -1236,7 +1289,9 @@ function exchange_interface_node_requests(
     for (iel_owned, ghost_list) in ghost_neighbor_map
         # Get global IDs of boundary nodes in owned element
         owned_boundary_global = Set(ip2gip[ip] for ip in elem_boundary_nodes[iel_owned])
-        
+        if (iel_owned == 1 && rank == 1)
+            @info " checking total number of spatial nodes on detected on refined element bdy", rank, iel_owned, length(owned_boundary_global)
+        end
         for (ghost_iel, ghost_owner) in ghost_list
             # We need the nodes from ghost_iel that overlap with iel_owned's boundary
             if !haskey(interface_requests, ghost_owner)

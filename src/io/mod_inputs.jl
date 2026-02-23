@@ -35,6 +35,26 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         end
     end
 
+    if(!haskey(inputs, :lmanufactured_solution))
+       inputs[:lmanufactured_solution] = [1.0]
+    end
+
+    if(!haskey(inputs, :RT_amr_threshold))
+       inputs[:lRT_from_data] = [1.0]
+    end
+
+    if(!haskey(inputs, :lRT_problem))
+       inputs[:lRT_from_data] = true
+    end
+
+    if(!haskey(inputs, :lRT_from_data))
+       inputs[:lRT_from_data] = false
+    end
+
+    if(!haskey(inputs, :RT_data_file))
+       inputs[:RT_data_file] = ""
+    end
+
     if(!haskey(inputs, :lcubed_sphere_angular_mesh))
        inputs[:lcubed_sphere_angular_mesh] = false
     end

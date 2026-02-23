@@ -87,7 +87,7 @@ function build_restriction_matrices_local_and_ghost(
     extra_meshes_extra_Je,
     mesh, ngl, nelem,
     neighbors,
-    ip2gip_spa, gid_to_extended_local, extended_local_to_gid,
+    ip2gip_spa, gip2owner_extra, gid_to_extended_local, extended_local_to_gid,
     rank
 )
     """
@@ -103,6 +103,24 @@ function build_restriction_matrices_local_and_ghost(
     After all operations, we manually remove ALL hanging node rows/columns.
     """
     
+    #These are used to store information about pure ghost parents
+    parent_ghost_idx = 1
+    gid_to_extended_parents = Dict{Int, Int}()
+    extended_parents_to_gid = Int[]
+    extended_parents_x = Float64[]
+    extended_parents_y = Float64[]
+    extended_parents_z = Float64[]
+    extended_parents_θ = Float64[]
+    extended_parents_ϕ = Float64[]
+    extended_parents_ip = Int[]
+
+
+    #store parent data for later use
+    local_parent_indices = Set{Int}()
+    local_non_owned_parents = Set{Int}()
+    nonowned_parent_gids = Set{Int}()
+
+    # Hanging node set definition
     n_free = n_spa - length(nc_non_global_nodes)
     hanging_node_set = Set(nc_non_global_nodes)
     
@@ -116,26 +134,41 @@ function build_restriction_matrices_local_and_ghost(
     I_local = Int[]
     J_local = Int[]
     V_local = Float64[]
+
+    I_rhs = Int[]
+    J_rhs = Int[]
+    V_rhs = Float64[]
     
     # Ghost constraint data
     ghost_constraint_data = Dict{Int, Vector{Tuple{Int, Float64}}}()
-    
+    ghost_constraint_data_rhs = Dict{Int, Vector{Tuple{Int, Float64}}}()
     # Track ALL hanging nodes for final removal
+    # CRITICAL: Include both interior AND interface-only hanging nodes
     all_hanging_nodes = Set{Int}(nc_non_global_nodes)
+    union!(all_hanging_nodes, ghost_layer.interface_hanging_nodes)
     
     estimated_entries = n_spa + length(nc_non_global_nodes) * 20
     sizehint!(I_local, estimated_entries)
     sizehint!(J_local, estimated_entries)
     sizehint!(V_local, estimated_entries)
+
+    sizehint!(I_rhs, estimated_entries)
+    sizehint!(J_rhs, estimated_entries)
+    sizehint!(V_rhs, estimated_entries)
     
     # =========================================================================
     # Phase 1: Free nodes - Identity
     # =========================================================================
     
     for ip_free = 1:n_free
-        push!(I_local, ip_free)
-        push!(J_local, ip_free)
-        push!(V_local, 1.0)
+        if !(ip_free in all_hanging_nodes )
+            push!(I_local, ip_free)
+            push!(J_local, ip_free)
+            push!(V_local, 1.0)
+            push!(I_rhs, ip_free)
+            push!(J_rhs, ip_free)
+            push!(V_rhs, 1.0)
+        end
     end
     
     @info "[Rank $rank] Added identity for $n_free free nodes"
@@ -159,15 +192,20 @@ function build_restriction_matrices_local_and_ghost(
         # Add constraint equation to nc_mat (replaces identity)
         for (parent_local_idx, weight) in constraint_entries
             if parent_local_idx <= n_spa
-                push!(I_local, ip_hanging)
-                push!(J_local, parent_local_idx)
+                #push!(I_local, ip_hanging)
+                #push!(J_local, parent_local_idx)
+                push!(I_local, parent_local_idx)
+                push!(J_local, ip_hanging)
                 push!(V_local, weight)
+                push!(I_rhs, parent_local_idx)
+                push!(J_rhs, ip_hanging)
+                push!(V_rhs, weight)
             end
         end
     end
     
     @info "[Rank $rank] Interior hanging constraint equations added to nc_mat"
-    
+    @info "max of nc_mat with interior", rank, maximum(sparse(I_local, J_local, V_local, n_spa, n_spa))
     # =========================================================================
     # Phase 3: Interface hanging nodes - Identity + Store constraints
     # =========================================================================
@@ -178,9 +216,14 @@ function build_restriction_matrices_local_and_ghost(
     
     for ip_hanging in interface_hanging
         # Add IDENTITY to nc_mat (will use this to extract data before removal)
-        push!(I_local, ip_hanging)
-        push!(J_local, ip_hanging)
-        push!(V_local, 1.0)
+        #=if !(ip_hanging in interior_hanging) && !(ip_hanging <= n_free)
+            push!(I_local, ip_hanging)
+            push!(J_local, ip_hanging)
+            push!(V_local, 1.0)
+            push!(I_rhs, ip_hanging)
+            push!(J_rhs, ip_hanging)
+            push!(V_rhs, 1.0)
+        end=#
         
         # Get and store constraint information
         if !haskey(ghost_layer.parent_search_cache, ip_hanging)
@@ -205,35 +248,106 @@ function build_restriction_matrices_local_and_ghost(
         # Separate local and ghost parents
         local_parents = Tuple{Int, Float64}[]
         ghost_parents = Tuple{Int, Float64}[]
-        
-        for (parent_extended_idx, weight) in constraint_entries
+
+        for (parent_extended_idx, weight, θ, ϕ, ip) in constraint_entries
             if parent_extended_idx <= n_spa
                 push!(local_parents, (parent_extended_idx, weight))
             else
                 ghost_gid = extended_local_to_gid[parent_extended_idx]
                 push!(ghost_parents, (ghost_gid, weight))
+                if !(haskey(gid_to_extended_parents,ghost_gid))
+                    gid_to_extended_parents[ghost_gid] = n_spa + parent_ghost_idx
+                    push!(extended_parents_to_gid,ghost_gid)
+                    push!(extended_parents_x, mesh.x[ip])
+                    push!(extended_parents_y, mesh.y[ip])
+                    push!(extended_parents_z, mesh.z[ip])
+                    push!(extended_parents_θ, θ)
+                    push!(extended_parents_ϕ, ϕ)
+                    push!(extended_parents_ip, ip)
+                    parent_ghost_idx += 1
+                    push!(I_local, n_spa + parent_ghost_idx-1)
+                    push!(J_local, n_spa + parent_ghost_idx-1)
+                    push!(V_local, 1.0)           
+                end
             end
         end
         
-        # Store all constraints (convert local to global IDs)
-        all_parents = vcat(
-            [(ip2gip_spa[p[1]], p[2]) for p in local_parents],
-            ghost_parents
-        )
-        
-        if !isempty(all_parents)
-            ghost_constraint_data[ip_hanging] = all_parents
+        # CRITICAL: Separate owned vs non-owned parents to avoid double-counting
+        # - Parents OWNED by this rank go to nc_mat for local constraint application
+        # - Parents NOT owned by this rank go to ghost_constraint_data for remote communication
+
+        owned_local_parents = Tuple{Int, Float64}[]
+        nonowned_local_parents = Tuple{Int, Float64}[]
+
+        for (parent_local_idx, weight) in local_parents
+            if parent_local_idx <= n_spa
+                if gip2owner_extra[parent_local_idx] == rank
+                    push!(owned_local_parents, (parent_local_idx, weight))
+                else
+                    push!(nonowned_local_parents, (parent_local_idx, weight))
+                end
+            end
         end
+
+        # Add OWNED local parents to nc_mat and nc_mat_rhs
+        for (parent_local_idx, weight) in owned_local_parents
+            push!(I_local, parent_local_idx)
+            push!(J_local, ip_hanging)
+            push!(V_local, weight)
+            push!(I_rhs, parent_local_idx)
+            push!(J_rhs, ip_hanging)
+            push!(V_rhs, weight)
+            if !(parent_local_idx in local_parent_indices)
+                push!(local_parent_indices, parent_local_idx)
+            end
+        end
+
+        # Add NON-OWNED local parents to nc_mat only
+        for (parent_local_idx, weight) in nonowned_local_parents
+            push!(I_local, parent_local_idx)
+            push!(J_local, ip_hanging)
+            push!(V_local, weight)
+            if !(parent_local_idx in local_parent_indices)
+                push!(local_parent_indices, parent_local_idx)
+                push!(local_non_owned_parents, parent_local_idx)
+                push!(nonowned_parent_gids, ip2gip_spa[parent_local_idx])
+            end
+        end
+
+
+        # Store non-owned parent constraints for inter-processor effects exchange for rhs
+        # Store owned and non-owned for matrix exchange.
+        # This includes:
+        # - Local parents NOT owned by this rank (needed by other ranks)
+        # - Ghost parents (from remote ranks)
+        all_parent_constraints = [(gid, w) for (gid, w) in vcat(
+            [(ip2gip_spa[p_idx], w) for (p_idx, w) in local_parents],
+            ghost_parents
+        )]
+
+        all_parent_constraints_rhs = [(gid, w) for (gid, w) in vcat(
+            [(ip2gip_spa[p_idx], w) for (p_idx, w) in nonowned_local_parents],
+            ghost_parents
+        )]
+        if !isempty(all_parent_constraints)
+            ghost_constraint_data[ip_hanging] = all_parent_constraints
+        end
+
+        if !isempty(all_parent_constraints_rhs)
+            ghost_constraint_data_rhs[ip_hanging] = all_parent_constraints_rhs
+        end
+
     end
     
     @info "[Rank $rank] Interface hanging: $(length(ghost_constraint_data)) nodes with constraints"
-    
+    #@info "max of nc_mat before construction", rank, maximum(sparse(I_local, J_local, V_local, n_spa, n_spa))
     # =========================================================================
     # Build nc_mat: (n_spa × n_spa)
     # =========================================================================
-    
-    nc_mat = sparse(I_local, J_local, V_local, n_spa, n_spa)
-    
+    @info maximum(I_local), maximum(J_local), n_free, n_spa
+    nc_mat = sparse(I_local, J_local, V_local, n_spa+parent_ghost_idx-1, n_spa+parent_ghost_idx-1)
+    nc_mat_rhs = sparse(I_rhs, J_rhs, V_rhs, n_spa + parent_ghost_idx-1, n_spa + parent_ghost_idx-1)
+    @info "maximum of nc_mat", rank, maximum(nc_mat)
     # Normalize constraint rows (skip free nodes and interface hanging identities)
     for i = 1:n_spa
         if i in interior_hanging
@@ -249,12 +363,31 @@ function build_restriction_matrices_local_and_ghost(
             end
         end
     end
-    
+
+    for i = 1:n_spa
+        if i in interior_hanging
+            col_sum = 0.0
+            for idx in nzrange(nc_mat_rhs, i)
+                col_sum += nonzeros(nc_mat_rhs)[idx]
+            end
+        
+            if abs(col_sum - 1.0) > 1e-13 && abs(col_sum) > 1e-14
+                for idx in nzrange(nc_mat_rhs, i)
+                    nonzeros(nc_mat_rhs)[idx] /= col_sum
+                end
+            end
+        end
+    end
+
+    @info "maximum of nc_mat after column normalization", rank, maximum(nc_mat)
     P = nc_mat'
-    
+    P_vec = nc_mat_rhs'
     @info "[Rank $rank] nc_mat: $(size(nc_mat)), nnz=$(nnz(nc_mat))"
-    
-    return nc_mat, P, ghost_constraint_data, all_hanging_nodes
+    #Separate matrix to used for rhs restriction from one used for matrix restriction
+    return nc_mat, P, nc_mat_rhs, P_vec, ghost_constraint_data, ghost_constraint_data_rhs,
+        all_hanging_nodes, gid_to_extended_parents, extended_parents_to_gid,
+        extended_parents_x, extended_parents_y, extended_parents_z, extended_parents_θ, extended_parents_ϕ, extended_parents_ip,
+        local_parent_indices, local_non_owned_parents, nonowned_parent_gids
 end
 
 # =========================================================================
@@ -335,6 +468,11 @@ function build_interior_hanging_constraint(
             if abs(Lθ_val) < 1e-14 || abs(Lϕ_val) < 1e-14
                 continue
             end
+
+            # Skip if this is identity (vertex node)
+            if abs(Lθ_val - 1.0) < 1e-14 && abs(Lϕ_val - 1.0) < 1e-14
+                continue
+            end
             
             # Get parent node index
             ip_parent = connijk_spa[iel_parent][i_parent, j_parent, k_parent, 
@@ -344,6 +482,7 @@ function build_interior_hanging_constraint(
                                                            iθ_parent, jθ_parent]
             
             # Weight includes interpolation and Jacobian ratio
+            
             weight = Lθ_val * Lϕ_val * (Je_child / Je_parent)
             
             push!(constraint_entries, (ip_parent, weight))
@@ -400,7 +539,7 @@ function build_interface_hanging_constraint(
     end
     
     # Build interpolation matrices (child to ghost parent)
-    Lθ, Lϕ = build_ghost_interpolation_matrices(
+    Lθ, Lϕ, θ_parent, ϕ_parent = build_ghost_interpolation_matrices(
         iel_child, e_ext_child, ghost_info, e_ext_parent,
         extra_meshes_coords, extra_meshes_connijk,
         extra_meshes_extra_nops
@@ -410,7 +549,7 @@ function build_interface_hanging_constraint(
     Je_child = extra_meshes_extra_Je[iel_child][e_ext_child, iθ_child, jθ_child]
     
     # Build constraint entries
-    constraint_entries = Tuple{Int, Float64}[]
+    constraint_entries = Tuple{Int, Float64, Float64, Float64, Int}[]
     
     nop_parent = ghost_info.nop_ang[e_ext_parent]
     
@@ -418,26 +557,24 @@ function build_interface_hanging_constraint(
     ip_spatial = mesh.connijk[iel_child, i_child, j_child, k_child]
     gip_spatial = mesh.ip2gip[ip_spatial]
     
-    # Find this in ghost's interface nodes
-    interface_spatial_idx = find_interface_spatial_index(ghost_info, gip_spatial)
-    
-    if interface_spatial_idx === nothing
+    # Verify spatial node is in ghost's interface
+    if !(gip_spatial in ghost_info.interface_spatial_global_ids)
         @warn "[Rank $rank] Spatial node (gip=$gip_spatial) not found in ghost interface for hanging node $ip_hanging"
         return Tuple{Int, Float64}[]
     end
-    
+
     for jθ_parent = 1:(nop_parent+1)
         for iθ_parent = 1:(nop_parent+1)
             Lθ_val = Lθ[iθ_child, iθ_parent]
             Lϕ_val = Lϕ[jθ_child, jθ_parent]
-            
+
             if abs(Lθ_val) < 1e-14 || abs(Lϕ_val) < 1e-14
                 continue
             end
-            
-            # Get ghost parent node global ID
+
+            # Get ghost parent node global ID using gip_spatial directly
             gid_parent = get_ghost_interface_node_gid(
-                ghost_info, interface_spatial_idx, e_ext_parent, 
+                ghost_info, gip_spatial, e_ext_parent,
                 iθ_parent, jθ_parent
             )
             
@@ -453,9 +590,9 @@ function build_interface_hanging_constraint(
             Je_parent = ghost_info.Je_ang[e_ext_parent, iθ_parent, jθ_parent]
             
             # Compute weight with Jacobian scaling
-            weight = Lθ_val * Lϕ_val * (Je_child / Je_parent)
+            weight = Lθ_val * Lϕ_val #* (Je_child / Je_parent)
             
-            push!(constraint_entries, (extended_local_idx, weight))
+            push!(constraint_entries, (extended_local_idx, weight ,θ_parent[iθ_parent], ϕ_parent[jθ_parent], ip_spatial))
         end
     end
     
@@ -718,7 +855,7 @@ function build_ghost_interpolation_matrices(
         end
     end
     
-    return Lθ, Lϕ
+    return Lθ, Lϕ, θ_parent, ϕ_parent
 end
 
 # =========================================================================
@@ -1075,9 +1212,15 @@ function exchange_ghost_responses(responses, rank, comm)
         send_buffers[dest_rank] = take!(buffer)
     end
     
-    recv_buffers = exchange_buffers(send_buffers,
-                                    Dict(k => [] for k in keys(send_buffers)),
-                                    comm)
+    # Build requests_by_rank for ALL ranks (including those not in send_buffers)
+    # This prevents deadlock when only some ranks have data to send
+    nproc = MPI.Comm_size(comm)
+    requests_by_rank = Dict{Int, Vector}()
+    for src_rank = 0:(nproc-1)
+        requests_by_rank[src_rank] = []
+    end
+
+    recv_buffers = exchange_buffers(send_buffers, requests_by_rank, comm)
     
     # Deserialize and organize by hanging node gid
     ghost_effects = Dict{Int, Vector{Tuple{Int, Float64}}}()  # gid_hanging -> [(gid_col, value)]
@@ -1101,51 +1244,61 @@ end
 # =========================================================================
 
 function compute_hanging_row_effects_before_restriction(
-    ghost_constraint_data, M_inv_LHS, ip2gip_spa, gip2owner_spa, rank
+    ghost_constraint_data, M_inv_LHS, ip2gip_spa, gip2owner_spa, rank,
+    gid_to_extended_parents, extended_parents_to_gid, gip_to_local
 )
-    """
-    Compute row effects for interface hanging nodes BEFORE applying nc_mat.
-    
-    For each interface hanging node:
-    - Get its row from M_inv_LHS (identity preserved it)
-    - Apply constraint weights
-    - Send to ghost parent owners
-    """
-    
-    effects_by_owner = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()
-    
+    n_spa = size(M_inv_LHS, 1)
+    I_vec, J_vec, V_vec = findnz(M_inv_LHS)
+    I_new = copy(I_vec)
+    J_new = copy(J_vec)
+    V_new = copy(V_vec)
+    n_ghost_parents = length(extended_parents_to_gid)
+
+    # extended_parents_to_gid is an array of GIDs — set of values for O(1) lookup
+    extended_gid_set = Set(extended_parents_to_gid)
+
+    effects_by_owner = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
+
+    # Build row lookup from findnz — O(nnz) once, avoids dense [row,col] indexing
+    row_index = Dict{Int, Vector{Tuple{Int,Float64}}}()
+    for k = 1:length(I_vec)
+        list = get!(row_index, I_vec[k], Tuple{Int,Float64}[])
+        push!(list, (J_vec[k], V_vec[k]))
+    end
+
     for (ip_hanging, parent_constraints) in ghost_constraint_data
-        gid_hanging = ip2gip_spa[ip_hanging]
-        
-        # Get row of M_inv_LHS for hanging node
-        row_vals = rowvals(M_inv_LHS)
-        nz_vals = nonzeros(M_inv_LHS)
-        
-        hanging_row = Tuple{Int, Float64}[]
-        
-        for idx in nzrange(M_inv_LHS, ip_hanging)
-            col = row_vals[idx]
-            val = nz_vals[idx]
-            gid_col = ip2gip_spa[col]
-            push!(hanging_row, (gid_col, val))
+
+        hanging_row = Tuple{Int,Float64}[]
+        for (col, val) in get(row_index, ip_hanging, Tuple{Int,Float64}[])
+            col > n_spa && continue
+            push!(hanging_row, (ip2gip_spa[col], val))
         end
-        
-        # Apply constraint: for each parent, send weighted row
+
         for (parent_gid, weight) in parent_constraints
             owner = gip2owner_spa[parent_gid]
-            
-            if !haskey(effects_by_owner, owner)
-                effects_by_owner[owner] = Tuple{Int, Int, Float64}[]
-            end
-            
-            # Send: (parent_gid, col_gid, weight * row_value)
-            for (gid_col, value) in hanging_row
-                push!(effects_by_owner[owner], (parent_gid, gid_col, weight * value))
+            owner == rank && continue
+
+            if parent_gid in extended_gid_set
+                ip_parent = gid_to_extended_parents[parent_gid]
+                for (gid_col, value) in hanging_row
+                    ip_col = get(gip_to_local, gid_col, nothing)
+                    ip_col === nothing && continue
+                    push!(I_new, ip_parent)
+                    push!(J_new, ip_col)
+                    push!(V_new, weight * value)
+                end
+            else
+                dest = get!(effects_by_owner, owner, Tuple{Int,Int,Float64}[])
+                for (gid_col, value) in hanging_row
+                    push!(dest, (parent_gid, gid_col, weight * value))
+                end
             end
         end
     end
-    
-    return effects_by_owner
+
+    M_inv_LHS = sparse(I_new, J_new, V_new,
+                       n_spa + n_ghost_parents, n_spa + n_ghost_parents)
+    return effects_by_owner, M_inv_LHS
 end
 
 # =========================================================================
@@ -1153,53 +1306,70 @@ end
 # =========================================================================
 
 function compute_hanging_col_effects_before_prolongation(
-    ghost_constraint_data, A_matrix, ip2gip_spa, gip2owner_spa, n_spa, rank
+    ghost_constraint_data, A_matrix, ip2gip_spa, gip2owner_spa,
+    n_spa, n_spa_g, all_hanging_nodes, rank,
+    gid_to_extended_parents, extended_parents_to_gid, gip_to_local
 )
-    """
-    Compute column effects for interface hanging nodes BEFORE applying P.
-    
-    For each interface hanging node:
-    - Get its column from A_matrix (identity preserved it)
-    - Apply constraint weights
-    - Send to ghost parent owners
-    """
-    
-    effects_by_owner = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()
-    
+    n_spa_g   = size(A_matrix, 1)
+    I_vec, J_vec, V_vec = findnz(A_matrix)
+    I_new = copy(I_vec)
+    J_new = copy(J_vec)
+    V_new = copy(V_vec)
+
+    extended_gid_set  = Set(extended_parents_to_gid)
+    hanging_set       = all_hanging_nodes isa Set ? all_hanging_nodes :
+                        Set(all_hanging_nodes)
+
+    # Build extended reverse lookup
+    gip_to_extended = copy(gip_to_local)
+    for (gid, local_idx) in gid_to_extended_parents
+        gip_to_extended[gid] = local_idx
+    end
+
+    effects_by_owner = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
+
     for (ip_hanging, parent_constraints) in ghost_constraint_data
-        gid_hanging = ip2gip_spa[ip_hanging]
-        
-        # Get column of A_matrix for hanging node
+        ip_hanging > size(A_matrix, 2) && continue
+
+        # Extract column ip_hanging using nzrange — correct for CSC
         hanging_col = Tuple{Int, Float64}[]
-        
-        if ip_hanging <= size(A_matrix, 2)
-            for idx in nzrange(A_matrix, ip_hanging)
-                row = rowvals(A_matrix)[idx]
-                val = nonzeros(A_matrix)[idx]
-                
-                if row <= n_spa
-                    gid_row = ip2gip_spa[row]
-                    push!(hanging_col, (gid_row, val))
+        for idx in nzrange(A_matrix, ip_hanging)
+            row = rowvals(A_matrix)[idx]
+            val = nonzeros(A_matrix)[idx]
+            row in hanging_set && continue
+
+            gid_row = if row <= n_spa
+                ip2gip_spa[row]
+            else
+                extended_parents_to_gid[row - n_spa]
+            end
+            push!(hanging_col, (gid_row, val))
+        end
+
+        for (parent_gid, weight) in parent_constraints
+            owner = gip2owner_spa[parent_gid]
+            owner == rank && continue
+
+            if parent_gid in extended_gid_set
+                ip_parent = gid_to_extended_parents[parent_gid]
+                for (gid_row, value) in hanging_col
+                    ip_row = get(gip_to_extended, gid_row, nothing)
+                    ip_row === nothing && continue
+                    push!(I_new, ip_row)
+                    push!(J_new, ip_parent)
+                    push!(V_new, weight * value)
+                end
+            else
+                dest = get!(effects_by_owner, owner, Tuple{Int,Int,Float64}[])
+                for (gid_row, value) in hanging_col
+                    push!(dest, (parent_gid, gid_row, weight * value))
                 end
             end
         end
-        
-        # Apply constraint: for each parent, send weighted column
-        for (parent_gid, weight) in parent_constraints
-            owner = gip2owner_spa[parent_gid]
-            
-            if !haskey(effects_by_owner, owner)
-                effects_by_owner[owner] = Tuple{Int, Int, Float64}[]
-            end
-            
-            # Send: (parent_gid, row_gid, weight * col_value)
-            for (gid_row, value) in hanging_col
-                push!(effects_by_owner[owner], (parent_gid, gid_row, weight * value))
-            end
-        end
     end
-    
-    return effects_by_owner
+
+    A_matrix = sparse(I_new, J_new, V_new, n_spa_g, n_spa_g)
+    return effects_by_owner, A_matrix
 end
 
 # =========================================================================
@@ -1207,177 +1377,185 @@ end
 # =========================================================================
 
 function exchange_hanging_effects(effects_to_send, rank, comm)
-    """
-    Exchange hanging node effects between processors (Matrix version)
+    nproc = MPI.Comm_size(comm)
 
-    For matrix operations: Tuple{Int, Int, Float64} format
-    (parent_gid, col_gid/row_gid, value)
-    """
-
-    send_buffers = Dict{Int, Vector{UInt8}}()
-
-    for (dest_rank, effects) in effects_to_send
-        buffer = IOBuffer()
-        serialize(buffer, effects)
-        send_buffers[dest_rank] = take!(buffer)
+    # Pack as flat Int/Float64 arrays: [parent_gid, col_gid, value, ...]
+    send_int   = Dict{Int, Vector{Int}}()
+    send_float = Dict{Int, Vector{Float64}}()
+    for dest = 0:nproc-1
+        effects = get(effects_to_send, dest, Tuple{Int,Int,Float64}[])
+        ints   = Vector{Int}(undef,     2 * length(effects))
+        floats = Vector{Float64}(undef, 1 * length(effects))
+        for (k, (pg, cg, v)) in enumerate(effects)
+            ints[2k-1]  = pg
+            ints[2k]    = cg
+            floats[k]   = v
+        end
+        send_int[dest]   = ints
+        send_float[dest] = floats
     end
 
-    recv_buffers = exchange_buffers(send_buffers,
-                                    Dict(k => [] for k in keys(send_buffers)),
-                                    comm)
+    # Exchange counts first
+    send_counts = Int32[length(get(effects_to_send, d,
+                    Tuple{Int,Int,Float64}[])) for d = 0:nproc-1]
+    recv_counts = MPI.Alltoall(MPI.UBuffer(send_counts, 1), comm)
 
-    # Deserialize
-    received_effects = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()
+    # Exchange int data
+    send_int_flat   = vcat([send_int[d]   for d = 0:nproc-1]...)
+    recv_int_flat   = Vector{Int}(undef, 2 * sum(recv_counts))
+    MPI.Alltoallv!(MPI.VBuffer(send_int_flat,   Int32.(2 .* send_counts)),
+               MPI.VBuffer(recv_int_flat,   Int32.(2 .* recv_counts)), comm)
 
-    for (src_rank, buffer) in recv_buffers
-        received_effects[src_rank] = deserialize(IOBuffer(buffer))
+    # Exchange float data  
+    send_float_flat = vcat([send_float[d] for d = 0:nproc-1]...)
+    recv_float_flat = Vector{Float64}(undef, sum(recv_counts))
+    MPI.Alltoallv!(MPI.VBuffer(send_float_flat, Int32.(send_counts)),
+               MPI.VBuffer(recv_float_flat, Int32.(recv_counts)), comm)
+
+    # Unpack
+    received = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
+    offset_i = 0; offset_f = 0
+    for src = 0:nproc-1
+        n = recv_counts[src+1]
+        effects = Vector{Tuple{Int,Int,Float64}}(undef, n)
+        for k = 1:n
+            pg = recv_int_flat[offset_i + 2k-1]
+            cg = recv_int_flat[offset_i + 2k]
+            v  = recv_float_flat[offset_f + k]
+            effects[k] = (pg, cg, v)
+        end
+        received[src] = effects
+        offset_i += 2n
+        offset_f += n
     end
-
-    return received_effects
+    return received
 end
 
 function exchange_hanging_effects_vector(effects_to_send, rank, comm)
-    """
-    Exchange hanging node effects between processors (Vector version)
+    nproc = MPI.Comm_size(comm)
 
-    For vector operations (RHS, solution): Tuple{Int, Float64} format
-    (parent_gid, value)
-    """
-
-    send_buffers = Dict{Int, Vector{UInt8}}()
-
-    for (dest_rank, effects) in effects_to_send
-        buffer = IOBuffer()
-        serialize(buffer, effects)
-        send_buffers[dest_rank] = take!(buffer)
+    send_int   = Dict{Int, Vector{Int}}()
+    send_float = Dict{Int, Vector{Float64}}()
+    for dest = 0:nproc-1
+        effects = get(effects_to_send, dest, Tuple{Int,Float64}[])
+        ints   = Vector{Int}(undef,     length(effects))
+        floats = Vector{Float64}(undef, length(effects))
+        for (k, (pg, v)) in enumerate(effects)
+            ints[k]   = pg
+            floats[k] = v
+        end
+        send_int[dest]   = ints
+        send_float[dest] = floats
     end
+    send_counts = Int32[length(get(effects_to_send, d,
+                    Tuple{Int,Int,Float64}[])) for d = 0:nproc-1]
+    recv_counts = MPI.Alltoall(MPI.UBuffer(send_counts, 1), comm)
 
-    recv_buffers = exchange_buffers(send_buffers,
-                                    Dict(k => [] for k in keys(send_buffers)),
-                                    comm)
+    # Exchange int data
+    send_int_flat   = vcat([send_int[d]   for d = 0:nproc-1]...)
+    recv_int_flat   = Vector{Int}(undef, sum(recv_counts))
+    MPI.Alltoallv!(MPI.VBuffer(send_int_flat,   Int32.(send_counts)),
+               MPI.VBuffer(recv_int_flat,   Int32.(recv_counts)), comm)
 
-    # Deserialize - DIFFERENT TYPE for vectors
-    received_effects = Dict{Int, Vector{Tuple{Int, Float64}}}()
+    # Exchange float data  
+    send_float_flat = vcat([send_float[d] for d = 0:nproc-1]...)
+    recv_float_flat = Vector{Float64}(undef, sum(recv_counts))
+    MPI.Alltoallv!(MPI.VBuffer(send_float_flat, Int32.(send_counts)),
+               MPI.VBuffer(recv_float_flat, Int32.(recv_counts)), comm)
 
-    for (src_rank, buffer) in recv_buffers
-        received_effects[src_rank] = deserialize(IOBuffer(buffer))
+    received = Dict{Int, Vector{Tuple{Int,Float64}}}()
+    offset = 0
+    for src = 0:nproc-1
+        n = recv_counts[src+1]
+        effects = Vector{Tuple{Int,Float64}}(undef, n)
+        for k = 1:n
+            effects[k] = (recv_int_flat[offset+k], recv_float_flat[offset+k])
+        end
+        received[src] = effects
+        offset += n
     end
-
-
-    return received_effects
+    return received
 end
 
 ## =========================================================================
 # Add Row Effects (Updated for n_spa dimension)
 # =========================================================================
 
-function add_hanging_row_effects(A_local, received_effects, ip2gip_spa, n_spa, rank)
-    """
-    Add received row effects to matrix.
-    A_local is (n_spa × n_spa) at this stage.
-    """
-    
+function add_hanging_row_effects(A_local, received_effects, ip2gip_spa,
+                                  n_spa, rank, gip_to_local)
     I_vec, J_vec, V_vec = findnz(A_local)
     I_new = copy(I_vec)
     J_new = copy(J_vec)
     V_new = copy(V_vec)
-    
+
     for (src_rank, effects) in received_effects
         for (parent_gid, gid_col, value) in effects
-            ip_parent = findfirst(x -> x == parent_gid, ip2gip_spa)
-            ip_col = findfirst(x -> x == gid_col, ip2gip_spa)
-            
-            if ip_parent !== nothing && ip_parent <= n_spa &&
-               ip_col !== nothing && ip_col <= n_spa
-                push!(I_new, ip_parent)
-                push!(J_new, ip_col)
-                push!(V_new, value)
-            end
+            ip_parent = get(gip_to_local, parent_gid, nothing)
+            ip_col    = get(gip_to_local, gid_col,    nothing)
+            ip_parent === nothing && continue
+            ip_col    === nothing && continue
+            ip_parent > n_spa    && continue
+            ip_col    > n_spa    && continue
+            push!(I_new, ip_parent)
+            push!(J_new, ip_col)
+            push!(V_new, value)
         end
     end
-    
-    A_updated = sparse(I_new, J_new, V_new, n_spa, n_spa)
-    
-    return A_updated
+
+    return sparse(I_new, J_new, V_new, n_spa, n_spa)
 end
 
 # =========================================================================
 # Add Column Effects (Updated for n_spa dimension)
 # =========================================================================
 
-function add_hanging_col_effects(A_local, received_effects, ip2gip_spa, n_spa, rank)
-    """
-    Add received column effects to matrix.
-    A_local is (n_spa × n_spa) at this stage.
-    """
-    
+function add_hanging_col_effects(A_local, received_effects, ip2gip_spa,
+                                  n_spa, rank, gip_to_local)
     I_vec, J_vec, V_vec = findnz(A_local)
     I_new = copy(I_vec)
     J_new = copy(J_vec)
     V_new = copy(V_vec)
-    
+
     for (src_rank, effects) in received_effects
         for (parent_gid, gid_row, value) in effects
-            ip_parent = findfirst(x -> x == parent_gid, ip2gip_spa)
-            ip_row = findfirst(x -> x == gid_row, ip2gip_spa)
-            
-            if ip_parent !== nothing && ip_parent <= n_spa &&
-               ip_row !== nothing && ip_row <= n_spa
-                push!(I_new, ip_row)
-                push!(J_new, ip_parent)
-                push!(V_new, value)
-            end
+            ip_parent = get(gip_to_local, parent_gid, nothing)
+            ip_row    = get(gip_to_local, gid_row,    nothing)
+            ip_parent === nothing && continue
+            ip_row    === nothing && continue
+            ip_parent > n_spa    && continue
+            ip_row    > n_spa    && continue
+            push!(I_new, ip_row)
+            push!(J_new, ip_parent)
+            push!(V_new, value)
         end
     end
-    
-    A_updated = sparse(I_new, J_new, V_new, n_spa, n_spa)
-    
-    return A_updated
+
+    return sparse(I_new, J_new, V_new, n_spa, n_spa)
 end
 
 function extract_free_submatrix_remove_all_hanging(
-    A_full, all_hanging_nodes, n_free, n_spa, rank
+    A_full, all_hanging_nodes, n_free, n_spa_g, rank
 )
-    """
-    Extract the (n_free × n_free) submatrix by removing ALL hanging node rows/columns.
-    
-    This removes both:
-    - Interior hanging nodes (which have constraint equations)
-    - Interface hanging nodes (which still have identity or partial data)
-    
-    Keep only: rows/cols 1:n_free (free nodes only)
-    """
-    
+    # Ensure O(1) lookup
+    hanging_set = all_hanging_nodes isa Set ? all_hanging_nodes :
+                  Set(all_hanging_nodes)
+
     I_full, J_full, V_full = findnz(A_full)
-    
-    I_free = Int[]
-    J_free = Int[]
-    V_free = Float64[]
-    
-    n_removed = 0
-    
-    for idx = 1:length(I_full)
-        i = I_full[idx]
-        j = J_full[idx]
-        v = V_full[idx]
-        
-        # Keep only if BOTH row and column are free nodes
-        if i <= n_free && j <= n_free && 
-           !(i in all_hanging_nodes) && !(j in all_hanging_nodes)
-            push!(I_free, i)
-            push!(J_free, j)
-            push!(V_free, v)
-        else
-            n_removed += 1
-        end
+    n = length(I_full)
+
+    I_free = sizehint!(Int[],     n)
+    J_free = sizehint!(Int[],     n)
+    V_free = sizehint!(Float64[], n)
+
+    for idx = 1:n
+        i = I_full[idx]; j = J_full[idx]
+        (i in hanging_set || j in hanging_set) && continue
+        push!(I_free, i)
+        push!(J_free, j)
+        push!(V_free, V_full[idx])
     end
-    
-    A_free = sparse(I_free, J_free, V_free, n_free, n_free)
 
-    @info "[Rank $rank] Removed $n_removed entries from $(length(all_hanging_nodes)) hanging node rows/cols"
-    @info "[Rank $rank] Final matrix: $(nnz(A_free)) nonzeros"
-
-    return A_free
+    return sparse(I_free, J_free, V_free, n_spa_g, n_spa_g)
 end
 
 # =========================================================================
@@ -1397,19 +1575,18 @@ function compute_hanging_rhs_effects_before_restriction(
 
     This is the vector version of compute_hanging_row_effects_before_restriction.
     """
-
+    
     effects_by_owner = Dict{Int, Vector{Tuple{Int, Float64}}}()
 
     for (ip_hanging, parent_constraints) in ghost_constraint_data
         gid_hanging = ip2gip_spa[ip_hanging]
-
         # Get RHS value for hanging node
         rhs_value = RHS_vector[ip_hanging]
 
         # Apply constraint: for each parent, send weighted RHS value
         for (parent_gid, weight) in parent_constraints
             owner = gip2owner_spa[parent_gid]
-
+            
             if !haskey(effects_by_owner, owner)
                 effects_by_owner[owner] = Tuple{Int, Float64}[]
             end
@@ -1422,33 +1599,22 @@ function compute_hanging_rhs_effects_before_restriction(
     return effects_by_owner
 end
 
-function add_hanging_rhs_effects(
-    RHS_local, received_effects, ip2gip_spa, n_spa, rank
-)
-    """
-    Add received RHS effects to vector.
-
-    For each ghost parent that receives weighted contributions from hanging children
-    on other processors, add those contributions.
-    """
-
+function add_hanging_rhs_effects(RHS_local, received_effects, ip2gip_spa,
+                                  n_spa, rank, gip_to_local)
     RHS_updated = copy(RHS_local)
-
     for (src_rank, effects) in received_effects
         for (parent_gid, value) in effects
-            ip_parent = findfirst(x -> x == parent_gid, ip2gip_spa)
-
-            if ip_parent !== nothing && ip_parent <= n_spa
-                RHS_updated[ip_parent] += value
-            end
+            ip_parent = get(gip_to_local, parent_gid, nothing)
+            ip_parent === nothing && continue
+            ip_parent > n_spa    && continue
+            RHS_updated[ip_parent] += value
         end
     end
-
     return RHS_updated
 end
 
 function extract_free_rhs_subvector(
-    RHS_full, all_hanging_nodes, n_free, n_spa, rank
+    RHS_full, all_hanging_nodes, n_free, n_spa, n_spa_g, rank
 )
     """
     Extract the (n_free) subvector by removing ALL hanging node entries.
@@ -1456,14 +1622,16 @@ function extract_free_rhs_subvector(
     Keep only: entries 1:n_free (free nodes only)
     """
 
-    RHS_free = zeros(eltype(RHS_full), n_free)
+    RHS_free = zeros(eltype(RHS_full), n_spa_g)
 
-    free_idx = 1
+    
     for i = 1:n_spa
-        if !(i in all_hanging_nodes) && free_idx <= n_free
-            RHS_free[free_idx] = RHS_full[i]
-            free_idx += 1
+        if !(i in all_hanging_nodes) && i <= n_free
+            RHS_free[i] = RHS_full[i]
+        elseif i <= n_free
+            RHS_free[i] = 0
         end
+
     end
 
     @info "[Rank $rank] Extracted RHS free subvector: $n_free entries"
@@ -1476,43 +1644,22 @@ end
 # =========================================================================
 
 function build_reverse_ghost_constraint_map(
-    ghost_constraint_data, ip2gip_spa, gip2owner_spa, rank
+    ghost_constraint_data, ip2gip_spa, gip2owner_spa, rank, gip_to_local
 )
-    """
-    Build reverse mapping: for each free node that is a ghost parent,
-    track which hanging nodes on other processors depend on it.
+    reverse_map = Dict{Int, Vector{Tuple{Int,Int,Float64}}}()
 
-    Returns: Dict{Int, Vector{Tuple{Int, Int, Float64}}}
-             local_free_idx -> [(hanging_gid, owner_rank, weight)]
-    """
-
-    reverse_map = Dict{Int, Vector{Tuple{Int, Int, Float64}}}()
-
-    # ghost_constraint_data maps: ip_hanging_local -> [(parent_gid, weight)]
     for (ip_hanging, parent_constraints) in ghost_constraint_data
-        gid_hanging = ip2gip_spa[ip_hanging]
+        gid_hanging   = ip2gip_spa[ip_hanging]
         owner_hanging = gip2owner_spa[gid_hanging]
 
         for (parent_gid, weight) in parent_constraints
-            # Find if this parent_gid is owned by us
-            owner_parent = gip2owner_spa[parent_gid]
-
-            if owner_parent == rank
-                # This parent is owned by us - find its local index
-                ip_parent = findfirst(x -> x == parent_gid, ip2gip_spa)
-
-                if ip_parent !== nothing
-                    if !haskey(reverse_map, ip_parent)
-                        reverse_map[ip_parent] = Tuple{Int, Int, Float64}[]
-                    end
-
-                    # This parent contributes to hanging node on another processor
-                    push!(reverse_map[ip_parent], (gid_hanging, owner_hanging, weight))
-                end
-            end
+            gip2owner_spa[parent_gid] == rank || continue
+            ip_parent = get(gip_to_local, parent_gid, nothing)
+            ip_parent === nothing && continue
+            dest = get!(reverse_map, ip_parent, Tuple{Int,Int,Float64}[])
+            push!(dest, (gid_hanging, owner_hanging, weight))
         end
     end
-
     return reverse_map
 end
 
@@ -1537,7 +1684,7 @@ function compute_solution_prolongation_contributions(
         # Get solution value at this parent node
         if ip_parent <= n_free
             parent_value = solution_free[ip_parent]
-
+            
             # Send weighted contributions to each hanging child
             for (gid_hanging, owner_hanging, weight) in hanging_children
                 if !haskey(contributions_by_owner, owner_hanging)
@@ -1554,28 +1701,91 @@ function compute_solution_prolongation_contributions(
 end
 
 function add_solution_prolongation_contributions(
-    solution_extended, received_contributions, ip2gip_spa, n_spa, rank
+    solution_extended, received_contributions, ip2gip_spa,
+    n_spa, rank, gip_to_local
 )
-    """
-    Add received contributions from ghost parents to interface hanging nodes.
-
-    solution_extended already has values from local prolongation (nc_mat' * solution_free).
-    This adds the contributions from ghost parents on other processors.
-    """
-
     solution_updated = copy(solution_extended)
-
     for (src_rank, contributions) in received_contributions
         for (gid_hanging, value) in contributions
-            ip_hanging = findfirst(x -> x == gid_hanging, ip2gip_spa)
+            ip_hanging = get(gip_to_local, gid_hanging, nothing)
+            ip_hanging === nothing && continue
+            ip_hanging > n_spa    && continue
+            solution_updated[ip_hanging] += value
+        end
+    end
+    return solution_updated
+end
 
-            if ip_hanging !== nothing && ip_hanging <= n_spa
-                solution_updated[ip_hanging] += value
-            end
+# =========================================================================
+# All-Reduce Parent-Parent Matrix Entries
+# =========================================================================
+
+function allreduce_parent_parent_entries(
+    MLHS, nc_mat, gip2owner_extra, n_spa, rank, comm, ip2gip_spa,
+    local_parent_indices, local_non_owned_parents, nonowned_parent_gids,
+    gip_to_local
+)
+    nproc = MPI.Comm_size(comm)
+
+    # Exchange non-owned parent GIDs as flat Int array
+    local_gids  = collect(nonowned_parent_gids)
+    n_local     = Int32(length(local_gids))
+    gid_counts  = MPI.Allgather([n_local], comm)
+    all_gids    = MPI.Allgatherv(local_gids, gid_counts, comm)
+    all_parent_gids = Set(all_gids)
+
+    # Extract relevant (row_gid, col_gid, val) triples
+    rows_sp = rowvals(MLHS)
+    vals_sp = nonzeros(MLHS)
+    local_I = Int[]
+    local_J = Int[]
+    local_V = Float64[]
+
+    for col_idx = 1:n_spa
+        col_gid = ip2gip_spa[col_idx]
+        col_gid in all_parent_gids || continue
+        for idx in nzrange(MLHS, col_idx)
+            row_idx = rows_sp[idx]
+            row_gid = ip2gip_spa[row_idx]
+            row_gid in all_parent_gids || continue
+            push!(local_I, row_gid)
+            push!(local_J, col_gid)
+            push!(local_V, vals_sp[idx])
         end
     end
 
-    @info "[Rank $rank] Added solution prolongation contributions from $(length(received_contributions)) ranks"
+    # Pack as flat arrays: [row_gid, col_gid, ...] and [val, ...]
+    n_local_entries = Int32(length(local_I))
+    entry_counts    = MPI.Allgather([n_local_entries], comm)
 
-    return solution_updated
+    send_ij  = Vector{Int}(undef,     2 * n_local_entries)
+    send_v   = Vector{Float64}(undef, n_local_entries)
+    for k = 1:n_local_entries
+        send_ij[2k-1] = local_I[k]
+        send_ij[2k]   = local_J[k]
+        send_v[k]     = local_V[k]
+    end
+
+    all_ij = MPI.Allgatherv(send_ij, Int32.(entry_counts .* 2), comm)
+    all_v  = MPI.Allgatherv(send_v,  entry_counts,              comm)
+
+    # Accumulate
+    global_entries = Dict{Tuple{Int,Int}, Float64}()
+    for k = 1:length(all_v)
+        rg = all_ij[2k-1]; cg = all_ij[2k]; v = all_v[k]
+        key = (rg, cg)
+        global_entries[key] = get(global_entries, key, 0.0) + v
+    end
+
+    # Update MLHS in-place
+    MLHS_updated = copy(MLHS)
+    for ((row_gid, col_gid), reduced_val) in global_entries
+        row_idx = get(gip_to_local, row_gid, nothing)
+        col_idx = get(gip_to_local, col_gid, nothing)
+        row_idx === nothing && continue
+        col_idx === nothing && continue
+        MLHS_updated[row_idx, col_idx] = reduced_val
+    end
+
+    return MLHS_updated
 end

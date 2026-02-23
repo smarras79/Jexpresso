@@ -196,34 +196,6 @@ mutable struct AssemblerCache
 
 end
 
-function setup_global_numbering_extra_dim(ip2gip, gip2owner, npoin, npoin_ang, npoin_total)
-
-    comm = MPI.COMM_WORLD
-
-    ip2gip_extra = KernelAbstractions.zeros(CPU(),Int64,npoin_total)
-    for ip = 1:npoin
-        gip = ip2gip[ip]
-        for ip_ext = 1:npoin_ang
-            idx_ip = (ip-1)*(npoin_ang) + ip_ext
-            idx_gip = (gip-1)*(npoin_ang) + ip_ext
-            #=if (ip != gip)
-                @info ip, gip
-            end=#
-            ip2gip_extra[idx_ip] = idx_gip
-        end
-    end
-    
-    gnpoin    = MPI.Allreduce(maximum(ip2gip_extra), MPI.MAX, comm)
-    gip2owner_extra = find_gip_owner(ip2gip_extra)
-    gip2ip    = KernelAbstractions.zeros(CPU(), TInt, gnpoin)
-    @info gnpoin, npoin_total
-    for (ip, gip) in enumerate(ip2gip_extra)
-        gip2ip[gip] = ip
-    end
-
-    return ip2gip_extra, gip2owner_extra, gnpoin
-end
-
 function setup_global_numbering_adaptive_angular_scalable(
     ip2gip, gip2owner, mesh, connijk_spa,
     extra_meshes_coords, extra_meshes_connijk,
@@ -233,553 +205,333 @@ function setup_global_numbering_adaptive_angular_scalable(
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     nproc = MPI.Comm_size(comm)
-    
     nelem = mesh.nelem
-    ngl = mesh.ngl
+    ngl   = mesh.ngl
 
-    # =========================================================================
-    # PHASE 0: Create hanging node lookup for fast checks
-    # =========================================================================
-    
+    # ── Phase 1: Build local unique signatures separated by type ─────────────
     hanging_node_set = Set{Int}(nc_non_global_nodes)
-    n_free_local = n_spa - n_non_global_nodes
-    
-    @info "[Rank $rank] Local DOFs: $n_spa (Free: $n_free_local, Hanging: $n_non_global_nodes)"
-    
-    # =========================================================================
-    # PHASE 1: Build local unique signatures (separated by type)
-    # =========================================================================
-    
-    local_free_points = Dict{NTuple{3,Float64}, Int}()
-    local_hanging_points = Dict{NTuple{3,Float64}, Int}()
-    
-    free_signature_list = NTuple{3,Float64}[]
-    hanging_signature_list = NTuple{3,Float64}[]
+
+    local_free_sigs    = Dict{NTuple{3,Float64}, Int}()  # sig → local ip_spa
+    local_hanging_sigs = Dict{NTuple{3,Float64}, Int}()
 
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
-            ip = mesh.connijk[iel, i, j, k]
+            ip  = mesh.connijk[iel, i, j, k]
             gip = ip2gip[ip]
-            
             for e_ext = 1:extra_meshes_extra_nelems[iel]
-                for jθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
-                    for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
-                        ip_ext = extra_meshes_connijk[iel][e_ext, iθ, jθ]
-                        θ = extra_meshes_coords[iel][1, ip_ext]
-                        ϕ = extra_meshes_coords[iel][2, ip_ext]
-                        ip_spa = connijk_spa[iel][i, j, k, e_ext, iθ, jθ]
-                        
-                        sig = (Float64(gip), round(θ, digits=12), round(ϕ, digits=12))
-                        
-                        # Separate free and hanging nodes
-                        is_hanging = ip_spa in hanging_node_set
+                nop = extra_meshes_extra_nops[iel][e_ext]
+                for jθ = 1:nop+1, iθ = 1:nop+1
+                    ip_ext = extra_meshes_connijk[iel][e_ext, iθ, jθ]
+                    θ      = extra_meshes_coords[iel][1, ip_ext]
+                    ϕ      = extra_meshes_coords[iel][2, ip_ext]
+                    ip_spa = connijk_spa[iel][i, j, k, e_ext, iθ, jθ]
+                    sig    = (Float64(gip), round(θ, digits=12), round(ϕ, digits=12))
 
-                        if is_hanging
-                            if !haskey(local_hanging_points, sig)
-                                local_hanging_points[sig] = ip_spa
-                                push!(hanging_signature_list, sig)
-                            end
-                        else
-                            if !haskey(local_free_points, sig)
-                                local_free_points[sig] = ip_spa
-                                push!(free_signature_list, sig)
-                            end
-                        end
+                    if ip_spa in hanging_node_set
+                        get!(local_hanging_sigs, sig, ip_spa)
+                    else
+                        get!(local_free_sigs, sig, ip_spa)
                     end
                 end
             end
         end
     end
-    sort!(free_signature_list)
-    sort!(hanging_signature_list)
-    
-    n_local_free = length(free_signature_list)
-    n_local_hanging = length(hanging_signature_list)
-    
-    @info "[Rank $rank] Local unique points - Free: $n_local_free, Hanging: $n_local_hanging"
 
+    # Sort for deterministic prefix-sum ordering
+    free_sig_list    = sort!(collect(keys(local_free_sigs)))
+    hanging_sig_list = sort!(collect(keys(local_hanging_sigs)))
+    n_local_free    = length(free_sig_list)
+    n_local_hanging = length(hanging_sig_list)
 
-    # =========================================================================
-    # PHASE 2: Identify processor boundary spatial-angular points
-    # =========================================================================
-    
-    # A spatial-angular point is on a processor boundary if:
-    # 1. Its spatial node (gip) is NOT owned by this processor, OR
-    # 2. Its spatial node (gip) IS owned but exists on other processors too
-    
-    # Find spatial nodes on processor boundaries
-    processor_boundary_spatial = Set{Int}()
-    
-    for ip = 1:mesh.npoin
-        gip = ip2gip[ip]
-        owner = gip2owner[ip]
-        
-        # If this processor doesn't own this spatial node, it's on a boundary
-        if owner != rank
-            push!(processor_boundary_spatial, gip)
-        end
-    end
-
-    # Additionally, find spatial nodes this processor owns but are shared
-    # (These are nodes owned by this rank but present on other ranks too)
-    owned_spatial = Set{Int}()
+    # ── Phase 2: Identify processor-boundary spatial nodes ───────────────────
+    # Build owned and non-owned sets from local mesh data only — no communication
+    owned_spatial    = Set{Int}()
+    nonowned_spatial = Set{Int}()
     for ip = 1:mesh.npoin
         gip = ip2gip[ip]
         if gip2owner[ip] == rank
             push!(owned_spatial, gip)
-        end
-    end
-
-    local_spatial = collect(processor_boundary_spatial)
-    n_local = Int32(length(local_spatial))
-
-    # Gather the counts from all processors
-    counts = MPI.Allgather([n_local], comm)
-
-    # Prepare the receive buffer
-    total_count = sum(counts)
-
-    # Handle empty case - need a typed array even if empty
-    if isempty(local_spatial)
-        local_spatial = Int[]  # Empty array with correct type
-    end
-
-    # Use Allgatherv to gather variable-length data
-    if total_count > 0
-        all_owned_spatial = MPI.Allgatherv(local_spatial, counts, comm)
-    else
-        # All ranks are empty
-        all_owned_spatial = Int[]
-    end
-    
-    for other_rank = 0:(nproc-1)
-        if other_rank == 0
-            offset = 0
         else
-            offset = sum(counts[1:other_rank])
+            push!(nonowned_spatial, gip)
         end
-
-        if other_rank == rank
-            continue
-        end
-        
-        other_not_owned = Set(all_owned_spatial[offset+1:counts[other_rank+1]])
-        
-        # Find intersection: spatial nodes owned by us but also present on other rank
-        shared = intersect(owned_spatial, other_not_owned)
-        
-        union!(processor_boundary_spatial, shared)
-        
     end
 
-    @info "[Rank $rank] Found $(length(processor_boundary_spatial)) spatial nodes on processor boundaries"
-    
-    # =========================================================================
-    # PHASE 3: Extract processor boundary spatial-angular signatures (for free nodes only)
-    # =========================================================================
-    
-    processor_boundary_free_sigs = Dict{NTuple{3,Float64}, Int}()
-    
-    for sig in free_signature_list
-        gip_spatial = Int(sig[1])  # First element is the global spatial ID
-        
+    # Exchange non-owned sets to find what each rank shares with others.
+    # Send our non-owned list (= nodes we have but others own).
+    # After Allgatherv, find which of our owned nodes appear as non-owned elsewhere.
+    local_nonowned     = collect(nonowned_spatial)
+    n_local_no         = Int32(length(local_nonowned))
+    no_counts          = MPI.Allgather([n_local_no], comm)
+    all_nonowned       = MPI.Allgatherv(local_nonowned, no_counts, comm)
+
+    processor_boundary_spatial = copy(nonowned_spatial)
+    all_nonowned_set   = Set(all_nonowned)
+    for gip in owned_spatial
+        if gip in all_nonowned_set
+            push!(processor_boundary_spatial, gip)
+        end
+    end
+
+    # ── Phase 3: Boundary free signatures — O(1) lookup via Dict ─────────────
+    # Replaced findfirst O(n) scan with direct Dict membership test
+    boundary_free_sigs = Set{NTuple{3,Float64}}()
+    for sig in free_sig_list
+        gip_spatial = Int(sig[1])
         if gip_spatial in processor_boundary_spatial
-            idx = findfirst(x -> x == sig, free_signature_list)
-            processor_boundary_free_sigs[sig] = idx  # Store local index for now
+            push!(boundary_free_sigs, sig)
         end
     end
-    
-    @info "[Rank $rank] Found $(length(processor_boundary_free_sigs)) FREE spatial-angular points on processor boundaries"
-    
-    # =========================================================================
-    # PHASE 4: Exchange boundary signatures and resolve duplicates (free only)
-    # =========================================================================
-    
-    # Gather all processor boundary signatures from all ranks
-    local_keys = collect(keys(processor_boundary_free_sigs))
-    n_local = length(local_keys)
 
-    # Flatten tuples to a matrix (3 x n_local)
-    local_data = hcat([collect(k) for k in local_keys]...)  # or stack them appropriately
-   
-    # Gather counts from all processors
-    counts = MPI.Allgather([n_local], comm)
-
-    # Prepare receive buffer
-    total_count = sum(counts)
-    
-    all_data = MPI.Allgatherv(local_data[:], Int32.(counts .* 3), comm)
-
-    # Reshape back to tuples
-    all_boundary_sigs = [Tuple(all_data[i:i+2]) for i in 1:3:length(all_data)]
-    #all_boundary_sigs = MPI.Allgather(collect(keys(processor_boundary_sigs)), comm)
-    
-    # Find globally shared signatures
-    global_boundary_sigs = Set{NTuple{3,Float64}}()
-    sig_counts = Dict{NTuple{3,Float64}, Int}()
-
-    for sig in all_boundary_sigs
-        sig_counts[sig] = get(sig_counts, sig, 0) + 1
+    # ── Phase 4: Exchange boundary signatures — flat Float64, no serialization
+    local_bsig_data = Vector{Float64}(undef, 3 * length(boundary_free_sigs))
+    for (k, sig) in enumerate(boundary_free_sigs)
+        local_bsig_data[3k-2] = sig[1]
+        local_bsig_data[3k-1] = sig[2]
+        local_bsig_data[3k]   = sig[3]
     end
-    
-    # A signature is shared if it appears on multiple processors
-    for (sig, count) in sig_counts
-        if count > 1
-            push!(global_boundary_sigs, sig)
+    n_local_bsig  = Int32(length(boundary_free_sigs))
+    bsig_counts   = MPI.Allgather([n_local_bsig], comm)
+    all_bsig_data = MPI.Allgatherv(local_bsig_data, Int32.(bsig_counts .* 3), comm)
+
+    # Count occurrences to find truly shared signatures
+    sig_count = Dict{NTuple{3,Float64}, Int}()
+    for k = 1:3:length(all_bsig_data)
+        sig = (all_bsig_data[k], all_bsig_data[k+1], all_bsig_data[k+2])
+        sig_count[sig] = get(sig_count, sig, 0) + 1
+    end
+    globally_shared_sigs = Set(sig for (sig, c) in sig_count if c > 1)
+
+    # ── Phase 5: Assign tentative GIDs via prefix sum — free nodes ───────────
+    offset_free = MPI.Exscan(n_local_free, MPI.SUM, comm)
+    offset_free = (rank == 0) ? 0 : offset_free
+
+    sig_to_tentative = Dict{NTuple{3,Float64}, Int}()
+    sizehint!(sig_to_tentative, n_local_free)
+    for (idx, sig) in enumerate(free_sig_list)
+        sig_to_tentative[sig] = offset_free + idx
+    end
+
+    # ── Phase 6: Resolve shared signatures — flat exchange, no serialization ──
+    # Send (sig_f1, sig_f2, sig_f3, tentative_gid) for each shared sig we own
+    local_shared = NTuple{3,Float64}[]
+    local_gids   = Int[]
+    for sig in globally_shared_sigs
+        if haskey(sig_to_tentative, sig)
+            push!(local_shared, sig)
+            push!(local_gids, sig_to_tentative[sig])
         end
     end
-    
-    @info "[Rank $rank] Found $(length(global_boundary_sigs)) FREE globally shared spatial-angular points"
-    
-    # ==================================================================================
-    # PHASE 5: Assign tentative global IDs using parallel prefix sum - Free nodes first
-    # ==================================================================================
-    
-    # Each processor gets a contiguous range of global IDs
-    n_local_free = length(free_signature_list)
-    local_count_free = n_local_free
-    offset_free = MPI.Exscan(local_count_free, MPI.SUM, comm)
-    
-    if rank == 0
-        offset_free = 0
-    end
-    
-    # Build tentative mapping
-    sig_to_tentative_gid = Dict{NTuple{3,Float64}, Int}()
-    for (idx, sig) in enumerate(free_signature_list)
-        sig_to_tentative_gid[sig] = offset_free + idx
-    end
-    
-    @info "[Rank $rank] Tentative global ID range: [$(offset_free+1), $(offset_free+n_local_free)]"
 
-    # =========================================================================
-    # PHASE 6: Resolve shared free signatures (take minimum GID)
-    # =========================================================================
-    
-    # For shared signatures, gather all tentative GIDs and take minimum
-    shared_sig_resolution = Dict{NTuple{3,Float64}, Int}()
-    
-    # Each processor broadcasts its tentative GIDs for shared signatures
-    local_shared_tentative = Dict{NTuple{3,Float64}, Int}()
-    for sig in global_boundary_sigs
-        if haskey(sig_to_tentative_gid, sig)
-            local_shared_tentative[sig] = sig_to_tentative_gid[sig]
-        end
+    n_shared = Int32(length(local_shared))
+    # Pack as Float64: [f1, f2, f3, gid_as_float64] per entry — 4 values each
+    packed = Vector{Float64}(undef, 4 * n_shared)
+    for (k, (sig, gid)) in enumerate(zip(local_shared, local_gids))
+        packed[4k-3] = sig[1]
+        packed[4k-2] = sig[2]
+        packed[4k-1] = sig[3]
+        packed[4k]   = Float64(gid)
     end
-    
-    # Serialize the dictionary
-    local_buffer = IOBuffer()
-    serialize(local_buffer, local_shared_tentative)
-    local_data = take!(local_buffer)
+    shared_counts  = MPI.Allgather([n_shared], comm)
+    all_packed     = MPI.Allgatherv(packed, Int32.(shared_counts .* 4), comm)
 
-    # Gather the sizes
-    n_local = Int32(length(local_data))
-    counts = MPI.Allgather([n_local], comm)
-
-    # Gather the serialized data
-    total_count = sum(counts)
-    if total_count > 0
-        all_data = MPI.Allgatherv(local_data, counts, comm)
-    
-        # Deserialize on each rank to get all dictionaries
-        all_shared_tentative = Dict{NTuple{3,Float64}, Int}[]
-        offset = 1
-        for count in counts
-            if count > 0
-                chunk = all_data[offset:offset+count-1]
-                push!(all_shared_tentative, deserialize(IOBuffer(chunk)))
-            else
-                push!(all_shared_tentative, Dict{NTuple{3,Float64}, Int}())
-            end
-            offset += count
-        end
-    else
-        all_shared_tentative = [Dict{NTuple{3,Float64}, Int}() for _ in 1:length(counts)]
-    end
-
-    
-    #all_shared_tentative = MPI.Allgather(local_shared_tentative, comm)
-    
-    # Resolve: take minimum tentative GID for each shared signature
-    for proc_shared in all_shared_tentative
-        for (sig, tentative_gid) in proc_shared
-            if haskey(shared_sig_resolution, sig)
-                shared_sig_resolution[sig] = min(shared_sig_resolution[sig], tentative_gid)
-            else
-                shared_sig_resolution[sig] = tentative_gid
-            end
-        end
-    end
-    
-    @info "[Rank $rank] Resolved $(length(shared_sig_resolution)) shared signatures"
-
-    # ===================================================================================
-    # PHASE 7: Build final global IDs (with duplicates for shared points) for free nodes
-    # ===================================================================================
-    
-    # For shared points, use resolved GID; for interior points, use tentative GID
-    sig_to_final_gid = Dict{NTuple{3,Float64}, Int}()
-    
-    for sig in free_signature_list
-        if haskey(shared_sig_resolution, sig)
-            sig_to_final_gid[sig] = shared_sig_resolution[sig]
+    # Resolve: minimum tentative GID wins
+    shared_resolution = Dict{NTuple{3,Float64}, Int}()
+    for k = 1:4:length(all_packed)
+        sig = (all_packed[k], all_packed[k+1], all_packed[k+2])
+        gid = Int(all_packed[k+3])
+        if haskey(shared_resolution, sig)
+            shared_resolution[sig] = min(shared_resolution[sig], gid)
         else
-            sig_to_final_gid[sig] = sig_to_tentative_gid[sig]
+            shared_resolution[sig] = gid
         end
     end
 
-    # =========================================================================
-    # PHASE 8: Compact FREE numbering to remove gaps
-    # =========================================================================
-    
-    # Collect all used global IDs across all processors
-    #local_used_gids = Set(values(sig_to_final_gid))
-    local_used_gids = collect(values(sig_to_final_gid))
-    n_local = Int32(length(local_used_gids))
-
-    # Gather the counts from all processors
-    counts = MPI.Allgather([n_local], comm)
-
-    # Prepare the receive buffer
-    total_count = sum(counts)
-
-    # Handle empty case - need a typed array even if empty
-    if isempty(local_used_gids)
-        local_used_gids = Int[]  # Empty array with correct type
+    # ── Phase 7: Final GIDs for free nodes ───────────────────────────────────
+    sig_to_final_free = Dict{NTuple{3,Float64}, Int}()
+    sizehint!(sig_to_final_free, n_local_free)
+    for sig in free_sig_list
+        sig_to_final_free[sig] = get(shared_resolution, sig, sig_to_tentative[sig])
     end
 
-    # Use Allgatherv to gather variable-length data
-    if total_count > 0
-        all_used_gids_list = MPI.Allgatherv(local_used_gids, counts, comm)
-    else
-        # All ranks are empty
-        all_used_gids_list = Int[]
-    end
-    
-    #all_used_gids_list = MPI.Allgather(collect(local_used_gids), comm)
-    
-    global_used_gids = Set{Int}(all_used_gids_list)
-    
-    # Create compaction map: old_gid -> new_gid (1:gnpoin with no gaps)
-    sorted_gids = sort(collect(global_used_gids))
-    old_to_new_free = Dict{Int, Int}()
-    for (new_id, old_id) in enumerate(sorted_gids)
-        old_to_new_free[old_id] = new_id
-    end
-    
-    gnpoin_free = length(sorted_gids)
-    
-    @info "[Rank $rank] Compacted to $gnpoin_free global spatial-angular points (no gaps)"
+    # ── Phase 8: Compact free numbering without global gather ────────────────
+    # Key insight: instead of gathering all GIDs globally, use a second prefix sum.
+    # Count how many of our free signatures are the canonical owner
+    # (i.e., our tentative GID == resolved GID, meaning we assigned the minimum).
+    # This tells us how many unique free DOFs we contribute to the global count.
+    #
+    # For shared nodes: only the rank whose tentative == resolved GID is canonical.
+    # For interior nodes: always canonical.
 
-    # =========================================================================
-    # PHASE 9: Assign global IDs to HANGING nodes (after free nodes)
-    # =========================================================================
-    
-    n_local_hanging = length(hanging_signature_list)
-    local_count_hanging = n_local_hanging
-    offset_hanging = MPI.Exscan(local_count_hanging, MPI.SUM, comm)
-    
-    if rank == 0
-        offset_hanging = 0
+    n_canonical_free = 0
+    for sig in free_sig_list
+        tentative = sig_to_tentative[sig]
+        resolved  = sig_to_final_free[sig]
+        if tentative == resolved
+            n_canonical_free += 1
+        end
     end
-    
-    # Hanging nodes get global IDs starting after all free nodes
-    for (idx, sig) in enumerate(hanging_signature_list)
-        sig_to_final_gid[sig] = gnpoin_free + offset_hanging + idx
+
+    # Prefix sum gives each rank its offset into the canonical free numbering
+    canonical_offset = MPI.Exscan(n_canonical_free, MPI.SUM, comm)
+    canonical_offset = (rank == 0) ? 0 : canonical_offset
+
+    # Assign compact GIDs to canonical nodes; share resolved GIDs for shared nodes
+    # via a second exchange so non-canonical ranks get the final compact GID
+    canonical_sig_to_compact = Dict{NTuple{3,Float64}, Int}()
+    canon_idx = canonical_offset
+    for sig in free_sig_list
+        tentative = sig_to_tentative[sig]
+        resolved  = sig_to_final_free[sig]
+        if tentative == resolved
+            canon_idx += 1
+            canonical_sig_to_compact[sig] = canon_idx
+        end
     end
-    
-    # Compute total hanging nodes globally
+
+    gnpoin_free = MPI.Allreduce(n_canonical_free, MPI.SUM, comm)
+
+    # Exchange compact GIDs for shared signatures
+    # Pack: [f1, f2, f3, compact_gid] for each sig we are canonical for
+    n_canon = Int32(length(canonical_sig_to_compact))
+    canon_packed = Vector{Float64}(undef, 4 * n_canon)
+    for (k, (sig, cgid)) in enumerate(canonical_sig_to_compact)
+        canon_packed[4k-3] = sig[1]
+        canon_packed[4k-2] = sig[2]
+        canon_packed[4k-1] = sig[3]
+        canon_packed[4k]   = Float64(cgid)
+    end
+    canon_counts    = MPI.Allgather([n_canon], comm)
+    all_canon_packed = MPI.Allgatherv(canon_packed, Int32.(canon_counts .* 4), comm)
+
+    # Build final compact GID lookup for all free signatures
+    sig_to_compact_gid = Dict{NTuple{3,Float64}, Int}()
+    sizehint!(sig_to_compact_gid, n_local_free)
+    # First add our own canonical entries
+    merge!(sig_to_compact_gid, canonical_sig_to_compact)
+    # Then fill in compact GIDs received from other ranks for shared non-canonical sigs
+    for k = 1:4:length(all_canon_packed)
+        sig  = (all_canon_packed[k], all_canon_packed[k+1], all_canon_packed[k+2])
+        cgid = Int(all_canon_packed[k+3])
+        if !haskey(sig_to_compact_gid, sig) && haskey(sig_to_final_free, sig)
+            sig_to_compact_gid[sig] = cgid
+        end
+    end
+
+    # ── Phase 9: Hanging node GIDs via prefix sum — no global gather ──────────
+    offset_hanging = MPI.Exscan(n_local_hanging, MPI.SUM, comm)
+    offset_hanging = (rank == 0) ? 0 : offset_hanging
+
+    sig_to_hanging_gid = Dict{NTuple{3,Float64}, Int}()
+    sizehint!(sig_to_hanging_gid, n_local_hanging)
+    for (idx, sig) in enumerate(hanging_sig_list)
+        sig_to_hanging_gid[sig] = gnpoin_free + offset_hanging + idx
+    end
+
     gnpoin_hanging = MPI.Allreduce(n_local_hanging, MPI.SUM, comm)
     gnpoin = gnpoin_free + gnpoin_hanging
-    
-    @info "[Rank $rank] Hanging global ID range: [$(gnpoin_free+offset_hanging+1), $(gnpoin_free+offset_hanging+n_local_hanging)]"
-    @info "[Rank $rank] Total global DOFs: $gnpoin (Free: $gnpoin_free, Hanging: $gnpoin_hanging)"
 
-    # =========================================================================
-    # PHASE 10: Apply global numbering to local spatial-angular points
-    # =========================================================================
-    
+    # ── Phase 10: Apply global numbering ─────────────────────────────────────
     ip2gip_spa = zeros(Int64, n_spa)
-    
+
     for iel = 1:nelem
         for k = 1:ngl, j = 1:ngl, i = 1:ngl
-            ip = mesh.connijk[iel, i, j, k]
+            ip  = mesh.connijk[iel, i, j, k]
             gip = ip2gip[ip]
-            
             for e_ext = 1:extra_meshes_extra_nelems[iel]
-                for jθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
-                    for iθ = 1:extra_meshes_extra_nops[iel][e_ext]+1
-                        ip_ext = extra_meshes_connijk[iel][e_ext, iθ, jθ]
-                        θ = extra_meshes_coords[iel][1, ip_ext]
-                        ϕ = extra_meshes_coords[iel][2, ip_ext]
-                        ip_spa = connijk_spa[iel][i, j, k, e_ext, iθ, jθ]
-                        
-                        sig = (Float64(gip), round(θ, digits=12), round(ϕ, digits=12))
-                        
-                        is_hanging = ip_spa in hanging_node_set
-                        
-                        if is_hanging
-                            # Direct lookup for hanging nodes (no compaction needed)
-                            ip2gip_spa[ip_spa] = sig_to_final_gid[sig]
-                        else
-                            # Apply compaction for free nodes
-                            old_gid = sig_to_final_gid[sig]
-                            new_gid = old_to_new_free[old_gid]
-                            ip2gip_spa[ip_spa] = new_gid
-                        end
+                nop = extra_meshes_extra_nops[iel][e_ext]
+                for jθ = 1:nop+1, iθ = 1:nop+1
+                    ip_ext = extra_meshes_connijk[iel][e_ext, iθ, jθ]
+                    θ      = extra_meshes_coords[iel][1, ip_ext]
+                    ϕ      = extra_meshes_coords[iel][2, ip_ext]
+                    ip_spa = connijk_spa[iel][i, j, k, e_ext, iθ, jθ]
+                    sig    = (Float64(gip), round(θ, digits=12), round(ϕ, digits=12))
+
+                    if ip_spa in hanging_node_set
+                        ip2gip_spa[ip_spa] = sig_to_hanging_gid[sig]
+                    else
+                        ip2gip_spa[ip_spa] = sig_to_compact_gid[sig]
                     end
                 end
             end
         end
     end
-    
-    # =========================================================================
-    # PHASE 11: Verify numbering structure
-    # =========================================================================
-    
-    verify_hanging_node_numbering(ip2gip_spa, n_spa, gnpoin_free, gnpoin, 
-                                   hanging_node_set, rank, comm)
-    
-    gip2owner_spa = find_gip_owner_spa(ip2gip_spa, n_spa, gnpoin, comm)
-    
-    gip2ip = zeros(Int, gnpoin)
-    for (ip, gid) in enumerate(ip2gip_spa)
-        if gid > 0 && gip2owner_spa[gid] == rank
-            gip2ip[gid] = ip
+
+    # ── Phase 11: Owner map — local computation only ─────────────────────────
+    # gip2owner_spa: for each global ID, which rank owns it.
+    # A rank owns a free DOF if it was canonical (tentative == resolved).
+    # A rank owns a hanging DOF always (hanging nodes are local by construction).
+    # Build by exchanging (gid, owner_rank) pairs for all DOFs this rank owns.
+
+    n_local_dofs = Int32(n_spa)
+    dof_counts   = MPI.Allgather([n_local_dofs], comm)
+
+    # Pack (gid, rank) for all local DOFs
+    local_claims = Vector{Int}(undef, 2 * n_spa)
+    for ip = 1:n_spa
+        local_claims[2ip-1] = ip2gip_spa[ip]
+        local_claims[2ip]   = rank
+    end
+
+    all_claims = MPI.Allgatherv(local_claims, Int32.(dof_counts .* 2), comm)
+
+    # Resolve: minimum rank wins for each gid
+    gip2owner_spa = fill(typemax(Int), gnpoin)
+    for k = 1:2:length(all_claims)
+        gid  = all_claims[k]
+        ownr = all_claims[k+1]
+        if ownr < gip2owner_spa[gid]
+            gip2owner_spa[gid] = ownr
         end
     end
+
+# Verify no unowned points in debug mode
+@assert all(x -> x != typemax(Int), gip2owner_spa) "Unowned global DOFs detected"
+
+gip2ip = zeros(Int, gnpoin)
+for (ip, gid) in enumerate(ip2gip_spa)
+    if gid > 0 && gip2owner_spa[gid] == rank
+        gip2ip[gid] = ip
+    end
+end
 
     return ip2gip_spa, gip2ip, gip2owner_spa, gnpoin
 end
 
-function find_gip_owner_spa(ip2gip_spa, n_spa, gnpoin, comm)
-    """
-    Determine which processor owns each global spatial-angular point
-    
-    Ownership rule: The processor with the minimum rank that has this point owns it
-    This ensures deterministic, consistent ownership across all processors
-    """
-    rank = MPI.Comm_rank(comm)
-    
-    # Each processor claims ownership of its points
-    local_ownership = fill(typemax(Int), gnpoin)
-    
-    for ip = 1:n_spa
-        gid = ip2gip_spa[ip]
-        if gid > 0 && gid <= gnpoin
-            local_ownership[gid] = rank
-        end
-    end
-    
-    # Global reduction: take minimum rank (lowest rank wins)
-    gip2owner_spa = similar(local_ownership)
-    MPI.Allreduce!(local_ownership, gip2owner_spa, MPI.MIN, comm)
-    
-    # Verify: all points should have an owner
-    unowned = findall(x -> x == typemax(Int), gip2owner_spa)
-    if !isempty(unowned) && rank == 0
-        @warn "Found $(length(unowned)) unowned spatial-angular points!"
-    end
-    
-    return gip2owner_spa
-end
+function verify_hanging_node_numbering_fast(ip2gip_spa, n_spa, gnpoin_free, gnpoin,
+                                             hanging_node_set, rank)
+    # Local checks only — no MPI communication
+    free_gids    = Set{Int}()
+    hanging_gids = Set{Int}()
+    ok = true
 
-function verify_hanging_node_numbering(ip2gip_spa, n_spa, gnpoin_free, gnpoin, 
-                                       hanging_node_set, rank, comm)
-    """
-    Verify that:
-    1. Free nodes have global IDs in [1, gnpoin_free]
-    2. Hanging nodes have global IDs in [gnpoin_free+1, gnpoin]
-    3. No gaps in the numbering
-    """
-    
-    local_free_gids = Int[]
-    local_hanging_gids = Int[]
-    
     for ip = 1:n_spa
         gid = ip2gip_spa[ip]
-        
         if ip in hanging_node_set
-            push!(local_hanging_gids, gid)
-            
-            # Verify hanging node is in correct range
             if gid <= gnpoin_free || gid > gnpoin
-                @warn "[Rank $rank] Hanging node $ip has incorrect global ID $gid (should be in [$gnpoin_free+1, $gnpoin])"
+                @warn "[Rank $rank] Hanging node $ip has GID $gid outside [$gnpoin_free+1, $gnpoin]"
+                ok = false
             end
+            if gid in hanging_gids
+                @warn "[Rank $rank] Duplicate hanging GID $gid"
+                ok = false
+            end
+            push!(hanging_gids, gid)
         else
-            push!(local_free_gids, gid)
-            
-            # Verify free node is in correct range
             if gid < 1 || gid > gnpoin_free
-                @warn "[Rank $rank] Free node $ip has incorrect global ID $gid (should be in [1, $gnpoin_free])"
+                @warn "[Rank $rank] Free node $ip has GID $gid outside [1, $gnpoin_free]"
+                ok = false
             end
-        end
-    end
-    
-    # Check for duplicates within each category
-    if length(unique(local_free_gids)) != length(local_free_gids)
-        @warn "[Rank $rank] Duplicate global IDs found in free nodes!"
-    end
-    
-    # Gather all used global IDs
-    n_local = length(local_free_gids)
-   
-    # Gather counts from all processors
-    counts = MPI.Allgather([n_local], comm)
-
-    # Prepare receive buffer
-    total_count_free = sum(counts)
-
-    all_free_gids = MPI.Gatherv(local_free_gids, Int32.(counts), 0, comm)
-
-    n_local = length(local_hanging_gids)
-   
-    # Gather counts from all processors
-    counts = MPI.Allgather([n_local], comm)
-
-    # Prepare receive buffer
-    total_count_hanging = sum(counts)
-
-    all_hanging_gids = MPI.Gatherv(local_hanging_gids, Int32.(counts), 0, comm)
-    
-    if rank == 0
-        
-        all_free = reduce(vcat, all_free_gids)
-        unique_free = unique(all_free)
-        @info "Global verification:"
-        @info "  Free nodes: $(length(unique_free)) unique IDs, range [$(minimum(unique_free)), $(maximum(unique_free))]"
-        # Check for gaps in free nodes
-        expected_free = Set(1:gnpoin_free)
-        actual_free = Set(unique_free)
-        missing_free = setdiff(expected_free, actual_free)
-        if !isempty(missing_free)
-            @warn "Missing free node global IDs: $(sort(collect(missing_free)))"
-        else
-            @info "  ✓ Free node numbering is compact (no gaps)"
-        end
-        
-        if total_count_hanging > 0 
-            all_hanging = reduce(vcat, all_hanging_gids)
-        
-      
-            unique_hanging = unique(all_hanging)
-        
-            @info "Global verification:"
-        
-            @info "  Hanging nodes: $(length(unique_hanging)) unique IDs, range [$(minimum(unique_hanging)), $(maximum(unique_hanging))]"
-            # Check that free and hanging don't overlap
-            overlap = intersect(Set(unique_free), Set(unique_hanging))
-            if !isempty(overlap)
-                @warn "Global ID overlap between free and hanging nodes: $overlap"
-            else
-                @info "  ✓ No overlap between free and hanging node IDs"
+            if gid in free_gids
+                @warn "[Rank $rank] Duplicate free GID $gid on rank $rank"
+                ok = false
             end
-        
+            push!(free_gids, gid)
         end
-        
     end
-    
-    MPI.Barrier(comm)
+
+    if ok && rank == 0
+        @info "Numbering verification passed (local checks)"
+    end
 end
 
 function setup_assembler(SD, a, index_a, owner_a)

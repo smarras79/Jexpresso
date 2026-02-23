@@ -34,6 +34,7 @@ function user_inputs()
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x1x10.msh",
         :gmsh_filename       => "./JexpressoMeshes/meshes/gmsh_grids/hexa_TFI_2x2.msh",
         #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_20x1x20.msh",
+        :lRT_problem        => true,
         :extra_dimensions    => 1,
         :adaptive_extra_meshes => false,
         :extra_dimensions_order => 4,
