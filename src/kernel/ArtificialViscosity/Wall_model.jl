@@ -12,22 +12,17 @@ function allocate_Wall_model(nface, ngl, T, backend; lwall_model=false, lmoist=f
         dims1 = (nface, ngl, ngl, 3)
         dims2 = (nface, ngl, ngl, 1)
         dims3 = (nface, ngl, ngl, 1)
-
-        wm = St_Wall_model{T, dims1, dims2, dims3, backend}()
     elseif (lwall_model == true) && (lmoist == false)
         dims1 = (nface, ngl, ngl, 3)
         dims2 = (nface, ngl, ngl, 1)
         dims3 = (0, 0, 0, 0)
-
-        wm = St_Wall_model{T, dims1, dims2, dims3, backend}()
     else
         # Allocate minimal empty arrays when wall model is disabled
         dims1 = (0, 0, 0, 0)
         dims2 = (0, 0, 0, 0)
         dims3 = (0, 0, 0, 0)
-
-        wm = St_Wall_model{T, dims1, dims2, backend}()
     end
-
+    
+    wm = St_Wall_model{T, dims1, dims2, dims3, backend}()
     return wm
 end

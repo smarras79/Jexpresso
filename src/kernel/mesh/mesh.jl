@@ -120,6 +120,10 @@ Base.@kwdef mutable struct St_mesh{TInt, TFloat, backend}
     ip2gip              = KernelAbstractions.zeros(backend, TInt, 0)
     gip2owner           = KernelAbstractions.zeros(backend, TInt, 0)
     gip2ip              = KernelAbstractions.zeros(backend, TInt, 0)
+    el2gel              = KernelAbstractions.zeros(backend, TInt, 0)
+    gel2owner           = KernelAbstractions.zeros(backend, TInt, 0)
+    el2sib              = KernelAbstractions.zeros(backend, TInt, 0)  # sibling grouping: all children → parent global ID
+    sib2owner           = KernelAbstractions.zeros(backend, TInt, 0)
     parts               = 1
     nparts              = 1
     
@@ -383,8 +387,8 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     d_to_num_dfaces = [num_vertices(model), num_edges(model), num_cells(model)]
 
     # Write the partitioned model to a VTK file
-    # vtk_directory = "./coarse/" 
-    # writevtk(partitioned_model_coarse, vtk_directory)
+    # vtk_directory = "./output_mesh/" 
+    # writevtk(partitioned_model, vtk_directory)
     # # if omesh.lneed_redistribute == true
     #     vtk_directory = "./refine/"
     #     writevtk(partitioned_model.dmodel, vtk_directory)
@@ -1504,11 +1508,11 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         iface_bdy = 1
         for iface in findall(x -> x == true, isboundary_face) #total nedges
             # if isboundary_face[iface] == true
+            mesh.bdy_face_type[iface_bdy] = mesh.face_type[iface]
+            mesh.bdy_face_in_elem[iface_bdy] = mesh.facet_cell_ids[iface][1]
                 for igl = 1:mesh.ngl
                     for jgl = 1:mesh.ngl
                         mesh.poin_in_bdy_face[iface_bdy, igl,jgl] = mesh.poin_in_face[iface, igl,jgl]
-                        mesh.bdy_face_type[iface_bdy] = mesh.face_type[iface]
-                        mesh.bdy_face_in_elem[iface_bdy] = mesh.facet_cell_ids[iface][1]
                         if (size(mesh.facet_cell_ids[iface],1) ≠ 1)
                             s = """
                             Check boundary elements! size(mesh.facet_cell_ids[iface],1) ≠ 1 
@@ -1569,6 +1573,70 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
     #----------------------------------------------------------------------
     # periodicity_restructure for MPI
     #----------------------------------------------------------------------
+
+    mesh.el2gel    = copy(elm2pelm)
+    mesh.el2sib    = copy(elm2pelm)
+
+    # Assign all children from the same parent the same el2sib (parent's global ID).
+    # el2sib is kept separate from el2gel (periodicity) so that the two assemble_mpi!
+    # passes can use different operators: refine must NOT propagate across siblings.
+    if ladaptive == true
+        if isnothing(adapt_flags)
+            # Initial adaptive mesh from scratch: use coarse cell global IDs
+            glue_local    = local_views(glue_adapt).item_ref[]
+            nelem_c       = num_faces(model_coarse, ELEM_flg)
+            coarse_global = local_to_global(cell_gids_c)
+            for i in 1:nelem_c
+                for j in glue_local.o2n_faces_map[i]
+                    mesh.el2sib[j] = eltype(mesh.el2sib)(coarse_global[i])
+                end
+            end
+        elseif !omesh.lneed_redistribute
+            glue_local    = local_views(glue_adapt).item_ref[]
+            coarse_global = local_to_global(cell_gids_c)
+            for i = 1:omesh.nelem
+                n_new = length(glue_local.o2n_faces_map[i])
+                for j in glue_local.o2n_faces_map[i]
+                    if n_new > 1  # refinement: children share parent's global ID
+                        mesh.el2sib[j] = eltype(mesh.el2sib)(coarse_global[i])
+                    else          # nothing or coarsen: preserve existing sibling group
+                        mesh.el2sib[j] = eltype(mesh.el2sib)(omesh.el2sib[i])
+                    end
+                end
+            end
+        elseif omesh.lneed_redistribute
+            # Redistribute: send/receive old el2sib across ranks (same pattern as ad_lvl)
+            lids_rcv, lids_snd, parts_rcv, parts_snd, new2old = GridapDistributed.get_glue_components(glue_redistribute, Val(false))
+            id2send      = local_views(lids_snd).item_ref[]
+            num2send     = id2send.ptrs[end] - 1
+            el2sib2send  = KernelAbstractions.zeros(backend, TInt, Int64(num2send))
+            el2sib2owner = KernelAbstractions.zeros(backend, TInt, Int64(num2send))
+            cnt = 1
+            for (i, part) in enumerate(local_views(parts_snd).item_ref[])
+                for idx in getindex(id2send, i)
+                    el2sib2send[cnt]  = omesh.el2sib[idx]
+                    el2sib2owner[cnt] = part - 1
+                    cnt += 1
+                end
+            end
+            el2sib2recv, _ = send_and_receive(el2sib2send, el2sib2owner, comm)
+            id2recv = local_views(lids_rcv).item_ref[]
+            cnt = 1
+            for (i, _) in enumerate(local_views(parts_rcv).item_ref[])
+                for idx in getindex(id2recv, i)
+                    mesh.el2sib[idx] = el2sib2recv[cnt]
+                    cnt += 1
+                end
+            end
+            for (id, n2o_id) in enumerate(local_views(new2old).item_ref[])
+                n2o_id == 0 && continue
+                mesh.el2sib[id] = omesh.el2sib[n2o_id]
+            end
+        end
+    end
+
+    mesh.gel2owner = KernelAbstractions.ones(backend, TInt, Int64(mesh.nelem))*local_views(parts).item_ref[]
+
     if mesh.nsd == 2 
             
         norx = [1.0, 0.0]
@@ -1607,6 +1675,10 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
         end
         restructure4periodicity_2D(mesh, norx, "periodicx")
         restructure4periodicity_2D(mesh, nory, "periodicy")
+        restructure_el2gel_for_periodicity_2D!(mesh, norx, "periodicx")
+        restructure_el2gel_for_periodicity_2D!(mesh, nory, "periodicy")
+        mesh.gel2owner = find_gip_owner(mesh.el2gel)
+        mesh.sib2owner = find_gip_owner(mesh.el2sib)
 
     elseif mesh.nsd > 2
 
@@ -1679,10 +1751,26 @@ function mod_mesh_read_gmsh!(mesh::St_mesh, inputs::Dict{Symbol,Any}, nparts::In
 
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. "; msg_rank = rank, suppress = mesh.msg_suppress)
      
+        # Detect periodic-NCF pairs (AMR across periodic boundaries) and merge them
+        # directly into the existing non_conforming_facets / ghost lists so the
+        # standard DSS_nc_gather_rhs! / DSS_nc_scatter_rhs! handle them automatically.
+        # if lamr_mesh
+            collect_periodic_ncf_pairs_3D!(mesh, "periodicx", elm2pelm)
+            collect_periodic_ncf_pairs_3D!(mesh, "periodicy", elm2pelm)
+            collect_periodic_ncf_pairs_3D!(mesh, "periodicz", elm2pelm)
+            extend_ncf_ip_lists_3D!(mesh)
+            println_rank(" # Total NCF pairs (interior + periodic): $(mesh.num_ncf)"; msg_rank = rank, suppress = mesh.msg_suppress)
+        # end
+        MPI.Barrier(comm)
         restructure4periodicity_3D_sorted!(mesh, norx, "periodicx")
         restructure4periodicity_3D_sorted!(mesh, nory, "periodicy")
         restructure4periodicity_3D_sorted!(mesh, norz, "periodicz")
-        
+        restructure_el2gel_for_periodicity_3D!(mesh, norx, "periodicx")
+        restructure_el2gel_for_periodicity_3D!(mesh, nory, "periodicy")
+        restructure_el2gel_for_periodicity_3D!(mesh, norz, "periodicz")
+        mesh.gel2owner = find_gip_owner(mesh.el2gel)
+        mesh.sib2owner = find_gip_owner(mesh.el2sib)
+
         println_rank(" # BUILDING INFRASTRUCTURE FOR PERIODICITY .................................................. DONE"; msg_rank = rank, suppress = mesh.msg_suppress)
 
         #check_memory(" AFTER restructure4periodicity before GC")
@@ -1831,54 +1919,6 @@ function _handle_optional_args4amr(optional_args...)
     return adapt_flags, partitioned_model_coarse, omesh
 end
 
-function find_gip_owner_v1(a)
-    comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
-    size = MPI.Comm_size(comm)
-    
-    # Gather all elements from all ranks to rank 0
-    all_elements = MPI.gather(a, comm)
-    
-    if rank == 0
-        # Flatten the gathered list
-        flat_elements = vcat(all_elements...)
-        # all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
-        all_owners = [i for i in 1:size for _ in 1:length(all_elements[i])]
-
-        # Create a dictionary to store the smallest rank for each element
-        element_owner_map = Dict{Int, Int}()
-        ownership_counts  = zeros(Int64, size)
-        for i in 1:length(flat_elements)
-            el = flat_elements[i]
-            owner = all_owners[i]
-            if !haskey(element_owner_map, el)
-                element_owner_map[el] = owner
-            else
-                # Conflict: element already seen on another rank
-                # Choose the rank with fewer owned elements
-                current_owner = element_owner_map[el]
-                if ownership_counts[owner] < ownership_counts[current_owner]
-                    element_owner_map[el] = owner
-                end
-                ownership_counts[element_owner_map[el]] += 1
-            end
-        end
-        # Map the owners back to the original elements in each rank's vector
-        all_owners_result = [element_owner_map[el] for el in flat_elements]
-        
-        # Split the ownership result according to the original vectors
-        chunked_owners = [all_owners_result[sum(length.(all_elements)[1:i-1])+1:sum(length.(all_elements)[1:i])] for i in 1:size]
-    else
-        chunked_owners = nothing
-    end
-
-    # Scatter the ownership chunks back to all ranks
-    element_owners = MPI.scatter(chunked_owners, comm)
-
-    return element_owners
-    
-end
-
 function find_gip_owner(a)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
@@ -1945,6 +1985,10 @@ function determine_colinearity(vec1, vec2)
 
     # For 3D vectors
     else
+        norm_v1 = sqrt(vec1[1] * vec1[1] + vec1[2] * vec1[2] + vec1[3] * vec1[3])
+        norm_v2 = sqrt(vec2[1] * vec2[1] + vec2[2] * vec2[2] + vec2[3] * vec2[3])
+        vec1    = vec1 ./ norm_v1
+        vec2    = vec2 ./ norm_v2
         return abs(vec1[2] * vec2[3] - vec1[3] * vec2[2]) < 1e-7 &&
                abs(vec1[3] * vec2[1] - vec1[1] * vec2[3]) < 1e-7 &&
                abs(vec1[1] * vec2[2] - vec1[2] * vec2[1]) < 1e-7

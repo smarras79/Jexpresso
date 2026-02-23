@@ -334,6 +334,119 @@ function assemble_mpi!(a, cache::AssemblerCache)
 end
 
 
+```
+efficiency needs to be tested
+```
+function assemble_mpi!(a, cache::AssemblerCache; operator = +)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    rank_sz = MPI.Comm_size(comm)
+    T = eltype(a)
+
+    is1D = ndims(a) == 1
+    n = size(a, 1)
+    m = is1D ? 1 : size(a, 2)
+
+    for i in 0:rank_sz-1
+        fill!(cache.send_data_buffers[i+1], zero(T))
+    end
+    @inbounds for owner = 0:rank_sz-1
+        buf_data = cache.send_data_buffers[owner+1]
+        send_i_local = cache.send_i[owner+1]
+
+        for (i,idx) in enumerate(send_i_local)
+            for j = 1:m
+                buf_data[(i-1)*m + j] = a[idx,j]
+            end
+        end
+    end
+    # MPI.Barrier(comm)
+
+
+    for i in 0:rank_sz-1
+        fill!(cache.recv_data_buffers[i+1], zero(T))
+    end
+
+
+    # Communicate data
+    req_idx = 1
+    @inbounds for i in 0:rank_sz-1
+        if cache.send_data_sizes[i+1] > 0
+            MPI.Isend(cache.send_data_buffers[i+1], comm, cache.requests[req_idx]; dest=i, tag=0)
+            req_idx += 1
+        end
+        if cache.recv_data_sizes[i+1] > 0
+            MPI.Irecv!(cache.recv_data_buffers[i+1], comm, cache.requests[req_idx]; source=i, tag=0)
+            req_idx += 1
+        end
+    end
+
+    # Wait for all communication to complete
+    MPI.Waitall(cache.requests)
+
+    @inbounds for rk in 0:rank_sz-1
+        if cache.recv_data_sizes[rk+1] > 0
+            buffer = cache.recv_data_buffers[rk+1]
+            for (i, local_idx) in enumerate(cache.recv_idx_buffers[rk+1])
+                for j = 1:m
+                    a[local_idx, j] = operator(a[local_idx, j], buffer[(i-1)*m+j])
+                end
+            end
+        end
+    end
+
+    # send data back to original ranks
+    sendback_data_buffers = cache.recv_data_buffers
+    @inbounds for rk in 0:rank_sz-1
+        if cache.recv_data_sizes[rk+1] > 0
+            buf_data = sendback_data_buffers[rk+1]
+            for (i, local_idx) in enumerate(cache.recv_idx_buffers[rk+1])
+                for j = 1:m
+                    buf_data[(i-1)*m+j] = a[local_idx, j]
+                end
+            end
+        end
+    end
+    sendback_data_sizes = cache.recv_data_sizes
+    recvback_data_sizes = cache.send_data_sizes
+    # MPI.Barrier(comm)
+
+
+
+    # Prepare buffers for sending and receiving back data
+    recvback_data_buffers = cache.send_data_buffers
+
+
+    # Communicate back data
+    req_idx = 1
+    @inbounds for i in 0:rank_sz-1
+        if sendback_data_sizes[i+1] > 0
+            MPI.Isend(sendback_data_buffers[i+1], comm, cache.requests_back[req_idx]; dest=i, tag=2)
+            req_idx += 1
+        end
+        if recvback_data_sizes[i+1] > 0
+            MPI.Irecv!(recvback_data_buffers[i+1], comm, cache.requests_back[req_idx]; source=i, tag=2)
+            req_idx += 1
+        end
+    end
+
+
+    # Wait for all communication to complete
+    MPI.Waitall(cache.requests_back)
+
+
+    @inbounds for rk = 0:rank_sz-1
+        if recvback_data_sizes[rk+1] > 0
+            buffer = recvback_data_buffers[rk+1]
+            for (i, local_idx) in enumerate(cache.recvback_idx_buffers[rk+1])
+                for j = 1:m
+                    a[local_idx, j] = buffer[(i-1)*m+j]
+                end
+            end
+        end
+    end
+end
+
 mutable struct SendReceiveCache{T}
     # MPI info
     comm::MPI.Comm

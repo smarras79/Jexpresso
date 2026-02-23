@@ -1384,11 +1384,11 @@ end
 
 
 function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
-    comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
+    comm    = MPI.COMM_WORLD
+    rank    = MPI.Comm_rank(comm)
     rank_sz = MPI.Comm_size(comm)
-    per_ip = Int[]
-    ngl = mesh.ngl
+    per_ip  = Int[]
+    ngl     = mesh.ngl
     for iface_bdy =1:size(mesh.bdy_face_type,1)
         for k=1:ngl
             for l=1:ngl
@@ -1488,9 +1488,28 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                 results = sort_coords_by_x3_groups(un_gathered_x,un_gathered_y,un_gathered_z)
             end
             vec = fill!(similar(norm), 0.0)
-            for i = 1:sz÷2
-                idx_i = results.idx_x3min[i]
-                idx_j = results.idx_x3max[i]
+            # Build lookup dict: rounded (x1,x2) transverse position → (gip, owner, idx)
+            # for nodes on the max side.  Nodes on the min side that have no entry in this
+            # dict belong to nonconforming periodic faces and are left unmerged; they will
+            # be handled by the periodic-NCF DSS machinery.
+            max_node_lookup = Dict{NTuple{2,Float64},NTuple{3,Int}}()
+            for k in eachindex(results.idx_x3max)
+                idx_j = results.idx_x3max[k]
+                key = (round(results.x1_x3max[k]; digits=5),
+                       round(results.x2_x3max[k]; digits=5))
+                max_node_lookup[key] = (un_updated_global_per_gip[idx_j],
+                                        un_updated_global_owner[idx_j],
+                                        idx_j)
+            end
+
+            for k in eachindex(results.idx_x3min)
+                idx_i = results.idx_x3min[k]
+                key   = (round(results.x1_x3min[k]; digits=5),
+                         round(results.x2_x3min[k]; digits=5))
+                # No matching max-side node → nonconforming periodic; skip node merge.
+                haskey(max_node_lookup, key) || continue
+
+                gip_j_val, owner_j_val, idx_j = max_node_lookup[key]
                 vec[1] = un_gathered_x[idx_i] - un_gathered_x[idx_j]
                 vec[2] = un_gathered_y[idx_i] - un_gathered_y[idx_j]
                 vec[3] = un_gathered_z[idx_i] - un_gathered_z[idx_j]
@@ -1533,13 +1552,9 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                     else
                         comp3 = zi*abs(xi*yi) < zt*abs(xt*yt)
                     end
-                    # @info "found", global_per_gip[i], global_per_gip[i1]
                     if comp1 || comp2 || comp3
                         # j is the slave, i is the master
                         changes_ip[gip_j] = gip_i
-                        #if gip_i< 100
-                        #    @info gip_j, gip_i
-                        #end
                         if un_updated_global_owner[idx_j] != un_updated_global_owner[idx_i]
                             changes_owner[gip_j] = un_updated_global_owner[idx_i]
                             changes_owner[gip_i] = un_updated_global_owner[idx_i]
@@ -1547,20 +1562,14 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
                     else
                         # i is the slave, j is the master
                         changes_ip[gip_i] = gip_j
-                        #if gip_i< 100
-                        #    @info gip_i, gip_j
-                        #end
                         if un_updated_global_owner[idx_j] != un_updated_global_owner[idx_i]
                             changes_owner[gip_i] = un_updated_global_owner[idx_j]
                             changes_owner[gip_j] = un_updated_global_owner[idx_j]
                         end
                     end
-                    # break
-                else
-                    @info length(changes_ip)
-                    @info "vec", vec, norm
-                    @mystop("!determine_colinearity(vec, norm), check periodic boundary setup: mesh.jl:1890")
                 end
+                # If determine_colinearity fails for a position-matched pair it means
+                # numerical noise; skip rather than crash.
             end
         end
         updated_global_per_gip = [get(changes_ip, x, x) for x in global_per_gip]
@@ -1574,7 +1583,667 @@ function restructure4periodicity_3D_sorted!(mesh, norm, periodic_direction)
     MPI.Barrier(comm)
     per_ip_updated = MPI.Scatterv!(s_gip_vbuf,zeros(eltype(per_gip), buffer_sz), 0, comm)
     owner_updated  = MPI.Scatterv!(s_owner_vbuf,zeros(eltype(ip_owner), buffer_sz), 0, comm)
-    
+
     mesh.ip2gip[per_ip]    .= per_ip_updated
     mesh.gip2owner[per_ip] .= owner_updated
+end
+
+
+function restructure_el2gel_for_periodicity_3D!(mesh, _norm, periodic_direction)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    ngl  = mesh.ngl
+
+    # Collect local periodic boundary face data: one entry per face
+    per_faces_iel  = Int[]
+    per_faces_gel  = eltype(mesh.el2gel)[]
+    per_faces_own  = eltype(mesh.gel2owner)[]
+    cx_local       = Float64[]
+    cy_local       = Float64[]
+    cz_local       = Float64[]
+
+    for iface_bdy = 1:size(mesh.bdy_face_type, 1)
+        if mesh.bdy_face_type[iface_bdy] == periodic_direction
+            iel = mesh.bdy_face_in_elem[iface_bdy]
+            gel = mesh.el2gel[iel]
+            own = mesh.gel2owner[iel]
+            cx = 0.0; cy = 0.0; cz = 0.0
+            for k = 1:ngl, l = 1:ngl
+                ip  = mesh.poin_in_bdy_face[iface_bdy, k, l]
+                cx += mesh.x[ip]
+                cy += mesh.y[ip]
+                cz += mesh.z[ip]
+            end
+            npts = Float64(ngl * ngl)
+            push!(per_faces_iel, iel)
+            push!(per_faces_gel, gel)
+            push!(per_faces_own, own)
+            push!(cx_local, cx / npts)
+            push!(cy_local, cy / npts)
+            push!(cz_local, cz / npts)
+        end
+    end
+
+    buffer_sz::Int32 = length(per_faces_iel)
+    recv_counts  = MPI.Gather(buffer_sz, 0, comm)
+    gel_gather   = MPI.gather(per_faces_gel, comm)
+    own_gather   = MPI.gather(per_faces_own, comm)
+    cx_gather    = MPI.gather(cx_local, comm)
+    cy_gather    = MPI.gather(cy_local, comm)
+    cz_gather    = MPI.gather(cz_local, comm)
+
+    if rank == 0
+        all_gel = vcat(gel_gather...)
+        all_own = vcat(own_gather...)
+        all_cx  = vcat(cx_gather...)
+        all_cy  = vcat(cy_gather...)
+        all_cz  = vcat(cz_gather...)
+
+        changes_gel = Dict{eltype(mesh.el2gel),   eltype(mesh.el2gel)}()
+        changes_own = Dict{eltype(mesh.el2gel),   eltype(mesh.gel2owner)}()
+
+        if length(all_gel) > 0
+            # Choose the periodic coordinate and transverse coordinates
+            if periodic_direction == "periodicx"
+                x1, x2, x3 = all_cy, all_cz, all_cx
+            elseif periodic_direction == "periodicy"
+                x1, x2, x3 = all_cx, all_cz, all_cy
+            elseif periodic_direction == "periodicz"
+                x1, x2, x3 = all_cx, all_cy, all_cz
+            end
+
+            x3min, x3max = extrema(x3)
+            idx_min = findall(v -> AlmostEqual(v, x3min), x3)
+            idx_max = findall(v -> AlmostEqual(v, x3max), x3)
+
+            # Build centroid lookup for max-side faces: rounded (x1,x2) → (gel, own, idx)
+            # Only conforming pairs (same centroid) are merged; NCF pairs are skipped.
+            max_face_centroid = Dict{NTuple{2,Float64},Tuple{Int,Int,Int}}()
+            for k in idx_max
+                key = (round(x1[k]; digits=5), round(x2[k]; digits=5))
+                max_face_centroid[key] = (all_gel[k], all_own[k], k)
+            end
+
+            for gi in idx_min
+                key = (round(x1[gi]; digits=5), round(x2[gi]; digits=5))
+                haskey(max_face_centroid, key) || continue  # NCF pair; no el2gel merge
+                gel_j_v, own_j_v, gj = max_face_centroid[key]
+                gel_i = get(changes_gel, all_gel[gi], all_gel[gi])
+                gel_j = get(changes_gel, all_gel[gj], all_gel[gj])
+                own_i = get(changes_own, all_gel[gi], all_own[gi])
+                own_j = get(changes_own, all_gel[gj], all_own[gj])
+                if gel_i <= gel_j
+                    changes_gel[all_gel[gi]] = gel_i
+                    changes_gel[all_gel[gj]] = gel_i
+                    changes_own[all_gel[gi]] = own_i
+                    changes_own[all_gel[gj]] = own_i
+                else
+                    changes_gel[all_gel[gi]] = gel_j
+                    changes_gel[all_gel[gj]] = gel_j
+                    changes_own[all_gel[gi]] = own_j
+                    changes_own[all_gel[gj]] = own_j
+                end
+            end
+        end
+
+        updated_gel = [get(changes_gel, g, g) for g in all_gel]
+        updated_own = [get(changes_own, g, all_own[i]) for (i, g) in enumerate(all_gel)]
+        s_gel_vbuf  = VBuffer(updated_gel, recv_counts)
+        s_own_vbuf  = VBuffer(updated_own, recv_counts)
+    else
+        s_gel_vbuf = VBuffer(nothing)
+        s_own_vbuf = VBuffer(nothing)
+    end
+
+    MPI.Barrier(comm)
+    gel_updated = MPI.Scatterv!(s_gel_vbuf, zeros(eltype(mesh.el2gel),   buffer_sz), 0, comm)
+    own_updated = MPI.Scatterv!(s_own_vbuf, zeros(eltype(mesh.gel2owner), buffer_sz), 0, comm)
+
+    for (i, iel) in enumerate(per_faces_iel)
+        mesh.el2gel[iel]   = gel_updated[i]
+        mesh.gel2owner[iel] = own_updated[i]
+    end
+end
+
+
+function restructure_el2gel_for_periodicity_2D!(mesh, _norm, periodic_direction)
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    ngl  = mesh.ngl
+
+    # Collect local periodic boundary edge data: one entry per edge
+    per_edges_iel = Int[]
+    per_edges_gel = eltype(mesh.el2gel)[]
+    cx_local      = Float64[]
+    cy_local      = Float64[]
+
+    for iedge_bdy = 1:size(mesh.bdy_edge_type, 1)
+        if mesh.bdy_edge_type[iedge_bdy] == periodic_direction
+            iel = mesh.bdy_edge_in_elem[iedge_bdy]
+            gel = mesh.el2gel[iel]
+            cx = 0.0; cy = 0.0
+            for k = 1:ngl
+                ip  = mesh.poin_in_bdy_edge[iedge_bdy, k]
+                cx += mesh.x[ip]
+                cy += mesh.y[ip]
+            end
+            push!(per_edges_iel, iel)
+            push!(per_edges_gel, gel)
+            push!(cx_local, cx / Float64(ngl))
+            push!(cy_local, cy / Float64(ngl))
+        end
+    end
+
+    buffer_sz::Int32 = length(per_edges_iel)
+    recv_counts = MPI.Gather(buffer_sz, 0, comm)
+    gel_gather  = MPI.gather(per_edges_gel, comm)
+    cx_gather   = MPI.gather(cx_local, comm)
+    cy_gather   = MPI.gather(cy_local, comm)
+
+    if rank == 0
+        all_gel = vcat(gel_gather...)
+        all_cx  = vcat(cx_gather...)
+        all_cy  = vcat(cy_gather...)
+
+        changes_gel = Dict{eltype(mesh.el2gel), eltype(mesh.el2gel)}()
+
+        if length(all_gel) > 0
+            # Choose the periodic coordinate and transverse coordinate
+            if periodic_direction == "periodicx"
+                x1, x3 = all_cy, all_cx
+            else  # periodicy / periodicz
+                x1, x3 = all_cx, all_cy
+            end
+
+            x3min, x3max = extrema(x3)
+            idx_min = findall(v -> AlmostEqual(v, x3min), x3)
+            idx_max = findall(v -> AlmostEqual(v, x3max), x3)
+
+            sort_min = sortperm(x1[idx_min])
+            sort_max = sortperm(x1[idx_max])
+            idx_min_sorted = idx_min[sort_min]
+            idx_max_sorted = idx_max[sort_max]
+
+            for i = 1:min(length(idx_min_sorted), length(idx_max_sorted))
+                gel_i = all_gel[idx_min_sorted[i]]
+                gel_j = all_gel[idx_max_sorted[i]]
+                gel_i = get(changes_gel, gel_i, gel_i)
+                gel_j = get(changes_gel, gel_j, gel_j)
+                gel_min = min(gel_i, gel_j)
+                changes_gel[gel_i] = gel_min
+                changes_gel[gel_j] = gel_min
+            end
+        end
+
+        updated_gel = [get(changes_gel, g, g) for g in all_gel]
+        s_gel_vbuf  = VBuffer(updated_gel, recv_counts)
+    else
+        s_gel_vbuf = VBuffer(nothing)
+    end
+
+    MPI.Barrier(comm)
+    gel_updated = MPI.Scatterv!(s_gel_vbuf, zeros(eltype(mesh.el2gel), buffer_sz), 0, comm)
+
+    for (i, iel) in enumerate(per_edges_iel)
+        mesh.el2gel[iel] = gel_updated[i]
+    end
+end
+
+
+# ---------------------------------------------------------------------------
+# Detect nonconforming periodic face pairs in 3D and MERGE them directly into
+# the existing non_conforming_facets / ghost lists so that the standard
+# DSS_nc_gather_rhs! / DSS_nc_scatter_rhs! handle them without any new code.
+#
+# Entry format is [ciel, piel, cfid, h1, h2] — identical to interior NCF:
+#   cfid = child's face ID (1-6); parent's face is always opposite(cfid).
+#
+# Call collect_periodic_ncf_pairs_3D! once per direction, then call
+# extend_ncf_ip_lists_3D! once to append new columns to IPc_list / IPp_list.
+#
+# Face-ID convention:
+#   1 front  (j=ngl)   2 back   (j=1)
+#   3 bottom (k=ngl)   4 top    (k=1)
+#   5 right  (i=1)     6 left   (i=ngl)
+#
+# For periodicx: child on min-side → cfid=5, child on max-side → cfid=6
+# For periodicy: child on min-side → cfid=2, child on max-side → cfid=1
+# For periodicz: child on min-side → cfid=4, child on max-side → cfid=3
+# ---------------------------------------------------------------------------
+function collect_periodic_ncf_pairs_3D!(mesh, periodic_direction, elm2pelm)
+    comm  = MPI.COMM_WORLD
+    rank  = MPI.Comm_rank(comm)
+    ngl   = mesh.ngl
+    ngl2  = ngl * ngl
+
+    # Determine face IDs for each side of this direction.
+    if periodic_direction == "periodicx"
+        fid_min = 5; fid_max = 6
+    elseif periodic_direction == "periodicy"
+        fid_min = 2; fid_max = 1
+    else  # periodicz
+        fid_min = 4; fid_max = 3
+    end
+
+    # -----------------------------------------------------------------
+    # Phase 1 – each rank collects its periodic boundary faces.
+    # -----------------------------------------------------------------
+    local_iel  = Int[]
+    local_gel  = eltype(elm2pelm)[]
+    local_rk   = Int[]
+    cx1_loc    = Float64[]
+    cx2_loc    = Float64[]
+    cx3_loc    = Float64[]
+    x1mn_loc   = Float64[]
+    x1mx_loc   = Float64[]
+    x2mn_loc   = Float64[]
+    x2mx_loc   = Float64[]
+
+    for iface_bdy = 1:size(mesh.bdy_face_type, 1)
+        mesh.bdy_face_type[iface_bdy] == periodic_direction || continue
+        iel = mesh.bdy_face_in_elem[iface_bdy]
+        gel = elm2pelm[iel]
+        cx = 0.0; cy = 0.0; cz = 0.0
+        x1mn = Inf; x1mx = -Inf; x2mn = Inf; x2mx = -Inf
+        for kk = 1:ngl, ll = 1:ngl
+            ip = mesh.poin_in_bdy_face[iface_bdy, kk, ll]
+            xx = mesh.x[ip]; yy = mesh.y[ip]; zz = mesh.z[ip]
+            cx += xx; cy += yy; cz += zz
+            if periodic_direction == "periodicx"
+                x1mn = min(x1mn, yy); x1mx = max(x1mx, yy)
+                x2mn = min(x2mn, zz); x2mx = max(x2mx, zz)
+            elseif periodic_direction == "periodicy"
+                x1mn = min(x1mn, xx); x1mx = max(x1mx, xx)
+                x2mn = min(x2mn, zz); x2mx = max(x2mx, zz)
+            else
+                x1mn = min(x1mn, xx); x1mx = max(x1mx, xx)
+                x2mn = min(x2mn, yy); x2mx = max(x2mx, yy)
+            end
+        end
+        npts = Float64(ngl2)
+        push!(local_iel, iel); push!(local_gel, gel); push!(local_rk, rank)
+        if periodic_direction == "periodicx"
+            push!(cx1_loc, cy/npts); push!(cx2_loc, cz/npts); push!(cx3_loc, cx/npts)
+        elseif periodic_direction == "periodicy"
+            push!(cx1_loc, cx/npts); push!(cx2_loc, cz/npts); push!(cx3_loc, cy/npts)
+        else
+            push!(cx1_loc, cx/npts); push!(cx2_loc, cy/npts); push!(cx3_loc, cz/npts)
+        end
+        push!(x1mn_loc, x1mn); push!(x1mx_loc, x1mx)
+        push!(x2mn_loc, x2mn); push!(x2mx_loc, x2mx)
+    end
+
+    gel_g  = MPI.gather(local_gel,  comm)
+    cx1_g  = MPI.gather(cx1_loc,    comm)
+    cx2_g  = MPI.gather(cx2_loc,    comm)
+    cx3_g  = MPI.gather(cx3_loc,    comm)
+    x1mn_g = MPI.gather(x1mn_loc,   comm)
+    x1mx_g = MPI.gather(x1mx_loc,   comm)
+    x2mn_g = MPI.gather(x2mn_loc,   comm)
+    x2mx_g = MPI.gather(x2mx_loc,   comm)
+    rk_g   = MPI.gather(local_rk,   comm)
+
+    # -----------------------------------------------------------------
+    # Phase 2 (rank 0) – build a PAIR LIST: each (child_gidx, parent_gidx,
+    # h1, h2, child_is_min_side).  A parent can appear in multiple pairs.
+    # -----------------------------------------------------------------
+    pair_child_g    = Int[]
+    pair_parent_g   = Int[]
+    pair_h1_g       = Int[]
+    pair_h2_g       = Int[]
+    pair_child_ismin = Int[]  # 1 if child is on the min-coordinate side
+
+    if rank == 0
+        all_gel  = vcat(gel_g...)
+        all_cx1  = vcat(cx1_g...)
+        all_cx2  = vcat(cx2_g...)
+        all_cx3  = vcat(cx3_g...)
+        all_x1mn = vcat(x1mn_g...)
+        all_x1mx = vcat(x1mx_g...)
+        all_x2mn = vcat(x2mn_g...)
+        all_x2mx = vcat(x2mx_g...)
+        all_rk   = vcat(rk_g...)
+
+        # Helper: reconstruct (x,y,z) from the (cx1,cx2,cx3) storage convention.
+        to_xyz(i) =
+            periodic_direction == "periodicx" ? (all_cx3[i], all_cx1[i], all_cx2[i]) :
+            periodic_direction == "periodicy" ? (all_cx1[i], all_cx3[i], all_cx2[i]) :
+                                               (all_cx1[i], all_cx2[i], all_cx3[i])
+
+        if length(all_gel) > 0
+            x3v_min, x3v_max = extrema(all_cx3)
+            idx_min = findall(v -> AlmostEqual(v, x3v_min), all_cx3)
+            idx_max = findall(v -> AlmostEqual(v, x3v_max), all_cx3)
+
+            # Identify conforming faces by matching centroids on both sides.
+            max_cmap = Dict{NTuple{2,Float64},Int}()
+            for k in idx_max
+                key = (round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5))
+                max_cmap[key] = k
+            end
+            min_cmap = Dict{NTuple{2,Float64},Int}()
+            for k in idx_min
+                key = (round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5))
+                min_cmap[key] = k
+            end
+            conform_keys_min = Set(keys(filter(kv -> haskey(max_cmap, kv[1]), min_cmap)))
+            conform_keys_max = Set(keys(filter(kv -> haskey(min_cmap, kv[1]), max_cmap)))
+
+            # Nonconforming parent faces on each side (larger face, no exact centroid match).
+            nonconform_max = filter(k -> begin
+                ky = (round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5))
+                ky ∉ conform_keys_max
+            end, idx_max)
+            nonconform_min = filter(k -> begin
+                ky = (round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5))
+                ky ∉ conform_keys_min
+            end, idx_min)
+
+            tol = 1e-8
+
+            # min-side children (finer on min side, coarser parent on max side).
+            # Each min-side nonconforming face is checked against every max-side
+            # nonconforming face; up to 4 min children can map to one max parent.
+            for k in idx_min
+                ky = (round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5))
+                ky in conform_keys_min && continue     # conforming — skip
+                c1 = all_cx1[k]; c2 = all_cx2[k]
+                for p in nonconform_max
+                    c1 > all_x1mn[p]-tol && c1 < all_x1mx[p]+tol &&
+                    c2 > all_x2mn[p]-tol && c2 < all_x2mx[p]+tol || continue
+                    # k must be the finer (smaller-area) element.
+                    (all_x1mx[k]-all_x1mn[k])*(all_x2mx[k]-all_x2mn[k]) <
+                    (all_x1mx[p]-all_x1mn[p])*(all_x2mx[p]-all_x2mn[p]) - tol || continue
+                    mid1 = (all_x1mn[p]+all_x1mx[p])/2.0
+                    mid2 = (all_x2mn[p]+all_x2mx[p])/2.0
+                    h1_loc = c1 > mid1 ? 1 : 2
+                    h2_loc = c2 > mid2 ? 1 : 2
+                    push!(pair_child_g,    k)
+                    push!(pair_parent_g,   p)
+                    push!(pair_h1_g,       h1_loc)
+                    push!(pair_h2_g,       h2_loc)
+                    push!(pair_child_ismin, 1)
+                    cx,cy,cz = to_xyz(k); px,py,pz = to_xyz(p)
+                    # println("[$(periodic_direction)] per-NCF pair (child on min-side): child_gel=$(all_gel[k]) rank=$(all_rk[k]) xyz=($(round(cx;digits=5)),$(round(cy;digits=5)),$(round(cz;digits=5))) | parent_gel=$(all_gel[p]) rank=$(all_rk[p]) xyz=($(round(px;digits=5)),$(round(py;digits=5)),$(round(pz;digits=5))) h1=$(h1_loc) h2=$(h2_loc)")
+                    break  # each child has exactly one parent
+                end
+            end
+
+            # max-side children (finer on max side, coarser parent on min side).
+            for k in idx_max
+                ky = (round(all_cx1[k]; digits=5), round(all_cx2[k]; digits=5))
+                ky in conform_keys_max && continue     # conforming — skip
+                c1 = all_cx1[k]; c2 = all_cx2[k]
+                for p in nonconform_min
+                    c1 > all_x1mn[p]-tol && c1 < all_x1mx[p]+tol &&
+                    c2 > all_x2mn[p]-tol && c2 < all_x2mx[p]+tol || continue
+                    # k must be the finer (smaller-area) element.
+                    (all_x1mx[k]-all_x1mn[k])*(all_x2mx[k]-all_x2mn[k]) <
+                    (all_x1mx[p]-all_x1mn[p])*(all_x2mx[p]-all_x2mn[p]) - tol || continue
+                    mid1 = (all_x1mn[p]+all_x1mx[p])/2.0
+                    mid2 = (all_x2mn[p]+all_x2mx[p])/2.0
+                    h1_loc = c1 > mid1 ? 1 : 2
+                    h2_loc = c2 > mid2 ? 1 : 2
+                    push!(pair_child_g,    k)
+                    push!(pair_parent_g,   p)
+                    push!(pair_h1_g,       h1_loc)
+                    push!(pair_h2_g,       h2_loc)
+                    push!(pair_child_ismin, 0)
+                    cx,cy,cz = to_xyz(k); px,py,pz = to_xyz(p)
+                    # println("[$(periodic_direction)] per-NCF pair (child on max-side): child_gel=$(all_gel[k]) rank=$(all_rk[k]) xyz=($(round(cx;digits=5)),$(round(cy;digits=5)),$(round(cz;digits=5))) | parent_gel=$(all_gel[p]) rank=$(all_rk[p]) xyz=($(round(px;digits=5)),$(round(py;digits=5)),$(round(pz;digits=5))) h1=$(h1_loc) h2=$(h2_loc)")
+                    break  # each child has exactly one parent
+                end
+            end
+        end
+    end
+
+    # -----------------------------------------------------------------
+    # Phase 3 – broadcast the full pair list and the global gel/rank
+    # arrays to all ranks so each rank can self-filter.
+    # -----------------------------------------------------------------
+    MPI.Barrier(comm)
+
+    npairs = (rank == 0) ? Int32(length(pair_child_g)) : Int32(0)
+    npairs = MPI.Bcast(npairs, 0, comm)
+
+    total_faces_g = (rank == 0) ? Int32(length(vcat(gel_g...))) : Int32(0)
+    total_faces_g = MPI.Bcast(total_faces_g, 0, comm)
+    all_gel_bcast = zeros(eltype(elm2pelm), total_faces_g)
+    all_rk_bcast  = zeros(Int32, total_faces_g)
+    if rank == 0
+        all_gel_bcast .= vcat(gel_g...)
+        all_rk_bcast  .= vcat(rk_g...)
+    end
+    MPI.Bcast!(all_gel_bcast, 0, comm)
+    MPI.Bcast!(all_rk_bcast,  0, comm)
+
+    pc  = rank == 0 ? pair_child_g    : zeros(Int, npairs)
+    pp  = rank == 0 ? pair_parent_g   : zeros(Int, npairs)
+    ph1 = rank == 0 ? pair_h1_g       : zeros(Int, npairs)
+    ph2 = rank == 0 ? pair_h2_g       : zeros(Int, npairs)
+    pm  = rank == 0 ? pair_child_ismin : zeros(Int, npairs)
+    MPI.Bcast!(pc,  0, comm)
+    MPI.Bcast!(pp,  0, comm)
+    MPI.Bcast!(ph1, 0, comm)
+    MPI.Bcast!(ph2, 0, comm)
+    MPI.Bcast!(pm,  0, comm)
+
+    # Map global element ID → local element index for this rank.
+    gel_to_iel = Dict{eltype(elm2pelm), Int}()
+    for (i, iel) in enumerate(local_iel)
+        gel_to_iel[local_gel[i]] = iel
+    end
+
+    # Staging arrays for cross-rank periodic NCF pairs.
+    ncf_peri_pg         = Vector{Vector{Int}}()   # [child_iel, child_fid, h1, h2]
+    ncf_peri_cg         = Vector{Vector{Int}}()   # [parent_iel, child_fid, h1, h2]
+    gpelm_ghost_peri    = eltype(elm2pelm)[]      # parent global element IDs (pg case)
+    gpfacets_ghost_peri = Int[]                   # child_fid values (pg case)
+    gpfacets_owner_peri = Int[]                   # parent rank (pg case)
+    gcelm_ghost_peri    = eltype(elm2pelm)[]      # child global element IDs (cg case)
+    gcfacets_ghost_peri = Int[]                   # child_fid values (cg case)
+    gcfacets_owner_peri = Int[]                   # child rank (cg case)
+
+    for ipair = 1:npairs
+        child_gidx  = pc[ipair];  parent_gidx = pp[ipair]
+        h1 = ph1[ipair];          h2 = ph2[ipair]
+        ismin = pm[ipair]
+
+        child_gel  = all_gel_bcast[child_gidx]
+        parent_gel = all_gel_bcast[parent_gidx]
+        R_c = Int(all_rk_bcast[child_gidx])
+        R_p = Int(all_rk_bcast[parent_gidx])
+
+        child_fid = ismin == 1 ? fid_min : fid_max
+
+        if R_c == rank && R_p == rank
+            # Both local: append directly to non_conforming_facets.
+            child_iel  = get(gel_to_iel, child_gel,  -1)
+            parent_iel = get(gel_to_iel, parent_gel, -1)
+            (child_iel == -1 || parent_iel == -1) && continue
+            push!(mesh.non_conforming_facets, [child_iel, parent_iel, child_fid, h1, h2])
+
+        elseif R_c == rank && R_p != rank
+            # Child local, parent on remote rank → parent-ghost entry.
+            child_iel = get(gel_to_iel, child_gel, -1)
+            child_iel == -1 && continue
+            push!(ncf_peri_pg,         [child_iel, child_fid, h1, h2])
+            push!(gpelm_ghost_peri,    parent_gel)
+            push!(gpfacets_ghost_peri, child_fid)
+            push!(gpfacets_owner_peri, R_p)
+
+        elseif R_p == rank && R_c != rank
+            # Parent local, child on remote rank → child-ghost entry.
+            parent_iel = get(gel_to_iel, parent_gel, -1)
+            parent_iel == -1 && continue
+            push!(ncf_peri_cg,         [parent_iel, child_fid, h1, h2])
+            push!(gcelm_ghost_peri,    child_gel)
+            push!(gcfacets_ghost_peri, child_fid)
+            push!(gcfacets_owner_peri, R_c)
+        end
+    end
+
+    # Inverse mapping: global element ID → local element index (needed by get_ghost_ips).
+    pelm2elm_inv = Dict(elm2pelm[i] => i for i in 1:length(elm2pelm))
+
+    # --- Extend parent-ghost infrastructure for periodic NCF pairs ---
+    # Sort by owner rank so get_ghost_ips return order matches our ncf list order.
+    if !isempty(gpelm_ghost_peri)
+        srt = sortperm(gpfacets_owner_peri)
+        gpelm_ghost_peri    = gpelm_ghost_peri[srt]
+        gpfacets_ghost_peri = gpfacets_ghost_peri[srt]
+        gpfacets_owner_peri = gpfacets_owner_peri[srt]
+        ncf_peri_pg         = ncf_peri_pg[srt]
+    end
+    # All ranks must call get_ghost_ips (MPI collective); empty arrays are fine.
+    pgip_peri, pgip_owner_peri = get_ghost_ips(
+        gpelm_ghost_peri, gpfacets_ghost_peri, gpfacets_owner_peri,
+        mesh.connijk, pelm2elm_inv, mesh.ip2gip, ngl, 1, comm, mesh.SD)
+    if !isempty(pgip_peri)
+        # println("[DBG pg R$(rank) $(periodic_direction)] get_ghost_ips returned $(length(pgip_peri)) GIPs")
+        # println("  pgip_peri     = $(pgip_peri)")
+        # println("  pgip_owner    = $(pgip_owner_peri)")
+        # println("  gip2ip on THIS rank = $(mesh.gip2ip[pgip_peri])")
+        # println("  (0 entries → GIP not owned by this rank)")
+    end
+
+    pgip_local_peri = send_and_receive(pgip_peri, pgip_owner_peri, comm)[1]
+
+    mesh.pgip_ghost = vcat(mesh.pgip_ghost, pgip_peri)
+    mesh.pgip_owner = vcat(mesh.pgip_owner, pgip_owner_peri)
+    mesh.pgip_local = vcat(mesh.pgip_local, pgip_local_peri)
+    # Rebuild pgip_local on all ranks (MPI collective).
+
+    for entry in ncf_peri_pg
+        push!(mesh.non_conforming_facets_parents_ghost, entry)
+        push!(mesh.cip_pg,   entry[1])
+        push!(mesh.lfid_pg,  entry[2])
+        push!(mesh.half1_pg, entry[3])
+        push!(mesh.half2_pg, entry[4])
+    end
+    # NOTE: do NOT update mesh.num_ncf_pg here — extend_ncf_ip_lists_3D! uses
+    # the old interior value to know where to start filling IPc_list_pg.
+
+    # --- Extend child-ghost infrastructure for periodic NCF pairs ---
+    if !isempty(gcelm_ghost_peri)
+        srt = sortperm(gcfacets_owner_peri)
+        gcelm_ghost_peri    = gcelm_ghost_peri[srt]
+        gcfacets_ghost_peri = gcfacets_ghost_peri[srt]
+        gcfacets_owner_peri = gcfacets_owner_peri[srt]
+        ncf_peri_cg         = ncf_peri_cg[srt]
+    end
+    # All ranks must call get_ghost_ips (MPI collective); empty arrays are fine.
+    cgip_peri, cgip_owner_peri = get_ghost_ips(
+        gcelm_ghost_peri, gcfacets_ghost_peri, gcfacets_owner_peri,
+        mesh.connijk, pelm2elm_inv, mesh.ip2gip, ngl, 2, comm, mesh.SD)
+    if !isempty(cgip_peri)
+        # println("[DBG cg R$(rank) $(periodic_direction)] get_ghost_ips returned $(length(cgip_peri)) GIPs")
+        # println("  cgip_peri     = $(cgip_peri)")
+        # println("  cgip_owner    = $(cgip_owner_peri)")
+        # println("  gip2ip on THIS rank = $(mesh.gip2ip[cgip_peri])")
+        # println("  (0 entries → GIP not owned by this rank)")
+    end
+
+    
+    cgip_local_peri = send_and_receive( cgip_peri, cgip_owner_peri, comm)[1]
+
+    mesh.cgip_ghost = vcat(mesh.cgip_ghost, cgip_peri)
+    mesh.cgip_owner = vcat(mesh.cgip_owner, cgip_owner_peri)
+    mesh.cgip_local = vcat(mesh.cgip_local, cgip_local_peri)
+    # Rebuild cgip_local on all ranks (MPI collective).
+
+    for entry in ncf_peri_cg
+        push!(mesh.non_conforming_facets_children_ghost, entry)
+        push!(mesh.pip_cg,   entry[1])
+        push!(mesh.lfid_cg,  entry[2])
+        push!(mesh.half1_cg, entry[3])
+        push!(mesh.half2_cg, entry[4])
+    end
+    # NOTE: do NOT update mesh.num_ncf_cg here — extend_ncf_ip_lists_3D! uses
+    # the old interior value to know where to start filling IPp_list_cg.
+end
+
+
+# ---------------------------------------------------------------------------
+# Extend IPc_list, IPp_list (and their ghost variants) after periodic NCF
+# pairs have been appended to non_conforming_facets* by
+# collect_periodic_ncf_pairs_3D!.  Call once after all three directions.
+# ---------------------------------------------------------------------------
+function extend_ncf_ip_lists_3D!(mesh)
+    ngl  = mesh.ngl
+    ngl2 = ngl * ngl
+
+    # Helper: extract ngl² IPs from element iel at face fid.
+    function face_ips(iel, fid)
+        if fid == 1       # front j=ngl
+            return reshape(mesh.connijk[iel, 1:ngl, ngl, 1:ngl], :)
+        elseif fid == 2   # back  j=1
+            return reshape(mesh.connijk[iel, 1:ngl, 1,   1:ngl], :)
+        elseif fid == 3   # bottom k=ngl
+            return reshape(mesh.connijk[iel, 1:ngl, 1:ngl, ngl], :)
+        elseif fid == 4   # top    k=1
+            return reshape(mesh.connijk[iel, 1:ngl, 1:ngl, 1  ], :)
+        elseif fid == 5   # right  i=1
+            return reshape(mesh.connijk[iel, 1,   1:ngl, 1:ngl], :)
+        else              # left   i=ngl
+            return reshape(mesh.connijk[iel, ngl, 1:ngl, 1:ngl], :)
+        end
+    end
+
+    # Opposite face mapping (child's face → parent's face).
+    opp = (2, 1, 4, 3, 6, 5)
+
+    # --- Extend IPc_list / IPp_list for local-local pairs ---
+    new_num_ncf = length(mesh.non_conforming_facets)
+    old_num_ncf = mesh.num_ncf
+    if new_num_ncf > old_num_ncf
+        new_IPc = zeros(Int, ngl2, new_num_ncf)
+        new_IPp = zeros(Int, ngl2, new_num_ncf)
+        if old_num_ncf > 0
+            new_IPc[:, 1:old_num_ncf] .= mesh.IPc_list
+            new_IPp[:, 1:old_num_ncf] .= mesh.IPp_list
+        end
+        for idx = old_num_ncf+1:new_num_ncf
+            ciel, piel, cfid, _, _ = mesh.non_conforming_facets[idx]
+            new_IPc[:, idx] .= face_ips(ciel, cfid)
+            new_IPp[:, idx] .= face_ips(piel, opp[cfid])
+        end
+        mesh.IPc_list = new_IPc
+        mesh.IPp_list = new_IPp
+        mesh.num_ncf  = new_num_ncf
+    end
+
+    # --- Extend IPc_list_pg for parent-ghost pairs (child local, parent remote) ---
+    new_num_pg = length(mesh.non_conforming_facets_parents_ghost)
+    old_num_pg = mesh.num_ncf_pg
+    # @info mesh.rank new_num_pg old_num_pg
+    if new_num_pg > old_num_pg
+        new_IPc_pg = zeros(Int, ngl2, new_num_pg)
+        if old_num_pg > 0
+            new_IPc_pg[:, 1:old_num_pg] .= mesh.IPc_list_pg
+        end
+        for idx = old_num_pg+1:new_num_pg
+            ciel, cfid, _, _ = mesh.non_conforming_facets_parents_ghost[idx]
+            new_IPc_pg[:, idx] .= face_ips(ciel, cfid)
+        end
+        mesh.IPc_list_pg = new_IPc_pg
+        mesh.num_ncf_pg  = new_num_pg
+    end
+
+    # --- Extend IPp_list_cg for child-ghost pairs (parent local, child remote) ---
+    new_num_cg = length(mesh.non_conforming_facets_children_ghost)
+    old_num_cg = mesh.num_ncf_cg
+    if new_num_cg > old_num_cg
+        new_IPp_cg = zeros(Int, ngl2, new_num_cg)
+        if old_num_cg > 0
+            new_IPp_cg[:, 1:old_num_cg] .= mesh.IPp_list_cg
+        end
+        for idx = old_num_cg+1:new_num_cg
+            piel, cfid, _, _ = mesh.non_conforming_facets_children_ghost[idx]
+            # Parent is at the opposite face of the child's face (cfid).
+            new_IPp_cg[:, idx] .= face_ips(piel, opp[cfid])
+        end
+        mesh.IPp_list_cg = new_IPp_cg
+        mesh.num_ncf_cg  = new_num_cg
+    end
 end

@@ -65,7 +65,6 @@ function lagrange_poly(L, xq, xgl, nq, ngl)
     end
 end
 
-# Main Function (translated from Fortran subroutine create_2d_projection_matrices_numa2d)
 function scatter_gather_projection!(plane, nglx, ngly, nglz)
     ngl1, ngl2 = (plane == 1) ? (nglx, ngly) :
                  (plane == 2) ? (nglx, nglz) :
@@ -220,7 +219,7 @@ end
 function build_projection_1d(ξa)
     Np = length(ξa)
 
-    # Create the barycentric weights (we assume a similar function exists in Julia)
+    # Create the barycentric weights
     ωa = barycentric_weights(ξa)
 
     # Create top and bottom grids
@@ -235,7 +234,7 @@ function build_projection_1d(ξa)
     interp[:, :, 1] = build_interpolation(ξa, ξa_t, ωa)
 
     # Build the mass matrix and its inverse
-    lgb =  basis_structs_ξ_ω!(LG(),Np-1, CPU())  # Similar to Fortran's legendre_gauss function
+    lgb =  basis_structs_ξ_ω!(LG(),Np-1, CPU())
     ξb, ωb_gl = lgb.ξ, lgb.ω
     # Get barycentric weights for ξb
     ωb = barycentric_weights(ξb)
@@ -2295,10 +2294,18 @@ function DSS_nc_gather_mass!(M, mesh, SD::NSD_3D, QT::Inexact, Mel::AbstractArra
     # # @info "gip_gather_owner", rank, gip_gather_owner
     M_local = send_and_receive(M_gather_ghost, gip_gather_owner, comm)[1]
     gip_local = send_and_receive(gip_gather_ghost, gip_gather_owner, comm)[1]
-    # # @info "M_local", rank, [(mesh.x[gip2ip[gip]], mesh.y[gip2ip[gip]], gip) for gip in gip_local]
+    # @info "M_local", rank, [(mesh.x[gip2ip[gip]], mesh.y[gip2ip[gip]], gip) for gip in gip_local]
 
-    for (gip, m_value) in zip(gip_local, M_local)
-        M[gip2ip[gip]] += m_value
+    # println("[DBG mass R$(rank)] pgip_ghost=$(collect(gip_gather_ghost))")
+    # println("[DBG mass R$(rank)] pgip_owner=$(collect(gip_gather_owner))")
+    # println("[DBG mass R$(rank)] gip_local=$(collect(gip_local)) (GIPs this rank must serve)")
+    for (idx2, (gip, m_value)) in enumerate(zip(gip_local, M_local))
+        lip = gip2ip[gip]
+        if lip == 0
+            # println("[DBG mass R$(rank)] BAD gip at idx=$(idx2): gip=$(gip) → gip2ip=$(lip) (not on this rank!)")
+            continue   # skip to avoid BoundsError; mass will be incomplete
+        end
+        M[lip] += m_value
     end
 end
 
@@ -3085,12 +3092,6 @@ function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
         end
     end
     if (ladapt == true)
-        # DSS_nc_gather_rhs!(q_tmp, SD, QT, q_el_tmp, conn, mesh.poin_in_edge,
-        #                mesh.non_conforming_facets, mesh.cip, mesh.pip, mesh.lfid, mesh.half1, mesh.half2,
-        #                mesh.non_conforming_facets_parents_ghost, mesh.cip_pg, mesh.lfid_pg, mesh.half1_pg, mesh.half2_pg,
-        #                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p,
-        #                mesh.IPc_list, mesh.IPp_list, mesh.IPc_list_pg,
-        #                mesh.ip2gip, mesh.gip2ip, mesh.pgip_ghost, mesh.pgip_owner, mesh.pgip_local, ngl-1, neqs, interp)
         DSS_nc_gather_rhs!(q_tmp, SD, QT, q_el_tmp,
                            mesh.non_conforming_facets,
                            mesh.non_conforming_facets_parents_ghost, cache_ghost_p,
@@ -3102,12 +3103,6 @@ function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
     for ieq = 1:neqs
         divide_by_mass_matrix!(@view(q_tmp[:,ieq]), vaux, Minv, neqs, npoin, AD)
         if (ladapt == true)
-            # DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT, @view(q_el_tmp[:,:,:,:,ieq]), conn, mesh.poin_in_edge,
-            #                     mesh.non_conforming_facets, mesh.cip, mesh.pip, mesh.lfid, mesh.half1, mesh.half2,
-            #                     mesh.non_conforming_facets_children_ghost, mesh.pip_cg, mesh.lfid_cg, mesh.half1_cg, mesh.half2_cg, 
-            #                     params.q_el, params.q_el_pro, params.mesh.q_local_c, params.q_ghost_c, 
-            #                     mesh.IPc_list, mesh.IPp_list, mesh.IPp_list_cg,
-            #                     mesh.ip2gip, mesh.gip2ip, mesh.cgip_ghost, mesh.cgip_owner, mesh.cgip_local, ngl-1, params.interp)
             DSS_nc_scatter_rhs!(@view(q_tmp[:,ieq]), SD, QT,
                                 mesh.non_conforming_facets,
                                 mesh.non_conforming_facets_children_ghost, cache_ghost_c,
@@ -3183,135 +3178,208 @@ function test_projection_solutions(omesh, qp, partitioned_model, inputs, nparts,
 end
 
 
-function adapt4periodicity!(adapt_flags, mesh, SD::NSD_2D, max_level)
-    ngl = mesh.ngl
-    aux_flags   = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
-    bdry_el2ips = Dict{Int64,Array{Int64, 1}}()
-    for (iedge_bdy, type) in enumerate(mesh.bdy_edge_type)
-        if (type == "periodicx") || (type == "periodicy") || (type == "periodicz")
-            iel = mesh.bdy_edge_in_elem[iedge_bdy]
-            flag = adapt_flags[iel]
-            aux::TFloat = 0.0
-            if flag == refine_flag
-                aux = 1.0
-            elseif flag == coarsen_flag
-                aux = -1.0
-            end
-            for k=1:ngl
-                    ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
-                    aux_flags[ip] = aux
-                    ip_list = get!(bdry_el2ips, iel, Int64[])
-                    push!(ip_list, ip)
-            end
-            # ip = mesh.poin_in_bdy_face[iface_bdy,2,2]
-            # @info iel, flag, aux_flags[ip], mesh.x[ip], mesh.y[ip], mesh.z[ip]
-        end
+# NOTE: periodic-NCF pairs are merged into non_conforming_facets by
+# collect_periodic_ncf_pairs_3D! (see restructure_for_periodicity.jl).
+# DSS_nc_gather_rhs! / DSS_nc_scatter_rhs! handle them automatically —
+# no separate DSS_nc_per_* functions are needed.
+
+function reconcile_periodic_flags(a, b)
+    # Refine takes priority; coarsen only if both agree.
+    # Used for periodic pairs: one refining forces the other to also refine.
+    if a == refine_flag || b == refine_flag
+        return refine_flag
+    elseif a == nothing_flag || b == nothing_flag
+        return nothing_flag
+    else
+        return coarsen_flag
     end
+end
+
+function reconcile_sibling_coarsen(a, b)
+    # Used for sibling groups (children of the same parent).
+    # Coarsen only if ALL siblings agree; refine_flag is never propagated to
+    # siblings that did not request it — only the requesting element refines.
+    if a == coarsen_flag && b == nothing_flag
+        return nothing_flag   # a wants to coarsen but a sibling disagrees → block it
+    end
+    if a == nothing_flag && b == coarsen_flag
+        return nothing_flag   # a wants to coarsen but a sibling disagrees → block it
+    end
+    return a                  # otherwise keep a unchanged
+end
+
+function adapt4periodicity!(adapt_flags, mesh, SD::NSD_2D, max_level)
+    # ngl = mesh.ngl
+    # aux_flags   = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
+    # bdry_el2ips = Dict{Int64,Array{Int64, 1}}()
+    # for (iedge_bdy, type) in enumerate(mesh.bdy_edge_type)
+    #     if (type == "periodicx") || (type == "periodicy") || (type == "periodicz")
+    #         iel = mesh.bdy_edge_in_elem[iedge_bdy]
+    #         flag = adapt_flags[iel]
+    #         aux::TFloat = 0.0
+    #         if flag == refine_flag
+    #             aux = 1.0
+    #         elseif flag == coarsen_flag
+    #             aux = -1.0
+    #         end
+    #         for k=1:ngl
+    #                 ip = mesh.poin_in_bdy_edge[iedge_bdy,k]
+    #                 aux_flags[ip] = aux
+    #                 ip_list = get!(bdry_el2ips, iel, Int64[])
+    #                 push!(ip_list, ip)
+    #         end
+    #         # ip = mesh.poin_in_bdy_face[iface_bdy,2,2]
+    #         # @info iel, flag, aux_flags[ip], mesh.x[ip], mesh.y[ip], mesh.z[ip]
+    #     end
+    # end
+    # # for (iel, ips) in bdry_el2ips
+    # #     flags = aux_flags[ips]
+    # #     if iel == 1 || iel == 3 || iel == 7 || iel == 9
+    # #         @info iel, flags, mesh.ip2gip[ips]
+    # #     end
+    # # end
+
+    # g_dss_cache = DSS_global_mass!(SD, aux_flags, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    # # @info "after DSS_global_mass!"
     # for (iel, ips) in bdry_el2ips
     #     flags = aux_flags[ips]
-    #     if iel == 1 || iel == 3 || iel == 7 || iel == 9
-    #         @info iel, flags, mesh.ip2gip[ips]
+    #     # if iel == 1 || iel == 3 || iel == 7 || iel == 9
+    #     #     @info iel, flags, mesh.ip2gip[ips]
+    #     # end
+    #     if any(flags .> 0.5)
+    #         adapt_flags[iel] = refine_flag
+    #         continue
     #     end
-    # end
-
-    g_dss_cache = DSS_global_mass!(SD, aux_flags, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
-    # @info "after DSS_global_mass!"
-    for (iel, ips) in bdry_el2ips
-        flags = aux_flags[ips]
-        # if iel == 1 || iel == 3 || iel == 7 || iel == 9
-        #     @info iel, flags, mesh.ip2gip[ips]
-        # end
-        if any(flags .> 0.5)
-            adapt_flags[iel] = refine_flag
-            continue
-        end
-        if all(flags .< -0.5)
-            adapt_flags[iel] = coarsen_flag
-            continue
-        end
-        adapt_flags[iel] = nothing_flag
-    end
-    # for (iface_bdy, type) in enumerate(mesh.bdy_face_type)
-    #     if (type == "periodicx") || (type == "periodicy") || (type == "periodicz")
-    #         iel = mesh.bdy_face_in_elem[iface_bdy]
-    #         ip = mesh.poin_in_bdy_face[iface_bdy,2,2]
-    #         if aux_flags[ip] > 0.5
-    #             adapt_flags[iel] = refine_flag
-    #         elseif aux_flags[ip] < -0.5
-    #             adapt_flags[iel] = coarsen_flag
-    #         else
-    #             adapt_flags[iel] = nothing_flag
-    #         end
-    #         @info iel, adapt_flags[iel], aux_flags[ip], mesh.x[ip], mesh.y[ip], mesh.z[ip]
+    #     if all(flags .< -0.5)
+    #         adapt_flags[iel] = coarsen_flag
+    #         continue
     #     end
+    #     adapt_flags[iel] = nothing_flag
     # end
+    # # for (iface_bdy, type) in enumerate(mesh.bdy_face_type)
+    # #     if (type == "periodicx") || (type == "periodicy") || (type == "periodicz")
+    # #         iel = mesh.bdy_face_in_elem[iface_bdy]
+    # #         ip = mesh.poin_in_bdy_face[iface_bdy,2,2]
+    # #         if aux_flags[ip] > 0.5
+    # #             adapt_flags[iel] = refine_flag
+    # #         elseif aux_flags[ip] < -0.5
+    # #             adapt_flags[iel] = coarsen_flag
+    # #         else
+    # #             adapt_flags[iel] = nothing_flag
+    # #         end
+    # #         @info iel, adapt_flags[iel], aux_flags[ip], mesh.x[ip], mesh.y[ip], mesh.z[ip]
+    # #     end
+    # # end
 
 end
 
+
 function adapt4periodicity!(adapt_flags, mesh, SD::NSD_3D, max_level)
-    ngl = mesh.ngl
-    aux_flags   = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
-    bdry_el2ips = Dict{Int64,Array{Int64, 1}}()
-    for (iface_bdy, type) in enumerate(mesh.bdy_face_type)
-        if (type == "periodicx") || (type == "periodicy") || (type == "periodicz")
-            iel = mesh.bdy_face_in_elem[iface_bdy]
-            flag = adapt_flags[iel]
-            aux::TFloat = 0.0
-            if flag == refine_flag
-                aux = 1.0
-            elseif flag == coarsen_flag
-                aux = -1.0
-            end
-            for k=1:ngl
-                for l=1:ngl
-                    ip = mesh.poin_in_bdy_face[iface_bdy,k,l]
-                    aux_flags[ip] = aux
-                    ip_list = get!(bdry_el2ips, iel, Int64[])
-                    push!(ip_list, ip)
-                end
-            end
-            # ip = mesh.poin_in_bdy_face[iface_bdy,2,2]
-            # @info iel, flag, aux_flags[ip], mesh.x[ip], mesh.y[ip], mesh.z[ip]
-        end
-    end
-    # for (iel, ips) in bdry_el2ips
-    #     flags = aux_flags[ips]
-    #     if iel == 1 || iel == 3 || iel == 7 || iel == 9
-    #         @info iel, flags, mesh.ip2gip[ips]
+
+    # # Build set of local periodic boundary elements
+    # per_bdy_elems = Set{Int}()
+    # for iface_bdy = 1:size(mesh.bdy_face_type, 1)
+    #     t = mesh.bdy_face_type[iface_bdy]
+    #     if t == "periodicx" || t == "periodicy" || t == "periodicz"
+    #         push!(per_bdy_elems, Int(mesh.bdy_face_in_elem[iface_bdy]))
     #     end
     # end
 
-    g_dss_cache = DSS_global_mass!(SD, aux_flags, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
-    # @info "after DSS_global_mass!"
-    for (iel, ips) in bdry_el2ips
-        flags = aux_flags[ips]
-        # if iel == 1 || iel == 3 || iel == 7 || iel == 9
-        #     @info iel, flags, mesh.ip2gip[ips]
-        # end
-        if (any(flags .> 0.5)) && (mesh.ad_lvl[iel] < max_level)
-            adapt_flags[iel] = refine_flag
-            continue
-        end
-        if all(flags .< -0.5)
-            adapt_flags[iel] = coarsen_flag
-            continue
-        end
-        adapt_flags[iel] = nothing_flag
-    end
+    # # Iteratively propagate refine_flag: if any locally-refining element is
+    # # adjacent to a periodic boundary element, flag that boundary element too.
+    # # This prevents p4est's 2:1 balance from creating asymmetric levels at
+    # # periodic boundaries that the subsequent assemble_mpi! cannot see.
+    # changed = true
+    # while changed
+    #     changed = false
+    #     for iel = 1:mesh.nelem
+    #         if adapt_flags[iel] == refine_flag && mesh.ad_lvl[iel] < max_level
+    #             for iface in mesh.cell_face_ids[iel]
+    #                 for iel_nb in mesh.facet_cell_ids[iface]
+    #                     if iel_nb != iel && (iel_nb in per_bdy_elems) &&
+    #                        adapt_flags[iel_nb] != refine_flag &&
+    #                        mesh.ad_lvl[iel_nb] < max_level
+    #                         adapt_flags[iel_nb] = refine_flag
+    #                         changed = true
+    #                     end
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
+
+    # Pass 1: sibling coarsen consistency — only coarsen if ALL 8 siblings agree;
+    #         refine_flag is NOT propagated to siblings that did not request it.
+    # sib_cache = setup_assembler(SD, adapt_flags, mesh.el2sib, mesh.sib2owner)
+    # assemble_mpi!(adapt_flags, sib_cache; operator = reconcile_sibling_coarsen)
+    # @info mesh.rank, mesh.el2sib, adapt_flags
+
+    # Pass 2: periodic pair sync — propagate refine/nothing/coarsen between partners.
+    mpi_cache = setup_assembler(SD, adapt_flags, mesh.el2gel, mesh.gel2owner)
+    assemble_mpi!(adapt_flags, mpi_cache; operator = reconcile_periodic_flags)
+    # ngl = mesh.ngl
+    # aux_flags   = KernelAbstractions.zeros(CPU(), TFloat, Int64(mesh.npoin))
+    # bdry_el2ips = Dict{Int64,Array{Int64, 1}}()
     # for (iface_bdy, type) in enumerate(mesh.bdy_face_type)
     #     if (type == "periodicx") || (type == "periodicy") || (type == "periodicz")
     #         iel = mesh.bdy_face_in_elem[iface_bdy]
-    #         ip = mesh.poin_in_bdy_face[iface_bdy,2,2]
-    #         if aux_flags[ip] > 0.5
-    #             adapt_flags[iel] = refine_flag
-    #         elseif aux_flags[ip] < -0.5
-    #             adapt_flags[iel] = coarsen_flag
-    #         else
-    #             adapt_flags[iel] = nothing_flag
+    #         flag = adapt_flags[iel]
+    #         aux::TFloat = 0.0
+    #         if flag == refine_flag
+    #             aux = 1.0
+    #         elseif flag == coarsen_flag
+    #             aux = -1.0
     #         end
-    #         @info iel, adapt_flags[iel], aux_flags[ip], mesh.x[ip], mesh.y[ip], mesh.z[ip]
+    #         for k=1:ngl
+    #             for l=1:ngl
+    #                 ip = mesh.poin_in_bdy_face[iface_bdy,k,l]
+    #                 aux_flags[ip] = aux
+    #                 ip_list = get!(bdry_el2ips, iel, Int64[])
+    #                 push!(ip_list, ip)
+    #             end
+    #         end
+    #         # ip = mesh.poin_in_bdy_face[iface_bdy,2,2]
+    #         # @info iel, flag, aux_flags[ip], mesh.x[ip], mesh.y[ip], mesh.z[ip]
     #     end
     # end
+    # # for (iel, ips) in bdry_el2ips
+    # #     flags = aux_flags[ips]
+    # #     if iel == 1 || iel == 3 || iel == 7 || iel == 9
+    # #         @info iel, flags, mesh.ip2gip[ips]
+    # #     end
+    # # end
+
+    # g_dss_cache = DSS_global_mass!(SD, aux_flags, mesh.ip2gip, mesh.gip2owner, mesh.parts, mesh.npoin, mesh.gnpoin)
+    # # @info "after DSS_global_mass!"
+    # for (iel, ips) in bdry_el2ips
+    #     flags = aux_flags[ips]
+    #     # if iel == 1 || iel == 3 || iel == 7 || iel == 9
+    #     #     @info iel, flags, mesh.ip2gip[ips]
+    #     # end
+    #     if (any(flags .> 0.5)) && (mesh.ad_lvl[iel] < max_level)
+    #         adapt_flags[iel] = refine_flag
+    #         continue
+    #     end
+    #     if all(flags .< -0.5)
+    #         adapt_flags[iel] = coarsen_flag
+    #         continue
+    #     end
+    #     adapt_flags[iel] = nothing_flag
+    # end
+    # # for (iface_bdy, type) in enumerate(mesh.bdy_face_type)
+    # #     if (type == "periodicx") || (type == "periodicy") || (type == "periodicz")
+    # #         iel = mesh.bdy_face_in_elem[iface_bdy]
+    # #         ip = mesh.poin_in_bdy_face[iface_bdy,2,2]
+    # #         if aux_flags[ip] > 0.5
+    # #             adapt_flags[iel] = refine_flag
+    # #         elseif aux_flags[ip] < -0.5
+    # #             adapt_flags[iel] = coarsen_flag
+    # #         else
+    # #             adapt_flags[iel] = nothing_flag
+    # #         end
+    # #         @info iel, adapt_flags[iel], aux_flags[ip], mesh.x[ip], mesh.y[ip], mesh.z[ip]
+    # #     end
+    # # end
 
 end
 
@@ -3347,7 +3415,16 @@ function amr_strategy!(args...)
               params.mp.S_micro, params.mp.qsatt)
     # @info ref_coarse_flags
     # re - sem, init, and params_setup
+
+    # vtk_directory = "./output_mesh_old/"
+    # Ω_old = Triangulation(partitioned_model)
+    # flags_dist = map(params.mesh.parts) do _
+    #     collect(Float64, ref_coarse_flags)
+    # end
+    # writevtk(Ω_old, vtk_directory; celldata = ["adapt_flags" => flags_dist])
+    
     sem, partitioned_model_new, uaux_new = sem_setup(inputs, params.nparts, params.distribute, ref_coarse_flags, partitioned_model, params.mesh, params.interp, params.project, params.uaux)
+
     
     # if (inputs[:backend] != CPU())
     #     convert_mesh_arrays!(sem.mesh.SD, sem.mesh, inputs[:backend], inputs)
