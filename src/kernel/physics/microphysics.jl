@@ -671,9 +671,9 @@ function compute_Pm!(uaux, qe, qr, qs, qg, Pr, Ps, Pg, npoin, MicroConst, lpert)
             ρ = uaux[ip,1]
         end
         #@info ρ,qr[ip],ρ0
-        Pr[ip] = (a_rain * γ4br)/6 * (π * ρ_rain * N0_rain)^(-b_rain/4)*(ρ0/ρ)^(0.5)*(ρ*qr[ip])^(1+b_rain/4)
-        Ps[ip] = (a_snow * γ4bs)/6 * (π * ρ_snow * N0_snow)^(-b_snow/4)*(ρ0/ρ)^(0.5)*(ρ*qs[ip])^(1+b_snow/4)
-        Pg[ip] = (a_graupel * γ4bg)/6 * (π * ρ_graupel * N0_graupel)^(-b_graupel/4)*(ρ0/ρ)^(0.5)*(ρ*qg[ip])^(1+b_graupel/4)
+        Pr[ip] = (a_rain * γ4br)/6 * (π * ρ_rain * N0_rain)^(-b_rain/4)*(ρ0/ρ)^(0.5)*max(0, ρ*qr[ip])^(1+b_rain/4)
+        Ps[ip] = (a_snow * γ4bs)/6 * (π * ρ_snow * N0_snow)^(-b_snow/4)*(ρ0/ρ)^(0.5)*max(0, ρ*qs[ip])^(1+b_snow/4)
+        Pg[ip] = (a_graupel * γ4bg)/6 * (π * ρ_graupel * N0_graupel)^(-b_graupel/4)*(ρ0/ρ)^(0.5)*max(0, ρ*qg[ip])^(1+b_graupel/4)
     end
 end
 
@@ -704,9 +704,9 @@ function compute_Pm_gpu(u, qe, qr, qs, qg, MicroConst, lpert)
     N0_graupel = MicroConst.N0_graupel
     b_graupel = MicroConst.b_graupel
 
-    Pr = (a_rain * γ4br)/FT(6) * (FT(π) * ρ_rain * N0_rain)^(FT(-b_rain/FT(4)))*(ρ0/ρ)^(FT(0.5))*(ρ*qr)^(FT(1)+FT(b_rain/FT(4)))
-    Ps = (a_snow * γ4bs)/FT(6) * (FT(π) * ρ_snow * N0_snow)^(FT(-b_snow/FT(4)))*(ρ0/ρ)^(FT(0.5))*(ρ*qs)^(FT(1)+FT(b_snow/FT(4)))
-    Pg = (a_graupel * γ4bg)/FT(6) * (FT(π) * ρ_graupel * N0_graupel)^(FT(-b_graupel/FT(4)))*(ρ0/ρ)^(FT(0.5))*(ρ*qg)^(FT(1)+FT(b_graupel/FT(4)))
+    Pr = (a_rain * γ4br)/FT(6) * (FT(π) * ρ_rain * N0_rain)^(FT(-b_rain/FT(4)))*(ρ0/ρ)^(FT(0.5))*max(FT(0), ρ*qr)^(FT(1)+FT(b_rain/FT(4)))
+    Ps = (a_snow * γ4bs)/FT(6) * (FT(π) * ρ_snow * N0_snow)^(FT(-b_snow/FT(4)))*(ρ0/ρ)^(FT(0.5))*max(FT(0), ρ*qs)^(FT(1)+FT(b_snow/FT(4)))
+    Pg = (a_graupel * γ4bg)/FT(6) * (FT(π) * ρ_graupel * N0_graupel)^(FT(-b_graupel/FT(4)))*(ρ0/ρ)^(FT(0.5))*max(FT(0), ρ*qg)^(FT(1)+FT(b_graupel/FT(4)))
     #if (Pr > 0)
     #    @info Pr, Ps, Pg
     #end
