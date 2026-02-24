@@ -261,7 +261,7 @@ function solve_parallel_lsqr(ip2gip, gip2owner, A_local, b, gnpoin, npoin, pM; n
     end
     #Use allreduce to build global rhs vector
     MPI.Allreduce!(b_global, +, MPI.COMM_WORLD)
-
+    @info maximum(b_global), minimum(b_global), maximum(b), minimum(b)
     # Solve using LSQR
     if rank == 0
         println("Starting parallel LSQR solve...")

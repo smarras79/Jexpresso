@@ -123,7 +123,7 @@ end
 
 function user_rad_bc(x,y,z,θ,ϕ)
     if (x == 0.0 || y == 2.0)
-        return exp(-((4/(2*π))*(ϕ-7*π/4))^2) 
+        return exp(-((4/(2*π))*(ϕ-7*π/4))^2)
     else
         return 0.0
     end

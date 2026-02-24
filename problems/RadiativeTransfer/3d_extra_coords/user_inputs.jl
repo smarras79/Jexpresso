@@ -38,6 +38,7 @@ function user_inputs()
         :extra_dimensions    => 2,
         :RT_amr_threshold   => [0.018],
         :lRT_problem        => true,
+        :lmanufactured_solution => true,
         :adaptive_extra_meshes => true,
         :extra_dimensions_order => 4,
         :extra_dimensions_nelemx => 3,

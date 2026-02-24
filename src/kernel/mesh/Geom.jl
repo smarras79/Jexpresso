@@ -196,6 +196,34 @@ mutable struct AssemblerCache
 
 end
 
+function setup_global_numbering_extra_dim(ip2gip, gip2owner, npoin, npoin_ang, npoin_total)
+
+    comm = MPI.COMM_WORLD
+
+    ip2gip_extra = KernelAbstractions.zeros(CPU(),Int64,npoin_total)
+    for ip = 1:npoin
+        gip = ip2gip[ip]
+        for ip_ext = 1:npoin_ang
+            idx_ip = (ip-1)*(npoin_ang) + ip_ext
+            idx_gip = (gip-1)*(npoin_ang) + ip_ext
+            #=if (ip != gip)
+                @info ip, gip
+            end=#
+            ip2gip_extra[idx_ip] = idx_gip
+        end
+    end
+    
+    gnpoin    = MPI.Allreduce(maximum(ip2gip_extra), MPI.MAX, comm)
+    gip2owner_extra = find_gip_owner(ip2gip_extra)
+    gip2ip    = KernelAbstractions.zeros(CPU(), TInt, gnpoin)
+    @info gnpoin, npoin_total
+    for (ip, gip) in enumerate(ip2gip_extra)
+        gip2ip[gip] = ip
+    end
+
+    return ip2gip_extra, gip2owner_extra, gnpoin
+end
+
 function setup_global_numbering_adaptive_angular_scalable(
     ip2gip, gip2owner, mesh, connijk_spa,
     extra_meshes_coords, extra_meshes_connijk,

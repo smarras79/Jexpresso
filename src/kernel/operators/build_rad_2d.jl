@@ -479,7 +479,8 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                    #axtol = 1e-13,
                    itmax = n_spa,
                    verbose = 1)=#
-    @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM)
+    @time solution = solve_parallel_lsqr(ip2gip_extra, gip2owner_extra, As, B, gnpoin, npoin_ang_total, pM; 
+    npoin_g = npoin_ang_total)
    
     @info maximum(solution), minimum(solution)
     @info "done radiation solved"
@@ -575,9 +576,11 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             ip_g = connijk_spa[iel][i,j,e_ext,iθ]
                             int_sol[ip] += solution_new[ip_g]*extra_meshes_extra_Je[iel][e_ext,iθ]*extra_mesh[1].ωθ[iθ]/div1
                             #if (iel == 11) @info int_sol[ip], solution_new[ip_g], solution_new[ip_g]*extra_meshes_extra_Je[iel][e_ext,iθ]*extra_mesh[1].ωθ[iθ]/div, e_ext, iθ, ip, x, y end
-                            int_ref[ip] += (ref[ip_g])*extra_meshes_extra_Je[iel][e_ext,iθ]*extra_mesh[1].ωθ[iθ]/div1
-                            L2_ref += (ref[ip_g])^2*extra_meshes_extra_Je[iel][e_ext,iθ]*extra_mesh[1].ωθ[iθ]*ω[i]*ω[j]*Je[iel,i,j]/div1
-                            L2_err += (ref[ip_g]-solution_new[ip_g])^2*extra_meshes_extra_Je[iel][e_ext,iθ]*extra_mesh[1].ωθ[iθ]*ω[i]*ω[j]*Je[iel,i,j]/div1
+                            if (inputs[:lmanufactured_solution])
+                                int_ref[ip] += (ref[ip_g])*extra_meshes_extra_Je[iel][e_ext,iθ]*extra_mesh[1].ωθ[iθ]/div1
+                                L2_ref += (ref[ip_g])^2*extra_meshes_extra_Je[iel][e_ext,iθ]*extra_mesh[1].ωθ[iθ]*ω[i]*ω[j]*Je[iel,i,j]/div1
+                                L2_err += (ref[ip_g]-solution_new[ip_g])^2*extra_meshes_extra_Je[iel][e_ext,iθ]*extra_mesh[1].ωθ[iθ]*ω[i]*ω[j]*Je[iel,i,j]/div1
+                            end
                         end
                     end
                 else
@@ -609,21 +612,28 @@ function build_radiative_transfer_problem(mesh, inputs, neqs, ngl, dψ, ψ, ω, 
                             ip_ext = extra_mesh.extra_connijk[e_ext,iθ]
                             θ = extra_mesh.extra_coords[ip_ext]
                             ip_g = (ip-1) * extra_mesh.extra_npoin + ip_ext
+                            
                             int_sol[ip] += solution[ip_g]*extra_mesh.extra_metrics.Je[e_ext,iθ]*extra_mesh.ωθ[iθ]/div1
-                            int_ref[ip] += (ref[ip_g]-solution[ip_g])*extra_mesh.extra_metrics.Je[e_ext,iθ]*extra_mesh.ωθ[iθ]/div1
-                            L2_ref += (ref[ip_g])^2*extra_mesh.extra_metrics.Je[e_ext,iθ]*extra_mesh.ωθ[iθ]*ω[i]*ω[j]*Je[iel,i,j]#/div1
-                            L2_err += (ref[ip_g]-solution[ip_g])^2*extra_mesh.extra_metrics.Je[e_ext,iθ]*extra_mesh.ωθ[iθ]*ω[i]*ω[j]*Je[iel,i,j]#/div1
-
+                            if (inputs[:lmanufactured_solution])
+                                int_ref[ip] += (ref[ip_g])*extra_mesh.extra_metrics.Je[e_ext,iθ]*extra_mesh.ωθ[iθ]/div1
+                                L2_ref += (ref[ip_g])^2*extra_mesh.extra_metrics.Je[e_ext,iθ]*extra_mesh.ωθ[iθ]*ω[i]*ω[j]*Je[iel,i,j]#/div1
+                                L2_err += (ref[ip_g]-solution[ip_g])^2*extra_mesh.extra_metrics.Je[e_ext,iθ]*extra_mesh.ωθ[iθ]*ω[i]*ω[j]*Je[iel,i,j]#/div1
+                            end
                         end
                     end
                 end
             end
         end
     end
-    @info "new L2 norms", sqrt(L2_ref), sqrt(L2_err), sqrt(L2_err/L2_ref)
-    @info "infinity norms", maximum(abs.(solution-ref)), maximum(abs.(solution-ref))/maximum(ref)
-    plot_triangulation(NSD_2D(), mesh, int_ref[:], "ref",  inputs[:output_dir], inputs; iout=1, nvar=1)
-    plot_triangulation(NSD_2D(), mesh, int_sol[:], "sol",  inputs[:output_dir], inputs; iout=2, nvar=1)
+    if (inputs[:lmanufactured_solution])
+        @info "new L2 norms", sqrt(L2_ref), sqrt(L2_err), sqrt(L2_err/L2_ref)
+        @info "infinity norms", maximum(abs.(solution-ref)), maximum(abs.(solution-ref))/maximum(ref)
+        
+    end
+    title = @sprintf "Solution-Radiation"
+    write_vtk(SD, mesh, int_sol, int_sol, nothing, nothing, nothing,
+              0.0, 0.0, 0.0, 0.0, title, inputs[:output_dir], inputs,
+              ["Ang_int"], ["Ang_int"]; iout=1, nvar=1)
 end
 
 function sparse_lhs_assembly_2Dby1D(ω, Je, connijk, ωθ, x, y, ψ, dψ, ψ_ang, connijk_ang, Je_ang, coords_ang, nop_ang, npoin_ang_total, nelem, ngl, nelem_ang,

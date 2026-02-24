@@ -36,15 +36,15 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     end
 
     if(!haskey(inputs, :lmanufactured_solution))
-       inputs[:lmanufactured_solution] = [1.0]
+       inputs[:lmanufactured_solution] = false
     end
 
     if(!haskey(inputs, :RT_amr_threshold))
-       inputs[:lRT_from_data] = [1.0]
+       inputs[:lRT_amr_threshold] = [1.0]
     end
 
     if(!haskey(inputs, :lRT_problem))
-       inputs[:lRT_from_data] = true
+       inputs[:lRT_problem] = false
     end
 
     if(!haskey(inputs, :lRT_from_data))
@@ -652,6 +652,10 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
         lowercase(parsed_equations) == "diffusion")
         inputs[:equations] = Helmholtz()
         inputs[:ldss_laplace] = true
+        inputs[:ldss_differentiation] = false
+    elseif (lowercase(parsed_equations) == "radiativetransfer")
+        inputs[:equations] = RadiativeTransfer()
+        inputs[:ldss_laplace] = false
         inputs[:ldss_differentiation] = false
     else
         

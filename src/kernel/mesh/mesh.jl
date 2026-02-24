@@ -310,7 +310,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         if (ϕ < 0)
             ϕ = ϕ + 2*π
         end
-        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
         extra_mesh.extra_connijk[1,1,1] = 1
         extra_mesh.extra_coords[1,1] = θ
         extra_mesh.extra_coords[2,1] = ϕ
@@ -330,7 +329,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         if (ϕ < 0)
             ϕ = ϕ + 2*π
         end 
-        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
         extra_mesh.extra_connijk[1,nop+1,1] = 2
         extra_mesh.extra_coords[1,2] = θ
         extra_mesh.extra_coords[2,2] = ϕ
@@ -350,7 +348,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         if (ϕ < 0)
             ϕ = ϕ + 2*π
         end 
-        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
         extra_mesh.extra_connijk[1,1,nop+1] = 3
         extra_mesh.extra_coords[1,3] = θ
         extra_mesh.extra_coords[2,3] = ϕ
@@ -370,7 +367,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         if (ϕ < 0)
             ϕ = ϕ + 2*π
         end 
-        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
         extra_mesh.extra_connijk[1,nop+1,nop+1] = 4
         extra_mesh.extra_coords[1,4] = θ
         extra_mesh.extra_coords[2,4] = ϕ
@@ -392,7 +388,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         z1 = z/r
         θ = asin(z1) + π/2
         ϕ = atan(y1,x1) + π/4
-        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
         extra_mesh.extra_connijk[2,nop+1,1] = 5
         extra_mesh.extra_coords[1,5] = θ
         extra_mesh.extra_coords[2,5] = ϕ
@@ -409,7 +404,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         z1 = z/r
         θ = asin(z1) + π/2
         ϕ = atan(y1,x1) +π/4
-        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
         extra_mesh.extra_connijk[2,nop+1,nop+1] = 6
         extra_mesh.extra_coords[1,6] = θ
         extra_mesh.extra_coords[2,6] = ϕ
@@ -431,7 +425,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         z1 = z/r
         θ = asin(z1) + π/2
         ϕ = atan(y1,x1) + 3*π/2 + π/4 
-        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
         extra_mesh.extra_connijk[3,nop+1,1] = 7
         extra_mesh.extra_coords[1,7] = θ
         extra_mesh.extra_coords[2,7] = ϕ
@@ -448,7 +441,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         z1 = z/r
         θ = asin(z1) + π/2
         ϕ = atan(y1,x1) + 3*π/2 + π/4
-        @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
         extra_mesh.extra_connijk[3,nop+1,nop+1] = 8
         extra_mesh.extra_coords[1,8] = θ
         extra_mesh.extra_coords[2,8] = ϕ
@@ -504,7 +496,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             if (ϕ < 0)
                 ϕ = ϕ + 2*π
             end 
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[1,i,1] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -528,7 +519,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             if (ϕ < 0)
                 ϕ = ϕ + 2*π
             end 
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[1,1,i] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -552,7 +542,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             if (ϕ < 0)
                 ϕ = ϕ + 2*π
             end 
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[1,i,nop+1] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -576,7 +565,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             if (ϕ < 0)
                 ϕ = ϕ + 2*π
             end 
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[1,nop+1,i] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -599,7 +587,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             z1 = z/r
             θ = asin(z1) + π/2
             ϕ = atan(y1,x1) +π/4
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[2,i,1] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -624,7 +611,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             z1 = z/r
             θ = asin(z1) + π/2
             ϕ = atan(y1,x1) +π/4
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[2,i,nop+1] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -645,7 +631,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             z1 = z/r
             θ = asin(z1) + π/2
             ϕ = atan(y1,x1) +π/4
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[2,nop+1,i] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -667,7 +652,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             z1 = z/r
             θ = asin(z1) + π/2
             ϕ = atan(y1,x1) + π + π/4
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[3,i,1] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -693,7 +677,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             z1 = z/r
             θ = asin(z1) + π/2
             ϕ = atan(y1,x1) +π + π/4   
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[3,i,nop+1] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -714,7 +697,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             z1 = z/r
             θ = asin(z1) + π/2
             ϕ = atan(y1,x1) +3*π/2 + π/4
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[3,nop+1,i] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -736,7 +718,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             z1 = z/r
             θ = asin(z1) + π/2
             ϕ = atan(y1,x1) + 2*π + π/4
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[4,i,1] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -761,7 +742,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             z1 = z/r
             θ = asin(z1) + π/2
             ϕ = atan(y1,x1) + 2*π + π/4
-            @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
             extra_mesh.extra_connijk[4,i,nop+1] = ip
             extra_mesh.extra_coords[1,ip] = θ
             extra_mesh.extra_coords[2,ip] = ϕ
@@ -824,7 +804,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                 if (ϕ < 0)
                     ϕ = ϕ + 2*π
                 end 
-                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
                 extra_mesh.extra_connijk[1,i,j] = ip
                 extra_mesh.extra_coords[1,ip] = θ
                 extra_mesh.extra_coords[2,ip] = ϕ
@@ -847,7 +826,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                 θ = asin(z1) + π/2
                 ϕ = atan(y1,x1) + π/4
 
-                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
                 extra_mesh.extra_connijk[2,i,j] = ip
                 extra_mesh.extra_coords[1,ip] = θ
                 extra_mesh.extra_coords[2,ip] = ϕ
@@ -869,7 +847,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                 z1 = z/r
                 θ = asin(z1) + π/2
                 ϕ = atan(y1,x1) +π + π/4
-                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
                 extra_mesh.extra_connijk[3,i,j] = ip
                 extra_mesh.extra_coords[1,ip] = θ
                 extra_mesh.extra_coords[2,ip] = ϕ
@@ -891,7 +868,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                 z1 = z/r
                 θ = asin(z1) + π/2
                 ϕ = atan(y1,x1) + 2*π + π/4
-                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2)
                 extra_mesh.extra_connijk[4,i,j] = ip
                 extra_mesh.extra_coords[1,ip] = θ
                 extra_mesh.extra_coords[2,ip] = ϕ
@@ -918,7 +894,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                 elseif (ϕ == 3*π/4)
                     ϕ = 7*π/4
                 end=#
-                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2), i,j 
                 extra_mesh.extra_connijk[5,i,j] = ip
                 extra_mesh.extra_coords[1,ip] = θ
                 extra_mesh.extra_coords[2,ip] = ϕ
@@ -945,7 +920,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                 elseif (ϕ == 7*π/4)
                     ϕ = 3*π/4
                 end=#
-                @info θ/π, ϕ/π, sqrt(x^2 + y^2 + z^2),i,j
                 extra_mesh.extra_connijk[6,i,j] = ip
                 extra_mesh.extra_coords[1,ip] = θ
                 extra_mesh.extra_coords[2,ip] = ϕ
@@ -1064,7 +1038,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         end
         extra_mesh.extra_npoin = ip - 1
     end
-    @info extra_mesh.extra_connijk[1,:,:]
    # build extra grid metrics
    metrics = allocate_metrics(NSD_2D(), nelemθ*nelemϕ, 0, nop+1, TFloat, backend)
    
@@ -1073,7 +1046,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
         
    xij = 0.0
    yij = 0.0
-   @info extra_mesh.extra_connijk, size(extra_mesh.extra_connijk)
    if !(inputs[:lcubed_sphere_angular_mesh])
         @inbounds for iel = 1:nelemθ*nelemϕ
             for j = 1:nop+1
@@ -1284,7 +1256,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                     col1 = [dxdξ_val, dydξ_val, dzdξ_val]
                     col2 = [dxdη_val, dydη_val, dzdη_val]
                     metrics.Je[iel, k, l] = norm(cross(col1, col2)) #dxdξ_val * dydη_val - dydξ_val * dxdη_val
-                    @info metrics.Je[iel, k, l]
                     #metrics.Je[iel, k, l] 
                     # Use the precomputed Je value for the other calculations
                     Jinv = 1.0/metrics.Je[iel, k, l]
@@ -1360,12 +1331,10 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
             for iper=1:extra_mesh.extra_npoin
                 θ = extra_mesh.extra_coords[1,iper]
                 ϕ = extra_mesh.extra_coords[2,iper]
-                @info ϕ/π, iper
                 if (abs(ϕ/π - 2.0) <= eps(Float64))
                     #found a periodic point
                     iper1 = 1
                     found = false
-                    @info ϕ/π  , θ/π
                     while (iper1 <= extra_mesh.extra_npoin && found == false)
                         θ1 = extra_mesh.extra_coords[1,iper1]
                         ϕ1 = extra_mesh.extra_coords[2,iper1]
@@ -1377,7 +1346,6 @@ function make_extra_mesh_2D(nelemθ, nelemϕ, nop, θmin, θmax, ϕmin, ϕmax, b
                     if (found)
                         ip_old = iper
                         ip_new = iper1-1
-                        @info found, extra_mesh.extra_coords[1,iper1-1]/π, ip_old, ip_new
                         for e=1:extra_mesh.extra_nelem
                             for i=1:extra_mesh.extra_nop[e]+1
                                 for j=1:extra_mesh.extra_nop[e]+1
