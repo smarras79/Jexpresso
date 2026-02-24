@@ -456,7 +456,7 @@ function build_custom_bcs_lin_solve!(::NSD_2D, t, coords,
                                      xmax, ymax, zmax, xmin, ymin, zmin, qbdy, qe,
                                      connijk_lag, bdy_edge_in_elem, bdy_edge_type, RHS, L,
                                      neqs, dirichlet!, neumann, inputs)
-    
+
     for iedge = 1:nedges_bdy
 
         if (bdy_edge_type[iedge] != "periodicx" && bdy_edge_type[iedge] != "periodic1" &&
