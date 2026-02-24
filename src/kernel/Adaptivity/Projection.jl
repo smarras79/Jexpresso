@@ -3394,6 +3394,7 @@ function do_adapt!(adapt_flags, inputs, mesh, uaux, qp,
                           qs, qg, Pr, Ps, Pg,
                           S_micro, qsatt,
                           mesh.connijk, mesh.nelem, mesh.ngl,
+                          mesh.coords,
                           inputs[:amr_max_level] )
     adapt4periodicity!(adapt_flags, mesh, mesh.SD, inputs[:amr_max_level])
 end

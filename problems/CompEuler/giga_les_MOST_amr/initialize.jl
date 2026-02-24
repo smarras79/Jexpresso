@@ -266,10 +266,14 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
                                Tabs, qn, qc, qi, qr,
                                qs, qg, Pr, Ps, Pg,
                                S_micro, qsatt,
-                               connijk, nelem, ngl, max_level)
+                               connijk, nelem, ngl, 
+                               coords,
+                               max_level)
     ips         = KernelAbstractions.zeros(CPU(), TInt, ngl * ngl * ngl)
     tol         = 1e-9
-    
+    x           = coords[:,1]
+    y           = coords[:,2]
+    z           = coords[:,3]
     for iel = 1:nelem
         m = 1
         for i = 1:ngl
@@ -282,7 +286,8 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
         end
         # @info q[ips,4] - qe[ips,4]
         qi_el      = qi[ips]
-        if any(qi_el .> tol) && (old_ad_lvl[iel] < max_level)
+        z_el       = z[ips]
+        if any(qi_el .> tol) && (old_ad_lvl[iel] < max_level) $$ all(z_el .< 18999.9)
             adapt_flags[iel] = refine_flag
         end
         if all(qi_el .< tol)
