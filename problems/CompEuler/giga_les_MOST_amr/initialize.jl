@@ -287,7 +287,7 @@ function user_get_adapt_flags!(adapt_flags, inputs, old_ad_lvl, q, qe,
         # @info q[ips,4] - qe[ips,4]
         qi_el      = qi[ips]
         z_el       = z[ips]
-        if any(qi_el .> tol) && (old_ad_lvl[iel] < max_level) $$ all(z_el .< 18999.9)
+        if any(qi_el .> tol) && (old_ad_lvl[iel] < max_level) && all(z_el .< 18999.9)
             adapt_flags[iel] = refine_flag
         end
         if all(qi_el .< tol)
