@@ -19,6 +19,13 @@ function time_loop!(inputs, params, u, args...)
     restart_time = inputs[:restart_time]
     rad_time     = inputs[:radiation_time_step]
     lnew_mesh    = true   
+    lwrite_time  = (inputs[:outformat] == VTK()) && (rank == 0)
+
+    if (lwrite_time == true) 
+        pvd_path = joinpath(inputs[:output_dir], "simulation.pvd")
+        init_pvd_file(pvd_path)
+    end
+
     function two_stream_condition(u, t, integrator)
         if (rem(t,rad_time) < 1e-3)
             return true
@@ -109,6 +116,9 @@ function time_loop!(inputs, params, u, args...)
                          integrator.p.qp.qoutvars,
                          inputs[:outformat];
                          nvar=integrator.p.qp.neqs, qexact=integrator.p.qp.qe)
+            if (lwrite_time == true) 
+                append_pvd_entry(pvd_path, integrator.t, "iter_$(idx).pvtu")
+            end
         end
     end
     cb_rad     = DiscreteCallback(two_stream_condition, do_radiation!)
@@ -134,6 +144,9 @@ function time_loop!(inputs, params, u, args...)
                      params.qp.qvars, params.qp.qoutvars,
                      inputs[:outformat];
                      nvar=params.qp.neqs, qexact=params.qp.qe)
+        if (lwrite_time == true) 
+            append_pvd_entry(pvd_path, inputs[:tinit], "iter_$(idx).pvtu")
+        end
         if rank == 0  println(" # Write initial condition to ",  typeof(inputs[:outformat]), " ......... END") end
     end
     
@@ -187,6 +200,6 @@ function time_loop!(inputs, params, u, args...)
     end
     
     println_rank(" # Solving ODE  ................................ DONE"; msg_rank = rank)
-    
+
     return solution
 end

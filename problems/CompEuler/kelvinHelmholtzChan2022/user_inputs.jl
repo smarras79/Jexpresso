@@ -24,21 +24,23 @@ function user_inputs()
         # Physical parameters/constants:
         #---------------------------------------------------------------------------
         :lvisc                => true, #false by default NOTICE: works only for Inexact
-        :μ                   => [0.0, 1.0, 1.0, 10.0], #horizontal viscosity constant for momentum
+        :μ                   => [0.0, 1.0, 1.0, 5.0], #horizontal viscosity constant for momentum
         #:μ                   => [0.0, 0.25, 0.25, 0.25], #horizontal viscosity constant for momentum
-        :visc_model           => SMAG(),
+        #:visc_model           => SMAG(),
+        :visc_model           => VREM(),
         #---------------------------------------------------------------------------
         # LKEP:
         #---------------------------------------------------------------------------
-        #:lkep        => true,
-        :volume_flux => "ec",
+        :lkep        => true,
+        #:volume_flux => artiano_etec(),
+        :volume_flux => central_theta(),
         #---------------------------------------------------------------------------
         # Mesh paramters and files:
         #---------------------------------------------------------------------------
         :lread_gmsh          => true, #If false, a 1D problem will be enforced
-        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
+        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_10x10_unitsquare.msh", #for nop=4
 	#:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_40x40_unitsquare.msh", #for nop=4
-        :gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
+        #:gmsh_filename       => "./meshes/gmsh_grids/hexa_TFI_32x32_unitsquare.msh", #for nop=4
         #---------------------------------------------------------------------------
         # Filter parameters
         #---------------------------------------------------------------------------

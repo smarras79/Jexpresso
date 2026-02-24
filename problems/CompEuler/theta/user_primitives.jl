@@ -21,10 +21,18 @@ function user_primitives_gpu(u, qe, lpert)
     end
 end
 
-function user_uout!(ip, ET, uout, u, qe; kwargs...)
+function user_uout!(ip, ::TOTAL, uout, u, qe; kwargs...)
 
     uout[1] = u[1]
     uout[2] = u[2]/u[1]
     uout[3] = u[3]/u[1]
     uout[4] = u[4]/u[1]
+end
+
+function user_uout!(ip, ::PERT, uout, u, qe; kwargs...)
+
+    uout[1] = u[1]+qe[1]
+    uout[2] = (u[2]+qe[2])/(u[1]+qe[1])
+    uout[3] = (u[3]+qe[3])/(u[1]+qe[1])
+    uout[4] = (u[4]+qe[4])/(u[1]+qe[1])
 end

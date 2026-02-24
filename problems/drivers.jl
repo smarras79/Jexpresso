@@ -1,3 +1,5 @@
+using Distributions
+
 function driver(nparts,
                 distribute,
                 inputs::Dict,
@@ -117,9 +119,13 @@ function driver(nparts,
                 
                 # 2.a/b
                 μ             = 1
+                â             = zeros(TFloat, sem.mesh.ngl, sem.mesh.ngl)
                 avisc         = zeros(TFloat, sem.mesh.ngl^2)
-                ranvisc       = isamp*μ #+ 10*rand()
+                avisc[:]     .= 0.5 + rand() #Uniform distribution between 0.5 and 1.5
                 avisc[:]     .= ranvisc
+                
+                expansion_2d(â, ψ)
+                @mystop
                 #sem.matrix.L .= ranvisc*sem.matrix.L
                 
                 for ip =1:sem.mesh.npoin
@@ -613,5 +619,13 @@ function elementLearning_Axb!(u, uaux, mesh::St_mesh,
     #------------------------------------------------------------------------
     
     #!!!!!  ML code GOES HERE !!!!!
+    
+end
+
+# Point evaluation: interpolate at a single point (ξ, η)
+function expansion_2d(a::Matrix, ψ::Vector)
+    
+    # Tensor product form: ψᵀ * A * ψ
+    return dot(ψ, a * ψ)
     
 end

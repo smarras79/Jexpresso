@@ -3070,9 +3070,13 @@ function conformity4ncf_q!(q, q_el_tmp, q_tmp, vaux, g_dss_cache,
         for iel = 1:nelem
             for i = 1:ngl
                 for j = 1:ngl
+                    ωi = ω[i]
+                    ωj = ω[j]
+                    ωij = ωi * ωj
                     for k = 1:ngl
                         ip = conn[iel,i,j,k]
-                        ωJac = ω[i]*ω[j]*ω[k]*Je[iel,i,j,k]
+                        Je_ijk = Je[iel,i,j,k]
+                        ωJac = ωij*ω[k]*Je_ijk
                         q_el_tmp[iel,i,j,k,ieq] = ωJac*q[ip,ieq]
                         q_tmp[ip,ieq] += ωJac*q[ip,ieq]
                     end
