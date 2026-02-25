@@ -134,6 +134,7 @@ For questions about registration:
 - Simone Marras: smarras@njit.edu
 - Yassine Tissaoui: tissaoui@wisc.edu
 - Hang Wang: hang.wang@njit.edu
+- Askhay Sridhar: asridhar@caltech.edu
 
 For questions about the Julia registry system:
 - [Julia Discourse](https://discourse.julialang.org/)
