@@ -14,7 +14,7 @@ program unitt_alya_with_another_code
   integer(4)                         :: arank, asize
   character(len=128)                 :: app_name
   character(len=128), allocatable    :: app_dumm(:)
-  integer                            :: i, idime, ndime
+  integer                            :: i, idime, ndime, itime
   integer(4)                         :: neqs
   character(len=128)                 :: s
 
@@ -253,7 +253,8 @@ program unitt_alya_with_another_code
   
   ! Optional: disable writes if out_dt <= 0
   if (out_dt <= 0.0d0) next_t = huge(1.0d0)
-  
+
+  itime = 1
   do step = 1, nsteps
      !t = t0 + step * dt
      
@@ -404,8 +405,9 @@ program unitt_alya_with_another_code
      if (write_now) then
         call write_alya_grid_vts(arank, asize, PAR_COMM_FINAL, ndime, &
              rem_min, rem_max, rem_nx, &
-             recvbuf_all, recvcoord_all, total_pts, neqs, step, t_plus)
+             recvbuf_all, recvcoord_all, total_pts, neqs, step, itime, t_plus)
         call MPI_Barrier(PAR_COMM_FINAL, ierr)
+        itime = itime + 1
      end if
 
      t = t_plus
@@ -478,9 +480,9 @@ contains
   subroutine write_alya_grid_vts(arank, asize, PAR_COMM, ndime, &
                                   rem_min, rem_max, rem_nx, &
                                   recvbuf, recvcoord, total_pts, neqs, &
-                                  timestep, time)
+                                  timestep, itime, time)
     implicit none
-    integer(4),   intent(in) :: arank, asize, ndime
+    integer(4),   intent(in) :: arank, asize, ndime, itime
     MY_MPI_COMM,  intent(in) :: PAR_COMM
     real,         intent(in) :: rem_min(3), rem_max(3)
     integer,      intent(in) :: rem_nx(3)
@@ -587,7 +589,7 @@ contains
     end if
 
     !--- Open file ---
-    write(filename,'(A,I6.6,A)') 'alya_grid_', timestep, '.vts'
+    write(filename,'(A,I6.6,A)') 'alya_grid_', itime, '.vts'
     iunit = 99
     open(unit=iunit, file=trim(filename), status='replace', action='write', iostat=ierr_loc)
     if (ierr_loc /= 0) then
@@ -595,7 +597,6 @@ contains
        deallocate(sendcounts, displs, sendcounts_c, displs_c, full_field, full_coord)
        return
     end if
-
     !=========================================================================
     ! VTK StructuredGrid XML
     !=========================================================================
