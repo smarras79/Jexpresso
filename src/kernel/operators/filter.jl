@@ -466,12 +466,13 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
     end
 
     if ladapt == true
-        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b, connijk, params.mesh.poin_in_edge, 
-                           params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
-                           params.mesh.non_conforming_facets_parents_ghost, params.mesh.cip_pg, params.mesh.lfid_pg, params.mesh.half1_pg, params.mesh.half2_pg,
-                           params.q_el, params.q_el_pro, params.L_1, params.L_2, params.q_ghost_p, 
+        DSS_nc_gather_rhs!(params.B, SD, params.QT, params.b,
+                           params.mesh.non_conforming_facets,
+                           params.mesh.non_conforming_facets_parents_ghost, params.cache_ghost_p,
+                           params.q_el, params.q_el_pro, params.q_ghost_p,
                            params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPc_list_pg,
-                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost, params.mesh.pgip_owner, params.mesh.pgip_local, 
+                           params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.pgip_ghost,
+                           params.mesh.pgip_local, 
                            params.mesh.ngl-1, params.neqs, params.interp)
     end
     DSS_rhs!(params.B, params.b, connijk, params.mesh.nelem, params.mesh.ngl, params.neqs, SD, params.AD)
@@ -479,13 +480,12 @@ function filter!(u, params, t, uaux, connijk, Je, SD::NSD_3D,::TOTAL; connijk_la
     for ieq=1:params.neqs
         divide_by_mass_matrix!(@view(params.B[:,ieq]), params.vaux, params.Minv, params.neqs, params.mesh.npoin, params.AD)
         if ladapt == true
-            DSS_nc_scatter_rhs!(@view(params.B[:,ieq]), SD, params.QT, selectdim(params.b, ndims(params.b), ieq), 
-                                connijk, params.mesh.poin_in_edge, 
-                                params.mesh.non_conforming_facets, params.mesh.cip, params.mesh.pip, params.mesh.lfid, params.mesh.half1, params.mesh.half2,
-                                params.mesh.non_conforming_facets_children_ghost, params.mesh.pip_cg, params.mesh.lfid_cg, params.mesh.half1_cg, params.mesh.half2_cg, 
-                                params.q_el, params.q_el_pro, params.L_1, params.L_2, params.mesh.q_local_c, params.q_ghost_c, 
+            DSS_nc_scatter_rhs!(@view(params.B[:,ieq]), SD, params.QT,
+                                params.mesh.non_conforming_facets,
+                                params.mesh.non_conforming_facets_children_ghost, params.cache_ghost_c,
+                                params.q_el, params.q_el_pro, params.q_ghost_c,
                                 params.mesh.IPc_list, params.mesh.IPp_list, params.mesh.IPp_list_cg,
-                                params.mesh.ip2gip, params.mesh.gip2ip, params.mesh.cgip_ghost, params.mesh.cgip_owner, params.mesh.cgip_local,
+                                params.mesh.gip2ip, params.mesh.cgip_local,
                                 params.mesh.ngl-1, params.interp)
         end
     end

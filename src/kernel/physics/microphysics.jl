@@ -481,6 +481,11 @@ function compute_dqpdt_sam_micro!(uaux, qe, Tabs, qn, qc, qi, qr, qs, qg, qsatt,
             end
 
         end
+        # Guard against negative density from AMR interpolation overshoots
+        if ρ <= 0.0
+            S_micro[ip] = 0.0
+            continue
+        end
         T = Tabs[ip]
         e_satw = esatw(T)*100
         e_sati = esati(T)*100
@@ -791,9 +796,23 @@ function saturation_adjustment_sam_microphysics!(uaux, qe, Tabs, qn, qi, qc, qr,
             end
         end
 
+        # Guard against negative density from AMR interpolation overshoots.
+        # With ρ <= 0 the mixing ratios (qt, qp) flip sign and all downstream
+        # microphysics is unphysical; skip the point and zero all outputs.
+        if ρ <= 0.0
+            qr[ip]    = 0.0
+            qs[ip]    = 0.0
+            qg[ip]    = 0.0
+            qn[ip]    = 0.0
+            qc[ip]    = 0.0
+            qi[ip]    = 0.0
+            qsatt[ip] = 0.0
+            continue
+        end
+
         # find equilibrium temperature from saturation adjustment
         # initial guess for sensible temperature and pressure assumes no condensates/all vapor
-                
+
         T =  (hl - g*z[ip])/cp
         an   = 1/(T0n - T00n)
         bn   = T00n * an
