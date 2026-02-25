@@ -529,17 +529,29 @@ function _build_rhs!(RHS, u, params, time)
     u2uaux!(@view(params.uaux[:,:]), u, params.neqs, params.mesh.npoin)
     
     if inputs[:ladapt] == true
-        conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux, 
+        conformity4ncf_q!(params.uaux, params.rhs_el_tmp, @view(params.utmp[:,1:neqs]), params.vaux,
                           params.g_dss_cache,
-                          params.mesh.SD, 
+                          params.mesh.SD,
                           params.QT, params.mesh.connijk,
-                          params.mesh, params.Minv, 
-                          params.metrics.Je, params.ω, params.AD, 
+                          params.mesh, params.Minv,
+                          params.metrics.Je, params.ω, params.AD,
                           params.neqs,
                           params.q_el, params.q_el_pro,
                           params.cache_ghost_p, params.q_ghost_p,
                           params.cache_ghost_c, params.q_ghost_c,
                           params.interp)
+        # After AMR L2 projection, spectral methods can introduce Gibbs-like
+        # overshoots at refinement boundaries that make conserved variables negative.
+        # For TOTAL variables: col 1 = ρ (must be > 0), cols 6-7 = ρqt, ρqp (must be ≥ 0).
+        # For PERT variables: col 1 = ρ' which can legitimately be negative — do not clamp.
+        if params.SOL_VARS_TYPE != PERT()
+            T_uaux = eltype(params.uaux)
+            @. params.uaux[:,1] = max(params.uaux[:,1], zero(T_uaux))
+            if params.neqs >= 7
+                @. params.uaux[:,6] = max(params.uaux[:,6], zero(T_uaux))
+                @. params.uaux[:,7] = max(params.uaux[:,7], zero(T_uaux))
+            end
+        end
     end
     
     resetbdyfluxToZero!(params)
