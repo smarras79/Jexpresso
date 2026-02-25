@@ -1,441 +1,53 @@
-# ANNOUNCEMENT:
+# JexpressoMeshes
 
-Dear all, 
+This repository contains:
+1. A collection of gmsh `*.geo` and `*.msh` meshes often used in Jexpresso benchmarks
+2. **NEW:** `JexpressoMeshGenerator.jl` - A standalone Julia module for programmatic mesh generation
 
-as we have noticed an increased interest in Jexpresso (this is amazing, thank you for this!), we added a script to [automate the installation](INSTALLATION.md) of Jexpresso.
+The meshes directory used to be part of the main Jexpresso repo but was growing in size, so we
+decided to remove it from the Jexpresso history and have it stand alone.
 
-Moreover, we have added **ERA5** reading capabilities and the branch for that will be merged soon into master, as well as an improved handling of boundary conditions from the user's perspective.
+## Using Pre-Generated Meshes
 
-Thank you your interest in the Jexpresso!
+After cloning the JexpressoMeshes repo, follow the instructions below to use the meshes with Jexpresso:
 
+```bash
+cd Jexpresso
+ln -s JexpressoMeshes/meshes .
+```
 
-# <img src="./assets/logo-ext2.png" width="500" title="JEXPRESSO logo">
+## Using the Mesh Generator (NEW!)
 
-| **Documentation** |
-|:------------ |
- [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://smarras79.github.io/Jexpresso/dev/) [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://smarras79.github.io/Jexpresso/dev/) |
-|**Build Status** |
-| [![CI](https://github.com/smarras79/Jexpresso/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/smarras79/Jexpresso/actions?query=workflow%3ACI)
-| **Contacts**  |
-| [![Simone Marras](https://img.shields.io/badge/Simone%20Marras-smarras%40njit.edu-8e7cc3)](mailto:smarras@njit.edu) |
-| [![Yassine Tissaoui](https://img.shields.io/badge/Yassine%20Tissaoui-tissaoui%40wisc.edu-8e7cc3)](mailto:tissaoui@wisc.edu) |
-| [![Hang Wang](https://img.shields.io/badge/Hang%20Wang-hang.wang%40njit.edu-8e7cc3)](mailto:hang.wang@njit.edu) |
-| **Citation** |
-| [![DOI](https://img.shields.io/badge/article-arXiv:2401.05624-green)](https://doi.org/10.48550/arXiv.2401.05624) |
+**JexpressoMeshGenerator.jl** allows you to generate meshes directly from within Julia using GMSH.jl,
+eliminating the need for external GMSH scripting.
 
-# JEXPRESSO
-A CPU and GPU research software for the numerical solution of a system of arbitrary conservation laws using **continuous spectral elements** and finite differences in **1D, 2D, 3D**. DISCLAIMER: this will always be WIP! Contact us to join the team of developers!
-
-Suggested Julia version: 1.11.2 or higher.
-
-# Installation:
-
-## Current Installation Method
-
-Jexpresso is currently being prepared for registration in the Julia General Registry. For now, please use the manual installation method described in [INSTALLATION.md](INSTALLATION.md).
-
-The installer will install all the necessary packages with the correct versions.
-
-## Future Installation (After Registry Approval)
-
-Once registered, you will be able to install Jexpresso directly with:
+### Quick Start
 
 ```julia
 using Pkg
-Pkg.add("Jexpresso")
+Pkg.add("Gmsh")
+
+push!(LOAD_PATH, "/path/to/JexpressoMeshes/src")
+using JexpressoMeshGenerator
+
+# Generate a 3D periodic LES mesh
+params = MeshParams3D(64, 64, 36, 0.0, 10240.0, 0.0, 10240.0, 0.0, 3500.0)
+generate_3d_periodic_mesh(params, periodic_x=true, periodic_y=true,
+                          output_file="LESICP_64x64x36.msh")
 ```
 
-For information about the registration process, see [REGISTRATION.md](REGISTRATION.md).
-
-Jexpresso uses a few packages whose latest version may be incompatible. Please, enfornce the installation of the following versions:
-
-```
-MPI 0.20.22
-MPIPreferences 0.1.11
-PackageCompiler 2.2.1
-Thermodynamics 0.12.7
-PrettyTables 2.4.0
-Crayons 4.1.1
-UnicodePlots 3.7.2
-Gridap v0.18.12
-GridapDistributed v0.4.7
-GridapGmsh v0.7.2
-GridapP4est v0.3.11
-```
-
-If you use Jexpresso please drop us a line to let us know. We'd like to add a link to your paper or work on this page.
-
-Please cite Jexpresso using:
-
-```
-@inproceedings{marrasJexpresso,
-  author    = {S. Marras and Y. Tissaoui and H. Wang and S. Stechmann}
-  title     = {JEXPRESSO V0. 1: A JULIA-LANGUAGE, USER-FRIENDLY, MULTI-PHYSICS PARALLEL SOLVER FOR THE SOLUTION OF CONSERVATIONS LAWS ON CPUs AND GPUs.},
-  booktitle = {Proceedings of the 36th Parallel CFD international conference 2025},
-  year      = {2025},
-  address   = {Merida, Yucatan, Mexico},
-  month     = {November},
-  organization = {UNAM},
-}
-
-@article{tissaoui2024,
-  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
-  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
-  volume ={487},
-  pages={129080},
-  year = {2024},
-  journal = {App. Math. Comput.},
-}
-```
-
-# Equations:
-Jexpresso uses arbitrarily high-order (3rd and above) **continuous spectral elements** to solve
-
-$$\frac{\partial \bf q}{\partial t} + \sum_{i=1}^{nd}\nabla\cdot{{\bf F}_i({\bf q})} = \mu\nabla^2{\bf q} + {\bf S}({\bf q}) + ~{\rm b.c.}$$
-
-where the vectors ${\bf q}$, ${\bf F}$, and ${\bf S}$ are problem-dependent as shown below,
-and are taken to be zero vectors of the appropriate size when not explicitly stated otherwise.
-
-The Julia package [DifferentialEquations.jl](https://docs.sciml.ai/DiffEqDocs/stable/) is used for time discretization and stepping.
-
-In order, we provide tests and results for the following equations:
-
-
-1. 1D wave equation:
-   
-$${\bf q}=\begin{bmatrix}
-u \\
-v
-\end{bmatrix}\quad {\bf F}=\begin{bmatrix}
-v\\
-u
-\end{bmatrix}$$
-
-2: 1D shallow water:
-
-$${\bf q}=\begin{bmatrix}
-h \\
-u
-\end{bmatrix}\quad {\bf F}=\begin{bmatrix}
-Uh + Hu\\
-gh + Uu
-\end{bmatrix},$$
-
-where $H$ and $U$ are a reference height and velocity, respectively.
-
-3. 2D Helmholtz:
-   
-$${\bf S}=\begin{bmatrix}
-\alpha^2 u + f(x,z)
-\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
-u_{xx} + u_{zz}
-\end{bmatrix},$$
-
-for a constant value of $\alpha$ and $\mu$, which are case-dependent.
-
-4. 2D scalar advection-diffusion:
-
-$${\bf q}=\begin{bmatrix}
-q\\
-\end{bmatrix}\quad {\bf F}=\begin{bmatrix}
-qu\\
-\end{bmatrix}\quad {\bf F}=\begin{bmatrix}
-qv\\
-\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
-q_{xx} + q_{zz}
-\end{bmatrix},$$
-
-5. 2D Euler equations of compressible flows with gravity and N passive chemicals $c_i, \forall i=1,...,N$ 
-
-$${\bf q}=\begin{bmatrix}
-\rho \\
-\rho u\\
-\rho v\\
-\rho \theta\\
-\rho c1\\
-...\\
-\rho cN
-\end{bmatrix}\quad {\bf F1}=\begin{bmatrix}
-\rho u\\
-\rho u^2 + p\\
-\rho u v\\
-\rho u \theta\\
-\rho u c1\\
-...\\
-\rho u cN
-\end{bmatrix}\quad {\bf F2}=\begin{bmatrix}
-\rho v\\
-\rho v u\\
-\rho v^2 + p\\
-\rho v \theta\\
-\rho v c1\\
-...\\
-\rho v cN
-\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
-0\\
-0\\
--\rho g\\
-0\\
-0\\
-...\\
-0
-\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
-0\\
-u_{xx} + u_{zz}\\
-v_{xx} + v_{zz}\\
-\theta_{xx} + \theta_{zz}\\
-c1_{xx} + c1_{zz}\\
-...\\
-cN_{xx} + cN_{zz}
-\end{bmatrix}.$$
-
-6. 3D Euler equations of compressible flows with gravity
-
-$${\bf q}=\begin{bmatrix}
-\rho \\
-\rho u\\
-\rho v\\
-\rho w\\
-\rho \theta\\
-\end{bmatrix}\quad {\bf F}1=\begin{bmatrix}
-\rho u\\
-\rho u^2 + p\\
-\rho u v\\
-\rho u w\\
-\rho u \theta\\
-\end{bmatrix}\quad {\bf F}2=\begin{bmatrix}
-\rho v\\
-\rho v u\\
-\rho v^2 + p\\
-\rho v w\\
-\rho v \theta\\
-\end{bmatrix}\quad {\bf F3}=\begin{bmatrix}
-\rho w\\
-\rho w u\\
-\rho w v\\
-\rho w^2 + p\\
-\rho w \theta\\
-\end{bmatrix}\quad {\bf S}=\begin{bmatrix}
-0\\
-0\\
-0\\
--\rho g\\
-0\\
-\end{bmatrix}\quad \mu\nabla^2{\bf q}=\mu\begin{bmatrix}
-0\\
-u_{xx} + u_{yy} + u_{zz}\\
-v_{xx} + v_{yy} + v_{zz}\\
-w_{xx} + w_{yy} + w_{zz}\\
-\theta_{xx} + \theta_{yy} + \theta_{zz}\\
-\end{bmatrix}.$$
-
-
-If you are interested in contributing, please get in touch:
-[Simone Marras](mailto:smarras@njit.edu), [Yassine Tissaoui](mailto:tissaoui@wisc.edu), [Hang Wang](mailto:hang.wang@njit.edu)
-
-
-# Some notes on using JEXPRESSO
-
-To install and run the code assume Julia 1.11.2
-
-Start by cloning Jexpresso and JexpressoMeshes:
-
-```bash
-git clone https://github.com/smarras79/Jexpresso.git
-```
-
-```bash
-git clone https://github.com/smarras79/JexpressoMeshes.git
-```
-    
-```bash
-cd Jexpresso
-```
-
-```bash
-ln -s ../JexpressoMeshes/meshes .
-```
-
-
-## Setup with CPUs
-
-```bash
->> cd $JEXPRESSO_HOME
->> julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.API.precompile()"
-```
-followed by the following:
-
-Push problem name to ARGS
-You need to do this only when you run a new problem
-```bash
-push!(empty!(ARGS), BENCHMARKS::String, CASE_NAME::String);
-include("./src/Jexpresso.jl")
-```
-
-* PROBLEM_NAME is the name of your problem directory as $JEXPRESSO/problems/problem_name
-* PROBLEM_CASE_NAME is the name of the subdirectory containing the specific setup that you want to run: 
-
-The path would look like 
-```$JEXPRESSO/problems/PROBLEM_NAME/PROBLEM_CASE_NAME```
-
-IMPORTANT: ```PROBLEM_NAME``` is arbitrary. The use of ```CompEuler```, ```AdvDiff```, or ```Elliptic``` in the defaults code are just indicative of the problems being solved, but a user can use any arbirtrary name if one wishes to create a new directory.
-
-## Shallow cumuli:
-Example of shallow cumuli simulations (right) for the type of Barbados clouds shown on the left: (picture taken from [P. Blossey webpage](https://www.atmos.washington.edu/~bloss/) from U. Washington)
-
-<img src="assets/barbados.jpg"
-     alt="Markdown icon"
-     style="float: left; margin-right: 3.5px;" />
-
-## Turbulent ABL
-Example of coarse simulation of the turbulent atmospheric boundary layer. Domain size: 10240m X 10240m X 3000m using 64x64x24 spectral elements of order 4.
-Surface and SGS: Monin-Obukhov Similarity Theory model with Richardson-corrected Smagorinsky.
-<img src="assets/ABLfullDomain.gif"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
-
-Examples available in this branch:
-
-Example 1: to solve the 2D Euler equations with buoyancy and two passive tracers defined in `problems/CompEuler/thetaTracers` you would do the following:
-```bash
-push!(empty!(ARGS), "CompEuler", "thetaTracers");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/thetaTracersMeshUnstr.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
-
-
-Example 2: to solve the 3D Euler equations with buoyancy defined in `problems/CompEuler/3d` you would do the following:
-```bash
-push!(empty!(ARGS), "CompEuler", "3d");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/rtb3d.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 5px;" />
-
-
-Example 3: to solve the 1D wave equation  defined in `problems/CompEuler/wave1d` you would do the following:
-```bash
-push!(empty!(ARGS), "CompEuler", "wave1d");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/wave1d-v.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-
-
-For ready to run tests, there are the currently available equations names:
-
-* CompEuler (option with total energy and theta formulation)
-
-The code is designed to create any system of conservsation laws. See CompEuler/case1 to see an example of each file.
-Details will be given in the documentation (still WIP). Write us if you need help.
-
-More are already implemented but currently only in individual branches. They will be added to master after proper testing.
-
-## Laguerre semi-infinite element test suite
-This section contains instructions to run all of the test cases presented in
-
-```
-@article{tissaoui2024,
-  author = {Y. Tissaoui and J. F. Kelly and S. Marras}
-  title = {Efficient Spectral Element Method for the Euler Equations on Unbounded Domains},
-  volume ={487},
-  pages={129080},
-  year = {2024},
-  journal = {App. Math. Comput.},
-}
-```
-
-Test 1: 1D wave equation with Laguerre semi-infinite element absorbing layers
-
-The problem is defined in [`problems/CompEuler/wave1d_lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/CompEuler/wave1d_lag) and by default output will be written to `output/CompEuler/wave1d_lag`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "CompEuler", "wave1d_lag");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/wave_v_4.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 2: 1D wave train for linearized shallow water equations
-
-The problem is defined in [`problems/AdvDiff/Wave_Train`](https://github.com/smarras79/Jexpresso/tree/master/problems/AdvDiff/Wave_Train) and by default output will be written to `output/AdvDiff/Wave_Train`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "AdvDiff", "Wave_Train");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/Wave_Train_final.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-
-Test 3: 2D advection-diffusion equation
-
-The problem is defined in [`problems/AdvDiff/2D_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/AdvDiff/2d_Laguerre) and by default output will be written to `output/AdvDiff/2D_laguerre`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "AdvDiff", "2D_laguerre");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/ad2d-4s-line.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 4: 2D Helmholtz equation
-
-The problem is defined in [`problems/Helmholtz/case1_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/Helmholtz/case1_laguerre) and by default output will be written to `output/Helmholtz/case1_laguerre`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "Helmholtz", "case1_laguerre");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/Helmholtz_from_jexpresso-line.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 5: Rising thermal bubble with semi-infinite Laguerre elements for outflows
-
-The problem is defined in [`problems/CompEuler/theta_laguerre`](https://github.com/smarras79/Jexpresso/tree/master/problems/CompEuler/theta_laguerre) and by default output will be written to `output/CompEuler/theta_laguerre`. To solve this problem run the following commands from the Julia command line:
-
-```bash
-push!(empty!(ARGS), "CompEuler", "theta_laguerre");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/48.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 6: Hydrostatic linear mountain waves with semi-infinite Laguerre elements for outflows
-
-The problem is defined in [`problems/CompEuler/HSmount_Lag`](https://github.com/smarras79/Jexpresso/tree/master/problems/CompEuler/HSmount_Lag) and by default output will be written to `output/CompEuler/HSmount_Lag`. To solve this problem run the following commands from the Julia command line:
-
-```bash      
-push!(empty!(ARGS), "CompEuler", "HSmount_Lag");
-include("./src/Jexpresso.jl")
-```
-
-<img src="assets/wvelo.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 7px;" />
-
-Test 7: Shallow cumuli simulation with BOMEX conditions:
-
-<img src="assets/bomex.png"
-     alt="Markdown icon"
-     style="float: left; margin-right: 3.5px;" />
-
-## Run with MPI on a multicore-laptop: [MPI-run](https://github.com/smarras79/Jexpresso/blob/master/INSTALLATION.md#3-running-with-mpi)
+### Documentation
+
+- **Quick Start:** See [QUICKSTART.md](QUICKSTART.md)
+- **Full Documentation:** See [MESH_GENERATOR_README.md](MESH_GENERATOR_README.md)
+- **Examples:** See `examples/basic_usage.jl` and `examples/advanced_usage.jl`
+- **Tests:** Run `julia test/runtests.jl`
+
+### Features
+
+- 2D and 3D structured mesh generation
+- Periodic boundary conditions
+- Vertical stretching for boundary layer resolution
+- Transfinite meshing for hexahedral elements
+- Full compatibility with existing Jexpresso `.msh` format
+- Programmatic mesh generation for parametric studies
