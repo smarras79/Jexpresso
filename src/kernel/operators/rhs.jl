@@ -1003,7 +1003,7 @@ function viscous_rhs_el!(u, params, connijk, qe, SD::NSD_3D)
     
     for iel=1:nelem        
         
-        Δ_effective = Δ/2^(ad_lvl[iel]+1)
+        Δ_effective = Δ/2^(ad_lvl[iel])
 
         for k = 1:ngl, j = 1:ngl, i=1:ngl
             ip = connijk[iel,i,j,k]
