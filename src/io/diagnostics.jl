@@ -118,7 +118,7 @@ end
 
 function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs)
 
-    PhysConst = PhysicalConst{Float64}()	 
+    PhysConst = PhysicalConst{TFloat}()	 
     u2uaux!(uaux, u, neqs, mesh.npoin)
     
     energy = 0.0	
@@ -190,7 +190,7 @@ end
 
 function compute_energy!(uaux, u, uauxe, mesh, metrics, ω,neqs,QT::Exact,Q,ψ)
 
-    PhysConst = PhysicalConst{Float64}()	 
+    PhysConst = PhysicalConst{TFloat}()	 
     u2uaux!(uaux, u, neqs, mesh.npoin)
     
     energy = 0.0	

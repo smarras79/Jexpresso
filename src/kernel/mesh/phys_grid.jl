@@ -255,7 +255,7 @@ end
 
 function interpolate_to_phys_grid!(mesh,phys_grid,uaux,qe,nlay,ncol,P,T,qc,qi,ρ,lpert)
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
     A = KernelAbstractions.zeros(CPU(), TFloat, mesh.npoin,6)
     ω = KernelAbstractions.zeros(CPU(), TFloat,mesh.ngl,mesh.ngl,mesh.ngl)
     B = KernelAbstractions.zeros(CPU(), TFloat, 6)

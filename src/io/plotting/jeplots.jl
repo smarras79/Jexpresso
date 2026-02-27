@@ -36,7 +36,7 @@ function plot_results(SD::NSD_1D, mesh::St_mesh, q, title::String, OUTPUT_DIR::S
     npoin = mesh.npoin
 
     qout = reshape(q, npoin, nvar)   # 2D view (3x4) - NO allocation
-    x_coords = mesh.x[1:npoin]
+    x_coords = mesh.coords[1:npoin, 1]
     sort_idx = sortperm(x_coords)
     for ivar=1:nvar
 
@@ -79,9 +79,7 @@ end
 
 
 function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, outvar, inputs::Dict; iout=1, nvar=1, fig=nothing, color ="blue", p=[], marker = :circle, PT=nothing)
-
-    @print "C"
-
+    
     epsi = 1.1
     npoin = mesh.npoin
 
@@ -117,73 +115,6 @@ function plot_results!(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPU
         fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".eps")
         Plots.savefig(fig, string(fout_name))
         fig
-    end
-end
-
-
-function plot_results(SD::NSD_1D, mesh::St_mesh, q::Array, title::String, OUTPUT_DIR::String, varnames; iout=1, nvar=1, PT=nothing)
-
-    epsi = 1.1
-    npoin = mesh.npoin
-
-    qout = copy(q)
-    qe   = range(0,0,npoin)
-
-    #outvar = ["ρ", "u", "e"]
-    outvar = varnames
-    if PT === CompEuler()
-        #ρ
-        qout[1:npoin] .= @view q[1:npoin]
-
-        #u = ρu/ρ
-        ivar = 2
-        idx = (ivar - 1)*npoin
-        qout[idx+1:2*npoin] .= q[idx+1:2*npoin]./q[1:npoin]
-
-        ivar = 3
-        idx = (ivar - 1)*npoin
-        γ = 1.4
-
-        if (outvar[3] == "e")
-            #Internal energy
-            qout[idx+1:3*npoin] .= (q[2*npoin+1:3*npoin] .- 0.5*q[npoin+1:2*npoin].*q[npoin+1:2*npoin]./q[1:npoin])./q[1:npoin] #internal energy: p/((γ-1)ρ)
-        elseif (outvar[3] == "p")
-            #Pressure
-            qout[idx+1:3*npoin] .= (γ - 1.0)*(q[2*npoin+1:3*npoin] .- 0.5*q[npoin+1:2*npoin].*q[npoin+1:2*npoin]./q[1:npoin]) #Pressure
-        end
-    elseif PT === ShallowWater()
-        Hb = zeros(npoin,nvar)
-        for i=1:npoin
-            x= mesh.x[i]
-            Hb[i,1] = zb[i]
-        end
-
-        for ivar=1:nvar
-            idx = (ivar - 1)*npoin
-            qout[idx+1:ivar*npoin] .= q[idx+1:ivar*npoin] .+ Hb[:,ivar]
-        end
-    end
-
-    for ivar=1:nvar
-
-        idx = (ivar - 1)*npoin
-        plt = Plots.scatter(mesh.x[1:npoin], qout[idx+1:ivar*npoin];
-                           markersize = 5,
-                           color = :blue,
-                           xlabel = "x",
-                           ylabel = "q(x)",
-                           title = string(outvar[ivar]),
-                           titlefontsize = 24,
-                           guidefontsize = 18,
-                           legendfontsize = 14,
-                           tickfontsize = 14,
-                           legend = false,
-                           size = (800, 600))
-
-
-        fout_name = string(OUTPUT_DIR, "/ivar", ivar, "-it", iout, ".png")
-        Plots.savefig(plt, string(fout_name))
-        plt
     end
 end
 

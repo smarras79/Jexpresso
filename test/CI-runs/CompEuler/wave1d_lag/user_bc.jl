@@ -24,12 +24,12 @@
     where  `qibdy[i=1:nvar]` is the value unknown `i`
     
 """
-function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe::SubArray{Float64},::TOTAL)
+function user_bc_dirichlet!(q::SubArray{TFloat}, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe::SubArray{TFloat},::TOTAL)
 
    nothing
 end
 
-function user_bc_dirichlet!(q::SubArray{Float64}, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe::SubArray{Float64},::PERT)
+function user_bc_dirichlet!(q::SubArray{TFloat}, x::AbstractFloat, t::AbstractFloat, tag::String,qbdy::AbstractArray,qe::SubArray{TFloat},::PERT)
 
    nothing
 end

@@ -14,7 +14,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
     qvars = ("ρ", "ρu", "ρv", "ρe")
     q = define_q(SD, mesh.nelem, mesh.npoin, mesh.ngl, qvars, TFloat, inputs[:backend]; neqs=length(qvars))
     #---------------------------------------------------------------------------------
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
 
     
     mycase   = "vor"
@@ -31,7 +31,7 @@ function initialize(SD::NSD_2D, PT, mesh::St_mesh, inputs::Dict, OUTPUT_DIR::Str
         # READ RESTART HDF5:
         #
         q.qn, q.qe = read_output(mesh.SD, inputs[:restart_input_file_path], inputs, mesh.npoin, HDF5(); nvar=length(qvars))
-        PhysConst = PhysicalConst{Float64}()
+        PhysConst = PhysicalConst{TFloat}()
         for ip=1:mesh.npoin
             ρ  = q.qn[ip,1]
             ρθ = q.qn[ip,4]

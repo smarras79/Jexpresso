@@ -1,10 +1,10 @@
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
-                    q::SubArray{Float64},
-                    qe::SubArray{Float64},
+function user_flux!(F::SubArray{TFloat}, G::SubArray{TFloat}, SD::NSD_2D,
+                    q::SubArray{TFloat},
+                    qe::SubArray{TFloat},
                     mesh::St_mesh,
-                    ::CL, ::TOTAL; neqs=6, ip=1, kwargs...)
+                    ::CL, ::TOTAL; neqs=6, ip=1)
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
     
     ρ  = q[1]
     ρu = q[2]
@@ -31,13 +31,13 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
     G[6] = q[6]*v
 end
 
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
-                    q::SubArray{Float64},
-                    qe::SubArray{Float64},
+function user_flux!(F::SubArray{TFloat}, G::SubArray{TFloat}, SD::NSD_2D,
+                    q::SubArray{TFloat},
+                    qe::SubArray{TFloat},
                     mesh::St_mesh,
-                    ::CL, ::PERT; neqs=5, ip=1, kwargs...)
+                    ::CL, ::PERT; neqs=5, ip=1)
 
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
 
     ρ  = q[1] + qe[1]
     ρu = q[2]
@@ -69,13 +69,13 @@ function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
 end
 
 
-function user_flux!(F::SubArray{Float64}, G::SubArray{Float64}, SD::NSD_2D,
-                    q::SubArray{Float64},
-                    qe::SubArray{Float64},
+function user_flux!(F::SubArray{TFloat}, G::SubArray{TFloat}, SD::NSD_2D,
+                    q::SubArray{TFloat},
+                    qe::SubArray{TFloat},
                     mesh::St_mesh,
-                    ::NCL, ::AbstractPert; neqs=5, ip=1, kwargs...)
+                    ::NCL, ::AbstractPert; neqs=5, ip=1)
     
-    PhysConst = PhysicalConst{Float64}()
+    PhysConst = PhysicalConst{TFloat}()
                 
     ρ = q[1]
     u = q[2]

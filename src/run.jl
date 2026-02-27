@@ -9,15 +9,27 @@ using ArgParse
 # 2. Push equations name to ARGS
 #    You need this only when you run a new equations
 #
-#    julia > push!(empty!(ARGS), EQUATIONS::String, EQUATIONS_CASE_NAME::String);
+#    julia > push!(empty!(ARGS), BENCHMARK::String, CASE_NAME::String);
 #    julia > include(./src/Jexpresso.jl)
 #
-#    EQUATIONS is the name of your equations directory as $JEXPRESSO/src/equations/EQUATIONS
-#    EQUATIONS_CASE_NAME is the name of the subdirectory $JEXPRESSO/src/equations/EQUATIONS_CASE_NAME
+#    BENCHMARK is the name of the user's directory that contains a user-defined CASE_NAME
+#    CASE_NAME is the name of the user's subdirectory $JEXPRESSO/problems/BENCHMARK/CASE_NAME (e.g. theta)
 #
-# Ex. To run the Compressible Euler equations in $JEXPRESSO/src/equations/CompEuler/theta
+# Ex. To run the rising thermal bubble benchmark: $JEXPRESSO/problems/CompEuler/theta
 # 
 #  julia > push!(empty!(ARGS), "CompEuler", "theta");
+#  julia > include(./src/Jexpresso.jl)
+#
+# To create a new case:
+#
+# mkdir $JEXPRESSO/problems/USER_DEFINED_DIR/
+# mkdir $JEXPRESSO/problems/USER_DEFINED_DIR/USER_DEFINED_CASE_NAME
+#
+# ex.:
+# mkdir $JEXPRESSO/problems/acoustics
+# mkdir $JEXPRESSO/problems/acoustics/acoustics2d
+#
+#  julia > push!(empty!(ARGS), "acoustics", "acoustics2d");
 #  julia > include(./src/Jexpresso.jl)
 #
 #--------------------------------------------------------
@@ -26,7 +38,7 @@ function parse_commandline()
 
     @add_arg_table s begin
         "eqs"
-        help = "equations"
+        help = "Directoy that contains some user-defined cases"
         default = "CompEuler"
         required = false
         
@@ -57,15 +69,13 @@ parsed_args                = parse_commandline()
 parsed_equations           = string(parsed_args["eqs"])
 parsed_equations_case_name = string(parsed_args["eqs_case"])
 parsed_CI_mode             = string(parsed_args["CI_MODE"])
-
-
-driver_file          = string(dirname(@__DIR__()), "/problems/equations/drivers.jl")
+driver_file                = string(dirname(@__DIR__()), "/problems/drivers.jl")
 
 # Check if running under CI environment and set directory accordingly
 if parsed_CI_mode == "true"
     case_name_dir = string(dirname(@__DIR__()), "/test/CI-runs", "/", parsed_equations, "/", parsed_equations_case_name)
 else
-    case_name_dir = string(dirname(@__DIR__()), "/problems/equations", "/", parsed_equations, "/", parsed_equations_case_name)
+    case_name_dir = string(dirname(@__DIR__()), "/problems", "/", parsed_equations, "/", parsed_equations_case_name)
 end
 
 user_input_file      = string(case_name_dir, "/user_inputs.jl")
@@ -115,9 +125,26 @@ if !isdir(OUTPUT_DIR)
 end
 
 #--------------------------------------------------------
+# Create restart output/inupt directory if it doesn't exist:
+#--------------------------------------------------------
+if (!haskey(inputs, :restart_output_file_path))
+    inputs[:restart_output_file_path] = joinpath(OUTPUT_DIR,string("restart"))
+end
+
+if (haskey(inputs, :lrestart))
+    if(inputs[:lrestart] == true && !haskey(inputs, :restart_input_file_path))
+        inputs[:restart_input_file_path] = inputs[:restart_output_file_path]
+    end
+else
+    inputs[:lrestart] = false
+end
+
+#--------------------------------------------------------
 # Save a copy of user_inputs.jl for the case being run 
 #--------------------------------------------------------
-cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
+if rank == 0 
+    cp(user_input_file, joinpath(OUTPUT_DIR, basename(user_input_file)); force = true)
+end
 
 #--------------------------------------------------------
 # use Metal (for apple) or CUDA (non apple) if we are on GPU

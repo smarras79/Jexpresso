@@ -6,6 +6,7 @@ Base.@kwdef mutable struct St_uODE{T <: AbstractFloat, dims1, dims2, dims3, back
     u    = KernelAbstractions.zeros(backend, T, dims1)
     uaux = KernelAbstractions.zeros(backend, T, dims2)
     vaux = KernelAbstractions.zeros(backend, T, dims3) #generic auxiliary array for general use
+    utmp = KernelAbstractions.zeros(backend, T, dims2) #for conformity use
     
 end
 function allocate_uODE(SD, npoin, T, backend; neqs=1)
@@ -47,119 +48,6 @@ function define_q(SD, nelem, npoin, ngl, qvars, T, backend; neqs=1, qoutvars=qva
     return q
 end
 
-# Poisson equation variables
-Base.@kwdef mutable struct St_poisson{T <: AbstractFloat, dims1, backend}
-
-    poisson    = KernelAbstractions.zeros(backend, T, dims1)
-    
-end
-function allocate_poisson(SD, npoin, T, backend; l_incompressible=false)
-
-    dims1 = Int64(npoin)
-    poisson = St_poisson{T, dims1, backend}()
-
-    return poisson
-end
-
-
-#-------------------------------------------------------------------------------------------------------------------------------
-# Flux data: this is to store quantities to be used in user flux that can't be directly optained from the prognostic variables.
-#-------------------------------------------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_F_data{T <: AbstractFloat, dims1, backend}
-
-    F_data    = KernelAbstractions.zeros(backend, T, dims1)
-    
-end
-function allocate_F_data(SD, npoin, T, backend; l_incompressible=false)
-   
-    if l_incompressible
-        dims1 = (Int64(npoin),2)
-    else
-        dims1 = 1
-    end
-    uODE = St_F_data{T, dims1, backend}()
-
-    return uODE
-end
-
-Base.@kwdef mutable struct St_number{T <: AbstractFloat, dims1, backend}
-
-    number    = KernelAbstractions.zeros(backend, T, dims1)
-    
-end
-function allocate_number(SD, npoin, T, backend; l_incompressible=false)
-   
-    
-    dims1 = (Int64(npoin),2)
-
-    number = St_number{T, dims1, backend}()
-
-    return number
-end
-
-
-# For Poisson Equation's rhs
-#-------------------------------------------------------------------------------------------
-Base.@kwdef mutable struct St_rhs_p{T <: AbstractFloat, dims1, dims2, dims3, dims4, backend}
-    
-    RHS_p          = KernelAbstractions.zeros(backend,  T, dims1)       #b_global
-    rhs_el_p       = KernelAbstractions.zeros(backend,  T, dims2)       #b_el
-
-    rhs_laplacian_el_p  = KernelAbstractions.zeros(backend,  T, dims3)  #D_el
-    RHS_laplacian_p = KernelAbstractions.zeros(backend,  T, dims4)      #D_global
-    
-end
-function allocate_rhs_p(SD, nelem, npoin, ngl, T, backend, l_incompressible; neqs=1)
-    if (l_incompressible)
-        
-        if SD == NSD_1D()
-
-            dims1 = (Int64(npoin), Int64(neqs))
-            dims2 = (Int64(nelem), Int64(ngl), Int64(neqs)) 
-            dims3 = (Int64(nelem), Int64(ngl), Int64(neqs))
-            dims4 = (Int64(npoin), Int64(neqs)) 
-
-        elseif SD == NSD_2D()
-
-            dims1 = (Int64(npoin), Int64(neqs))
-            dims2 = (Int64(nelem), Int64(ngl)*Int64(ngl), Int64(neqs)) 
-            dims3 = (Int64(nelem), Int64(ngl)*Int64(ngl), Int64(ngl)*Int64(ngl), Int64(neqs)) 
-            dims4 = (Int64(npoin), Int64(npoin), Int64(neqs)) 
-
-        elseif SD == NSD_3D()
-
-            dims1 = (Int64(npoin), Int64(neqs))
-            dims2 = (Int64(nelem), Int64(ngl), Int64(ngl), Int64(ngl), Int64(neqs)) 
-            dims3 = (Int64(nelem), Int64(ngl), Int64(ngl) , Int64(ngl), Int64(neqs)) 
-            dims4 = (Int64(npoin), Int64(npoin), Int64(npoin), Int64(neqs)) 
-
-        end
-
-    else
-        dims1 = 1
-        dims2 = 1
-        dims3 = 1
-        dims4 = 1
-    end
-    
-    rhs_p = St_rhs_p{T, dims1, dims2, dims3, dims4, backend}()
-    
-    return rhs_p
-end
-
-# For computing boundary condition for NS2 eq in moving lid case
-Base.@kwdef mutable struct St_segment_p{T <: AbstractFloat, dims1, backend}
-
-    seg_p    = KernelAbstractions.zeros(backend, T, dims1)
-    
-end
-function allocate_segment_p(SD, npoin, T, backend; l_incompressible=false)
-
-    dims1 = Int64(npoin)
-    segment_p = St_segment_p{T, dims1, backend}()
-
-    return segment_p
-end
 
 #-------------------------------------------------------------------------------------------
 # rhs
@@ -173,6 +61,7 @@ Base.@kwdef mutable struct St_rhs{T <: AbstractFloat, dims1, dims2, backend}
     rhs_diffξ_el = KernelAbstractions.zeros(backend,  T, dims2)
     rhs_diffη_el = KernelAbstractions.zeros(backend,  T, dims2)
     rhs_diffζ_el = KernelAbstractions.zeros(backend,  T, dims2)
+    rhs_el_tmp   = KernelAbstractions.zeros(backend,  T, dims2)
     
 end
 function allocate_rhs(SD, nelem, npoin, ngl, T, backend; neqs=1)
@@ -567,3 +456,27 @@ function allocate_gpuMoist(SD, npoin, nelem, ngl, T, backend, lmoist; neqs=1)
 end
 
 
+Base.@kwdef mutable struct St_ncfArrays{T <: AbstractFloat, dims1, dims2, dims3, backend}
+
+    q_el      = KernelAbstractions.zeros(backend, T, dims1)
+    q_el_pro  = KernelAbstractions.zeros(backend, T, dims1)
+    q_ghost_p = KernelAbstractions.zeros(backend, T, dims2)
+    q_ghost_c = KernelAbstractions.zeros(backend, T, dims3)
+end
+
+function allocate_ncfArrays(SD, num_ncf_pg, num_ncf_cg, ngl, T, backend; neqs=1)
+
+    if SD == NSD_1D() || SD == NSD_2D()
+        dims1 = (Int64(ngl))
+        dims2 = (Int64(num_ncf_pg * (ngl)), Int64(neqs))
+        dims3 = (Int64(num_ncf_cg * (ngl)))
+    elseif SD == NSD_3D()
+        ngl2 = ngl * ngl
+        dims1 = (Int64(ngl * ngl))
+        dims2 = (Int64(num_ncf_pg * (ngl2)), Int64(neqs))
+        dims3 = (Int64(num_ncf_cg * (ngl2)))
+    end
+    ncf_arrays = St_ncfArrays{T, dims1, dims2, dims3, backend}()
+
+    return ncf_arrays
+end
