@@ -19,10 +19,34 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
     #
     mod_inputs_check(inputs, :nop, Int8(4), "w")  #Polynomial order
     
+    
+    
     if(!haskey(inputs, :backend))
         inputs[:backend] = CPU()
     end
     
+    if(!haskey(inputs, :lJACC))
+        inputs[:lJACC] = true
+    end
+
+    @info inputs[:JACC_backend] 
+
+    if(!haskey(inputs, :JACC_backend))
+        inputs[:JACC_backend] = "threads"
+    end
+
+    if inputs[:lJACC]
+        try
+            JACC.set_backend(inputs[:JACC_backend])
+            
+            print_rank(GREEN_FG(string(" # JACC backend set to: ", inputs[:JACC_backend], "\n")); msg_rank = rank)
+        catch e
+            error("Failed to set JACC backend to '$(inputs[:JACC_backend])'. 
+                   The available backends are: 'threads' (default), 'cuda', 'amdgpu', 'metal' and 'oneAPI'.
+                   Error: $e")
+        end
+    end
+
     if (inputs[:backend] != CPU())
         if (inputs[:backend] == CUDABackend())
             global TInt = Int32
@@ -485,6 +509,9 @@ function mod_inputs_user_inputs!(inputs, rank = 0)
             inputs[:gmsh_filename_c] = "none"
         end
     end
+    
+    
+    
     
     #Grid entries:
     if(!haskey(inputs, :lread_gmsh) || inputs[:lread_gmsh] == false)

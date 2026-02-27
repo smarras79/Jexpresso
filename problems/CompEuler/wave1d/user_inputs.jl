@@ -39,11 +39,15 @@ function user_inputs()
         :xmin          =>   0.0,
         :xmax          =>   5.0,
         :nelx          =>   50,
+
+        :lJACC        => true,
+        :JACC_backend => "cuda", 
+
     ) #Dict
     #---------------------------------------------------------------------------
     # END User define your inputs below: the order doesn't matter
     #---------------------------------------------------------------------------
-
+    
     return inputs
     
 end
